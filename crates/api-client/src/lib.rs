@@ -4983,7 +4983,8 @@ pub mod types {
     #[doc = "    \"system.stats\","]
     #[doc = "    \"audit.read\","]
     #[doc = "    \"flags.read\","]
-    #[doc = "    \"flags.write\""]
+    #[doc = "    \"flags.write\","]
+    #[doc = "    \"system.superuser\""]
     #[doc = "  ]"]
     #[doc = "}"]
     #[doc = r" ```"]
@@ -5061,6 +5062,8 @@ pub mod types {
         FlagsRead,
         #[serde(rename = "flags.write")]
         FlagsWrite,
+        #[serde(rename = "system.superuser")]
+        SystemSuperuser,
     }
     impl ::std::fmt::Display for Permission {
         fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -5095,6 +5098,7 @@ pub mod types {
                 Self::AuditRead => f.write_str("audit.read"),
                 Self::FlagsRead => f.write_str("flags.read"),
                 Self::FlagsWrite => f.write_str("flags.write"),
+                Self::SystemSuperuser => f.write_str("system.superuser"),
             }
         }
     }
@@ -5132,6 +5136,7 @@ pub mod types {
                 "audit.read" => Ok(Self::AuditRead),
                 "flags.read" => Ok(Self::FlagsRead),
                 "flags.write" => Ok(Self::FlagsWrite),
+                "system.superuser" => Ok(Self::SystemSuperuser),
                 _ => Err("invalid value".into()),
             }
         }
@@ -25904,7 +25909,7 @@ impl Client {
     pub fn delete_account(&self) -> builder::DeleteAccount<'_> {
         builder::DeleteAccount::new(self)
     }
-    #[doc = "Get my capabilities\n\nThe permissions the caller holds and the features this deployment has enabled — everything\na client needs to decide which navigation, panels and controls to render.\n\nNot cacheable: a permission revoked or a feature switched off must be reflected on the next\nfetch, and this is the endpoint a client polls to find out.\n\nSends a `GET` request to `/v1/me/capabilities`\n\n```ignore\nlet response = client.capabilities()\n    .send()\n    .await;\n```"]
+    #[doc = "Get my capabilities\n\nThe permissions the caller holds and the features this deployment has enabled — everything\na client needs to decide which navigation, panels and controls to render.\n\nNot cacheable: a permission revoked or a feature switched off must be reflected on the next\nfetch, and this is the endpoint a client polls to find out.\n\nThe grants as stored, not as they resolve: a super user's list is the single\n`system.superuser` token, and a client must treat that token the way the server does —\nas holding everything — rather than reading the array as exhaustive.\n\nSends a `GET` request to `/v1/me/capabilities`\n\n```ignore\nlet response = client.capabilities()\n    .send()\n    .await;\n```"]
     pub fn capabilities(&self) -> builder::Capabilities<'_> {
         builder::Capabilities::new(self)
     }

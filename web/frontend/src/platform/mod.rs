@@ -47,6 +47,10 @@ pub(crate) use imp::EventStream;
 /// is switched off in `main`, so minimising, maximising, moving and closing the window are the
 /// app's job now. See [`crate::components::TitleBar`].
 ///
+/// `autostart_*` is the reader's sign-in list — an `HKCU\…\Run` value on Windows, a freedesktop
+/// `autostart` entry on Linux. There is no browser equivalent and there should not be: a web page
+/// cannot arrange to be opened at login, and an installed app is the only thing entitled to ask.
+///
 /// `credential_*` is the OS credential store — Credential Manager, Secret Service, Keychain.
 /// The web build has no counterpart because it needs none: the browser already keeps the refresh
 /// cookie encrypted, scoped to the origin and out of reach of script. On desktop that guarantee
@@ -56,9 +60,10 @@ pub(crate) use imp::EventStream;
 /// [`crate::api::session_store`].
 #[cfg(feature = "desktop")]
 pub(crate) use desktop::{
-    credential_delete, credential_get, credential_set, fit_window_to_display,
-    notifications_enabled, notify, server_origin, set_notifications_enabled, set_server_origin,
-    set_window_heading, settings_path, window, ROOT_ATTRIBUTES, WINDOW_HEADING,
+    autostart_enabled, autostart_supported, credential_delete, credential_get, credential_set,
+    fit_window_to_display, notifications_enabled, notify, server_origin, set_autostart,
+    set_notifications_enabled, set_server_origin, set_window_heading, settings_path, window,
+    ROOT_ATTRIBUTES, WINDOW_HEADING,
 };
 
 // ---------------------------------------------------------------------------------------------

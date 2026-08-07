@@ -567,9 +567,13 @@ async fn seed(pool: &tankovault_db::PgPool) -> anyhow::Result<()> {
     match tankovault_bootstrap::seed_admin(pool, &seed).await? {
         // Printed on purpose: this command's whole output is the account you can now log in
         // with, on a local database, so `expose_secret` here is deliberate.
-        tankovault_bootstrap::AdminOutcome::Created(username) => println!(
-            "seeded admin user {username} with all {} permissions (password: {})",
-            tankovault_domain::Permission::all().len(),
+        tankovault_bootstrap::AdminOutcome::Created {
+            username,
+            super_user,
+        } => println!(
+            "seeded admin user {username} with all {} permissions{} (password: {})",
+            tankovault_domain::Permission::grantable().len(),
+            if super_user { " and super user" } else { "" },
             password.expose_secret(),
         ),
         tankovault_bootstrap::AdminOutcome::AlreadyPresent => {

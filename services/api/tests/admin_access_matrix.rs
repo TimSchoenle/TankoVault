@@ -593,10 +593,12 @@ impl<'a> Callers<'a> {
     }
 
     /// A bearer for an active account holding every capability *except* `withheld`.
+    ///
+    /// `grantable()`, not `all()`: seeding the super user grant would answer every check and
+    /// turn every expected 403 in the matrix into a pass.
     async fn holding_all_but(&mut self, withheld: &[Permission]) -> String {
-        let perms: Vec<Permission> = Permission::all()
-            .iter()
-            .copied()
+        let perms: Vec<Permission> = Permission::grantable()
+            .into_iter()
             .filter(|p| !withheld.contains(p))
             .collect();
         self.holding(&perms).await

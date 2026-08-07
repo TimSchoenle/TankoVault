@@ -108,6 +108,126 @@ async fn other_active_holders_protects_the_last_holder_of_a_critical_capability(
     assert_eq!(others, 0, "a suspended holder cannot rescue the deployment");
 }
 
+/// The permission editor's catalogue does not list `system.superuser`, so *every* checklist
+/// submit omits it. A plain whole-set diff would therefore revoke the deployment owner's grant
+/// the first time anyone edited their other permissions — and no API path can put it back.
+#[tokio::test]
+async fn a_permission_edit_that_omits_the_super_user_grant_leaves_it_in_place() {
+    let db = TestDb::spawn().await;
+    let granter = db
+        .seed_user(
+            "granter",
+            &[Permission::UsersPermissions],
+            AccountStatus::Active,
+        )
+        .await;
+    let owner = db
+        .seed_user(
+            "owner",
+            &[Permission::SuperUser, Permission::ScansRead],
+            AccountStatus::Active,
+        )
+        .await;
+
+    let desired: PermissionSet = [Permission::MergeRead].into_iter().collect();
+    let mut conn = db.pool.acquire().await.expect("acquire");
+    let diff = permissions::replace(&mut conn, owner, &desired, granter)
+        .await
+        .expect("replace grants");
+    drop(conn);
+
+    assert_eq!(diff.added, vec!["merge.read".to_owned()]);
+    assert_eq!(
+        diff.removed,
+        vec!["scans.read".to_owned()],
+        "only the enumerable grant may be revoked here"
+    );
+
+    let principal = permissions::resolve(&db.pool, owner)
+        .await
+        .expect("resolve")
+        .expect("exists");
+    assert!(principal.permissions.is_super_user());
+    assert!(principal.permissions.has(Permission::MergeRead));
+}
+
+/// The whole premise of the grant: it is the installer's, once. A second one would be a second
+/// account holding every future capability, granted by whoever ran the job last.
+#[tokio::test]
+async fn only_the_deployments_first_account_can_claim_the_super_user() {
+    let db = TestDb::spawn().await;
+    let owner = db.seed_user("owner", &[], AccountStatus::Active).await;
+
+    assert!(
+        permissions::claim_super_user(&db.pool, owner)
+            .await
+            .expect("claim"),
+        "the only account in the database becomes the super user"
+    );
+    assert!(
+        !permissions::claim_super_user(&db.pool, owner)
+            .await
+            .expect("re-claim"),
+        "re-running the install job changes nothing"
+    );
+
+    let second = db.seed_user("second", &[], AccountStatus::Active).await;
+    assert!(
+        !permissions::claim_super_user(&db.pool, second)
+            .await
+            .expect("claim by a later account"),
+        "seeding a second administrator must not promote it"
+    );
+    // And not by writing the row directly either: the partial unique index is what makes the
+    // rule hold for any path that reaches the table, including a migration.
+    assert!(
+        permissions::grant(&db.pool, second, Permission::SuperUser, None)
+            .await
+            .is_err(),
+        "the database must refuse a second super user"
+    );
+
+    assert!(
+        permissions::resolve(&db.pool, second)
+            .await
+            .expect("resolve")
+            .expect("exists")
+            .permissions
+            .is_empty()
+    );
+}
+
+/// The lockout guard asks "does anyone else hold this?" before every revoke, suspend and erase.
+/// Counting the exact token alone would answer no while the super user was sitting there able
+/// to grant it back, refusing an operation that was never dangerous.
+#[tokio::test]
+async fn a_super_user_counts_as_another_holder_of_every_capability() {
+    let db = TestDb::spawn().await;
+    let owner = db
+        .seed_user("owner", &[Permission::SuperUser], AccountStatus::Active)
+        .await;
+    let admin = db
+        .seed_user(
+            "admin",
+            &[Permission::UsersPermissions],
+            AccountStatus::Active,
+        )
+        .await;
+
+    let others = permissions::other_active_holders(&db.pool, Permission::UsersPermissions, admin)
+        .await
+        .expect("count holders");
+    assert_eq!(others, 1, "the super user can grant the capability back");
+
+    user_admin::set_status(&db.pool, owner, AccountStatus::Suspended, Some("test"))
+        .await
+        .expect("suspend the owner");
+    let others = permissions::other_active_holders(&db.pool, Permission::UsersPermissions, admin)
+        .await
+        .expect("count holders");
+    assert_eq!(others, 0, "a suspended super user cannot sign in to help");
+}
+
 #[tokio::test]
 async fn replace_reports_the_precise_diff_and_takes_effect_immediately() {
     let db = TestDb::spawn().await;

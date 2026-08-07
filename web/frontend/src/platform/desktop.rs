@@ -350,6 +350,166 @@ pub(crate) fn notify(summary: &str, body: &str) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Start with the OS
+// ---------------------------------------------------------------------------------------------
+
+/// Whether this build can put the app in the reader's sign-in list at all.
+///
+/// False leaves the switch out of the settings sheet rather than showing one that does nothing.
+///
+/// What the implementations below register is the running binary's own path, never the install
+/// directory the installer would have used: this app also ships as a portable archive and as an
+/// `AppImage`, and both run from wherever the reader put them.
+pub(crate) fn autostart_supported() -> bool {
+    autostart::SUPPORTED
+}
+
+/// Whether the app is currently registered to start at sign-in.
+///
+/// **Read from the OS, not from the settings file.** The Windows installer offers the same choice
+/// as a checkbox and writes the same registry value, so a mirror in `settings.json` would be a
+/// second opinion that disagrees the moment the reader uses the other one — and the OS is the
+/// copy that decides what actually happens.
+pub(crate) fn autostart_enabled() -> bool {
+    autostart::enabled()
+}
+
+/// Register or deregister the app for sign-in. Returns whether the OS accepted it.
+///
+/// Unlike the rest of this module a refusal is *not* silent: this one is a switch the reader
+/// flipped and watched, so the caller puts the toggle back where it was and says so.
+pub(crate) fn set_autostart(enabled: bool) -> bool {
+    autostart::set(enabled)
+}
+
+/// `HKCU\…\Run`, the one supported way to start an app at sign-in without a shell shortcut — and
+/// a shortcut is a COM object, which a crate that forbids `unsafe` cannot build.
+#[cfg(windows)]
+mod autostart {
+    pub(super) const SUPPORTED: bool = true;
+
+    /// The value name, and what Task Manager's Startup tab lists the entry as.
+    ///
+    /// **`bundle/windows/installer.nsi.hbs` writes this exact name at this exact key**, so the
+    /// installer checkbox and this switch are two views of one value rather than two settings
+    /// that could disagree. Renaming either side alone orphans whatever the other one wrote,
+    /// leaving the app starting at sign-in with nothing in the UI admitting it.
+    const VALUE: &str = "TankoVault";
+    const KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
+
+    pub(super) fn enabled() -> bool {
+        windows_registry::CURRENT_USER
+            .open(KEY)
+            .and_then(|key| key.get_string(VALUE))
+            .is_ok_and(|command| !command.trim().is_empty())
+    }
+
+    pub(super) fn set(enabled: bool) -> bool {
+        // `create` rather than `open`: the Run key exists on every Windows install, but opening
+        // for write is the same call either way and this one cannot fail for a missing key.
+        let Ok(key) = windows_registry::CURRENT_USER.create(KEY) else {
+            return false;
+        };
+        if enabled {
+            let Ok(command) = std::env::current_exe() else {
+                return false;
+            };
+            // Quoted, because a path with a space in it — `C:\Program Files\…` under a
+            // per-machine install — is otherwise read as a program name plus arguments.
+            key.set_string(VALUE, format!("\"{}\"", command.display()))
+                .is_ok()
+        } else {
+            match key.remove_value(VALUE) {
+                Ok(()) => true,
+                // `remove_value` reports "no such value" as an error, and a value that was never
+                // there is the state being asked for. Re-read rather than match on the code.
+                Err(_) => key.get_string(VALUE).is_err(),
+            }
+        }
+    }
+}
+
+/// The freedesktop autostart directory: a `.desktop` entry in `$XDG_CONFIG_HOME/autostart` is
+/// what every conforming session reads at login.
+#[cfg(all(unix, not(target_vendor = "apple")))]
+mod autostart {
+    use std::path::PathBuf;
+
+    pub(super) const SUPPORTED: bool = true;
+
+    /// Matches the bundle identifier, which is how a desktop environment keys the entry back to
+    /// the installed application.
+    const ENTRY_FILE_NAME: &str = "dev.tankovault.frontend.desktop";
+
+    fn entry_path() -> Option<PathBuf> {
+        directories::BaseDirs::new()
+            .map(|dirs| dirs.config_dir().join("autostart").join(ENTRY_FILE_NAME))
+    }
+
+    pub(super) fn enabled() -> bool {
+        entry_path().is_some_and(|path| path.is_file())
+    }
+
+    pub(super) fn set(enabled: bool) -> bool {
+        let Some(path) = entry_path() else {
+            return false;
+        };
+        if !enabled {
+            // Same reading as the Windows side: an entry that is not there is the state asked
+            // for, not a failure.
+            return match std::fs::remove_file(&path) {
+                Ok(()) => true,
+                Err(error) => error.kind() == std::io::ErrorKind::NotFound,
+            };
+        }
+        // `APPIMAGE` before `current_exe`, and it is not a nicety: inside an `AppImage` the
+        // running binary is a file on a temporary mount that is gone by the next login, so a
+        // session started from one would autostart a path that no longer exists. The runtime sets
+        // this to the image itself, which is what the reader would double-click.
+        let Some(command) = std::env::var_os("APPIMAGE")
+            .map(PathBuf::from)
+            .or_else(|| std::env::current_exe().ok())
+        else {
+            return false;
+        };
+        let Some(dir) = path.parent() else {
+            return false;
+        };
+        if std::fs::create_dir_all(dir).is_err() {
+            return false;
+        }
+        // `Exec` is a shell-like word list, so a path containing a space has to be quoted for the
+        // same reason the registry command does.
+        let entry = format!(
+            "[Desktop Entry]\n\
+             Type=Application\n\
+             Name=TankoVault\n\
+             Exec=\"{}\"\n\
+             Terminal=false\n\
+             X-GNOME-Autostart-enabled=true\n",
+            command.display()
+        );
+        std::fs::write(&path, entry).is_ok()
+    }
+}
+
+/// No third desktop platform is shipped — the release workflow builds Windows and Linux — so this
+/// exists to keep the module compiling on a developer's macOS rather than to serve anyone. The
+/// settings sheet reads [`SUPPORTED`] and leaves the switch out entirely.
+#[cfg(not(any(windows, all(unix, not(target_vendor = "apple")))))]
+mod autostart {
+    pub(super) const SUPPORTED: bool = false;
+
+    pub(super) fn enabled() -> bool {
+        false
+    }
+
+    pub(super) fn set(_enabled: bool) -> bool {
+        false
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
 // Appearance attributes
 // ---------------------------------------------------------------------------------------------
 

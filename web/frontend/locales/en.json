@@ -286,6 +286,12 @@
       "label": "Show desktop notifications",
       "title": "Notifications"
     },
+    "startup": {
+      "failed": "Your system refused the change. Nothing was altered.",
+      "hint": "The same option the installer offered. Turning it off here removes the entry again.",
+      "label": "Start TankoVault when I sign in",
+      "title": "Startup"
+    },
     "title": "Settings",
     "update": {
       "check": "Check now",

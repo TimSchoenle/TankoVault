@@ -110,8 +110,9 @@ pub(crate) fn flavour() -> Flavour {
 /// a second install** with its own entry in Apps & Features, so anything not recognisably one or
 /// the other is left alone.
 ///
-/// It therefore depends on the bundler's NSIS default install mode. If `dx` ever grows a knob for
-/// it, `Dioxus.toml` should set it explicitly so this reads a decision rather than a default.
+/// It therefore depends on the NSIS install mode, which `Dioxus.toml` now states explicitly
+/// (`[bundle.windows.nsis] install_mode`) rather than leaving to the bundler's default — so this
+/// reads a decision, and changing it there is visibly a change to this rule.
 // Compiled on every host on purpose. This rule decides which installer is handed to a Windows
 // install, and handing over the wrong one produces a second install rather than an upgrade — so
 // it is the per-OS rule that most needs the CI gate, which runs on Linux, to test it.

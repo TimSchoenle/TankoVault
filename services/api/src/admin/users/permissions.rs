@@ -2,7 +2,7 @@
 //! Both are served from the same compiled registry, so the list an operator sees and the set
 //! the write path accepts cannot disagree.
 
-use crate::audit::audit;
+use crate::audit::{audit, audit_failure};
 use crate::error::{ApiError, ApiResult};
 use crate::openapi::ADMIN_USERS_TAG;
 use crate::state::{AppState, AuthUser};
@@ -40,7 +40,7 @@ pub struct SetPermissions {
     security(("bearer_auth" = [])),
     responses(
         (status = 200, description = "The updated account and its grants", body = UserDetailResponse),
-        (status = 400, description = "cannot edit your own permissions, or strip the last administrator", body = crate::error::ProblemDetails),
+        (status = 400, description = "cannot edit your own permissions, strip the last administrator, or grant the super user", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 404, description = "no such user", body = crate::error::ProblemDetails),
@@ -57,6 +57,30 @@ pub async fn set_user_permissions(
     guard_not_self(&state, &user, target, "user.permissions").await?;
 
     let desired: PermissionSet = body.permissions.into_iter().collect();
+
+    // The super user grant is minted by the installer and by nothing else, so this path may
+    // only ever confirm one that already exists. Repeating it is what the console does on every
+    // save — the checklist seeds from the stored grants, and the catalogue has no toggle to
+    // clear this one with — while *adding* it is an escalation past the whole permission model,
+    // since it would outlive every capability the enum currently has.
+    if desired.is_super_user() {
+        let already_super = tankovault_db::repo::permissions::resolve(&state.pool, target)
+            .await?
+            .is_some_and(|p| p.permissions.is_super_user());
+        if !already_super {
+            audit_failure(
+                &state,
+                &user,
+                "user.permissions",
+                &id.to_string(),
+                &serde_json::json!({ "reason": "super_user_not_grantable" }),
+            )
+            .await;
+            return Err(ApiError::BadRequest(
+                "the super user is created by the installer and cannot be granted here".to_owned(),
+            ));
+        }
+    }
 
     // Only a *removal* of the meta-capability can strip the last administrator; granting it can
     // only ever add one.
@@ -133,10 +157,12 @@ pub struct PermissionCatalogue {
 pub async fn permission_catalogue(user: AuthUser) -> ApiResult<Json<PermissionCatalogue>> {
     user.require(Permission::UsersRead).await?;
     Ok(Json(PermissionCatalogue {
-        permissions: Permission::all()
-            .iter()
+        // `grantable()`, not `all()`: listing the super user grant would offer a checkbox the
+        // editor is not allowed to tick, and every submit that left it ticked would be refused.
+        permissions: Permission::grantable()
+            .into_iter()
             .map(|p| PermissionInfo {
-                key: *p,
+                key: p,
                 group: p.group(),
                 description: p.description(),
             })

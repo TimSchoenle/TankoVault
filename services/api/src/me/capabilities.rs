@@ -35,6 +35,10 @@ pub struct Capabilities {
 ///
 /// Not cacheable: a permission revoked or a feature switched off must be reflected on the next
 /// fetch, and this is the endpoint a client polls to find out.
+///
+/// The grants as stored, not as they resolve: a super user's list is the single
+/// `system.superuser` token, and a client must treat that token the way the server does —
+/// as holding everything — rather than reading the array as exhaustive.
 #[utoipa::path(
     get,
     path = "/v1/me/capabilities",

@@ -12,6 +12,25 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [3.0.0](https://github.com/TimSchoenle/TankoVault/compare/v2.1.0...v3.0.0) (2026-08-07)
+
+
+### ⚠ BREAKING CHANGES
+
+* **catalogue,recsys:** gate adult content behind a deployment flag and a per-reader opt-in ([#129](https://github.com/TimSchoenle/TankoVault/issues/129))
+
+### Features
+
+* **api,frontend:** let readers choose which source a series opens on ([#127](https://github.com/TimSchoenle/TankoVault/issues/127)) ([d0e6dd5](https://github.com/TimSchoenle/TankoVault/commit/d0e6dd59de3ac855e63d7363056ea844051483cd))
+* **catalogue,recsys:** gate adult content behind a deployment flag and a per-reader opt-in ([#129](https://github.com/TimSchoenle/TankoVault/issues/129)) ([2feeb24](https://github.com/TimSchoenle/TankoVault/commit/2feeb24db5d64d4da24caa0b9324889cd42aff45))
+* **frontend:** update the desktop client from the github releases ([#132](https://github.com/TimSchoenle/TankoVault/issues/132)) ([9d22618](https://github.com/TimSchoenle/TankoVault/commit/9d22618aedca620a804a0bf9083a797faf6935bf))
+
+
+### Bug Fixes
+
+* **ci:** retry the release's by-digest push past GHCR's throttled token ([#133](https://github.com/TimSchoenle/TankoVault/issues/133)) ([4fed264](https://github.com/TimSchoenle/TankoVault/commit/4fed264923e44c34e903ac5aea2bbc736db6f6f5))
+* **matching:** stop an alias hit attaching a source to the wrong series ([#131](https://github.com/TimSchoenle/TankoVault/issues/131)) ([6da14d5](https://github.com/TimSchoenle/TankoVault/commit/6da14d53447c6173a4f690e29c20d17f3d25bfa5))
+
 ## [2.1.0](https://github.com/TimSchoenle/TankoVault/compare/v2.0.0...v2.1.0) (2026-08-07)
 
 

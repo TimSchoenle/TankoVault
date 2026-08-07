@@ -5,7 +5,7 @@ use crate::config::{AdapterConfig, TextSource};
 use crate::error::AdapterError;
 use crate::html::{
     absolutize, extract_all, extract_first, map_status, parse_blocking, parse_chapter_number,
-    parse_selector, parse_year, relativize, split_attr, split_list,
+    parse_selector, parse_year, relativize, split_attr, split_titles,
 };
 use crate::types::{
     CatalogItem, CatalogPage, ChapterMeta, Ctx, LatestUpdate, SeriesMeta, SourceAdapter,
@@ -82,7 +82,7 @@ fn extract_text_source(
                     continue;
                 }
                 return Ok(extract_first(row, &cfg.value)?
-                    .map(|v| split_list(&v))
+                    .map(|v| split_titles(&v))
                     .unwrap_or_default());
             }
             Ok(Vec::new())

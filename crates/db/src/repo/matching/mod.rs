@@ -38,6 +38,23 @@ mod pairs;
 mod queue;
 mod undo;
 
+/// How many distinct series may hold one title key before it stops identifying anything.
+///
+/// Two stages read it, for the same reason. In [`find_duplicate_pairs`] a key held by `n` series
+/// contributes `n·(n-1)/2` pairs, so it is the only thing standing between a shortlist and a
+/// quadratic one. In [`find_candidates`] it is what stops a runaway: a source attaches to a
+/// series on an alias hit, its own aliases are then filed under that series, and the next source
+/// that shares any of them attaches too — one live row absorbed 281 unrelated sources that way.
+/// A key that many works answer to is not evidence about any of them, whatever produced it.
+///
+/// Sixteen is far above any real duplicate cluster (the largest legitimate one observed is a
+/// single work listed by every provider at once) and far below the thousands a mis-scraped label
+/// produces, so the two cases do not overlap and the exact value is not load-bearing.
+///
+/// Kept in step with the `HAVING count(*) > 16` in `migrations/0025_merge_sweep_progress.up.sql`,
+/// which applies the same rule once, destructively, to repair what a past adapter wrote.
+pub(super) const MAX_KEY_FANOUT: i64 = 16;
+
 pub use candidates::{find_candidates, find_candidates_multi};
 pub use decisions::{
     MergeDecisionFilter, MergeDecisionRow, NewMergeDecision, flag_merge_decision,

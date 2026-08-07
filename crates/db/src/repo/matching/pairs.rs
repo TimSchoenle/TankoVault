@@ -11,15 +11,7 @@ pub type DuplicatePair = (SeriesId, SeriesId);
 /// How many distinct series may share one compact title key before [`find_duplicate_pairs`]
 /// stops blocking on it.
 ///
-/// A key held by `n` series contributes `n·(n-1)/2` pairs, so this is the only thing standing
-/// between a shortlist and a quadratic one. Sixteen is far above any real duplicate cluster
-/// (the largest legitimate one observed is a single work listed by every provider at once) and
-/// far below the thousands that a mis-scraped label produces, so the two cases do not overlap
-/// and the exact value is not load-bearing.
-///
-/// Kept in step with the `HAVING count(*) > 16` in `migrations/0025_merge_sweep_progress.up.sql`,
-/// which applies the same rule once, destructively, to repair what a past adapter wrote.
-const MAX_KEY_FANOUT: i64 = 16;
+use super::MAX_KEY_FANOUT;
 
 /// Every pair of *existing* series whose titles collide on the whitespace-insensitive key and
 /// that the sweep has not already recorded a verdict for.

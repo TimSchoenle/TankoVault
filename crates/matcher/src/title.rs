@@ -24,6 +24,10 @@ pub(crate) struct TitleMatch<'a> {
     pub(crate) containment: bool,
     /// Whether the winning title was an alternative rather than the canonical one.
     pub(crate) via_alias: bool,
+    /// The textual agreement against the **canonical** title alone, whatever won overall. The
+    /// scorer discounts an alias-only agreement and needs the undiscounted floor to fall back
+    /// to; see [`assess_with`](crate::assess::assess_with).
+    pub(crate) canonical_ratio: f32,
     /// The candidate title the winning comparison was against. Borrowed from the candidate, so
     /// an explanation can name it without the scorer cloning a string on the hot path.
     pub(crate) matched: &'a str,
@@ -38,6 +42,7 @@ impl Default for TitleMatch<'_> {
             compact_equal: false,
             containment: false,
             via_alias: false,
+            canonical_ratio: 0.0,
             matched: "",
         }
     }
@@ -89,6 +94,9 @@ pub(crate) fn best_title_match<'a>(
             token.max(edit)
         };
 
+        if !is_alias {
+            best.canonical_ratio = ratio;
+        }
         // `>` not `>=`, so the canonical title wins ties against an alternative and
         // `via_alias` reports the truth rather than whichever synonym happened to be last.
         if ratio > best.ratio {

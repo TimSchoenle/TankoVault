@@ -5,7 +5,7 @@
 use crate::error::AdapterError;
 use crate::html::{
     absolutize, map_status, parse_blocking, parse_chapter_number, parse_selector, parse_ymd_date,
-    relativize, split_list, text_of,
+    relativize, split_list, split_titles, text_of,
 };
 use crate::types::{
     CatalogItem, CatalogPage, ChapterMeta, Ctx, LatestUpdate, SeriesMeta, SourceAdapter,
@@ -163,7 +163,7 @@ impl SourceAdapter for DemonicScansAdapter {
                 stat_value(root, "Status").map_or(SeriesStatus::Unknown, |s| map_status(&s));
 
             let alt_titles = stat_value(root, "Alternatives")
-                .map(|v| split_list(&v))
+                .map(|v| split_titles(&v))
                 .unwrap_or_default();
 
             let authors = stat_value(root, "Author")

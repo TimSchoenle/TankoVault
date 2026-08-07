@@ -630,7 +630,7 @@ async fn search_finds_a_series_by_its_alternative_title() {
     assert_eq!(titles(&page), vec!["Solo Leveling"]);
 
     // The unfiltered listing carries the same three-way predicate; both must agree.
-    let listed = list_series(&db.pool, Some("na honjaman level up"), 10)
+    let listed = list_series(&db.pool, Some("na honjaman level up"), false, 10)
         .await
         .expect("list_series search");
     assert_eq!(
@@ -862,7 +862,7 @@ async fn source_count_counts_distinct_providers() {
     let db = TestDb::spawn().await;
     seed_corpus(&db).await;
 
-    let listed = list_series(&db.pool, None, 100).await.expect("list");
+    let listed = list_series(&db.pool, None, false, 100).await.expect("list");
     for item in &listed {
         let want = i64::from(item.series.canonical_title == "Solo Leveling") + 1;
         assert_eq!(

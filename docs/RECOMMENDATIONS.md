@@ -814,8 +814,8 @@ Applied before scoring where they are indexed, after where they are not:
 - already in `watchlist_entries` for this user;
 - in `recommendation_feedback` (`not_interested` decays after 90 days; `hide_forever` does not);
 - `series_prior.recommendable = false`;
-- `series.is_adult` unless the user has opted in — a per-user preference, defaulting off, not a
-  deployment-wide flag;
+- `series.adult_gated` unless the reader has opted in *and* the deployment allows it — a per-user
+  preference defaulting off, plus a deployment-wide flag that also ships off (§12.3);
 - no active `series_sources` (recommending something unreadable is worse than recommending
   nothing);
 - direct sequels/prequels of tracked series → **excluded from the discovery shelf and routed to a
@@ -1382,7 +1382,35 @@ read it as a tuning knob.
 
 ### 12.3 Adult content
 
-`is_adult` is a hard gate defaulting to excluded, opted in per user, never inferred from tags.
+The gate is `series.adult_gated` — a stored generated column, `is_adult OR adult_inferred` — and
+it defaults to excluded. Two conditions must both hold before a series passes it: the deployment
+has `catalogue.adult_content` switched on (a feature flag that ships **off**, the only one whose
+default-on failure mode is showing adult material to an audience nobody chose), and the reader has
+opted in *and* attested their age. Anonymous callers cannot satisfy the second and so never see
+gated series, on any surface.
+
+Two writers, deliberately in separate columns:
+
+- `is_adult` — AniList's `isAdult`, via the enrichment sweep. Authoritative, may say either yes or
+  no.
+- `adult_inferred` — the ingest classifier over the provider's own genre chips
+  (`tankovault_domain::AdultTagSet`). May only ever say **yes**, and nothing clears it.
+
+**This revises the previous rule that the flag is "never inferred from tags."** That rule was
+correct about *stored* tags — AniList's adult-flagged tags are dropped at parse time and never
+reach `series_tags`, so nothing downstream can infer from them — but it left the real hole
+unaddressed: `is_adult` had exactly one writer, so every series the AniList sweep had not matched
+kept the column's `false` default and read as safe. On a freshly scanned catalogue that is most of
+it, and permanently so for anything AniList does not carry. The inference runs at ingest against
+the raw scrape, before the tag blocklist, and its term list is deliberately short and
+high-precision: it carries only terms that mean explicit sexual content, and explicitly excludes
+`ecchi`, `yaoi`, `yuri`, `mature`, `seinen` and `doujinshi`. See the doc comment on
+`DEFAULT_ADULT_TAGS` for why each exclusion is not an oversight.
+
+The gate is applied at **read** time only. It used to also set `series_prior.recommendable = false`
+during the model build, which made the reader's opt-in unreachable: every retrieval path joins
+`recommendable`, so a series the build refused could not be recovered by any read-time filter,
+however permissive. The build's flag is about usefulness; content is the reader's filter.
 
 ### 12.4 Repository gates this touches
 

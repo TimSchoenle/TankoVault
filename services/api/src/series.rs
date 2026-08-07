@@ -1,6 +1,7 @@
 //! Public series browse/detail/chapters. Links are resolved to absolute URLs here via
 //! `domain::resolve_link`; the database stays relative (design §11).
 
+use crate::content_gate::AdultVisibility;
 use crate::error::{ApiError, ApiResult};
 use crate::state::AppState;
 use axum::Json;
@@ -111,6 +112,11 @@ pub struct SeriesSummary {
     /// Tag names, alphabetically. Capped server-side: a card has room for two or three, and
     /// shipping forty for a client to slice is payload nobody renders.
     pub tags: Vec<String>,
+    /// Whether this series is adult-classified.
+    ///
+    /// Only ever `true` for a caller who opted in — a card that reaches a client at all has
+    /// already passed the gate. This labels what is on screen; it is not what hides anything.
+    pub is_adult: bool,
 }
 
 /// Tags a card carries at most. Alphabetical, so the choice is stable between requests rather
@@ -134,9 +140,10 @@ impl SeriesSummary {
         items: Vec<tankovault_db::repo::catalog::SeriesListItem>,
     ) -> ApiResult<Vec<Self>> {
         let ids: Vec<SeriesId> = items.iter().map(|it| it.series.id).collect();
-        let (chapters, tags) = tokio::try_join!(
+        let (chapters, tags, adult) = tokio::try_join!(
             tankovault_db::repo::catalog::chapter_stats_for_series(&state.pool, &ids),
             tankovault_db::repo::catalog::tags_for_series(&state.pool, &ids),
+            tankovault_db::repo::catalog::adult_gated_many(&state.pool, &ids),
         )?;
 
         Ok(items
@@ -158,6 +165,7 @@ impl SeriesSummary {
                         .get(&id)
                         .map(|names| names.iter().take(CARD_TAGS).cloned().collect())
                         .unwrap_or_default(),
+                    is_adult: adult.contains(&id),
                 }
             })
             .collect())
@@ -188,6 +196,7 @@ impl SeriesSummary {
 )]
 pub async fn list(
     State(state): State<AppState>,
+    adult: AdultVisibility,
     MultiQuery(params): MultiQuery<ListParams>,
 ) -> ApiResult<(HeaderMap, Json<Vec<SeriesSummary>>)> {
     // Search is a *parameter* of the browse route, not a route of its own, so the feature
@@ -248,6 +257,7 @@ pub async fn list(
         year_min: params.year_min,
         year_max: params.year_max,
         min_chapters: params.min_chapters,
+        include_adult: adult.include_adult(),
         sort,
         limit,
         offset: page.saturating_mul(limit),
@@ -303,6 +313,9 @@ pub struct SeriesDetail {
     /// `AniList` media id, if this series is mapped (`sync_mappings`); lets the frontend
     /// link out to the canonical `AniList` entry regardless of whether the viewer has synced.
     pub anilist_id: Option<String>,
+    /// Whether this series is adult-classified. See [`SeriesSummary::is_adult`] — reaching this
+    /// response at all means the caller is entitled to it.
+    pub is_adult: bool,
 }
 
 /// Get series detail
@@ -318,13 +331,14 @@ pub struct SeriesDetail {
 )]
 pub async fn detail(
     State(state): State<AppState>,
+    adult: AdultVisibility,
     Path(id): Path<SeriesId>,
 ) -> ApiResult<Json<SeriesDetail>> {
     use tankovault_db::repo::{catalog, providers, sync};
 
     // Two grouped reads replace what used to be an N+1 loop over providers; the four
     // independent tail reads below touch different tables and can overlap.
-    let series = catalog::get_series(&state.pool, id).await?;
+    let series = catalog::get_series_visible(&state.pool, id, adult.include_adult()).await?;
     let sources = catalog::list_sources_for_series(&state.pool, id).await?;
 
     // Same-source smart merge (§10): several `series_sources` rows can share a provider (one
@@ -380,11 +394,13 @@ pub async fn detail(
     }
 
     // Four different tables, no shared state, nothing downstream of one another.
-    let (alt_titles, tags, authors, anilist_id) = tokio::try_join!(
+    let only = [id];
+    let (alt_titles, tags, authors, anilist_id, adult) = tokio::try_join!(
         catalog::list_series_titles(&state.pool, id),
         catalog::list_series_tags(&state.pool, id),
         catalog::list_series_authors(&state.pool, id),
         sync::mapping_external_for_series(&state.pool, id, "anilist"),
+        catalog::adult_gated_many(&state.pool, &only),
     )?;
 
     Ok(Json(SeriesDetail {
@@ -400,6 +416,7 @@ pub async fn detail(
         tags,
         authors,
         anilist_id,
+        is_adult: adult.contains(&id),
     }))
 }
 
@@ -737,6 +754,7 @@ const SIMILAR_OVERFETCH: i64 = 4;
 )]
 pub async fn similar(
     State(state): State<AppState>,
+    adult: AdultVisibility,
     Path(id): Path<SeriesId>,
     Query(params): Query<SimilarParams>,
 ) -> ApiResult<Json<Vec<SimilarSeries>>> {
@@ -752,22 +770,24 @@ pub async fn similar(
     };
     // Confirms the series exists at all, and turns an unknown id into a 404 rather than an
     // empty list — the two mean different things to a caller.
-    tankovault_db::repo::catalog::get_series(&state.pool, seed).await?;
+    tankovault_db::repo::catalog::get_series_visible(&state.pool, seed, adult.include_adult())
+        .await?;
 
     let Some(embedding) = recsys::embedding_of(&state.pool, seed).await? else {
-        return Ok(Json(fallback_to_prior(&state, seed, limit).await?));
+        return Ok(Json(fallback_to_prior(&state, seed, adult, limit).await?));
     };
 
     let neighbours = recsys::nearest_neighbours(
         &state.pool,
         &embedding,
         seed,
+        adult.include_adult(),
         limit,
         limit * SIMILAR_OVERFETCH,
     )
     .await?;
     if neighbours.is_empty() {
-        return Ok(Json(fallback_to_prior(&state, seed, limit).await?));
+        return Ok(Json(fallback_to_prior(&state, seed, adult, limit).await?));
     }
 
     let ids: Vec<SeriesId> = neighbours.iter().map(|n| n.series_id).collect();
@@ -826,11 +846,12 @@ pub struct SimilarParams {
 async fn fallback_to_prior(
     state: &AppState,
     seed: SeriesId,
+    adult: AdultVisibility,
     limit: i64,
 ) -> ApiResult<Vec<SimilarSeries>> {
     use tankovault_db::repo::recsys;
 
-    let ids: Vec<SeriesId> = recsys::top_by_prior(&state.pool, limit + 1)
+    let ids: Vec<SeriesId> = recsys::top_by_prior(&state.pool, adult.include_adult(), limit + 1)
         .await?
         .into_iter()
         .filter(|id| *id != seed)

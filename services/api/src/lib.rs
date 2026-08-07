@@ -14,6 +14,7 @@ mod admin;
 mod audit;
 mod auth;
 mod cache;
+mod content_gate;
 mod error;
 mod legal;
 mod mailer;
@@ -345,6 +346,8 @@ fn documented_router() -> OpenApiRouter<AppState> {
         .routes(routes!(me::passkey_register_finish))
         .routes(routes!(me::rename_passkey, me::delete_passkey))
         .routes(routes!(me::notification_prefs, me::put_notification_prefs))
+        // The reader's half of the adult gate. Ungated on purpose — see `me::content`.
+        .routes(routes!(me::content_prefs, me::put_content_prefs))
         .routes(routes!(me::notifications))
         .routes(routes!(me::mark_read))
         // GDPR data-subject rights: portability (Art. 20) and erasure (Art. 17), plus the
@@ -615,6 +618,9 @@ mod tests {
         let declared = route_features().declared_features();
         let enforced_elsewhere = [
             Feature::CatalogueSearch,
+            // Not a route: it narrows what several routes *return*, and switching it off must
+            // leave every one of them answering. See `crate::content_gate`.
+            Feature::CatalogueAdultContent,
             Feature::NotificationsEmail,
             Feature::NotificationsWebhook,
             Feature::NotificationsDiscord,

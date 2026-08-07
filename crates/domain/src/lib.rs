@@ -3,6 +3,7 @@
 //! [`Politeness`], title [`normalize_title`], the [`NotificationPrefs`] delivery rules, and the
 //! [`implausible_indices`] guard against junk chapter numbers. No I/O, no async, no persistence.
 
+pub mod adult;
 pub mod chapter_outliers;
 pub mod entities;
 pub mod enums;
@@ -20,6 +21,7 @@ pub mod ssrf;
 pub mod tag_filter;
 pub mod tunables;
 
+pub use adult::{AdultTagSet, DEFAULT_ADULT_TAGS};
 pub use chapter_outliers::{OutlierPolicy, implausible_indices};
 pub use entities::{
     Author, Chapter, Notification, Provider, ReadProgress, ScanRun, ScanTask, Series, SeriesSource,

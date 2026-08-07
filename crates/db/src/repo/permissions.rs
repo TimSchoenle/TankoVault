@@ -16,6 +16,15 @@ use uuid::Uuid;
 pub struct Principal {
     pub status: AccountStatus,
     pub permissions: PermissionSet,
+    /// Whether this account has opted into adult content *and* attested its age.
+    ///
+    /// Resolved here rather than read separately because it is consulted on catalogue reads —
+    /// the hottest authenticated path there is — and a second round trip per browse request to
+    /// answer one boolean is not worth it when this query already has the row open.
+    ///
+    /// Only half the answer: the deployment flag is the other half, and both must be true. See
+    /// `services/api/src/content_gate.rs`.
+    pub adult_opt_in: bool,
 }
 
 /// Resolve a principal's account status and permission grants in one round trip (`LEFT JOIN`,
@@ -32,16 +41,22 @@ pub async fn resolve<'e, E: PgExecutor<'e>>(
     struct Row {
         status: AccountStatus,
         permissions: Vec<String>,
+        adult_opt_in: bool,
     }
     let row = sqlx::query_as!(
         Row,
+        // The attestation is folded in here, not compared by the caller: `adult_opt_in` alone is
+        // the preference, and the pair is the entitlement. A caller reading only the preference
+        // would be right today — a schema constraint keeps them consistent — and wrong the first
+        // time attestation gains an expiry.
         "SELECT u.status AS \"status: AccountStatus\", \
                 coalesce(array_agg(p.permission) FILTER (WHERE p.permission IS NOT NULL), \
-                         '{}'::text[]) AS \"permissions!\" \
+                         '{}'::text[]) AS \"permissions!\", \
+                (u.adult_opt_in AND u.age_attested_at IS NOT NULL) AS \"adult_opt_in!\" \
          FROM users u \
          LEFT JOIN user_permissions p ON p.user_id = u.id \
          WHERE u.id = $1 \
-         GROUP BY u.status",
+         GROUP BY u.status, u.adult_opt_in, u.age_attested_at",
         user_id.as_uuid(),
     )
     .fetch_optional(exec)
@@ -53,6 +68,7 @@ pub async fn resolve<'e, E: PgExecutor<'e>>(
             // Logged, not silently dropped — surfaces schema/binary drift.
             tracing::warn!(%token, user_id = %user_id.as_uuid(), "ignoring unknown permission grant");
         }),
+        adult_opt_in: r.adult_opt_in,
     }))
 }
 

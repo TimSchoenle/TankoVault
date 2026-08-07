@@ -147,6 +147,22 @@ impl FeatureGate {
         gate
     }
 
+    /// A gate with named features forced on, for tests that need one that ships off.
+    ///
+    /// The counterpart to [`Self::with_disabled`], and not redundant with it: three features
+    /// default to off, so a test exercising what they do cannot get there from the defaults.
+    #[must_use]
+    pub fn with_enabled(enabled: &[Feature]) -> Self {
+        let gate = Self::defaults();
+        {
+            let mut snapshot = gate.write_snapshot();
+            for feature in enabled {
+                snapshot.enabled.insert(*feature);
+            }
+        }
+        gate
+    }
+
     /// Whether `feature` is currently enabled.
     ///
     /// Recovers from a poisoned lock rather than propagating it: the snapshot is plain data

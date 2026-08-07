@@ -1355,6 +1355,104 @@ pub mod types {
             Default::default()
         }
     }
+    #[doc = "The caller's content settings and what the deployment currently allows."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"The caller's content settings and what the deployment currently allows.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"adult_opt_in\","]
+    #[doc = "    \"age_attested\","]
+    #[doc = "    \"allowed_by_deployment\","]
+    #[doc = "    \"effective\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"adult_opt_in\": {"]
+    #[doc = "      \"description\": \"The caller's stored preference. Independent of whether it currently has any effect.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"age_attested\": {"]
+    #[doc = "      \"description\": \"Whether the account has ever confirmed it is of age.\\n\\nDrives the client's decision to ask: an account with this already `true` is changing a\\nsetting, not making a declaration, and re-prompting it would train readers to click\\nthrough the one dialog that is supposed to mean something.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"age_attested_at\": {"]
+    #[doc = "      \"description\": \"When it attested, or `null` if it never has.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"allowed_by_deployment\": {"]
+    #[doc = "      \"description\": \"Whether this deployment permits adult content at all.\\n\\nPublished so the client can explain an opted-in reader's empty shelf as an operator\\ndecision rather than leaving it looking like the preference failed to save.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"effective\": {"]
+    #[doc = "      \"description\": \"The resolved answer: whether adult series are actually being shown to this caller.\\n\\nThe conjunction of everything above, computed server-side. A client recombining the\\nparts itself is a second implementation of the gate, and the two will disagree.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct ContentPrefsDto {
+        #[doc = "The caller's stored preference. Independent of whether it currently has any effect."]
+        pub adult_opt_in: bool,
+        #[doc = "Whether the account has ever confirmed it is of age.\n\nDrives the client's decision to ask: an account with this already `true` is changing a\nsetting, not making a declaration, and re-prompting it would train readers to click\nthrough the one dialog that is supposed to mean something."]
+        pub age_attested: bool,
+        #[doc = "When it attested, or `null` if it never has."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub age_attested_at: ::std::option::Option<::std::string::String>,
+        #[doc = "Whether this deployment permits adult content at all.\n\nPublished so the client can explain an opted-in reader's empty shelf as an operator\ndecision rather than leaving it looking like the preference failed to save."]
+        pub allowed_by_deployment: bool,
+        #[doc = "The resolved answer: whether adult series are actually being shown to this caller.\n\nThe conjunction of everything above, computed server-side. A client recombining the\nparts itself is a second implementation of the gate, and the two will disagree."]
+        pub effective: bool,
+    }
+    impl ContentPrefsDto {
+        pub fn builder() -> builder::ContentPrefsDto {
+            Default::default()
+        }
+    }
+    #[doc = "A change to the caller's content settings."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"A change to the caller's content settings.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"adult_opt_in\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"adult_opt_in\": {"]
+    #[doc = "      \"description\": \"The preference to store.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"confirm_age\": {"]
+    #[doc = "      \"description\": \"The caller's confirmation, in this request, that they are of age.\\n\\nRequired to turn [`Self::adult_opt_in`] on for an account that has never attested;\\nignored when it already has, and ignored when opting out. It is a declaration the reader\\nmakes, so it is a field on the request rather than something the server infers from\\nhaving asked.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct ContentPrefsUpdate {
+        #[doc = "The preference to store."]
+        pub adult_opt_in: bool,
+        #[doc = "The caller's confirmation, in this request, that they are of age.\n\nRequired to turn [`Self::adult_opt_in`] on for an account that has never attested;\nignored when it already has, and ignored when opting out. It is a declaration the reader\nmakes, so it is a field on the request rather than something the server infers from\nhaving asked."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub confirm_age: ::std::option::Option<bool>,
+    }
+    impl ContentPrefsUpdate {
+        pub fn builder() -> builder::ContentPrefsUpdate {
+            Default::default()
+        }
+    }
     #[doc = "The medium/origin classification of a work."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -2066,6 +2164,7 @@ pub mod types {
     #[doc = "    \"catalogue.browse\","]
     #[doc = "    \"catalogue.search\","]
     #[doc = "    \"catalogue.recommendations\","]
+    #[doc = "    \"catalogue.adult_content\","]
     #[doc = "    \"accounts.registration\","]
     #[doc = "    \"accounts.password_reset\","]
     #[doc = "    \"accounts.email_verification\","]
@@ -2126,6 +2225,8 @@ pub mod types {
         CatalogueSearch,
         #[serde(rename = "catalogue.recommendations")]
         CatalogueRecommendations,
+        #[serde(rename = "catalogue.adult_content")]
+        CatalogueAdultContent,
         #[serde(rename = "accounts.registration")]
         AccountsRegistration,
         #[serde(rename = "accounts.password_reset")]
@@ -2207,6 +2308,7 @@ pub mod types {
                 Self::CatalogueBrowse => f.write_str("catalogue.browse"),
                 Self::CatalogueSearch => f.write_str("catalogue.search"),
                 Self::CatalogueRecommendations => f.write_str("catalogue.recommendations"),
+                Self::CatalogueAdultContent => f.write_str("catalogue.adult_content"),
                 Self::AccountsRegistration => f.write_str("accounts.registration"),
                 Self::AccountsPasswordReset => f.write_str("accounts.password_reset"),
                 Self::AccountsEmailVerification => f.write_str("accounts.email_verification"),
@@ -2254,6 +2356,7 @@ pub mod types {
                 "catalogue.browse" => Ok(Self::CatalogueBrowse),
                 "catalogue.search" => Ok(Self::CatalogueSearch),
                 "catalogue.recommendations" => Ok(Self::CatalogueRecommendations),
+                "catalogue.adult_content" => Ok(Self::CatalogueAdultContent),
                 "accounts.registration" => Ok(Self::AccountsRegistration),
                 "accounts.password_reset" => Ok(Self::AccountsPasswordReset),
                 "accounts.email_verification" => Ok(Self::AccountsEmailVerification),
@@ -7524,6 +7627,7 @@ pub mod types {
     #[doc = "    \"authors\","]
     #[doc = "    \"content_type\","]
     #[doc = "    \"id\","]
+    #[doc = "    \"is_adult\","]
     #[doc = "    \"sources\","]
     #[doc = "    \"status\","]
     #[doc = "    \"tags\","]
@@ -7568,6 +7672,10 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"id\": {"]
     #[doc = "      \"$ref\": \"#/components/schemas/SeriesId\""]
+    #[doc = "    },"]
+    #[doc = "    \"is_adult\": {"]
+    #[doc = "      \"description\": \"Whether this series is adult-classified. See [`SeriesSummary::is_adult`] — reaching this\\nresponse at all means the caller is entitled to it.\","]
+    #[doc = "      \"type\": \"boolean\""]
     #[doc = "    },"]
     #[doc = "    \"release_year\": {"]
     #[doc = "      \"type\": ["]
@@ -7614,6 +7722,8 @@ pub mod types {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub description: ::std::option::Option<::std::string::String>,
         pub id: SeriesId,
+        #[doc = "Whether this series is adult-classified. See [`SeriesSummary::is_adult`] — reaching this\nresponse at all means the caller is entitled to it."]
+        pub is_adult: bool,
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub release_year: ::std::option::Option<i32>,
         pub sources: ::std::vec::Vec<SourceDto>,
@@ -7842,6 +7952,7 @@ pub mod types {
     #[doc = "    \"chapter_count\","]
     #[doc = "    \"content_type\","]
     #[doc = "    \"id\","]
+    #[doc = "    \"is_adult\","]
     #[doc = "    \"source_count\","]
     #[doc = "    \"status\","]
     #[doc = "    \"tags\","]
@@ -7864,6 +7975,10 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"id\": {"]
     #[doc = "      \"$ref\": \"#/components/schemas/SeriesId\""]
+    #[doc = "    },"]
+    #[doc = "    \"is_adult\": {"]
+    #[doc = "      \"description\": \"Whether this series is adult-classified.\\n\\nOnly ever `true` for a caller who opted in — a card that reaches a client at all has\\nalready passed the gate. This labels what is on screen; it is not what hides anything.\","]
+    #[doc = "      \"type\": \"boolean\""]
     #[doc = "    },"]
     #[doc = "    \"latest_chapter\": {"]
     #[doc = "      \"description\": \"The highest chapter number any source carries, when there is one.\","]
@@ -7910,6 +8025,8 @@ pub mod types {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub cover_url: ::std::option::Option<::std::string::String>,
         pub id: SeriesId,
+        #[doc = "Whether this series is adult-classified.\n\nOnly ever `true` for a caller who opted in — a card that reaches a client at all has\nalready passed the gate. This labels what is on screen; it is not what hides anything."]
+        pub is_adult: bool,
         #[doc = "The highest chapter number any source carries, when there is one."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub latest_chapter: ::std::option::Option<f64>,
@@ -8192,6 +8309,8 @@ pub mod types {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub cover_url: ::std::option::Option<::std::string::String>,
         pub id: SeriesId,
+        #[doc = "Whether this series is adult-classified.\n\nOnly ever `true` for a caller who opted in — a card that reaches a client at all has\nalready passed the gate. This labels what is on screen; it is not what hides anything."]
+        pub is_adult: bool,
         #[doc = "The highest chapter number any source carries, when there is one."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub latest_chapter: ::std::option::Option<f64>,
@@ -12913,6 +13032,161 @@ pub mod types {
                     remote_value: Ok(value.remote_value),
                     series_id: Ok(value.series_id),
                     series_title: Ok(value.series_title),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct ContentPrefsDto {
+            adult_opt_in: ::std::result::Result<bool, ::std::string::String>,
+            age_attested: ::std::result::Result<bool, ::std::string::String>,
+            age_attested_at: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            allowed_by_deployment: ::std::result::Result<bool, ::std::string::String>,
+            effective: ::std::result::Result<bool, ::std::string::String>,
+        }
+        impl ::std::default::Default for ContentPrefsDto {
+            fn default() -> Self {
+                Self {
+                    adult_opt_in: Err("no value supplied for adult_opt_in".to_string()),
+                    age_attested: Err("no value supplied for age_attested".to_string()),
+                    age_attested_at: Ok(Default::default()),
+                    allowed_by_deployment: Err(
+                        "no value supplied for allowed_by_deployment".to_string()
+                    ),
+                    effective: Err("no value supplied for effective".to_string()),
+                }
+            }
+        }
+        impl ContentPrefsDto {
+            pub fn adult_opt_in<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.adult_opt_in = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for adult_opt_in: {e}"));
+                self
+            }
+            pub fn age_attested<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.age_attested = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for age_attested: {e}"));
+                self
+            }
+            pub fn age_attested_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.age_attested_at = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for age_attested_at: {e}")
+                });
+                self
+            }
+            pub fn allowed_by_deployment<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.allowed_by_deployment = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for allowed_by_deployment: {e}")
+                });
+                self
+            }
+            pub fn effective<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.effective = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for effective: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<ContentPrefsDto> for super::ContentPrefsDto {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: ContentPrefsDto,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    adult_opt_in: value.adult_opt_in?,
+                    age_attested: value.age_attested?,
+                    age_attested_at: value.age_attested_at?,
+                    allowed_by_deployment: value.allowed_by_deployment?,
+                    effective: value.effective?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::ContentPrefsDto> for ContentPrefsDto {
+            fn from(value: super::ContentPrefsDto) -> Self {
+                Self {
+                    adult_opt_in: Ok(value.adult_opt_in),
+                    age_attested: Ok(value.age_attested),
+                    age_attested_at: Ok(value.age_attested_at),
+                    allowed_by_deployment: Ok(value.allowed_by_deployment),
+                    effective: Ok(value.effective),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct ContentPrefsUpdate {
+            adult_opt_in: ::std::result::Result<bool, ::std::string::String>,
+            confirm_age: ::std::result::Result<::std::option::Option<bool>, ::std::string::String>,
+        }
+        impl ::std::default::Default for ContentPrefsUpdate {
+            fn default() -> Self {
+                Self {
+                    adult_opt_in: Err("no value supplied for adult_opt_in".to_string()),
+                    confirm_age: Ok(Default::default()),
+                }
+            }
+        }
+        impl ContentPrefsUpdate {
+            pub fn adult_opt_in<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.adult_opt_in = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for adult_opt_in: {e}"));
+                self
+            }
+            pub fn confirm_age<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<bool>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.confirm_age = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for confirm_age: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<ContentPrefsUpdate> for super::ContentPrefsUpdate {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: ContentPrefsUpdate,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    adult_opt_in: value.adult_opt_in?,
+                    confirm_age: value.confirm_age?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::ContentPrefsUpdate> for ContentPrefsUpdate {
+            fn from(value: super::ContentPrefsUpdate) -> Self {
+                Self {
+                    adult_opt_in: Ok(value.adult_opt_in),
+                    confirm_age: Ok(value.confirm_age),
                 }
             }
         }
@@ -20142,6 +20416,7 @@ pub mod types {
                 ::std::string::String,
             >,
             id: ::std::result::Result<super::SeriesId, ::std::string::String>,
+            is_adult: ::std::result::Result<bool, ::std::string::String>,
             release_year: ::std::result::Result<::std::option::Option<i32>, ::std::string::String>,
             sources:
                 ::std::result::Result<::std::vec::Vec<super::SourceDto>, ::std::string::String>,
@@ -20159,6 +20434,7 @@ pub mod types {
                     cover_url: Ok(Default::default()),
                     description: Ok(Default::default()),
                     id: Err("no value supplied for id".to_string()),
+                    is_adult: Err("no value supplied for is_adult".to_string()),
                     release_year: Ok(Default::default()),
                     sources: Err("no value supplied for sources".to_string()),
                     status: Err("no value supplied for status".to_string()),
@@ -20238,6 +20514,16 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for id: {e}"));
                 self
             }
+            pub fn is_adult<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.is_adult = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for is_adult: {e}"));
+                self
+            }
             pub fn release_year<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::std::option::Option<i32>>,
@@ -20302,6 +20588,7 @@ pub mod types {
                     cover_url: value.cover_url?,
                     description: value.description?,
                     id: value.id?,
+                    is_adult: value.is_adult?,
                     release_year: value.release_year?,
                     sources: value.sources?,
                     status: value.status?,
@@ -20320,6 +20607,7 @@ pub mod types {
                     cover_url: Ok(value.cover_url),
                     description: Ok(value.description),
                     id: Ok(value.id),
+                    is_adult: Ok(value.is_adult),
                     release_year: Ok(value.release_year),
                     sources: Ok(value.sources),
                     status: Ok(value.status),
@@ -20337,6 +20625,7 @@ pub mod types {
                 ::std::string::String,
             >,
             id: ::std::result::Result<super::SeriesId, ::std::string::String>,
+            is_adult: ::std::result::Result<bool, ::std::string::String>,
             latest_chapter:
                 ::std::result::Result<::std::option::Option<f64>, ::std::string::String>,
             release_year: ::std::result::Result<::std::option::Option<i32>, ::std::string::String>,
@@ -20355,6 +20644,7 @@ pub mod types {
                     content_type: Err("no value supplied for content_type".to_string()),
                     cover_url: Ok(Default::default()),
                     id: Err("no value supplied for id".to_string()),
+                    is_adult: Err("no value supplied for is_adult".to_string()),
                     latest_chapter: Ok(Default::default()),
                     release_year: Ok(Default::default()),
                     source_count: Err("no value supplied for source_count".to_string()),
@@ -20403,6 +20693,16 @@ pub mod types {
                 self.id = value
                     .try_into()
                     .map_err(|e| format!("error converting supplied value for id: {e}"));
+                self
+            }
+            pub fn is_adult<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.is_adult = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for is_adult: {e}"));
                 self
             }
             pub fn latest_chapter<T>(mut self, value: T) -> Self
@@ -20476,6 +20776,7 @@ pub mod types {
                     content_type: value.content_type?,
                     cover_url: value.cover_url?,
                     id: value.id?,
+                    is_adult: value.is_adult?,
                     latest_chapter: value.latest_chapter?,
                     release_year: value.release_year?,
                     source_count: value.source_count?,
@@ -20492,6 +20793,7 @@ pub mod types {
                     content_type: Ok(value.content_type),
                     cover_url: Ok(value.cover_url),
                     id: Ok(value.id),
+                    is_adult: Ok(value.is_adult),
                     latest_chapter: Ok(value.latest_chapter),
                     release_year: Ok(value.release_year),
                     source_count: Ok(value.source_count),
@@ -20859,6 +21161,7 @@ pub mod types {
                 ::std::string::String,
             >,
             id: ::std::result::Result<super::SeriesId, ::std::string::String>,
+            is_adult: ::std::result::Result<bool, ::std::string::String>,
             latest_chapter:
                 ::std::result::Result<::std::option::Option<f64>, ::std::string::String>,
             release_year: ::std::result::Result<::std::option::Option<i32>, ::std::string::String>,
@@ -20882,6 +21185,7 @@ pub mod types {
                     content_type: Err("no value supplied for content_type".to_string()),
                     cover_url: Ok(Default::default()),
                     id: Err("no value supplied for id".to_string()),
+                    is_adult: Err("no value supplied for is_adult".to_string()),
                     latest_chapter: Ok(Default::default()),
                     release_year: Ok(Default::default()),
                     score: Err("no value supplied for score".to_string()),
@@ -20932,6 +21236,16 @@ pub mod types {
                 self.id = value
                     .try_into()
                     .map_err(|e| format!("error converting supplied value for id: {e}"));
+                self
+            }
+            pub fn is_adult<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.is_adult = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for is_adult: {e}"));
                 self
             }
             pub fn latest_chapter<T>(mut self, value: T) -> Self
@@ -21025,6 +21339,7 @@ pub mod types {
                     content_type: value.content_type?,
                     cover_url: value.cover_url?,
                     id: value.id?,
+                    is_adult: value.is_adult?,
                     latest_chapter: value.latest_chapter?,
                     release_year: value.release_year?,
                     score: value.score?,
@@ -21043,6 +21358,7 @@ pub mod types {
                     content_type: Ok(value.content_type),
                     cover_url: Ok(value.cover_url),
                     id: Ok(value.id),
+                    is_adult: Ok(value.is_adult),
                     latest_chapter: Ok(value.latest_chapter),
                     release_year: Ok(value.release_year),
                     score: Ok(value.score),
@@ -25239,6 +25555,14 @@ impl Client {
     #[doc = "Get my capabilities\n\nThe permissions the caller holds and the features this deployment has enabled — everything\na client needs to decide which navigation, panels and controls to render.\n\nNot cacheable: a permission revoked or a feature switched off must be reflected on the next\nfetch, and this is the endpoint a client polls to find out.\n\nSends a `GET` request to `/v1/me/capabilities`\n\n```ignore\nlet response = client.capabilities()\n    .send()\n    .await;\n```"]
     pub fn capabilities(&self) -> builder::Capabilities<'_> {
         builder::Capabilities::new(self)
+    }
+    #[doc = "Get content preferences\n\nThe caller's adult-content decision, whether they have attested their age, and whether this\ndeployment permits adult content at all.\n\nSends a `GET` request to `/v1/me/content-prefs`\n\n```ignore\nlet response = client.content_prefs()\n    .send()\n    .await;\n```"]
+    pub fn content_prefs(&self) -> builder::ContentPrefs<'_> {
+        builder::ContentPrefs::new(self)
+    }
+    #[doc = "Replace content preferences\n\nStores the caller's adult-content decision. Turning it on requires `confirm_age` unless the\naccount has attested before; the attestation is recorded once and kept across later changes,\nso opting out and back in does not ask again.\n\nA `409` means the opt-in was refused for want of an attestation. The preference is unchanged\n— this endpoint does not partially apply.\n\nSends a `PUT` request to `/v1/me/content-prefs`\n\n```ignore\nlet response = client.put_content_prefs()\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn put_content_prefs(&self) -> builder::PutContentPrefs<'_> {
+        builder::PutContentPrefs::new(self)
     }
     #[doc = "Get continue-reading cards\n\nContinue-reading cards for Home / the Series CTA (frontend §9.3): tracked, in-progress\nseries that have unread chapters, freshest activity first.\n\nSends a `GET` request to `/v1/me/continue`\n\n```ignore\nlet response = client.continue_reading()\n    .send()\n    .await;\n```"]
     pub fn continue_reading(&self) -> builder::ContinueReading<'_> {
@@ -31689,6 +32013,129 @@ pub mod builder {
                     ResponseValue::from_response(response).await?,
                 )),
                 403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::content_prefs`]\n\n[`Client::content_prefs`]: super::Client::content_prefs"]
+    #[derive(Debug, Clone)]
+    pub struct ContentPrefs<'a> {
+        client: &'a super::Client,
+    }
+    impl<'a> ContentPrefs<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+        #[doc = "Sends a `GET` request to `/v1/me/content-prefs`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::ContentPrefsDto>, Error<types::ProblemDetails>> {
+            let Self { client } = self;
+            let url = format!("{}/v1/me/content-prefs", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "content_prefs",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::put_content_prefs`]\n\n[`Client::put_content_prefs`]: super::Client::put_content_prefs"]
+    #[derive(Debug, Clone)]
+    pub struct PutContentPrefs<'a> {
+        client: &'a super::Client,
+        body: Result<types::builder::ContentPrefsUpdate, String>,
+    }
+    impl<'a> PutContentPrefs<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::ContentPrefsUpdate>,
+            <V as std::convert::TryInto<types::ContentPrefsUpdate>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `ContentPrefsUpdate` for body failed: {}", s));
+            self
+        }
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::ContentPrefsUpdate,
+                ) -> types::builder::ContentPrefsUpdate,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+        #[doc = "Sends a `PUT` request to `/v1/me/content-prefs`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::ContentPrefsDto>, Error<types::ProblemDetails>> {
+            let Self { client, body } = self;
+            let body = body
+                .and_then(|v| types::ContentPrefsUpdate::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v1/me/content-prefs", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .put(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "put_content_prefs",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                409u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
                 _ => Err(Error::UnexpectedResponse(response)),

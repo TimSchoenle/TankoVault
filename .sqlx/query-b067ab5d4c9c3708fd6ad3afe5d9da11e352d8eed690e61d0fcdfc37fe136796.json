@@ -1,0 +1,42 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE users SET age_attested_at = CASE WHEN $3 THEN COALESCE(age_attested_at, now()) ELSE age_attested_at END, adult_opt_in = ($2 AND ($3 OR age_attested_at IS NOT NULL)) WHERE id = $1 RETURNING adult_opt_in, age_attested_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "adult_opt_in",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "adult_opt_in"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "age_attested_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "age_attested_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bool",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "b067ab5d4c9c3708fd6ad3afe5d9da11e352d8eed690e61d0fcdfc37fe136796"
+}

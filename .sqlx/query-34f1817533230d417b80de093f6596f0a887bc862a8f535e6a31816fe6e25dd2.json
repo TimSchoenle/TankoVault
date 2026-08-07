@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE series SET adult_inferred = true WHERE id = $1 AND NOT adult_inferred",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "34f1817533230d417b80de093f6596f0a887bc862a8f535e6a31816fe6e25dd2"
+}

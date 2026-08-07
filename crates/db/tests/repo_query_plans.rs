@@ -143,6 +143,11 @@ async fn plan_of(pool: &PgPool, query: &CachedQuery) -> Value {
             "Text" => explain.bind(probe.clone()),
             "TextArray" => explain.bind(vec![probe.clone()]),
             "Int8" => explain.bind(10_i64),
+            // `false` rather than `true`, and not arbitrarily: every bool reaching these
+            // statements is the adult gate's `include_adult`, whose closed position is both the
+            // default and what the overwhelming majority of requests bind. Probing with `true`
+            // would plan the branch almost nobody takes.
+            "Bool" => explain.bind(false),
             other => panic!("no probe value for parameter type {other}"),
         };
     }

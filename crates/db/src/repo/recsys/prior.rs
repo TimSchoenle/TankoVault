@@ -32,7 +32,7 @@ struct InputsRow {
     external_score: Option<f32>,
     external_popularity: Option<i32>,
     descriptive_features: i64,
-    is_adult: bool,
+    adult_gated: bool,
     has_active_source: bool,
 }
 
@@ -51,7 +51,13 @@ pub struct PriorInputs {
     /// strength of facts that describe nothing. Only a tag or an author distinguishes one series
     /// from another.
     pub descriptive_features: i64,
-    pub is_adult: bool,
+    /// Whether the adult gate is closed on this series.
+    ///
+    /// Reported to the build, **not acted on by it**. The exclusion belongs at read time, where
+    /// the reader's own opt-in is known. A build that also excluded these would make that opt-in
+    /// unreachable: every retrieval path joins `series_prior.recommendable`, so a series the
+    /// build refused can never be recovered by a read-time filter, however permissive.
+    pub adult_gated: bool,
     pub has_active_source: bool,
 }
 
@@ -91,7 +97,7 @@ pub async fn prior_inputs_for<'e, E: PgExecutor<'e>>(
     let ids: Vec<Uuid> = series_ids.iter().copied().map(SeriesId::as_uuid).collect();
     let rows = sqlx::query_as!(
         InputsRow,
-        // `id!` and `is_adult!`: both are `NOT NULL` on `series`, but the three `LEFT JOIN
+        // `id!` and `adult_gated!`: both are `NOT NULL` on `series`, but the three `LEFT JOIN
         // LATERAL`s make sqlx treat the whole row as nullable, so the overrides restore what the
         // schema already guarantees.
         "SELECT s.id AS \"id!\", \
@@ -104,7 +110,7 @@ pub async fn prior_inputs_for<'e, E: PgExecutor<'e>>(
                   SELECT count(*) FROM rec_features rf \
                   WHERE rf.id = ANY(f.feature_ids) AND rf.kind IN ('tag', 'author') \
                 ), 0) AS \"descriptive_features!\", \
-                s.is_adult AS \"is_adult!\", \
+                s.adult_gated AS \"adult_gated!\", \
                 COALESCE(src.active, false) AS \"has_active_source!\" \
          FROM series s \
          LEFT JOIN series_features f ON f.series_id = s.id \
@@ -136,7 +142,7 @@ pub async fn prior_inputs_for<'e, E: PgExecutor<'e>>(
             external_score: r.external_score,
             external_popularity: r.external_popularity,
             descriptive_features: r.descriptive_features,
-            is_adult: r.is_adult,
+            adult_gated: r.adult_gated,
             has_active_source: r.has_active_source,
         })
         .collect())
@@ -182,19 +188,26 @@ pub async fn write_priors<'e, E: PgExecutor<'e>>(
 
 /// The most broadly appealing recommendable series — cold start, and shelf backfill.
 ///
-/// Excludes adult titles unconditionally: this is the one retrieval path that runs with no
-/// reader context at all, so there is nobody whose opt-in could be consulted.
+/// `include_adult` is the caller's resolved answer for this reader. It exists because this path
+/// serves two callers with different context: the shelf, which knows exactly who is asking, and
+/// the public similarity fallback, which may not. Passing `false` is always safe; passing it
+/// where the reader *has* opted in makes their shelf quietly narrow as the other paths run dry.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
-pub async fn top_by_prior<'e, E: PgExecutor<'e>>(exec: E, limit: i64) -> DbResult<Vec<SeriesId>> {
+pub async fn top_by_prior<'e, E: PgExecutor<'e>>(
+    exec: E,
+    include_adult: bool,
+    limit: i64,
+) -> DbResult<Vec<SeriesId>> {
     let rows: Vec<Uuid> = sqlx::query_scalar!(
         "SELECT p.series_id FROM series_prior p \
-         JOIN series s ON s.id = p.series_id AND NOT s.is_adult \
+         JOIN series s ON s.id = p.series_id AND (NOT s.adult_gated OR $2) \
          WHERE p.recommendable \
          ORDER BY p.prior DESC, p.series_id \
          LIMIT $1",
         limit,
+        include_adult,
     )
     .fetch_all(exec)
     .await?;

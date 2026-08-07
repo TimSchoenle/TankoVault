@@ -21,6 +21,7 @@ pub struct SeriesListItem {
 pub async fn list_series<'e, E: PgExecutor<'e>>(
     exec: E,
     query: Option<&str>,
+    include_adult: bool,
     limit: i64,
 ) -> DbResult<Vec<SeriesListItem>> {
     // Trigram + FTS aware search when a query is supplied; otherwise most-recent first.
@@ -62,6 +63,7 @@ pub async fn list_series<'e, E: PgExecutor<'e>>(
                                   FROM series_titles st WHERE st.series_id = s.id), 0) \
                       ) AS sim \
                FROM series s JOIN matched m ON m.id = s.id \
+               WHERE NOT s.adult_gated OR $3 \
                ORDER BY sim DESC \
                LIMIT $2 \
              ) \
@@ -74,6 +76,7 @@ pub async fn list_series<'e, E: PgExecutor<'e>>(
              ORDER BY r.sim DESC",
             q,
             limit,
+            include_adult,
         )
         .fetch_all(exec)
         .await?
@@ -85,8 +88,10 @@ pub async fn list_series<'e, E: PgExecutor<'e>>(
                     s.status AS \"status: SeriesStatus\", s.release_year, \
                     s.created_at, s.updated_at, \
                     (SELECT count(DISTINCT ss.provider_id) FROM series_sources ss WHERE ss.series_id = s.id) AS \"source_count!\" \
-             FROM series s ORDER BY s.updated_at DESC LIMIT $1",
+             FROM series s WHERE NOT s.adult_gated OR $2 \
+             ORDER BY s.updated_at DESC LIMIT $1",
             limit,
+            include_adult,
         )
         .fetch_all(exec)
         .await?
@@ -200,6 +205,13 @@ pub struct SeriesFilter {
     pub year_min: Option<i32>,
     pub year_max: Option<i32>,
     pub min_chapters: Option<i32>,
+    /// Whether adult-gated series may appear. `false` — the `Default` — is the safe value, and
+    /// the only correct one for a caller with no authenticated reader to ask.
+    ///
+    /// Not a filter the client picks: the API resolves it from the caller's stored opt-in and
+    /// the deployment flag. A request parameter here would be an age gate anybody could open by
+    /// editing a query string.
+    pub include_adult: bool,
     pub sort: SeriesSort,
     pub limit: i64,
     pub offset: i64,
@@ -241,8 +253,12 @@ struct CountRow {
 /// counts) instead of six times; `crates/db/tests/repo_browse.rs` is the differential over what
 /// still differs.
 ///
-/// The predicate binds `$1`–`$8`, so a call site numbers its own parameters from `$9` up. `$cte`
+/// The predicate binds `$1`–`$9`, so a call site numbers its own parameters from `$10` up. `$cte`
 /// and `$join` carry the search branch's matched-id set, `$tail` the ordering and paging.
+///
+/// `$9` is the adult gate, and it lives in the shared predicate rather than at the call sites
+/// precisely because there are six of them: a gate that has to be remembered six times is a gate
+/// that will be missing from the seventh statement somebody adds.
 macro_rules! browse_statement {
     (page $cte:literal, $join:literal, $tail:literal, $($args:tt)*) => {
         browse_statement!(
@@ -292,7 +308,8 @@ macro_rules! browse_statement {
                            WHERE stg.series_id = s.id)) \
                      AND (cardinality($8::text[]) = 0 OR NOT EXISTS ( \
                            SELECT 1 FROM series_tags stg JOIN tags t ON t.id = stg.tag_id \
-                           WHERE stg.series_id = s.id AND t.slug = ANY($8::text[])))"
+                           WHERE stg.series_id = s.id AND t.slug = ANY($8::text[]))) \
+                     AND (NOT s.adult_gated OR $9)"
                 + $tail,
             $($args)*
         )
@@ -395,26 +412,26 @@ async fn fetch_page_by_relevance(
     let key = tankovault_domain::normalize_title(query);
     let rows = browse_statement!(
         page "WITH matched AS ( \
-                SELECT s.id FROM series s WHERE s.normalized_title % $11 \
+                SELECT s.id FROM series s WHERE s.normalized_title % $12 \
                 UNION \
                 SELECT s.id FROM series s \
-                 WHERE s.search_vec @@ plainto_tsquery('simple', $11) \
+                 WHERE s.search_vec @@ plainto_tsquery('simple', $12) \
                 UNION \
-                SELECT st.series_id FROM series_titles st WHERE st.normalized % $11 \
+                SELECT st.series_id FROM series_titles st WHERE st.normalized % $12 \
               ) ",
         " JOIN matched m ON m.id = s.id",
         " ORDER BY \
-            (s.normalized_title = $12) DESC, \
+            (s.normalized_title = $13) DESC, \
             EXISTS (SELECT 1 FROM series_titles st \
-                     WHERE st.series_id = s.id AND st.normalized = $12) DESC, \
-            (left(s.normalized_title, length($12)) = $12) DESC, \
+                     WHERE st.series_id = s.id AND st.normalized = $13) DESC, \
+            (left(s.normalized_title, length($13)) = $13) DESC, \
             GREATEST( \
-              similarity(s.normalized_title, $11), \
-              COALESCE((SELECT max(similarity(st.normalized, $11)) \
+              similarity(s.normalized_title, $12), \
+              COALESCE((SELECT max(similarity(st.normalized, $12)) \
                         FROM series_titles st WHERE st.series_id = s.id), 0) \
             ) DESC, \
             s.updated_at DESC, s.id DESC \
-          LIMIT $9 OFFSET $10",
+          LIMIT $10 OFFSET $11",
         filter.content_type as Option<ContentType>,
         filter.status as Option<SeriesStatus>,
         filter.year_min,
@@ -423,6 +440,7 @@ async fn fetch_page_by_relevance(
         filter.min_chapters,
         &filter.tags as &[String],
         &filter.exclude_tags as &[String],
+        filter.include_adult,
         filter.limit,
         filter.offset,
         query,
@@ -442,15 +460,15 @@ async fn fetch_page_by_recency(
     let rows = if let Some(q) = query {
         browse_statement!(
             page "WITH matched AS ( \
-                    SELECT s.id FROM series s WHERE s.normalized_title % $11 \
+                    SELECT s.id FROM series s WHERE s.normalized_title % $12 \
                     UNION \
                     SELECT s.id FROM series s \
-                     WHERE s.search_vec @@ plainto_tsquery('simple', $11) \
+                     WHERE s.search_vec @@ plainto_tsquery('simple', $12) \
                     UNION \
-                    SELECT st.series_id FROM series_titles st WHERE st.normalized % $11 \
+                    SELECT st.series_id FROM series_titles st WHERE st.normalized % $12 \
                   ) ",
             " JOIN matched m ON m.id = s.id",
-            " ORDER BY s.updated_at DESC, s.id DESC LIMIT $9 OFFSET $10",
+            " ORDER BY s.updated_at DESC, s.id DESC LIMIT $10 OFFSET $11",
             filter.content_type as Option<ContentType>,
             filter.status as Option<SeriesStatus>,
             filter.year_min,
@@ -459,6 +477,7 @@ async fn fetch_page_by_recency(
             filter.min_chapters,
             &filter.tags as &[String],
             &filter.exclude_tags as &[String],
+            filter.include_adult,
             filter.limit,
             filter.offset,
             q,
@@ -469,7 +488,7 @@ async fn fetch_page_by_recency(
         browse_statement!(
             page "",
             "",
-            " ORDER BY s.updated_at DESC, s.id DESC LIMIT $9 OFFSET $10",
+            " ORDER BY s.updated_at DESC, s.id DESC LIMIT $10 OFFSET $11",
             filter.content_type as Option<ContentType>,
             filter.status as Option<SeriesStatus>,
             filter.year_min,
@@ -478,6 +497,7 @@ async fn fetch_page_by_recency(
             filter.min_chapters,
             &filter.tags as &[String],
             &filter.exclude_tags as &[String],
+            filter.include_adult,
             filter.limit,
             filter.offset,
         )
@@ -499,25 +519,25 @@ async fn fetch_page_by_sort_token(
     let rows = if let Some(q) = query {
         browse_statement!(
             page "WITH matched AS ( \
-                    SELECT s.id FROM series s WHERE s.normalized_title % $12 \
+                    SELECT s.id FROM series s WHERE s.normalized_title % $13 \
                     UNION \
                     SELECT s.id FROM series s \
-                     WHERE s.search_vec @@ plainto_tsquery('simple', $12) \
+                     WHERE s.search_vec @@ plainto_tsquery('simple', $13) \
                     UNION \
-                    SELECT st.series_id FROM series_titles st WHERE st.normalized % $12 \
+                    SELECT st.series_id FROM series_titles st WHERE st.normalized % $13 \
                   ) ",
             " JOIN matched m ON m.id = s.id",
             " ORDER BY \
-                CASE WHEN $11 = 'title' THEN s.canonical_title END ASC NULLS LAST, \
-                CASE WHEN $11 = 'year' THEN s.release_year END DESC NULLS LAST, \
-                CASE WHEN $11 = 'chapters' THEN ( \
+                CASE WHEN $12 = 'title' THEN s.canonical_title END ASC NULLS LAST, \
+                CASE WHEN $12 = 'year' THEN s.release_year END DESC NULLS LAST, \
+                CASE WHEN $12 = 'chapters' THEN ( \
                       SELECT COALESCE(sum(ss.chapter_count),0)::int8 FROM series_sources ss \
                       WHERE ss.series_id = s.id) END DESC NULLS LAST, \
-                CASE WHEN $11 = 'sources' THEN ( \
+                CASE WHEN $12 = 'sources' THEN ( \
                       SELECT count(DISTINCT ss.provider_id)::int8 FROM series_sources ss \
                       WHERE ss.series_id = s.id) END DESC NULLS LAST, \
                 s.updated_at DESC, s.id DESC \
-              LIMIT $9 OFFSET $10",
+              LIMIT $10 OFFSET $11",
             filter.content_type as Option<ContentType>,
             filter.status as Option<SeriesStatus>,
             filter.year_min,
@@ -526,6 +546,7 @@ async fn fetch_page_by_sort_token(
             filter.min_chapters,
             &filter.tags as &[String],
             &filter.exclude_tags as &[String],
+            filter.include_adult,
             filter.limit,
             filter.offset,
             filter.sort.as_token(),
@@ -538,16 +559,16 @@ async fn fetch_page_by_sort_token(
             page "",
             "",
             " ORDER BY \
-                CASE WHEN $11 = 'title' THEN s.canonical_title END ASC NULLS LAST, \
-                CASE WHEN $11 = 'year' THEN s.release_year END DESC NULLS LAST, \
-                CASE WHEN $11 = 'chapters' THEN ( \
+                CASE WHEN $12 = 'title' THEN s.canonical_title END ASC NULLS LAST, \
+                CASE WHEN $12 = 'year' THEN s.release_year END DESC NULLS LAST, \
+                CASE WHEN $12 = 'chapters' THEN ( \
                       SELECT COALESCE(sum(ss.chapter_count),0)::int8 FROM series_sources ss \
                       WHERE ss.series_id = s.id) END DESC NULLS LAST, \
-                CASE WHEN $11 = 'sources' THEN ( \
+                CASE WHEN $12 = 'sources' THEN ( \
                       SELECT count(DISTINCT ss.provider_id)::int8 FROM series_sources ss \
                       WHERE ss.series_id = s.id) END DESC NULLS LAST, \
                 s.updated_at DESC, s.id DESC \
-              LIMIT $9 OFFSET $10",
+              LIMIT $10 OFFSET $11",
             filter.content_type as Option<ContentType>,
             filter.status as Option<SeriesStatus>,
             filter.year_min,
@@ -556,6 +577,7 @@ async fn fetch_page_by_sort_token(
             filter.min_chapters,
             &filter.tags as &[String],
             &filter.exclude_tags as &[String],
+            filter.include_adult,
             filter.limit,
             filter.offset,
             filter.sort.as_token(),
@@ -578,12 +600,12 @@ async fn count_filtered(
     let row = if let Some(q) = query {
         browse_statement!(
             count "WITH matched AS ( \
-                     SELECT s.id FROM series s WHERE s.normalized_title % $9 \
+                     SELECT s.id FROM series s WHERE s.normalized_title % $10 \
                      UNION \
                      SELECT s.id FROM series s \
-                      WHERE s.search_vec @@ plainto_tsquery('simple', $9) \
+                      WHERE s.search_vec @@ plainto_tsquery('simple', $10) \
                      UNION \
-                     SELECT st.series_id FROM series_titles st WHERE st.normalized % $9 \
+                     SELECT st.series_id FROM series_titles st WHERE st.normalized % $10 \
                    ) ",
             " JOIN matched m ON m.id = s.id",
             filter.content_type as Option<ContentType>,
@@ -594,6 +616,7 @@ async fn count_filtered(
             filter.min_chapters,
             &filter.tags as &[String],
             &filter.exclude_tags as &[String],
+            filter.include_adult,
             q,
         )
         .fetch_one(pool)
@@ -610,6 +633,7 @@ async fn count_filtered(
             filter.min_chapters,
             &filter.tags as &[String],
             &filter.exclude_tags as &[String],
+            filter.include_adult,
         )
         .fetch_one(pool)
         .await?

@@ -22,6 +22,14 @@ pub enum Feature {
     /// The "you might like" recommendations on the home dashboard.
     #[serde(rename = "catalogue.recommendations")]
     CatalogueRecommendations,
+    /// Whether adult-classified series may be shown to *anyone* on this deployment.
+    ///
+    /// The deployment-wide half of the adult gate; the per-reader opt-in is the other half, and
+    /// both must be on. Off does not merely hide the preference — it closes the gate for every
+    /// reader regardless of what they already opted into, which is what makes it usable as a
+    /// kill switch on an instance whose audience turns out not to be what the operator assumed.
+    #[serde(rename = "catalogue.adult_content")]
+    CatalogueAdultContent,
 
     /// Self-service registration. Off makes the deployment invite-only: existing accounts
     /// keep working, new ones can only be created by an administrator.
@@ -159,6 +167,7 @@ impl Feature {
             Self::CatalogueBrowse,
             Self::CatalogueSearch,
             Self::CatalogueRecommendations,
+            Self::CatalogueAdultContent,
             Self::AccountsRegistration,
             Self::AccountsPasswordReset,
             Self::AccountsEmailVerification,
@@ -207,6 +216,7 @@ impl Feature {
             Self::CatalogueBrowse => "catalogue.browse",
             Self::CatalogueSearch => "catalogue.search",
             Self::CatalogueRecommendations => "catalogue.recommendations",
+            Self::CatalogueAdultContent => "catalogue.adult_content",
             Self::AccountsRegistration => "accounts.registration",
             Self::AccountsPasswordReset => "accounts.password_reset",
             Self::AccountsEmailVerification => "accounts.email_verification",
@@ -250,14 +260,19 @@ impl Feature {
     /// Whether the feature ships on.
     ///
     /// Everything defaults to on: the flag system exists so an operator can *narrow* a
-    /// working deployment, not so that a fresh install arrives inert. Two exceptions ship
-    /// off because they send data to third parties from a configuration the installer has
+    /// working deployment, not so that a fresh install arrives inert. Three exceptions. Two
+    /// ship off because they send data to third parties from a configuration the installer has
     /// not necessarily reviewed yet.
+    ///
+    /// [`Self::CatalogueAdultContent`] is the third and ships off for a different reason: it is
+    /// the only flag whose default-on failure mode is showing adult material to an audience
+    /// nobody decided to show it to. Every other flag defaults to the *working* state; this one
+    /// defaults to the *safe* one, and turning it on is an operator's deliberate act.
     #[must_use]
     pub const fn default_enabled(self) -> bool {
         !matches!(
             self,
-            Self::NotificationsWebhook | Self::NotificationsDiscord
+            Self::NotificationsWebhook | Self::NotificationsDiscord | Self::CatalogueAdultContent
         )
     }
 
@@ -276,9 +291,10 @@ impl Feature {
     #[must_use]
     pub const fn group(self) -> FeatureGroup {
         match self {
-            Self::CatalogueBrowse | Self::CatalogueSearch | Self::CatalogueRecommendations => {
-                FeatureGroup::Catalogue
-            }
+            Self::CatalogueBrowse
+            | Self::CatalogueSearch
+            | Self::CatalogueRecommendations
+            | Self::CatalogueAdultContent => FeatureGroup::Catalogue,
             Self::AccountsRegistration
             | Self::AccountsPasswordReset
             | Self::AccountsEmailVerification
@@ -326,6 +342,7 @@ impl Feature {
             Self::CatalogueBrowse => "Catalogue browsing",
             Self::CatalogueSearch => "Catalogue search",
             Self::CatalogueRecommendations => "Recommendations",
+            Self::CatalogueAdultContent => "Adult content",
             Self::AccountsRegistration => "Self-service registration",
             Self::AccountsPasswordReset => "Password reset",
             Self::AccountsEmailVerification => "Email verification",
@@ -384,6 +401,13 @@ impl Feature {
             Self::CatalogueSearch => "Off: the search screen and query parameter are rejected.",
             Self::CatalogueRecommendations => {
                 "Off: the home dashboard drops its recommendation rail."
+            }
+            Self::CatalogueAdultContent => {
+                "Off (the default): adult-classified series are hidden from every reader on \
+                 this deployment, including those who opted in and confirmed their age. On: \
+                 each reader decides for themselves, and the default for a reader who has \
+                 decided nothing is still hidden. Nobody is ever shown adult content by an \
+                 operator turning this on alone."
             }
             Self::AccountsRegistration => {
                 "Off: the deployment becomes invite-only. Existing accounts keep working; \
@@ -570,7 +594,7 @@ mod tests {
 
     #[test]
     fn all_lists_every_variant() {
-        assert_eq!(Feature::all().len(), 40);
+        assert_eq!(Feature::all().len(), 41);
     }
 
     #[test]
@@ -589,12 +613,19 @@ mod tests {
         }
     }
 
+    /// The exact set that ships off, so adding a feature cannot quietly join it.
+    ///
+    /// A fresh install is supposed to arrive working; every entry here is a deliberate
+    /// exception with a reason in [`Feature::default_enabled`], and a fourth one appearing
+    /// without that reason being written down is the failure this pins.
     #[test]
-    fn only_third_party_egress_ships_off() {
+    fn only_third_party_egress_and_the_adult_gate_ship_off() {
         for &f in Feature::all() {
             let expected_off = matches!(
                 f,
-                Feature::NotificationsWebhook | Feature::NotificationsDiscord
+                Feature::NotificationsWebhook
+                    | Feature::NotificationsDiscord
+                    | Feature::CatalogueAdultContent
             );
             assert_eq!(!f.default_enabled(), expected_off, "{f} default");
         }

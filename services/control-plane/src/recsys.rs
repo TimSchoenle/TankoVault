@@ -784,8 +784,14 @@ async fn prior_pass(
 /// Whether a series may be recommended at all.
 ///
 /// A series nothing links to and nothing describes cannot be recommended usefully and should not
-/// occupy a slot. Adult titles are excluded here *and* at every read: this flag is the model's
-/// opinion, the read-time filter is the reader's.
+/// occupy a slot. This flag is the model's opinion about usefulness, and only that.
+///
+/// The adult gate is deliberately **not** applied here, though it used to be. Every retrieval
+/// path joins `series_prior.recommendable`, so a series the build refuses is unreachable by any
+/// read-time filter however permissive — which made the reader's opt-in and the `include_adult`
+/// parameter dead in the same stroke: an opted-in reader still got nothing, and nothing said so.
+/// Content belongs to the reader's filter, usefulness to this one. See `crates/db/src/repo/
+/// recsys/prior.rs::PriorInputs::adult_gated`.
 /// The metadata bar counts *descriptive* features — tags and authors — not all of them. Status,
 /// decade and length come from columns every series has, so a bar counting those would admit a
 /// completely unenriched series on the strength of three facts that distinguish it from nothing.
@@ -795,7 +801,6 @@ fn is_recommendable(inputs: &recsys::PriorInputs, min_features: i64) -> bool {
     inputs.has_active_source
         && inputs.chapters > 0
         && inputs.descriptive_features >= min_features.max(1)
-        && !inputs.is_adult
 }
 
 /// Blend the appeal signals into `[0, 1]`.

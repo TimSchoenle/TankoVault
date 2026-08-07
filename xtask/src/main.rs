@@ -11,6 +11,8 @@ mod notices;
 #[cfg(feature = "full")]
 mod prune_chapters;
 mod release_plan;
+#[cfg(feature = "full")]
+mod repair_series;
 mod repo_lint;
 
 #[cfg(feature = "full")]
@@ -79,7 +81,8 @@ fn main() -> anyhow::Result<()> {
             "unknown command {cmd:?} in a --no-default-features build; usage: xtask \
              <repo-lint|install-hooks|coverage-ratchet [--integration] [report.json]|\
              config-docs [--check]|notices [--check]|release-plan <bases.json>|--all>\n\
-             ci, migrate, reset, seed, prune-chapters, openapi and sqlx-prepare need the \
+             ci, migrate, reset, seed, prune-chapters, repair-series, openapi and sqlx-prepare \
+             need the \
              default `full` feature."
         );
         std::process::exit(2);
@@ -125,10 +128,25 @@ async fn compiled_commands(cmd: &str) -> anyhow::Result<()> {
             let apply = std::env::args().nth(2).as_deref() == Some("--apply");
             prune_chapters::run(&pool, apply).await?;
         }
+        "repair-series" => {
+            let args: Vec<String> = std::env::args().skip(2).collect();
+            let apply = args.iter().any(|a| a == "--apply");
+            let split = match args.iter().position(|a| a == "--split") {
+                Some(i) => Some(
+                    args.get(i + 1)
+                        .ok_or_else(|| anyhow::anyhow!("--split needs a series id"))?
+                        .parse()?,
+                ),
+                None => None,
+            };
+            repair_series::run(&pool, apply, split).await?;
+        }
         other => {
             eprintln!(
                 "unknown command {other:?}; usage: xtask \
-                 <migrate|reset|seed|prune-chapters [--apply]|openapi [--check]|\
+                 <migrate|reset|seed|prune-chapters [--apply]|\
+                 repair-series [--split <series-id>] [--apply]|\
+                 openapi [--check]|\
                  config-docs [--check]|notices [--check]|sqlx-prepare [--check]|\
                  release-plan <bases.json>|--all>"
             );

@@ -1492,6 +1492,51 @@ async fn an_over_shared_title_key_is_not_a_blocking_key() {
     );
 }
 
+/// **Regression: an over-shared alias key kept pulling unrelated sources onto one series.**
+///
+/// The create-time lookup searched `series_titles` without any fan-out ceiling, and the scorer
+/// read an exact hit on an alias as identity — so a junk key attracted a source, attaching filed
+/// *that* source's aliases under the same series, and the net widened with every attach. One live
+/// row reached 309 sources across three providers and 1 140 alternative titles, holding titles as
+/// unrelated as "Please Go Home, Akutsu-San!" and "I Am The Fated Villain". The sweep's blocking
+/// step already refused such keys (`an_over_shared_title_key_is_not_a_blocking_key`); this is the
+/// same ceiling one stage earlier, where the damage is actually done.
+#[tokio::test]
+async fn an_over_shared_alias_is_not_a_candidate_key() {
+    use tankovault_db::repo::matching::find_candidates;
+
+    let db = TestDb::spawn().await;
+    // Above MAX_KEY_FANOUT (16), and the shape the comma-shredder produced: a sentence fragment
+    // that dozens of unrelated works ended up answering to.
+    for i in 0..20 {
+        let id = insert_series_directly(&db, &format!("Unrelated Work {i}")).await;
+        add_alt_title(&db, id, "A Prince").await;
+    }
+    let selective = insert_series_directly(&db, "The Silent Concubine").await;
+    add_alt_title(&db, selective, "Silent Lover").await;
+
+    let junk = find_candidates(&db.pool, &normalize_title("A Prince"), 50)
+        .await
+        .expect("candidate lookup");
+    assert!(
+        junk.is_empty(),
+        "a key 20 series answer to identifies none of them, got {:?}",
+        junk.iter().map(|c| &c.normalized_title).collect::<Vec<_>>()
+    );
+
+    let selective_hits = find_candidates(&db.pool, &normalize_title("Silent Lover"), 50)
+        .await
+        .expect("candidate lookup");
+    assert!(
+        selective_hits.iter().any(|c| c.series_id == selective),
+        "the ceiling must not cost a key only one series holds, got {:?}",
+        selective_hits
+            .iter()
+            .map(|c| &c.normalized_title)
+            .collect::<Vec<_>>()
+    );
+}
+
 /// **Regression: the new-pair shortlist re-offered the same prefix on every run.**
 ///
 /// It is ordered by `(lo, hi)` with a `LIMIT`, and it used to exclude only pairs an operator had

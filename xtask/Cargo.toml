@@ -26,6 +26,7 @@ default = ["full"]
 full = [
     "dep:tankovault-db",
     "dep:tankovault-domain",
+    "dep:tankovault-matcher",
     "dep:tankovault-bootstrap",
     "dep:tankovault-api",
     "dep:secrecy",
@@ -48,6 +49,9 @@ syn = { workspace = true }
 
 tankovault-db = { workspace = true, optional = true }
 tankovault-domain = { workspace = true, optional = true }
+# `repair-series` decides which stored sources do not belong by asking the *same* scorer the
+# ingest path asks, rather than by a similarity rule of its own that would drift away from it.
+tankovault-matcher = { workspace = true, optional = true }
 # The install steps themselves: shared with the shipped `bootstrap` image rather than
 # reimplemented, so "the first admin holds every permission" has one definition.
 tankovault-bootstrap = { workspace = true, optional = true }

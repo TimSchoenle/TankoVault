@@ -494,6 +494,78 @@ async fn the_summary_ignores_the_filters_the_list_counts_apply() {
     );
 }
 
+/// One provider carrying a series twice is **one** carrier in the `Sources` column.
+///
+/// `series_sources` is unique on `(provider_id, source_path)`, not on `(series_id,
+/// provider_id)`, so a provider can hold the same series under several paths — legitimately for
+/// a colour edition, and in bulk when a scan mis-attaches. The column's query emitted a row per
+/// source, so the ledger repeated one carrier's monogram across all four tiles and then
+/// overflowed into a `+n` counting paths: a live catalogue had 309 rows and 3 providers on one
+/// series, rendered as `+305`. It also disagreed with `source_count` on the same row, which has
+/// always been `count(DISTINCT provider_id)`.
+#[tokio::test]
+async fn a_provider_carrying_a_series_twice_is_one_source() {
+    let db = TestDb::spawn().await;
+    let user = seed::user(&db, "collector").create().await;
+    let alpha = seed::provider(&db, "alpha").create().await;
+    let beta = seed::provider(&db, "beta").create().await;
+
+    let series = a_series(&db, alpha, "Vagabond", &[1.0, 2.0]).await;
+    // A second path on the *same* provider, ranked above the first so the survivor is the one
+    // `preferred_source_name` names — the flag and the submeta have to agree.
+    add_source(&db, series, alpha, "/vagabond-colored", 99).await;
+    // ...and a genuinely different carrier, which must survive as its own tile.
+    add_source(&db, series, beta, "/vagabond", 5).await;
+
+    watchlist_upsert(&db.pool, user, series, WatchStatus::Reading, true)
+        .await
+        .expect("watchlist");
+
+    let page = watchlist_page(&db.pool, user, &WatchlistFilter::default())
+        .await
+        .expect("watchlist");
+    let card = page.items.first().expect("one row");
+
+    let codes: Vec<&str> = card.sources.iter().map(|s| s.code.as_str()).collect();
+    assert_eq!(
+        codes,
+        ["alpha", "beta"],
+        "one tile per provider, best first"
+    );
+    assert_eq!(
+        card.source_count,
+        i64::try_from(card.sources.len()).expect("small"),
+        "the tiles and the count must describe the same set",
+    );
+    assert!(
+        card.sources[0].preferred,
+        "the best-ranked carrier is tinted"
+    );
+    assert!(!card.sources[1].preferred, "and only that one");
+}
+
+/// Attach an extra source row to an existing series, as a second scan of the same provider does.
+async fn add_source(
+    db: &TestDb,
+    series: SeriesId,
+    provider: ProviderId,
+    source_path: &str,
+    chapter_count: i32,
+) {
+    sqlx::query(
+        "INSERT INTO series_sources \
+             (series_id, provider_id, source_path, chapter_count, last_scanned_at) \
+         VALUES ($1, $2, $3, $4, now())",
+    )
+    .bind(series.as_uuid())
+    .bind(provider.as_uuid())
+    .bind(source_path)
+    .bind(chapter_count)
+    .execute(&db.pool)
+    .await
+    .expect("seed extra source");
+}
+
 /// The notifier's "already read?" filter must be [`ReadProgress::covers`], not a comparison
 /// against one frontier.
 ///

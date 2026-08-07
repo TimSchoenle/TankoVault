@@ -188,10 +188,23 @@ jobs:
       # from a commit `main` has not built, so a bad arm64 merge surfaces minutes after the merge
       # rather than at release. A pull request stops catching it before the merge.
       #
-      # A run that exports a deps cache is exactly a run whose arm64 leg something later reads —
-      # `backend-deps-arm64` off `main`, `release-pr-deps-arm64` off the release pull request,
-      # which `release-please.yaml` imports instead of recompiling the identical tree. So `arm64`
-      # follows `scope`, and the fork check below governs both rather than being written twice.
+      # **A pull request exports too, to a tag of its own, and that is what stops the same build
+      # running four times.** Until it did, `deps_scope` was empty on an ordinary pull request, so
+      # this warm-up compiled for 37 minutes and published nothing — and each of `docker`,
+      # `docker-frontend` and `docker-arm64`, which wait on it, then rebuilt the identical chain
+      # because `backend-deps-<arch>` off `main` is keyed on `main`'s Dockerfile and misses the
+      # moment this branch touches it. Measured on one such run: warm-up 37m, then api 38m,
+      # render 40m and frontend 40m, all after it. 78 minutes of wall clock for 37 minutes of
+      # work done four times.
+      #
+      # `pr-<number>-deps` rather than one shared pull-request tag: two `mode=max` exporters
+      # writing one tag is the write race this file warns about elsewhere, and concurrent pull
+      # requests would be exactly that. One tag per pull request per architecture is bounded by
+      # the number of open pull requests, and each is rewritten rather than added to on a push.
+      # Nothing prunes them yet, which is a housekeeping debt, not a correctness one.
+      #
+      # The fork check governs the export for the reason spelled out above this step, and it now
+      # governs three tag families rather than one.
       - name: decide the deps cache scope and architecture set
         id: depsscope
         env:
@@ -200,13 +213,16 @@ jobs:
           HEAD_REF: ${{ github.head_ref }}
           HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
           THIS_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
           scope=''
+          release_pr=false
           if [ "$EVENT" = "pull_request" ]; then
             if [ "$HEAD_REPO" = "$THIS_REPO" ]; then
               case "$HEAD_REF" in
-                release-please--*) scope='release-pr-deps' ;;
+                release-please--*) scope='release-pr-deps'; release_pr=true ;;
+                *) scope="pr-${PR_NUMBER}-deps" ;;
               esac
             fi
           else
@@ -215,9 +231,14 @@ jobs:
           echo "scope=$scope" >> "$GITHUB_OUTPUT"
           echo "::notice::deps cache export scope: ${scope:-none}"
 
+          # arm64 no longer follows `scope`, because `scope` is now set on ordinary pull requests
+          # too. It follows what a *later* run reads: `backend-deps-arm64` off `main` and
+          # `release-pr-deps-arm64` off the release pull request, which `release-please.yaml`
+          # imports instead of recompiling the identical tree. An ordinary pull request's arm64
+          # leg is read by nothing after the run ends.
           amd64='{"arch":"amd64","runner":"ubuntu-latest"}'
           arm64='{"arch":"arm64","runner":"ubuntu-24.04-arm"}'
-          if [ -n "$scope" ] || [ "$FULL" = "true" ]; then
+          if [ "$EVENT" != "pull_request" ] || [ "$FULL" = "true" ] || [ "$release_pr" = "true" ]; then
             echo "arm64=true" >> "$GITHUB_OUTPUT"
             echo "arches=[${amd64},${arm64}]" >> "$GITHUB_OUTPUT"
           else
@@ -1443,7 +1464,12 @@ jobs:
           # upload its own copy of the multi-gigabyte `cook` layer. On the Actions cache that
           # evicted `backend-deps` itself; on GHCR it instead makes every later import pull a
           # duplicate chain, which is a slower gate for no benefit either way.
-          cache-from: type=registry,ref=${{ needs.changes.outputs.buildcache }}:backend-deps-amd64
+          # `deps_scope` first: it is what `docker-deps` exported *in this run, at this commit*,
+          # so on a pull request it is the only tag that can hit once this branch touches the
+          # Dockerfile. `backend-deps-amd64` stays as the fallback for the runs that write it.
+          cache-from: |
+            ${{ needs.changes.outputs.deps_scope != '' && format('type=registry,ref={0}:{1}-amd64', needs.changes.outputs.buildcache, needs.changes.outputs.deps_scope) || '' }}
+            type=registry,ref=${{ needs.changes.outputs.buildcache }}:backend-deps-amd64
 
       # Enforces the image contract: non-root 1001:1001, the entrypoint, the baked-in binary and CA
       # trust store, and for the render tier the absence of root plus the presence of Chromium.
@@ -1543,7 +1569,10 @@ jobs:
           load: true
           tags: tankovault-${{ matrix.bin }}:ci-arm64
           provenance: false
-          cache-from: type=registry,ref=${{ needs.changes.outputs.buildcache }}:backend-deps-arm64
+          # Same ordering as the amd64 leg: this run's own export first, `main`'s as the fallback.
+          cache-from: |
+            ${{ needs.changes.outputs.deps_scope != '' && format('type=registry,ref={0}:{1}-arm64', needs.changes.outputs.buildcache, needs.changes.outputs.deps_scope) || '' }}
+            type=registry,ref=${{ needs.changes.outputs.buildcache }}:backend-deps-arm64
 
       # The same image contract as the amd64 leg. `container-structure-test` ships a separate
       # arm64 binary; the config files are architecture-independent.
@@ -1622,6 +1651,7 @@ jobs:
           # layers too, so it would publish a second copy of the whole backend chain under this
           # image's own tag and every later import would pull it twice.
           cache-from: |
+            ${{ needs.changes.outputs.deps_scope != '' && format('type=registry,ref={0}:{1}-amd64', needs.changes.outputs.buildcache, needs.changes.outputs.deps_scope) || '' }}
             type=registry,ref=${{ needs.changes.outputs.buildcache }}:backend-deps-amd64
             type=registry,ref=${{ needs.changes.outputs.buildcache }}:frontend-deps-amd64
 

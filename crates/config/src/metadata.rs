@@ -59,6 +59,14 @@ pub struct TagIntakeConfig {
     /// Additional refused terms, matched on their slug: `N/A`, `n/a` and `n-a` are one entry.
     #[serde(default)]
     pub blocklist: Vec<String>,
+    /// Additional genre chips that classify a series as adult, matched on their slug.
+    ///
+    /// Additions only: unlike [`Self::blocklist`] there is no switch that drops the shipped
+    /// terms. See [`tankovault_domain::AdultTagSet`] — an emptied classifier silently stops
+    /// classifying, where the two supported ways to make adult content visible (the deployment
+    /// flag and the per-reader opt-in) both leave a record of somebody deciding.
+    #[serde(default)]
+    pub adult_tags: Vec<String>,
 }
 
 impl Default for TagIntakeConfig {
@@ -66,6 +74,7 @@ impl Default for TagIntakeConfig {
         Self {
             use_defaults: true,
             blocklist: Vec::new(),
+            adult_tags: Vec::new(),
         }
     }
 }
@@ -86,6 +95,12 @@ impl TagIntakeConfig {
                 .chain(self.blocklist.iter().cloned()),
         )
     }
+
+    /// Resolve the adult classifier intake applies.
+    #[must_use]
+    pub fn adult_tags(&self) -> tankovault_domain::AdultTagSet {
+        tankovault_domain::AdultTagSet::with_extra(self.adult_tags.iter())
+    }
 }
 
 #[cfg(test)]
@@ -100,6 +115,7 @@ mod tests {
         let config = TagIntakeConfig {
             use_defaults: true,
             blocklist: vec!["Bookmark".to_owned()],
+            adult_tags: Vec::new(),
         };
         let list = config.blocklist();
         assert!(list.blocks("Bookmark"));
@@ -112,6 +128,7 @@ mod tests {
         let only_mine = TagIntakeConfig {
             use_defaults: false,
             blocklist: vec!["Bookmark".to_owned()],
+            adult_tags: Vec::new(),
         };
         let list = only_mine.blocklist();
         assert!(list.blocks("Bookmark"));
@@ -120,6 +137,7 @@ mod tests {
         let off = TagIntakeConfig {
             use_defaults: false,
             blocklist: Vec::new(),
+            adult_tags: Vec::new(),
         };
         assert!(off.blocklist().is_empty());
     }

@@ -52,10 +52,18 @@ pub(crate) fn Cover(url: Option<String>, title: String) -> Element {
 /// showing it where a reader expects a length taught them to read it as one.
 #[component]
 pub(crate) fn CoverCard(series: ReadSignal<SeriesSummary>) -> Element {
+    let i18n = use_i18n();
     let series = series.read();
     rsx! {
         Link { to: Route::Series { id: series.id.to_string() }, class: "ik-card",
-            Cover { url: series.cover_url.clone(), title: series.title.clone() }
+            div { class: "ik-cover-wrap",
+                Cover { url: series.cover_url.clone(), title: series.title.clone() }
+                // Only ever rendered for a reader who opted in, since a card carrying this flag
+                // has already passed the gate. It marks what they chose to see; it does not hide.
+                if series.is_adult {
+                    span { class: "ik-adult-badge", {i18n.t("account.content.badge")} }
+                }
+            }
             div { class: "ik-card-body",
                 div { class: "ik-card-title", "{series.title}" }
                 CardMeta {

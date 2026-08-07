@@ -4,7 +4,7 @@
 //! and a suspended account is refused before any capability is consulted.
 
 use crate::error::ApiError;
-use axum::extract::{ConnectInfo, FromRequestParts};
+use axum::extract::{ConnectInfo, FromRequestParts, OptionalFromRequestParts};
 use axum::http::header::{AUTHORIZATION, USER_AGENT};
 use axum::http::request::Parts;
 use secrecy::SecretSlice;
@@ -127,6 +127,11 @@ pub struct AuthUser {
     /// The capabilities resolved for this request. Freshly read, so a grant revoked a second
     /// ago is already gone.
     pub permissions: PermissionSet,
+    /// Whether this account may see adult-gated series, as far as the *account* decides it.
+    ///
+    /// Half the answer. The deployment flag is the other half and both must hold, which is why
+    /// no handler reads this directly — [`crate::content_gate::AdultVisibility`] combines them.
+    pub adult_opt_in: bool,
     /// Request origin, attached to any audit record this principal produces.
     pub client: ClientContext,
     /// Carried so [`Self::require`] can record a refused privileged action without every
@@ -220,8 +225,34 @@ impl FromRequestParts<AppState> for AuthUser {
         Ok(Self {
             user_id,
             permissions: principal.permissions,
+            adult_opt_in: principal.adult_opt_in,
             client: ClientContext::from_parts(parts),
             audit: Arc::clone(&state.audit),
         })
+    }
+}
+
+/// Extract an [`AuthUser`] on a route that also serves anonymous callers.
+///
+/// `Ok(None)` for *every* reason a principal cannot be established — no header, a malformed or
+/// expired token, an erased account — because on these routes all of them mean the same thing:
+/// nobody is signed in, serve the public view. A suspended account is the one case worth
+/// distinguishing, and it is not: it also gets the public view, which is strictly less than it
+/// would get by authenticating.
+///
+/// Never use this where a route's *authorization* depends on the result. Anything that grants
+/// access must extract [`AuthUser`] itself and take the 401.
+impl OptionalFromRequestParts<AppState> for AuthUser {
+    type Rejection = std::convert::Infallible;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Option<Self>, Self::Rejection> {
+        Ok(
+            <Self as FromRequestParts<AppState>>::from_request_parts(parts, state)
+                .await
+                .ok(),
+        )
     }
 }

@@ -201,6 +201,7 @@ async fn build(cfg: &Config) -> anyhow::Result<Built> {
             matching: cfg.matching.clone(),
             metadata_priority: cfg.metadata.priority.clone(),
             tag_blocklist: cfg.metadata.tag_blocklist(),
+            adult_tags: cfg.metadata.tags.adult_tags(),
             outliers: cfg.chapter_outliers.policy(),
         },
     );

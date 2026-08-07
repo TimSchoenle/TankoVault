@@ -2,14 +2,17 @@
 //! genuinely new chapters for the `chapter.discovered` fan-out.
 
 use super::chapters::{ChapterUpsert, upsert_chapters};
-use super::enrichment::{TagLink, add_series_authors, add_series_tags, add_series_titles};
+use super::enrichment::{
+    TagLink, add_series_authors, add_series_tags, add_series_titles, mark_adult_inferred,
+};
 use super::metadata::merge_metadata;
 use super::series::{SeriesUpsert, resolve_canonical_series};
 use super::sources::{update_source_scan, upsert_source};
 use crate::error::DbResult;
 use tankovault_domain::matching::Canonicaliser;
 use tankovault_domain::{
-    MetadataPriority, MetadataSource, ProviderId, SeriesId, SeriesSourceId, TagBlocklist,
+    AdultTagSet, MetadataPriority, MetadataSource, ProviderId, SeriesId, SeriesSourceId,
+    TagBlocklist,
 };
 
 /// A fully-scanned series ready to persist: canonical metadata, alternative titles,
@@ -39,7 +42,8 @@ pub struct IngestOutcome {
 ///
 /// `canonicaliser` decides which series the scan belongs to; `priority` decides which of the
 /// scan's values are allowed to replace what another source already wrote; `blocked` decides
-/// which scraped "genres" are not tags at all. This function only writes.
+/// which scraped "genres" are not tags at all; `adult` decides which of them classify the
+/// series as adult. This function only writes.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; any failure rolls back the whole transaction, so a series
@@ -52,6 +56,7 @@ pub async fn ingest_series(
     canonicaliser: &dyn Canonicaliser,
     priority: &MetadataPriority,
     blocked: &TagBlocklist,
+    adult: &AdultTagSet,
 ) -> DbResult<IngestOutcome> {
     let mut tx = pool.begin().await?;
 
@@ -68,6 +73,12 @@ pub async fn ingest_series(
         add_series_titles(&mut tx, series_id, &scanned.alt_titles).await?;
     }
     if !scanned.tags.is_empty() {
+        // Classified from the *raw* scrape, before the blocklist runs. The blocklist exists to
+        // drop template labels, but it is operator-editable, and a term added to it must not be
+        // able to hide an adult signal from the gate as a side effect.
+        if adult.classifies_any(&scanned.tags) {
+            mark_adult_inferred(&mut *tx, series_id).await?;
+        }
         // A scraped tag is a bare genre name: no rank to carry, so it is wholly present.
         let links: Vec<TagLink<'_>> = scanned.tags.iter().map(|t| TagLink::genre(t)).collect();
         add_series_tags(&mut tx, series_id, &links, blocked).await?;

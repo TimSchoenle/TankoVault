@@ -1,0 +1,39 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT c.series_id, (1 - c.distance)::float8 AS \"score!\" FROM ( SELECT series_id, embedding <=> $1::text::halfvec(128) AS distance FROM series_embedding ORDER BY embedding <=> $1::text::halfvec(128) LIMIT $5 ) c JOIN series_prior p ON p.series_id = c.series_id AND p.recommendable JOIN series s ON s.id = c.series_id AND (NOT s.adult_gated OR $3) WHERE NOT (c.series_id = ANY($2)) ORDER BY c.distance LIMIT $4",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "series_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "series_embedding",
+            "name": "series_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "score!",
+        "type_info": "Float8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "UuidArray",
+        "Bool",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "4dd12e815527b34e669b42fcd6d6647c2329095b8c17d94dc1b0b086d6b3e17e"
+}

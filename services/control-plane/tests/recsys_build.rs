@@ -140,6 +140,7 @@ async fn ingest(db: &TestDb, provider: ProviderId, fixture: &Fixture) -> SeriesI
         &MatchingConfig::default(),
         &MetadataPriority::default(),
         &tankovault_domain::TagBlocklist::default(),
+        &tankovault_domain::AdultTagSet::defaults(),
     )
     .await
     .expect("ingest series")
@@ -195,7 +196,7 @@ async fn a_full_build_produces_an_index_that_separates_the_clusters() {
         .expect("embedding")
         .expect("the seed must have been embedded");
 
-    let neighbours = recsys::nearest_neighbours(&db.pool, &embedding, seed_id, 5, 20)
+    let neighbours = recsys::nearest_neighbours(&db.pool, &embedding, seed_id, false, 5, 20)
         .await
         .expect("ann search");
     assert!(!neighbours.is_empty(), "the index must return something");
@@ -354,7 +355,7 @@ async fn a_merge_evicts_the_absorbed_series_and_queues_the_survivor() {
         .await
         .expect("embedding")
         .expect("the survivor is still embedded");
-    let neighbours = recsys::nearest_neighbours(&db.pool, &embedding, keep, 10, 40)
+    let neighbours = recsys::nearest_neighbours(&db.pool, &embedding, keep, false, 10, 40)
         .await
         .expect("ann search");
     assert!(
@@ -426,7 +427,7 @@ async fn a_series_with_too_little_metadata_is_not_recommendable() {
 
     build(&db.pool, budget(), true).await.expect("build");
 
-    let top = recsys::top_by_prior(&db.pool, 50).await.expect("prior");
+    let top = recsys::top_by_prior(&db.pool, false, 50).await.expect("prior");
     assert!(
         !top.contains(&bare),
         "a series with no tags, no authors and no medium must not be offered"

@@ -74,6 +74,7 @@ impl Engine {
             &self.matching,
             &self.metadata_priority,
             &self.tag_blocklist,
+            &self.adult_tags,
         )
         .await?;
 

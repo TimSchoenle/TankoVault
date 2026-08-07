@@ -511,6 +511,58 @@
         ],
         "type": "object"
       },
+      "ContentPrefsDto": {
+        "description": "The caller's content settings and what the deployment currently allows.",
+        "properties": {
+          "adult_opt_in": {
+            "description": "The caller's stored preference. Independent of whether it currently has any effect.",
+            "type": "boolean"
+          },
+          "age_attested": {
+            "description": "Whether the account has ever confirmed it is of age.\n\nDrives the client's decision to ask: an account with this already `true` is changing a\nsetting, not making a declaration, and re-prompting it would train readers to click\nthrough the one dialog that is supposed to mean something.",
+            "type": "boolean"
+          },
+          "age_attested_at": {
+            "description": "When it attested, or `null` if it never has.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "allowed_by_deployment": {
+            "description": "Whether this deployment permits adult content at all.\n\nPublished so the client can explain an opted-in reader's empty shelf as an operator\ndecision rather than leaving it looking like the preference failed to save.",
+            "type": "boolean"
+          },
+          "effective": {
+            "description": "The resolved answer: whether adult series are actually being shown to this caller.\n\nThe conjunction of everything above, computed server-side. A client recombining the\nparts itself is a second implementation of the gate, and the two will disagree.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "adult_opt_in",
+          "age_attested",
+          "allowed_by_deployment",
+          "effective"
+        ],
+        "type": "object"
+      },
+      "ContentPrefsUpdate": {
+        "description": "A change to the caller's content settings.",
+        "properties": {
+          "adult_opt_in": {
+            "description": "The preference to store.",
+            "type": "boolean"
+          },
+          "confirm_age": {
+            "description": "The caller's confirmation, in this request, that they are of age.\n\nRequired to turn [`Self::adult_opt_in`] on for an account that has never attested;\nignored when it already has, and ignored when opting out. It is a declaration the reader\nmakes, so it is a field on the request rather than something the server infers from\nhaving asked.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "adult_opt_in"
+        ],
+        "type": "object"
+      },
       "ContentType": {
         "description": "The medium/origin classification of a work.",
         "enum": [
@@ -882,6 +934,7 @@
           "catalogue.browse",
           "catalogue.search",
           "catalogue.recommendations",
+          "catalogue.adult_content",
           "accounts.registration",
           "accounts.password_reset",
           "accounts.email_verification",
@@ -3297,6 +3350,10 @@
           "id": {
             "$ref": "#/components/schemas/SeriesId"
           },
+          "is_adult": {
+            "description": "Whether this series is adult-classified. See [`SeriesSummary::is_adult`] — reaching this\nresponse at all means the caller is entitled to it.",
+            "type": "boolean"
+          },
           "release_year": {
             "format": "int32",
             "type": [
@@ -3332,7 +3389,8 @@
           "sources",
           "alt_titles",
           "tags",
-          "authors"
+          "authors",
+          "is_adult"
         ],
         "type": "object"
       },
@@ -3377,6 +3435,10 @@
           "id": {
             "$ref": "#/components/schemas/SeriesId"
           },
+          "is_adult": {
+            "description": "Whether this series is adult-classified.\n\nOnly ever `true` for a caller who opted in — a card that reaches a client at all has\nalready passed the gate. This labels what is on screen; it is not what hides anything.",
+            "type": "boolean"
+          },
           "latest_chapter": {
             "description": "The highest chapter number any source carries, when there is one.",
             "format": "double",
@@ -3418,7 +3480,8 @@
           "status",
           "source_count",
           "chapter_count",
-          "tags"
+          "tags",
+          "is_adult"
         ],
         "type": "object"
       },
@@ -10412,6 +10475,98 @@
           }
         ],
         "summary": "Get my capabilities",
+        "tags": [
+          "me-account"
+        ]
+      }
+    },
+    "/v1/me/content-prefs": {
+      "get": {
+        "description": "The caller's adult-content decision, whether they have attested their age, and whether this\ndeployment permits adult content at all.",
+        "operationId": "content_prefs",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentPrefsDto"
+                }
+              }
+            },
+            "description": "The caller's content settings"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Get content preferences",
+        "tags": [
+          "me-account"
+        ]
+      },
+      "put": {
+        "description": "Stores the caller's adult-content decision. Turning it on requires `confirm_age` unless the\naccount has attested before; the attestation is recorded once and kept across later changes,\nso opting out and back in does not ask again.\n\nA `409` means the opt-in was refused for want of an attestation. The preference is unchanged\n— this endpoint does not partially apply.",
+        "operationId": "put_content_prefs",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContentPrefsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentPrefsDto"
+                }
+              }
+            },
+            "description": "The stored settings"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "opting in requires an age attestation"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Replace content preferences",
         "tags": [
           "me-account"
         ]

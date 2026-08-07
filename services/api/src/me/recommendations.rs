@@ -4,6 +4,7 @@
 //! request. Retrieval is now four bounded paths — none of which grows with the catalogue — blended,
 //! diversified and explained.
 
+use crate::content_gate::AdultVisibility;
 use crate::error::{ApiError, ApiResult};
 use crate::openapi::ME_DASHBOARD_TAG;
 use crate::state::{AppState, AuthUser};
@@ -161,6 +162,7 @@ pub struct ShelfParams {
 pub async fn recommendations(
     State(state): State<AppState>,
     user: AuthUser,
+    adult: AdultVisibility,
     Query(params): Query<ShelfParams>,
 ) -> ApiResult<Json<Vec<Recommendation>>> {
     let started = std::time::Instant::now();
@@ -190,7 +192,7 @@ pub async fn recommendations(
         return Ok(Json(items));
     }
 
-    let shelf = compute_shelf(&state, user.user_id, &profile, limit, &tuning).await?;
+    let shelf = compute_shelf(&state, user.user_id, &profile, limit, &tuning, adult).await?;
     if let Ok(items) = serde_json::to_value(&shelf) {
         recsys::write_shelf(&state.pool, user.user_id, &items, profile.built_at).await?;
     }
@@ -341,10 +343,11 @@ async fn compute_shelf(
     profile: &recsys::TasteProfile,
     limit: i64,
     tuning: &ShelfTuning,
+    adult: AdultVisibility,
 ) -> ApiResult<Vec<Recommendation>> {
     let suppressed =
         recsys::suppressed_series(&state.pool, user_id, tuning.feedback_decay_days).await?;
-    let mut candidates = retrieve(state, profile, &suppressed, tuning).await?;
+    let mut candidates = retrieve(state, profile, &suppressed, tuning, adult).await?;
     if candidates.is_empty() {
         return Ok(Vec::new());
     }
@@ -361,6 +364,7 @@ async fn retrieve(
     profile: &recsys::TasteProfile,
     suppressed: &[SeriesId],
     tuning: &ShelfTuning,
+    adult: AdultVisibility,
 ) -> ApiResult<Vec<Candidate<SeriesId>>> {
     let mut candidates: Vec<Candidate<SeriesId>> = Vec::new();
 
@@ -383,7 +387,7 @@ async fn retrieve(
             &mut *conn,
             &embedding,
             suppressed,
-            false,
+            adult.include_adult(),
             tuning.per_seed,
             tuning.per_seed * OVERFETCH,
         )
@@ -402,7 +406,7 @@ async fn retrieve(
             &mut *conn,
             embedding,
             suppressed,
-            false,
+            adult.include_adult(),
             tuning.profile_candidates,
             tuning.profile_candidates * OVERFETCH,
         )
@@ -423,7 +427,7 @@ async fn retrieve(
             &mut *conn,
             &rare,
             suppressed,
-            false,
+            adult.include_adult(),
             tuning.exact_candidates,
         )
         .await?;
@@ -441,7 +445,8 @@ async fn retrieve(
 
     // R5 — the popularity prior. Cold start, and backfill when the rest come up short.
     let suppressed_set: HashSet<SeriesId> = suppressed.iter().copied().collect();
-    let popular = recsys::top_by_prior(&mut *conn, PRIOR_CANDIDATES).await?;
+    let popular =
+        recsys::top_by_prior(&mut *conn, adult.include_adult(), PRIOR_CANDIDATES).await?;
     candidates.extend(
         popular
             .into_iter()

@@ -3,7 +3,7 @@
 
 use crate::error::{DbError, DbResult};
 use sqlx::{FromRow, PgExecutor};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use tankovault_domain::matching::{Canonicaliser, Decision, Query};
 use tankovault_domain::{
     ContentType, MetadataSource, MetadataValue, Series, SeriesId, SeriesStatus,
@@ -184,6 +184,64 @@ pub async fn get_series<'e, E: PgExecutor<'e>>(exec: E, id: SeriesId) -> DbResul
     .fetch_optional(exec)
     .await?;
     row.ok_or(DbError::NotFound)?.try_into()
+}
+
+/// One series, but only if the adult gate lets this reader see it.
+///
+/// A gated series a reader has not opted into is [`DbError::NotFound`], deliberately
+/// indistinguishable from an id that never existed. The alternative — a distinct "exists but
+/// forbidden" answer — turns the detail route into an oracle that confirms which ids in the
+/// catalogue are adult, to anyone willing to enumerate.
+///
+/// Separate from [`get_series`] rather than replacing it, because most callers of that are not
+/// serving a reader at all: the scan worker, the sync engine and the notification decorator all
+/// need the row regardless of who may look at it. Gating there would break ingest, not protect
+/// anyone.
+///
+/// # Errors
+/// [`DbError::NotFound`] when no such series exists *or* it is gated for this reader;
+/// [`crate::DbError::Sqlx`] otherwise.
+pub async fn get_series_visible<'e, E: PgExecutor<'e>>(
+    exec: E,
+    id: SeriesId,
+    include_adult: bool,
+) -> DbResult<Series> {
+    let row = sqlx::query_as!(
+        SeriesRow,
+        "SELECT id, canonical_title, normalized_title, description, cover_url, \
+         content_type AS \"content_type: ContentType\", status AS \"status: SeriesStatus\", \
+         release_year, created_at, updated_at \
+         FROM series WHERE id = $1 AND (NOT adult_gated OR $2)",
+        id.as_uuid(),
+        include_adult,
+    )
+    .fetch_optional(exec)
+    .await?;
+    row.ok_or(DbError::NotFound)?.try_into()
+}
+
+/// Which of `ids` are adult-gated, for the badge on rows a reader can already see.
+///
+/// Only ever asked about series that survived the gate, so this labels what is on screen — it
+/// is not itself a gate and must not be used as one.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only; an empty `ids` is an empty set.
+pub async fn adult_gated_many<'e, E: PgExecutor<'e>>(
+    exec: E,
+    ids: &[SeriesId],
+) -> DbResult<HashSet<SeriesId>> {
+    if ids.is_empty() {
+        return Ok(HashSet::new());
+    }
+    let uuids: Vec<Uuid> = ids.iter().map(|id| id.as_uuid()).collect();
+    let rows: Vec<Uuid> = sqlx::query_scalar!(
+        "SELECT id FROM series WHERE id = ANY($1) AND adult_gated",
+        &uuids,
+    )
+    .fetch_all(exec)
+    .await?;
+    Ok(rows.into_iter().map(SeriesId::from_uuid).collect())
 }
 
 /// The two fields a list row needs to name a series it links to.

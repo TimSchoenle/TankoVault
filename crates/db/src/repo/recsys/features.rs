@@ -514,7 +514,7 @@ pub async fn exact_feature_matches<'e, E: PgExecutor<'e>>(
                   ::int8 AS \"shared!\" \
          FROM series_features f \
          JOIN series_prior p ON p.series_id = f.series_id AND p.recommendable \
-         JOIN series s ON s.id = f.series_id AND (NOT s.is_adult OR $3) \
+         JOIN series s ON s.id = f.series_id AND (NOT s.adult_gated OR $3) \
          WHERE f.feature_ids && $1::int[] \
            AND NOT (f.series_id = ANY($2)) \
          ORDER BY \"shared!\" DESC, f.series_id \

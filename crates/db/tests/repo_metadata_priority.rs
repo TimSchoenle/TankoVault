@@ -101,6 +101,7 @@ async fn an_adapter_rescan_does_not_overwrite_enriched_metadata() {
         &MatchingConfig::default(),
         &priority,
         &tankovault_domain::TagBlocklist::default(),
+        &tankovault_domain::AdultTagSet::defaults(),
     )
     .await
     .expect("first scan")
@@ -122,6 +123,7 @@ async fn an_adapter_rescan_does_not_overwrite_enriched_metadata() {
         &MatchingConfig::default(),
         &priority,
         &tankovault_domain::TagBlocklist::default(),
+        &tankovault_domain::AdultTagSet::defaults(),
     )
     .await
     .expect("rescan");
@@ -163,6 +165,7 @@ async fn an_adapter_first_order_lets_the_scan_win() {
         &MatchingConfig::default(),
         &priority,
         &tankovault_domain::TagBlocklist::default(),
+        &tankovault_domain::AdultTagSet::defaults(),
     )
     .await
     .expect("first scan")
@@ -208,6 +211,7 @@ async fn a_losing_title_is_kept_as_an_alternative() {
         &MatchingConfig::default(),
         &priority,
         &tankovault_domain::TagBlocklist::default(),
+        &tankovault_domain::AdultTagSet::defaults(),
     )
     .await
     .expect("first scan")

@@ -168,12 +168,17 @@ pub async fn embedding_of<'e, E: PgExecutor<'e>>(
 /// left to remove. An over-fetch that is too small silently returns fewer rows than asked for
 /// once a deployment marks many series unrecommendable.
 ///
+/// `include_adult` is the caller's resolved answer for *this* reader, not a convenience default.
+/// This backs a route that answers unauthenticated callers, and there the only correct value is
+/// `false`.
+///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
 pub async fn nearest_neighbours<'e, E: PgExecutor<'e>>(
     exec: E,
     embedding: &str,
     exclude: SeriesId,
+    include_adult: bool,
     limit: i64,
     overfetch: i64,
 ) -> DbResult<Vec<Neighbour>> {
@@ -184,15 +189,16 @@ pub async fn nearest_neighbours<'e, E: PgExecutor<'e>>(
            SELECT series_id, embedding <=> $1::text::halfvec(128) AS distance \
            FROM series_embedding \
            ORDER BY embedding <=> $1::text::halfvec(128) \
-           LIMIT $4 \
+           LIMIT $5 \
          ) c \
          JOIN series_prior p ON p.series_id = c.series_id AND p.recommendable \
-         JOIN series s ON s.id = c.series_id AND NOT s.is_adult \
+         JOIN series s ON s.id = c.series_id AND (NOT s.adult_gated OR $3) \
          WHERE c.series_id <> $2 \
          ORDER BY c.distance \
-         LIMIT $3",
+         LIMIT $4",
         embedding,
         exclude.as_uuid(),
+        include_adult,
         limit,
         overfetch,
     )
@@ -246,7 +252,7 @@ pub async fn nearest_excluding<'e, E: PgExecutor<'e>>(
            LIMIT $5 \
          ) c \
          JOIN series_prior p ON p.series_id = c.series_id AND p.recommendable \
-         JOIN series s ON s.id = c.series_id AND (NOT s.is_adult OR $3) \
+         JOIN series s ON s.id = c.series_id AND (NOT s.adult_gated OR $3) \
          WHERE NOT (c.series_id = ANY($2)) \
          ORDER BY c.distance \
          LIMIT $4",

@@ -1,4 +1,12 @@
 //! The watchlist summary: per-status counts and the release-bucket grouping.
+//!
+//! Every statement here aggregates over the user's whole watchlist, so the shape of the two
+//! per-series laterals decides what they cost. The unread predicate sits in the lateral's
+//! `WHERE` rather than in a `FILTER` over the series' full chapter list — the same rows, but
+//! `floor(number) >` becomes an index cond on `chapters_source_floor_num_idx` and the scan stays
+//! index-only over the unread tail. `latest_chapter_at` is a scalar `max()` per source for the
+//! same reason: that is the form the MIN/MAX index optimisation fires on. Together they are what
+//! keeps these off the 570 ms shape [`fetch_page`](super::page) documents.
 
 use crate::error::DbResult;
 use sqlx::{FromRow, PgExecutor, PgPool};
@@ -47,14 +55,13 @@ pub async fn watchlist_summary<'e, E: PgExecutor<'e>>(
          FROM watchlist_entries w \
          LEFT JOIN read_progress rp ON rp.user_id = w.user_id AND rp.series_id = w.series_id \
          CROSS JOIN LATERAL ( \
-           SELECT COALESCE(count(DISTINCT floor(c.number)) FILTER ( \
-                    WHERE floor(c.number) > COALESCE(rp.last_read_whole_number, 0) \
-                      AND NOT (c.number <> floor(c.number) \
-                               AND rp.last_read_part_number IS NOT NULL \
-                               AND c.number <= rp.last_read_part_number) \
-                  ), 0) AS unread \
+           SELECT COALESCE(count(DISTINCT floor(c.number)), 0) AS unread \
            FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
            WHERE ss.series_id = w.series_id \
+             AND floor(c.number) > COALESCE(rp.last_read_whole_number, 0) \
+             AND NOT (c.number <> floor(c.number) \
+                      AND rp.last_read_part_number IS NOT NULL \
+                      AND c.number <= rp.last_read_part_number) \
          ) ch \
          CROSS JOIN LATERAL ( \
            SELECT COALESCE((array_agg(ss.state <> 'active' OR p.state <> 'active' \
@@ -105,16 +112,19 @@ pub(super) async fn fetch_counts(
          JOIN series s ON s.id = w.series_id \
          LEFT JOIN read_progress rp ON rp.user_id = w.user_id AND rp.series_id = w.series_id \
          CROSS JOIN LATERAL ( \
-           SELECT COALESCE(count(DISTINCT floor(c.number)) FILTER ( \
-                    WHERE floor(c.number) > COALESCE(rp.last_read_whole_number, 0) \
-                      AND NOT (c.number <> floor(c.number) \
-                               AND rp.last_read_part_number IS NOT NULL \
-                               AND c.number <= rp.last_read_part_number) \
-                  ), 0) AS unread, \
-                  max(c.discovered_at) AS latest_chapter_at \
+           SELECT COALESCE(count(DISTINCT floor(c.number)), 0) AS unread \
            FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
            WHERE ss.series_id = w.series_id \
+             AND floor(c.number) > COALESCE(rp.last_read_whole_number, 0) \
+             AND NOT (c.number <> floor(c.number) \
+                      AND rp.last_read_part_number IS NOT NULL \
+                      AND c.number <= rp.last_read_part_number) \
          ) ch \
+         CROSS JOIN LATERAL ( \
+           SELECT max((SELECT max(c.discovered_at) FROM chapters c \
+                       WHERE c.series_source_id = ss.id)) AS latest_chapter_at \
+           FROM series_sources ss WHERE ss.series_id = w.series_id \
+         ) la \
          CROSS JOIN LATERAL ( \
            SELECT COALESCE((array_agg(ss.state <> 'active' OR p.state <> 'active' \
                                       ORDER BY ss.chapter_count DESC, \
@@ -136,7 +146,7 @@ pub(super) async fn fetch_counts(
                            WHERE sa.series_id = w.series_id \
                              AND a.name ILIKE $2)) \
            AND (NOT $3::boolean OR ch.unread > 0) \
-           AND ($4::timestamptz IS NULL OR ch.latest_chapter_at >= $4) \
+           AND ($4::timestamptz IS NULL OR la.latest_chapter_at >= $4) \
            AND (NOT $5::boolean OR src.source_degraded) \
            AND ($6::uuid IS NULL OR w.series_id = $6) \
          GROUP BY w.status",
@@ -177,8 +187,8 @@ pub(super) async fn fetch_groups(
     let rows = sqlx::query_as!(
         Row,
         "SELECT CASE \
-                  WHEN ch.latest_chapter_at >= now() - interval '24 hours' THEN 'today' \
-                  WHEN ch.latest_chapter_at >= now() - interval '7 days'   THEN 'week' \
+                  WHEN la.latest_chapter_at >= now() - interval '24 hours' THEN 'today' \
+                  WHEN la.latest_chapter_at >= now() - interval '7 days'   THEN 'week' \
                   ELSE 'earlier' \
                 END AS \"bucket!\", \
                 count(*) AS \"title_count!\", \
@@ -187,16 +197,19 @@ pub(super) async fn fetch_groups(
          JOIN series s ON s.id = w.series_id \
          LEFT JOIN read_progress rp ON rp.user_id = w.user_id AND rp.series_id = w.series_id \
          CROSS JOIN LATERAL ( \
-           SELECT COALESCE(count(DISTINCT floor(c.number)) FILTER ( \
-                    WHERE floor(c.number) > COALESCE(rp.last_read_whole_number, 0) \
-                      AND NOT (c.number <> floor(c.number) \
-                               AND rp.last_read_part_number IS NOT NULL \
-                               AND c.number <= rp.last_read_part_number) \
-                  ), 0) AS unread, \
-                  max(c.discovered_at) AS latest_chapter_at \
+           SELECT COALESCE(count(DISTINCT floor(c.number)), 0) AS unread \
            FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
            WHERE ss.series_id = w.series_id \
+             AND floor(c.number) > COALESCE(rp.last_read_whole_number, 0) \
+             AND NOT (c.number <> floor(c.number) \
+                      AND rp.last_read_part_number IS NOT NULL \
+                      AND c.number <= rp.last_read_part_number) \
          ) ch \
+         CROSS JOIN LATERAL ( \
+           SELECT max((SELECT max(c.discovered_at) FROM chapters c \
+                       WHERE c.series_source_id = ss.id)) AS latest_chapter_at \
+           FROM series_sources ss WHERE ss.series_id = w.series_id \
+         ) la \
          CROSS JOIN LATERAL ( \
            SELECT COALESCE((array_agg(ss.state <> 'active' OR p.state <> 'active' \
                                       ORDER BY ss.chapter_count DESC, \
@@ -219,7 +232,7 @@ pub(super) async fn fetch_groups(
                            WHERE sa.series_id = w.series_id \
                              AND a.name ILIKE $3)) \
            AND (NOT $4::boolean OR ch.unread > 0) \
-           AND ($5::timestamptz IS NULL OR ch.latest_chapter_at >= $5) \
+           AND ($5::timestamptz IS NULL OR la.latest_chapter_at >= $5) \
            AND (NOT $6::boolean OR src.source_degraded) \
            AND ($7::uuid IS NULL OR w.series_id = $7) \
          GROUP BY 1",

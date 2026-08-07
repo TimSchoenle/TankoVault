@@ -15,10 +15,16 @@
 //! on bare `[data-theme]`/`[data-accent]` attributes rather than `:root[…]`, so they cascade
 //! from there unchanged.
 //!
-//! What is stored on disk is the server URL and the appearance preferences. **The access token
-//! is not, and must not be** — it lives in memory for exactly as long as the process does, which
-//! is the property the web build's CSP rules exist to protect. Having a filesystem is not a
-//! reason to weaken it.
+//! What the settings file holds is the server URL and the appearance preferences, and nothing
+//! else. **The access token is not in it, and must not be** — it lives in memory for exactly as
+//! long as the process does, which is the property the web build's CSP rules exist to protect.
+//! Having a filesystem is not a reason to weaken it.
+//!
+//! The refresh credential *is* kept between runs, but never as a file: it goes to the OS
+//! credential store through [`credential_get`] and friends, which is the one place on a desktop
+//! that offers what the browser's cookie jar offers on the other side — encryption at rest under
+//! the user's login, and access scoped to their account rather than to anything that can read
+//! their config directory. See `crate::api::session_store` for what is written there.
 
 use dioxus::prelude::*;
 use futures_util::StreamExt as _;
@@ -94,7 +100,9 @@ impl Settings {
 }
 
 /// Where the settings document lives, shown on the connection screen so an operator can find —
-/// or delete — the one thing this app writes outside its install directory.
+/// or delete — the one *file* this app writes outside its install directory. The other thing it
+/// writes is the refresh credential, which is not a file and is not here; it is an entry in the
+/// OS credential store, and signing out removes it (see [`credential_delete`]).
 pub(crate) fn settings_path() -> Option<PathBuf> {
     settings().read().ok()?.path.clone()
 }
@@ -117,6 +125,101 @@ pub(crate) fn store_remove(key: &str) {
     };
     settings.values.remove(key);
     settings.flush();
+}
+
+// ---------------------------------------------------------------------------------------------
+// OS credential store
+// ---------------------------------------------------------------------------------------------
+
+/// The service name every entry is filed under — what the reader sees next to the secret in the
+/// Windows Credential Manager or Seahorse, and what they delete to sign the app out from outside
+/// it.
+const KEYRING_SERVICE: &str = "TankoVault";
+
+/// One unit of work for the credential thread. `Get` carries its own reply channel because the
+/// caller has to wait for the answer; the other two are fire-and-forget.
+enum CredentialRequest {
+    Get(String, std::sync::mpsc::Sender<Option<String>>),
+    Set(String, String),
+    Delete(String),
+}
+
+/// The one thread every credential-store call is funnelled through. **Do not inline these calls
+/// at the call site.** Two separate things depend on this indirection.
+///
+/// **On Linux it is what stops the process aborting.** The Secret Service backend is
+/// `secret-service`'s blocking API, which is `zbus::blocking`, which is
+/// `tokio::runtime::Runtime::block_on` — because `notify-rust`'s `z-with-tokio` turns on zbus's
+/// `tokio` feature for the whole graph. `block_on` panics when the calling thread is already
+/// inside a runtime ("Cannot start a runtime from within a runtime"), and [`credential_set`] is
+/// called from `reqwest`'s response path, which *is* a runtime worker. This crate builds with
+/// `panic = "abort"`, so that panic is not an error anyone sees — it is the app disappearing
+/// while the reader signs in. A plain OS thread carries no runtime context, so the call is legal
+/// here and nowhere else.
+///
+/// **And it is the ordering guarantee.** One FIFO, not a thread per call: two independently
+/// spawned threads could land a stale write *after* a sign-out's delete and leave a revoked
+/// credential on disk. Reads go through it for the same reason rather than around it.
+fn credentials() -> &'static std::sync::mpsc::Sender<CredentialRequest> {
+    static REQUESTS: OnceLock<std::sync::mpsc::Sender<CredentialRequest>> = OnceLock::new();
+    REQUESTS.get_or_init(|| {
+        let (tx, rx) = std::sync::mpsc::channel::<CredentialRequest>();
+        std::thread::spawn(move || {
+            while let Ok(request) = rx.recv() {
+                match request {
+                    CredentialRequest::Get(account, reply) => {
+                        let secret = entry(&account).and_then(|e| e.get_password().ok());
+                        let _ = reply.send(secret);
+                    }
+                    CredentialRequest::Set(account, secret) => {
+                        if let Some(entry) = entry(&account) {
+                            let _ = entry.set_password(&secret);
+                        }
+                    }
+                    CredentialRequest::Delete(account) => {
+                        if let Some(entry) = entry(&account) {
+                            let _ = entry.delete_credential();
+                        }
+                    }
+                }
+            }
+        });
+        tx
+    })
+}
+
+/// An entry handle, or `None` when the platform has no usable credential store — a headless
+/// Linux session with no Secret Service provider is the ordinary case. Absent is a valid answer
+/// here for the same reason it is for the settings file: the caller's fallback is "signed out",
+/// not an error to interrupt the reader with.
+fn entry(account: &str) -> Option<keyring::Entry> {
+    keyring::Entry::new(KEYRING_SERVICE, account).ok()
+}
+
+/// The secret stored under `account`, or `None` if there is none or the store is unavailable.
+///
+/// Blocks until the credential thread answers. Callers are boot-time only, by design — see
+/// [`credentials`].
+pub(crate) fn credential_get(account: &str) -> Option<String> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    credentials()
+        .send(CredentialRequest::Get(account.to_owned(), tx))
+        .ok()?;
+    rx.recv().ok().flatten()
+}
+
+/// Store `secret` under `account`, replacing whatever was there. Queued; a refusal is silent.
+pub(crate) fn credential_set(account: &str, secret: &str) {
+    let _ = credentials().send(CredentialRequest::Set(
+        account.to_owned(),
+        secret.to_owned(),
+    ));
+}
+
+/// Forget `account` entirely. Queued behind any pending write for that account, which is what
+/// makes a sign-out final rather than a race.
+pub(crate) fn credential_delete(account: &str) {
+    let _ = credentials().send(CredentialRequest::Delete(account.to_owned()));
 }
 
 // ---------------------------------------------------------------------------------------------

@@ -25,6 +25,12 @@ const EXPORTED: &[(&str, &str)] = &[
     ("series_sync_overrides", "sync_overrides"),
     ("sync_conflicts", "sync_conflicts"),
     ("sync_history", "sync_history"),
+    // The operator-facing journal of what the sync engine decided *about this subject*: their
+    // reading progress before and after every write, the values it compared against, and the
+    // remote entries it matched them to. `sync_history` is the same events as the subject sees
+    // them; this is the same events with the reasoning attached, and Art. 15(1)(h) asks about
+    // exactly the reasoning.
+    ("sync_decisions", "sync_decisions"),
     ("audit_log", "audit_entries"),
     ("user_permissions", "permissions"),
     ("gdpr_requests", "privacy_requests"),
@@ -63,22 +69,44 @@ const NOT_EXPORTED: &[(&str, &str)] = &[
         "an idempotency guard, not a record about the person: every (series, chapter) in it is \
          already visible in `notifications`, which is exported",
     ),
+    (
+        "merge_decisions",
+        "a record about the *catalogue* — which two series the sweep judged the same work, and \
+         why. The subject appears only as the operator who triggered, reverted or flagged a \
+         decision, and each of those is a privileged action that already writes the subject's \
+         own `audit_log` row, which is exported",
+    ),
 ];
 
-/// Tables the live schema says reference a user, via `user_id` or (for `audit_log`) `actor_id`.
-async fn tables_referencing_a_user(db: &TestDb) -> BTreeSet<String> {
-    let rows: Vec<String> = sqlx::query_scalar(
-        "SELECT DISTINCT table_name::text FROM information_schema.columns \
+/// Every `(table, column)` in the live schema that names a user: `user_id` or `actor_id`.
+///
+/// The column travels with the table rather than being re-derived from its name at each use. A
+/// heuristic that assumed `user_id` for everything but `audit_log` looked right for years and
+/// then failed on the first *other* table to name its column `actor_id` — reporting a schema
+/// error, but only because the column was missing; had that table happened to hold a `user_id`
+/// as well, it would have silently checked the wrong one.
+async fn columns_referencing_a_user(db: &TestDb) -> BTreeSet<(String, String)> {
+    let rows: Vec<(String, String)> = sqlx::query_as(
+        "SELECT table_name::text, column_name::text FROM information_schema.columns \
          WHERE table_schema = 'public' AND column_name IN ('user_id', 'actor_id')",
     )
     .fetch_all(&db.pool)
     .await
     .expect("read the live schema");
 
-    let mut tables: BTreeSet<String> = rows.into_iter().collect();
+    let mut columns: BTreeSet<(String, String)> = rows.into_iter().collect();
     // `users` itself holds no `user_id`; it is the subject.
-    tables.insert("users".to_owned());
-    tables
+    columns.insert(("users".to_owned(), "id".to_owned()));
+    columns
+}
+
+/// The tables of [`columns_referencing_a_user`], for the checks that ask only "which tables".
+async fn tables_referencing_a_user(db: &TestDb) -> BTreeSet<String> {
+    columns_referencing_a_user(db)
+        .await
+        .into_iter()
+        .map(|(table, _)| table)
+        .collect()
 }
 
 async fn seed_subject(db: &TestDb, name: &str) -> UserId {
@@ -316,14 +344,7 @@ async fn erasing_a_subject_leaves_no_row_referencing_them_anywhere() {
     // does not.
     let pseudonymised = ["audit_log", "gdpr_requests"];
 
-    for table in tables_referencing_a_user(&db).await {
-        let column = if table == "audit_log" {
-            "actor_id"
-        } else if table == "users" {
-            "id"
-        } else {
-            "user_id"
-        };
+    for (table, column) in columns_referencing_a_user(&db).await {
         let sql = format!("SELECT count(*) FROM {table} WHERE {column} = $1");
         let remaining: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(sql))
             .bind(subject.as_uuid())

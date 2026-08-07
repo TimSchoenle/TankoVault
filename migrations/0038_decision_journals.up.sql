@@ -26,7 +26,10 @@ CREATE TABLE merge_decisions (
   sweep_id    uuid,
   -- 'sweep_new' | 'sweep_requeue' | 'sweep_recheck' | 'operator'
   trigger     text NOT NULL,
-  actor       uuid REFERENCES users(id) ON DELETE SET NULL,
+  -- Named `actor_id`, not `actor`, so `repo_privacy.rs` enumerates this table from the live
+  -- schema and forces a decision about whether it is exported. A column named around that guard
+  -- is a table that silently escapes it.
+  actor_id    uuid REFERENCES users(id) ON DELETE SET NULL,
 
   left_id     uuid NOT NULL,
   right_id    uuid NOT NULL,

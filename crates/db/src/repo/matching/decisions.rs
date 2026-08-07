@@ -81,7 +81,7 @@ pub async fn record_merge_decision<'e, E: PgExecutor<'e>>(
     let id = Uuid::now_v7();
     sqlx::query!(
         "INSERT INTO merge_decisions \
-            (id, sweep_id, trigger, actor, left_id, right_id, left_title, right_title, \
+            (id, sweep_id, trigger, actor_id, left_id, right_id, left_title, right_title, \
              verdict, reason, blocked_by, outcome, survivor_id, absorbed_id, \
              score, base_score, signals, terms, evidence, policy, undo) \
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)",
@@ -216,7 +216,7 @@ pub async fn list_merge_decisions<'e, E: PgExecutor<'e>>(
     // of leaving `undo` out of the projection is not to ship it to the caller at all.
     let rows = sqlx::query_as!(
         Row,
-        "SELECT d.id, d.decided_at, d.sweep_id, d.trigger, d.actor, \
+        "SELECT d.id, d.decided_at, d.sweep_id, d.trigger, d.actor_id AS actor, \
                 d.left_id, d.right_id, d.left_title, d.right_title, \
                 d.verdict, d.reason, d.blocked_by, d.outcome, d.survivor_id, d.absorbed_id, \
                 d.score, d.base_score, d.signals, d.terms, d.evidence, d.policy, \

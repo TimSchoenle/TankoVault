@@ -546,11 +546,14 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # Built and contract-checked *before* it is pushed, in two `build-push-action` calls rather
-      # than one. The second call is a cache hit against the same buildkit instance — it re-exports
-      # and uploads, it does not recompile — so the cost of the split is an upload, and what it
-      # buys is that nothing reaches a registry until `container-structure-test` has passed
-      # against the exact artefact.
+      # The by-digest push below is a registry call on the publishing path, so it goes through the
+      # same wrapper the `manifest` job uses. See the action for the two releases that paid for it.
+      - uses: ./.github/actions/registry-retry
+
+      # Built and contract-checked *before* it is pushed, in two builds rather than one. The second
+      # is a cache hit against the same buildkit instance — it re-exports and uploads, it does not
+      # recompile — so the cost of the split is an upload, and what it buys is that nothing reaches
+      # a registry until `container-structure-test` has passed against the exact artefact.
       #
       # This is not redundant with `ci.yml`, which is the reason it survives here: `ci.yml`'s
       # arm64 job covers `api` and `render` only, so these legs are the only place the other
@@ -620,33 +623,69 @@ jobs:
       # under. It then recompiles the entire workspace: measured at 24 minutes on release v1.5.2,
       # on all eighteen legs, against a `builder` the warm-up above had imported in 28 seconds and
       # the structure-test build 40 lines up had just hit. Passing it as an explicit `--build-arg`
-      # has the identical effect; the two are the same wire format.
+      # has the identical effect; the two are the same wire format. That is also why the variable
+      # is not named in this step: it is inherited, and buildx reads it from the environment.
+      #
+      # `docker buildx build` under the retry helper rather than `docker/build-push-action`,
+      # because a `uses:` step cannot be retried and this is the call that failed v2.1.0 —
+      # `failed to fetch oauth token: denied: denied`, GHCR's throttle response, after seventeen
+      # sibling legs had pushed to the same registry inside ninety seconds. The flags below are the
+      # command line the action itself emitted, and a push is idempotent, so a retry re-uploads
+      # only what did not land. Retrying a *build* failure would be the objection, and it cannot
+      # arise: the structure-test build above compiled and loaded this exact target, so by here the
+      # solve is a local cache hit and only the export can fail.
       - name: push ${{ matrix.bin }} (${{ matrix.arch }}) by digest
         id: build
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
-        with:
-          context: .
-          file: deploy/docker/Dockerfile
-          target: ${{ steps.params.outputs.target }}
-          platforms: linux/${{ matrix.arch }}
-          build-args: |
-            BIN=${{ matrix.bin }}
-          outputs: |
-            type=image,name=docker.io/${{ steps.params.outputs.dockerhub }},push-by-digest=true,name-canonical=true,push=true,rewrite-timestamp=true
-            type=image,name=${{ steps.params.outputs.ghcr }},push-by-digest=true,name-canonical=true,push=true,rewrite-timestamp=true
-          # `provenance: false` matches ci.yml and is a deliberate reproducibility trade: an
-          # attestation layer carries build timestamps, which breaks byte-identical rebuilds.
-          # The SBOM attested in the `manifest` job compensates.
-          provenance: false
-          # Read only, and the same tags as the step above — this is a hit against the local
-          # buildkit instance, so it re-exports and uploads rather than recompiling. Nine legs
-          # exporting `mode=max` would each re-upload the whole imported layer chain into a tag
-          # CI also reads, and a release build is the one build that must not poison that.
-          cache-from: |
-            type=registry,ref=${{ steps.params.outputs.buildcache }}:release-deps-${{ matrix.arch }}
-            type=registry,ref=${{ steps.params.outputs.buildcache }}:release-pr-deps-${{ matrix.arch }}
-            type=registry,ref=${{ steps.params.outputs.buildcache }}:backend-deps-${{ matrix.arch }}
-            ${{ matrix.bin == 'frontend' && format('type=registry,ref={0}:frontend-deps-{1}', steps.params.outputs.buildcache, matrix.arch) || '' }}
+        env:
+          BIN: ${{ matrix.bin }}
+          ARCH: ${{ matrix.arch }}
+          TARGET: ${{ steps.params.outputs.target }}
+          DOCKERHUB_IMAGE: docker.io/${{ steps.params.outputs.dockerhub }}
+          GHCR_IMAGE: ${{ steps.params.outputs.ghcr }}
+          BUILDCACHE: ${{ steps.params.outputs.buildcache }}
+        run: |
+          set -euo pipefail
+
+          # Read only, and the same tags as the structure-test build above — this is a hit against
+          # the local buildkit instance, so it re-exports and uploads rather than recompiling.
+          # Eighteen legs exporting `mode=max` would each re-upload the whole imported layer chain
+          # into a tag CI also reads, and a release build is the one build that must not poison
+          # that, so there is no `--cache-to` here.
+          cache=(
+            --cache-from "type=registry,ref=${BUILDCACHE}:release-deps-${ARCH}"
+            --cache-from "type=registry,ref=${BUILDCACHE}:release-pr-deps-${ARCH}"
+            --cache-from "type=registry,ref=${BUILDCACHE}:backend-deps-${ARCH}"
+          )
+          if [ "$BIN" = "frontend" ]; then
+            cache+=(--cache-from "type=registry,ref=${BUILDCACHE}:frontend-deps-${ARCH}")
+          fi
+
+          metadata="${RUNNER_TEMP}/push-metadata.json"
+          # `--attest type=provenance,disabled=true` is what `provenance: false` expands to, and it
+          # matches ci.yml: a provenance attestation carries build timestamps, which breaks
+          # byte-identical rebuilds. The SBOM attested in the `manifest` job compensates.
+          "${RUNNER_TEMP}/registry-retry" docker buildx build \
+            --file deploy/docker/Dockerfile \
+            --target "$TARGET" \
+            --platform "linux/${ARCH}" \
+            --build-arg "BIN=${BIN}" \
+            "${cache[@]}" \
+            --attest type=provenance,disabled=true \
+            --output "type=image,name=${DOCKERHUB_IMAGE},push-by-digest=true,name-canonical=true,push=true,rewrite-timestamp=true" \
+            --output "type=image,name=${GHCR_IMAGE},push-by-digest=true,name-canonical=true,push=true,rewrite-timestamp=true" \
+            --metadata-file "$metadata" \
+            .
+
+          # Both exporters push the same content-addressed manifest, so there is exactly one digest
+          # to find — but buildx has reported it both at the root of the metadata document and
+          # under a per-exporter key depending on the version, so this reads either and fails loudly
+          # if the two exporters ever disagree rather than picking one arbitrarily.
+          digest=$(jq -er '
+            [.. | objects | ."containerimage.digest"? // empty] | unique
+            | if length == 1 then .[0]
+              else error("expected one image digest in the metadata, got \(.)") end
+          ' "$metadata")
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
 
       # The digest is what the `manifest` job assembles the list from. Written as an empty file
       # *named* for the digest, which is the conventional shape: artifact merging then yields one
@@ -716,52 +755,10 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       # Every registry call in this job goes through this wrapper, and `repo-lint`'s
-      # `registry-calls-in-publish-retry` rule fails if one is added that does not.
-      #
-      # GHCR answers a throttled token request with `403 Forbidden` / `DENIED` and no
-      # `Retry-After` — byte for byte a permissions failure — so buildx, syft and cosign all treat
-      # the first one as fatal. Nine `publish` legs run concurrently and `ci.yml` reads the same
-      # registry's build cache on the same push, and at v2.0.0 two legs lost that race one second
-      # apart, *after* their images were pushed: `publish api` on the SBOM's pull, and
-      # `publish bootstrap` half way through `imagetools create` — Docker Hub tagged, GHCR not.
-      # The seven whose registry work had finished seconds earlier all passed.
-      #
-      # A real permissions failure still fails the step; it exhausts the schedule first.
-      - name: install the registry retry helper
-        run: |
-          set -euo pipefail
-          cat > "${RUNNER_TEMP}/registry-retry" <<'SH'
-          #!/usr/bin/env bash
-          set -uo pipefail
-          attempts=5
-          delay=5
-          attempt=1
-          while :; do
-            status=0
-            "$@" || status=$?
-            if [ "$status" -eq 0 ]; then
-              exit 0
-            fi
-            if [ "$attempt" -ge "$attempts" ]; then
-              echo "::error::${1} failed ${attempts} times against the registry (exit ${status})" >&2
-              exit "$status"
-            fi
-            echo "::warning::${1} failed (attempt ${attempt}/${attempts}, exit ${status}); retrying" >&2
-            # Jittered, and both messages go to stderr. All nine legs meet the same quota at the
-            # same instant, so a fixed schedule would only re-synchronise them onto the next one;
-            # and a caller reads this wrapper's stdout in a command substitution.
-            sleep "$(( delay + RANDOM % delay ))"
-            attempt=$(( attempt + 1 ))
-            # Clamped, because a genuinely broken registry has to fail this job with the message
-            # above rather than with the job's `timeout-minutes`: seven calls each backing off
-            # unbounded would outlast it and report nothing.
-            delay=$(( delay * 2 ))
-            if [ "$delay" -gt 20 ]; then
-              delay=20
-            fi
-          done
-          SH
-          chmod +x "${RUNNER_TEMP}/registry-retry"
+      # `registry-calls-in-publish-retry` rule fails if one is added that does not. The action
+      # carries the incidents that paid for it; a real permissions failure still fails the step,
+      # it just exhausts the schedule first.
+      - uses: ./.github/actions/registry-retry
 
       - name: download this image's digests
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1

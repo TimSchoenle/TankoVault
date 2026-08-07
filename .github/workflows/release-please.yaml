@@ -1038,14 +1038,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # The flag is repeated per type rather than given a comma-separated list, because that
-          # is the form actually verified against `dx bundle`.
           - os: windows
             runner: windows-latest
-            packages: --package-types msi --package-types nsis
           - os: linux
             runner: ubuntu-latest
-            packages: --package-types deb --package-types appimage
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
@@ -1112,12 +1108,32 @@ jobs:
       # `assets/main.css` is the committed Tailwind output, and `ci.yml`'s `css` job fails the
       # merge if it is stale — so the file at this tag is current and there is no reason to put
       # Node on the path that builds a signed-off artifact.
+      #
+      # The package types are resolved from one `case` rather than interpolated from the matrix,
+      # for the reason the `build` job resolves its image parameters that way: a `${{ … }}` inside
+      # a `run:` block is expanded into the script *before* the shell sees it, so the value is
+      # code rather than data — flagged by zizmor (`template-injection`) whether or not the
+      # particular value is under anyone's control. An unknown `os` fails loudly instead of
+      # bundling nothing.
+      #
+      # The flag is repeated per type rather than given a comma-separated list, because that is
+      # the form verified against `dx bundle`; a bash array so nothing depends on word splitting.
       - name: bundle
         working-directory: web/frontend
         env:
           TANKOVAULT_COMMIT: ${{ github.sha }}
+          OS: ${{ matrix.os }}
         shell: bash
-        run: dx bundle --platform desktop --release --no-default-features --features desktop ${{ matrix.packages }} --out-dir dist
+        run: |
+          set -euo pipefail
+          case "$OS" in
+            windows) types=(--package-types msi --package-types nsis) ;;
+            linux)   types=(--package-types deb --package-types appimage) ;;
+            *)       echo "::error::no package types are defined for os ${OS}"; exit 1 ;;
+          esac
+          dx bundle --platform desktop --release \
+            --no-default-features --features desktop \
+            "${types[@]}" --out-dir dist
 
       # The unpacked app beside the installers, for people who would rather not run one.
       #

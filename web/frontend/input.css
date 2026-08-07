@@ -177,6 +177,24 @@ a { color: inherit; text-decoration: none; }
  * App shell — sidebar rail + top command bar (DESIGN_SPEC §6.1)
  * ========================================================================== */
 .ik-app { display: grid; grid-template-columns: var(--rail-w) 1fr; min-height: 100vh; }
+/* The desktop build's outermost element (`app::AppRoot`), which the web build never renders.
+ *
+ * It exists because Rust cannot reach `<html>` in a wry webview, so the `data-theme`/`data-accent`
+ * attributes live here instead — the rules below select on bare attributes, so they cascade from
+ * this element just as well. It therefore has to carry the page fill itself: `body`'s own
+ * `var(--bg)` resolves against `:root` and stays dark under Warm Paper.
+ *
+ * `flow-root` is load-bearing, not tidying. Without a block formatting context the first child's
+ * top margin collapses *out* through this element — `.ik-auth` has `margin: 9vh auto` — and that
+ * strip is then painted by `body`, in the wrong colour. It shipped as a dark band across the top
+ * of the connection screen. */
+.ik-desktop-root {
+  display: flow-root;
+  min-height: 100dvh;
+  background: var(--bg);
+  color: var(--text);
+  overscroll-behavior: none;
+}
 
 /* Skip-to-content: off-screen until focused, then pinned over the rail. The rail is ~10
    focusable stops ahead of the content on every route, so this is the difference between one

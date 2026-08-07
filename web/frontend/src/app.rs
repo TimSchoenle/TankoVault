@@ -147,19 +147,19 @@ fn Connected() -> Element {
 /// attribute selectors (`[data-theme="light"]`, not `:root[data-theme="light"]`), so they apply
 /// from here just as well.
 ///
-/// The wrapper carries the page background too, because `body`'s own `var(--bg)` resolves
-/// against `:root` and would stay dark under a light theme. `display: flow-root` is what makes
-/// that hold: without a block formatting context the first child's top margin collapses *out*
-/// through this element — `.ik-auth` has `margin: 9vh auto` — and that strip is then painted by
-/// `body`, which is the wrong colour. It rendered as a dark band across the top of the
-/// connection screen under Warm Paper.
+/// It also carries the page fill; `.ik-desktop-root` in `input.css` says why, and why the
+/// formatting context it establishes is load-bearing rather than tidying.
+///
+/// A named class rather than the inline `style:` this codebase usually reaches for: the Tailwind
+/// CLI scans these sources for class names, and `display:flow-root` in a style string is enough
+/// for it to mint a phantom `.flow-root` utility nothing renders.
 #[cfg(feature = "desktop")]
 #[component]
 fn AppRoot(children: Element) -> Element {
     let attributes = crate::platform::ROOT_ATTRIBUTES.read().clone();
     rsx! {
         div {
-            style: "display:flow-root;min-height:100dvh;background:var(--bg);color:var(--text);overscroll-behavior:none;",
+            class: "ik-desktop-root",
             lang: attributes.get("lang"),
             "data-theme": attributes.get("data-theme"),
             "data-accent": attributes.get("data-accent"),

@@ -715,6 +715,54 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      # Every registry call in this job goes through this wrapper, and `repo-lint`'s
+      # `registry-calls-in-publish-retry` rule fails if one is added that does not.
+      #
+      # GHCR answers a throttled token request with `403 Forbidden` / `DENIED` and no
+      # `Retry-After` — byte for byte a permissions failure — so buildx, syft and cosign all treat
+      # the first one as fatal. Nine `publish` legs run concurrently and `ci.yml` reads the same
+      # registry's build cache on the same push, and at v2.0.0 two legs lost that race one second
+      # apart, *after* their images were pushed: `publish api` on the SBOM's pull, and
+      # `publish bootstrap` half way through `imagetools create` — Docker Hub tagged, GHCR not.
+      # The seven whose registry work had finished seconds earlier all passed.
+      #
+      # A real permissions failure still fails the step; it exhausts the schedule first.
+      - name: install the registry retry helper
+        run: |
+          set -euo pipefail
+          cat > "${RUNNER_TEMP}/registry-retry" <<'SH'
+          #!/usr/bin/env bash
+          set -uo pipefail
+          attempts=5
+          delay=5
+          attempt=1
+          while :; do
+            status=0
+            "$@" || status=$?
+            if [ "$status" -eq 0 ]; then
+              exit 0
+            fi
+            if [ "$attempt" -ge "$attempts" ]; then
+              echo "::error::${1} failed ${attempts} times against the registry (exit ${status})" >&2
+              exit "$status"
+            fi
+            echo "::warning::${1} failed (attempt ${attempt}/${attempts}, exit ${status}); retrying" >&2
+            # Jittered, and both messages go to stderr. All nine legs meet the same quota at the
+            # same instant, so a fixed schedule would only re-synchronise them onto the next one;
+            # and a caller reads this wrapper's stdout in a command substitution.
+            sleep "$(( delay + RANDOM % delay ))"
+            attempt=$(( attempt + 1 ))
+            # Clamped, because a genuinely broken registry has to fail this job with the message
+            # above rather than with the job's `timeout-minutes`: seven calls each backing off
+            # unbounded would outlast it and report nothing.
+            delay=$(( delay * 2 ))
+            if [ "$delay" -gt 20 ]; then
+              delay=20
+            fi
+          done
+          SH
+          chmod +x "${RUNNER_TEMP}/registry-retry"
+
       - name: download this image's digests
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -773,7 +821,7 @@ jobs:
             done
             # shellcheck disable=SC2086 -- word splitting is how the accumulated
             # strings become separate arguments; none of the values contain whitespace.
-            docker buildx imagetools create ${tag_args} ${sources}
+            "${RUNNER_TEMP}/registry-retry" docker buildx imagetools create ${tag_args} ${sources}
           done
 
       # Resolve the manifest **list** digest after creation. This is what gets signed: signing a
@@ -786,8 +834,10 @@ jobs:
           TAG: ${{ needs.release-please.outputs.tag_name }}
         run: |
           set -euo pipefail
-          dockerhub=$(docker buildx imagetools inspect "${DOCKERHUB_IMAGE}:${TAG}" --format '{{println .Manifest.Digest}}' | head -n1)
-          ghcr=$(docker buildx imagetools inspect "${GHCR_IMAGE}:${TAG}" --format '{{println .Manifest.Digest}}' | head -n1)
+          # Spelled out at each call site rather than through a local alias, because that is what
+          # `repo-lint`'s `registry-calls-in-publish-retry` rule reads.
+          dockerhub=$("${RUNNER_TEMP}/registry-retry" docker buildx imagetools inspect "${DOCKERHUB_IMAGE}:${TAG}" --format '{{println .Manifest.Digest}}' | head -n1)
+          ghcr=$("${RUNNER_TEMP}/registry-retry" docker buildx imagetools inspect "${GHCR_IMAGE}:${TAG}" --format '{{println .Manifest.Digest}}' | head -n1)
           {
             echo "dockerhub=${dockerhub}"
             echo "ghcr=${ghcr}"
@@ -816,6 +866,19 @@ jobs:
           path: /tmp/list-digests/*
           if-no-files-found: error
           retention-days: 1
+
+      # The step below is a registry call with no retry of its own, and it is the one that failed
+      # `publish api` at v2.0.0. syft resolves a plain reference through the local Docker daemon
+      # *before* it tries the registry, so pulling here is what puts that round trip behind the
+      # helper. The SBOM describes the same bytes either way: both paths resolve the
+      # multi-architecture list to this runner's own platform.
+      - name: pull the published image for the SBOM
+        env:
+          GHCR_IMAGE: ${{ steps.names.outputs.ghcr }}
+          TAG: ${{ needs.release-please.outputs.tag_name }}
+        run: |
+          set -euo pipefail
+          "${RUNNER_TEMP}/registry-retry" docker pull "${GHCR_IMAGE}:${TAG}"
 
       # A `scratch` image defeats every package-manager-based scanner: there is no apt/apk
       # database, so a running container cannot be mapped back to its dependency set at all.
@@ -890,8 +953,8 @@ jobs:
         run: |
           set -euo pipefail
           token="${RUNNER_TEMP}/cosign-oidc-token"
-          cosign sign --yes --recursive --identity-token "$token" "${DOCKERHUB_IMAGE}@${DOCKERHUB_DIGEST}"
-          cosign sign --yes --recursive --identity-token "$token" "${GHCR_IMAGE}@${GHCR_DIGEST}"
+          "${RUNNER_TEMP}/registry-retry" cosign sign --yes --recursive --identity-token "$token" "${DOCKERHUB_IMAGE}@${DOCKERHUB_DIGEST}"
+          "${RUNNER_TEMP}/registry-retry" cosign sign --yes --recursive --identity-token "$token" "${GHCR_IMAGE}@${GHCR_DIGEST}"
 
       - name: attest the SBOM against the published digests
         env:
@@ -903,8 +966,8 @@ jobs:
         run: |
           set -euo pipefail
           token="${RUNNER_TEMP}/cosign-oidc-token"
-          cosign attest --yes --identity-token "$token" --predicate "$SBOM" --type spdxjson "${DOCKERHUB_IMAGE}@${DOCKERHUB_DIGEST}"
-          cosign attest --yes --identity-token "$token" --predicate "$SBOM" --type spdxjson "${GHCR_IMAGE}@${GHCR_DIGEST}"
+          "${RUNNER_TEMP}/registry-retry" cosign attest --yes --identity-token "$token" --predicate "$SBOM" --type spdxjson "${DOCKERHUB_IMAGE}@${DOCKERHUB_DIGEST}"
+          "${RUNNER_TEMP}/registry-retry" cosign attest --yes --identity-token "$token" --predicate "$SBOM" --type spdxjson "${GHCR_IMAGE}@${GHCR_DIGEST}"
 
   # The hand-off to the deployable chart: pin the services this run published in
   # `TimSchoenle/helm-charts` to their new digests, and open a pull request there. It is a pull

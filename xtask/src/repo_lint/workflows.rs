@@ -594,6 +594,115 @@ pub(super) fn the_build_epoch_is_one_constant(root: &Path) -> anyhow::Result<Vec
     Ok(findings)
 }
 
+/// **Every registry command in the `manifest` job of `release-please.yaml` runs through the retry
+/// helper.** GHCR reports a throttled token request as `403 Forbidden` / `DENIED` with no
+/// `Retry-After` — indistinguishable from a permissions failure — so buildx, syft and cosign all
+/// give up on the first response.
+///
+/// Nine `publish` legs run concurrently, and `ci.yml` reads the same registry's build cache on the
+/// same push. At v2.0.0 two legs lost that race one second apart, each *after* its image was
+/// pushed: `publish api` on the SBOM's pull, and `publish bootstrap` between the two
+/// `imagetools create` calls — which left Docker Hub carrying `v2.0.0` and GHCR not. The seven
+/// legs whose registry work had finished seconds earlier all passed, which is what makes this
+/// recur silently: it looks like a flake, it is load, and the next call added without the wrapper
+/// brings it back on a release nobody is watching.
+///
+/// Scoped to the one job on purpose. `plan`'s `imagetools inspect` probes are *deliberately*
+/// unretried: a failed probe there means "not published yet", which is a legitimate answer that a
+/// retry would only make expensive.
+pub(super) fn registry_calls_in_publish_retry(root: &Path) -> anyhow::Result<Vec<Finding>> {
+    const RULE: &str = "registry-calls-in-publish-retry";
+    /// The job whose every registry call is on the publishing path.
+    const JOB: &str = "manifest";
+    /// The helper each of them is invoked through, by the name it is written and called under.
+    const HELPER: &str = "registry-retry";
+    /// Commands that reach a registry, in the spellings this workflow uses.
+    const REGISTRY_COMMANDS: [&str; 4] = [
+        "docker buildx imagetools",
+        "docker pull",
+        "cosign sign",
+        "cosign attest",
+    ];
+
+    let path = root.join(PUBLISH_WORKFLOW);
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        anyhow::bail!("repo-lint: cannot read {}", path.display());
+    };
+
+    let mut findings = Vec::new();
+    let mut calls = 0_usize;
+    let mut installed = false;
+    for (index, line) in job_lines(&text, JOB) {
+        if !line.contains(HELPER) {
+            let Some(command) = REGISTRY_COMMANDS
+                .iter()
+                .find(|command| line.contains(**command))
+            else {
+                continue;
+            };
+            findings.push(Finding {
+                rule: RULE,
+                file: PathBuf::from(PUBLISH_WORKFLOW),
+                line: index,
+                detail: format!(
+                    "`{command}` runs without `{HELPER}`; GHCR reports throttling as a bare 403, \
+                     so one unwrapped call fails a release after its images are already pushed"
+                ),
+            });
+            continue;
+        }
+        installed |= line.contains("chmod +x");
+        calls += usize::from(
+            REGISTRY_COMMANDS
+                .iter()
+                .any(|command| line.contains(*command)),
+        );
+    }
+
+    // Neither half can be allowed to become a no-op: a renamed helper would pass the loop above
+    // while wrapping nothing, and a `manifest` job with no registry call is not this job.
+    if !installed || calls == 0 {
+        findings.push(Finding {
+            rule: RULE,
+            file: PathBuf::from(PUBLISH_WORKFLOW),
+            line: 0,
+            detail: format!(
+                "the `{JOB}` job installs `{HELPER}` on {installed} and makes {calls} call(s) \
+                 through it, so this rule checks nothing; if either was renamed, rename it in \
+                 xtask/src/repo_lint/workflows.rs too"
+            ),
+        });
+    }
+    Ok(findings)
+}
+
+/// The non-comment, non-empty lines of one top-level job, each with its 1-based line number.
+///
+/// Jobs are the only two-space-indented keys in these files, so the next one of those ends the
+/// job — which is what keeps the rule off `plan`'s deliberately unretried probes.
+fn job_lines<'text>(text: &'text str, job: &str) -> Vec<(usize, &'text str)> {
+    let header = format!("  {job}:");
+    let mut inside = false;
+    let mut lines = Vec::new();
+    for (index, line) in text.lines().enumerate() {
+        if line.trim_end() == header {
+            inside = true;
+            continue;
+        }
+        if inside
+            && line.starts_with("  ")
+            && !line.starts_with("   ")
+            && line.trim_end().ends_with(':')
+        {
+            break;
+        }
+        if inside && !is_comment(line) && !line.trim().is_empty() {
+            lines.push((index + 1, line));
+        }
+    }
+    lines
+}
+
 /// The value of one key in a workflow's **top-level** `env:` block, and the line it is on.
 ///
 /// Top-level only: an `env:` nested under a job or a step is the override this rule reports, so
@@ -694,6 +803,47 @@ mod tests {
         // The no-op guard: a renamed file leaves nothing to check, which the rule reports rather
         // than passing silently.
         assert!(oidc_token_writes("          printf '%s' \"$token\" > \"$other\"").is_empty());
+    }
+
+    /// The bug this pins: release 2.0.0 published seven of nine images. GHCR reports a throttled
+    /// token request as `403 Forbidden` / `DENIED` with no `Retry-After`, which is the same
+    /// response as a permissions failure, so nothing retried it — `publish api` died on the SBOM's
+    /// pull and `publish bootstrap` between the two `imagetools create` calls, both *after* their
+    /// images had been pushed, one second apart, while the seven legs that had finished their
+    /// registry work moments earlier all passed.
+    ///
+    /// The rule has to stay inside the `manifest` job: `plan` probes the registry with the same
+    /// `imagetools` command and is deliberately unretried, because a failed probe there is the
+    /// legitimate answer "not published yet".
+    #[test]
+    fn a_registry_call_added_without_the_retry_helper_is_caught() {
+        let workflow = "\
+jobs:\n  \
+plan:\n    \
+steps:\n      \
+- run: docker buildx imagetools inspect \"$IMAGE:$TAG\"\n  \
+manifest:\n    \
+steps:\n      \
+- run: chmod +x \"${RUNNER_TEMP}/registry-retry\"\n      \
+# a comment naming docker pull is prose, not a call\n      \
+- run: \"${RUNNER_TEMP}/registry-retry\" docker buildx imagetools create --tag \"$TAG\"\n      \
+- run: docker pull \"$IMAGE:$TAG\"\n  \
+summary:\n    \
+steps:\n      \
+- run: cosign sign --yes \"$IMAGE@$DIGEST\"\n";
+
+        let lines = job_lines(workflow, "manifest");
+        // `plan`'s probe above and `summary`'s call below are outside the job, and the comment is
+        // not a call — so the one unwrapped `docker pull` is all that is left to report.
+        let unwrapped: Vec<usize> = lines
+            .iter()
+            .filter(|(_, line)| line.contains("docker pull"))
+            .map(|(index, _)| *index)
+            .collect();
+        assert_eq!(unwrapped, vec![10]);
+        assert!(lines.iter().any(|(_, line)| line.contains("chmod +x")));
+        assert!(!lines.iter().any(|(_, line)| line.contains("cosign sign")));
+        assert!(!lines.iter().any(|(_, line)| line.contains("inspect")));
     }
 
     /// The bug this pins, in both of the shapes it has taken. Release 1.5.1 passed

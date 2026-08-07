@@ -12,6 +12,25 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [2.1.0](https://github.com/TimSchoenle/TankoVault/compare/v2.0.0...v2.1.0) (2026-08-07)
+
+
+### Features
+
+* **frontend:** keep the desktop refresh credential in the OS keyring ([#121](https://github.com/TimSchoenle/TankoVault/issues/121)) ([3c895ed](https://github.com/TimSchoenle/TankoVault/commit/3c895ed83d1f187b3d7acafa588c600e53414e09))
+
+
+### Bug Fixes
+
+* **ci:** make the desktop release actually ship ([#124](https://github.com/TimSchoenle/TankoVault/issues/124)) ([906a49f](https://github.com/TimSchoenle/TankoVault/commit/906a49f71d6e16d257ad2b27a4675945c6617cde))
+* **ci:** retry the release's registry calls past GHCR throttling ([#128](https://github.com/TimSchoenle/TankoVault/issues/128)) ([7f27c14](https://github.com/TimSchoenle/TankoVault/commit/7f27c145c45f1d47f1251529e14e2369be0f1e28))
+* **frontend:** size result grids to the window so a page fills whole rows ([#122](https://github.com/TimSchoenle/TankoVault/issues/122)) ([79e13f9](https://github.com/TimSchoenle/TankoVault/commit/79e13f9793849a7faa56b3afcc10618f81e1d1f2))
+
+
+### Performance Improvements
+
+* **db:** make the watchlist load in one page's worth of work, and count one source per provider ([#125](https://github.com/TimSchoenle/TankoVault/issues/125)) ([d3011bd](https://github.com/TimSchoenle/TankoVault/commit/d3011bdad8a4e814e750b0d859074007282bbe80))
+
 ## [2.0.0](https://github.com/TimSchoenle/TankoVault/compare/v1.5.2...v2.0.0) (2026-08-07)
 
 

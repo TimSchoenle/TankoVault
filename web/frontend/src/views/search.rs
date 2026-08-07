@@ -1,7 +1,9 @@
 //! Search (`DESIGN_SPEC` §7.6) — a trigram-backed query passed straight to the API.
 
 use crate::api;
-use crate::components::{async_list, CoverCard, SkeletonGrid};
+use crate::components::{
+    async_list, unmeasured, use_grid_fill, CoverCard, GridFitProbe, SkeletonGrid,
+};
 use crate::hooks::use_reload;
 use crate::i18n::use_i18n;
 use dioxus::prelude::*;
@@ -21,15 +23,23 @@ pub(crate) fn Search(q: String) -> Element {
     let reload = use_reload();
     let i18n = use_i18n();
     let api = api::use_api();
+    // This screen has no pager, so the result set *is* one page: as many whole rows of covers as
+    // the ceiling allows, rather than a fixed 60 that ends in a ragged row at most widths.
+    let fit = use_grid_fill();
     let resource = use_resource(move || {
         let q = q_state.read().clone();
         reload.track();
+        let limit = fit.page_size();
         let client = api.client();
         async move {
+            // Parked until the grid is measured; see `crate::components::unmeasured`.
+            let Some(limit) = limit else {
+                return unmeasured().await;
+            };
             client
                 .list()
                 .query(q)
-                .limit(60)
+                .limit(i64::try_from(limit).unwrap_or(60))
                 .send()
                 .await
                 .map(ResponseValue::into_inner)
@@ -46,7 +56,7 @@ pub(crate) fn Search(q: String) -> Element {
     let body = async_list(
         &resource,
         reload,
-        || rsx! { SkeletonGrid { count: 8 } },
+        || rsx! { SkeletonGrid { count: fit.page_size_or_default() } },
         &i18n.t("search.empty"),
         |items| {
             rsx! {
@@ -68,6 +78,9 @@ pub(crate) fn Search(q: String) -> Element {
                 {i18n.args("search.countLine", &[("count", &count.to_string())])}
             }
         }
+        // Sits in the same column as the grid and stays mounted through the skeleton, which is
+        // what releases the parked fetch.
+        GridFitProbe { fit }
         {body}
     }
 }

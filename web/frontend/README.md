@@ -1,9 +1,30 @@
-# TankoVault frontend (Dioxus WASM SPA)
+# TankoVault frontend (Dioxus)
 
 The reader-facing product plus the operator console (design §17), built with **Dioxus 0.7** +
 `dioxus-router` and the **Inkstone** design system.
 
-This crate is intentionally **excluded from the host Cargo workspace** (it targets
+One component tree, **two builds**:
+
+| Feature | Renderer | Ships as |
+| --- | --- | --- |
+| `web` (default) | `wasm32-unknown-unknown` in a browser | the SPA image, served by `services/frontend` |
+| `desktop` | a `wry` webview — WebView2 on Windows, WebKitGTK on Linux | installers attached to the GitHub release |
+
+They are **mutually exclusive**; `src/platform/mod.rs` says so to the compiler, because the
+alternative failure is a wall of unrelated resolution errors. Everything either build needs from
+the system it runs on is behind `src/platform`, and nothing under `src/views` knows which it is.
+
+Two differences are not incidental and are documented where they live:
+
+- **There is no served origin on desktop.** `src/views/connect.rs` asks for one on first run and
+  stores it; `platform::origin()` answers from there. The access token still lives in memory
+  only — the settings file holds the server URL and the appearance choices, never a credential.
+- **Passkeys are web-only.** WebAuthn requires `rp.id` to be a registrable suffix of the
+  document's origin, and a wry webview serves this app from its own custom protocol, so no
+  ceremony started here can name the server's relying-party id. `webauthn::is_available()`
+  answers `false` on desktop and the controls hide themselves. See the module contract.
+
+This crate is intentionally **excluded from the host Cargo workspace** (the web build targets
 `wasm32-unknown-unknown` via the `dx` CLI). Build and check it on its own.
 
 ## Develop
@@ -17,13 +38,46 @@ dx serve                 # terminal 2: dev server with hot reload
 dx build --release       # static WASM + assets for CDN/API hosting
 ```
 
-Gates this crate has to pass. It is outside the workspace, so run them here:
+The desktop build, against a local stack (`deploy/docker-compose.yml`):
+
+```bash
+dx serve --platform desktop --no-default-features --features desktop
+```
+
+`dx`'s version must match the `dioxus` in `Cargo.lock` — `dx bundle` refuses outright on a
+mismatch. `cargo install dioxus-cli@0.7.10 --locked`.
+
+On Linux the desktop build links WebKitGTK:
+
+```bash
+sudo apt-get install -y libwebkit2gtk-4.1-dev libsoup-3.0-dev libxdo-dev libayatana-appindicator3-dev
+```
+
+Gates this crate has to pass. It is outside the workspace, so run them here — and **both feature
+sets**, or a `#[cfg]` that stops compiling on the other side is first noticed by a release:
 
 ```bash
 cargo fmt --check
 cargo clippy --target wasm32-unknown-unknown --all-targets -- -D warnings
 cargo test
+cargo clippy --no-default-features --features desktop --all-targets -- -D warnings
+cargo test --no-default-features --features desktop
 ```
+
+## Packaging the desktop app
+
+`.github/workflows/release-please.yaml` cuts these for every release; this is the same command:
+
+```bash
+dx bundle --platform desktop --release --no-default-features --features desktop --package-types msi,nsis
+```
+
+`deb,appimage` on Linux. The bundle's identity, icons and the WebView2 install mode are in
+`Dioxus.toml`; the icons under `assets/icons/` are the SPA's own brand mark (`.ik-brand-tile` +
+`Icon::MenuBook`) so the two clients are recognisably one product.
+
+**The published installers are unsigned**, so Windows SmartScreen warns on first run. The
+release attaches `sha256sums.txt` beside them.
 
 ## API access
 

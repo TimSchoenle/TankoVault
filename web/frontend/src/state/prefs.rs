@@ -1,10 +1,10 @@
 //! Appearance preferences (`DESIGN_SPEC` §8) and the operator console's persisted knobs.
 //!
-//! Each appearance knob is a `data-*` attribute on `<html>`, mirrored into a `tv-*`
-//! `localStorage` key so it survives a reload. The *initial* application runs from an inline
-//! script in `index.html`, before first paint, since a WASM app can't set the attribute soon
-//! enough to avoid a flash of the wrong theme — this module only handles changes made while
-//! the app is running.
+//! Each appearance knob is a `data-*` attribute on the document root, mirrored into a `tv-*`
+//! settings key so it survives a restart. On the web build the *initial* application runs from
+//! an inline script in `index.html`, before first paint, since a WASM app can't set the
+//! attribute soon enough to avoid a flash of the wrong theme; the desktop build has no such
+//! script and applies them from [`hydrate_appearance`] on the first render instead.
 //!
 //! The console's knobs (below) are `localStorage` and *not* the URL on purpose: they are the
 //! operator's, not the link's. A colleague opening a pasted console URL should see their own
@@ -14,6 +14,25 @@ use crate::views::ConsoleEntity;
 use dioxus::prelude::*;
 use std::collections::BTreeSet;
 use std::str::FromStr as _;
+
+/// Every appearance knob, in the order they are applied. Iterated by [`hydrate_appearance`];
+/// the individual constants are what the appearance screen binds its controls to.
+const KNOBS: [Knob; 4] = [THEME, ACCENT, DENSITY, COVER];
+
+/// Apply each stored appearance choice to the document root.
+///
+/// Runs once at the app root. On web this re-asserts what the boot script already wrote, which
+/// is why it is cheap and not a source of flash; on desktop it is the only thing that applies
+/// them at all.
+pub(crate) fn hydrate_appearance() {
+    for knob in KNOBS {
+        let stored = crate::platform::store_get(knob.key)
+            .or_else(|| crate::platform::root_attribute(knob.attr));
+        if let Some(value) = stored {
+            crate::platform::set_root_attribute(knob.attr, &value);
+        }
+    }
+}
 
 /// One appearance knob: which attribute it drives, which key persists it, and the value that
 /// means "leave it to the stylesheet".
@@ -63,8 +82,8 @@ impl Knob {
     /// Read the knob's persisted value into `signal` (`localStorage`, else the attribute the
     /// boot script already applied, else the default).
     pub(crate) fn load(self, mut signal: Signal<String>) {
-        let stored = crate::browser::local_get(self.key)
-            .or_else(|| crate::browser::root_attribute(self.attr))
+        let stored = crate::platform::store_get(self.key)
+            .or_else(|| crate::platform::root_attribute(self.attr))
             .unwrap_or_else(|| self.default.to_owned());
         signal.set(stored);
     }
@@ -75,11 +94,11 @@ impl Knob {
     pub(crate) fn apply(self, mut signal: Signal<String>, value: &str) {
         signal.set(value.to_owned());
         if value == self.default && !self.explicit_default {
-            crate::browser::remove_root_attribute(self.attr);
-            crate::browser::local_remove(self.key);
+            crate::platform::remove_root_attribute(self.attr);
+            crate::platform::store_remove(self.key);
         } else {
-            crate::browser::set_root_attribute(self.attr, value);
-            crate::browser::local_set(self.key, value);
+            crate::platform::set_root_attribute(self.attr, value);
+            crate::platform::store_set(self.key, value);
         }
     }
 }
@@ -95,45 +114,45 @@ const CONSOLE_HIDDEN_COLUMNS: &str = "tv-console-hidden-cols";
 
 /// The console entity to reopen, if one was stored and this build still has it.
 pub(crate) fn console_entity() -> Option<ConsoleEntity> {
-    crate::browser::local_get(CONSOLE_ENTITY).and_then(|slug| ConsoleEntity::from_str(&slug).ok())
+    crate::platform::store_get(CONSOLE_ENTITY).and_then(|slug| ConsoleEntity::from_str(&slug).ok())
 }
 
 /// Remember the console entity as the one to reopen.
 pub(crate) fn set_console_entity(entity: ConsoleEntity) {
-    crate::browser::local_set(CONSOLE_ENTITY, entity.slug());
+    crate::platform::store_set(CONSOLE_ENTITY, entity.slug());
 }
 
 /// Whether the console's live push should run. Defaults to on — a console that opens detached
 /// shows stale numbers with no sign that they are stale.
 pub(crate) fn console_live() -> bool {
-    crate::browser::local_get(CONSOLE_LIVE).is_none_or(|stored| stored != "0")
+    crate::platform::store_get(CONSOLE_LIVE).is_none_or(|stored| stored != "0")
 }
 
 pub(crate) fn set_console_live(live: bool) {
     if live {
-        crate::browser::local_remove(CONSOLE_LIVE);
+        crate::platform::store_remove(CONSOLE_LIVE);
     } else {
-        crate::browser::local_set(CONSOLE_LIVE, "0");
+        crate::platform::store_set(CONSOLE_LIVE, "0");
     }
 }
 
 /// Whether the console's tables are drawn compact. Defaults to on, matching what the class
 /// strings hardcoded before this was a choice.
 pub(crate) fn console_compact() -> bool {
-    crate::browser::local_get(CONSOLE_COMPACT).is_none_or(|stored| stored != "0")
+    crate::platform::store_get(CONSOLE_COMPACT).is_none_or(|stored| stored != "0")
 }
 
 pub(crate) fn set_console_compact(compact: bool) {
     if compact {
-        crate::browser::local_remove(CONSOLE_COMPACT);
+        crate::platform::store_remove(CONSOLE_COMPACT);
     } else {
-        crate::browser::local_set(CONSOLE_COMPACT, "0");
+        crate::platform::store_set(CONSOLE_COMPACT, "0");
     }
 }
 
 /// The console table columns the operator has hidden.
 pub(crate) fn console_hidden_columns() -> BTreeSet<String> {
-    crate::browser::local_get(CONSOLE_HIDDEN_COLUMNS)
+    crate::platform::store_get(CONSOLE_HIDDEN_COLUMNS)
         .unwrap_or_default()
         .split(',')
         .filter(|token| !token.is_empty())
@@ -143,9 +162,9 @@ pub(crate) fn console_hidden_columns() -> BTreeSet<String> {
 
 pub(crate) fn set_console_hidden_columns(hidden: &BTreeSet<String>) {
     if hidden.is_empty() {
-        crate::browser::local_remove(CONSOLE_HIDDEN_COLUMNS);
+        crate::platform::store_remove(CONSOLE_HIDDEN_COLUMNS);
     } else {
         let joined = hidden.iter().cloned().collect::<Vec<_>>().join(",");
-        crate::browser::local_set(CONSOLE_HIDDEN_COLUMNS, &joined);
+        crate::platform::store_set(CONSOLE_HIDDEN_COLUMNS, &joined);
     }
 }

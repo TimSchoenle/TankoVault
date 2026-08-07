@@ -52,7 +52,7 @@ pub(crate) fn use_document_title() {
     let title = published
         .claimed_for(&route)
         .map_or_else(|| route_title(&route, i18n), |name| decorate(&name, i18n));
-    use_effect(use_reactive!(|title| crate::browser::set_document_title(
+    use_effect(use_reactive!(|title| crate::platform::set_document_title(
         &title
     )));
 }

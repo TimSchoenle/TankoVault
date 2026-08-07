@@ -560,7 +560,7 @@ fn TrackerRow(tracker: Tracker, reload_sync: Reload) -> Element {
                 {
                     // A full-page navigation, not a router push: the consent screen lives on
                     // the provider's origin.
-                    crate::browser::navigate_to(&response.into_inner().url);
+                    crate::platform::navigate_to(&response.into_inner().url);
                 }
                 busy.release();
             });

@@ -105,7 +105,7 @@ impl Session {
             reason = "a unix-second timestamp; the precision f64 loses there is far below the \
                       minute-scale granularity this scheduling hint is used at"
         )]
-        Some(exp as f64 * 1000.0 - js_sys::Date::now())
+        Some(exp as f64 * 1000.0 - crate::platform::now_ms())
     }
 }
 

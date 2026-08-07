@@ -71,13 +71,13 @@ pub(crate) fn I18nRoot(children: Element) -> Element {
     }
 }
 
-/// The language to start in when nothing has been stored yet: the browser's own preference if
+/// The language to start in when nothing has been stored yet: the system's own preference if
 /// we ship it, else [`DEFAULT_LANGUAGE`].
 ///
-/// Only the primary subtag is matched — a reader whose browser reports `de-AT` gets `de`
+/// Only the primary subtag is matched — a reader whose system reports `de-AT` gets `de`
 /// rather than being bounced to English over a regional suffix we do not distinguish.
 fn preferred_language() -> String {
-    browser_language()
+    crate::platform::preferred_language()
         .and_then(|tag| {
             let primary = tag
                 .split(['-', '_'])
@@ -92,12 +92,7 @@ fn preferred_language() -> String {
         )
 }
 
-/// The browser's preferred language tag, if it exposes one.
-fn browser_language() -> Option<String> {
-    web_sys::window()?.navigator().language()
-}
-
-/// Mirror the active language onto `<html lang>`.
+/// Mirror the active language onto the document root.
 ///
 /// `i18nrs` maintains `dir` but not `lang`, and `lang` is what drives screen-reader voice
 /// selection, hyphenation and locale-aware font fallback. Runs on mount and on every change.
@@ -105,10 +100,10 @@ fn browser_language() -> Option<String> {
 fn HtmlLang() -> Element {
     let i18n = use_i18n();
     use_effect(move || {
-        // Written through the typed DOM binding (`crate::browser`), so the tag is a value
+        // Written through the typed platform binding, so the tag is a value
         // rather than a fragment of a script — there is no string literal to break out of,
         // and nothing for the served CSP to have to permit.
-        crate::browser::set_document_language(&i18n.language());
+        crate::platform::set_document_language(&i18n.language());
     });
     rsx! {}
 }

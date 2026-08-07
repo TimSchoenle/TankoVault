@@ -312,7 +312,10 @@ fn RunDrawer() -> Element {
         reload.track();
         let client = api.client();
         async move {
-            let Some(id) = selected.as_deref().and_then(|id| id.parse::<ScanRunId>().ok()) else {
+            let Some(id) = selected
+                .as_deref()
+                .and_then(|id| id.parse::<ScanRunId>().ok())
+            else {
                 return Ok(None);
             };
             client
@@ -386,7 +389,7 @@ fn elapsed_label(i18n: crate::i18n::Translator, run: &ScanRun) -> (String, Strin
         .finished_at
         .as_deref()
         .and_then(parse_ms)
-        .unwrap_or_else(|| js_sys::Date::new_0().get_time());
+        .unwrap_or_else(crate::platform::now_ms);
     let minutes = ((ended - started) / MS_PER_MINUTE).max(0.0);
 
     let elapsed = if minutes < 1.0 {
@@ -409,9 +412,9 @@ fn elapsed_label(i18n: crate::i18n::Translator, run: &ScanRun) -> (String, Strin
     (elapsed, per_minute)
 }
 
-/// An RFC 3339 stamp as epoch milliseconds, or `None` if the browser cannot parse it.
+/// An RFC 3339 stamp as epoch milliseconds, or `None` if it cannot be parsed.
 fn parse_ms(stamp: &str) -> Option<f64> {
-    let ms = js_sys::Date::parse(stamp);
+    let ms = crate::platform::parse_timestamp_ms(stamp);
     ms.is_finite().then_some(ms)
 }
 

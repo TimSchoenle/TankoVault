@@ -9,6 +9,22 @@ use crate::icons::Icon;
 use crate::state::prefs::{Knob, ACCENT, COVER, DENSITY, THEME};
 use dioxus::prelude::*;
 
+/// The desktop build's server picker, and nothing at all on web — where the app is served by
+/// the API it talks to and there is no choice to offer.
+///
+/// Two definitions rather than a `#[cfg]` inside `rsx!`, which the macro does not accept.
+#[cfg(feature = "desktop")]
+#[component]
+fn ServerCard() -> Element {
+    rsx! { crate::views::connect::ServerCard {} }
+}
+
+#[cfg(feature = "web")]
+#[component]
+fn ServerCard() -> Element {
+    rsx! {}
+}
+
 #[component]
 pub(crate) fn AppearancePanel() -> Element {
     let i18n = use_i18n();
@@ -26,6 +42,10 @@ pub(crate) fn AppearancePanel() -> Element {
     });
 
     rsx! {
+        // Above appearance rather than in its own tab: it is one field, and only the desktop
+        // build has a server to choose.
+        ServerCard {}
+
         PanelCard { icon: Icon::Settings, title: i18n.t("account.appearance.title"),
             p { class: "ik-muted", style: "font-size:13px;margin-top:0;",
                 {i18n.t("account.appearance.intro")}

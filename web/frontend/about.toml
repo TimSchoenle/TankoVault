@@ -1,10 +1,12 @@
-# cargo-about configuration for the SPA — the second half of the root `THIRD-PARTY-NOTICES`.
+# cargo-about configuration for the Dioxus client — the second half of the root
+# `THIRD-PARTY-NOTICES`.
 #
 # This workspace needs its own config because it *is* its own workspace (root `Cargo.toml`
-# `exclude`), with its own lockfile and a wasm-only dependency graph. The bundle it produces is
-# served by the `frontend` image and executes in a reader's browser, which is a binary
-# distribution like any other, so its dependencies' notices are owed too. Regenerated together
-# with the backend half by `cargo run -p xtask -- notices`, which renders both into one document.
+# `exclude`), with its own lockfile. It produces two distributions and this file has to cover
+# both: the WASM bundle served by the `frontend` image and executed in a reader's browser, and
+# the desktop installers attached to each GitHub release. Both are binary distributions, so
+# their dependencies' notices are owed. Regenerated together with the backend half by
+# `cargo run -p xtask -- notices`, which renders both into one document.
 
 # Exactly the licences this graph resolves to today, and deliberately not a copy of the root
 # `about.toml`'s list.
@@ -21,16 +23,36 @@ accepted = [
     "Zlib",
     "MPL-2.0",
     "CC0-1.0",
+    # The four below arrived with the desktop build and are on the root `deny.toml`'s allow list
+    # for the same reasons — all permissive, all attribution-only.
+    #
+    # `BSD-3-Clause` is `subtle` plus the AVIF/EXR encoders `image` pulls in for `tao`'s window
+    # icons (`rav1e`, `ravif`, `av1-grain`, `v_frame`, `avif-serialize`, `exr`); `BSD-2-Clause`
+    # is `lebe` under `exr`. `ISC` and `Apache-2.0 WITH LLVM-exception` come from the native TLS
+    # stack and the `libc`/compiler shims, which the browser build has no equivalent of.
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Apache-2.0 WITH LLVM-exception",
+    # `webpki-root-certs`: the Mozilla CA bundle rustls trusts. No copyleft or attribution.
+    "CDLA-Permissive-2.0",
 ]
 
-# `dx` builds this crate for one target and one only.
-targets = ["wasm32-unknown-unknown"]
+# Every target a shipped artefact is built for. The wasm bundle is one; the desktop installers
+# `release-please.yaml` publishes are the other two, and a notice owed by a Windows-only or
+# Linux-only dependency is not discharged by a document generated for wasm alone.
+targets = [
+    "wasm32-unknown-unknown",
+    "x86_64-pc-windows-msvc",
+    "x86_64-unknown-linux-gnu",
+]
 
 ignore-dev-dependencies = true
 # Included for the reason the root config gives: a proc macro's output is part of the bundle.
 ignore-build-dependencies = false
 private = { ignore = true }
 
-# Only the built-ins whose crates are in this graph; `ring`/`rustls` are absent because the SPA's
-# `reqwest` talks through the browser's fetch and links no TLS stack of its own.
-workarounds = ["chrono"]
+# Only the built-ins whose crates are in this graph. `ring`/`rustls` are here for the desktop
+# build alone: the browser build's `reqwest` talks through the window's own fetch and links no
+# TLS stack, while the native one carries rustls.
+workarounds = ["chrono", "ring", "rustls", "rustix"]

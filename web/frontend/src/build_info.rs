@@ -1,6 +1,12 @@
 //! What this bundle is, for the footer's meta line.
 
-/// The crate version, which release-please keeps in step with the tag.
+/// The crate version.
+///
+/// Stamped into `Cargo.toml` by the release workflow immediately before it builds, and never
+/// committed — release-please's `extra-files` cannot bump this manifest without also bumping
+/// `web/frontend/Cargo.lock`, and CI's `supply-chain` job checks exactly that pair with
+/// `cargo metadata --locked`. So a build from a working copy reads the placeholder below, and
+/// only a released artefact carries the tag.
 pub(crate) const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// The short commit this bundle was built from, when the build supplied one.

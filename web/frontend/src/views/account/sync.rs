@@ -180,7 +180,7 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
                     Ok(response) => {
                         // A full-page navigation, not a router push: the consent screen lives
                         // on the provider's origin.
-                        crate::browser::navigate_to(&response.into_inner().url);
+                        crate::platform::navigate_to(&response.into_inner().url);
                     }
                     Err(e) => outcome.set(Some(Err(api::friendly_error(i18n, e)))),
                 }

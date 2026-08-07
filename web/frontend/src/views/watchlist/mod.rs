@@ -9,7 +9,7 @@ mod row;
 mod toolbar;
 
 use crate::api;
-use crate::components::{AuthRequired, ErrorBox, OutcomeLine, SkeletonRows};
+use crate::components::{AuthRequired, ErrorBox, FocusTargets, OutcomeLine, SkeletonRows};
 use crate::hooks::{use_busy, use_outcome, use_reload};
 use crate::i18n::{use_i18n, Translator};
 use crate::icons::{Ic, Icon};
@@ -91,11 +91,11 @@ fn bucket_of(ts: Option<&str>) -> Bucket {
     let Some(s) = ts.filter(|s| !s.is_empty()) else {
         return Bucket::Earlier;
     };
-    let parsed = js_sys::Date::parse(s);
+    let parsed = crate::platform::parse_timestamp_ms(s);
     if parsed.is_nan() {
         return Bucket::Earlier;
     }
-    bucket_of_age(js_sys::Date::now() - parsed)
+    bucket_of_age(crate::platform::now_ms() - parsed)
 }
 
 /// What the list renders, in order: band headings interleaved with the rows under them.
@@ -184,6 +184,7 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
     let mut selected = use_signal(HashSet::<SeriesId>::new);
     let mut focus = use_signal(|| 0usize);
     let menu_for = use_signal(|| Option::<SeriesId>::None);
+    let focus_targets = crate::components::use_focus_targets();
 
     // Route is the source of truth for view state, so a route change restarts paging. Guarded
     // on inequality, or `Signal::set`'s unconditional invalidation double-fetches on first render.
@@ -412,7 +413,7 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
                     .items
                     .get(*focus.read())
                     .map_or_else(String::new, |item| format!("wl-row-{}", item.series_id)),
-                onkeydown: move |event| on_key(&event, board, selected, focus, menu_for, ctx),
+                onkeydown: move |event| on_key(&event, board, selected, focus, menu_for, ctx, focus_targets),
                 for entry in entries {
                     match entry {
                         Entry::Band(band) => {
@@ -619,6 +620,7 @@ fn on_key(
     mut focus: Signal<usize>,
     mut menu_for: Signal<Option<SeriesId>>,
     ctx: RowCtx,
+    focus_targets: FocusTargets,
 ) {
     let modifiers = event.modifiers();
     if modifiers.ctrl() || modifiers.alt() || modifiers.meta() {
@@ -703,7 +705,7 @@ fn on_key(
             }
             "/" => {
                 event.prevent_default();
-                crate::browser::focus_and_select(toolbar::FILTER_INPUT_ID);
+                crate::components::focus_and_select(focus_targets.filter);
             }
             _ => {}
         },

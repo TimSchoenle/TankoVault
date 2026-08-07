@@ -2,15 +2,27 @@
 //!
 //! The private key never leaves the authenticator, so the browser must broker it through
 //! `navigator.credentials.create()` / `.get()` — this is the typed boundary around that, the
-//! counterpart to [`crate::browser`].
+//! counterpart to [`crate::platform`].
 //!
 //! Byte-level conversion (challenge, `user.id`, `excludeCredentials[].id`) is intentionally not
 //! reimplemented here: `webauthn-rs-proto`'s `wasm` feature already does it, at the same pinned
 //! version the API verifies with. Every call below is a typed `web-sys` binding — the served CSP
 //! carries no `'unsafe-eval'`, and none is needed.
+//!
+//! **The desktop build cannot run a ceremony, and this is not a gap to be filled with `eval`.**
+//! `WebAuthn` requires `rp.id` to be a registrable suffix of the *document's* origin. A wry
+//! webview serves this app from its own custom protocol, so a challenge naming the server's
+//! relying-party id is refused with `SecurityError` no matter how the call is reached, and
+//! claiming the server's domain for locally-served content is not something to do. So
+//! [`is_available`] answers `false` there and the passkey controls hide themselves — which is
+//! what that function is for. Making it work needs the ceremony to run at the server's real
+//! origin, in a second webview window pointed at it, which is a change with an API-side half.
 
+#[cfg(feature = "web")]
 use wasm_bindgen::JsCast as _;
+#[cfg(feature = "web")]
 use wasm_bindgen::JsValue;
+#[cfg(feature = "web")]
 use wasm_bindgen_futures::JsFuture;
 use webauthn_rs_proto::{
     CreationChallengeResponse, PublicKeyCredential, RegisterPublicKeyCredential,
@@ -37,6 +49,18 @@ pub(crate) enum CeremonyError {
     /// nothing", and "no credential matched" — it is deliberately indistinguishable so a page
     /// cannot probe which authenticators a visitor holds. So this is not necessarily a refusal,
     /// and the wording must not accuse anyone of one.
+    //
+    // `not(test)`: the desktop build refuses every ceremony with `Unsupported` and so never
+    // constructs this, but the wording test below does — so the claim only holds for the
+    // non-test compilation, and an `expect` that is unfulfilled under `--all-targets` would warn
+    // exactly as loudly as the thing it suppresses.
+    #[cfg_attr(
+        all(feature = "desktop", not(test)),
+        expect(
+            dead_code,
+            reason = "unreachable on desktop, but part of what the shared type means"
+        )
+    )]
     Cancelled,
     /// Anything else: a malformed challenge, an origin mismatch, an authenticator fault. The
     /// browser's own message, which is the only thing that will help.
@@ -62,8 +86,15 @@ impl CeremonyError {
 /// Used to hide the passkey controls rather than to gate the call — a control that fails when
 /// pressed is worse than one that is not offered. The call is still guarded, because a stale
 /// render is not a security boundary.
+#[cfg(feature = "web")]
 pub(crate) fn is_available() -> bool {
     web_sys::window().is_some_and(|w| !JsValue::from(w.navigator().credentials()).is_undefined())
+}
+
+/// Always `false`; see the origin constraint in the module contract.
+#[cfg(feature = "desktop")]
+pub(crate) const fn is_available() -> bool {
+    false
 }
 
 /// Register a new credential: `navigator.credentials.create()`.
@@ -73,6 +104,7 @@ pub(crate) fn is_available() -> bool {
 /// authenticator is already registered, the page is on plain HTTP — and a panic in WASM is an
 /// `unreachable` trap that takes the whole app down (`panic = "abort"`), so every path here
 /// returns.
+#[cfg(feature = "web")]
 pub(crate) async fn create(
     challenge: CreationChallengeResponse,
 ) -> Result<RegisterPublicKeyCredential, CeremonyError> {
@@ -95,6 +127,7 @@ pub(crate) async fn create(
 ///
 /// # Errors
 /// [`CeremonyError`]; see [`create`].
+#[cfg(feature = "web")]
 pub(crate) async fn get(
     challenge: RequestChallengeResponse,
 ) -> Result<PublicKeyCredential, CeremonyError> {
@@ -111,6 +144,36 @@ pub(crate) async fn get(
     Ok(PublicKeyCredential::from(credential))
 }
 
+/// The desktop counterparts, which refuse rather than pretend.
+///
+/// They exist so the screens are one code path on both builds: the controls are already hidden
+/// on [`is_available`], and this is the guard behind them for a stale render. See the module
+/// contract for why the answer cannot be anything else.
+#[cfg(feature = "desktop")]
+mod unavailable {
+    use super::{
+        CeremonyError, CreationChallengeResponse, PublicKeyCredential, RegisterPublicKeyCredential,
+        RequestChallengeResponse,
+    };
+
+    /// Mirrors the browser signature, which has to await the authenticator.
+    pub(crate) async fn create(
+        _challenge: CreationChallengeResponse,
+    ) -> Result<RegisterPublicKeyCredential, CeremonyError> {
+        Err(CeremonyError::Unsupported)
+    }
+
+    /// See [`create`].
+    pub(crate) async fn get(
+        _challenge: RequestChallengeResponse,
+    ) -> Result<PublicKeyCredential, CeremonyError> {
+        Err(CeremonyError::Unsupported)
+    }
+}
+
+#[cfg(feature = "desktop")]
+pub(crate) use unavailable::{create, get};
+
 /// Drop the `mediation` hint the API's challenge carries, so the ceremony opens a dialog.
 ///
 /// `webauthn-rs` stamps `mediation: Some(Conditional)` onto every discoverable-auth challenge,
@@ -120,6 +183,7 @@ pub(crate) async fn get(
 ///
 /// Mediation is a client-side presentation choice, not something the server verifies, so
 /// stripping it here is safe and covers every caller.
+#[cfg(feature = "web")]
 fn for_modal_prompt(mut challenge: RequestChallengeResponse) -> RequestChallengeResponse {
     challenge.mediation = None;
     challenge
@@ -164,6 +228,7 @@ pub(crate) fn to_envelope<T: serde::Serialize>(
 }
 
 /// `navigator.credentials`, or [`CeremonyError::Unsupported`].
+#[cfg(feature = "web")]
 fn container() -> Result<web_sys::CredentialsContainer, CeremonyError> {
     let window = web_sys::window().ok_or(CeremonyError::Unsupported)?;
     let credentials = window.navigator().credentials();
@@ -180,6 +245,7 @@ fn container() -> Result<web_sys::CredentialsContainer, CeremonyError> {
 /// same event arriving through `AbortController` — a navigation away, or a second ceremony
 /// superseding this one — and belongs with it: nothing went wrong and nobody should be told
 /// anything did.
+#[cfg(feature = "web")]
 fn classify(error: &JsValue) -> CeremonyError {
     let Some(exception) = error.dyn_ref::<web_sys::DomException>() else {
         return CeremonyError::Failed(describe(error));
@@ -195,6 +261,7 @@ fn classify(error: &JsValue) -> CeremonyError {
 }
 
 /// A human-readable rendering of a non-`DOMException` throw.
+#[cfg(feature = "web")]
 fn describe(error: &JsValue) -> String {
     error
         .as_string()
@@ -209,6 +276,7 @@ fn describe(error: &JsValue) -> String {
 #[cfg(test)]
 mod tests {
     use super::CeremonyError;
+    #[cfg(feature = "web")]
     use webauthn_rs_proto::RequestChallengeResponse;
 
     /// A verbatim `/v1/auth/passkey/login/start` response, captured from the running API.
@@ -216,6 +284,7 @@ mod tests {
     /// Hard-coded rather than built from the proto types because the point of the test below is
     /// that the field arrives *from the server*, in the envelope, whether or not this crate
     /// thinks about it. Constructing the value locally would test our own literal.
+    #[cfg(feature = "web")]
     const SERVER_CHALLENGE: &str = r#"{
         "mediation": "conditional",
         "publicKey": {
@@ -240,6 +309,10 @@ mod tests {
     /// This asserts on the parsed challenge rather than the `CredentialRequestOptions` because
     /// the latter only exists under `wasm32`; what regresses is this field surviving, and that
     /// is visible here.
+    ///
+    /// Web-only because the ceremony it guards is: the desktop build cannot reach an
+    /// authenticator at all (see the module contract), so `for_modal_prompt` does not exist there.
+    #[cfg(feature = "web")]
     #[test]
     fn a_ceremony_started_from_a_button_does_not_ask_for_conditional_mediation() {
         let challenge: RequestChallengeResponse =

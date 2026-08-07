@@ -148,7 +148,7 @@ fn ModelHealth(can_write: bool, reload: Reload) -> Element {
     let building = matches!(&*health.read_unchecked(), Some(Ok(view)) if view.building);
     use_future(move || async move {
         loop {
-            gloo_timers::future::TimeoutFuture::new(BUILD_POLL_MS).await;
+            crate::platform::sleep_ms(BUILD_POLL_MS).await;
             if building {
                 tick.bump();
             }

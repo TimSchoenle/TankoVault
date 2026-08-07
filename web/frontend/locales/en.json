@@ -177,7 +177,8 @@
     "backToSignIn": "Back to sign in",
     "cancel": "Cancel",
     "close": "Close",
-    "downloadRefused": "Your browser would not accept the download.",
+    "downloadCancelled": "Save cancelled — nothing was written.",
+    "downloadRefused": "The download could not be saved.",
     "markRead": "Mark read",
     "markUnread": "Mark unread",
     "next": "Next",
@@ -195,6 +196,29 @@
     "signIn": "Sign in",
     "tryAgain": "Try again",
     "working": "Working…"
+  },
+  "connect": {
+    "action": "Connect",
+    "card": {
+      "action": "Change server",
+      "intro": "Which TankoVault server this app talks to. Changing it signs you out, because your session belongs to the server that issued it.",
+      "title": "Server"
+    },
+    "connecting": "Connecting…",
+    "error": {
+      "empty": "Enter the address of your TankoVault server.",
+      "insecure": "Only https:// is accepted for a server on the network — your sign-in token is sent with every request. Plain http:// works for localhost.",
+      "malformed": "That does not look like a server address.",
+      "notTankovault": "Something answered at that address, but it is not a TankoVault server this app can talk to.",
+      "unreachable": "Could not reach that address. Check the URL and that the server is running."
+    },
+    "field": {
+      "hint": "The same address you would open in a browser.",
+      "server": "Server address"
+    },
+    "heading": "Connect to your server",
+    "storedAt": "Saved to {path}",
+    "subtitle": "TankoVault is self-hosted, so this copy needs to know which server is yours. You can change it later in Settings."
   },
   "console": {
     "adapterKind": {

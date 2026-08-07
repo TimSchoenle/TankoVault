@@ -18,5 +18,35 @@ watch_path = ["src", "assets"]
 # Extra static assets copied verbatim into the build output.
 [web.resource.dev]
 
+# Desktop packaging (`dx bundle --platform desktop`). The web build ignores all of this.
 [bundle]
 identifier = "dev.tankovault.frontend"
+publisher = "TankoVault contributors"
+copyright = "TankoVault contributors"
+category = "Utility"
+short_description = "Self-hosted manga release tracker"
+long_description = """
+TankoVault tracks manga releases across the sources you follow and keeps your reading progress \
+in one place. This is the desktop client; it talks to a TankoVault server you host, which you \
+are asked for the first time it starts.
+"""
+# Every size Windows picks between — the taskbar, alt-tab and the installer each reach for a
+# different one. Generated from the same brand mark the SPA renders (`.ik-brand-tile` +
+# `Icon::MenuBook`), so the two clients are recognisably one product.
+icon = [
+    "assets/icons/32x32.png",
+    "assets/icons/128x128.png",
+    "assets/icons/128x128@2x.png",
+    "assets/icons/icon.ico",
+]
+
+# Without this, a machine whose WebView2 runtime is missing launches to a blank window with no
+# explanation — the app *is* a webview. Evergreen ships with Windows 11 and with current 10, so
+# the bootstrapper is a fallback that usually downloads nothing.
+[bundle.windows.webview_install_mode.DownloadBootstrapper]
+silent = true
+
+[bundle.deb]
+# Runtime halves of the build dependencies. `dpkg` will refuse to install rather than let the
+# binary fail its first dynamic link, which is the better of the two failures.
+depends = ["libwebkit2gtk-4.1-0", "libgtk-3-0"]

@@ -61,6 +61,16 @@ impl Api {
         };
         Client::new_with_client(&self.base.read(), http)
     }
+
+    /// Point this handle at `origin`, once the reader has chosen a server.
+    ///
+    /// Desktop only: the web build is served *by* its API and reads the origin off the document,
+    /// so there is nothing to choose and nothing to re-point.
+    #[cfg(feature = "desktop")]
+    pub(crate) fn set_base(&self, origin: &str) {
+        let mut base = self.base;
+        base.set(origin.to_owned());
+    }
 }
 
 /// Provide the API handle. Call once, inside the component that already provided the
@@ -100,14 +110,10 @@ fn build_http_client(token: Option<&str>) -> reqwest::Client {
         .expect("wasm reqwest client build is infallible")
 }
 
-/// Absolute base URL for API calls (design §19: same origin as the API).
-///
-/// Unlike the browser's `fetch`, reqwest rejects a relative URL with a builder error, so this
-/// needs the concrete origin. Falls back to an empty base outside a browser.
+/// Absolute base URL for API calls (design §19: same origin as the API on web, the configured
+/// server on desktop). See [`crate::platform::origin`].
 fn origin() -> String {
-    web_sys::window()
-        .and_then(|window| window.location().origin().ok())
-        .unwrap_or_default()
+    crate::platform::origin()
 }
 
 /// URL of the per-user SSE notification stream, for a ticket from `POST /v1/me/stream-ticket`.

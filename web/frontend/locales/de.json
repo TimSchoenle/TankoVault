@@ -177,7 +177,8 @@
     "backToSignIn": "Zurück zur Anmeldung",
     "cancel": "Abbrechen",
     "close": "Schließen",
-    "downloadRefused": "Dein Browser hat den Download abgelehnt.",
+    "downloadCancelled": "Speichern abgebrochen — es wurde nichts geschrieben.",
+    "downloadRefused": "Der Download konnte nicht gespeichert werden.",
     "markRead": "Als gelesen markieren",
     "markUnread": "Als ungelesen markieren",
     "next": "Weiter",
@@ -195,6 +196,29 @@
     "signIn": "Anmelden",
     "tryAgain": "Erneut versuchen",
     "working": "Wird ausgeführt…"
+  },
+  "connect": {
+    "action": "Verbinden",
+    "card": {
+      "action": "Server wechseln",
+      "intro": "Mit welchem TankoVault-Server diese App spricht. Ein Wechsel meldet dich ab, denn deine Sitzung gehört dem Server, der sie ausgestellt hat.",
+      "title": "Server"
+    },
+    "connecting": "Verbinde…",
+    "error": {
+      "empty": "Gib die Adresse deines TankoVault-Servers ein.",
+      "insecure": "Für einen Server im Netzwerk wird nur https:// akzeptiert — dein Anmelde-Token wird bei jeder Anfrage mitgesendet. Einfaches http:// funktioniert für localhost.",
+      "malformed": "Das sieht nicht nach einer Serveradresse aus.",
+      "notTankovault": "Unter dieser Adresse antwortet etwas, aber es ist kein TankoVault-Server, mit dem diese App sprechen kann.",
+      "unreachable": "Diese Adresse ist nicht erreichbar. Prüfe die URL und ob der Server läuft."
+    },
+    "field": {
+      "hint": "Dieselbe Adresse, die du im Browser öffnen würdest.",
+      "server": "Serveradresse"
+    },
+    "heading": "Mit deinem Server verbinden",
+    "storedAt": "Gespeichert unter {path}",
+    "subtitle": "TankoVault wird selbst gehostet, deshalb muss diese Kopie wissen, welcher Server deiner ist. Du kannst das später in den Einstellungen ändern."
   },
   "console": {
     "adapterKind": {

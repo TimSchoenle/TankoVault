@@ -8,11 +8,11 @@ use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
 use crate::models::*;
 use dioxus::prelude::*;
-use gloo_timers::future::TimeoutFuture;
 
-/// The filter input's DOM id, so `/` can focus it from the list's keyboard handler without
-/// either side hard-coding a string the other could rename.
-pub(super) const FILTER_INPUT_ID: &str = "wl-filter";
+/// The filter input's DOM id. Focusing it goes through [`crate::components::FocusTargets`]
+/// rather than this — the id is kept because it is a stable hook for the field in the rendered
+/// document.
+const FILTER_INPUT_ID: &str = "wl-filter";
 
 /// How long the filter box waits before committing. Long enough that typing a title does not
 /// fire a request per keystroke, short enough that it still feels live.
@@ -107,6 +107,7 @@ pub(super) fn FilterBar(
     // keystroke superseded it and does nothing. That is the whole debounce — no timer handle to
     // cancel, and no way for two in-flight timers to both commit.
     let mut generation = use_signal(|| 0u32);
+    let mut focus_targets = crate::components::use_focus_targets();
 
     // The route is authoritative: a back-navigation, or the "reset filters" button, has to be
     // reflected in the box. Guarded so it does not clobber what the reader is mid-way through
@@ -125,7 +126,7 @@ pub(super) fn FilterBar(
         generation.set(mine);
         let committed = committed.clone();
         spawn(async move {
-            TimeoutFuture::new(DEBOUNCE_MS).await;
+            crate::platform::sleep_ms(DEBOUNCE_MS).await;
             if *generation.peek() != mine {
                 return;
             }
@@ -151,6 +152,7 @@ pub(super) fn FilterBar(
                 span { class: "lead", Ic { icon: Icon::Search, size: 15 } }
                 input {
                     id: FILTER_INPUT_ID,
+                    onmounted: move |event| focus_targets.filter.set(Some(event.data())),
                     class: "ik-input",
                     r#type: "search",
                     value: "{draft}",

@@ -656,11 +656,12 @@ fn RailCount(entity: ConsoleEntity, counts: Option<SystemStats>) -> Element {
 #[component]
 fn JumpField() -> Element {
     let i18n = use_i18n();
+    let focus_targets = crate::components::use_focus_targets();
     rsx! {
         button {
             class: "ik-cons-jump",
             onclick: move |_| {
-                crate::browser::focus_and_select("tv-search");
+                crate::components::focus_and_select(focus_targets.search);
             },
             span { style: "display:flex;flex:none;",
                 Ic { icon: Icon::Search, size: 15 }

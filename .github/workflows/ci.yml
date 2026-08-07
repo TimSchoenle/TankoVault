@@ -67,6 +67,9 @@ jobs:
     outputs:
       full: ${{ steps.decide.outputs.full }}
       images: ${{ steps.decide.outputs.images }}
+      arches: ${{ steps.depsscope.outputs.arches }}
+      wasm_arches: ${{ steps.depsscope.outputs.wasm_arches }}
+      arm64: ${{ steps.depsscope.outputs.arm64 }}
       toolchain: ${{ steps.versions.outputs.toolchain }}
       msrv: ${{ steps.versions.outputs.msrv }}
       buildcache: ${{ steps.buildcache.outputs.ref }}
@@ -175,20 +178,51 @@ jobs:
       # anything after it. A fork's `GITHUB_TOKEN` is read-only and its export would 403 anyway,
       # but that is a consequence of how Actions issues tokens, not a rule this file states, and
       # the tag is an input to the workflow that publishes signed images.
-      - name: decide the deps cache scope
+      # This step also decides the architecture set, because the answer is the same predicate.
+      #
+      # arm64 is native-only — no QEMU, since BoringSSL under emulation costs upwards of an hour
+      # an image — so warming it is a second full compile of the workspace: 30 minutes beside the
+      # amd64 leg, on a runner nothing else in the graph waits for. Ordinary pull requests no
+      # longer pay it. What that gives up is narrower than the warning on `docker-arm64`, which is
+      # about arm64 breaking at a *tag*: `main` still builds both architectures, and no tag is cut
+      # from a commit `main` has not built, so a bad arm64 merge surfaces minutes after the merge
+      # rather than at release. A pull request stops catching it before the merge.
+      #
+      # **A pull request exports too, to a tag of its own, and that is what stops the same build
+      # running four times.** Until it did, `deps_scope` was empty on an ordinary pull request, so
+      # this warm-up compiled for 37 minutes and published nothing — and each of `docker`,
+      # `docker-frontend` and `docker-arm64`, which wait on it, then rebuilt the identical chain
+      # because `backend-deps-<arch>` off `main` is keyed on `main`'s Dockerfile and misses the
+      # moment this branch touches it. Measured on one such run: warm-up 37m, then api 38m,
+      # render 40m and frontend 40m, all after it. 78 minutes of wall clock for 37 minutes of
+      # work done four times.
+      #
+      # `pr-<number>-deps` rather than one shared pull-request tag: two `mode=max` exporters
+      # writing one tag is the write race this file warns about elsewhere, and concurrent pull
+      # requests would be exactly that. One tag per pull request per architecture is bounded by
+      # the number of open pull requests, and each is rewritten rather than added to on a push.
+      # Nothing prunes them yet, which is a housekeeping debt, not a correctness one.
+      #
+      # The fork check governs the export for the reason spelled out above this step, and it now
+      # governs three tag families rather than one.
+      - name: decide the deps cache scope and architecture set
         id: depsscope
         env:
           EVENT: ${{ github.event_name }}
+          FULL: ${{ steps.decide.outputs.full }}
           HEAD_REF: ${{ github.head_ref }}
           HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
           THIS_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
           scope=''
+          release_pr=false
           if [ "$EVENT" = "pull_request" ]; then
             if [ "$HEAD_REPO" = "$THIS_REPO" ]; then
               case "$HEAD_REF" in
-                release-please--*) scope='release-pr-deps' ;;
+                release-please--*) scope='release-pr-deps'; release_pr=true ;;
+                *) scope="pr-${PR_NUMBER}-deps" ;;
               esac
             fi
           else
@@ -196,6 +230,32 @@ jobs:
           fi
           echo "scope=$scope" >> "$GITHUB_OUTPUT"
           echo "::notice::deps cache export scope: ${scope:-none}"
+
+          # arm64 no longer follows `scope`, because `scope` is now set on ordinary pull requests
+          # too. It follows what a *later* run reads: `backend-deps-arm64` off `main` and
+          # `release-pr-deps-arm64` off the release pull request, which `release-please.yaml`
+          # imports instead of recompiling the identical tree. An ordinary pull request's arm64
+          # leg is read by nothing after the run ends.
+          amd64='{"arch":"amd64","runner":"ubuntu-latest"}'
+          arm64='{"arch":"arm64","runner":"ubuntu-24.04-arm"}'
+          if [ "$EVENT" != "pull_request" ] || [ "$FULL" = "true" ] || [ "$release_pr" = "true" ]; then
+            echo "arm64=true" >> "$GITHUB_OUTPUT"
+            echo "arches=[${amd64},${arm64}]" >> "$GITHUB_OUTPUT"
+          else
+            echo "arm64=false" >> "$GITHUB_OUTPUT"
+            echo "arches=[${amd64}]" >> "$GITHUB_OUTPUT"
+          fi
+
+          # The wasm half follows a stricter rule than `arches`, because its export rule is
+          # stricter: `docker-wasm-deps` writes `frontend-deps-<arch>` on non-pull-request events
+          # only, with no release-pull-request tag to mirror `release-pr-deps`. So on *any* pull
+          # request its arm64 leg would compile for 9 minutes and publish nothing, and no job in
+          # this workflow reads that architecture — the frontend image is amd64 here.
+          if [ "$EVENT" != "pull_request" ] || [ "$FULL" = "true" ]; then
+            echo "wasm_arches=[${amd64},${arm64}]" >> "$GITHUB_OUTPUT"
+          else
+            echo "wasm_arches=[${amd64}]" >> "$GITHUB_OUTPUT"
+          fi
 
       # Skipped on `schedule` and `workflow_dispatch`: those runs are already `full`, so every
       # consumer reads `true` regardless.
@@ -1227,12 +1287,9 @@ jobs:
       packages: write # to export the layer cache to ghcr.io
     strategy:
       fail-fast: false
+      # amd64 always; arm64 off pull requests. `changes` owns the rule and says why.
       matrix:
-        include:
-          - arch: amd64
-            runner: ubuntu-latest
-          - arch: arm64
-            runner: ubuntu-24.04-arm
+        include: ${{ fromJSON(needs.changes.outputs.arches) }}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
@@ -1253,17 +1310,18 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: derive SOURCE_DATE_EPOCH
-        id: epoch
-        run: echo "value=$(git log -1 --format=%ct)" >> "$GITHUB_OUTPUT"
-
+      # No `SOURCE_DATE_EPOCH`, here or in any other leg. It is the commit timestamp, so passing it
+      # as a build arg changed the build's argument set on every commit and BuildKit reused nothing
+      # a previous run exported — the miss this whole warm-up exists to prevent. Nothing is exported
+      # from a `type=cacheonly` build, so there is no image whose timestamps it could clamp anyway.
+      # The Dockerfile's own comment carries the rule; release-please.yaml keeps reproducibility via
+      # the exporter instead.
       - name: cook dependency graph and compile every binary
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: deploy/docker/Dockerfile
           platforms: linux/${{ matrix.arch }}
-          build-args: SOURCE_DATE_EPOCH=${{ steps.epoch.outputs.value }}
           target: builder
           push: false
           outputs: type=cacheonly
@@ -1305,12 +1363,9 @@ jobs:
       packages: write # to export the layer cache to ghcr.io
     strategy:
       fail-fast: false
+      # `wasm_arches`, not `arches` — a stricter rule, for the reason `changes` gives.
       matrix:
-        include:
-          - arch: amd64
-            runner: ubuntu-latest
-          - arch: arm64
-            runner: ubuntu-24.04-arm
+        include: ${{ fromJSON(needs.changes.outputs.wasm_arches) }}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
@@ -1331,17 +1386,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: derive SOURCE_DATE_EPOCH
-        id: epoch
-        run: echo "value=$(git log -1 --format=%ct)" >> "$GITHUB_OUTPUT"
-
       - name: cook the wasm dependency graph
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: deploy/docker/Dockerfile
           platforms: linux/${{ matrix.arch }}
-          build-args: SOURCE_DATE_EPOCH=${{ steps.epoch.outputs.value }}
           target: cook-web
           push: false
           outputs: type=cacheonly
@@ -1352,7 +1402,9 @@ jobs:
   docker:
     name: docker build (${{ matrix.bin }})
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # 60 for the same reason `docker-frontend` carries 90: with no cache to import these legs
+    # build the whole `builder` chain themselves. `render` came in at 38m against the old 45.
+    timeout-minutes: 60
     needs: [changes, lint, docker-deps]
     if: ${{ !cancelled() && !failure() && needs.changes.outputs.docker == 'true' }}
     permissions:
@@ -1384,11 +1436,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Clamps layer mtimes to the commit timestamp so repeated builds of a commit are identical.
-      - name: derive SOURCE_DATE_EPOCH
-        id: epoch
-        run: echo "value=$(git log -1 --format=%ct)" >> "$GITHUB_OUTPUT"
-
       - name: build ${{ matrix.bin }} image
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
@@ -1397,7 +1444,6 @@ jobs:
           platforms: linux/amd64
           build-args: |
             BIN=${{ matrix.bin }}
-            SOURCE_DATE_EPOCH=${{ steps.epoch.outputs.value }}
           # The render tier needs a real browser at runtime (Chromium), so it selects the
           # dedicated runtime-browser stage; every other binary is a musl build that ships on
           # the default `scratch` runtime.
@@ -1406,7 +1452,9 @@ jobs:
           # Loaded into the local daemon so container-structure-test can inspect it by tag.
           load: true
           tags: tankovault-${{ matrix.bin }}:ci
-          # Reproducible output: no attestation/provenance layer, and mtimes rewritten.
+          # No attestation/provenance layer. Nothing here is published — the image is built to be
+          # structure-tested and thrown away — so it carries no `SOURCE_DATE_EPOCH` either;
+          # release-please.yaml is where reproducibility is owned.
           provenance: false
           # Import only — this job deliberately writes no cache. `backend-deps-amd64` is published
           # by `docker-deps` in this same run at this same commit, which is what makes `COPY . .`
@@ -1416,7 +1464,12 @@ jobs:
           # upload its own copy of the multi-gigabyte `cook` layer. On the Actions cache that
           # evicted `backend-deps` itself; on GHCR it instead makes every later import pull a
           # duplicate chain, which is a slower gate for no benefit either way.
-          cache-from: type=registry,ref=${{ needs.changes.outputs.buildcache }}:backend-deps-amd64
+          # `deps_scope` first: it is what `docker-deps` exported *in this run, at this commit*,
+          # so on a pull request it is the only tag that can hit once this branch touches the
+          # Dockerfile. `backend-deps-amd64` stays as the fallback for the runs that write it.
+          cache-from: |
+            ${{ needs.changes.outputs.deps_scope != '' && format('type=registry,ref={0}:{1}-amd64', needs.changes.outputs.buildcache, needs.changes.outputs.deps_scope) || '' }}
+            type=registry,ref=${{ needs.changes.outputs.buildcache }}:backend-deps-amd64
 
       # Enforces the image contract: non-root 1001:1001, the entrypoint, the baked-in binary and CA
       # trust store, and for the render tier the absence of root plus the presence of Chromium.
@@ -1471,7 +1524,11 @@ jobs:
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 60
     needs: [changes, lint, docker-deps]
-    if: ${{ !cancelled() && !failure() && needs.changes.outputs.docker == 'true' }}
+    # `arm64` is false on pull requests, where `docker-deps` builds no arm64 leg and there is no
+    # `backend-deps-arm64` at this commit for these legs to import. Without the second test they
+    # would not skip — they would cook their own arm64 dependency graph, which is the 30 minutes
+    # dropping the warm-up was meant to save.
+    if: ${{ !cancelled() && !failure() && needs.changes.outputs.docker == 'true' && needs.changes.outputs.arm64 == 'true' }}
     permissions:
       contents: read # to check out the build context
       packages: read # to import the layer cache from ghcr.io
@@ -1499,10 +1556,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: derive SOURCE_DATE_EPOCH
-        id: epoch
-        run: echo "value=$(git log -1 --format=%ct)" >> "$GITHUB_OUTPUT"
-
       - name: build ${{ matrix.bin }} image (linux/arm64)
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
@@ -1511,13 +1564,15 @@ jobs:
           platforms: linux/arm64
           build-args: |
             BIN=${{ matrix.bin }}
-            SOURCE_DATE_EPOCH=${{ steps.epoch.outputs.value }}
           target: ${{ matrix.bin == 'render' && 'runtime-browser' || 'runtime' }}
           push: false
           load: true
           tags: tankovault-${{ matrix.bin }}:ci-arm64
           provenance: false
-          cache-from: type=registry,ref=${{ needs.changes.outputs.buildcache }}:backend-deps-arm64
+          # Same ordering as the amd64 leg: this run's own export first, `main`'s as the fallback.
+          cache-from: |
+            ${{ needs.changes.outputs.deps_scope != '' && format('type=registry,ref={0}:{1}-arm64', needs.changes.outputs.buildcache, needs.changes.outputs.deps_scope) || '' }}
+            type=registry,ref=${{ needs.changes.outputs.buildcache }}:backend-deps-arm64
 
       # The same image contract as the amd64 leg. `container-structure-test` ships a separate
       # arm64 binary; the config files are architecture-independent.
@@ -1547,7 +1602,12 @@ jobs:
   docker-frontend:
     name: docker build (frontend)
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # 90, matching `docker-deps`, because this leg has the longest cold path in the workflow: it
+    # consumes both lineages, so with nothing to import it builds the backend `builder` chain *and*
+    # the wasm one. That happens whenever the Dockerfile itself changes, since a pull request
+    # exports no cache and `main`'s tag is then keyed on the old file — this job timed out at
+    # exactly 45m00s on the change that fixed the toolchain mismatch, having built correctly.
+    timeout-minutes: 90
     # Both warm-ups: this image consumes both lineages — the musl binary from `backend-deps` and
     # the SPA bundle from `frontend-deps`.
     needs: [changes, lint, docker-deps, docker-wasm-deps]
@@ -1575,10 +1635,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: derive SOURCE_DATE_EPOCH
-        id: epoch
-        run: echo "value=$(git log -1 --format=%ct)" >> "$GITHUB_OUTPUT"
-
       - name: build frontend image
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
@@ -1586,8 +1642,6 @@ jobs:
           file: deploy/docker/Dockerfile
           platforms: linux/amd64
           target: frontend
-          build-args: |
-            SOURCE_DATE_EPOCH=${{ steps.epoch.outputs.value }}
           push: false
           # Loaded into the local daemon so container-structure-test can inspect it by tag.
           load: true
@@ -1597,6 +1651,7 @@ jobs:
           # layers too, so it would publish a second copy of the whole backend chain under this
           # image's own tag and every later import would pull it twice.
           cache-from: |
+            ${{ needs.changes.outputs.deps_scope != '' && format('type=registry,ref={0}:{1}-amd64', needs.changes.outputs.buildcache, needs.changes.outputs.deps_scope) || '' }}
             type=registry,ref=${{ needs.changes.outputs.buildcache }}:backend-deps-amd64
             type=registry,ref=${{ needs.changes.outputs.buildcache }}:frontend-deps-amd64
 

@@ -398,10 +398,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: derive SOURCE_DATE_EPOCH
-        id: epoch
-        run: echo "value=$(git log -1 --format=%ct)" >> "$GITHUB_OUTPUT"
-
       # Build args and `platforms` must match the legs below exactly, or they look up a key this
       # never wrote. `BIN` is deliberately absent: no stage up to `builder` reads it, which is
       # what makes one warm-up serve every planned image.
@@ -412,14 +408,18 @@ jobs:
       # build unable to read anything `ci.yml` writes — including `release-pr-deps-<arch>`, which
       # is this same tree already compiled on the release pull request. Leaving the Dockerfile's
       # default is what makes that import hit.
+      #
+      # `SOURCE_DATE_EPOCH` was the same mistake, one level worse, and is why this job has no
+      # build args at all now. It is the commit timestamp, so it differed between the release pull
+      # request and the merge commit — the two trees this import exists to bridge — and between
+      # every consecutive `main` push besides. No `cache-from` in either workflow had hit since it
+      # was introduced. Reproducibility moved to the exporter on the publishing legs below.
       - name: cook dependency graph and compile every binary
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: deploy/docker/Dockerfile
           platforms: linux/${{ matrix.arch }}
-          build-args: |
-            SOURCE_DATE_EPOCH=${{ steps.epoch.outputs.value }}
           target: builder
           push: false
           outputs: type=cacheonly
@@ -515,8 +515,9 @@ jobs:
         # rather than `${{ github.repository }}` directly.
 
       # Clamps image layer mtimes to the commit timestamp so a rebuild of the same commit is
-      # byte-identical. A step output rather than `$GITHUB_ENV`, which is a mutable channel
-      # between steps and the thing zizmor's `github-env` audit is about.
+      # byte-identical. Consumed by the exporter on the push leg below — never as a build arg.
+      # A step output rather than `$GITHUB_ENV`, which is a mutable channel between steps and the
+      # thing zizmor's `github-env` audit is about.
       - name: derive SOURCE_DATE_EPOCH
         id: epoch
         run: echo "value=$(git log -1 --format=%ct)" >> "$GITHUB_OUTPUT"
@@ -555,7 +556,6 @@ jobs:
           platforms: linux/${{ matrix.arch }}
           build-args: |
             BIN=${{ matrix.bin }}
-            SOURCE_DATE_EPOCH=${{ steps.epoch.outputs.value }}
           push: false
           load: true
           tags: tankovault-${{ matrix.bin }}:release-${{ matrix.arch }}
@@ -599,9 +599,17 @@ jobs:
       # from one pass. The manifest digest is content-addressed, so it is the *same* digest in
       # both — which is why the `manifest` job can use one digest file to assemble the list in
       # either registry.
+      # `SOURCE_DATE_EPOCH` reaches this build as a step environment variable, which buildx
+      # propagates to the exporter, and `rewrite-timestamp=true` is what applies it to the file
+      # timestamps inside the pushed image. It is deliberately *not* a `--build-arg`: that put the
+      # commit timestamp into every stage's cache key and cost this job a full 45-minute recompile
+      # of a tree the warm-up above had already built. The Dockerfile must not declare the `ARG`
+      # again, and its comment says so.
       - name: push ${{ matrix.bin }} (${{ matrix.arch }}) by digest
         id: build
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        env:
+          SOURCE_DATE_EPOCH: ${{ steps.epoch.outputs.value }}
         with:
           context: .
           file: deploy/docker/Dockerfile
@@ -609,10 +617,9 @@ jobs:
           platforms: linux/${{ matrix.arch }}
           build-args: |
             BIN=${{ matrix.bin }}
-            SOURCE_DATE_EPOCH=${{ steps.epoch.outputs.value }}
           outputs: |
-            type=image,name=docker.io/${{ steps.params.outputs.dockerhub }},push-by-digest=true,name-canonical=true,push=true
-            type=image,name=${{ steps.params.outputs.ghcr }},push-by-digest=true,name-canonical=true,push=true
+            type=image,name=docker.io/${{ steps.params.outputs.dockerhub }},push-by-digest=true,name-canonical=true,push=true,rewrite-timestamp=true
+            type=image,name=${{ steps.params.outputs.ghcr }},push-by-digest=true,name-canonical=true,push=true,rewrite-timestamp=true
           # `provenance: false` matches ci.yml and is a deliberate reproducibility trade: an
           # attestation layer carries build timestamps, which breaks byte-identical rebuilds.
           # The SBOM attested in the `manifest` job compensates.

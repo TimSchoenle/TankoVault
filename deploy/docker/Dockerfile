@@ -4,13 +4,28 @@
 # `--build-arg BIN=<api|worker|control-plane|notifier|sync|challenge-solver|render|bootstrap>`.
 
 ARG RUST_VERSION=1.94
-# Passed through so BuildKit can clamp layer mtimes for reproducible images; empty is fine.
-ARG SOURCE_DATE_EPOCH
+
+# `SOURCE_DATE_EPOCH` is deliberately **not** declared, and must not be re-added. Reproducible
+# timestamps come from the exporter — `rewrite-timestamp=true` on the publishing legs in
+# release-please.yaml — which reads the value buildx propagates from the environment. Declaring it
+# and passing `--build-arg` instead puts the commit timestamp into the build's argument set, and
+# BuildKit then reuses no cached layer built under a different epoch. That made every cross-run
+# `cache-from` a total miss: `chef` re-ran `apk add` and rebuilt `cargo-auditable` on a
+# digest-pinned base, and `cook` recompiled all 549 dependencies, on every run — 45 minutes a
+# build. release-please.yaml documents the same trap for `SERVICE_BINS`.
 
 # Alpine, not Debian: BoringSSL (wreq's TLS backend) needs a musl C++ toolchain that Debian's
 # musl-tools lacks, so the build is native rather than cross. Pinned by digest.
 FROM lukemathwalker/cargo-chef:latest-rust-${RUST_VERSION}-alpine@sha256:5b2b5c6585c537a2795a477e93ebba85b4a2887e11ee9bddd34ad607e53ccec0 AS chef
 WORKDIR /app
+# Copied alone, first, exactly as `wasm-chef` does below and for a sharper version of the same
+# reason: the base image's toolchain floats within 1.94 while this file pins an exact patch.
+# Without it here, `cook` compiled against the image's rustc and `builder` — which receives this
+# file via `COPY . .` — compiled against the pinned one. Cargo's fingerprint carries the rustc
+# identity, so every one of the 523 dependency crates got a different metadata hash and `builder`
+# recompiled the entire graph `cook` had just built, on every single build. Measured: 427 crates
+# rebuilt with this file arriving late, 11 with the two stages agreeing.
+COPY rust-toolchain.toml ./
 # musl-dev/g++/cmake/nasm/perl build BoringSSL from source; git lets btls-sys patch the vendored
 # tree; clang-dev is bindgen's libclang; ca-certificates goes into the certificate-less scratch image.
 RUN apk add --no-cache musl-dev g++ cmake make nasm perl git clang-dev ca-certificates
@@ -52,8 +67,24 @@ COPY . .
 ARG SERVICE_BINS="api bootstrap challenge-solver control-plane frontend notifier render sync worker xtask"
 # `from=cook,source=/app/target` seeds the mount so a cold cache (CI's is always cold) starts from
 # `cook`'s output instead of rebuilding every dependency. `sharing=locked` lets concurrent builds
-# queue on cargo's target-dir lock rather than race it. `${flags}` is unquoted so word splitting
-# turns it into separate --bin args.
+# queue on cargo's target-dir lock rather than race it.
+# `${flags}` is unquoted so word splitting turns it into separate --bin args.
+#
+# **The seed above currently delivers nothing, and the package selection is not why.** Measured on
+# CI, this stage recompiles *all 523* third-party crates `cook` had just compiled, every build —
+# `cook`'s 11 minutes are pure waste and cargo-chef is buying nothing here. The `/cargo` mount is
+# shared and works (zero re-downloads in this stage), so it is specifically the compiled artefacts
+# in `/app/target` that never come back.
+#
+# Building the whole workspace here instead of this `--bin` list was tried, on the theory that
+# feature unification over a different package set was invalidating the fingerprints. It is not:
+# the redundant recompiles went 489-of-512 to 523-of-549 — the same ~95%, just more crates. It is
+# reverted rather than kept because it compiled 26 extra crates for no gain. `cargo auditable` is
+# not the cause either: it sets `RUSTC_WORKSPACE_WRAPPER`, so switching to it rebuilds workspace
+# members only, verified locally at one crate rather than a graph.
+#
+# So the cause is still unknown, and the next person should start at whether the `from=cook`
+# seeding populates the mount at all rather than re-testing either of the above.
 RUN --mount=type=cache,id=tankovault-backend-cargo,target=/cargo,sharing=shared \
     --mount=type=cache,id=tankovault-backend-target,target=/app/target,sharing=locked,from=cook,source=/app/target \
     set -eu; \

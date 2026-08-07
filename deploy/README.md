@@ -99,15 +99,24 @@ building. `BIN` must be one of the names in `SERVICE_BINS`, or the final `COPY` 
 take.
 
 ### Reproducible & cached builds
-All base images are pinned by digest, cargo resolves against the committed `Cargo.lock`
-(`--locked`), and passing `SOURCE_DATE_EPOCH` clamps image layer timestamps so repeated
-builds of the same commit are byte-identical:
+All base images are pinned by digest and cargo resolves against the committed `Cargo.lock`
+(`--locked`):
 ```bash
 docker build -f deploy/docker/Dockerfile \
   --build-arg BIN=api \
-  --build-arg SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)" \
   -t tankovault-api .
 ```
+Image layer timestamps are clamped from `SOURCE_DATE_EPOCH` in the *environment*, which buildx
+passes to the exporter, and `rewrite-timestamp=true` applies it to the files inside the image:
+```bash
+SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)" docker buildx build \
+  -f deploy/docker/Dockerfile --build-arg BIN=api \
+  --output type=image,name=tankovault-api,rewrite-timestamp=true .
+```
+Never pass it as `--build-arg`. The Dockerfile does not declare the `ARG`, deliberately: a build
+argument is part of every stage's cache key, and this one changes with each commit, so it made
+every `cache-from` in CI a total miss — 45 minutes of recompilation a run. The Dockerfile's
+header comment carries the rule.
 The dependency graph is compiled once by cargo-chef (reused across every service image and
 exported by CI via the GHA layer cache); BuildKit `type=cache` mounts additionally keep the
 crate registry warm across local rebuilds. Refresh a pinned digest with

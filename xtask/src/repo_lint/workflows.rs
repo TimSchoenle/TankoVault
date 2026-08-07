@@ -682,7 +682,8 @@ mod tests {
 
         // A step `env:` is nested, so it is not the declaration — the caller reports it as the
         // override it is.
-        let step = "jobs:\n  build:\n    steps:\n      - env:\n          SOURCE_DATE_EPOCH: \"7\"\n";
+        let step =
+            "jobs:\n  build:\n    steps:\n      - env:\n          SOURCE_DATE_EPOCH: \"7\"\n";
         assert_eq!(workflow_env_value(step, "SOURCE_DATE_EPOCH"), None);
 
         // An unindented key ends the block; a later top-level `env:` is a different workflow's

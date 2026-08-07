@@ -7,6 +7,7 @@
 
 use tankovault_config::MatchingConfig;
 use tankovault_db::repo::catalog::register_source_stubs;
+use tankovault_db::repo::tracking::NotificationFilter;
 use tankovault_db::repo::{sync, tracking};
 use tankovault_domain::{
     AccountStatus, ContentType, ProviderId, SeriesId, SeriesStatus, WatchStatus,
@@ -70,24 +71,31 @@ async fn dedup_claim_many_on_an_empty_list_is_a_no_op() {
 }
 
 #[tokio::test]
-async fn notifications_create_many_writes_one_row_per_user_and_counts_group() {
+async fn notifications_upsert_many_writes_one_row_per_user_and_counts_group() {
     let db = TestDb::spawn().await;
     let a = db.seed_user("a", &[], AccountStatus::Active).await;
     let b = db.seed_user("b", &[], AccountStatus::Active).await;
     let payload = serde_json::json!({ "chapter_number": 4.0 });
 
-    let created = tracking::notifications_create_many(&db.pool, &[a, b], "new_chapter", &payload)
-        .await
-        .expect("create notifications");
+    let created =
+        tracking::notifications_upsert_many(&db.pool, &[a, b], "new_chapter", None, &payload)
+            .await
+            .expect("create notifications");
     assert_eq!(created.len(), 2);
 
     // The returned id must belong to its paired user (SSE addressing depends on it).
-    for (user, id) in &created {
-        let page = tracking::notifications_page(&db.pool, *user, 10, 0)
-            .await
-            .expect("list notifications");
+    for entry in &created {
+        let page = tracking::notifications_page(
+            &db.pool,
+            entry.user_id,
+            NotificationFilter::default(),
+            10,
+            0,
+        )
+        .await
+        .expect("list notifications");
         assert_eq!(page.items.len(), 1);
-        assert_eq!(page.items[0].id, *id);
+        assert_eq!(page.items[0].id, entry.notification_id);
         assert_eq!(page.items[0].payload, payload);
     }
 
@@ -105,12 +113,87 @@ async fn notifications_create_many_writes_one_row_per_user_and_counts_group() {
     assert!(!counts.contains_key(&c));
 }
 
+/// A group key coalesces into the reader's *open* row; a read one starts a fresh row.
+///
+/// Twelve chapters overnight used to be twelve rows and a bell reading `12`, none of which said
+/// which series they were about. The merge is what makes the count mean "things to look at": it
+/// sums `count`, widens `first_number`/`last_number`, and keeps `latest` on whichever side is
+/// further along, so an event arriving out of order cannot walk the row backwards.
+#[tokio::test]
+async fn a_group_key_coalesces_into_the_open_row_only() {
+    let db = TestDb::spawn().await;
+    let reader = db.seed_user("grouped", &[], AccountStatus::Active).await;
+    let group = "series:test";
+
+    let event = |number: f64, title: &str| {
+        serde_json::json!({
+            "v": 2,
+            "series_title": "Blame!",
+            "count": 1,
+            "first_number": number,
+            "last_number": number,
+            "latest": { "number": number, "title": title },
+        })
+    };
+
+    for (number, title) in [(7.0, "seven"), (9.0, "nine"), (8.0, "eight")] {
+        tracking::notifications_upsert_many(
+            &db.pool,
+            &[reader],
+            "new_chapter",
+            Some(group),
+            &event(number, title),
+        )
+        .await
+        .expect("upsert");
+    }
+
+    let page = tracking::notifications_page(&db.pool, reader, NotificationFilter::default(), 10, 0)
+        .await
+        .expect("list");
+    assert_eq!(page.items.len(), 1, "three chapters coalesced into one row");
+    assert_eq!(page.unread, 1, "and into one unread count");
+    let merged = &page.items[0].payload;
+    assert_eq!(merged["count"], serde_json::json!(3));
+    // Read as `f64`, not compared against a JSON literal: a whole `float8` round-trips through
+    // `jsonb` as `7`, not `7.0`, and the API reads these with `as_f64` for exactly that reason.
+    assert_eq!(merged["first_number"].as_f64(), Some(7.0));
+    assert_eq!(merged["last_number"].as_f64(), Some(9.0));
+    assert_eq!(
+        merged["latest"]["title"],
+        serde_json::json!("nine"),
+        "the out-of-order chapter 8 must not overwrite the newer chapter 9"
+    );
+
+    tracking::notifications_mark_all_read(&db.pool, reader)
+        .await
+        .expect("mark read");
+    tracking::notifications_upsert_many(
+        &db.pool,
+        &[reader],
+        "new_chapter",
+        Some(group),
+        &event(10.0, "ten"),
+    )
+    .await
+    .expect("upsert after read");
+
+    let page = tracking::notifications_page(&db.pool, reader, NotificationFilter::default(), 10, 0)
+        .await
+        .expect("list");
+    assert_eq!(page.items.len(), 2, "a read row is not reopened");
+    assert_eq!(page.items[0].payload["count"], serde_json::json!(1));
+}
+
 /// The window is a window, and the two totals count the inbox behind it.
 ///
 /// `GET /v1/me/notifications` used to answer with a single hard-capped batch of 100 rows and no
 /// counts at all, so a reader with more than that saw exactly 100 rows, a notification bell stuck
 /// at 100, and no way to reach the rest. `total` and `unread` must therefore be counted from the
 /// table rather than from the page — deriving them from `items` reproduces the cap exactly.
+///
+/// The filter is server-side for the same reason: the tabs used to filter the one page the client
+/// had loaded, so "Unread" showed nothing whenever the unread rows sat on page two.
 #[tokio::test]
 async fn notifications_page_windows_the_inbox_and_counts_all_of_it() {
     let db = TestDb::spawn().await;
@@ -119,16 +202,28 @@ async fn notifications_page_windows_the_inbox_and_counts_all_of_it() {
 
     for n in 0..5 {
         let payload = serde_json::json!({ "chapter_number": f64::from(n) });
-        tracking::notifications_create_many(&db.pool, &[reader, other], "new_chapter", &payload)
-            .await
-            .expect("create notifications");
+        tracking::notifications_upsert_many(
+            &db.pool,
+            &[reader, other],
+            "new_chapter",
+            None,
+            &payload,
+        )
+        .await
+        .expect("create notifications");
     }
 
     let mut seen = std::collections::HashSet::new();
     for offset in [0, 2, 4] {
-        let page = tracking::notifications_page(&db.pool, reader, 2, offset)
-            .await
-            .expect("page notifications");
+        let page = tracking::notifications_page(
+            &db.pool,
+            reader,
+            NotificationFilter::default(),
+            2,
+            offset,
+        )
+        .await
+        .expect("page notifications");
         // Both counts describe the inbox, so they do not move as the window does.
         assert_eq!(page.total, 5);
         assert_eq!(page.unread, 5);
@@ -138,19 +233,53 @@ async fn notifications_page_windows_the_inbox_and_counts_all_of_it() {
     // Walking the offsets reaches every row exactly once — the point of paging over truncating.
     assert_eq!(seen.len(), 5);
 
+    let filtered = tracking::notifications_page(
+        &db.pool,
+        reader,
+        NotificationFilter {
+            unread_only: false,
+            kind: Some("series_completed"),
+        },
+        10,
+        0,
+    )
+    .await
+    .expect("page notifications");
+    assert!(filtered.items.is_empty());
+    assert_eq!(
+        filtered.total, 0,
+        "`total` follows the filter — it is the pager's denominator"
+    );
+    assert_eq!(filtered.unread, 5, "`unread` does not — it is the bell");
+
     let marked = tracking::notifications_mark_all_read(&db.pool, reader)
         .await
         .expect("mark all read");
     assert_eq!(marked, 5);
 
-    let page = tracking::notifications_page(&db.pool, reader, 2, 0)
+    let page = tracking::notifications_page(&db.pool, reader, NotificationFilter::default(), 2, 0)
         .await
         .expect("page notifications");
     assert_eq!(page.unread, 0);
     assert_eq!(page.total, 5);
 
+    let unread_only = tracking::notifications_page(
+        &db.pool,
+        reader,
+        NotificationFilter {
+            unread_only: true,
+            kind: None,
+        },
+        10,
+        0,
+    )
+    .await
+    .expect("page notifications");
+    assert!(unread_only.items.is_empty());
+    assert_eq!(unread_only.total, 0);
+
     // Scoped to its owner: "mark all read" must not reach across accounts.
-    let theirs = tracking::notifications_page(&db.pool, other, 2, 0)
+    let theirs = tracking::notifications_page(&db.pool, other, NotificationFilter::default(), 2, 0)
         .await
         .expect("page notifications");
     assert_eq!(theirs.unread, 5);

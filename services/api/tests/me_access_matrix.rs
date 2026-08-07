@@ -168,7 +168,7 @@ fn me_gates() -> Vec<Gate> {
         },
         get("/v1/me/notification-prefs", "/v1/me/notification-prefs"),
         Gate {
-            // Free-form by design (`request_body = serde_json::Value`); an empty object is valid.
+            // Typed, but every field defaults, so an empty object is a valid whole document.
             body: || Some(json!({})),
             ..gate(
                 "PUT",

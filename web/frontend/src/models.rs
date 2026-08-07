@@ -72,9 +72,14 @@ pub(crate) use crate::wire::types::MergeCandidateView as MergeCandidate;
 pub(crate) use crate::wire::types::RemoteEntryRow as UnmatchedRemoteEntry;
 pub(crate) use crate::wire::types::UnmappedSeriesRow as UnmappedSeries;
 
-/// The notifications list is product-defined free-form JSON on the server, so it is untyped
-/// here too rather than pretending to a schema the API does not publish.
-pub(crate) type Notification = serde_json::Value;
+/// One inbox row.
+///
+/// Was `serde_json::Value` while the API published the stored document verbatim, which is why
+/// every row read "new chapter": the view had to guess at a payload whose title field no writer
+/// ever set. The server resolves the display fields now, so this is a real type.
+pub(crate) use crate::wire::types::NotificationItem as Notification;
+
+pub(crate) use crate::wire::types::NotificationPrefs;
 
 /// The SSE push body: just the recomputed unread count.
 #[derive(Debug, Clone, Serialize, Deserialize)]

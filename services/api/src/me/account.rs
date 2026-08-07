@@ -7,6 +7,7 @@ use axum::Json;
 use axum::extract::{Path, State};
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
+use tankovault_domain::NotificationPrefs;
 use time::OffsetDateTime;
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -265,21 +266,23 @@ pub async fn delete_session(
 
 /// Get notification preferences
 ///
-/// The caller's notification preferences JSON (frontend §9.4). `{}` means "product defaults".
+/// The caller's effective notification preferences. A reader who has never saved any gets the
+/// product defaults, fully populated, rather than an empty object the client would have to know
+/// how to fill in.
 #[utoipa::path(
     get,
     path = "/v1/me/notification-prefs",
     tag = ME_NOTIFICATIONS_TAG,
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Product-defined free-form preferences JSON", body = serde_json::Value),
+        (status = 200, description = "The caller's effective preferences", body = NotificationPrefs),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn notification_prefs(
     State(state): State<AppState>,
     user: AuthUser,
-) -> ApiResult<Json<serde_json::Value>> {
+) -> ApiResult<Json<NotificationPrefs>> {
     Ok(Json(
         tankovault_db::repo::users::get_notification_prefs(&state.pool, user.user_id).await?,
     ))
@@ -287,24 +290,31 @@ pub async fn notification_prefs(
 
 /// Replace notification preferences
 ///
-/// Replace the caller's notification preferences (frontend §9.4). The body is stored verbatim
-/// as an open JSON document.
+/// Replaces the caller's preferences wholesale. Every field defaults, so a partial body is a
+/// valid document — the omitted fields come back to the product defaults, not to `false`.
+///
+/// The stored document used to be free-form and unvalidated, and nothing read it: the three
+/// toggles it held had no effect on delivery at all. It is typed now precisely so that a
+/// preference which is saved is a preference the notifier honours.
 #[utoipa::path(
     put,
     path = "/v1/me/notification-prefs",
     tag = ME_NOTIFICATIONS_TAG,
-    request_body = serde_json::Value,
+    request_body = NotificationPrefs,
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "The stored preferences, echoed back", body = serde_json::Value),
+        (status = 200, description = "The stored preferences, echoed back", body = NotificationPrefs),
+        (status = 400, description = "the document is out of range or from a newer schema", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn put_notification_prefs(
     State(state): State<AppState>,
     user: AuthUser,
-    Json(body): Json<serde_json::Value>,
-) -> ApiResult<Json<serde_json::Value>> {
+    Json(body): Json<NotificationPrefs>,
+) -> ApiResult<Json<NotificationPrefs>> {
+    body.validate()
+        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     tankovault_db::repo::users::set_notification_prefs(&state.pool, user.user_id, &body).await?;
     Ok(Json(body))
 }

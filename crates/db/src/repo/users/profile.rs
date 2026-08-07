@@ -5,7 +5,7 @@ use super::CiText;
 use super::credentials::UserRow;
 use crate::error::{DbError, DbResult};
 use sqlx::PgExecutor;
-use tankovault_domain::{AccountStatus, User, UserId};
+use tankovault_domain::{AccountStatus, NotificationPrefs, User, UserId};
 
 /// Apply a username and/or email change.
 ///
@@ -51,36 +51,44 @@ pub async fn update_profile<'e, E: PgExecutor<'e>>(
     Ok(row.into())
 }
 
-/// Read a user's notification preferences JSON. `{}` means "defaults".
+/// Read a user's notification preferences.
+///
+/// An unknown id, an empty document and a document this build cannot parse all yield
+/// [`NotificationPrefs::default`]. Failing here would cost the reader the notification the
+/// preferences were only ever meant to shape.
 ///
 /// # Errors
-/// [`DbError::Sqlx`] only. An unknown `id` yields `{}`, not [`DbError::NotFound`].
+/// [`DbError::Sqlx`] only.
 pub async fn get_notification_prefs<'e, E: PgExecutor<'e>>(
     exec: E,
     id: UserId,
-) -> DbResult<serde_json::Value> {
-    let prefs = sqlx::query_scalar!(
+) -> DbResult<NotificationPrefs> {
+    let stored = sqlx::query_scalar!(
         "SELECT notification_prefs AS \"notification_prefs: serde_json::Value\" FROM users WHERE id = $1",
         id.as_uuid(),
     )
     .fetch_optional(exec)
     .await?;
-    Ok(prefs.unwrap_or_else(|| serde_json::json!({})))
+    Ok(stored
+        .and_then(|value| serde_json::from_value(value).ok())
+        .unwrap_or_default())
 }
 
-/// Replace a user's notification preferences JSON.
+/// Replace a user's notification preferences.
 ///
 /// # Errors
-/// [`DbError::NotFound`] — a 404 — when `id` matches no row. Otherwise [`DbError::Sqlx`].
+/// [`DbError::NotFound`] — a 404 — when `id` matches no row. [`DbError::Serialization`] if the
+/// document cannot be encoded. Otherwise [`DbError::Sqlx`].
 pub async fn set_notification_prefs<'e, E: PgExecutor<'e>>(
     exec: E,
     id: UserId,
-    prefs: &serde_json::Value,
+    prefs: &NotificationPrefs,
 ) -> DbResult<()> {
+    let document = serde_json::to_value(prefs)?;
     let result = sqlx::query!(
         "UPDATE users SET notification_prefs = $2 WHERE id = $1",
         id.as_uuid(),
-        prefs,
+        document,
     )
     .execute(exec)
     .await?;

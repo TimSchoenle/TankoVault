@@ -38,10 +38,30 @@
       "signedOut": "Melde dich an und verbinde den Anbieter dann erneut über Konto → Sync & Integrationen."
     },
     "notifications": {
-      "digest": "Wochenrückblick",
-      "email": "E-Mail-Benachrichtigungen",
-      "newChapters": "Neue Kapitel auf deiner Merkliste",
+      "channel": {
+        "inApp": "Benachrichtigungen in der App",
+        "inAppHint": "Posteingang und Zähler. Aus stoppt alles darunter.",
+        "live": "Live-Push",
+        "liveHint": "Aktualisiert den Zähler ohne Neuladen. Aus wird trotzdem gespeichert."
+      },
+      "groupUnread": "Kapitel einer Serie bündeln",
+      "groupUnreadHint": "Zwölf Kapitel über Nacht werden zu einer Zeile, bis du sie gelesen hast.",
+      "kind": {
+        "announcement": "Ankündigungen dieser Instanz",
+        "newChapter": "Neue Kapitel",
+        "seriesCompleted": "Eine Serie ist abgeschlossen",
+        "sourceAdded": "Eine neue Quelle zum Lesen",
+        "syncConflict": "Sync braucht eine Entscheidung"
+      },
+      "quietHours": "Ruhezeiten",
+      "quietHoursHint": "Schaltet den Live-Push nachts stumm. Benachrichtigungen werden trotzdem gespeichert.",
       "saved": "Einstellungen gespeichert.",
+      "section": {
+        "channels": "Wohin",
+        "delivery": "Zustellung",
+        "kinds": "Worüber",
+        "series": "Welche Serien"
+      },
       "title": "Benachrichtigungseinstellungen"
     },
     "privacy": {
@@ -1038,17 +1058,21 @@
     "empty": "Noch keine Benachrichtigungen. Wir melden uns, sobald eine verfolgte Serie ein Update hat.",
     "emptyFilter": "In diesem Filter ist nichts.",
     "line": {
-      "generic": "Benachrichtigung",
-      "newChapter": "Neues Kapitel {number} von {title}",
+      "chapterRange": "{title} — Kap. {first}–{last}",
+      "newChapter": "{title} — Kap. {number}",
       "update": "Update für {title}"
     },
     "markAllRead": "Alle als gelesen markieren",
     "new": "Neu",
+    "newChapters": {
+      "one": "{count} neues Kapitel",
+      "other": "{count} neue Kapitel"
+    },
+    "read": "Lesen",
     "summary": "{count} ungelesen · Live-Push über SSE",
     "tab": {
       "all": "Alle",
       "chapters": "Kapitel",
-      "sync": "Sync",
       "unread": "Ungelesen"
     }
   },

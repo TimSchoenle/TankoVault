@@ -1,0 +1,56 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO notifications (id, user_id, kind, group_key, payload) SELECT i, u, $3, $4, $5 FROM UNNEST($1::uuid[], $2::uuid[]) AS t(i, u) ON CONFLICT (user_id, group_key) WHERE read_at IS NULL AND group_key IS NOT NULL DO UPDATE SET payload = notifications.payload || EXCLUDED.payload || jsonb_build_object( 'count', COALESCE((notifications.payload->>'count')::int, 1) + COALESCE((EXCLUDED.payload->>'count')::int, 1), 'first_number', LEAST((notifications.payload->>'first_number')::float8, (EXCLUDED.payload->>'first_number')::float8), 'last_number', GREATEST((notifications.payload->>'last_number')::float8, (EXCLUDED.payload->>'last_number')::float8), 'latest', CASE WHEN COALESCE((EXCLUDED.payload->>'last_number')::float8, 0) >= COALESCE((notifications.payload->>'last_number')::float8, 0) THEN EXCLUDED.payload->'latest' ELSE notifications.payload->'latest' END ), created_at = now() RETURNING id, user_id, payload AS \"payload: Json\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "notifications",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "notifications",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "payload: Json",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "notifications",
+            "name": "payload"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "UuidArray",
+        "Text",
+        "Text",
+        "Jsonb"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "e992537e2919402aba9fb4525b3c148e9978a2f2e6c3a077800c3af8157e4834"
+}

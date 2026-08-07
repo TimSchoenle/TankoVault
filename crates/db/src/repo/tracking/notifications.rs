@@ -8,21 +8,77 @@ use super::ReadProgress;
 use crate::error::DbResult;
 use serde_json::Value as Json;
 use sqlx::{FromRow, PgExecutor};
-use tankovault_domain::{Notification, NotificationId, SeriesId, UserId};
+use tankovault_domain::{
+    Notification, NotificationId, NotificationPrefs, SeriesId, UserId, WatchStatus,
+};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-/// Insert one identical notification for each user in `user_ids`, returning `(user, id)` pairs,
-/// in one statement rather than one per user.
+/// A notification row the notifier just wrote, with the document as stored.
+pub struct CreatedNotification {
+    pub user_id: UserId,
+    pub notification_id: NotificationId,
+    /// The payload *after* any coalescing merge — what the live push has to carry, since a
+    /// pushed `count: 1` for a row that now reads "12 new" is a lie the client cannot detect.
+    pub payload: Json,
+}
+
+/// The display fields a notification payload snapshots, resolved once per event.
+pub struct NotificationContext {
+    pub series_title: String,
+    pub cover_url: Option<String>,
+    /// The provider's base, for resolving a chapter's relative path into an openable URL.
+    pub base_url: String,
+}
+
+/// Resolve the series and provider a chapter event refers to.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only; an unknown series or provider slug is `Ok(None)`, which a
+/// caller must treat as "write the notification without the decoration", not as a failure.
+pub async fn notification_context<'e, E: PgExecutor<'e>>(
+    exec: E,
+    series_id: SeriesId,
+    provider_slug: &str,
+) -> DbResult<Option<NotificationContext>> {
+    let row = sqlx::query!(
+        "SELECT s.canonical_title, s.cover_url, p.base_url \
+         FROM series s JOIN providers p ON p.slug = $2 \
+         WHERE s.id = $1",
+        series_id.as_uuid(),
+        provider_slug,
+    )
+    .fetch_optional(exec)
+    .await?;
+    Ok(row.map(|r| NotificationContext {
+        series_title: r.canonical_title,
+        cover_url: r.cover_url,
+        base_url: r.base_url,
+    }))
+}
+
+/// Insert one identical notification for each user in `user_ids`, in one statement rather than
+/// one per user, coalescing into each user's open row when `group_key` is set.
+///
+/// With a `group_key`, an unread row for the same `(user, group)` absorbs the event instead of
+/// adding a second row: `count` sums, `first_number`/`last_number` widen, `latest` keeps whichever
+/// side is further along, and everything else takes the newer document's value so a renamed series
+/// or a fresh cover lands. `notifications_open_group_idx` is both the conflict target and the
+/// concurrency guard — two notifiers handling different chapters of one series serialise on it
+/// rather than racing into two rows, so no retry loop is needed here.
+///
+/// `None` inserts unconditionally: the partial index excludes NULL `group_key`, so ungrouped kinds
+/// keep one row per event.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; all-or-nothing — one failure drops the whole fan-out.
-pub async fn notifications_create_many<'e, E: PgExecutor<'e>>(
+pub async fn notifications_upsert_many<'e, E: PgExecutor<'e>>(
     exec: E,
     user_ids: &[UserId],
     kind: &str,
+    group_key: Option<&str>,
     payload: &Json,
-) -> DbResult<Vec<(UserId, NotificationId)>> {
+) -> DbResult<Vec<CreatedNotification>> {
     if user_ids.is_empty() {
         return Ok(Vec::new());
     }
@@ -32,53 +88,82 @@ pub async fn notifications_create_many<'e, E: PgExecutor<'e>>(
         .collect();
     let users: Vec<Uuid> = user_ids.iter().map(|u| u.as_uuid()).collect();
     let rows = sqlx::query!(
-        "INSERT INTO notifications (id, user_id, kind, payload) \
-         SELECT i, u, $3, $4 FROM UNNEST($1::uuid[], $2::uuid[]) AS t(i, u) \
-         RETURNING id, user_id",
+        "INSERT INTO notifications (id, user_id, kind, group_key, payload) \
+         SELECT i, u, $3, $4, $5 FROM UNNEST($1::uuid[], $2::uuid[]) AS t(i, u) \
+         ON CONFLICT (user_id, group_key) WHERE read_at IS NULL AND group_key IS NOT NULL \
+         DO UPDATE SET \
+           payload = notifications.payload || EXCLUDED.payload || jsonb_build_object( \
+             'count', COALESCE((notifications.payload->>'count')::int, 1) \
+                    + COALESCE((EXCLUDED.payload->>'count')::int, 1), \
+             'first_number', LEAST((notifications.payload->>'first_number')::float8, \
+                                   (EXCLUDED.payload->>'first_number')::float8), \
+             'last_number', GREATEST((notifications.payload->>'last_number')::float8, \
+                                     (EXCLUDED.payload->>'last_number')::float8), \
+             'latest', CASE WHEN COALESCE((EXCLUDED.payload->>'last_number')::float8, 0) \
+                              >= COALESCE((notifications.payload->>'last_number')::float8, 0) \
+                            THEN EXCLUDED.payload->'latest' \
+                            ELSE notifications.payload->'latest' END \
+           ), \
+           created_at = now() \
+         RETURNING id, user_id, payload AS \"payload: Json\"",
         &ids,
         &users,
         kind,
+        group_key,
         payload,
     )
     .fetch_all(exec)
     .await?;
     Ok(rows
         .into_iter()
-        .map(|r| {
-            (
-                UserId::from_uuid(r.user_id),
-                NotificationId::from_uuid(r.id),
-            )
+        .map(|r| CreatedNotification {
+            user_id: UserId::from_uuid(r.user_id),
+            notification_id: NotificationId::from_uuid(r.id),
+            payload: r.payload,
         })
         .collect())
 }
 
+/// Which rows of the inbox a request wants.
+///
+/// Applied server-side rather than by the client over a loaded page: the tabs used to filter one
+/// 50-row batch, so "Unread" showed an empty page whenever the unread rows sat on page two.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct NotificationFilter<'a> {
+    /// Restrict to rows the reader has not read.
+    pub unread_only: bool,
+    /// Restrict to one `notifications.kind` token.
+    pub kind: Option<&'a str>,
+}
+
 /// One page of a user's inbox, plus the two totals the page cannot be counted from.
 ///
-/// `total` and `unread` describe the whole inbox, not this window. Deriving them from `items`
-/// is what capped both the list and the bell at whatever the page size happened to be.
+/// `total` counts the whole *filtered* inbox and `unread` the whole *unfiltered* one — the pager's
+/// denominator and the bell respectively. Deriving either from `items` is what capped both the
+/// list and the bell at whatever the page size happened to be.
 pub struct NotificationPage {
     /// Newest first.
     pub items: Vec<Notification>,
-    /// Notifications this user has, in total.
+    /// Notifications matching the filter, in total.
     pub total: i64,
-    /// Of those, how many are unread.
+    /// Unread notifications this user has, whatever the filter.
     pub unread: i64,
 }
 
-/// One page of a user's notifications, newest first, with the inbox-wide totals.
+/// One page of a user's notifications, newest first, with the totals the pager and bell need.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; an empty inbox is an empty `Vec` and two zeroes.
 pub async fn notifications_page(
     pool: &sqlx::PgPool,
     user_id: UserId,
+    filter: NotificationFilter<'_>,
     limit: i64,
     offset: i64,
 ) -> DbResult<NotificationPage> {
     let (items, totals) = tokio::try_join!(
-        notifications_window(pool, user_id, limit, offset),
-        notifications_totals(pool, user_id),
+        notifications_window(pool, user_id, filter, limit, offset),
+        notifications_totals(pool, user_id, filter),
     )?;
     let (total, unread) = totals;
     Ok(NotificationPage {
@@ -92,6 +177,7 @@ pub async fn notifications_page(
 async fn notifications_window<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
+    filter: NotificationFilter<'_>,
     limit: i64,
     offset: i64,
 ) -> DbResult<Vec<Notification>> {
@@ -107,10 +193,15 @@ async fn notifications_window<'e, E: PgExecutor<'e>>(
     let rows = sqlx::query_as!(
         Row,
         "SELECT id, user_id, kind, payload AS \"payload: Json\", read_at, created_at FROM notifications \
-         WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3",
+         WHERE user_id = $1 \
+           AND ($4::bool IS NOT TRUE OR read_at IS NULL) \
+           AND ($5::text IS NULL OR kind = $5) \
+         ORDER BY created_at DESC LIMIT $2 OFFSET $3",
         user_id.as_uuid(),
         limit,
         offset,
+        filter.unread_only,
+        filter.kind,
     )
     .fetch_all(exec)
     .await?;
@@ -127,16 +218,20 @@ async fn notifications_window<'e, E: PgExecutor<'e>>(
         .collect())
 }
 
-/// `(total, unread)` for the whole inbox, counted in one pass.
+/// `(filtered total, inbox-wide unread)`, counted in one pass.
 async fn notifications_totals<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
+    filter: NotificationFilter<'_>,
 ) -> DbResult<(i64, i64)> {
     let row = sqlx::query!(
-        "SELECT count(*) AS \"total!\", \
+        "SELECT count(*) FILTER (WHERE ($2::bool IS NOT TRUE OR read_at IS NULL) \
+                                   AND ($3::text IS NULL OR kind = $3)) AS \"total!\", \
                 count(*) FILTER (WHERE read_at IS NULL) AS \"unread!\" \
          FROM notifications WHERE user_id = $1",
         user_id.as_uuid(),
+        filter.unread_only,
+        filter.kind,
     )
     .fetch_one(exec)
     .await?;
@@ -210,17 +305,27 @@ pub async fn notifications_mark_read<'e, E: PgExecutor<'e>>(
     Ok(result.rows_affected())
 }
 
-/// A watcher who opted into notifications for a series, with their read progress.
+/// A watcher who opted into notifications for a series, with the two things that decide whether
+/// they hear about a chapter: their preferences and their read progress.
 pub struct Watcher {
     pub user_id: UserId,
+    /// The watchlist status this reader has the series in — the axis their preferences filter on.
+    pub status: WatchStatus,
+    /// Their decoded preference document; a malformed one decodes to the defaults rather than
+    /// failing the fan-out, since a broken preference must not cost the reader the notification.
+    pub prefs: NotificationPrefs,
     /// Both read frontiers, or `None` with no progress row. Use
     /// [`ReadProgress::covers`](super::ReadProgress::covers), not a hand-rolled comparison.
     pub progress: Option<ReadProgress>,
 }
 
-/// All users watching `series_id` with `notify = true`, plus both read frontiers so the notifier
-/// can call [`ReadProgress::covers`](super::ReadProgress::covers) instead of hand-rolling
-/// `number <= whole`, which announces an already-read part release as new.
+/// All users watching `series_id` with `notify = true`, plus their watchlist status, decoded
+/// preferences and both read frontiers.
+///
+/// Returns the raw inputs rather than a verdict on purpose: the caller must call
+/// [`ReadProgress::covers`](super::ReadProgress::covers) rather than hand-rolling `number <=
+/// whole`, which announces an already-read part release as new, and it must apply
+/// [`NotificationPrefs`] *after* claiming the dedup slot, not before.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; nobody watching is an empty `Vec` — must not be read as
@@ -232,14 +337,19 @@ pub async fn watchers_for_series<'e, E: PgExecutor<'e>>(
     #[derive(FromRow)]
     struct Row {
         user_id: Uuid,
+        status: WatchStatus,
+        prefs: Json,
         whole: Option<f64>,
         part: Option<f64>,
     }
     let rows = sqlx::query_as!(
         Row,
-        "SELECT w.user_id, rp.last_read_whole_number::float8 AS whole, \
+        "SELECT w.user_id, w.status AS \"status: WatchStatus\", \
+                u.notification_prefs AS \"prefs: Json\", \
+                rp.last_read_whole_number::float8 AS whole, \
                 rp.last_read_part_number::float8 AS part \
          FROM watchlist_entries w \
+         JOIN users u ON u.id = w.user_id \
          LEFT JOIN read_progress rp ON rp.user_id = w.user_id AND rp.series_id = w.series_id \
          WHERE w.series_id = $1 AND w.notify",
         series_id.as_uuid(),
@@ -250,6 +360,8 @@ pub async fn watchers_for_series<'e, E: PgExecutor<'e>>(
         .into_iter()
         .map(|r| Watcher {
             user_id: UserId::from_uuid(r.user_id),
+            status: r.status,
+            prefs: serde_json::from_value(r.prefs).unwrap_or_default(),
             // `whole` NULL means no progress row at all; `part` alone being NULL is normal.
             progress: r.whole.map(|whole| ReadProgress {
                 last_read_whole_number: whole,

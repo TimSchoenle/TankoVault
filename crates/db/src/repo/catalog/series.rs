@@ -3,6 +3,7 @@
 
 use crate::error::{DbError, DbResult};
 use sqlx::{FromRow, PgExecutor};
+use std::collections::HashMap;
 use tankovault_domain::matching::{Canonicaliser, Decision, Query};
 use tankovault_domain::{
     ContentType, MetadataSource, MetadataValue, Series, SeriesId, SeriesStatus,
@@ -183,4 +184,46 @@ pub async fn get_series<'e, E: PgExecutor<'e>>(exec: E, id: SeriesId) -> DbResul
     .fetch_optional(exec)
     .await?;
     row.ok_or(DbError::NotFound)?.try_into()
+}
+
+/// The two fields a list row needs to name a series it links to.
+pub struct SeriesDisplay {
+    pub title: String,
+    pub cover_url: Option<String>,
+}
+
+/// Title and cover for each of `ids`, in one lookup. Ids that match no row are absent from the map.
+///
+/// Exists so a page of rows that reference series by id can be named in one query instead of one
+/// per row — see `services/api`'s notification list, where it decorates rows written before the
+/// payload carried a title.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only; an empty `ids` is an empty map.
+pub async fn series_display_many<'e, E: PgExecutor<'e>>(
+    exec: E,
+    ids: &[SeriesId],
+) -> DbResult<HashMap<SeriesId, SeriesDisplay>> {
+    if ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let uuids: Vec<Uuid> = ids.iter().map(|id| id.as_uuid()).collect();
+    let rows = sqlx::query!(
+        "SELECT id, canonical_title, cover_url FROM series WHERE id = ANY($1)",
+        &uuids,
+    )
+    .fetch_all(exec)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| {
+            (
+                SeriesId::from_uuid(r.id),
+                SeriesDisplay {
+                    title: r.canonical_title,
+                    cover_url: r.cover_url,
+                },
+            )
+        })
+        .collect())
 }

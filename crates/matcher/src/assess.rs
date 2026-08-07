@@ -8,6 +8,17 @@ use crate::similarity::{name_set_overlap, numeric_signatures_agree, shares_a_nam
 use crate::title::best_title_match;
 use crate::types::{Assessment, Explanation, ScoreTerm};
 
+/// What a title agreement is worth when it is against an *alternative* title rather than the
+/// canonical one.
+///
+/// Sized against [`Thresholds`](crate::Thresholds): a perfect but otherwise uncorroborated alias
+/// hit scores `1.0 * 0.75 + 0.05 = 0.80`, which is inside the review band `[low, high)` rather
+/// than above it. One corroborating signal — an agreeing medium, an agreeing release year, a
+/// shared credit — puts it back over `high`. That split is deliberate: the catalogue-stub path
+/// (`register_source_stub`) supplies a title and nothing else, so it can never attach on an
+/// alias alone, while a full scan that agrees on the medium still can.
+const ALIAS_EVIDENCE_WEIGHT: f32 = 0.75;
+
 /// Collects the terms of a score, or discards them.
 ///
 /// One scorer, two callers: [`assess`] wants only the number and runs on the ingest path, while
@@ -115,11 +126,35 @@ fn assess_with<'a>(query: &Query, candidate: &'a Candidate, ledger: &mut Ledger)
 
     // Base similarity: the strongest of the trigram score (from the db), the token-set ratio
     // and the compact comparison — each catches a failure the others miss.
-    let base = candidate.similarity.max(title_match.ratio);
+    let textual = candidate.similarity.max(title_match.ratio);
+
+    // An exact hit on an *alternative* title is evidence, not identity, and on its own it must
+    // not clear `Thresholds::high`. Aliases are scraped free text: they arrive shredded out of a
+    // comma-joined cell, and they are shared across the `(Colored)` and franchise listings of
+    // unrelated works. Because attaching a source also files *its* aliases under the series it
+    // attached to, one junk alias that attracts one wrong series then attracts everything that
+    // series answers to — a runaway that put 281 unrelated sources on one live row. The discount
+    // drops an uncorroborated alias hit into the review band; a matching medium, release year,
+    // credit or genre set still lifts it back to an automatic attach, which is what the
+    // cross-provider romaji/english case has and a catalogue-stub coincidence does not.
+    //
+    // The trigram score is discounted with the rest, not exempted: `find_candidates` reports the
+    // *maximum* similarity over the canonical title and every alias, so a perfect alias hit
+    // arrives from the database as 1.0 and would otherwise defeat the discount by itself.
+    let base = if title_match.via_alias {
+        (textual * ALIAS_EVIDENCE_WEIGHT).max(title_match.canonical_ratio)
+    } else {
+        textual
+    };
     let mut s = base;
     ledger.term("base_similarity", base, || {
+        let via = if title_match.via_alias {
+            format!(", discounted to {ALIAS_EVIDENCE_WEIGHT} as an alternative title")
+        } else {
+            String::new()
+        };
         format!(
-            "strongest of trigram {:.3} and textual {:.3}",
+            "strongest of trigram {:.3} and textual {:.3}{via}",
             candidate.similarity, title_match.ratio
         )
     });
@@ -174,10 +209,12 @@ fn assess_with<'a>(query: &Query, candidate: &'a Candidate, ledger: &mut Ledger)
         }
     }
 
-    // Exact normalized-title equality is decisive.
+    // Exact normalized-title equality is decisive — against the canonical title. Against an
+    // alternative it is half a bonus, for the reason the base discount above spells out.
     if title_match.exact || title_match.compact_equal {
-        s += 0.1;
-        ledger.term("title_identity", 0.1, || {
+        let bonus = if title_match.via_alias { 0.05 } else { 0.1 };
+        s += bonus;
+        ledger.term("title_identity", bonus, || {
             let rule = if title_match.exact {
                 "identical"
             } else {

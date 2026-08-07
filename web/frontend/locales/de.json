@@ -37,6 +37,24 @@
       "noCode": "Der Anbieter hat keinen Autorisierungscode zurückgegeben.",
       "signedOut": "Melde dich an und verbinde den Anbieter dann erneut über Konto → Sync & Integrationen."
     },
+    "content": {
+      "title": "Inhaltseinstellungen",
+      "intro": "Manche Serien sind als nicht jugendfrei eingestuft. Sie bleiben verborgen, sofern du sie nicht sehen möchtest. Diese Entscheidung gehört dir allein — sie wird niemandem angezeigt oder weitergegeben.",
+      "unavailable": "Auf diesem Server sind nicht jugendfreie Inhalte abgeschaltet, diese Einstellung hat derzeit also keine Wirkung. Deine Wahl wird trotzdem gespeichert.",
+      "saved": "Deine Inhaltseinstellungen wurden gespeichert.",
+      "section": {
+        "adult": "Nicht jugendfreie Inhalte"
+      },
+      "adult": {
+        "label": "Nicht jugendfreie Inhalte anzeigen",
+        "hint": "Gilt überall: beim Stöbern, in der Suche, in Empfehlungen und bei ähnlichen Serien."
+      },
+      "confirm": {
+        "body": "Wenn du dies aktivierst, bestätigst du, dass du nach dem Recht deines Wohnorts volljährig bist. Wir halten fest, dass und wann du das bestätigt hast.",
+        "cta": "Ich bin volljährig"
+      },
+      "badge": "18+"
+    },
     "notifications": {
       "channel": {
         "inApp": "Benachrichtigungen in der App",
@@ -165,6 +183,7 @@
     },
     "tab": {
       "appearance": "Darstellung",
+      "content": "Inhalte",
       "notifications": "Benachrichtigungen",
       "privacy": "Datenschutz",
       "profile": "Profil",

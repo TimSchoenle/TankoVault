@@ -181,6 +181,7 @@ impl Fixture {
             &MatchingConfig::default(),
             &MetadataPriority::default(),
             &tankovault_domain::TagBlocklist::default(),
+            &tankovault_domain::AdultTagSet::defaults(),
         )
         .await
         .expect("ingest local series")
@@ -251,6 +252,7 @@ impl Fixture {
             &MatchingConfig::default(),
             &MetadataPriority::default(),
             &tankovault_domain::TagBlocklist::default(),
+            &tankovault_domain::AdultTagSet::defaults(),
         )
         .await
         .expect("re-scrape local series");
@@ -732,9 +734,14 @@ mod signals {
 
     /// The adult flag and the appeal priors must reach the series row.
     ///
-    /// The bug this pins: `is_adult` is the recommender's only hard content gate, and it
-    /// defaults to `false`. An unwritten gate is an open one, so this failing means adult series
-    /// are recommendable to every reader — a silent failure with no error anywhere.
+    /// The bug this pins: `series.is_adult` defaults to `false`, and an unwritten gate is an
+    /// open one. This failing means adult series are visible to every reader — in browse,
+    /// search and the shelf alike — as a silent failure with no error anywhere.
+    ///
+    /// Reads through `adult_gated`, the generated column the gate actually tests, rather than
+    /// `is_adult` directly: this asserts that what `AniList` said reaches *the column the read
+    /// paths consult*, which is the property that matters and the one a refactor could break
+    /// while leaving `is_adult` correctly written.
     #[tokio::test]
     async fn the_adult_flag_and_appeal_signals_reach_the_series_row() {
         let f = Fixture::spawn().await;
@@ -746,7 +753,7 @@ mod signals {
 
         let inputs = f.prior_inputs().await;
         assert!(
-            inputs.is_adult,
+            inputs.adult_gated,
             "the adult gate must not stay at its default"
         );
         assert_eq!(inputs.external_score, Some(84.0));

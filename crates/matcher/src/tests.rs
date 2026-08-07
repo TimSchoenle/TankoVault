@@ -229,15 +229,19 @@ fn the_same_title_with_and_without_an_apostrophe_attaches() {
     );
 }
 
-/// A candidate found through one of its *alternative* titles is scored against that title.
+/// A candidate found through one of its *alternative* titles is scored against that title —
+/// but on its own that is evidence, not identity, so it lands in the review band.
 ///
-/// The trigram lookup already searches `series_titles`, so a series listed under its romaji
-/// name on one provider and its english name on another is retrieved — and was then
-/// re-scored against the canonical title only, which is a name the query does not go by. The
-/// candidate below has a deliberately unrelated canonical title so nothing but the alias
-/// rule can produce the outcome.
+/// Both halves are bugs that happened. The trigram lookup already searches `series_titles`, so
+/// a series listed under its romaji name on one provider and its english name on another is
+/// retrieved — and was then re-scored against the canonical title only, which is a name the
+/// query does not go by, leaving the two split. Fixing that by treating an exact alias hit as
+/// full identity produced the opposite failure: aliases are scraped free text, an attach files
+/// the attaching source's aliases under the series it joined, and the widening net put 309
+/// sources for unrelated works onto one live row. The candidate below has a deliberately
+/// unrelated canonical title so nothing but the alias rule can produce the outcome.
 #[test]
-fn an_exact_hit_on_an_alternative_title_counts() {
+fn an_uncorroborated_hit_on_an_alternative_title_is_held_for_review() {
     let q = query("na honjaman level up", ContentType::Unknown, None);
     let mut c = cand(0.3, ContentType::Unknown, None, "solo leveling");
     c.alt_normalized_titles = vec!["na honjaman level up".to_owned()];
@@ -248,6 +252,29 @@ fn an_exact_hit_on_an_alternative_title_counts() {
         !assessment.signals.exact_title,
         "an alias hit is not an exact canonical-title hit"
     );
+    assert!(
+        assessment.score >= Thresholds::default().low
+            && assessment.score < Thresholds::default().high,
+        "an alias hit alone belongs in the review band, got {assessment:?}"
+    );
+    assert!(matches!(
+        decide(&q, &[c], Thresholds::default()),
+        Decision::Ambiguous { candidate, .. } if candidate == id
+    ));
+}
+
+/// One corroborating signal restores the automatic attach an alias hit alone no longer earns.
+///
+/// The discount has to leave the cross-provider romaji/english case working, or the catalogue
+/// splits the very series the alias rule exists to join. An agreeing medium is enough — and a
+/// catalogue *stub* (`register_source_stub`) carries a title and nothing else, so the path that
+/// produced the over-attach cannot reach this and the path that needs it can.
+#[test]
+fn an_alias_hit_that_agrees_on_the_medium_still_attaches() {
+    let q = query("na honjaman level up", ContentType::Manhwa, None);
+    let mut c = cand(0.3, ContentType::Manhwa, None, "solo leveling");
+    c.alt_normalized_titles = vec!["na honjaman level up".to_owned()];
+    let id = c.series_id;
     assert_eq!(
         decide(&q, &[c], Thresholds::default()),
         Decision::Attach(id)

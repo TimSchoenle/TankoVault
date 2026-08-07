@@ -3,6 +3,7 @@
 
 mod appearance;
 mod callback;
+mod content;
 mod notifications;
 mod passkeys;
 mod privacy;
@@ -27,6 +28,7 @@ enum Panel {
     Profile,
     Appearance,
     Sources,
+    Content,
     Taste,
     Security,
     Sync,
@@ -40,6 +42,7 @@ impl TabKind for Panel {
             Self::Profile,
             Self::Appearance,
             Self::Sources,
+            Self::Content,
             Self::Taste,
             Self::Security,
             Self::Sync,
@@ -54,6 +57,7 @@ impl TabKind for Panel {
             Self::Profile => "account.tab.profile",
             Self::Appearance => "account.tab.appearance",
             Self::Sources => "account.tab.sources",
+            Self::Content => "account.tab.content",
             Self::Taste => "account.tab.taste",
             Self::Security => "account.tab.security",
             Self::Sync => "account.tab.sync",
@@ -71,6 +75,10 @@ impl Panel {
             // ungated on the server because it only shapes outbound links — a reader who cannot
             // change it is worse off than one who can.
             Self::Appearance | Self::Sources => true,
+            // Deliberately *not* gated on `CatalogueAdultContent`. The panel explains that the
+            // deployment has it switched off; hiding it instead would mean an operator turning
+            // the flag on silently activates opt-ins nobody has been able to review.
+            Self::Content => caps.has_feature(Feature::CatalogueBrowse),
             Self::Profile => caps.has_feature(Feature::AccountsProfile),
             Self::Taste => caps.has_feature(Feature::CatalogueRecommendations),
             // Either half is enough; passkeys and sessions are independent features.
@@ -150,6 +158,7 @@ pub(crate) fn Account() -> Element {
             Panel::Profile => rsx! { profile::ProfilePanel { name: name.clone(), tier: tier.clone() } },
             Panel::Appearance => rsx! { appearance::AppearancePanel {} },
             Panel::Sources => rsx! { sources::SourcesPanel {} },
+            Panel::Content => rsx! { content::ContentPanel {} },
             Panel::Taste => rsx! { taste::TastePanel {} },
             Panel::Security => rsx! { security::SecurityPanel {} },
             Panel::Sync => rsx! { sync::SyncPanel {} },

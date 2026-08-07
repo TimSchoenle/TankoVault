@@ -37,6 +37,24 @@
       "noCode": "The provider did not return an authorization code.",
       "signedOut": "Sign in, then connect the provider again from Account → Sync & integrations."
     },
+    "content": {
+      "title": "Content preferences",
+      "intro": "Some series are classified as adult. They are hidden unless you choose to see them, and that choice is yours alone — it is never shared or shown to anyone else.",
+      "unavailable": "This server has adult content switched off, so this setting has no effect right now. Your choice is saved either way.",
+      "saved": "Your content preferences have been saved.",
+      "section": {
+        "adult": "Adult content"
+      },
+      "adult": {
+        "label": "Show adult content",
+        "hint": "Applies everywhere: browsing, search, recommendations and similar-series lists."
+      },
+      "confirm": {
+        "body": "Turning this on confirms that you are of legal age to view adult content where you live. We record that you confirmed it, and when.",
+        "cta": "I am of legal age"
+      },
+      "badge": "Adult"
+    },
     "notifications": {
       "channel": {
         "inApp": "In-app notifications",
@@ -165,6 +183,7 @@
     },
     "tab": {
       "appearance": "Appearance",
+      "content": "Content",
       "notifications": "Notification prefs",
       "privacy": "Privacy & data",
       "profile": "Profile",

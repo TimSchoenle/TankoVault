@@ -123,6 +123,14 @@ impl TestConfig {
         self
     }
 
+    /// Force named features on. Needed for the three that ship off, which no test can otherwise
+    /// reach from the compiled defaults.
+    #[must_use]
+    pub fn with_features_enabled(mut self, enabled: &[tankovault_domain::Feature]) -> Self {
+        self.features = FeatureGate::with_enabled(enabled);
+        self
+    }
+
     /// Move named tuning values, so a test can prove a knob reaches the thing it configures
     /// without going through the admin endpoint and a refresh.
     #[must_use]

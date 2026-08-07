@@ -594,30 +594,36 @@ pub(super) fn the_build_epoch_is_one_constant(root: &Path) -> anyhow::Result<Vec
     Ok(findings)
 }
 
-/// **Every registry command in the `manifest` job of `release-please.yaml` runs through the retry
+/// **Every registry command in the publishing jobs of `release-please.yaml` runs through the retry
 /// helper.** GHCR reports a throttled token request as `403 Forbidden` / `DENIED` with no
 /// `Retry-After` — indistinguishable from a permissions failure — so buildx, syft and cosign all
 /// give up on the first response.
 ///
-/// Nine `publish` legs run concurrently, and `ci.yml` reads the same registry's build cache on the
-/// same push. At v2.0.0 two legs lost that race one second apart, each *after* its image was
-/// pushed: `publish api` on the SBOM's pull, and `publish bootstrap` between the two
-/// `imagetools create` calls — which left Docker Hub carrying `v2.0.0` and GHCR not. The seven
-/// legs whose registry work had finished seconds earlier all passed, which is what makes this
-/// recur silently: it looks like a flake, it is load, and the next call added without the wrapper
-/// brings it back on a release nobody is watching.
+/// A release makes eighteen `build` legs and nine `manifest` legs hit that registry inside a few
+/// minutes, and `ci.yml` reads the same registry's build cache on the same push. At v2.0.0 two
+/// `manifest` legs lost that race one second apart, each *after* its image was pushed:
+/// `publish api` on the SBOM's pull, and `publish bootstrap` between the two `imagetools create`
+/// calls — which left Docker Hub carrying `v2.0.0` and GHCR not. At v2.1.0 it was the by-digest
+/// push in `build`, which had no wrapper because the rule only covered `manifest`:
+/// `bootstrap (arm64)` died on `failed to fetch oauth token: denied: denied` while its seventeen
+/// siblings pushed to the same registry and passed. That is what makes this recur silently: it
+/// looks like a flake, it is load, and the next call added outside the wrapper brings it back on
+/// a release nobody is watching.
 ///
-/// Scoped to the one job on purpose. `plan`'s `imagetools inspect` probes are *deliberately*
+/// Scoped to those two jobs on purpose. `plan`'s `imagetools inspect` probes are *deliberately*
 /// unretried: a failed probe there means "not published yet", which is a legitimate answer that a
 /// retry would only make expensive.
 pub(super) fn registry_calls_in_publish_retry(root: &Path) -> anyhow::Result<Vec<Finding>> {
     const RULE: &str = "registry-calls-in-publish-retry";
-    /// The job whose every registry call is on the publishing path.
-    const JOB: &str = "manifest";
+    /// The jobs whose every registry call is on the publishing path.
+    const JOBS: [&str; 2] = ["build", "manifest"];
     /// The helper each of them is invoked through, by the name it is written and called under.
     const HELPER: &str = "registry-retry";
+    /// The composite action that installs it, by the path a job references it at.
+    const HELPER_ACTION: &str = "./.github/actions/registry-retry";
     /// Commands that reach a registry, in the spellings this workflow uses.
-    const REGISTRY_COMMANDS: [&str; 4] = [
+    const REGISTRY_COMMANDS: [&str; 5] = [
+        "docker buildx build",
         "docker buildx imagetools",
         "docker pull",
         "cosign sign",
@@ -630,46 +636,70 @@ pub(super) fn registry_calls_in_publish_retry(root: &Path) -> anyhow::Result<Vec
     };
 
     let mut findings = Vec::new();
-    let mut calls = 0_usize;
-    let mut installed = false;
-    for (index, line) in job_lines(&text, JOB) {
-        if !line.contains(HELPER) {
-            let Some(command) = REGISTRY_COMMANDS
-                .iter()
-                .find(|command| line.contains(**command))
-            else {
+    for job in JOBS {
+        let mut calls = 0_usize;
+        let mut installed = false;
+        for (index, line) in job_lines(&text, job) {
+            if !line.contains(HELPER) {
+                let Some(command) = REGISTRY_COMMANDS
+                    .iter()
+                    .find(|command| line.contains(**command))
+                else {
+                    continue;
+                };
+                findings.push(Finding {
+                    rule: RULE,
+                    file: PathBuf::from(PUBLISH_WORKFLOW),
+                    line: index,
+                    detail: format!(
+                        "`{command}` runs without `{HELPER}`; GHCR reports throttling as a bare \
+                         403, so one unwrapped call fails a release after its images are already \
+                         pushed"
+                    ),
+                });
                 continue;
-            };
+            }
+            installed |= line.contains(HELPER_ACTION);
+            calls += usize::from(
+                REGISTRY_COMMANDS
+                    .iter()
+                    .any(|command| line.contains(*command)),
+            );
+        }
+
+        // Neither half can be allowed to become a no-op: a renamed helper would pass the loop
+        // above while wrapping nothing, and a publishing job with no registry call is not the job
+        // this rule was written about.
+        if !installed || calls == 0 {
             findings.push(Finding {
                 rule: RULE,
                 file: PathBuf::from(PUBLISH_WORKFLOW),
-                line: index,
+                line: 0,
                 detail: format!(
-                    "`{command}` runs without `{HELPER}`; GHCR reports throttling as a bare 403, \
-                     so one unwrapped call fails a release after its images are already pushed"
+                    "the `{job}` job installs `{HELPER}` on {installed} and makes {calls} call(s) \
+                     through it, so this rule checks nothing for it; if either was renamed, \
+                     rename it in xtask/src/repo_lint/workflows.rs too"
                 ),
             });
-            continue;
         }
-        installed |= line.contains("chmod +x");
-        calls += usize::from(
-            REGISTRY_COMMANDS
-                .iter()
-                .any(|command| line.contains(*command)),
-        );
     }
 
-    // Neither half can be allowed to become a no-op: a renamed helper would pass the loop above
-    // while wrapping nothing, and a `manifest` job with no registry call is not this job.
-    if !installed || calls == 0 {
+    // The jobs above only *reference* the installer, so a wrapper that stopped being written would
+    // leave every call above failing with "no such file" — a message about the helper's path, not
+    // about the registry.
+    let action = root
+        .join(HELPER_ACTION.trim_start_matches("./"))
+        .join("action.yml");
+    let installs = std::fs::read_to_string(&action)
+        .is_ok_and(|action| action.contains(HELPER) && action.contains("chmod +x"));
+    if !installs {
         findings.push(Finding {
             rule: RULE,
-            file: PathBuf::from(PUBLISH_WORKFLOW),
+            file: PathBuf::from(format!("{HELPER_ACTION}/action.yml")),
             line: 0,
             detail: format!(
-                "the `{JOB}` job installs `{HELPER}` on {installed} and makes {calls} call(s) \
-                 through it, so this rule checks nothing; if either was renamed, rename it in \
-                 xtask/src/repo_lint/workflows.rs too"
+                "does not write an executable `{HELPER}`, so every wrapped call in \
+                 {PUBLISH_WORKFLOW} resolves to a path that does not exist"
             ),
         });
     }
@@ -812,7 +842,13 @@ mod tests {
     /// images had been pushed, one second apart, while the seven legs that had finished their
     /// registry work moments earlier all passed.
     ///
-    /// The rule has to stay inside the `manifest` job: `plan` probes the registry with the same
+    /// Release 2.1.0 then failed the same way one job earlier: the by-digest push in `build` was a
+    /// `docker/build-push-action` step, which cannot be wrapped and was outside this rule, and
+    /// `bootstrap (arm64)` died on `failed to fetch oauth token: denied: denied` while seventeen
+    /// sibling legs pushed to the same registry and passed. Which is why the rule now reads both
+    /// publishing jobs and counts `docker buildx build` as a registry call.
+    ///
+    /// The rule has to stay inside those jobs: `plan` probes the registry with the same
     /// `imagetools` command and is deliberately unretried, because a failed probe there is the
     /// legitimate answer "not published yet".
     #[test]
@@ -824,7 +860,7 @@ steps:\n      \
 - run: docker buildx imagetools inspect \"$IMAGE:$TAG\"\n  \
 manifest:\n    \
 steps:\n      \
-- run: chmod +x \"${RUNNER_TEMP}/registry-retry\"\n      \
+- uses: ./.github/actions/registry-retry\n      \
 # a comment naming docker pull is prose, not a call\n      \
 - run: \"${RUNNER_TEMP}/registry-retry\" docker buildx imagetools create --tag \"$TAG\"\n      \
 - run: docker pull \"$IMAGE:$TAG\"\n  \
@@ -841,9 +877,48 @@ steps:\n      \
             .map(|(index, _)| *index)
             .collect();
         assert_eq!(unwrapped, vec![10]);
-        assert!(lines.iter().any(|(_, line)| line.contains("chmod +x")));
+        // The installer is now a shared composite action, and the line referencing it is what the
+        // rule reads as "installed" — a job that calls the helper without installing it is the
+        // no-op the guard reports.
+        assert!(
+            lines
+                .iter()
+                .any(|(_, line)| line.contains("./.github/actions/registry-retry"))
+        );
         assert!(!lines.iter().any(|(_, line)| line.contains("cosign sign")));
         assert!(!lines.iter().any(|(_, line)| line.contains("inspect")));
+    }
+
+    /// The v2.1.0 shape specifically: an unwrapped `docker buildx build` in the `build` job. It
+    /// pushes to both registries by digest, so it is a registry call like any other — but it did
+    /// not read as one while the command list only named `imagetools`, `pull`, `sign` and
+    /// `attest`.
+    #[test]
+    fn an_unwrapped_by_digest_push_is_a_registry_call() {
+        let workflow = "\
+jobs:\n  \
+build:\n    \
+steps:\n      \
+- run: docker buildx build --output type=image,push=true .\n  \
+manifest:\n    \
+steps:\n      \
+- run: \"${RUNNER_TEMP}/registry-retry\" docker buildx build .\n";
+
+        let build = job_lines(workflow, "build");
+        assert!(
+            build
+                .iter()
+                .any(|(_, line)| line.contains("docker buildx build")
+                    && !line.contains("registry-retry"))
+        );
+        // The same command wrapped in the next job is not this job's, and is not a finding there.
+        let manifest = job_lines(workflow, "manifest");
+        assert!(
+            manifest
+                .iter()
+                .filter(|(_, line)| line.contains("docker buildx build"))
+                .all(|(_, line)| line.contains("registry-retry"))
+        );
     }
 
     /// The bug this pins, in both of the shapes it has taken. Release 1.5.1 passed

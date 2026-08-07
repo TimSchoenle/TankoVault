@@ -167,6 +167,13 @@ fn me_gates() -> Vec<Gate> {
             )
         },
         get("/v1/me/notification-prefs", "/v1/me/notification-prefs"),
+        get("/v1/me/content-prefs", "/v1/me/content-prefs"),
+        Gate {
+            // Opting *out*, so the admitted leg cannot leave the shared account able to see
+            // adult series for whatever later leg runs against it.
+            body: || Some(json!({ "adult_opt_in": false })),
+            ..gate("PUT", "/v1/me/content-prefs", "/v1/me/content-prefs")
+        },
         Gate {
             // Typed, but every field defaults, so an empty object is a valid whole document.
             body: || Some(json!({})),

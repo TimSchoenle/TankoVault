@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT p.series_id FROM series_prior p JOIN series s ON s.id = p.series_id AND (NOT s.adult_gated OR $2) WHERE p.recommendable ORDER BY p.prior DESC, p.series_id LIMIT $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "series_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "series_prior",
+            "name": "series_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "b78c6b22b9b2a47febf7460c0acf3a434be1d507d97547a7efa9a2ab01048650"
+}

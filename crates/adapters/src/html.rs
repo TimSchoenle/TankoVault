@@ -91,10 +91,10 @@ fn value_of(el: ElementRef<'_>, attr: Option<&str>) -> String {
     }
 }
 
-/// Split a label/value cell (`Alternative`, `Author(s)`, …) into its entries on `,`/`;`.
+/// Split a label/value cell (`Author(s)`, `Artist(s)`, …) into its entries on `,`/`;`.
 ///
 /// Themes render these as one joined string; a value that legitimately contains a comma also
-/// splits, which is accepted.
+/// splits, which is accepted. **Not** for alternative titles — see [`split_titles`].
 #[must_use]
 pub fn split_list(value: &str) -> Vec<String> {
     value
@@ -103,6 +103,38 @@ pub fn split_list(value: &str) -> Vec<String> {
         .filter(|s| !s.is_empty())
         .map(str::to_owned)
         .collect()
+}
+
+/// Split an `Alternative` cell into the titles it lists, refusing to shred one title that
+/// happens to contain a comma.
+///
+/// A fragment of a sentence is not an inert row in `series_titles`: `find_candidates` searches
+/// those keys and `best_title_match` scores an exact hit on one as a name the series answers
+/// to, so `a prince` — cut out of "…Reincarnated as a Mere Villager, a Prince, a Saint? Nay…"
+/// by an unconditional comma split — pulled every unrelated series whose title normalises to
+/// those two words onto one row. One live series absorbed 281 sources that way.
+///
+/// The rule: `;`/`|` are unambiguous list separators and always split. A comma splits only
+/// when *every* resulting fragment could stand alone as a title, which a fragment starting
+/// with a lower-case letter cannot — it was cut out of the middle of a sentence. Scripts
+/// without case are unaffected, since they have no lower-case letters to start with.
+#[must_use]
+pub fn split_titles(value: &str) -> Vec<String> {
+    let mut titles = Vec::new();
+    for part in value.split([';', '|']).map(str::trim) {
+        if part.is_empty() {
+            continue;
+        }
+        let fragments = || part.split(',').map(str::trim);
+        if part.contains(',')
+            && fragments().all(|f| !f.is_empty() && !f.starts_with(char::is_lowercase))
+        {
+            titles.extend(fragments().map(str::to_owned));
+        } else {
+            titles.push(part.to_owned());
+        }
+    }
+    titles
 }
 
 /// Collapse an element's inner text to a single, whitespace-normalised line.
@@ -337,6 +369,32 @@ pub fn unescape_entities(s: &str) -> String {
 mod tests {
     use super::*;
     use scraper::Html;
+
+    /// Regression: an unconditional comma split shredded one long alternative title into
+    /// sentence fragments (`a prince`, `a beautiful girl`, `a saint? nay`), and every fragment
+    /// became a key `find_candidates` searches and `best_title_match` scores as identity — the
+    /// mechanism behind one live series absorbing 281 unrelated sources.
+    #[test]
+    fn a_sentence_that_contains_commas_stays_one_alternative_title() {
+        let sentence = "A Mere Villager Was Reincarnated, a Prince, a Saint? Nay, a Beautiful Girl";
+        assert_eq!(split_titles(sentence), vec![sentence]);
+    }
+
+    /// A genuine list still splits: an explicit `;`/`|` always separates, and a comma does when
+    /// every fragment could stand alone as a title.
+    #[test]
+    fn a_list_of_titles_still_splits() {
+        assert_eq!(
+            split_titles("Shibuya Noir, 시부야 느와르; Shibuya Nowaru"),
+            vec!["Shibuya Noir", "시부야 느와르", "Shibuya Nowaru"]
+        );
+        assert_eq!(
+            split_titles("Berserk | ベルセルク"),
+            vec!["Berserk", "ベルセルク"]
+        );
+        assert!(split_titles("   ").is_empty());
+        assert!(split_titles("").is_empty());
+    }
 
     /// Regression: a byte offset found in the lowercased copy must never index the original —
     /// `to_lowercase` isn't length-preserving (`İ` grows a byte), which used to split a

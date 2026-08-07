@@ -1,5 +1,6 @@
 //! The create-time candidate lookup: raw trigram matches for a normalized title.
 
+use super::MAX_KEY_FANOUT;
 use crate::error::DbResult;
 use sqlx::{FromRow, PgExecutor};
 use tankovault_domain::{ContentType, SeriesId, matching::Candidate};
@@ -7,6 +8,11 @@ use uuid::Uuid;
 
 /// Find existing series whose canonical or alternative normalized titles are
 /// trigram-similar to `normalized`, ordered by best similarity.
+///
+/// An *alternative* title held by more than [`MAX_KEY_FANOUT`] series is not searched: a name
+/// that many distinct works answer to identifies none of them, and shortlisting on one is what
+/// let a single row accumulate 281 unrelated sources. Canonical titles are not capped — a series
+/// keeps its own name however many others share it.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only — no other variant is reachable. "No candidate cleared the
@@ -50,12 +56,22 @@ pub async fn find_candidates<'e, E: PgExecutor<'e>>(
         // scored below the threshold — and the row only reached the union at all through a title
         // that scored at or above it, so it can never have been the `GREATEST`. `UNION ALL`,
         // because the `GROUP BY` already collapses the duplicates a `UNION` would have sorted for.
+        //
+        // The alias branch drops keys held by more than [`MAX_KEY_FANOUT`] series: a name that
+        // many distinct works answer to identifies none of them, and shortlisting on one is how a
+        // single row grew to 281 unrelated sources. The window runs over the rows the GIN index
+        // already returned, so it costs a partition of that set and no extra scan — and for the
+        // case that matters, an exact hit on the junk key, every holder of the key is in it, so
+        // the count is the true fan-out rather than a sample of it.
         "WITH matched AS ( \
            SELECT s.id, similarity(s.normalized_title, $1) AS sim \
              FROM series s WHERE s.normalized_title % $1 \
            UNION ALL \
-           SELECT st.series_id, similarity(st.normalized, $1) \
-             FROM series_titles st WHERE st.normalized % $1 \
+           SELECT a.series_id, a.sim FROM ( \
+             SELECT st.series_id, similarity(st.normalized, $1) AS sim, \
+                    count(*) OVER (PARTITION BY st.normalized) AS fanout \
+               FROM series_titles st WHERE st.normalized % $1 \
+           ) a WHERE a.fanout <= $3 \
          ), ranked AS ( \
            SELECT m.id, max(m.sim) AS sim \
            FROM matched m \
@@ -76,6 +92,7 @@ pub async fn find_candidates<'e, E: PgExecutor<'e>>(
          ORDER BY r.sim DESC",
         normalized,
         limit,
+        MAX_KEY_FANOUT,
     )
     .fetch_all(exec)
     .await?;
@@ -160,8 +177,11 @@ pub async fn find_candidates_multi<'e, E: PgExecutor<'e>>(
                     FROM ( SELECT s2.id, similarity(s2.normalized_title, q.norm) AS sim \
                              FROM series s2 WHERE s2.normalized_title % q.norm \
                            UNION ALL \
-                           SELECT st2.series_id, similarity(st2.normalized, q.norm) \
-                             FROM series_titles st2 WHERE st2.normalized % q.norm \
+                           SELECT a.series_id, a.sim FROM ( \
+                             SELECT st2.series_id, similarity(st2.normalized, q.norm) AS sim, \
+                                    count(*) OVER (PARTITION BY st2.normalized) AS fanout \
+                               FROM series_titles st2 WHERE st2.normalized % q.norm \
+                           ) a WHERE a.fanout <= $3 \
                          ) u \
                     GROUP BY u.id \
                     ORDER BY sim DESC \
@@ -172,6 +192,7 @@ pub async fn find_candidates_multi<'e, E: PgExecutor<'e>>(
          ) c",
         normalized,
         limit,
+        MAX_KEY_FANOUT,
     )
     .fetch_all(exec)
     .await?;

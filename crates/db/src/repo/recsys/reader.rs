@@ -399,6 +399,28 @@ pub async fn read_shelf<'e, E: PgExecutor<'e>>(
     Ok(items)
 }
 
+/// Drop a reader's cached shelf, forcing the next request to recompute it.
+///
+/// The cache is keyed on `(user_id, profile_at)` and expires on age, so nothing about it
+/// notices a change to *who the reader is allowed to see*. Their taste profile has not moved,
+/// the entry has not aged out, and the shelf they get back is the one built under the old
+/// answer. That is how an opt-out keeps serving adult recommendations until the TTL runs down.
+///
+/// Called by whatever changes the adult gate for this reader. Idempotent; a reader with no
+/// cached shelf is `Ok(())`.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only.
+pub async fn clear_shelf<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResult<()> {
+    sqlx::query!(
+        "DELETE FROM user_recommendations WHERE user_id = $1",
+        user_id.as_uuid(),
+    )
+    .execute(exec)
+    .await?;
+    Ok(())
+}
+
 /// Cache a freshly computed shelf.
 ///
 /// # Errors

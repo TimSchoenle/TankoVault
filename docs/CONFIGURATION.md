@@ -319,6 +319,26 @@ cleaning up after the last one.
 |---|---|---|---|
 | `TANKOVAULT_METADATA__TAGS__USE_DEFAULTS` | `true` | worker, sync | Whether the shipped list applies. An escape hatch for a deployment whose catalogue genuinely uses one of those words as a genre. |
 | `TANKOVAULT_METADATA__TAGS__BLOCKLIST` | `[]` | worker, sync | Additional refused terms, added to the shipped list unless `USE_DEFAULTS` is off. Matched on the slug. |
+| `TANKOVAULT_METADATA__TAGS__ADULT_TAGS` | `[]` | worker | Additional genre chips that classify a series as adult. Matched on the slug. **Additions only** — there is no `USE_DEFAULTS` counterpart, because an emptied classifier stops classifying silently, where both supported ways to make adult content visible leave a record of somebody deciding. |
+
+#### The adult classifier
+
+The same scraped genre chips also decide whether a series is adult-gated. That verdict is written
+to `series.adult_inferred`, separately from AniList's `series.is_adult`, and it runs against the
+**raw** scrape before the blocklist above — a term an operator adds to `BLOCKLIST` must not be
+able to hide an adult signal from the gate as a side effect.
+
+It is a fallback, not the primary classifier: AniList's `isAdult` is authoritative where the
+enrichment sweep has a match, and this covers everything it does not, which on a freshly scanned
+catalogue is most of the rows. It may only ever answer *yes* — nothing in the normal path clears
+`adult_inferred`, because a provider dropping a chip from one page and an adapter selector
+breaking are indistinguishable from the scan's side, and one of them silently reopens a gate.
+
+The shipped terms are short and mean explicit sexual content and nothing else. `ecchi`, `yaoi`,
+`yuri`, `bl`, `mature`, `seinen`, `josei` and `doujinshi` are deliberately **not** among them; see
+`tankovault_domain::DEFAULT_ADULT_TAGS`, whose doc comment gives the reason for each. Whether
+anything is actually hidden is a separate decision — see the `catalogue.adult_content` feature
+flag and the per-reader opt-in at `PUT /v1/me/content-prefs`; both must be on.
 
 ### `chapter_outliers` — refusing implausible chapter numbers
 

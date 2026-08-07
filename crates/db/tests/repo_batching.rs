@@ -532,7 +532,7 @@ async fn stubs_sharing_a_normalized_title_attach_to_one_canonical_series() {
     .await
     .expect("registration");
 
-    let series = tankovault_db::repo::catalog::list_series(&db.pool, None, 50)
+    let series = tankovault_db::repo::catalog::list_series(&db.pool, None, false, 50)
         .await
         .expect("list series");
     assert_eq!(

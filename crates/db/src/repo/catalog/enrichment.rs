@@ -240,6 +240,32 @@ pub async fn finish_sweep<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
+/// Record that a scan's own genre chips classify this series as adult.
+///
+/// Writes `adult_inferred` and only ever sets it: there is no call that clears it. A provider
+/// dropping the chip from one page, or an adapter selector breaking, must not reopen a gate
+/// that a previous scan closed — the two are indistinguishable from here, and one of them is
+/// a silent regression that shows adult series to readers who never opted in. Clearing a
+/// wrong verdict is an operator action against the database, deliberately not a code path.
+///
+/// Guarded on the current value so a re-scan of an already-flagged series writes nothing,
+/// keeping `updated_at` and the row version untouched under at-least-once delivery.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only; an erased `series_id` is a no-op `Ok(())`.
+pub async fn mark_adult_inferred<'e, E: PgExecutor<'e>>(
+    exec: E,
+    series_id: SeriesId,
+) -> DbResult<()> {
+    sqlx::query!(
+        "UPDATE series SET adult_inferred = true WHERE id = $1 AND NOT adult_inferred",
+        series_id.as_uuid(),
+    )
+    .execute(exec)
+    .await?;
+    Ok(())
+}
+
 /// A batch of metadata to fold into an existing series. `None` leaves a field untouched;
 /// titles/tags/authors are additive.
 pub struct MetadataEnrichment<'a> {

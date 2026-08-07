@@ -6,6 +6,7 @@
 use super::model::{
     chapter_key, group_chapters, ChapterGroup, ChapterKey, MergedChapter, RankedSource,
 };
+use super::pin::Pinned;
 use crate::api;
 use crate::components::OutcomeLine;
 use crate::hooks::{use_busy, use_outcome, Outcome, Reload};
@@ -32,7 +33,7 @@ pub(super) fn ChapterSection(
     chapters: Vec<MergedChapter>,
     /// The series' sources in resolution order.
     sources: Vec<RankedSource>,
-    pinned: Signal<Option<SeriesSourceId>>,
+    pinned: Pinned,
     /// Bumped after a read-state write so the merged list refetches.
     reload: Reload,
 ) -> Element {
@@ -193,13 +194,13 @@ pub(super) fn ChapterSection(
 /// The resolved open target, stated once above the list: which source the buttons will use and
 /// which one backs it up. Read-only here — the picker lives in each chapter's source menu.
 #[component]
-fn OpensOn(sources: Vec<RankedSource>, pinned: Signal<Option<SeriesSourceId>>) -> Element {
+fn OpensOn(sources: Vec<RankedSource>, pinned: Pinned) -> Element {
     let i18n = use_i18n();
     let Some(lead) = sources.first() else {
         return rsx! {};
     };
     let backup = sources.get(1).map(|s| s.source.provider_name.clone());
-    let is_pinned = *pinned.read() == Some(lead.source.id);
+    let is_pinned = pinned.current() == Some(lead.source.id);
 
     rsx! {
         div { class: "ik-opens",
@@ -229,7 +230,7 @@ fn GroupRows(
     group: ChapterGroup,
     series_id: SeriesId,
     sources: Vec<RankedSource>,
-    pinned: Signal<Option<SeriesSourceId>>,
+    pinned: Pinned,
     open_menu: Signal<Option<ChapterKey>>,
     next_up: Option<ChapterKey>,
     hide_parts: bool,
@@ -310,7 +311,7 @@ fn ChapterRow(
     chapter: MergedChapter,
     series_id: SeriesId,
     sources: Vec<RankedSource>,
-    pinned: Signal<Option<SeriesSourceId>>,
+    pinned: Pinned,
     open_menu: Signal<Option<ChapterKey>>,
     next_up: Option<ChapterKey>,
     is_part: bool,
@@ -469,7 +470,7 @@ fn Carriers(chapter: MergedChapter) -> Element {
 pub(super) fn OpenControl(
     chapter: MergedChapter,
     sources: Vec<RankedSource>,
-    pinned: Signal<Option<SeriesSourceId>>,
+    pinned: Pinned,
     open_menu: Signal<Option<ChapterKey>>,
     /// The page's or the row's primary action, rendered filled rather than ghosted.
     filled: bool,
@@ -547,7 +548,7 @@ pub(super) fn OpenControl(
 fn SourceMenu(
     chapter: MergedChapter,
     sources: Vec<RankedSource>,
-    pinned: Signal<Option<SeriesSourceId>>,
+    pinned: Pinned,
     open_menu: Signal<Option<ChapterKey>>,
 ) -> Element {
     let i18n = use_i18n();
@@ -575,7 +576,13 @@ fn SourceMenu(
                 }
             }
             div { class: "foot",
-                span { style: "font-size:11.5px;color:var(--muted);", {i18n.t("series.pinHint")} }
+                span { style: "font-size:11.5px;color:var(--muted);",
+                    if pinned.is_available() {
+                        {i18n.t("series.pinHint")}
+                    } else {
+                        {i18n.t("series.pinNeedsTracking")}
+                    }
+                }
                 span { class: "ik-mono", style: "margin-left:auto;font-size:10.5px;color:var(--faint);",
                     {i18n.t("series.enterHint")}
                 }
@@ -590,16 +597,16 @@ fn SourceMenuRow(
     ranked: RankedSource,
     chapter: MergedChapter,
     preferred: SeriesSourceId,
-    pinned: Signal<Option<SeriesSourceId>>,
+    pinned: Pinned,
     open_menu: Signal<Option<ChapterKey>>,
 ) -> Element {
     let i18n = use_i18n();
-    let mut pinned = pinned;
     let mut open_menu = open_menu;
     let source_id = ranked.source.id;
     let name = ranked.source.provider_name.clone();
     let tile = monogram(&name);
     let is_preferred = source_id == preferred;
+    let is_pinned = pinned.current() == Some(source_id);
 
     let Some(carrier) = chapter
         .carriers
@@ -655,12 +662,23 @@ fn SourceMenuRow(
                 span { style: "margin-left:auto;display:flex;color:var(--acc);",
                     Ic { icon: Icon::Check, size: 14 }
                 }
-            } else {
+            }
+            if is_pinned {
+                button {
+                    class: "ik-pinbtn",
+                    title: i18n.t("series.unpinSource"),
+                    onclick: move |_| {
+                        pinned.clear();
+                        open_menu.set(None);
+                    },
+                    Ic { icon: Icon::Close, size: 12 }
+                }
+            } else if pinned.is_available() {
                 button {
                     class: "ik-pinbtn",
                     title: i18n.t("series.pinSource"),
                     onclick: move |_| {
-                        pinned.set(Some(source_id));
+                        pinned.set(source_id);
                         open_menu.set(None);
                     },
                     Ic { icon: Icon::Bookmark, size: 12 }

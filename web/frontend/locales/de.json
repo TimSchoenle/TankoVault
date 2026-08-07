@@ -117,6 +117,25 @@
       "unavailable": "Passwortänderung und Zwei-Faktor-Authentifizierung sind noch nicht verfügbar."
     },
     "signOut": "Abmelden",
+    "sources": {
+      "empty": "Noch nichts bewertet — Serien öffnen auf der Quelle mit den meisten Kapiteln.",
+      "intro": "Auf welchem Anbieter eine Serie geöffnet wird. Bewertete Anbieter gewinnen in dieser Reihenfolge; alles Unbewertete fällt auf die Quelle mit den meisten Kapiteln zurück. Eine Anheftung an einer einzelnen Serie schlägt alles davon.",
+      "moveDown": "Nach unten",
+      "moveDownOf": "{source} nach unten verschieben",
+      "moveUp": "Nach oben",
+      "moveUpOf": "{source} nach oben verschieben",
+      "rank": "Bewerten",
+      "rankOf": "{source} zur Reihenfolge hinzufügen",
+      "saved": "Quellenreihenfolge gespeichert.",
+      "section": {
+        "ranked": "Deine Reihenfolge",
+        "unranked": "Nicht bewertet"
+      },
+      "seriesCount": "{count} Serien",
+      "title": "Quellen-Einstellungen",
+      "unrank": "Aus der Reihenfolge entfernen",
+      "unrankOf": "{source} aus der Reihenfolge entfernen"
+    },
     "sync": {
       "anonymousUser": "{provider}-Leser",
       "auto": "Automatischer Sync",
@@ -150,6 +169,7 @@
       "privacy": "Datenschutz",
       "profile": "Profil",
       "security": "Sicherheit & Sitzungen",
+      "sources": "Quellen",
       "sync": "Sync & Integrationen",
       "taste": "Geschmack"
     },
@@ -1321,6 +1341,7 @@
       "other": "{count} Teilreleases"
     },
     "pinHint": "Hefte eine Quelle an, damit sie zuerst öffnet",
+    "pinNeedsTracking": "Serie verfolgen, um eine Quelle anzuheften",
     "pinSource": "Für diese Serie anheften",
     "pinned": "angeheftet",
     "preferred": "bevorzugt",
@@ -1362,6 +1383,7 @@
       "unlink": "Trennen"
     },
     "tracking": "Verfolgung",
+    "unpinSource": "Lösen — meiner Quellenreihenfolge folgen",
     "unread": "Ungelesen",
     "upTo": "bis #{number}"
   },

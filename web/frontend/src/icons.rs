@@ -34,6 +34,8 @@ pub(crate) enum Icon {
     ArrowForward,
     ChevronRight,
     ChevronDown,
+    ArrowUp,
+    ArrowDown,
     Close,
     Check,
     OpenInNew,
@@ -165,6 +167,8 @@ fn path_for(icon: Icon) -> &'static str {
         Icon::ArrowForward => r#"<path d="M5 12h14M13 6l6 6-6 6"/>"#,
         Icon::ChevronRight => r#"<path d="m9 6 6 6-6 6"/>"#,
         Icon::ChevronDown => r#"<path d="m6 9 6 6 6-6"/>"#,
+        Icon::ArrowUp => r#"<path d="M12 19V5"/><path d="m5 12 7-7 7 7"/>"#,
+        Icon::ArrowDown => r#"<path d="M12 5v14"/><path d="m19 12-7 7-7-7"/>"#,
         Icon::Close => r#"<path d="M6 6l12 12M18 6 6 18"/>"#,
         Icon::Check => r#"<path d="m5 12 5 5 9-11"/>"#,
         Icon::OpenInNew => {

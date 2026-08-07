@@ -71,12 +71,18 @@ impl MergedChapter {
 
 /// Rank the series' sources into the order the open control resolves through.
 ///
-/// A per-series pin wins outright; otherwise the API's own `is_primary` flag (the richest
-/// source) leads, and the rest fall in by chapter count. Ties break on name so the order is
-/// stable across reloads rather than following whatever order the API happened to return.
+/// Three tiers, most specific first: a per-series pin wins outright, then the reader's global
+/// provider order, then the API's own `is_primary` flag (the richest source) and chapter count
+/// for everything they have no opinion about. Ties break on name so the order is stable across
+/// reloads rather than following whatever order the API happened to return.
+///
+/// An unranked provider is *not* ranked last on purpose — it sorts behind every ranked one but
+/// keeps its objective standing among the rest, so adding one favourite does not scramble the
+/// order of the sources the reader never mentioned.
 pub(super) fn rank_sources(
     sources: &[SourceDto],
     pinned: Option<SeriesSourceId>,
+    order: &[String],
 ) -> Vec<SourceDto> {
     let mut ranked = sources.to_vec();
     ranked.sort_by(|a, b| {
@@ -84,6 +90,10 @@ pub(super) fn rank_sources(
             (
                 // `false` sorts before `true`, so negate the two "should lead" flags.
                 pinned != Some(s.id),
+                order
+                    .iter()
+                    .position(|slug| *slug == s.provider_slug)
+                    .unwrap_or(usize::MAX),
                 !s.is_primary,
                 -i64::from(s.chapter_count),
             )
@@ -261,7 +271,7 @@ mod tests {
     fn the_pinned_source_outranks_the_primary_one() {
         let primary = source("Asura", true, 158, 1);
         let backup = source("MangaDex", false, 140, 2);
-        let ranked = rank_sources(&[primary.clone(), backup.clone()], Some(backup.id));
+        let ranked = rank_sources(&[primary.clone(), backup.clone()], Some(backup.id), &[]);
         assert_eq!(ranked[0].id, backup.id);
         assert_eq!(ranked[1].id, primary.id);
     }
@@ -270,8 +280,54 @@ mod tests {
     fn without_a_pin_the_primary_source_leads() {
         let primary = source("Asura", true, 158, 1);
         let backup = source("MangaDex", false, 200, 2);
-        let ranked = rank_sources(&[backup.clone(), primary.clone()], None);
+        let ranked = rank_sources(&[backup.clone(), primary.clone()], None, &[]);
         assert_eq!(ranked[0].id, primary.id);
+    }
+
+    /// The global order has to beat `is_primary`, or a reader who ranked their favourite
+    /// provider still opens on whichever source happens to carry the most chapters — which is
+    /// the state this preference exists to replace.
+    #[test]
+    fn the_global_order_outranks_the_primary_source() {
+        let primary = source("Asura", true, 158, 1);
+        let favourite = source("MangaDex", false, 12, 2);
+        let order = vec!["mangadex".to_owned()];
+        let ranked = rank_sources(&[primary.clone(), favourite.clone()], None, &order);
+        assert_eq!(ranked[0].id, favourite.id);
+        assert_eq!(ranked[1].id, primary.id);
+    }
+
+    /// A per-series pin is the more specific statement, so it wins even over a provider the
+    /// reader ranked first globally.
+    #[test]
+    fn a_pin_outranks_the_global_order() {
+        let favourite = source("Asura", true, 158, 1);
+        let pinned = source("MangaDex", false, 12, 2);
+        let order = vec!["asura".to_owned()];
+        let ranked = rank_sources(
+            &[favourite.clone(), pinned.clone()],
+            Some(pinned.id),
+            &order,
+        );
+        assert_eq!(ranked[0].id, pinned.id);
+    }
+
+    /// Ranking one provider must not scramble the rest: everything unranked keeps its objective
+    /// standing behind the ranked ones.
+    #[test]
+    fn unranked_sources_keep_their_objective_order() {
+        let ranked_one = source("Asura", false, 3, 1);
+        let primary = source("MangaDex", true, 200, 2);
+        let other = source("Reaper", false, 9, 3);
+        let order = vec!["asura".to_owned()];
+        let sorted = rank_sources(
+            &[other.clone(), primary.clone(), ranked_one.clone()],
+            None,
+            &order,
+        );
+        assert_eq!(sorted[0].id, ranked_one.id);
+        assert_eq!(sorted[1].id, primary.id);
+        assert_eq!(sorted[2].id, other.id);
     }
 
     #[test]

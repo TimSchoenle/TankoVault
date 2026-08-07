@@ -3,8 +3,8 @@
 use std::collections::HashMap;
 
 use crate::error::DbResult;
-use sqlx::{FromRow, PgExecutor};
-use tankovault_domain::{SeriesId, UserId, WatchStatus, WatchlistEntry};
+use sqlx::{FromRow, PgExecutor, PgPool};
+use tankovault_domain::{SeriesId, SeriesSourceId, UserId, WatchStatus, WatchlistEntry};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -35,6 +35,65 @@ pub async fn watchlist_upsert<'e, E: PgExecutor<'e>>(
     .execute(exec)
     .await?;
     Ok(())
+}
+
+/// What [`watchlist_set_pinned_source`] did, so the caller can answer with the right status.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PinOutcome {
+    /// The pin was written (or cleared).
+    Written,
+    /// The caller does not track this series, so there is no entry to pin against.
+    NotTracked,
+    /// The source exists, but carries a different series.
+    ForeignSource,
+}
+
+/// Pin the source a series should open on for this reader, or clear the pin with `None`.
+///
+/// The pin is scoped to the series in SQL, not just validated by a foreign key: `series_sources`
+/// ids are global, so without the `EXISTS` a reader could point one series' entry at another
+/// series' source and every resolution downstream would follow it.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — a rejected pin is a [`PinOutcome`], not an error.
+pub async fn watchlist_set_pinned_source(
+    pool: &PgPool,
+    user_id: UserId,
+    series_id: SeriesId,
+    source_id: Option<SeriesSourceId>,
+) -> DbResult<PinOutcome> {
+    let source = source_id.map(SeriesSourceId::as_uuid);
+    let written = sqlx::query!(
+        "UPDATE watchlist_entries SET pinned_source_id = $3, updated_at = now() \
+         WHERE user_id = $1 AND series_id = $2 \
+           AND ($3::uuid IS NULL \
+                OR EXISTS (SELECT 1 FROM series_sources ss \
+                            WHERE ss.id = $3 AND ss.series_id = $2))",
+        user_id.as_uuid(),
+        series_id.as_uuid(),
+        source,
+    )
+    .execute(pool)
+    .await?
+    .rows_affected();
+    if written > 0 {
+        return Ok(PinOutcome::Written);
+    }
+
+    // Nothing moved, and the statement above cannot say which half failed. Ask.
+    let tracked = sqlx::query_scalar!(
+        "SELECT EXISTS (SELECT 1 FROM watchlist_entries WHERE user_id = $1 AND series_id = $2) \
+         AS \"tracked!\"",
+        user_id.as_uuid(),
+        series_id.as_uuid(),
+    )
+    .fetch_one(pool)
+    .await?;
+    Ok(if tracked {
+        PinOutcome::ForeignSource
+    } else {
+        PinOutcome::NotTracked
+    })
 }
 
 /// Remove a watchlist entry.

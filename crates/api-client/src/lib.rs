@@ -5422,6 +5422,46 @@ pub mod types {
             Self::Variant1(value)
         }
     }
+    #[doc = "One provider in the reader's order."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One provider in the reader's order.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"id\","]
+    #[doc = "    \"name\","]
+    #[doc = "    \"slug\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"id\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/ProviderId\""]
+    #[doc = "    },"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"slug\": {"]
+    #[doc = "      \"description\": \"The provider slug — the same stable client-side key the source lists are drawn with.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct PreferredProvider {
+        pub id: ProviderId,
+        pub name: ::std::string::String,
+        #[doc = "The provider slug — the same stable client-side key the source lists are drawn with."]
+        pub slug: ::std::string::String,
+    }
+    impl PreferredProvider {
+        pub fn builder() -> builder::PreferredProvider {
+            Default::default()
+        }
+    }
     #[doc = "A named starting point in the permission editor."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -8269,6 +8309,100 @@ pub mod types {
     }
     impl SourceDto {
         pub fn builder() -> builder::SourceDto {
+            Default::default()
+        }
+    }
+    #[doc = "The source a reader wants a series to open on."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"The source a reader wants a series to open on.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"series_source_id\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"series_source_id\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/SeriesSourceId\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct SourcePin {
+        pub series_source_id: SeriesSourceId,
+    }
+    impl SourcePin {
+        pub fn builder() -> builder::SourcePin {
+            Default::default()
+        }
+    }
+    #[doc = "The reader's provider order, most preferred first."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"The reader's provider order, most preferred first.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"providers\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"providers\": {"]
+    #[doc = "      \"description\": \"Ranked providers only. An absent provider is \\\"no opinion\\\", not \\\"last\\\": series carried by\\nnobody on this list resolve by the objective richest-source order instead.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/PreferredProvider\""]
+    #[doc = "      }"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct SourcePreferences {
+        #[doc = "Ranked providers only. An absent provider is \"no opinion\", not \"last\": series carried by\nnobody on this list resolve by the objective richest-source order instead."]
+        pub providers: ::std::vec::Vec<PreferredProvider>,
+    }
+    impl SourcePreferences {
+        pub fn builder() -> builder::SourcePreferences {
+            Default::default()
+        }
+    }
+    #[doc = "A replacement provider order."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"A replacement provider order.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"provider_ids\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"provider_ids\": {"]
+    #[doc = "      \"description\": \"Provider ids, most preferred first. Must be distinct and must all exist; an empty list\\nclears the preference.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/ProviderId\""]
+    #[doc = "      }"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct SourcePreferencesUpdate {
+        #[doc = "Provider ids, most preferred first. Must be distinct and must all exist; an empty list\nclears the preference."]
+        pub provider_ids: ::std::vec::Vec<ProviderId>,
+    }
+    impl SourcePreferencesUpdate {
+        pub fn builder() -> builder::SourcePreferencesUpdate {
             Default::default()
         }
     }
@@ -11235,6 +11369,14 @@ pub mod types {
     #[doc = "    \"notify\": {"]
     #[doc = "      \"type\": \"boolean\""]
     #[doc = "    },"]
+    #[doc = "    \"pinned_source_id\": {"]
+    #[doc = "      \"description\": \"The source this reader pinned for this series, or `null` to follow the global order.\\n\\nThe reader's explicit choice, and not the same question as\\n[`Self::preferred_source_name`], which stays the derived richest source the ledger row\\ndisplays. Set through `PUT /v1/me/watchlist/{series_id}/source-pin`.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
     #[doc = "    \"preferred_source_name\": {"]
     #[doc = "      \"description\": \"Display name of the provider this series is primarily carried by.\","]
     #[doc = "      \"type\": ["]
@@ -11308,6 +11450,9 @@ pub mod types {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub next_unread: ::std::option::Option<WatchlistItemNextUnread>,
         pub notify: bool,
+        #[doc = "The source this reader pinned for this series, or `null` to follow the global order.\n\nThe reader's explicit choice, and not the same question as\n[`Self::preferred_source_name`], which stays the derived richest source the ledger row\ndisplays. Set through `PUT /v1/me/watchlist/{series_id}/source-pin`."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub pinned_source_id: ::std::option::Option<::uuid::Uuid>,
         #[doc = "Display name of the provider this series is primarily carried by."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub preferred_source_name: ::std::option::Option<::std::string::String>,
@@ -17828,6 +17973,74 @@ pub mod types {
             }
         }
         #[derive(Clone, Debug)]
+        pub struct PreferredProvider {
+            id: ::std::result::Result<super::ProviderId, ::std::string::String>,
+            name: ::std::result::Result<::std::string::String, ::std::string::String>,
+            slug: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+        impl ::std::default::Default for PreferredProvider {
+            fn default() -> Self {
+                Self {
+                    id: Err("no value supplied for id".to_string()),
+                    name: Err("no value supplied for name".to_string()),
+                    slug: Err("no value supplied for slug".to_string()),
+                }
+            }
+        }
+        impl PreferredProvider {
+            pub fn id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::ProviderId>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for id: {e}"));
+                self
+            }
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+            pub fn slug<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.slug = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for slug: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<PreferredProvider> for super::PreferredProvider {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: PreferredProvider,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    id: value.id?,
+                    name: value.name?,
+                    slug: value.slug?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::PreferredProvider> for PreferredProvider {
+            fn from(value: super::PreferredProvider) -> Self {
+                Self {
+                    id: Ok(value.id),
+                    name: Ok(value.name),
+                    slug: Ok(value.slug),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
         pub struct PresetInfo {
             key: ::std::result::Result<super::PermissionPreset, ::std::string::String>,
             permissions:
@@ -21165,6 +21378,130 @@ pub mod types {
             }
         }
         #[derive(Clone, Debug)]
+        pub struct SourcePin {
+            series_source_id: ::std::result::Result<super::SeriesSourceId, ::std::string::String>,
+        }
+        impl ::std::default::Default for SourcePin {
+            fn default() -> Self {
+                Self {
+                    series_source_id: Err("no value supplied for series_source_id".to_string()),
+                }
+            }
+        }
+        impl SourcePin {
+            pub fn series_source_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::SeriesSourceId>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.series_source_id = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for series_source_id: {e}")
+                });
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<SourcePin> for super::SourcePin {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: SourcePin,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    series_source_id: value.series_source_id?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::SourcePin> for SourcePin {
+            fn from(value: super::SourcePin) -> Self {
+                Self {
+                    series_source_id: Ok(value.series_source_id),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct SourcePreferences {
+            providers: ::std::result::Result<
+                ::std::vec::Vec<super::PreferredProvider>,
+                ::std::string::String,
+            >,
+        }
+        impl ::std::default::Default for SourcePreferences {
+            fn default() -> Self {
+                Self {
+                    providers: Err("no value supplied for providers".to_string()),
+                }
+            }
+        }
+        impl SourcePreferences {
+            pub fn providers<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::PreferredProvider>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.providers = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for providers: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<SourcePreferences> for super::SourcePreferences {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: SourcePreferences,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    providers: value.providers?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::SourcePreferences> for SourcePreferences {
+            fn from(value: super::SourcePreferences) -> Self {
+                Self {
+                    providers: Ok(value.providers),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct SourcePreferencesUpdate {
+            provider_ids:
+                ::std::result::Result<::std::vec::Vec<super::ProviderId>, ::std::string::String>,
+        }
+        impl ::std::default::Default for SourcePreferencesUpdate {
+            fn default() -> Self {
+                Self {
+                    provider_ids: Err("no value supplied for provider_ids".to_string()),
+                }
+            }
+        }
+        impl SourcePreferencesUpdate {
+            pub fn provider_ids<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::ProviderId>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.provider_ids = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for provider_ids: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<SourcePreferencesUpdate> for super::SourcePreferencesUpdate {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: SourcePreferencesUpdate,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    provider_ids: value.provider_ids?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::SourcePreferencesUpdate> for SourcePreferencesUpdate {
+            fn from(value: super::SourcePreferencesUpdate) -> Self {
+                Self {
+                    provider_ids: Ok(value.provider_ids),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
         pub struct StatusPrefs {
             completed: ::std::result::Result<bool, ::std::string::String>,
             dropped: ::std::result::Result<bool, ::std::string::String>,
@@ -24253,6 +24590,8 @@ pub mod types {
                 ::std::string::String,
             >,
             notify: ::std::result::Result<bool, ::std::string::String>,
+            pinned_source_id:
+                ::std::result::Result<::std::option::Option<::uuid::Uuid>, ::std::string::String>,
             preferred_source_name: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
@@ -24281,6 +24620,7 @@ pub mod types {
                     latest_chapter_number: Ok(Default::default()),
                     next_unread: Ok(Default::default()),
                     notify: Err("no value supplied for notify".to_string()),
+                    pinned_source_id: Ok(Default::default()),
                     preferred_source_name: Ok(Default::default()),
                     read_count: Err("no value supplied for read_count".to_string()),
                     series_id: Err("no value supplied for series_id".to_string()),
@@ -24364,6 +24704,16 @@ pub mod types {
                 self.notify = value
                     .try_into()
                     .map_err(|e| format!("error converting supplied value for notify: {e}"));
+                self
+            }
+            pub fn pinned_source_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::uuid::Uuid>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.pinned_source_id = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for pinned_source_id: {e}")
+                });
                 self
             }
             pub fn preferred_source_name<T>(mut self, value: T) -> Self
@@ -24490,6 +24840,7 @@ pub mod types {
                     latest_chapter_number: value.latest_chapter_number?,
                     next_unread: value.next_unread?,
                     notify: value.notify?,
+                    pinned_source_id: value.pinned_source_id?,
                     preferred_source_name: value.preferred_source_name?,
                     read_count: value.read_count?,
                     series_id: value.series_id?,
@@ -24514,6 +24865,7 @@ pub mod types {
                     latest_chapter_number: Ok(value.latest_chapter_number),
                     next_unread: Ok(value.next_unread),
                     notify: Ok(value.notify),
+                    pinned_source_id: Ok(value.pinned_source_id),
                     preferred_source_name: Ok(value.preferred_source_name),
                     read_count: Ok(value.read_count),
                     series_id: Ok(value.series_id),
@@ -25344,6 +25696,14 @@ impl Client {
     pub fn delete_session(&self) -> builder::DeleteSession<'_> {
         builder::DeleteSession::new(self)
     }
+    #[doc = "Get source preferences\n\nThe caller's provider order. Providers that have since been disabled are dropped rather than\nreturned — they carry nothing a reader can open, so ranking them would be a preference that\ncan never apply.\n\nSends a `GET` request to `/v1/me/source-preferences`\n\n```ignore\nlet response = client.source_preferences()\n    .send()\n    .await;\n```"]
+    pub fn source_preferences(&self) -> builder::SourcePreferences<'_> {
+        builder::SourcePreferences::new(self)
+    }
+    #[doc = "Replace source preferences\n\nReplaces the order wholesale: the list *is* the preference, so a provider left out of the\nbody is unranked afterwards.\n\nSends a `PUT` request to `/v1/me/source-preferences`\n\n```ignore\nlet response = client.put_source_preferences()\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn put_source_preferences(&self) -> builder::PutSourcePreferences<'_> {
+        builder::PutSourcePreferences::new(self)
+    }
     #[doc = "Get lifetime tracking stats\n\n*Stub*: lifetime tracking stats for the Home / Profile headline (frontend §9.3). See\n[`tankovault_db::repo::tracking::MeStats`] for the honest definition of `chapters_read` and\nwhy no \"streak\" is returned.\n\nSends a `GET` request to `/v1/me/stats`\n\n```ignore\nlet response = client.stats()\n    .send()\n    .await;\n```"]
     pub fn stats(&self) -> builder::Stats<'_> {
         builder::Stats::new(self)
@@ -25435,6 +25795,14 @@ impl Client {
     #[doc = "Remove a watchlist entry\n\nSends a `DELETE` request to `/v1/me/watchlist/{series_id}`\n\nArguments:\n- `series_id`: Series id\n```ignore\nlet response = client.delete_watchlist()\n    .series_id(series_id)\n    .send()\n    .await;\n```"]
     pub fn delete_watchlist(&self) -> builder::DeleteWatchlist<'_> {
         builder::DeleteWatchlist::new(self)
+    }
+    #[doc = "Pin a series' source\n\nOverrides the reader's global provider order for this one series. A separate resource from\nthe entry itself rather than a field on [`WatchlistUpsert`]: that body is a full replacement,\nso a reader toggling `notify` would silently drop their pin.\n\nSends a `PUT` request to `/v1/me/watchlist/{series_id}/source-pin`\n\nArguments:\n- `series_id`: Series id\n- `body`\n```ignore\nlet response = client.put_source_pin()\n    .series_id(series_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn put_source_pin(&self) -> builder::PutSourcePin<'_> {
+        builder::PutSourcePin::new(self)
+    }
+    #[doc = "Clear a series' source pin\n\nIdempotent: clearing a pin that is not set is a `200`, because the reader's intent — \"stop\noverriding for this series\" — is satisfied either way.\n\nSends a `DELETE` request to `/v1/me/watchlist/{series_id}/source-pin`\n\nArguments:\n- `series_id`: Series id\n```ignore\nlet response = client.delete_source_pin()\n    .series_id(series_id)\n    .send()\n    .await;\n```"]
+    pub fn delete_source_pin(&self) -> builder::DeleteSourcePin<'_> {
+        builder::DeleteSourcePin::new(self)
     }
     #[doc = "Set the per-series sync-exclusion flag\n\nSet the blanket per-series sync-exclusion flag (design v2 §A.5).\n\nThe flag lives on the watchlist entry, so the series must already be tracked. It answers\n`404` when it is not, rather than the `{\"ok\": true}` it used to answer unconditionally\n(OPS-2.2d): this decides whether the caller's reading progress is pushed to an external\nprovider, and a privacy setting that reports success without persisting is worse than one\nthat refuses.\n\nSends a `PUT` request to `/v1/me/watchlist/{series_id}/sync`\n\nArguments:\n- `series_id`: Series id\n- `body`\n```ignore\nlet response = client.put_sync_excluded()\n    .series_id(series_id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn put_sync_excluded(&self) -> builder::PutSyncExcluded<'_> {
@@ -33557,6 +33925,133 @@ pub mod builder {
             }
         }
     }
+    #[doc = "Builder for [`Client::source_preferences`]\n\n[`Client::source_preferences`]: super::Client::source_preferences"]
+    #[derive(Debug, Clone)]
+    pub struct SourcePreferences<'a> {
+        client: &'a super::Client,
+    }
+    impl<'a> SourcePreferences<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+        #[doc = "Sends a `GET` request to `/v1/me/source-preferences`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::SourcePreferences>, Error<types::ProblemDetails>> {
+            let Self { client } = self;
+            let url = format!("{}/v1/me/source-preferences", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "source_preferences",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::put_source_preferences`]\n\n[`Client::put_source_preferences`]: super::Client::put_source_preferences"]
+    #[derive(Debug, Clone)]
+    pub struct PutSourcePreferences<'a> {
+        client: &'a super::Client,
+        body: Result<types::builder::SourcePreferencesUpdate, String>,
+    }
+    impl<'a> PutSourcePreferences<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::SourcePreferencesUpdate>,
+            <V as std::convert::TryInto<types::SourcePreferencesUpdate>>::Error: std::fmt::Display,
+        {
+            self.body = value.try_into().map(From::from).map_err(|s| {
+                format!(
+                    "conversion to `SourcePreferencesUpdate` for body failed: {}",
+                    s
+                )
+            });
+            self
+        }
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::SourcePreferencesUpdate,
+                ) -> types::builder::SourcePreferencesUpdate,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+        #[doc = "Sends a `PUT` request to `/v1/me/source-preferences`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::SourcePreferences>, Error<types::ProblemDetails>> {
+            let Self { client, body } = self;
+            let body = body
+                .and_then(|v| {
+                    types::SourcePreferencesUpdate::try_from(v).map_err(|e| e.to_string())
+                })
+                .map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v1/me/source-preferences", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .put(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "put_source_preferences",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
     #[doc = "Builder for [`Client::stats`]\n\n[`Client::stats`]: super::Client::stats"]
     #[derive(Debug, Clone)]
     pub struct Stats<'a> {
@@ -35267,6 +35762,171 @@ pub mod builder {
             match response.status().as_u16() {
                 200u16 => ResponseValue::from_response(response).await,
                 401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::put_source_pin`]\n\n[`Client::put_source_pin`]: super::Client::put_source_pin"]
+    #[derive(Debug, Clone)]
+    pub struct PutSourcePin<'a> {
+        client: &'a super::Client,
+        series_id: Result<types::SeriesId, String>,
+        body: Result<types::builder::SourcePin, String>,
+    }
+    impl<'a> PutSourcePin<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                series_id: Err("series_id was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+        pub fn series_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::SeriesId>,
+        {
+            self.series_id = value
+                .try_into()
+                .map_err(|_| "conversion to `SeriesId` for series_id failed".to_string());
+            self
+        }
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::SourcePin>,
+            <V as std::convert::TryInto<types::SourcePin>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `SourcePin` for body failed: {}", s));
+            self
+        }
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(types::builder::SourcePin) -> types::builder::SourcePin,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+        #[doc = "Sends a `PUT` request to `/v1/me/watchlist/{series_id}/source-pin`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::serde_json::Value>, Error<types::ProblemDetails>> {
+            let Self {
+                client,
+                series_id,
+                body,
+            } = self;
+            let series_id = series_id.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::SourcePin::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/me/watchlist/{}/source-pin",
+                client.baseurl,
+                encode_path(&series_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .put(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "put_source_pin",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                404u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::delete_source_pin`]\n\n[`Client::delete_source_pin`]: super::Client::delete_source_pin"]
+    #[derive(Debug, Clone)]
+    pub struct DeleteSourcePin<'a> {
+        client: &'a super::Client,
+        series_id: Result<types::SeriesId, String>,
+    }
+    impl<'a> DeleteSourcePin<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                series_id: Err("series_id was not initialized".to_string()),
+            }
+        }
+        pub fn series_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::SeriesId>,
+        {
+            self.series_id = value
+                .try_into()
+                .map_err(|_| "conversion to `SeriesId` for series_id failed".to_string());
+            self
+        }
+        #[doc = "Sends a `DELETE` request to `/v1/me/watchlist/{series_id}/source-pin`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::serde_json::Value>, Error<types::ProblemDetails>> {
+            let Self { client, series_id } = self;
+            let series_id = series_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/me/watchlist/{}/source-pin",
+                client.baseurl,
+                encode_path(&series_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .delete(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "delete_source_pin",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                404u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
                 _ => Err(Error::UnexpectedResponse(response)),

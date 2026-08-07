@@ -8,6 +8,7 @@ mod passkeys;
 mod privacy;
 mod profile;
 mod security;
+mod sources;
 mod sync;
 mod taste;
 
@@ -25,6 +26,7 @@ use dioxus::prelude::*;
 enum Panel {
     Profile,
     Appearance,
+    Sources,
     Taste,
     Security,
     Sync,
@@ -37,6 +39,7 @@ impl TabKind for Panel {
         &[
             Self::Profile,
             Self::Appearance,
+            Self::Sources,
             Self::Taste,
             Self::Security,
             Self::Sync,
@@ -50,6 +53,7 @@ impl TabKind for Panel {
         match self {
             Self::Profile => "account.tab.profile",
             Self::Appearance => "account.tab.appearance",
+            Self::Sources => "account.tab.sources",
             Self::Taste => "account.tab.taste",
             Self::Security => "account.tab.security",
             Self::Sync => "account.tab.sync",
@@ -63,7 +67,10 @@ impl Panel {
     /// Whether this deployment offers the panel at all.
     fn is_visible(self, caps: &CapabilitySet) -> bool {
         match self {
-            Self::Appearance => true,
+            // Neither has a flag behind it: appearance is device-local, and the source order is
+            // ungated on the server because it only shapes outbound links — a reader who cannot
+            // change it is worse off than one who can.
+            Self::Appearance | Self::Sources => true,
             Self::Profile => caps.has_feature(Feature::AccountsProfile),
             Self::Taste => caps.has_feature(Feature::CatalogueRecommendations),
             // Either half is enough; passkeys and sessions are independent features.
@@ -142,6 +149,7 @@ pub(crate) fn Account() -> Element {
         match current {
             Panel::Profile => rsx! { profile::ProfilePanel { name: name.clone(), tier: tier.clone() } },
             Panel::Appearance => rsx! { appearance::AppearancePanel {} },
+            Panel::Sources => rsx! { sources::SourcesPanel {} },
             Panel::Taste => rsx! { taste::TastePanel {} },
             Panel::Security => rsx! { security::SecurityPanel {} },
             Panel::Sync => rsx! { sync::SyncPanel {} },

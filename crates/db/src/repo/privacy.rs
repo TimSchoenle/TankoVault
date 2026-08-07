@@ -35,6 +35,18 @@ pub async fn export_user_data<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -
                            FROM watchlist_entries w WHERE w.user_id = $1), \
            'read_progress', (SELECT coalesce(json_agg(to_jsonb(p) ORDER BY p.updated_at), '[]'::json) \
                                FROM read_progress p WHERE p.user_id = $1), \
+           /* The reader's global source order. Carries the provider slug rather than only the \
+              id, so the export says which sites the subject preferred without a second lookup \
+              they have no access to. The per-series half of the same preference rides the \
+              watchlist rows above as `pinned_source_id`. */ \
+           'source_preferences', (SELECT coalesce(json_agg(json_build_object( \
+                                                    'position', upp.position, \
+                                                    'provider_id', upp.provider_id, \
+                                                    'provider_slug', pr.slug) \
+                                                  ORDER BY upp.position), '[]'::json) \
+                                    FROM user_provider_priority upp \
+                                    JOIN providers pr ON pr.id = upp.provider_id \
+                                   WHERE upp.user_id = $1), \
            'notifications', (SELECT coalesce(json_agg(to_jsonb(n) ORDER BY n.created_at), '[]'::json) \
                                FROM notifications n WHERE n.user_id = $1), \
            /* The recommendation profile. Derived from the watchlist, but disclosed separately \

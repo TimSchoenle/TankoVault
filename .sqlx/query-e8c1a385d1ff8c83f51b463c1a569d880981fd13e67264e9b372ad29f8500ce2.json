@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE watchlist_entries SET pinned_source_id = $3, updated_at = now() WHERE user_id = $1 AND series_id = $2 AND ($3::uuid IS NULL OR EXISTS (SELECT 1 FROM series_sources ss WHERE ss.id = $3 AND ss.series_id = $2))",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e8c1a385d1ff8c83f51b463c1a569d880981fd13e67264e9b372ad29f8500ce2"
+}

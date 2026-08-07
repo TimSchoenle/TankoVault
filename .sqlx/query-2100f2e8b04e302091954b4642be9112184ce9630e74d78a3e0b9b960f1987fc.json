@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO user_provider_priority (user_id, provider_id, position) SELECT $1, t.provider_id, (t.ordinality - 1)::int FROM unnest($2::uuid[]) WITH ORDINALITY AS t(provider_id, ordinality)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2100f2e8b04e302091954b4642be9112184ce9630e74d78a3e0b9b960f1987fc"
+}

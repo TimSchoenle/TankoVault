@@ -27,6 +27,7 @@ const RETRY_BACKOFF_MAX_MS: u32 = 60_000;
 pub(crate) fn Shell() -> Element {
     use_token_refresh();
     use_capability_sync();
+    use_source_order_sync();
     use_unread_count();
     use_live_notifications();
     crate::state::legal::use_legal_sync();
@@ -199,6 +200,38 @@ fn use_capability_sync() {
             match client.capabilities().send().await {
                 Ok(response) => capabilities.set(response.into_inner()),
                 Err(_) => capabilities.clear(),
+            }
+        }
+    });
+}
+
+/// Keep the cached global source order in step with the session.
+///
+/// Keyed on the token for the same reason capabilities are: the order is per reader, so a
+/// sign-out must not leave the previous reader's preference shaping this one's links.
+fn use_source_order_sync() {
+    let session = use_session();
+    let api = api::use_api();
+    let order = crate::state::source_order::use_source_order();
+
+    use_resource(move || {
+        let client = api.client();
+        let signed_in = session.is_authenticated();
+        async move {
+            if !signed_in {
+                order.clear();
+                return;
+            }
+            match client.source_preferences().send().await {
+                Ok(response) => order.set(
+                    response
+                        .into_inner()
+                        .providers
+                        .into_iter()
+                        .map(|p| p.slug)
+                        .collect(),
+                ),
+                Err(_) => order.clear(),
             }
         }
     });

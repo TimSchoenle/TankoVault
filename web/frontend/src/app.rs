@@ -7,6 +7,7 @@ use crate::components::{SettingsSheet, TitleBar};
 use crate::i18n::I18nRoot;
 use crate::state::capabilities::CapabilitySet;
 use crate::state::legal::LegalIndex;
+use crate::state::source_order::SourceOrder;
 use crate::state::Session;
 use crate::title::PageTitle;
 use crate::views::{
@@ -86,6 +87,9 @@ pub(crate) fn App() -> Element {
     // so views don't need it threaded down.
     use_context_provider(CapabilitySet::new);
     use_context_provider(|| UnreadBadge(Signal::new(0)));
+    // The reader's global source order; filled by `Shell` and re-set by the Account panel that
+    // edits it, so a save lands on the Series screen without a reload.
+    use_context_provider(SourceOrder::new);
     // Filled once by `Shell`; three surfaces read the same list.
     use_context_provider(LegalIndex::new);
     // Empty until a screen publishes a name only it knows; the route's own name covers the rest.

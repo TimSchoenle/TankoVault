@@ -178,6 +178,12 @@ jobs:
           permission-contents: write
           permission-pull-requests: write
 
+      # `draft: true` in `release-please-config.json` is load-bearing and belongs to
+      # `desktop-release`, which publishes the draft once the installers are attached. This
+      # repository's releases are **immutable**: once one is published, no asset can be added,
+      # changed or removed, so a release published here is a release that can never carry the
+      # desktop builds. A draft has no such lock — and no git tag either, which is why the
+      # `desktop` job checks out `github.sha`.
       - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5
         id: release
         with:
@@ -1048,10 +1054,14 @@ jobs:
         with:
           egress-policy: audit
 
+      # The release commit, named by sha rather than by tag: the release is still a draft at this
+      # point and GitHub does not materialise a draft's tag until it is published, which happens
+      # in `desktop-release` below. The two are the same commit — the push that started this run
+      # is what release-please released.
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.release-please.outputs.tag_name }}
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       # No toolchain version named here on purpose: `rust-toolchain.toml` at the repository root
@@ -1186,14 +1196,22 @@ jobs:
 
   # One job attaches everything, so `sha256sums.txt` is written over the complete set. Split
   # across the matrix it would describe half a release, twice.
+  #
+  # It is also the job that **publishes** the release, which is why a desktop build that fails
+  # leaves a draft and no tag rather than a published release nobody can attach anything to.
   desktop-release:
-    name: attach the desktop builds
+    name: attach the desktop builds and publish
     needs: [release-please, desktop]
     if: ${{ !cancelled() && !failure() && needs.release-please.outputs.release_created == 'true' }}
+    # Required, not decorative: `RELEASE_BOT_*` are `release` environment secrets, and a job that
+    # omits the environment reads them as empty strings.
+    environment:
+      name: release
+      deployment: false
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
-      contents: write # to upload assets onto the release this run created
+      contents: read # to check out; the release itself is written with the bot token below
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
@@ -1222,14 +1240,39 @@ jobs:
           sha256sum ./* > sha256sums.txt
           cat sha256sums.txt
 
+      # Publishing the draft is what creates the git tag, and the tag ruleset admits only the
+      # release bot — so this runs on the bot's token rather than `GITHUB_TOKEN`, which would be
+      # refused at the one step that cannot be retried by hand. Narrowed to `contents`, which is
+      # what uploading an asset and clearing the draft bit both need.
+      - name: Generate Bot Token
+        id: generate_token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.RELEASE_BOT_APP_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          permission-contents: write
+
+      # The order is the whole point. This repository's releases are **immutable**: the moment one
+      # is published its asset set is frozen, and `gh release upload` against it fails no matter
+      # what `--clobber` is asked to do. So release-please creates a draft, the installers go onto
+      # the draft, and only then is it published.
+      #
       # These installers are **not signed**. Windows SmartScreen warns on first run and the Linux
       # packages carry no repository signature, so the checksums above are the only integrity
       # check a reader has — which is why they are published beside the files and named here.
-      - name: attach to the release
+      - name: attach the installers and publish the release
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.generate_token.outputs.token }}
           TAG: ${{ needs.release-please.outputs.tag_name }}
-        run: gh release upload "$TAG" dist/* --clobber
+        run: |
+          set -euo pipefail
+          gh release upload "$TAG" dist/* --clobber
+          gh release edit "$TAG" --draft=false
+          # Everything that reaches this release afterwards does so by tag — the changelog links,
+          # a reader cloning at the version, the next run of release-please working out what the
+          # previous release was. A publish that left no tag behind is not a release, and it is
+          # the half of this step that reports nothing on its own.
+          gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" --jq '.object.sha'
 
       - name: write the summary
         env:
@@ -1268,6 +1311,7 @@ jobs:
           CHART: ${{ needs.helm-release.result }}
           CHART_PR: ${{ needs.helm-release.outputs.pr_url }}
           CHART_VERSION: ${{ needs.helm-release.outputs.chart_version }}
+          RELEASED: ${{ needs.desktop-release.result }}
         run: |
           # Case-folded to match what was actually pushed; see the `build` job's `params` step.
           GHCR_PREFIX="${GHCR_REGISTRY}/${GITHUB_REPOSITORY,,}"
@@ -1284,7 +1328,7 @@ jobs:
               echo "republished, and no chart update was opened: every service stays on the digest"
               echo "it was already deployed at, and the tag records the changelog alone."
             elif [ "$PUBLISHED" != "success" ]; then
-              echo "The tag exists, but publishing reported \`${PUBLISHED}\` — **the ${count} planned"
+              echo "Publishing reported \`${PUBLISHED}\` — **the ${count} planned"
               echo "image(s) were not all published**. Read the failed jobs in this run before"
               echo "re-running; a partially pushed digest set is not a release."
             else
@@ -1316,4 +1360,13 @@ jobs:
               *)       echo "The chart bump reported \`${CHART}\` — **the images are published but"
                        echo "no chart update was opened**. Re-run this job, or bump the chart by hand." ;;
             esac
+            echo
+            # The release is created as a draft and published by `desktop-release`, so this is not
+            # a footnote about installers: until that job succeeds there is no `${TAG}` tag and
+            # nothing a reader can download, however much of the image set went out.
+            if [ "$RELEASED" != "success" ]; then
+              echo "Attaching the desktop builds reported \`${RELEASED}\` — **the release is still a"
+              echo "draft and \`${TAG}\` was never tagged**. Re-run this run's desktop jobs; the"
+              echo "draft is publishable once its installers are attached."
+            fi
           } >> "$GITHUB_STEP_SUMMARY"

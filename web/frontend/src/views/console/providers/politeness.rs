@@ -112,7 +112,9 @@ mod tests {
     fn choosing_no_emulation_sends_an_explicit_null() {
         assert_eq!(body("")["emulation"], serde_json::Value::Null);
         assert!(
-            body("").as_object().is_some_and(|o| o.contains_key("emulation")),
+            body("")
+                .as_object()
+                .is_some_and(|o| o.contains_key("emulation")),
             "the key must be present and null, not absent — an absent key defaults to Chrome"
         );
     }

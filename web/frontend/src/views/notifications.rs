@@ -329,6 +329,16 @@ impl Line {
     }
 }
 
+/// The one-line summary an OS notification carries, worded exactly as the inbox row is.
+///
+/// The desktop build's toast and this screen must not drift into two readings of the same
+/// free-form payload, which is what a second parser would become the first time the notifier
+/// ships a kind only one of them knows about.
+#[cfg(feature = "desktop")]
+pub(crate) fn headline(notification: &Notification, i18n: Translator) -> String {
+    describe(notification).0.render(i18n)
+}
+
 /// Derive a row's line and an optional deep-link target from a notification payload.
 ///
 /// The notifier writes `{ series_id, series_title, chapter_number, .. }` for chapter events;

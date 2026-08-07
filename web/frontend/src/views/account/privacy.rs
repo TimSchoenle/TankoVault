@@ -38,8 +38,8 @@ pub(crate) fn PrivacyPanel() -> Element {
 ///
 /// Fetched and saved from memory rather than linked to directly: the endpoint is
 /// bearer-authenticated, and a plain anchor navigation carries no `Authorization` header. See
-/// [`crate::util::save_text_file`], which also explains why the object URL is revoked straight
-/// away for a document of this sensitivity.
+/// [`crate::platform::save_text_file`], which also explains why the web build revokes the object
+/// URL straight away for a document of this sensitivity.
 #[component]
 fn ExportCard() -> Element {
     let i18n = use_i18n();
@@ -59,11 +59,13 @@ fn ExportCard() -> Element {
                     let body = response.into_inner();
                     match serde_json::to_string_pretty(&body) {
                         Ok(json) => {
-                            match crate::util::save_text_file(
+                            match crate::platform::save_text_file(
                                 "tankovault-export.json",
                                 "application/json",
                                 &json,
-                            ) {
+                            )
+                            .await
+                            {
                                 Ok(()) => {
                                     outcome.set(Some(Ok(i18n.t("account.privacy.export.done"))));
                                 }

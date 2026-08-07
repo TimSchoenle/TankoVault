@@ -9,8 +9,8 @@ short version, kept here because it is what gets loaded first.
 `cargo run -p xtask -- ci` is still the gate a change has to pass — every offline gate CI runs,
 in CI's order. It is **not** what you run by default. One pass rebuilds the workspace under
 `--all-features` and `wasm32-unknown-unknown`, runs `test --workspace`, the doc tests, rustdoc
-and the three `web/frontend` gates; that is minutes per iteration, and spending it after every
-edit buys nothing CI will not report anyway.
+and the six `web/frontend` gates (both its feature sets); that is minutes per iteration, and
+spending it after every edit buys nothing CI will not report anyway.
 
 Default while working — the whole obligation:
 
@@ -68,7 +68,7 @@ cargo test -p tankovault-db -p tankovault-api -p tankovault-sync --features inte
    token is in memory; the CSP is the ceiling on where an injected script could send it.
 2. **Never call `document::eval` in the frontend** — it is `new Function(…)`, the served CSP
    blocks it, and the failure *aborts the WASM instance* rather than returning an error. Add a
-   typed wrapper to `web/frontend/src/browser.rs`. Banned in `web/frontend/clippy.toml`.
+   typed wrapper to `web/frontend/src/platform/`. Banned in `web/frontend/clippy.toml`.
 3. **`#[expect(…, reason = "…")]`, never `#[allow]`.** An `expect` warns when its claim stops
    holding; an `allow` never does.
 4. **Comments are short by default.** One summary line of rustdoc per public item; a module `//!`
@@ -84,7 +84,11 @@ cargo test -p tankovault-db -p tankovault-api -p tankovault-sync --features inte
    `THIRD-PARTY-NOTICES`. Run `cargo run -p xtask -- openapi` / `-- notices`.
 7. **`web/frontend` is a separate workspace and inherits nothing** — not lints, not `clippy.toml`.
    A frontend URL and the API struct behind it have no compile-time relationship; `openapi.json`
-   is the only connector.
+   is the only connector. It also builds **two ways**: `web` (the wasm SPA, the default) and
+   `desktop` (a wry webview, shipped as installers). They are mutually exclusive, everything
+   platform-specific is behind `src/platform/`, and a check of one proves nothing about the
+   other — so `cargo check` there is twice:
+   `cargo check` and `cargo check --no-default-features --features desktop`.
 8. **A fix that could silently come back gets a test whose doc comment says what the bug was.**
 9. **Every secret value is a `secrecy` type — never a `String`, `&str` or `Vec<u8>`.**
    `SecretString` for text (DSNs, broker URLs, tokens, passwords, the pepper, webhook URLs with an

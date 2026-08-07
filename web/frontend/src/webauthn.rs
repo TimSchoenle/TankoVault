@@ -2,15 +2,39 @@
 //!
 //! The private key never leaves the authenticator, so the browser must broker it through
 //! `navigator.credentials.create()` / `.get()` — this is the typed boundary around that, the
-//! counterpart to [`crate::browser`].
+//! counterpart to [`crate::platform`].
 //!
 //! Byte-level conversion (challenge, `user.id`, `excludeCredentials[].id`) is intentionally not
 //! reimplemented here: `webauthn-rs-proto`'s `wasm` feature already does it, at the same pinned
 //! version the API verifies with. Every call below is a typed `web-sys` binding — the served CSP
 //! carries no `'unsafe-eval'`, and none is needed.
+//!
+//! **The desktop build does not go through a webview, and must not try to.** `WebAuthn` in a
+//! browser requires `rp.id` to be a registrable suffix of the *document's* origin, and a wry
+//! webview serves this app from its own custom protocol — so a challenge naming the server's
+//! relying-party id is refused with `SecurityError` however the call is reached. That rule is
+//! the *browser's*, not `WebAuthn`'s: it is how a page is stopped from asserting an origin it
+//! does not occupy.
+//!
+//! Windows exposes the same ceremony natively through `webauthn.dll`, which is the API the
+//! browsers themselves call, and it takes the `clientDataJSON` — origin included — from the
+//! caller. So the desktop build talks to Windows Hello directly and claims the origin the reader
+//! connected to. **The origin binding is therefore this app's assertion rather than a browser's
+//! guarantee**, which is the accepted model for a native client and is worth knowing: Windows has
+//! no app-to-relying-party association (no equivalent of Android's Digital Asset Links), so any
+//! native process on the machine can ask for the same `rp.id`. The server cannot tell one from
+//! the other, and a passkey therefore proves possession of the credential, not that the request
+//! came from this app.
+//!
+//! Linux has no OS passkey provider, so [`is_available`] answers `false` there and the controls
+//! hide themselves — which is what that function is for. Hardware security keys over CTAP/HID
+//! would be a separate feature with a separate dependency set.
 
+#[cfg(feature = "web")]
 use wasm_bindgen::JsCast as _;
+#[cfg(feature = "web")]
 use wasm_bindgen::JsValue;
+#[cfg(feature = "web")]
 use wasm_bindgen_futures::JsFuture;
 use webauthn_rs_proto::{
     CreationChallengeResponse, PublicKeyCredential, RegisterPublicKeyCredential,
@@ -19,10 +43,9 @@ use webauthn_rs_proto::{
 
 /// Why a ceremony did not produce a credential.
 ///
-/// Three outcomes, because the screen says something different for each and lumping them
-/// together produces the worst message in the set. A user who pressed Escape is not looking at
-/// an error and must not be shown one; a user on a browser without `WebAuthn` needs to be told
-/// that rather than to try again.
+/// One outcome per thing the screen should say, because lumping them together produces the worst
+/// message in the set. A user who pressed Escape is not looking at an error and must not be shown
+/// one; a user with no `WebAuthn` at all needs to be told that rather than to try again.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum CeremonyError {
     /// This browser exposes no `navigator.credentials`, or the page is not in a secure context.
@@ -37,9 +60,46 @@ pub(crate) enum CeremonyError {
     /// nothing", and "no credential matched" — it is deliberately indistinguishable so a page
     /// cannot probe which authenticators a visitor holds. So this is not necessarily a refusal,
     /// and the wording must not accuse anyone of one.
+    //
+    // Reached by a browser and by Windows Hello, but not by the desktop build anywhere else —
+    // there, every ceremony is refused with `Unsupported` before an authenticator is involved.
+    // `not(test)` because the wording test below constructs the whole set, so the claim only
+    // holds for the non-test compilation and an `expect` unfulfilled under `--all-targets` warns
+    // exactly as loudly as the thing it suppresses.
+    #[cfg_attr(
+        all(feature = "desktop", not(windows), not(test)),
+        expect(
+            dead_code,
+            reason = "no OS passkey provider off Windows, so nothing gets as far as a refusal"
+        )
+    )]
     Cancelled,
+    /// The prompt closed without producing a credential, and the platform did not say why.
+    ///
+    /// Windows only, and it exists because [`Cancelled`](Self::Cancelled) cannot be reached
+    /// there: `webauthn-authenticator-rs`'s Win10 backend maps every `HRESULT` — the user
+    /// pressing Cancel included — onto one opaque error, so a ceremony that was declined and one
+    /// that faulted are the same value by the time they arrive here.
+    ///
+    /// A fourth outcome rather than folding it into either neighbour, because both foldings lie:
+    /// as `Cancelled` it would silently swallow a misconfigured relying party, and as
+    /// [`Failed`](Self::Failed) it would tell a reader who pressed Cancel that something broke.
+    /// The wording names both possibilities instead. Fixing it properly is an upstream patch
+    /// mapping `ERROR_CANCELLED`/`NTE_USER_CANCELLED`.
+    //
+    // Constructed by the Windows backend and nowhere else: a browser distinguishes cancellation,
+    // and every other desktop target refuses before a ceremony starts. See `Cancelled` for why
+    // `not(test)` is part of the condition.
+    #[cfg_attr(
+        all(not(test), any(feature = "web", not(windows))),
+        expect(
+            dead_code,
+            reason = "only the Windows backend loses the distinction this outcome exists for"
+        )
+    )]
+    Incomplete,
     /// Anything else: a malformed challenge, an origin mismatch, an authenticator fault. The
-    /// browser's own message, which is the only thing that will help.
+    /// platform's own message, which is the only thing that will help.
     Failed(String),
 }
 
@@ -52,6 +112,7 @@ impl CeremonyError {
         match self {
             Self::Unsupported => "passkey.error.unsupported",
             Self::Cancelled => "passkey.error.cancelled",
+            Self::Incomplete => "passkey.error.incomplete",
             Self::Failed(_) => "passkey.error.failed",
         }
     }
@@ -62,8 +123,26 @@ impl CeremonyError {
 /// Used to hide the passkey controls rather than to gate the call — a control that fails when
 /// pressed is worse than one that is not offered. The call is still guarded, because a stale
 /// render is not a security boundary.
+#[cfg(feature = "web")]
 pub(crate) fn is_available() -> bool {
     web_sys::window().is_some_and(|w| !JsValue::from(w.navigator().credentials()).is_undefined())
+}
+
+/// Whether Windows exposes its `WebAuthn` API, and whether a server has been chosen to name as
+/// the relying party.
+///
+/// Both halves matter: the ceremony asserts an origin, and before the first-run connection screen
+/// has been answered there is no origin to assert.
+#[cfg(all(feature = "desktop", windows))]
+pub(crate) fn is_available() -> bool {
+    webauthn_authenticator_rs::win10::Win10::api_version() > 0
+        && crate::platform::server_origin().is_some()
+}
+
+/// Always `false`: no OS passkey provider outside Windows. See the module contract.
+#[cfg(all(feature = "desktop", not(windows)))]
+pub(crate) const fn is_available() -> bool {
+    false
 }
 
 /// Register a new credential: `navigator.credentials.create()`.
@@ -73,6 +152,7 @@ pub(crate) fn is_available() -> bool {
 /// authenticator is already registered, the page is on plain HTTP — and a panic in WASM is an
 /// `unreachable` trap that takes the whole app down (`panic = "abort"`), so every path here
 /// returns.
+#[cfg(feature = "web")]
 pub(crate) async fn create(
     challenge: CreationChallengeResponse,
 ) -> Result<RegisterPublicKeyCredential, CeremonyError> {
@@ -95,6 +175,7 @@ pub(crate) async fn create(
 ///
 /// # Errors
 /// [`CeremonyError`]; see [`create`].
+#[cfg(feature = "web")]
 pub(crate) async fn get(
     challenge: RequestChallengeResponse,
 ) -> Result<PublicKeyCredential, CeremonyError> {
@@ -111,6 +192,136 @@ pub(crate) async fn get(
     Ok(PublicKeyCredential::from(credential))
 }
 
+/// Windows Hello, through the platform's own `webauthn.dll`.
+///
+/// The same two ceremonies, reached through `webauthn-authenticator-rs`'s `Win10` backend rather
+/// than through a browser. It is pinned to the `webauthn-rs-proto` this crate and the API already
+/// share, so the challenge the API minted goes to the authenticator and the result comes back
+/// with no conversion anyone here had to write.
+#[cfg(all(feature = "desktop", windows))]
+mod hello {
+    use super::{
+        CeremonyError, CreationChallengeResponse, PublicKeyCredential, RegisterPublicKeyCredential,
+        RequestChallengeResponse,
+    };
+    use webauthn_authenticator_rs::prelude::{Url, WebauthnCError};
+    use webauthn_authenticator_rs::{win10::Win10, AuthenticatorBackend as _};
+
+    /// Used when the relying party sets no timeout. Matches the API's own ceremony timeout, so a
+    /// prompt does not outlive the challenge behind it.
+    const DEFAULT_TIMEOUT_MS: u32 = 300_000;
+
+    pub(crate) async fn create(
+        challenge: CreationChallengeResponse,
+    ) -> Result<RegisterPublicKeyCredential, CeremonyError> {
+        let origin = ceremony_origin()?;
+        let options = challenge.public_key;
+        let timeout = options.timeout.unwrap_or(DEFAULT_TIMEOUT_MS);
+        off_thread(move || Win10::default().perform_register(origin, options, timeout)).await
+    }
+
+    pub(crate) async fn get(
+        challenge: RequestChallengeResponse,
+    ) -> Result<PublicKeyCredential, CeremonyError> {
+        let origin = ceremony_origin()?;
+        // No `for_modal_prompt` here: `mediation` is a browser presentation hint and the native
+        // API has no field for it, so the conditional-UI trap the web side works around cannot
+        // arise. Windows always prompts.
+        let options = challenge.public_key;
+        let timeout = options.timeout.unwrap_or(DEFAULT_TIMEOUT_MS);
+        off_thread(move || Win10::default().perform_auth(origin, options, timeout)).await
+    }
+
+    /// The origin this client claims in `clientDataJSON`, which the server checks against the
+    /// relying party it was configured with.
+    ///
+    /// It is the server the reader connected to, because that is the origin this app is acting
+    /// for — and in a working deployment it is also the one the web SPA is served from, since
+    /// both are the address the reader reaches the API at.
+    fn ceremony_origin() -> Result<Url, CeremonyError> {
+        let origin = crate::platform::server_origin().ok_or(CeremonyError::Unsupported)?;
+        Url::parse(&origin).map_err(|e| {
+            CeremonyError::Failed(format!(
+                "configured server {origin:?} is not a valid URL: {e}"
+            ))
+        })
+    }
+
+    /// Run a ceremony on its own thread and await the answer.
+    ///
+    /// `webauthn.dll` shows a modal system dialog and does not return until the reader has
+    /// finished with it. On the UI thread that is a frozen window for as long as they take —
+    /// including the full timeout if they walk away.
+    ///
+    /// A plain `std::thread` plus a channel rather than `spawn_blocking`, because that would
+    /// assume an ambient Tokio runtime on whichever executor Dioxus polls this future on.
+    async fn off_thread<T, F>(ceremony: F) -> Result<T, CeremonyError>
+    where
+        T: Send + 'static,
+        F: FnOnce() -> Result<T, WebauthnCError> + Send + 'static,
+    {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        std::thread::spawn(move || {
+            // The receiver is gone if the screen was left mid-ceremony; nothing to report to.
+            let _ = tx.send(ceremony());
+        });
+        match rx.await {
+            Ok(result) => result.map_err(classify),
+            Err(_) => Err(CeremonyError::Failed(
+                "the passkey ceremony ended without an answer".to_owned(),
+            )),
+        }
+    }
+
+    /// Map the backend's error onto what the screen should say.
+    ///
+    /// `Internal` is deliberately **not** folded into either neighbour — see
+    /// [`CeremonyError::Incomplete`]. The Win10 backend maps every `HRESULT` onto it, so a
+    /// declined prompt and a genuine fault are the same value here.
+    fn classify(error: WebauthnCError) -> CeremonyError {
+        match error {
+            WebauthnCError::Cancelled => CeremonyError::Cancelled,
+            WebauthnCError::Internal => CeremonyError::Incomplete,
+            WebauthnCError::NotSupported | WebauthnCError::PlatformAuthenticator => {
+                CeremonyError::Unsupported
+            }
+            other => CeremonyError::Failed(other.to_string()),
+        }
+    }
+}
+
+#[cfg(all(feature = "desktop", windows))]
+pub(crate) use hello::{create, get};
+
+/// The non-Windows desktop counterparts, which refuse rather than pretend.
+///
+/// They exist so the screens are one code path on every build: the controls are already hidden on
+/// [`is_available`], and this is the guard behind them for a stale render.
+#[cfg(all(feature = "desktop", not(windows)))]
+mod unavailable {
+    use super::{
+        CeremonyError, CreationChallengeResponse, PublicKeyCredential, RegisterPublicKeyCredential,
+        RequestChallengeResponse,
+    };
+
+    /// Mirrors the platform signature, which has to await the authenticator.
+    pub(crate) async fn create(
+        _challenge: CreationChallengeResponse,
+    ) -> Result<RegisterPublicKeyCredential, CeremonyError> {
+        Err(CeremonyError::Unsupported)
+    }
+
+    /// See [`create`].
+    pub(crate) async fn get(
+        _challenge: RequestChallengeResponse,
+    ) -> Result<PublicKeyCredential, CeremonyError> {
+        Err(CeremonyError::Unsupported)
+    }
+}
+
+#[cfg(all(feature = "desktop", not(windows)))]
+pub(crate) use unavailable::{create, get};
+
 /// Drop the `mediation` hint the API's challenge carries, so the ceremony opens a dialog.
 ///
 /// `webauthn-rs` stamps `mediation: Some(Conditional)` onto every discoverable-auth challenge,
@@ -120,6 +331,7 @@ pub(crate) async fn get(
 ///
 /// Mediation is a client-side presentation choice, not something the server verifies, so
 /// stripping it here is safe and covers every caller.
+#[cfg(feature = "web")]
 fn for_modal_prompt(mut challenge: RequestChallengeResponse) -> RequestChallengeResponse {
     challenge.mediation = None;
     challenge
@@ -164,6 +376,7 @@ pub(crate) fn to_envelope<T: serde::Serialize>(
 }
 
 /// `navigator.credentials`, or [`CeremonyError::Unsupported`].
+#[cfg(feature = "web")]
 fn container() -> Result<web_sys::CredentialsContainer, CeremonyError> {
     let window = web_sys::window().ok_or(CeremonyError::Unsupported)?;
     let credentials = window.navigator().credentials();
@@ -173,13 +386,14 @@ fn container() -> Result<web_sys::CredentialsContainer, CeremonyError> {
     Ok(credentials)
 }
 
-/// Turn a thrown `DOMException` into one of the three outcomes.
+/// Turn a thrown `DOMException` into one of the outcomes.
 ///
 /// The name is read rather than the message, because the message is localised by the browser
 /// and differs between them; `NotAllowedError` is stable and specified. `AbortError` is the
 /// same event arriving through `AbortController` — a navigation away, or a second ceremony
 /// superseding this one — and belongs with it: nothing went wrong and nobody should be told
 /// anything did.
+#[cfg(feature = "web")]
 fn classify(error: &JsValue) -> CeremonyError {
     let Some(exception) = error.dyn_ref::<web_sys::DomException>() else {
         return CeremonyError::Failed(describe(error));
@@ -195,6 +409,7 @@ fn classify(error: &JsValue) -> CeremonyError {
 }
 
 /// A human-readable rendering of a non-`DOMException` throw.
+#[cfg(feature = "web")]
 fn describe(error: &JsValue) -> String {
     error
         .as_string()
@@ -209,6 +424,7 @@ fn describe(error: &JsValue) -> String {
 #[cfg(test)]
 mod tests {
     use super::CeremonyError;
+    #[cfg(feature = "web")]
     use webauthn_rs_proto::RequestChallengeResponse;
 
     /// A verbatim `/v1/auth/passkey/login/start` response, captured from the running API.
@@ -216,6 +432,7 @@ mod tests {
     /// Hard-coded rather than built from the proto types because the point of the test below is
     /// that the field arrives *from the server*, in the envelope, whether or not this crate
     /// thinks about it. Constructing the value locally would test our own literal.
+    #[cfg(feature = "web")]
     const SERVER_CHALLENGE: &str = r#"{
         "mediation": "conditional",
         "publicKey": {
@@ -240,6 +457,10 @@ mod tests {
     /// This asserts on the parsed challenge rather than the `CredentialRequestOptions` because
     /// the latter only exists under `wasm32`; what regresses is this field surviving, and that
     /// is visible here.
+    ///
+    /// Web-only because the ceremony it guards is: the desktop build cannot reach an
+    /// authenticator at all (see the module contract), so `for_modal_prompt` does not exist there.
+    #[cfg(feature = "web")]
     #[test]
     fn a_ceremony_started_from_a_button_does_not_ask_for_conditional_mediation() {
         let challenge: RequestChallengeResponse =
@@ -264,11 +485,17 @@ mod tests {
     /// visitor's authenticators. Collapsing it into the generic error bucket therefore shows
     /// "something went wrong" to a user who chose to cancel, on a screen where the natural next
     /// thought is that passkeys are broken here.
+    ///
+    /// `Incomplete` is in the set for the same reason from the other direction: Windows cannot
+    /// tell a declined prompt from a fault, so it gets wording that names both rather than
+    /// borrowing either neighbour's — and that only means something while its message stays its
+    /// own.
     #[test]
     fn each_outcome_is_worded_separately_and_cancellation_is_not_an_error() {
         let keys = [
             CeremonyError::Unsupported.key(),
             CeremonyError::Cancelled.key(),
+            CeremonyError::Incomplete.key(),
             CeremonyError::Failed(String::new()).key(),
         ];
         let unique: std::collections::BTreeSet<_> = keys.iter().collect();

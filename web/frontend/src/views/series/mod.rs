@@ -66,12 +66,12 @@ pub(crate) fn Series(id: String) -> Element {
     // The pin is read once on mount; a plain synchronous `localStorage` lookup lets the signal
     // seed with the stored value instead of rendering unpinned and correcting itself.
     let pinned = use_signal(|| {
-        crate::browser::local_get(&pin_key(id))
+        crate::platform::store_get(&pin_key(id))
             .and_then(|stored| stored.parse::<SeriesSourceId>().ok())
     });
     use_effect(move || {
         if let Some(source) = *pinned.read() {
-            crate::browser::local_set(&pin_key(id), &source.to_string());
+            crate::platform::store_set(&pin_key(id), &source.to_string());
         }
     });
 
@@ -295,8 +295,8 @@ fn Hero(
     // Counted separately rather than folded into the total: a part release is a chapter a source
     // shipped ahead of the compiled whole one, so counting them together would make a series
     // look longer than it is — which is exactly why the chapter list collapses them.
-    let part_releases = i64::try_from(chapters.iter().filter(|c| c.is_part()).count())
-        .unwrap_or(i64::MAX);
+    let part_releases =
+        i64::try_from(chapters.iter().filter(|c| c.is_part()).count()).unwrap_or(i64::MAX);
     // The merge orders newest-first, so the head is the newest number and the newest date.
     let latest_number = chapters.first().map(|c| c.number);
     let latest_release = chapters

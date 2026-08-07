@@ -264,9 +264,7 @@ pub(super) fn TagFacetPanel(
         tags.clone()
     } else {
         tags.iter()
-            .filter(|tag| {
-                tag.name.to_lowercase().contains(&needle) || tag.slug.contains(&needle)
-            })
+            .filter(|tag| tag.name.to_lowercase().contains(&needle) || tag.slug.contains(&needle))
             .cloned()
             .collect()
     };

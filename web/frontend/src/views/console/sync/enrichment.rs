@@ -46,7 +46,7 @@ pub(super) fn EnrichmentPanel() -> Element {
     let running = matches!(&*sweep.read_unchecked(), Some(Ok(view)) if view.running);
     use_future(move || async move {
         loop {
-            gloo_timers::future::TimeoutFuture::new(SWEEP_POLL_MS).await;
+            crate::platform::sleep_ms(SWEEP_POLL_MS).await;
             if running {
                 reload.bump();
             }

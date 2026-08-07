@@ -57,16 +57,13 @@ impl Window {
     /// The RFC 3339 instant this window starts at, as the API's `since` parameter wants it.
     ///
     /// `None` for [`Window::Any`], which is the absence of the parameter rather than a bound at
-    /// the beginning of time. Computed from the browser clock: the window is what the operator
-    /// sees on their own screen, and a server-relative one would drift against it.
+    /// the beginning of time. Computed from the operator's own clock: the window is what they
+    /// see on their own screen, and a server-relative one would drift against it.
     pub(crate) fn since_iso(self) -> Option<String> {
         const MS_PER_HOUR: f64 = 3_600_000.0;
         let hours = self.hours()?;
-        let now = js_sys::Date::new_0();
-        let start = js_sys::Date::new(&wasm_bindgen::JsValue::from_f64(
-            now.get_time() - f64::from(hours) * MS_PER_HOUR,
-        ));
-        start.to_iso_string().as_string()
+        let start = crate::platform::now_ms() - f64::from(hours) * MS_PER_HOUR;
+        crate::platform::format_timestamp_iso(start)
     }
 
     /// Parse a `?since=` token. An unrecognised one widens to "any time" rather than refusing

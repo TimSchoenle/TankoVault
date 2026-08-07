@@ -39,7 +39,7 @@ The short list. Everything else in this document is elaboration.
 
 1. **Never widen a Content-Security-Policy to make code work.** Change the code. [§4.1](#41-the-content-security-policy-contract)
 2. **Never call `document::eval` in the frontend.** Add a `web-sys` wrapper to
-   `web/frontend/src/browser.rs`. [§4.2](#42-the-browser-boundary)
+   `web/frontend/src/platform/web.rs`. [§4.2](#42-the-browser-boundary)
 3. **Suppress with `#[expect(…, reason = "…")]`, never `#[allow]`.** [§3.4](#34-suppressions)
 4. **A secret published in this repository must be refused by the code that reads it.** [§2.2](#22-secrets)
 5. **Anything fetching a URL someone else chose calls `tankovault_domain::ssrf`.** [§2.3](#23-ssrf)
@@ -58,7 +58,7 @@ The short list. Everything else in this document is elaboration.
 | Tree | Toolchain | Why it is separate |
 | --- | --- | --- |
 | the root workspace | `rust-toolchain.toml` (1.94.0) | everything shipped as a server binary |
-| `web/frontend` | same toolchain, `wasm32-unknown-unknown` via `dx` | needs a target the host workspace does not build; carries its own lockfile |
+| `web/frontend` | same toolchain; `wasm32-unknown-unknown` **and** the host triple, via `dx` | needs targets the host workspace does not build; carries its own lockfile |
 | `fuzz` | **nightly** | `libfuzzer-sys` needs `-Z sanitizer`; as a member it would drag nightly into every workspace-wide gate |
 
 **Consequence you will meet.** `web/frontend` inherits *nothing* from the root — not
@@ -84,7 +84,7 @@ crates/          shared libraries, no binary
   fetch/         the crawl HTTP stack (wreq, emulation, politeness)
   ...
 services/        deployable binaries, one per tier
-web/frontend/    the Dioxus SPA
+web/frontend/    the Dioxus client — the SPA and the desktop app, one tree (§4.4)
 xtask/           developer and CI tasks
 ```
 
@@ -339,8 +339,8 @@ over the four pure decision cores; a survivor is a missing assertion, not a buil
 
 ## 4 The frontend
 
-Read `web/frontend/src/browser.rs` and `services/frontend/src/main.rs` before changing anything
-in this section. They carry the long-form reasoning; this is the summary.
+Read `web/frontend/src/platform/mod.rs` and `services/frontend/src/main.rs` before changing
+anything in this section. They carry the long-form reasoning; this is the summary.
 
 ### 4.1 The Content-Security-Policy contract
 
@@ -368,7 +368,7 @@ CDN asset at runtime and nothing refuses it at build time.
 ### 4.2 The browser boundary
 
 **[E] `document::eval` is banned**, along with `js_sys::Function::new_*` and `js_sys::eval`
-(`web/frontend/clippy.toml`). All browser access goes through `web/frontend/src/browser.rs`.
+(`web/frontend/clippy.toml`). All browser access goes through `web/frontend/src/platform/`.
 
 Why it is a ban and not a preference: `dioxus-web` implements `Document::eval` as
 `Function::new_with_args`, and its `wasm-bindgen` import is **not** marked `catch` — so under the
@@ -387,6 +387,62 @@ its appearance preferences on boot, so the first eval killed it: a white page an
 user; `rsx!` escapes, these two parse. One use is allowed, as a budget of one:
 `icons.rs` interpolates `&'static str` from a closed match over an enum.
 
+### 4.4 Two builds, one component tree
+
+`web/frontend` compiles two ways from the same source. `web` (the default) is the
+`wasm32-unknown-unknown` SPA that `services/frontend` serves; `desktop` is a `wry` webview —
+WebView2 on Windows, WebKitGTK on Linux — shipped as installers attached to the GitHub release
+by `release-please.yaml`. They are **mutually exclusive**, and `src/platform/mod.rs` says so to
+the compiler.
+
+**[E] Both feature sets are gated by CI's `frontend` job.** A `#[cfg(feature = "web")]` that
+stops compiling on the other side is otherwise first noticed by a release.
+
+**[R] Everything either build needs from the system is behind `src/platform`.** Nothing under
+`src/views` knows which it is on. That is also what keeps §4.1 checkable: there is one file per
+platform to read, and neither may reach for `eval` to fill a gap in the surface — the desktop
+webview is served under the same CSP, for the same reason.
+
+Two divergences are deliberate and are argued where they live:
+
+**There is no served origin on desktop.** The SPA is delivered by the API it talks to, so
+`location.origin` answers; a desktop binary is delivered by nobody and has to be told.
+`src/views/connect.rs` asks once and stores the answer. It accepts `https`, and `http` only for
+a loopback host — the access token rides an `Authorization` header on every request, so a server
+accepted over plaintext puts it on the wire for the life of the session. **The token itself is
+never written to disk**, on either build; the settings file holds the server URL and the
+appearance choices and nothing else.
+
+**Passkeys do not go through the webview, and must not.** WebAuthn *in a browser* requires
+`rp.id` to be a registrable suffix of the document's origin, and a wry webview serves this app
+from its own custom protocol — so a challenge naming the server's relying-party id is refused
+with `SecurityError` however the call is reached. That rule is the browser's: it is how a page is
+stopped from asserting an origin it does not occupy.
+
+Windows exposes the same ceremony natively through `webauthn.dll` — the API the browsers
+themselves call — and it takes the `clientDataJSON`, origin included, from the caller. The
+desktop build uses it through `webauthn-authenticator-rs`'s `win10` backend, pinned to the same
+`webauthn-rs-proto` the API verifies with, and claims the origin the reader connected to. The
+server needs no change: it already checks `clientDataJSON.origin` against the relying party it
+was configured with, and that is the same address.
+
+**[R] The origin binding is therefore the app's assertion, not a browser's guarantee.** Windows
+has no app-to-relying-party association — no equivalent of Android's Digital Asset Links — so any
+native process on that machine can request the same `rp.id`, and the server cannot tell them
+apart. A passkey proves possession of the credential; it does not prove which client asked. That
+is the accepted model for a native client, and it is the thing to weigh before widening what a
+passkey is trusted for.
+
+**[R] Windows cannot distinguish a declined prompt from a fault.** The `win10` backend maps every
+`HRESULT` onto one opaque error, so `CeremonyError::Incomplete` exists as its own outcome with
+wording that names both possibilities. Folding it into `Cancelled` would swallow a misconfigured
+relying party; folding it into `Failed` would tell a reader who pressed Cancel that something
+broke. Fixing it properly is an upstream patch.
+
+Linux has no OS passkey provider, so `is_available()` answers `false` there and the controls hide
+themselves. Hardware security keys over CTAP/HID would be a separate feature with its own
+dependency set.
+
 ---
 
 ## 5 The enforcement map
@@ -399,6 +455,7 @@ Everything that can fail, what owns it, and how to run it.
 | pedantic lints, `expect`-not-`allow`, `# Errors`/`# Panics` | `[workspace.lints]` | `cargo clippy --workspace --all-targets --all-features -- -D warnings` |
 | banned calls and macros (backend) | `clippy.toml` | as above |
 | banned calls and macros (frontend, incl. `eval`) | `web/frontend/clippy.toml` | `cd web/frontend && cargo clippy --all-targets -- -D warnings` |
+| the frontend's *other* feature set still compiles | CI's `frontend` job | `cd web/frontend && cargo clippy --no-default-features --features desktop --all-targets -- -D warnings` |
 | CSP grants no `'unsafe-eval'`; shell is same-origin; no `dangerous_inner_html`; published secrets are refused; the Dockerfile ships every workspace binary; the deploy blacklist is honoured; every top-level path is classified as a build input or not; the notices config matches `deny.toml`; the SPA's notices link matches the served route; the test harness runs production's Postgres major; `deny.toml` and `.cargo/audit.toml` ignore the same advisories; every metric is described and every service serves them; no concurrency group is shared by three or more workflows; the cosign OIDC token file is written with no trailing newline | `xtask repo-lint` | `cargo run -p xtask -- repo-lint` |
 | intra-doc links | `[workspace.lints.rustdoc]` | `cargo doc --workspace --no-deps --all-features` |
 | OpenAPI + generated client are current | `xtask openapi --check` | `cargo run -p xtask -- openapi --check` |

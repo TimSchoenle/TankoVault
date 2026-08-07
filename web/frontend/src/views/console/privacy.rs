@@ -382,11 +382,13 @@ fn ExportButton(id: uuid::Uuid, busy: Busy, outcome: Signal<crate::hooks::Outcom
             match client.export_subject_data().id(id).send().await {
                 Ok(response) => {
                     let body = response.into_inner();
-                    let saved = serde_json::to_string_pretty(&body)
-                        .map_err(|_| "console.privacy.exportFailed")
-                        .and_then(|json| {
-                            crate::util::save_text_file(&filename, "application/json", &json)
-                        });
+                    let saved = match serde_json::to_string_pretty(&body) {
+                        Ok(json) => {
+                            crate::platform::save_text_file(&filename, "application/json", &json)
+                                .await
+                        }
+                        Err(_) => Err("console.privacy.exportFailed"),
+                    };
                     match saved {
                         Ok(()) => outcome.set(Some(Ok(i18n.t("console.privacy.exportDone")))),
                         Err(key) => outcome.set(Some(Err(i18n.t(key)))),
@@ -543,7 +545,11 @@ mod tests {
                 "`{status}` offered a claim"
             );
         }
-        let taken = row(RequestKind::Access, RequestStatus::InProgress, Some("kaori"));
+        let taken = row(
+            RequestKind::Access,
+            RequestStatus::InProgress,
+            Some("kaori"),
+        );
         assert!(!offers(&taken, ALL, RowAction::Claim));
     }
 

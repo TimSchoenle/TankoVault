@@ -1,10 +1,12 @@
-# cargo-about configuration for the SPA — the second half of the root `THIRD-PARTY-NOTICES`.
+# cargo-about configuration for the Dioxus client — the second half of the root
+# `THIRD-PARTY-NOTICES`.
 #
 # This workspace needs its own config because it *is* its own workspace (root `Cargo.toml`
-# `exclude`), with its own lockfile and a wasm-only dependency graph. The bundle it produces is
-# served by the `frontend` image and executes in a reader's browser, which is a binary
-# distribution like any other, so its dependencies' notices are owed too. Regenerated together
-# with the backend half by `cargo run -p xtask -- notices`, which renders both into one document.
+# `exclude`), with its own lockfile. It produces two distributions and this file has to cover
+# both: the WASM bundle served by the `frontend` image and executed in a reader's browser, and
+# the desktop installers attached to each GitHub release. Both are binary distributions, so
+# their dependencies' notices are owed. Regenerated together with the backend half by
+# `cargo run -p xtask -- notices`, which renders both into one document.
 
 # Exactly the licences this graph resolves to today, and deliberately not a copy of the root
 # `about.toml`'s list.
@@ -21,16 +23,79 @@ accepted = [
     "Zlib",
     "MPL-2.0",
     "CC0-1.0",
+    # The four below arrived with the desktop build and are on the root `deny.toml`'s allow list
+    # for the same reasons — all permissive, all attribution-only.
+    #
+    # `BSD-3-Clause` is `subtle` plus the AVIF/EXR encoders `image` pulls in for `tao`'s window
+    # icons (`rav1e`, `ravif`, `av1-grain`, `v_frame`, `avif-serialize`, `exr`); `BSD-2-Clause`
+    # is `lebe` under `exr`. `ISC` and `Apache-2.0 WITH LLVM-exception` come from the native TLS
+    # stack and the `libc`/compiler shims, which the browser build has no equivalent of.
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Apache-2.0 WITH LLVM-exception",
+    # `webpki-root-certs`: the Mozilla CA bundle rustls trusts. No copyleft or attribution.
+    "CDLA-Permissive-2.0",
 ]
 
-# `dx` builds this crate for one target and one only.
-targets = ["wasm32-unknown-unknown"]
+# Every target a shipped artefact is built for. The wasm bundle is one; the desktop installers
+# `release-please.yaml` publishes are the other two, and a notice owed by a Windows-only or
+# Linux-only dependency is not discharged by a document generated for wasm alone.
+#
+# **Regenerating requires the sources for all three to be unpacked**, and `cargo fetch` resolves
+# for the host unless each is named. Miss one and cargo-about omits its crates silently: a
+# Windows developer and a Linux runner then produce different documents and overwrite each
+# other's "fix" for ever. CI's `notices` job names them; so must you.
+#
+#   cargo fetch --locked --manifest-path web/frontend/Cargo.toml \
+#     --target wasm32-unknown-unknown --target x86_64-pc-windows-msvc \
+#     --target x86_64-unknown-linux-gnu
+targets = [
+    "wasm32-unknown-unknown",
+    "x86_64-pc-windows-msvc",
+    "x86_64-unknown-linux-gnu",
+]
 
+# `rfd` ships **two** MIT files: its own, and a vendored copy of `ashpd`'s under
+# `src/backend/xdg_desktop_portal/window_identifier/`. cargo-about harvests both and picks one
+# per run, so the generated document alternated between "Copyright (c) 2022 Bartłomiej Maryńczak"
+# and "Copyright (c) 2020 Bilal Elmoussaoui" — a one-line diff that made every `notices --check`
+# run disagree with the last, and the auto-fix workflow rewrite and re-trigger itself for ever.
+#
 ignore-dev-dependencies = true
 # Included for the reason the root config gives: a proc macro's output is part of the bundle.
 ignore-build-dependencies = false
 private = { ignore = true }
 
-# Only the built-ins whose crates are in this graph; `ring`/`rustls` are absent because the SPA's
-# `reqwest` talks through the browser's fetch and links no TLS stack of its own.
-workarounds = ["chrono"]
+# Only the built-ins whose crates are in this graph. `ring`/`rustls` are here for the desktop
+# build alone: the browser build's `reqwest` talks through the window's own fetch and links no
+# TLS stack, while the native one carries rustls.
+workarounds = ["chrono", "ring", "rustls", "rustix"]
+
+# `rfd` ships **two** MIT files: its own, and a vendored copy of `ashpd`'s under
+# `src/backend/xdg_desktop_portal/window_identifier/` — rfd 0.17 inlined that code rather than
+# depend on `ashpd`, so `ashpd` is not in this graph and nothing else carries its notice.
+# cargo-about harvests both files and picked one per run, so the document alternated between the
+# two copyright lines: a one-line diff that made every `notices --check` disagree with the last
+# and had the auto-fix workflow rewriting and re-triggering itself indefinitely.
+#
+# Both are named, and the order matters — the first is the crate's own licence, which is the one
+# that must be attributed to it. Naming only that one would be stable but would drop
+# Elmoussaoui's attribution for code rfd genuinely distributes.
+#
+# **This table must stay at the end of the file.** `[rfd.clarify]` is a table header, so every
+# top-level key written after it belongs to *it* — putting this block mid-file silently moved
+# `ignore-dev-dependencies`, `workarounds` and two others inside it, and the config kept parsing.
+#
+# The checksums make this a pin rather than a guess: cargo-about fails loudly when either file
+# changes under a version bump, which is exactly when a human should look again.
+[rfd.clarify]
+license = "MIT"
+
+[[rfd.clarify.files]]
+path = "LICENSE"
+checksum = "65fc947f4bac882a2cd104ef73c246b1b037059df9f2b3a58b7f77f0b9e56071"
+
+[[rfd.clarify.files]]
+path = "src/backend/xdg_desktop_portal/window_identifier/LICENSE"
+checksum = "ae26bc7b1bc91fb8648f6a298decbb1a77090a56c9d04e2c23b8365e5f54acb5"

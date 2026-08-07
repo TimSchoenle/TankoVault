@@ -1,58 +1,11 @@
 //! Small formatting helpers shared across screens.
 //!
-//! Deliberately dependency-free: dates are parsed and compared with the browser's own
-//! `Date`, because pulling a date crate into the wasm bundle to render "3d ago" would cost
-//! more bytes than the whole module. Anything with words in it resolves through
-//! [`crate::i18n`] rather than baking English into the formatter.
+//! Deliberately dependency-free: dates are read through [`crate::platform`], which on the web
+//! build is the browser's own `Date` — pulling a date crate into the wasm bundle to render
+//! "3d ago" would cost more bytes than the whole module. Anything with words in it resolves
+//! through [`crate::i18n`] rather than baking English into the formatter.
 
 use crate::i18n::Translator;
-
-/// Hand `contents` to the browser as a download named `filename`.
-///
-/// Built from a `Blob` + object URL + a synthetic anchor click, which is the only way to make a
-/// browser save a document the app already holds in memory. The alternative — pointing an
-/// anchor at the endpoint — cannot work here: the export is bearer-authenticated and a plain
-/// navigation carries no `Authorization` header.
-///
-/// The object URL is revoked immediately after the click. The download has already been handed
-/// to the browser at that point, and leaving it alive pins the blob for the lifetime of the
-/// document — which, for a personal-data export, means keeping the reader's entire record in
-/// memory until they navigate away.
-///
-/// # Errors
-/// A **catalogue key**, not a sentence — resolved through the caller's [`Translator`].
-pub(crate) fn save_text_file(
-    filename: &str,
-    mime: &str,
-    contents: &str,
-) -> Result<(), &'static str> {
-    use wasm_bindgen::JsCast as _;
-
-    let failed = || "common.downloadRefused";
-
-    let parts = js_sys::Array::new();
-    parts.push(&wasm_bindgen::JsValue::from_str(contents));
-    let options = web_sys::BlobPropertyBag::new();
-    options.set_type(mime);
-    let blob =
-        web_sys::Blob::new_with_str_sequence_and_options(&parts, &options).map_err(|_| failed())?;
-    let url = web_sys::Url::create_object_url_with_blob(&blob).map_err(|_| failed())?;
-
-    let document = web_sys::window()
-        .and_then(|w| w.document())
-        .ok_or_else(failed)?;
-    let anchor = document
-        .create_element("a")
-        .map_err(|_| failed())?
-        .dyn_into::<web_sys::HtmlAnchorElement>()
-        .map_err(|_| failed())?;
-    anchor.set_href(&url);
-    anchor.set_download(filename);
-    anchor.click();
-
-    let _ = web_sys::Url::revoke_object_url(&url);
-    Ok(())
-}
 
 /// Render a chapter number without a trailing `.0`, so whole chapters read `#152` and part
 /// releases keep their fraction (`#152.6`).
@@ -140,11 +93,11 @@ pub(crate) fn rel_time(i18n: Translator, ts: Option<&str>) -> String {
     let Some(s) = ts.filter(|s| !s.is_empty()) else {
         return i18n.t("time.unknown");
     };
-    let parsed = js_sys::Date::parse(s);
+    let parsed = crate::platform::parse_timestamp_ms(s);
     if parsed.is_nan() {
         return s.to_owned();
     }
-    let age = Age::of(js_sys::Date::now() - parsed);
+    let age = Age::of(crate::platform::now_ms() - parsed);
     i18n.args(age.key(), &[("count", &age.count().to_string())])
 }
 
@@ -158,11 +111,11 @@ pub(crate) fn is_fresh(ts: Option<&str>) -> bool {
     let Some(s) = ts.filter(|s| !s.is_empty()) else {
         return false;
     };
-    let parsed = js_sys::Date::parse(s);
+    let parsed = crate::platform::parse_timestamp_ms(s);
     if parsed.is_nan() {
         return false;
     }
-    fresh_age(js_sys::Date::now() - parsed)
+    fresh_age(crate::platform::now_ms() - parsed)
 }
 
 /// The freshness rule itself, split out from the clock so the boundary is testable on the host
@@ -264,9 +217,9 @@ pub(crate) fn monogram(name: &str) -> String {
     }
 }
 
-/// The catalogue key of the time-of-day greeting, from the browser clock.
+/// The catalogue key of the time-of-day greeting, from the reader's own clock.
 pub(crate) fn greeting_key() -> &'static str {
-    match js_sys::Date::new_0().get_hours() {
+    match crate::platform::local_hour() {
         5..=11 => "greeting.morning",
         12..=17 => "greeting.afternoon",
         18..=21 => "greeting.evening",

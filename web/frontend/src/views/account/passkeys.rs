@@ -134,9 +134,10 @@ pub(crate) fn PasskeysCard() -> Element {
         });
     });
 
-    // Hidden entirely where the browser cannot run a ceremony — an "Add a passkey" button that
-    // can only ever report "not available here" is worse than no button. Plain-HTTP development
-    // lands here too, since `navigator.credentials` needs a secure context.
+    // Hidden entirely where no ceremony can run — an "Add a passkey" button that can only ever
+    // report "not available here" is worse than no button. Plain-HTTP development lands here too
+    // on the web build, since `navigator.credentials` needs a secure context; on desktop it is
+    // Windows Hello's presence, and every non-Windows desktop build.
     let available = webauthn::is_available();
 
     rsx! {

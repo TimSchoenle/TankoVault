@@ -1,19 +1,16 @@
-//! The console's live push: one `EventSource` for the whole surface.
+//! The console's live push: one stream for the whole surface.
 //!
 //! Replaces a four-second timer that bumped a shared tick, after which every subscribed panel
 //! re-issued its own GET — `system_stats` twice per tick, because the rail and Overview each
 //! held one. Here the payload arrives once and both read it.
 //!
-//! Same ticket discipline as [`crate::live`]: the credential is single-use, so `EventSource`'s
+//! Same ticket discipline as [`crate::live`]: the credential is single-use, so a transport's
 //! own reconnect would replay a spent ticket into a `401` loop, and this reconnects itself with
 //! a fresh ticket per attempt instead.
 
 use crate::api::Api;
 use crate::models::{ScanRun, SystemStats};
 use dioxus::prelude::*;
-use futures_util::StreamExt;
-use gloo_net::eventsource::futures::EventSource;
-use gloo_timers::future::TimeoutFuture;
 
 /// First wait after a failed attempt; doubles up to [`RECONNECT_BACKOFF_MAX_MS`].
 const RECONNECT_BACKOFF_START_MS: u32 = 1_000;
@@ -87,7 +84,7 @@ pub(super) fn use_console_live(api: Api, attached: ReadSignal<bool>) -> ConsoleL
     let live = use_context_provider(ConsoleLive::new);
     let session = crate::state::use_session();
 
-    // Restarts on pause and on sign-out, so detaching *closes* the `EventSource` rather than
+    // Restarts on pause and on sign-out, so detaching *closes* the connection rather than
     // merely ignoring it: a paused console must not hold a connection open, and a sign-out must
     // not leave one attached to the previous session.
     use_resource(move || {
@@ -113,7 +110,7 @@ pub(super) fn use_console_live(api: Api, attached: ReadSignal<bool>) -> ConsoleL
 /// Keep one stream open, reconnecting with a fresh ticket after each failure.
 ///
 /// Runs until dropped — the caller's `use_resource` does that on pause, sign-out or unmount,
-/// closing the `EventSource`.
+/// closing the stream.
 async fn run(api: Api, live: ConsoleLive) {
     let mut state = live.state;
     let mut backoff_ms = RECONNECT_BACKOFF_START_MS;
@@ -123,7 +120,7 @@ async fn run(api: Api, live: ConsoleLive) {
             // Covers a gone-away session (401) and a suspension (403); backing off rather than
             // giving up resumes a recovered session without a reload.
             state.set(LiveState::Reconnecting);
-            TimeoutFuture::new(backoff_ms).await;
+            crate::platform::sleep_ms(backoff_ms).await;
             backoff_ms = backoff_ms.saturating_mul(2).min(RECONNECT_BACKOFF_MAX_MS);
             continue;
         };
@@ -133,7 +130,7 @@ async fn run(api: Api, live: ConsoleLive) {
             backoff_ms = RECONNECT_BACKOFF_START_MS;
         }
         state.set(LiveState::Reconnecting);
-        TimeoutFuture::new(backoff_ms).await;
+        crate::platform::sleep_ms(backoff_ms).await;
         backoff_ms = backoff_ms.saturating_mul(2).min(RECONNECT_BACKOFF_MAX_MS);
     }
 }
@@ -144,66 +141,42 @@ async fn run(api: Api, live: ConsoleLive) {
 /// a duration rather than a status.
 async fn consume(api: &Api, ticket: &str, live: ConsoleLive) -> bool {
     let url = format!("{}{}", api.base_url(), crate::api::admin_stream_url(ticket));
-    let Ok(mut source) = EventSource::new(&url) else {
-        // A malformed URL is the only failure mode here; nothing is actionable.
-        return false;
-    };
-    let (Ok(stats_events), Ok(runs_events)) = (source.subscribe("stats"), source.subscribe("runs"))
-    else {
-        source.close();
+    // Both names off one connection: they arrive on their own cadences, and a stream per name
+    // would stall `runs` behind the ten-second `stats` tick.
+    let Some(mut stream) = crate::platform::subscribe(&url, &["stats", "runs"]).await else {
+        // A malformed URL or a refused connection; neither is actionable here.
         return false;
     };
 
     let mut connection = live.state;
     let mut stats = live.stats;
     let mut runs = live.runs;
-    // Merged rather than pumped in sequence: the two events arrive on their own cadences, and
-    // awaiting one at a time would stall `runs` behind the ten-second `stats` tick.
-    let mut merged = futures_util::stream::select(
-        stats_events.map(Payload::Stats),
-        runs_events.map(Payload::Runs),
-    );
 
-    let started = js_sys::Date::now();
-    while let Some(payload) = merged.next().await {
-        let (Payload::Stats(incoming) | Payload::Runs(incoming)) = &payload;
-        // A spent ticket cannot be reused, so `EventSource`'s own retry cannot succeed — any
-        // error here ends the attempt and the caller mints a fresh ticket.
-        let Ok((_event, message)) = incoming else {
-            break;
-        };
-        let Some(text) = message.data().as_string() else {
-            continue;
-        };
-        // Only on a decoded payload: the bar must not claim "live" on the strength of an open
+    let started = crate::platform::now_ms();
+    while let Some((name, text)) = stream.next().await {
+        // Only on a delivered payload: the bar must not claim "live" on the strength of an open
         // socket alone. Guarded, because `set` invalidates unconditionally and this would
         // otherwise re-render the whole console twice a second to write the same value.
         if *connection.peek() != LiveState::Live {
             connection.set(LiveState::Live);
         }
-        match payload {
-            Payload::Stats(_) => {
+        match name.as_str() {
+            "stats" => {
                 if let Ok(value) = serde_json::from_str::<SystemStats>(&text) {
                     stats.set(Some(value));
                 }
             }
-            Payload::Runs(_) => {
+            "runs" => {
                 if let Ok(value) = serde_json::from_str::<Vec<ScanRun>>(&text) {
                     runs.set(Some(value));
                 }
             }
+            // The subscription asked for two names; anything else is a server the client does
+            // not yet know about, which is not a reason to drop the stream.
+            _ => {}
         }
     }
 
-    source.close();
-    js_sys::Date::now() - started >= SETTLED_MS
-}
-
-/// One event off the merged stream, tagged with the subscription that produced it.
-///
-/// Generic over the item type so the `gloo` error type never has to be named here — it is an
-/// implementation detail of the subscription, and spelling it out would break on a bump.
-enum Payload<T> {
-    Stats(T),
-    Runs(T),
+    stream.close();
+    crate::platform::now_ms() - started >= SETTLED_MS
 }

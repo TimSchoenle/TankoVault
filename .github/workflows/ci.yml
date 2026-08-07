@@ -682,10 +682,15 @@ jobs:
           # entry claims `web/frontend` is the only consumer of that operation.
           err-ignore: .github/oasdiff-ignore.txt
 
-  # `web/frontend` targets wasm32 and is outside the host workspace, so no job above touches it.
-  # Its tests and its own `clippy::pedantic` set run here or nowhere.
+  # `web/frontend` is outside the host workspace, so no job above touches it. Its tests and its
+  # own `clippy::pedantic` set run here or nowhere.
+  #
+  # It builds two ways from one source tree — `web` (the wasm32 SPA, the default) and `desktop`
+  # (a wry webview, shipped as installers by `release-please.yaml`) — and both are gated here.
+  # Without the desktop legs, a `#[cfg(feature = "web")]` that stops compiling on the other side
+  # is first noticed by a release, which is the worst place to find it.
   frontend:
-    name: frontend (test + clippy + wasm32)
+    name: frontend (fmt + test + clippy + wasm32 + desktop)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: [changes]
@@ -717,6 +722,13 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-on-failure: true
 
+      # The `lint` job's `cargo fmt --all --check` runs in the host workspace, which this crate is
+      # not a member of — so without this line nothing formats it, and three files had already
+      # drifted by the time anyone looked.
+      - name: rustfmt
+        working-directory: web/frontend
+        run: cargo fmt --check
+
       # Host target: these are pure logic tests with no DOM dependency. Anything needing a DOM
       # would need wasm-bindgen-test.
       - name: cargo test (host)
@@ -730,6 +742,24 @@ jobs:
       - name: cargo check (wasm)
         working-directory: web/frontend
         run: cargo check --target wasm32-unknown-unknown
+
+      # The desktop build links `wry`, which on Linux is `WebKitGTK`. These are the same packages
+      # the release job installs and the `.deb`'s `depends` names at runtime.
+      - name: desktop build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libsoup-3.0-dev libxdo-dev libayatana-appindicator3-dev
+
+      # `--no-default-features`: `web` is the default and the two are mutually exclusive, which
+      # `src/platform/mod.rs` states to the compiler.
+      - name: cargo test (desktop)
+        working-directory: web/frontend
+        run: cargo test --no-default-features --features desktop
+
+      - name: clippy (desktop)
+        working-directory: web/frontend
+        run: cargo clippy --no-default-features --features desktop --all-targets -- -D warnings
 
   # `assets/main.css` is Tailwind output committed so a build without Node works. Unchecked, a
   # class used in `rsx!` can silently have no style behind it.
@@ -1124,7 +1154,15 @@ jobs:
       # crate sources. `cargo fetch` unpacks them; without this the run would harvest nothing and
       # report drift that does not exist. Both graphs, because `web/frontend` is its own
       # workspace with its own lockfile.
-      - name: fetch both dependency graphs
+      #
+      # **Every target the `about.toml` files name, explicitly.** `cargo fetch` resolves for the
+      # *host* unless told otherwise, so a Linux runner never unpacks a Windows-only crate and
+      # cargo-about silently omits it — while a developer regenerating on Windows omits the
+      # Linux-only ones instead. The two then overwrite each other for ever, each "fixing" drift
+      # the other introduced, and the committed document is incomplete on both. It only became
+      # visible when `web/frontend` grew target-specific dependencies (`rfd` pulls `ashpd` on
+      # Linux; the passkey backend is Windows-only); before that its graph was wasm alone.
+      - name: fetch every dependency graph, for every target the notices cover
         run: |
           cargo fetch --locked
           cargo fetch --locked --manifest-path web/frontend/Cargo.toml

@@ -307,9 +307,10 @@ pub(crate) fn Login() -> Element {
                 }
             }
 
-            // Offered only where it can work: the deployment has the feature on, the browser
-            // exposes `navigator.credentials`, and the page is in a secure context. A button
-            // that can only report "not available here" is worse than no button.
+            // Offered only where it can work: the deployment has the feature on, and the platform
+            // can run a ceremony — `navigator.credentials` in a secure context on the web build,
+            // Windows Hello on the desktop one. A button that can only report "not available
+            // here" is worse than no button.
             if !is_register && caps.has_feature(Feature::AccountsPasskeys) && webauthn::is_available() {
                 div { class: "ik-or", style: "margin:4px 0 12px;text-align:center;",
                     span { class: "ik-muted", style: "font-size:12px;", {i18n.t("common.or")} }

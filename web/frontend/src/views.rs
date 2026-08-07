@@ -3,11 +3,17 @@
 
 mod account;
 mod auth;
+// Not a route: it renders instead of the router until a server is chosen. Desktop only — the
+// web build is served by the API it talks to and has nothing to ask.
+#[cfg(feature = "desktop")]
+pub(crate) mod connect;
 mod console;
 mod discover;
 mod home;
 mod legal;
-mod notifications;
+// `pub(crate)` for one function: `crate::live` reuses this screen's payload-to-sentence logic
+// for the OS notification, rather than growing a second reading of the same free-form JSON.
+pub(crate) mod notifications;
 mod password;
 mod recommendations;
 mod search;
@@ -16,6 +22,8 @@ mod watchlist;
 
 pub(crate) use account::{Account, AnilistCallback};
 pub(crate) use auth::{Login, VerifyEmail};
+#[cfg(feature = "desktop")]
+pub(crate) use connect::ConnectServer;
 pub(crate) use console::{Console, ConsoleEntity, ConsoleQuery, ConsoleSection};
 pub(crate) use discover::Discover;
 pub(crate) use home::Home;

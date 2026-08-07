@@ -10,11 +10,19 @@ authors = ["TankoVault contributors"]
 publish = false
 description = "TankoVault reader-facing web frontend — Dioxus (WASM SPA) + the Inkstone design system (design §17)."
 
-# The web bundle's output filenames (`<bin>_bg.wasm`, `<bin>.js`, referenced from the
-# generated index.html) follow this binary target's name, not the package name. Pin it to a
-# generic, project-agnostic `app` so renaming the crate never churns the served asset paths.
+# This target's name — not the package's — decides two user-visible things, which is why it is
+# pinned to the product rather than to the crate:
+#
+#   * the web bundle's output filenames (`<bin>_bg.wasm`, `<bin>.js`, referenced from the
+#     index.html `dx` generates). Nothing reads them by name: `deploy/docker/Dockerfile` copies
+#     the whole bundle directory and `services/frontend` rewrites whatever `src=` it finds.
+#   * the **desktop installer's product name** — what the `.msi` is called, and what the reader
+#     sees in the Start menu and in Program Files. `dx` derives it as `PascalCase(<bin>)` with no
+#     config override (`bundled_app_name`, dioxus-cli 0.7.10), so a generic name here shipped
+#     installers called "App". The casing that yields is "Tankovault"; the window title is set
+#     at runtime by `crate::title` and reads correctly.
 [[bin]]
-name = "app"
+name = "tankovault"
 path = "src/main.rs"
 
 # This crate is intentionally excluded from the host workspace (see the root
@@ -31,16 +39,19 @@ path = "src/main.rs"
 [workspace]
 
 [dependencies]
-dioxus = { version = "0.7", features = ["web", "router"] }
+# The renderer is chosen by this crate's own `web`/`desktop` features, never here: `dioxus`'s
+# defaults carry no renderer, so naming one at this line would make the desktop build link the
+# WASM one as well.
+dioxus = { version = "0.7", features = ["router"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-gloo-net = { version = "0.7", features = ["http", "json", "eventsource"] }
+gloo-net = { version = "0.7", features = ["http", "json", "eventsource"], optional = true }
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "json"] }
 progenitor-client = "0.14"
 tankovault-api-client = { path = "../../crates/api-client" }
 tankovault-domain = { path = "../../crates/domain" }
 # Console dashboard auto-refresh loop (wasm-friendly async sleep).
-gloo-timers = { version = "0.4", features = ["futures"] }
+gloo-timers = { version = "0.4", features = ["futures"], optional = true }
 futures-util = "0.3"
 base64 = "0.23"
 # Live notification stream: read `MessageEvent.data()` from the SSE subscription.
@@ -62,12 +73,12 @@ web-sys = { version = "0.3", features = [
     "Storage", "HtmlElement", "HtmlInputElement",
     "Credential", "CredentialsContainer", "CredentialCreationOptions",
     "CredentialRequestOptions", "PublicKeyCredential", "DomException",
-] }
-wasm-bindgen = "0.2"
+], optional = true }
+wasm-bindgen = { version = "0.2", optional = true }
 # `navigator.credentials.*` returns a `Promise`; this is what awaits it. Nothing else in the app
 # needed it, because every other async path goes through `reqwest`/`gloo-net`, which own their
 # own bridge.
-wasm-bindgen-futures = "0.4"
+wasm-bindgen-futures = { version = "0.4", optional = true }
 # The WebAuthn wire types, and — the reason this dependency exists rather than a hand-written
 # conversion — the four `From` impls between them and `web_sys` that its `wasm` feature carries.
 #
@@ -81,17 +92,23 @@ wasm-bindgen-futures = "0.4"
 #
 # `=` pins it for the reason the host workspace pins `webauthn-rs`: a `-dev` pre-release, and
 # these two must never disagree about the format on the wire.
-webauthn-rs-proto = { version = "=0.6.1-dev", features = ["wasm"] }
-# Relative-time formatting on the console uses the browser's own ISO-8601 date parser.
-js-sys = "0.3"
+#
+# Not optional, and the `wasm` feature is added by the `web` feature rather than here: the
+# challenge and credential *types* cross both builds — the screens are one code path — while
+# only the browser needs the `web-sys` conversions that feature carries.
+webauthn-rs-proto = { version = "=0.6.1-dev" }
+# Relative-time formatting on the console uses the browser's own ISO-8601 date parser
+# (`crate::platform::web`); the desktop build reads `chrono` instead.
+js-sys = { version = "0.3", optional = true }
 # Typed ids in the generated wire types (the progenitor `tankovault-api-client` maps
 # `format: uuid` back to the domain newtypes, which wrap this). The frontend never mints ids
 # itself, but `uuid`'s `v7` feature is switched on transitively (the shared
 # `tankovault-domain` newtypes mint v7 ids), and as of uuid 1.24 `v7` on
 # `wasm32-unknown-unknown` demands an explicit randomness source. `js` supplies the
 # self-contained WebCrypto backend (via `wasm-bindgen`/`js-sys`, already deps) — no
-# `getrandom` wasm cfg required.
-uuid = { version = "1", features = ["serde", "js"] }
+# `getrandom` wasm cfg required. It is requested per-target below rather than here, so the
+# desktop build does not link `wasm-bindgen` for a backend it could never call.
+uuid = { version = "1", features = ["serde"] }
 # Message catalogues + the language switch (`src/i18n.rs`). `dio` is the Dioxus binding; the
 # `dio-ssr`/`server` features are fullstack-only and would drag `http` and server functions into
 # a bundle that is a pure client-side SPA.
@@ -101,12 +118,102 @@ i18nrs = { version = "0.1.9", default-features = false, features = ["dio"] }
 # `rsx!` nodes. Nothing ever produces an HTML string, so there is no HTML for an operator's file
 # to inject and nothing to sanitise — `Event::Html` is rendered as literal text. A
 # markdown-to-HTML pipeline would need `dangerous_inner_html`, which is the one door this app
-# keeps shut (see `src/browser.rs` and the served CSP).
+# keeps shut (see `src/platform/mod.rs` and the served CSP).
 pulldown-cmark = { version = "0.13.4", default-features = false }
 
+# ---------------------------------------------------------------------------------------------
+# Desktop-only. Each backs one entry in the `crate::platform` surface that has no browser API
+# behind it natively; see `src/platform/desktop.rs` for which.
+# ---------------------------------------------------------------------------------------------
+# The async runtime is `dioxus-desktop`'s own; this is here for `time::sleep`, which replaces
+# `gloo-timers` in the poll loops, and for the oneshot channel that carries a passkey ceremony
+# back off the thread it has to block on.
+tokio = { version = "1", features = ["time", "sync"], optional = true }
+# The clock. `default-features = false` + `clock` drops the localisation tables: this build needs
+# "now", "parse RFC-3339" and "which hour is it here", not formatted month names.
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"], optional = true }
+# Where the settings document lives, per platform convention (`%APPDATA%`, `$XDG_CONFIG_HOME`).
+directories = { version = "6", optional = true }
+# The save dialog behind `platform::save_text_file`. The personal-data export is
+# bearer-authenticated, so the document is already in memory and only needs a destination.
+#
+# Matched to the version `dioxus-desktop` already depends on. A different minor here is not a
+# second opinion about file dialogs, it is a second *copy* of one — extra compilation, an entry
+# on `cargo-deny`'s duplicate budget, and two crates whose licence text the notices document has
+# to carry separately.
+rfd = { version = "0.17", optional = true }
+# Hands an OAuth consent URL to the reader's own browser, which is where their provider session
+# already is — and where several providers refuse to run a ceremony in a webview at all.
+open = { version = "5", optional = true }
+sys-locale = { version = "0.3", optional = true }
+# OS notifications: WinRT toasts on Windows, the freedesktop D-Bus service on Linux, from one
+# call site. `z-with-tokio` picks zbus's tokio integration on Linux rather than the default
+# `async-io`, so the desktop build carries one async runtime instead of two.
+notify-rust = { version = "4", default-features = false, features = [
+    "z-with-tokio",
+], optional = true }
+# Parses the SSE framing the browser's `EventSource` parses for us. The stream is authenticated
+# by the single-use ticket in the URL, exactly as on web, so this needs no credential handling.
+eventsource-stream = { version = "0.2", optional = true }
+
+# `uuid`'s WebCrypto backend, needed only where `v7` has no OS randomness to reach for. Declared
+# per-target so the desktop build links neither it nor `wasm-bindgen`.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+uuid = { version = "1", features = ["js"] }
+
+# Windows Hello, through the platform's own `webauthn.dll` — the same API the browsers call.
+#
+# Per-target because the `win10` backend exists on Windows and nowhere else; Linux has no OS
+# passkey provider to reach for and `webauthn::is_available()` stays `false` there.
+#
+# `=0.6.1-dev` is the same pin, from the same release train, as the `webauthn-rs-proto` above and
+# the API's `webauthn-rs`. That is the whole reason this is a dependency rather than hand-written
+# FFI: all three agree about the wire types by construction, so a challenge the API minted is
+# handed to the authenticator and the result handed back without a conversion anyone wrote.
+#
+# `win10` alone, deliberately: the `ctap2`/`usb` backends would add a HID stack and its
+# dependencies for hardware keys, which is a separate feature with a separate decision behind it.
+[target.'cfg(windows)'.dependencies]
+webauthn-authenticator-rs = { version = "=0.6.1-dev", features = [
+    "win10",
+], optional = true }
+
+# One of `web` and `desktop` must be on and both may not be; `src/platform/mod.rs` says so to the
+# compiler, because a violation otherwise surfaces as a wall of unrelated resolution errors.
+#
+# Build the desktop app with `--no-default-features --features desktop`.
 [features]
 default = ["web"]
-web = []
+web = [
+    "dioxus/web",
+    "dep:gloo-net",
+    "dep:gloo-timers",
+    "dep:js-sys",
+    "dep:wasm-bindgen",
+    "dep:wasm-bindgen-futures",
+    "dep:web-sys",
+    "webauthn-rs-proto/wasm",
+]
+desktop = [
+    "dioxus/desktop",
+    "dep:chrono",
+    "dep:directories",
+    "dep:eventsource-stream",
+    "dep:notify-rust",
+    "dep:open",
+    "dep:rfd",
+    "dep:sys-locale",
+    "dep:tokio",
+    # Resolves to nothing off Windows — the dependency is declared per-target — so this enables
+    # Windows Hello where there is one and changes nothing where there is not.
+    "dep:webauthn-authenticator-rs",
+    # `bytes_stream()`, which is what the SSE parser above is fed.
+    "reqwest/stream",
+    # The refresh credential is an httpOnly cookie. On web the browser owns the jar and this is
+    # free; a native `reqwest` has no jar at all unless asked, and without one it discards the
+    # cookie and the session dies at the access token's first expiry. See `api::cookie_jar`.
+    "reqwest/cookies",
+]
 
 # This crate sits outside the workspace, so it cannot inherit `[workspace.lints]`. The set
 # below mirrors it, minus the lints that fight idiomatic Dioxus: component functions are
@@ -148,7 +255,9 @@ opt-level = "s"
 lto = "fat"
 codegen-units = 1
 # A panic in a WASM SPA cannot be caught or recovered from — the runtime just traps — so the
-# unwinding machinery and its landing pads are pure weight.
+# unwinding machinery and its landing pads are pure weight. It stays on for the desktop build
+# too: a panicked UI thread has no recovery path there either, and the settings document is
+# written through a rename, so an abort mid-write leaves the previous one intact.
 panic = "abort"
 strip = "symbols"
 

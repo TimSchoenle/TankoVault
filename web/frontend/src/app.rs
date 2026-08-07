@@ -1,7 +1,9 @@
 //! The app root: the route table, the contexts every screen depends on, and the bundled
 //! font faces.
 
-use crate::components::{Shell, UnreadBadge};
+use crate::components::{FocusTargets, Shell, UnreadBadge};
+#[cfg(feature = "desktop")]
+use crate::components::{SettingsSheet, TitleBar};
 use crate::i18n::I18nRoot;
 use crate::state::capabilities::CapabilitySet;
 use crate::state::legal::LegalIndex;
@@ -88,16 +90,118 @@ pub(crate) fn App() -> Element {
     use_context_provider(LegalIndex::new);
     // Empty until a screen publishes a name only it knows; the route's own name covers the rest.
     use_context_provider(PageTitle::new);
+    // Registered on mount by the two fields, read by the shortcut that focuses them.
+    use_context_provider(FocusTargets::new);
     crate::api::provide_api();
+
+    // Applies the stored appearance choices to the document root. A no-op on web beyond
+    // re-asserting what the boot script in `index.html` already wrote before first paint; on
+    // desktop there is no boot script, so this *is* how the reader's theme gets applied.
+    use_hook(crate::state::prefs::hydrate_appearance);
 
     rsx! {
         document::Stylesheet { href: asset!("/assets/main.css") }
         FontFaces {}
         // Above the router so a language change can re-render every screen.
         I18nRoot {
-            Router::<Route> {}
+            AppRoot {
+                Connected {}
+            }
         }
     }
+}
+
+/// The router, once there is a server to point it at.
+///
+/// Desktop starts with no origin at all, and every screen behind the router issues requests, so
+/// the choice has to be made before any of them mounts — not inside a route they could navigate
+/// away from.
+#[cfg(feature = "desktop")]
+#[component]
+fn Connected() -> Element {
+    let api = crate::api::use_api();
+    let mut origin = use_signal(crate::platform::server_origin);
+
+    if origin.read().is_none() {
+        return rsx! {
+            crate::views::ConnectServer {
+                on_connected: move |chosen: String| {
+                    api.set_base(&chosen);
+                    origin.set(Some(chosen));
+                },
+            }
+        };
+    }
+    rsx! { Router::<Route> {} }
+}
+
+#[cfg(feature = "web")]
+#[component]
+fn Connected() -> Element {
+    rsx! { Router::<Route> {} }
+}
+
+/// The element the appearance attributes live on for the desktop build, and a plain pass-through
+/// on web.
+///
+/// Web writes `data-theme` and friends onto `<html>`, which Rust can reach there and cannot
+/// reach in a wry webview — see `crate::platform::desktop`. The stylesheet's rules are bare
+/// attribute selectors (`[data-theme="light"]`, not `:root[data-theme="light"]`), so they apply
+/// from here just as well.
+///
+/// It also carries the page fill; `.ik-desktop-root` in `input.css` says why, and why the
+/// formatting context it establishes is load-bearing rather than tidying.
+///
+/// A named class rather than the inline `style:` this codebase usually reaches for: the Tailwind
+/// CLI scans these sources for class names, and `display:flow-root` in a style string is enough
+/// for it to mint a phantom `.flow-root` utility nothing renders.
+#[cfg(feature = "desktop")]
+#[component]
+fn AppRoot(children: Element) -> Element {
+    let attributes = crate::platform::ROOT_ATTRIBUTES.read().clone();
+    let mut settings_open = use_signal(|| false);
+
+    // Once, on the first render: shrink the window to the display if the default does not fit.
+    // The builder cannot do this — it runs before there is an event loop to ask which monitor
+    // the window landed on — so a laptop at 1366×768 would otherwise open a 1280×860 window
+    // taller than its screen, with the footer and the sign-in button below the bottom edge.
+    use_hook(crate::platform::fit_window_to_display);
+
+    // The OS caption is off, so the window's light/dark chrome — its shadow, its resize borders,
+    // and the caption itself if decorations are ever turned back on — has to be told which theme
+    // the *app* is in. Left alone it follows the system's, which is how a dark border ended up
+    // around the Warm Paper theme.
+    let theme = attributes.get("data-theme");
+    use_effect(move || {
+        if let Some(window) = crate::platform::window() {
+            window.set_theme(Some(match theme.as_deref() {
+                Some("light") => dioxus::desktop::tao::window::Theme::Light,
+                _ => dioxus::desktop::tao::window::Theme::Dark,
+            }));
+        }
+    });
+
+    rsx! {
+        div {
+            class: "ik-desktop-root",
+            lang: attributes.get("lang"),
+            "data-theme": attributes.get("data-theme"),
+            "data-accent": attributes.get("data-accent"),
+            "data-density": attributes.get("data-density"),
+            "data-cover": attributes.get("data-cover"),
+            TitleBar { on_settings: move |()| settings_open.set(true) }
+            div { class: "ik-desktop-body", {children} }
+            if settings_open() {
+                SettingsSheet { on_close: move |()| settings_open.set(false) }
+            }
+        }
+    }
+}
+
+#[cfg(feature = "web")]
+#[component]
+fn AppRoot(children: Element) -> Element {
+    rsx! { {children} }
 }
 
 /// Self-hosted font subsets (`DESIGN_SPEC` §3.3), wired through the Dioxus asset system so the

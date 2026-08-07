@@ -342,7 +342,14 @@ jobs:
       # `cargo-about` resolves licences from a fetched graph; both, because the notices document
       # covers the frontend workspace too. `--locked` is safe here only because the step above
       # has already brought both lockfiles into step with the manifests.
-      - name: fetch both dependency graphs
+      #
+      # **Every target the `about.toml` files name**, and this list must stay identical to the
+      # one in `ci.yml`'s `notices` job — the two regenerate the same artefact, so a target
+      # missing from either produces a document the other rejects. `cargo fetch` resolves for the
+      # host unless told, and cargo-about silently omits any crate whose source it cannot find:
+      # this workflow on Linux and a developer on Windows were each dropping the other's
+      # target-specific crates and rewriting the file back and forth for ever.
+      - name: fetch every dependency graph, for every target the notices cover
         run: |
           set -euo pipefail
           cargo fetch --locked

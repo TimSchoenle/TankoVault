@@ -61,6 +61,16 @@ impl Api {
         };
         Client::new_with_client(&self.base.read(), http)
     }
+
+    /// Point this handle at `origin`, once the reader has chosen a server.
+    ///
+    /// Desktop only: the web build is served *by* its API and reads the origin off the document,
+    /// so there is nothing to choose and nothing to re-point.
+    #[cfg(feature = "desktop")]
+    pub(crate) fn set_base(&self, origin: &str) {
+        let mut base = self.base;
+        base.set(origin.to_owned());
+    }
 }
 
 /// Provide the API handle. Call once, inside the component that already provided the
@@ -94,20 +104,40 @@ fn build_http_client(token: Option<&str>) -> reqwest::Client {
             builder = builder.default_headers(headers);
         }
     }
-    // The WASM builder only stores headers, so `build` cannot fail here.
+    #[cfg(feature = "desktop")]
+    {
+        builder = builder.cookie_provider(cookie_jar());
+    }
     builder
         .build()
-        .expect("wasm reqwest client build is infallible")
+        .expect("the client is configured with headers and a cookie jar, neither of which fails")
 }
 
-/// Absolute base URL for API calls (design §19: same origin as the API).
+/// The process's one cookie jar, shared by every client this module builds.
 ///
-/// Unlike the browser's `fetch`, reqwest rejects a relative URL with a builder error, so this
-/// needs the concrete origin. Falls back to an empty base outside a browser.
+/// **Shared, not per-client, and that is the whole point.** `build_http_client` runs again every
+/// time the access token changes — which is every fifteen minutes, by design — and a jar owned by
+/// the client would be discarded with it, taking the refresh cookie that the *next* refresh
+/// depends on. The session would then end at the first expiry after sign-in.
+///
+/// Deliberately in memory only. The refresh cookie is a long-lived credential, and this app does
+/// not write credentials to disk on either build; the cost is that closing the app signs the
+/// reader out, which is a product decision to take on its own rather than by leaving a token in
+/// a file. Nothing in `settings.json` is a credential.
+///
+/// Web needs none of this: requests go through the window's own `fetch`, so the browser's cookie
+/// store handles the refresh cookie and is already scoped, persisted and protected by it.
+#[cfg(feature = "desktop")]
+fn cookie_jar() -> std::sync::Arc<reqwest::cookie::Jar> {
+    static JAR: std::sync::OnceLock<std::sync::Arc<reqwest::cookie::Jar>> =
+        std::sync::OnceLock::new();
+    std::sync::Arc::clone(JAR.get_or_init(std::sync::Arc::default))
+}
+
+/// Absolute base URL for API calls (design §19: same origin as the API on web, the configured
+/// server on desktop). See [`crate::platform::origin`].
 fn origin() -> String {
-    web_sys::window()
-        .and_then(|window| window.location().origin().ok())
-        .unwrap_or_default()
+    crate::platform::origin()
 }
 
 /// URL of the per-user SSE notification stream, for a ticket from `POST /v1/me/stream-ticket`.

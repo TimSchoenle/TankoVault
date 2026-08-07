@@ -83,7 +83,19 @@ const GATES: &[Gate] = &[
         name: "repo invariants",
         step: Step::InProcess(|| crate::repo_lint::run(crate::workspace_root())),
     },
-    // `web/frontend` is outside the host workspace, so none of the above touches it.
+    // `web/frontend` is outside the host workspace, so none of the above touches it — not even
+    // `cargo fmt --all`, which is why the first gate here exists.
+    //
+    // It builds two ways from one tree (`web`, the default, and `desktop`), and a check of one
+    // proves nothing about the other, so both feature sets are gated. Same set and same order as
+    // CI's `frontend` job.
+    Gate {
+        name: "frontend fmt",
+        step: Step::Cargo {
+            dir: "web/frontend",
+            args: &["fmt", "--check"],
+        },
+    },
     Gate {
         name: "frontend test",
         step: Step::Cargo {
@@ -103,6 +115,29 @@ const GATES: &[Gate] = &[
         step: Step::Cargo {
             dir: "web/frontend",
             args: &["check", "--target", "wasm32-unknown-unknown"],
+        },
+    },
+    Gate {
+        name: "frontend desktop test",
+        step: Step::Cargo {
+            dir: "web/frontend",
+            args: &["test", "--no-default-features", "--features", "desktop"],
+        },
+    },
+    Gate {
+        name: "frontend desktop clippy",
+        step: Step::Cargo {
+            dir: "web/frontend",
+            args: &[
+                "clippy",
+                "--no-default-features",
+                "--features",
+                "desktop",
+                "--all-targets",
+                "--",
+                "-D",
+                "warnings",
+            ],
         },
     },
 ];
@@ -229,17 +264,29 @@ mod tests {
         }
     }
 
-    /// `web/frontend` is excluded from the host workspace, so `cargo test --workspace` at the
-    /// root reaches none of it — it once ran nowhere at all for exactly that reason.
+    /// `web/frontend` is excluded from the host workspace, so `cargo test --workspace` and
+    /// `cargo fmt --all` at the root reach none of it — it once ran nowhere at all for exactly
+    /// that reason, and three of its files had drifted out of rustfmt before anyone looked.
+    ///
+    /// Six, not three: it builds two ways from one source tree, and a gate that only ever
+    /// compiles the default `web` feature says nothing about the `desktop` one that
+    /// `release-please.yaml` ships to readers.
     #[test]
     fn the_frontend_gates_run_in_the_frontend() {
-        let frontend = GATES
+        let frontend: Vec<_> = GATES
             .iter()
             .filter(|g| matches!(&g.step, Step::Cargo { dir, .. } if *dir == "web/frontend"))
-            .count();
+            .collect();
         assert_eq!(
-            frontend, 3,
-            "the frontend needs its own test, clippy and wasm gates"
+            frontend.len(),
+            6,
+            "the frontend needs fmt, test, clippy and wasm gates, plus test and clippy for the \
+             desktop feature set"
         );
+        let desktop = frontend
+            .iter()
+            .filter(|g| matches!(&g.step, Step::Cargo { args, .. } if args.contains(&"desktop")))
+            .count();
+        assert_eq!(desktop, 2, "the desktop feature set needs test and clippy");
     }
 }

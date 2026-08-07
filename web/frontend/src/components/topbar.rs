@@ -1,6 +1,6 @@
 //! The top command bar: instant search, the language control and the notifications bell.
 
-use crate::components::UnreadBadge;
+use crate::components::{use_focus_targets, UnreadBadge};
 use crate::i18n::{use_i18n, Translator, LOCALES};
 use crate::icons::{Ic, Icon};
 use crate::state::use_session;
@@ -15,6 +15,7 @@ pub(crate) fn TopBar() -> Element {
     let route: Route = use_route();
     let unread = *use_context::<UnreadBadge>().0.read();
     let mut query = use_signal(String::new);
+    let mut focus_targets = use_focus_targets();
 
     let signed_in = session.is_authenticated();
 
@@ -31,8 +32,11 @@ pub(crate) fn TopBar() -> Element {
                 div { class: "ik-search",
                     span { class: "lead", Ic { icon: Icon::Search, size: 16 } }
                     input {
-                        // `index.html` binds ⌘K / Ctrl+K to focus this field by id.
+                        // `index.html` binds ⌘K / Ctrl+K to focus this field by id — a web-only
+                        // boot script. The console's jump button goes through the handle below,
+                        // which works on both builds.
                         id: "tv-search",
+                        onmounted: move |event| focus_targets.search.set(Some(event.data())),
                         class: "ik-input",
                         r#type: "search",
                         placeholder: i18n.t("topbar.searchPlaceholder"),

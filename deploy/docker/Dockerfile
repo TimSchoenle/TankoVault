@@ -143,12 +143,15 @@ WORKDIR /app
 # Copied alone, before `rustup target add`: the base image's toolchain floats within 1.94 while
 # this file pins an exact patch, so without this order wasm32-unknown-unknown ends up missing.
 COPY rust-toolchain.toml ./
-# `dx`'s version must match `dioxus` (web/frontend/Cargo.toml) or asset hashing/codegen mismatch.
+# `dx`'s version must match `dioxus` (web/frontend/Cargo.lock) or asset hashing/codegen mismatch —
+# `dx bundle` refuses outright on a mismatch, and `dx build` is not guaranteed to. The desktop
+# release job (`.github/workflows/release-please.yaml`) pins the same version; both track the
+# lockfile.
 RUN --mount=type=cache,id=tankovault-wasm-cargo-registry,target=/usr/local/cargo/registry \
     --mount=type=cache,id=tankovault-wasm-cargo-git,target=/usr/local/cargo/git \
     rustup target add wasm32-unknown-unknown \
  && cargo install cargo-chef --locked --version 0.1.77 \
- && cargo install dioxus-cli@0.7.9 --locked
+ && cargo install dioxus-cli@0.7.10 --locked
 
 # A cooked layer, not a cache mount: `type=cache` mounts aren't carried by `cache-to: type=gha`, so
 # every fresh CI runner would start empty. Must not mount a cache over the target dir it cooks

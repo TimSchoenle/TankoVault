@@ -23,6 +23,12 @@
 @custom-variant light (&:where([data-theme="light"], [data-theme="light"] *));
 
 :root {
+  /* Height of any app-drawn window chrome above the layout. Zero in a browser, where the
+   * window's own caption is outside the page; the desktop build's title bar sets it (§4.4 of the
+   * engineering guide). Every `100vh` below subtracts it, because a viewport height is the wrong
+   * answer the moment something else occupies part of the viewport. */
+  --chrome-h: 0px;
+
   /* Ground & surface (dark, default) — §2.1 */
   --bg: #0b0e13;
   --rail: #0c1016;
@@ -176,7 +182,99 @@ a { color: inherit; text-decoration: none; }
 /* ============================================================================
  * App shell — sidebar rail + top command bar (DESIGN_SPEC §6.1)
  * ========================================================================== */
-.ik-app { display: grid; grid-template-columns: var(--rail-w) 1fr; min-height: 100vh; }
+.ik-app { display: grid; grid-template-columns: var(--rail-w) 1fr; min-height: calc(100vh - var(--chrome-h)); }
+/* The desktop build's outermost element (`app::AppRoot`), which the web build never renders.
+ *
+ * It exists because Rust cannot reach `<html>` in a wry webview, so the `data-theme`/`data-accent`
+ * attributes live here instead — the rules below select on bare attributes, so they cascade from
+ * this element just as well. It therefore has to carry the page fill itself: `body`'s own
+ * `var(--bg)` resolves against `:root` and stays dark under Warm Paper.
+ *
+ * `flow-root` is load-bearing, not tidying. Without a block formatting context the first child's
+ * top margin collapses *out* through this element — `.ik-auth` has `margin: 9vh auto` — and that
+ * strip is then painted by `body`, in the wrong colour. It shipped as a dark band across the top
+ * of the connection screen. */
+/* `height`, not `min-height`: the window is the viewport, and a definite height is what lets the
+ * body below claim "the rest of it" and scroll inside itself. */
+.ik-desktop-root {
+  /* What the title bar below occupies. Every viewport-height rule in this file subtracts it, so
+   * this is the single place the bar's height is written — `.ik-titlebar` reads it back. Getting
+   * it wrong pushes the rail's bottom (its sign-in button) past the window edge, which is how it
+   * was found. */
+  --chrome-h: 38px;
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  background: var(--bg);
+  color: var(--text);
+  overscroll-behavior: none;
+}
+/* The body scrolls, not the window: the title bar above it is the window's own chrome and must
+ * not slide away with the content.
+ *
+ * `flow-root` for the reason the root used to need it — the first child's top margin (`.ik-auth`
+ * has `margin: 9vh auto`) would otherwise collapse out and leave a strip painted by `body`, in
+ * the wrong colour under a light theme. */
+.ik-desktop-body { display: flow-root; flex: 1; min-height: 0; overflow: auto; }
+
+/* ---------------------------------------------------------------------------------------------
+ * The app-drawn window header (desktop only; `components::TitleBar`).
+ * ------------------------------------------------------------------------------------------ */
+.ik-titlebar {
+  display: flex; align-items: center; gap: 4px; flex: none;
+  height: var(--chrome-h); padding-left: 10px;
+  background: var(--rail);
+  border-bottom: 1px solid var(--border);
+  /* The buttons sit in it, so the bar must not be dragged out from under them. */
+  user-select: none;
+}
+/* Everything not a button is drag surface, so it takes the leftover width. */
+.ik-titlebar-grab { display: flex; align-items: center; gap: 9px; flex: 1; min-width: 0; height: 100%; }
+.ik-titlebar-name {
+  font-size: 12.5px; font-weight: 600; color: var(--text-2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ik-titlebar-controls { display: flex; align-items: center; flex: none; }
+/* 46px wide, matching the Windows caption buttons either side of it, so the strip reads as one
+ * row rather than as app buttons pretending to be window buttons. */
+.ik-titlebar-btn {
+  display: grid; place-items: center; flex: none;
+  width: 46px; height: 38px;
+  background: none; border: 0; color: var(--text-3); cursor: default;
+}
+.ik-titlebar-btn:hover { background: var(--surface); color: var(--text); }
+/* Close is the one control whose hover has to be unmistakable — every desktop does this, and a
+ * reader reaches for it by muscle memory rather than by reading. */
+.ik-titlebar-btn.danger:hover { background: #c42b1c; color: #fff; }
+.ik-titlebar-btn:focus-visible { outline: 2px solid var(--acc); outline-offset: -3px; }
+
+/* ---------------------------------------------------------------------------------------------
+ * The settings sheet (desktop only; `components::SettingsSheet`).
+ * ------------------------------------------------------------------------------------------ */
+.ik-prefs-scrim {
+  position: fixed; inset: 0; z-index: 60;
+  display: grid; place-items: center; padding: 24px;
+  background: color-mix(in srgb, #000 55%, transparent);
+}
+.ik-prefs {
+  width: min(520px, 100%); max-height: 100%; overflow: auto;
+  display: flex; flex-direction: column; gap: 18px;
+  padding: 20px;
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: 0 18px 50px rgb(0 0 0 / .45);
+}
+.ik-prefs-head { display: flex; align-items: center; gap: 9px; }
+.ik-prefs-head strong { font-size: 15px; }
+.ik-prefs-close {
+  margin-left: auto; display: grid; place-items: center;
+  width: 30px; height: 30px; border-radius: 8px;
+  background: none; border: 1px solid var(--border-ctl); color: var(--text-3);
+}
+.ik-prefs-close:hover { border-color: var(--acc); color: var(--text); }
+.ik-prefs-section h3 { font-size: 13px; margin: 0 0 6px; }
+.ik-prefs-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.ik-prefs-toggle { display: flex; align-items: center; gap: 9px; font-size: 13.5px; }
 
 /* Skip-to-content: off-screen until focused, then pinned over the rail. The rail is ~10
    focusable stops ahead of the content on every route, so this is the difference between one
@@ -201,8 +299,12 @@ a { color: inherit; text-decoration: none; }
   background: var(--rail);
   padding: 18px 14px;
   position: sticky;
+  /* Both axes, not just the vertical one. A sticky box only sticks along an axis it is given an
+   * offset for, so with `top` alone a page wide enough to scroll sideways — a console table —
+   * carries the rail off the left edge with it. */
   top: 0;
-  height: 100vh;
+  left: 0;
+  height: calc(100vh - var(--chrome-h));
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -766,7 +868,7 @@ a { color: inherit; text-decoration: none; }
  * ========================================================================== */
 .ik-discover { display: grid; grid-template-columns: 298px 1fr; gap: 24px; align-items: start; }
 .ik-discover.collapsed { grid-template-columns: 1fr; }
-.ik-filter-panel { background: var(--rail); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; position: sticky; top: 84px; max-height: calc(100vh - 108px); overflow-y: auto; }
+.ik-filter-panel { background: var(--rail); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; position: sticky; top: 84px; max-height: calc(100vh - var(--chrome-h) - 108px); overflow-y: auto; }
 .ik-filter-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
 .ik-filter-head strong { display: flex; align-items: center; gap: 8px; font-family: var(--font-display); font-size: 16px; }
 .ik-filter-head .reset { background: none; border: none; color: var(--muted); font: inherit; font-size: 13px; cursor: pointer; }
@@ -1065,7 +1167,7 @@ table.ik-table { width: 100%; border-collapse: collapse; }
 /* The console opts out of the padding; it opts out of the *measure* by having `Shell` set
  * `--measure: none` for its route, which the `.ik-measure` row inside reads directly. */
 .ik-content:has(.ik-cons) { padding: 0; }
-.ik-cons { display: flex; flex-direction: column; min-height: calc(100vh - 64px); }
+.ik-cons { display: flex; flex-direction: column; min-height: calc(100vh - var(--chrome-h) - 64px); }
 .ik-cons-bar { display: flex; align-items: center; gap: 14px; padding: 0 18px; height: 56px; flex: none; background: var(--rail); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
 .ik-cons-brand { display: flex; align-items: center; gap: 9px; }
 .ik-cons-brand .nm { font-family: var(--font-display); font-weight: 600; font-size: 15px; }

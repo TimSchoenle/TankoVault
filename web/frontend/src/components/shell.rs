@@ -8,7 +8,6 @@ use crate::state::capabilities::use_capabilities;
 use crate::state::use_session;
 use crate::Route;
 use dioxus::prelude::*;
-use gloo_timers::future::TimeoutFuture;
 
 /// How long before the access token's `exp` the background refresh fires. Comfortably inside
 /// the server's 15-minute default `access_ttl_minutes`.
@@ -133,7 +132,7 @@ fn use_token_refresh() {
                 Some(_) => 0.0,
                 // Signed out, or a transient boot failure left us tokenless: poll without hammering.
                 None if booted => {
-                    TimeoutFuture::new(SIGNED_OUT_POLL_MS).await;
+                    crate::platform::sleep_ms(SIGNED_OUT_POLL_MS).await;
                     continue;
                 }
                 None => 0.0,
@@ -144,7 +143,7 @@ fn use_token_refresh() {
                 reason = "the wait is bounded by the token TTL (minutes) so it fits u32, and \
                           `max(0.0)` clamps an already-expired token to an immediate refresh"
             )]
-            TimeoutFuture::new(wait_ms.max(0.0) as u32).await;
+            crate::platform::sleep_ms(wait_ms.max(0.0) as u32).await;
 
             // The refresh endpoint is cookie-authenticated, but it still needs a client with
             // the real same-origin base URL: reqwest rejects a relative path outright.
@@ -161,7 +160,7 @@ fn use_token_refresh() {
                     // On boot we skip the sleep and fall through to `mark_ready` so the UI
                     // still paints promptly; the `None if booted` poll drives recovery.
                     if booted {
-                        TimeoutFuture::new(backoff_ms).await;
+                        crate::platform::sleep_ms(backoff_ms).await;
                         backoff_ms = backoff_ms.saturating_mul(2).min(RETRY_BACKOFF_MAX_MS);
                     }
                 }
@@ -217,12 +216,16 @@ fn use_live_notifications() {
     let session = use_session();
     let api = api::use_api();
     let badge = use_context::<UnreadBadge>();
+    // Threaded in rather than read inside the stream: the desktop build words its OS
+    // notification through the catalogue, and `use_i18n` is a hook — it cannot be called from
+    // inside a future that has already awaited.
+    let i18n = crate::i18n::use_i18n();
 
     use_resource(move || {
         let signed_in = session.is_authenticated();
         async move {
             if signed_in {
-                crate::live::run(api, badge).await;
+                crate::live::run(api, badge, i18n).await;
             }
         }
     });

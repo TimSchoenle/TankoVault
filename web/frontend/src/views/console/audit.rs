@@ -229,8 +229,8 @@ fn AuditRow(entry: Signal<AuditEntry>) -> Element {
         .clone()
         .unwrap_or_else(|| i18n.t("console.audit.system"));
     let target = a.target.clone().unwrap_or_else(|| i18n.t("time.unknown"));
-    let has_detail = !a.detail.is_null()
-        && a.detail.as_object().is_none_or(|object| !object.is_empty());
+    let has_detail =
+        !a.detail.is_null() && a.detail.as_object().is_none_or(|object| !object.is_empty());
     let expanded = *open.read();
 
     rsx! {

@@ -207,30 +207,6 @@ pub(crate) fn GridFitProbe(fit: GridFit, #[props(default = false)] tiles: bool) 
     }
 }
 
-/// Keep a paginated grid pointing at roughly the same series when its page size changes.
-///
-/// The page index is expressed in units of the page size, so a size that moves under it moves
-/// the reader: page 12 of a 24-cover page is series 288, but page 12 of a 48-cover page is
-/// series 576 — often past the end of the result set, which renders as "no matches" for a filter
-/// that matched a moment ago. Opening the filter panel is enough to trigger it.
-pub(crate) fn use_page_rescale(fit: GridFit, mut page: Signal<usize>) {
-    let mut applied = use_signal(|| Option::<usize>::None);
-    use_effect(move || {
-        let Some(size) = fit.page_size() else {
-            return;
-        };
-        let previous = *applied.peek();
-        applied.set(Some(size));
-        let Some(previous) = previous else {
-            return;
-        };
-        let current = *page.peek();
-        if previous != size && current > 0 {
-            page.set(current.saturating_mul(previous) / size);
-        }
-    });
-}
-
 /// Covers one page holds: whole rows of `columns`, never under [`MIN_ITEMS`] and never over
 /// [`MAX_ITEMS`].
 ///

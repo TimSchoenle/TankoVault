@@ -1,36 +1,122 @@
 //! Discover's collapsible filter panel and the three chip kinds it is built from.
 //!
-//! Split out of `views/discover/mod.rs`: `FilterPanel` alone takes fourteen props, and together
-//! with the chips it is a screen's worth of markup sitting inside another screen's module.
+//! Split out of `views/discover/mod.rs`: `FilterPanel` alone is a screen's worth of markup sitting
+//! inside another screen's module. The panel owns no filter state — every control hands the whole
+//! next [`DiscoverFilters`] to its caller, which puts it in the URL (see `super::query`).
 
-use super::{YEAR_MAX, YEAR_MIN};
+use super::query::{DiscoverFilters, MIN_CHAPTERS_MAX, YEAR_MAX, YEAR_MIN};
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
 use crate::models::*;
 use crate::util::thousands;
 use dioxus::prelude::*;
 
+/// Which of the tag chip's three states one tag is in.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum TagState {
+    Neutral,
+    Include,
+    Exclude,
+}
+
 // `#[component]` turns these props into a struct, so `too_many_arguments` never fires here.
 #[component]
 pub(super) fn FilterPanel(
-    types: Signal<Vec<ContentType>>,
-    statuses: Signal<Vec<SeriesStatus>>,
-    inc: Signal<Vec<String>>,
-    exc: Signal<Vec<String>>,
-    match_all: Signal<bool>,
-    year_min: Signal<i32>,
-    year_max: Signal<i32>,
-    min_ch: Signal<i32>,
-    provider: Signal<Option<String>>,
+    filters: DiscoverFilters,
     tags: Vec<TagFacet>,
     providers: Vec<PublicProvider>,
-    active_count: usize,
-    page: Signal<usize>,
+    on_change: EventHandler<DiscoverFilters>,
     on_reset: EventHandler<()>,
 ) -> Element {
     let i18n = use_i18n();
-    let ma = *match_all.read();
-    let cur_provider = provider.read().clone().unwrap_or_default();
+    // Panel-local, not part of the URL: the API has no "match all tags" parameter yet, so putting
+    // it in the query string would publish a filter that changes nothing and reset the grid every
+    // time it was flipped.
+    let mut match_all = use_signal(|| false);
+    // The sliders report continuously so the number beside them follows the thumb, but only a
+    // released slider is a filter: committing every intermediate value would be one navigation
+    // and one catalogue query per pixel dragged.
+    let mut year_draft = use_signal(|| Option::<(i32, i32)>::None);
+    let mut chapters_draft = use_signal(|| Option::<i32>::None);
+
+    let active_count = filters.active_count();
+    let all = *match_all.read();
+    let provider_now = filters.provider.clone().unwrap_or_default();
+    let (year_min, year_max) = year_draft
+        .read()
+        .unwrap_or((filters.year_min, filters.year_max));
+    let min_chapters = chapters_draft.read().unwrap_or(filters.min_chapters);
+
+    // `EventHandler`, not a bare closure: a closure that captures the filters is neither `Copy`
+    // nor cloneable into a `for` body, and one chip per content type needs the same handler.
+    let toggle_type = EventHandler::new({
+        let filters = filters.clone();
+        move |value: ContentType| {
+            let mut next = filters.clone();
+            next.toggle_type(value);
+            on_change.call(next);
+        }
+    });
+    let toggle_status = EventHandler::new({
+        let filters = filters.clone();
+        move |value: SeriesStatus| {
+            let mut next = filters.clone();
+            next.toggle_status(value);
+            on_change.call(next);
+        }
+    });
+    let cycle_tag = EventHandler::new({
+        let filters = filters.clone();
+        move |slug: String| {
+            let mut next = filters.clone();
+            next.cycle_tag(&slug);
+            on_change.call(next);
+        }
+    });
+    let set_provider = EventHandler::new({
+        let filters = filters.clone();
+        move |slug: String| {
+            let mut next = filters.clone();
+            next.provider = Some(slug).filter(|s| !s.is_empty());
+            on_change.call(next);
+        }
+    });
+    // Both commits read the draft rather than a value captured at render time: `input` and
+    // `change` are two events, and taking the number from the render between them would commit
+    // whatever the slider read one step ago if that render had not landed yet.
+    let commit_years = EventHandler::new({
+        let filters = filters.clone();
+        move |()| {
+            let Some((min, max)) = *year_draft.peek() else {
+                return;
+            };
+            year_draft.set(None);
+            let next = DiscoverFilters {
+                year_min: min.min(max),
+                year_max: max.max(min),
+                ..filters.clone()
+            };
+            if next != filters {
+                on_change.call(next);
+            }
+        }
+    });
+    let commit_chapters = EventHandler::new({
+        let filters = filters.clone();
+        move |()| {
+            let Some(value) = *chapters_draft.peek() else {
+                return;
+            };
+            chapters_draft.set(None);
+            if value != filters.min_chapters {
+                on_change.call(DiscoverFilters {
+                    min_chapters: value,
+                    ..filters.clone()
+                });
+            }
+        }
+    });
+
     rsx! {
         aside { class: "ik-filter-panel",
             div { class: "ik-filter-head",
@@ -50,7 +136,7 @@ pub(super) fn FilterPanel(
                 div { class: "lbl", {i18n.t("discover.contentType")} }
                 div { class: "ik-chips", style: "margin-bottom:0;",
                     for t in ContentType::all().iter().copied() {
-                        TypeChip { t, types, page }
+                        TypeChip { t, active: filters.types.contains(&t), on_toggle: toggle_type }
                     }
                 }
             }
@@ -60,7 +146,7 @@ pub(super) fn FilterPanel(
                 div { class: "lbl", {i18n.t("discover.status")} }
                 div { class: "ik-chips", style: "margin-bottom:0;",
                     for s in SeriesStatus::all().iter().copied() {
-                        StatusChip { s, statuses, page }
+                        StatusChip { s, active: filters.statuses.contains(&s), on_toggle: toggle_status }
                     }
                 }
             }
@@ -74,10 +160,9 @@ pub(super) fn FilterPanel(
                         style: "font-family:var(--font-mono);text-transform:none;",
                         onclick: move |_| {
                             let cur = *match_all.peek();
-                            let mut m = match_all;
-                            m.set(!cur);
+                            match_all.set(!cur);
                         },
-                        if ma {
+                        if all {
                             {i18n.t("discover.matchAll")}
                         } else {
                             {i18n.t("discover.matchAny")}
@@ -87,7 +172,12 @@ pub(super) fn FilterPanel(
                 if tags.is_empty() {
                     div { class: "ik-muted", style: "font-size:12px;", {i18n.t("discover.noTags")} }
                 } else {
-                    TagFacetPanel { tags: tags.clone(), inc, exc, page }
+                    TagFacetPanel {
+                        tags: tags.clone(),
+                        inc: filters.inc.clone(),
+                        exc: filters.exc.clone(),
+                        on_cycle: cycle_tag,
+                    }
                 }
             }
 
@@ -100,19 +190,14 @@ pub(super) fn FilterPanel(
                     select {
                         class: "ik-select",
                         style: "width:100%;",
-                        value: "{cur_provider}",
-                        onchange: move |e| {
-                            let v = e.value();
-                            let mut provider = provider;
-                            provider.set(if v.is_empty() { None } else { Some(v) });
-                            page.set(0);
-                        },
-                        option { value: "", selected: cur_provider.is_empty(), {i18n.t("discover.allProviders")} }
+                        value: "{provider_now}",
+                        onchange: move |e| set_provider.call(e.value()),
+                        option { value: "", selected: provider_now.is_empty(), {i18n.t("discover.allProviders")} }
                         for p in providers.iter().cloned() {
                             option {
                                 key: "{p.id}",
                                 value: "{p.slug}",
-                                selected: cur_provider == p.slug,
+                                selected: provider_now == p.slug,
                                 "{p.name} ({p.series_count})"
                             }
                         }
@@ -136,8 +221,9 @@ pub(super) fn FilterPanel(
                         "aria-label": i18n.t("discover.releaseYearFrom"),
                         value: "{year_min}",
                         oninput: move |e| {
-                            if let Ok(v) = e.value().parse::<i32>() { year_min.set(v); }
+                            if let Ok(v) = e.value().parse::<i32>() { year_draft.set(Some((v, year_max))); }
                         },
+                        onchange: move |_| commit_years.call(()),
                     }
                     span { "{year_max}" }
                 }
@@ -150,8 +236,9 @@ pub(super) fn FilterPanel(
                     "aria-label": i18n.t("discover.releaseYearTo"),
                     value: "{year_max}",
                     oninput: move |e| {
-                        if let Ok(v) = e.value().parse::<i32>() { year_max.set(v); }
+                        if let Ok(v) = e.value().parse::<i32>() { year_draft.set(Some((year_min, v))); }
                     },
+                    onchange: move |_| commit_years.call(()),
                 }
             }
 
@@ -159,19 +246,20 @@ pub(super) fn FilterPanel(
             div { class: "ik-filter-group",
                 label { class: "lbl", r#for: "tv-min-chapters",
                     {i18n.t("discover.minChapters")}
-                    span { class: "ik-mono", style: "color:var(--muted);", "{min_ch}+" }
+                    span { class: "ik-mono", style: "color:var(--muted);", "{min_chapters}+" }
                 }
                 input {
                     id: "tv-min-chapters",
                     class: "ik-range",
                     r#type: "range",
                     min: "0",
-                    max: "500",
+                    max: "{MIN_CHAPTERS_MAX}",
                     step: "10",
-                    value: "{min_ch}",
+                    value: "{min_chapters}",
                     oninput: move |e| {
-                        if let Ok(v) = e.value().parse::<i32>() { min_ch.set(v); }
+                        if let Ok(v) = e.value().parse::<i32>() { chapters_draft.set(Some(v)); }
                     },
+                    onchange: move |_| commit_chapters.call(()),
                 }
             }
 
@@ -187,22 +275,17 @@ pub(super) fn FilterPanel(
 #[component]
 pub(super) fn TypeChip(
     t: ContentType,
-    types: Signal<Vec<ContentType>>,
-    page: Signal<usize>,
+    active: bool,
+    on_toggle: EventHandler<ContentType>,
 ) -> Element {
     let i18n = use_i18n();
-    let active = types.read().contains(&t);
     let class = if active { "ik-chip active" } else { "ik-chip" };
     rsx! {
         button {
             class: "{class}",
             r#type: "button",
-            onclick: move |_| {
-                let mut v = types;
-                let pos = v.read().iter().position(|x| *x == t);
-                if let Some(i) = pos { v.write().remove(i); } else { v.write().push(t); }
-                page.set(0);
-            },
+            "aria-pressed": "{active}",
+            onclick: move |_| on_toggle.call(t),
             {i18n.t(t.label_key())}
         }
     }
@@ -211,22 +294,17 @@ pub(super) fn TypeChip(
 #[component]
 pub(super) fn StatusChip(
     s: SeriesStatus,
-    statuses: Signal<Vec<SeriesStatus>>,
-    page: Signal<usize>,
+    active: bool,
+    on_toggle: EventHandler<SeriesStatus>,
 ) -> Element {
     let i18n = use_i18n();
-    let active = statuses.read().contains(&s);
     let class = if active { "ik-chip active" } else { "ik-chip" };
     rsx! {
         button {
             class: "{class}",
             r#type: "button",
-            onclick: move |_| {
-                let mut v = statuses;
-                let pos = v.read().iter().position(|x| *x == s);
-                if let Some(i) = pos { v.write().remove(i); } else { v.write().push(s); }
-                page.set(0);
-            },
+            "aria-pressed": "{active}",
+            onclick: move |_| on_toggle.call(s),
             {i18n.t(s.label_key())}
         }
     }
@@ -251,9 +329,9 @@ const VISIBLE_TAGS: usize = 32;
 #[component]
 pub(super) fn TagFacetPanel(
     tags: Vec<TagFacet>,
-    inc: Signal<Vec<String>>,
-    exc: Signal<Vec<String>>,
-    page: Signal<usize>,
+    inc: Vec<String>,
+    exc: Vec<String>,
+    on_cycle: EventHandler<String>,
 ) -> Element {
     let i18n = use_i18n();
     let mut query = use_signal(String::new);
@@ -296,7 +374,16 @@ pub(super) fn TagFacetPanel(
         } else {
             div { class: "ik-chips", style: "margin-bottom:0;",
                 for tag in shown {
-                    TagChip { key: "{tag.slug}", tag, inc, exc, page }
+                    {
+                        let state = if inc.contains(&tag.slug) {
+                            TagState::Include
+                        } else if exc.contains(&tag.slug) {
+                            TagState::Exclude
+                        } else {
+                            TagState::Neutral
+                        };
+                        rsx! { TagChip { key: "{tag.slug}", tag, state, on_cycle } }
+                    }
                 }
             }
             // Only when collapsing actually hides something: a "show fewer" control under a
@@ -327,48 +414,18 @@ pub(super) fn TagFacetPanel(
 
 /// A 3-state tag chip: neutral → include (+) → exclude (−) → neutral.
 #[component]
-pub(super) fn TagChip(
-    tag: TagFacet,
-    inc: Signal<Vec<String>>,
-    exc: Signal<Vec<String>>,
-    page: Signal<usize>,
-) -> Element {
+pub(super) fn TagChip(tag: TagFacet, state: TagState, on_cycle: EventHandler<String>) -> Element {
+    let (class, prefix) = match state {
+        TagState::Include => ("ik-tagchip inc", "+ "),
+        TagState::Exclude => ("ik-tagchip exc", "− "),
+        TagState::Neutral => ("ik-tagchip", ""),
+    };
     let slug = tag.slug.clone();
-    let is_inc = inc.read().contains(&slug);
-    let is_exc = exc.read().contains(&slug);
-    let class = if is_inc {
-        "ik-tagchip inc"
-    } else if is_exc {
-        "ik-tagchip exc"
-    } else {
-        "ik-tagchip"
-    };
-    let prefix = if is_inc {
-        "+ "
-    } else if is_exc {
-        "− "
-    } else {
-        ""
-    };
     rsx! {
         button {
             class: "{class}",
             r#type: "button",
-            onclick: move |_| {
-                let mut inc = inc;
-                let mut exc = exc;
-                if is_inc {
-                    let pos = inc.read().iter().position(|x| x == &slug);
-                    if let Some(i) = pos { inc.write().remove(i); }
-                    exc.write().push(slug.clone());
-                } else if is_exc {
-                    let pos = exc.read().iter().position(|x| x == &slug);
-                    if let Some(i) = pos { exc.write().remove(i); }
-                } else {
-                    inc.write().push(slug.clone());
-                }
-                page.set(0);
-            },
+            onclick: move |_| on_cycle.call(slug.clone()),
             "{prefix}{tag.name}"
             // How much the chip would narrow the grid, before it is clicked. A facet whose
             // options are all unlabelled is a facet you have to click to learn anything from.

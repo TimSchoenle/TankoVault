@@ -1,5 +1,6 @@
 //! The removable "active filter" chip bar above Discover's results.
 
+use super::query::DiscoverFilters;
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
 use crate::models::*;
@@ -7,22 +8,13 @@ use dioxus::prelude::*;
 
 #[component]
 pub(super) fn ActiveFilters(
-    types: Signal<Vec<ContentType>>,
-    statuses: Signal<Vec<SeriesStatus>>,
-    inc: Signal<Vec<String>>,
-    exc: Signal<Vec<String>>,
-    provider: Signal<Option<String>>,
+    filters: DiscoverFilters,
     tags: Vec<TagFacet>,
     providers: Vec<PublicProvider>,
-    page: Signal<usize>,
+    on_change: EventHandler<DiscoverFilters>,
 ) -> Element {
     let i18n = use_i18n();
-    let ty = types.read().clone();
-    let st = statuses.read().clone();
-    let inc_v = inc.read().clone();
-    let exc_v = exc.read().clone();
-    let prov = provider.read().clone();
-    if ty.is_empty() && st.is_empty() && inc_v.is_empty() && exc_v.is_empty() && prov.is_none() {
+    if filters.active_count() == 0 {
         return rsx! {};
     }
     let name_of = |slug: &str| {
@@ -30,7 +22,7 @@ pub(super) fn ActiveFilters(
             .find(|t| t.slug == slug)
             .map_or_else(|| slug.to_owned(), |t| t.name.clone())
     };
-    let provider_label = prov.as_ref().map(|slug| {
+    let provider_label = filters.provider.as_ref().map(|slug| {
         providers
             .iter()
             .find(|p| &p.slug == slug)
@@ -39,84 +31,70 @@ pub(super) fn ActiveFilters(
     rsx! {
         div { class: "ik-active-filters",
             if let Some(label) = provider_label {
-                div { class: "ik-afchip",
-                    "{label}"
-                    button {
-                        onclick: move |_| {
-                            let mut v = provider;
-                            v.set(None);
-                            page.set(0);
-                        },
-                        Ic { icon: Icon::Close, size: 12 }
-                    }
-                }
-            }
-            for t in ty {
-                div { class: "ik-afchip",
-                    {i18n.t(t.label_key())}
-                    button {
-                        onclick: move |_| {
-                            let mut v = types;
-                            let pos = v.read().iter().position(|x| *x == t);
-                            if let Some(i) = pos { v.write().remove(i); }
-                            page.set(0);
-                        },
-                        Ic { icon: Icon::Close, size: 12 }
-                    }
-                }
-            }
-            for s in st {
-                div { class: "ik-afchip",
-                    {i18n.t(s.label_key())}
-                    button {
-                        onclick: move |_| {
-                            let mut v = statuses;
-                            let pos = v.read().iter().position(|x| *x == s);
-                            if let Some(i) = pos { v.write().remove(i); }
-                            page.set(0);
-                        },
-                        Ic { icon: Icon::Close, size: 12 }
-                    }
-                }
-            }
-            for slug in inc_v {
                 {
-                    let label = name_of(&slug);
+                    let mut next = filters.clone();
+                    next.provider = None;
+                    rsx! { Chip { label, on_remove: move |()| on_change.call(next.clone()) } }
+                }
+            }
+            for t in filters.types.clone() {
+                {
+                    let mut next = filters.clone();
+                    next.toggle_type(t);
                     rsx! {
-                        div { class: "ik-afchip",
-                            "+ {label}"
-                            button {
-                                onclick: move |_| {
-                                    let mut v = inc;
-                                    let pos = v.read().iter().position(|x| x == &slug);
-                                    if let Some(i) = pos { v.write().remove(i); }
-                                    page.set(0);
-                                },
-                                Ic { icon: Icon::Close, size: 12 }
-                            }
+                        Chip {
+                            key: "type-{t.token()}",
+                            label: i18n.t(t.label_key()),
+                            on_remove: move |()| on_change.call(next.clone()),
                         }
                     }
                 }
             }
-            for slug in exc_v {
+            for s in filters.statuses.clone() {
                 {
-                    let label = name_of(&slug);
+                    let mut next = filters.clone();
+                    next.toggle_status(s);
                     rsx! {
-                        div { class: "ik-afchip",
-                            "− {label}"
-                            button {
-                                onclick: move |_| {
-                                    let mut v = exc;
-                                    let pos = v.read().iter().position(|x| x == &slug);
-                                    if let Some(i) = pos { v.write().remove(i); }
-                                    page.set(0);
-                                },
-                                Ic { icon: Icon::Close, size: 12 }
-                            }
+                        Chip {
+                            key: "status-{s.token()}",
+                            label: i18n.t(s.label_key()),
+                            on_remove: move |()| on_change.call(next.clone()),
                         }
                     }
                 }
             }
+            for slug in filters.inc.clone() {
+                {
+                    let label = format!("+ {}", name_of(&slug));
+                    let mut next = filters.clone();
+                    next.drop_tag(&slug);
+                    rsx! {
+                        Chip { key: "inc-{slug}", label, on_remove: move |()| on_change.call(next.clone()) }
+                    }
+                }
+            }
+            for slug in filters.exc.clone() {
+                {
+                    let label = format!("− {}", name_of(&slug));
+                    let mut next = filters.clone();
+                    next.drop_tag(&slug);
+                    rsx! {
+                        Chip { key: "exc-{slug}", label, on_remove: move |()| on_change.call(next.clone()) }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// One removable chip. The button carries the filter it would leave behind rather than a
+/// description of what to remove, so the bar has no second copy of the removal rules.
+#[component]
+fn Chip(label: String, on_remove: EventHandler<()>) -> Element {
+    rsx! {
+        div { class: "ik-afchip",
+            "{label}"
+            button { onclick: move |_| on_remove.call(()), Ic { icon: Icon::Close, size: 12 } }
         }
     }
 }

@@ -12,8 +12,8 @@ use crate::state::Session;
 use crate::title::PageTitle;
 use crate::views::{
     Account, AnilistCallback, Console, ConsoleEntity, ConsoleQuery, ConsoleSection, Discover,
-    ForgotPassword, Home, Legal, Login, NotFound, Notifications, Recommendations, ResetPassword,
-    Search, Series, VerifyEmail, Watchlist, WatchlistQuery,
+    DiscoverQuery, ForgotPassword, Home, Legal, Login, NotFound, Notifications, Recommendations,
+    ResetPassword, Search, Series, VerifyEmail, Watchlist, WatchlistQuery,
 };
 use dioxus::prelude::*;
 
@@ -25,8 +25,10 @@ pub(crate) enum Route {
     #[layout(Shell)]
         #[route("/")]
         Home {},
-        #[route("/discover")]
-        Discover {},
+        // Filters, sort *and* how far the reader had scrolled ride in the query string, so a
+        // shared link opens on the same covers; see `views::discover::query`.
+        #[route("/discover?:..query")]
+        Discover { query: DiscoverQuery },
         // Its own screen rather than a shelf on Home: the reasons are the surface, and a rail
         // under three other sections had room for neither the list nor the explanations.
         #[route("/for-you")]

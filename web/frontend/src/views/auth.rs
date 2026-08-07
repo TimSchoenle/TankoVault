@@ -10,6 +10,7 @@ use crate::models::*;
 use crate::state::capabilities::use_capabilities;
 use crate::state::legal::{legal_title, published};
 use crate::state::use_session;
+use crate::views::DiscoverQuery;
 use crate::webauthn::{self, CeremonyError};
 use crate::wire::types::Feature;
 use crate::Route;
@@ -92,7 +93,9 @@ pub(crate) fn Login() -> Element {
                         } else if let Some(token) = body.access_token {
                             // No mailer: the account was activated immediately.
                             session.set_token(token);
-                            nav.push(Route::Discover {});
+                            nav.push(Route::Discover {
+                                query: DiscoverQuery::default(),
+                            });
                         }
                     }
                     Err(e) => error.set(Some(api::friendly_error(i18n, e))),
@@ -109,7 +112,9 @@ pub(crate) fn Login() -> Element {
                 {
                     Ok(res) => {
                         session.set_token(res.into_inner().access_token);
-                        nav.push(Route::Discover {});
+                        nav.push(Route::Discover {
+                            query: DiscoverQuery::default(),
+                        });
                     }
                     Err(e) => match sign_in_failure(api::error_status(&e)) {
                         Some((key, offer_resend)) => {
@@ -169,7 +174,9 @@ pub(crate) fn Login() -> Element {
             {
                 Ok(res) => {
                     session.set_token(res.into_inner().access_token);
-                    nav.push(Route::Discover {});
+                    nav.push(Route::Discover {
+                        query: DiscoverQuery::default(),
+                    });
                 }
                 // The same two statuses a password sign-in distinguishes, for the same reasons.
                 // A `401` here is not "wrong password" though — nothing was typed — so it gets
@@ -478,7 +485,9 @@ pub(crate) fn VerifyEmail(token: String) -> Element {
     use_effect(move || {
         if let Some(Ok(access_token)) = resource.read().clone() {
             session.set_token(access_token);
-            nav.push(Route::Discover {});
+            nav.push(Route::Discover {
+                query: DiscoverQuery::default(),
+            });
         }
     });
 

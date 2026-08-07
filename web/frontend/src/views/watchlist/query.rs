@@ -2,8 +2,8 @@
 //! shareable and the back button is meaningful; one catch-all `?:..query` field rather than seven.
 
 use crate::models::{WatchStatus, WatchStatusExt};
+use crate::util::{decode_component, encode_component};
 use std::fmt;
-use std::fmt::Write as _;
 
 /// How the list is ordered. Mirrors `tankovault_db::repo::tracking::WatchlistSort`; the tokens
 /// are the wire contract between them.
@@ -299,48 +299,6 @@ fn parse_status(token: &str) -> Option<WatchStatus> {
         .find(|s| s.token() == token)
 }
 
-/// Percent-encode everything the query grammar reserves.
-///
-/// The router's own encoding leaves `&` and `=` alone, so a filter like `fate/stay & night`
-/// would otherwise re-parse as two parameters.
-fn encode_component(value: &str) -> String {
-    let mut out = String::with_capacity(value.len());
-    for byte in value.bytes() {
-        match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                out.push(byte as char);
-            }
-            // `write!` into a `String` is infallible, so discarding the `Result` is safe (and
-            // avoids an allocation per escaped byte).
-            _ => {
-                let _ = write!(out, "%{byte:02X}");
-            }
-        }
-    }
-    out
-}
-
-/// The inverse of [`encode_component`]. A malformed escape is kept verbatim rather than
-/// dropped — a hand-typed `100%` in the filter box should search for `100%`, not `100`.
-fn decode_component(value: &str) -> String {
-    let bytes = value.as_bytes();
-    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'%' && i + 2 < bytes.len() {
-            if let Ok(byte) = u8::from_str_radix(&value[i + 1..i + 3], 16) {
-                out.push(byte);
-                i += 3;
-                continue;
-            }
-        }
-        // `+` is a form-encoding convention `encode_component` never emits, but pasted URLs do.
-        out.push(if bytes[i] == b'+' { b' ' } else { bytes[i] });
-        i += 1;
-    }
-    String::from_utf8_lossy(&out).into_owned()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -429,12 +387,5 @@ mod tests {
     #[test]
     fn an_empty_query_is_the_default_state() {
         assert_eq!(WatchlistQuery::from(""), WatchlistQuery::default());
-    }
-
-    /// A malformed escape is data, not an error.
-    #[test]
-    fn a_malformed_escape_is_kept_verbatim() {
-        assert_eq!(decode_component("100%"), "100%");
-        assert_eq!(decode_component("%zz"), "%zz");
     }
 }

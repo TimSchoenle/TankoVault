@@ -34,7 +34,7 @@ pub(crate) use feedback::{
 pub(crate) use focus::{focus_and_select, use_focus_targets, FocusTargets};
 pub(crate) use footer::Footer;
 pub(crate) use form::{Field, ListSearch, SegControl, SliderRow};
-pub(crate) use grid::{unmeasured, use_grid_fill, use_grid_fit, use_page_rescale, GridFitProbe};
+pub(crate) use grid::{unmeasured, use_grid_fill, use_grid_fit, GridFitProbe};
 pub(crate) use layout::{ListFooter, NoSelection, PanelCard, Section};
 pub(crate) use pagination::{CompactPager, Pagination, Window};
 pub(crate) use recommend::RecCard;

@@ -1058,13 +1058,18 @@
   "discover": {
     "activeFilters": "{count} aktiv",
     "allProviders": "Alle Anbieter",
+    "backToStart": "Zurück zum Anfang",
     "contentType": "Inhaltstyp",
-    "countLine": "{total} Serien · Seite {page} von {pages}",
+    "continueHere": "Ab hier fortsetzen",
+    "countLine": "{first}–{last} von {total} Serien",
+    "endOfResults": "Das war alles.",
     "filters": "Filter",
     "legend": {
       "exclude": "− ausschließen",
       "include": "+ einschließen"
     },
+    "loadMore": "Mehr laden",
+    "loadingMore": "Lädt weitere …",
     "matchAll": "Treffer: alle",
     "matchAny": "Treffer: beliebige",
     "minChapters": "Min. Kapitel",
@@ -1083,6 +1088,10 @@
       "next": "Weiter",
       "ofTotal": "von {pages}",
       "prev": "Zurück"
+    },
+    "pastEnd": {
+      "hint": "Dieser Link zeigt hinter das Ende der aktuellen Ergebnisse — sie haben sich seitdem möglicherweise geändert.",
+      "title": "Hier ist nichts mehr"
     },
     "presets": "Gespeicherte Vorlagen",
     "presetsSoon": "Das Speichern von Filtervorlagen kommt bald.",
@@ -1106,7 +1115,8 @@
     "status": "Status",
     "tagSearch": "{count} Tags filtern",
     "tags": "Genres / Tags",
-    "toggleFilters": "Filter ein-/ausblenden"
+    "toggleFilters": "Filter ein-/ausblenden",
+    "windowFull": "Hier angehalten, damit die Seite flüssig bleibt."
   },
   "enum": {
     "accountStatus": {

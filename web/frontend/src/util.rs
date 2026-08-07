@@ -6,6 +6,7 @@
 //! through [`crate::i18n`] rather than baking English into the formatter.
 
 use crate::i18n::Translator;
+use std::fmt::Write as _;
 
 /// Render a chapter number without a trailing `.0`, so whole chapters read `#152` and part
 /// releases keep their fraction (`#152.6`).
@@ -227,9 +228,67 @@ pub(crate) fn greeting_key() -> &'static str {
     }
 }
 
+/// Percent-encode everything the query grammar reserves.
+///
+/// The router's own encoding leaves `&` and `=` alone, so a filter like `fate/stay & night`
+/// would otherwise re-parse as two parameters.
+pub(crate) fn encode_component(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(byte as char);
+            }
+            // `write!` into a `String` is infallible, so discarding the `Result` is safe (and
+            // avoids an allocation per escaped byte).
+            _ => {
+                let _ = write!(out, "%{byte:02X}");
+            }
+        }
+    }
+    out
+}
+
+/// The inverse of [`encode_component`]. A malformed escape is kept verbatim rather than
+/// dropped — a hand-typed `100%` in the filter box should search for `100%`, not `100`.
+pub(crate) fn decode_component(value: &str) -> String {
+    let bytes = value.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let Ok(byte) = u8::from_str_radix(&value[i + 1..i + 3], 16) {
+                out.push(byte);
+                i += 3;
+                continue;
+            }
+        }
+        // `+` is a form-encoding convention `encode_component` never emits, but pasted URLs do.
+        out.push(if bytes[i] == b'+' { b' ' } else { bytes[i] });
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A malformed escape is data, not an error.
+    #[test]
+    fn a_malformed_escape_is_kept_verbatim() {
+        assert_eq!(decode_component("100%"), "100%");
+        assert_eq!(decode_component("%zz"), "%zz");
+    }
+
+    /// The query grammar's own separators must survive a round trip, or a filter containing one
+    /// re-parses as extra parameters and everything after it is lost.
+    #[test]
+    fn reserved_characters_round_trip() {
+        for value in ["fate/stay & night = ?", "九番の鐘", ""] {
+            assert_eq!(decode_component(&encode_component(value)), value);
+        }
+    }
 
     /// Pins the badge string's length, which is the whole point of the function.
     ///

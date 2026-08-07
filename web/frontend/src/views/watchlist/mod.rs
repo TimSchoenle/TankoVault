@@ -615,7 +615,7 @@ fn empty_state(
             div { class: "ik-empty",
                 Ic { icon: Icon::Watchlist, size: 28 }
                 p { style: "margin:10px 0 4px;font-weight:600;", {i18n.t("watchlist.empty")} }
-                Link { to: Route::Discover {}, class: "ik-btn", style: "margin-top:10px;",
+                Link { to: Route::Discover { query: crate::views::DiscoverQuery::default() }, class: "ik-btn", style: "margin-top:10px;",
                     {i18n.t("watchlist.emptyCta")}
                 }
             }

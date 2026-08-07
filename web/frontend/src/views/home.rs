@@ -19,6 +19,7 @@ use crate::models::*;
 use crate::state::capabilities::use_capabilities;
 use crate::state::use_session;
 use crate::util::{chapter_number, greeting_key, iso_date};
+use crate::views::DiscoverQuery;
 use crate::wire::types::Feature;
 use crate::Route;
 use dioxus::prelude::*;
@@ -217,7 +218,7 @@ fn GuestHome() -> Element {
             }
             if caps.has_feature(Feature::CatalogueBrowse) {
                 Link {
-                    to: Route::Discover {},
+                    to: Route::Discover { query: DiscoverQuery::default() },
                     class: "ik-btn block",
                     style: "margin-top:10px;",
                     {i18n.t("home.guest.browse")}

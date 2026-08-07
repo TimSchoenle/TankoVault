@@ -126,6 +126,79 @@ pub(super) fn shell_loads_nothing_off_origin(root: &Path) -> anyhow::Result<Vec<
     Ok(findings)
 }
 
+/// **The installer and the app write the same autostart entry.** The NSIS "start when I sign in"
+/// checkbox and the switch in the desktop settings sheet are two views of one
+/// `HKCU\…\Run` value; renaming either side alone leaves the app starting at sign-in under a name
+/// nothing in the UI can see, and no build step relates a `.hbs` template to a Rust constant.
+pub(super) fn autostart_entry_agrees(root: &Path) -> anyhow::Result<Vec<Finding>> {
+    let template = root.join("web/frontend/bundle/windows/installer.nsi.hbs");
+    let platform = root.join("web/frontend/src/platform/desktop.rs");
+    let (Ok(nsi), Ok(rust)) = (
+        std::fs::read_to_string(&template),
+        std::fs::read_to_string(&platform),
+    ) else {
+        anyhow::bail!(
+            "repo-lint: cannot read {} or {} — neither is optional",
+            template.display(),
+            platform.display()
+        );
+    };
+
+    let mut findings = Vec::new();
+    for (nsi_define, rust_const, what) in [
+        ("AUTOSTART_VALUE", "VALUE", "registry value name"),
+        ("AUTOSTART_KEY", "KEY", "registry key path"),
+    ] {
+        let Some(expected) = quoted_after(&nsi, &format!("!define {nsi_define} ")) else {
+            findings.push(Finding {
+                rule: "autostart-entry-agrees",
+                file: template.clone(),
+                line: 1,
+                detail: format!("no `!define {nsi_define} \"…\"` — the {what} has no definition"),
+            });
+            continue;
+        };
+        // Matched on the value, not on the literal's syntax: the key is a raw string on the Rust
+        // side and a plain one in the template, and the point is that they mean the same thing.
+        let Some((number, line)) = rust.lines().enumerate().find(|(_, line)| {
+            line.trim_start()
+                .starts_with(&format!("const {rust_const}: &str"))
+        }) else {
+            findings.push(Finding {
+                rule: "autostart-entry-agrees",
+                file: platform.clone(),
+                line: 1,
+                detail: format!("no `const {rust_const}: &str` to hold the {what} `{expected}`"),
+            });
+            continue;
+        };
+        if !line.contains(&format!("\"{expected}\"")) {
+            findings.push(Finding {
+                rule: "autostart-entry-agrees",
+                file: platform.clone(),
+                line: number + 1,
+                detail: format!(
+                    "disagrees with the installer's `{nsi_define}` (`{expected}`), so the two \
+                     would write different {what}s and one would be orphaned"
+                ),
+            });
+        }
+    }
+    Ok(findings)
+}
+
+/// The contents of the first double-quoted run following `prefix`, or `None` if `prefix` is absent
+/// or nothing is quoted after it on that line.
+fn quoted_after(text: &str, prefix: &str) -> Option<String> {
+    let line = text
+        .lines()
+        .find(|line| line.trim_start().starts_with(prefix))?;
+    let rest = line.split_once(prefix)?.1;
+    let opened = rest.strip_prefix('"')?;
+    let (value, _) = opened.split_once('"')?;
+    Some(value.to_owned())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -151,5 +224,25 @@ mod tests {
             "assert!(!csp.contains(\"'{}'\"));",
             "unsafe-eval"
         )));
+    }
+
+    /// Same reasoning as above: the autostart rule reads a value out of an NSIS `!define`, and a
+    /// reader that silently returned `None` would make the rule pass for ever.
+    #[test]
+    fn the_autostart_rule_reads_an_nsis_define() {
+        let script = "; !define AUTOSTART_VALUE \"a comment about it\"\n\
+                      !define AUTOSTART_VALUE \"TankoVault\"\n\
+                      !define AUTOSTART_KEY \"Software\\Microsoft\\Windows\\CurrentVersion\\Run\"\n";
+        assert_eq!(
+            quoted_after(script, "!define AUTOSTART_KEY ").as_deref(),
+            Some(r"Software\Microsoft\Windows\CurrentVersion\Run")
+        );
+        assert_eq!(quoted_after(script, "!define MISSING ").as_deref(), None);
+        // The `;` comment above is not a definition, and `starts_with` on the trimmed line is
+        // what keeps it from being read as one.
+        assert_eq!(
+            quoted_after(script, "!define AUTOSTART_VALUE ").as_deref(),
+            Some("TankoVault")
+        );
     }
 }

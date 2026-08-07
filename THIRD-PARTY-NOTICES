@@ -5633,7 +5633,7 @@ Ships as: the WebAssembly bundle the frontend image serves, which executes in th
 
 Licences in this section, by number of crates:
 
-  Apache License 2.0 (Apache-2.0) — 426 crates, 31 distinct notices
+  Apache License 2.0 (Apache-2.0) — 427 crates, 31 distinct notices
   MIT License (MIT) — 143 crates, 68 distinct notices
   Unicode License v3 (Unicode-3.0) — 19 crates, 2 distinct notices
   BSD 3-Clause "New" or "Revised" License (BSD-3-Clause) — 9 crates, 6 distinct notices
@@ -6470,6 +6470,7 @@ by the block naming that crate.
   - windows-link 0.1.3
   - windows-link 0.2.1
   - windows-numerics 0.2.0
+  - windows-registry 0.6.1
   - windows-result 0.3.4
   - windows-result 0.4.1
   - windows-strings 0.4.2

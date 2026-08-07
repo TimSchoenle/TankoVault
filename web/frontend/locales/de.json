@@ -286,6 +286,12 @@
       "label": "Desktop-Benachrichtigungen anzeigen",
       "title": "Benachrichtigungen"
     },
+    "startup": {
+      "failed": "Dein System hat die Änderung abgelehnt. Es wurde nichts geändert.",
+      "hint": "Dieselbe Option, die das Installationsprogramm angeboten hat. Hier ausgeschaltet, wird der Eintrag wieder entfernt.",
+      "label": "TankoVault beim Anmelden starten",
+      "title": "Autostart"
+    },
     "title": "Einstellungen",
     "update": {
       "check": "Jetzt prüfen",

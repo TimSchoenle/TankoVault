@@ -56,6 +56,9 @@ pub(crate) fn SettingsSheet(on_close: EventHandler<()>) -> Element {
                 ServerSection {}
                 UpdateSection {}
                 NotificationSection {}
+                if crate::platform::autostart_supported() {
+                    StartupSection {}
+                }
 
                 if let Some(path) = crate::platform::settings_path() {
                     p { class: "ik-muted", style: "font-size:11.5px;word-break:break-all;margin:4px 0 0;",
@@ -370,6 +373,52 @@ fn NotificationSection() -> Element {
             }
             p { class: "ik-muted", style: "font-size:12.5px;margin:6px 0 0;",
                 {i18n.t("settings.notifications.hint")}
+            }
+        }
+    }
+}
+
+/// Whether the app is in the reader's sign-in list.
+///
+/// The one switch on this sheet whose state is *not* stored by the app: it reads and writes the
+/// OS list directly (`HKCU\…\Run`, or a freedesktop `autostart` entry), because the Windows
+/// installer offers the same choice as a checkbox and both have to mean the same thing. That is
+/// also why a refusal is shown rather than swallowed — the reader can see the box move, so a
+/// change that did not take has to say so.
+#[component]
+fn StartupSection() -> Element {
+    let i18n = use_i18n();
+    let mut enabled = use_signal(crate::platform::autostart_enabled);
+    let mut refused = use_signal(|| false);
+
+    rsx! {
+        section { class: "ik-prefs-section",
+            h3 { {i18n.t("settings.startup.title")} }
+            label { class: "ik-prefs-toggle",
+                input {
+                    r#type: "checkbox",
+                    checked: enabled(),
+                    onchange: move |event| {
+                        let on = event.checked();
+                        let applied = crate::platform::set_autostart(on);
+                        // On refusal the OS list is unchanged, so the switch goes back to what it
+                        // actually reflects rather than to what was asked for.
+                        enabled.set(if applied { on } else { !on });
+                        refused.set(!applied);
+                    },
+                }
+                span { {i18n.t("settings.startup.label")} }
+            }
+            p { class: "ik-muted", style: "font-size:12.5px;margin:6px 0 0;",
+                {i18n.t("settings.startup.hint")}
+            }
+            if refused() {
+                div {
+                    class: "ik-error",
+                    role: "alert",
+                    style: "padding:10px;margin-top:8px;font-size:12.5px;",
+                    {i18n.t("settings.startup.failed")}
+                }
             }
         }
     }

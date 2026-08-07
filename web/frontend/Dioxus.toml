@@ -40,6 +40,18 @@ icon = [
     "assets/icons/icon.ico",
 ]
 
+# The Windows `.exe` installer. `dx`'s built-in script offers the reader nothing to decide, so
+# this one is a fork of it carrying the three options — desktop shortcut, start with Windows, run
+# now — and its own comments explain each.
+#
+# `install_mode` is stated rather than inherited because two other things read it as a decision:
+# `src/update/install.rs` tells an NSIS install from an MSI one by whether the running binary
+# sits under `%LOCALAPPDATA%`, and the template's "run after install" checkbox is only safe
+# while the installer is unelevated.
+[bundle.windows.nsis]
+template = "bundle/windows/installer.nsi.hbs"
+install_mode = "CurrentUser"
+
 # Without this, a machine whose WebView2 runtime is missing launches to a blank window with no
 # explanation — the app *is* a webview. Evergreen ships with Windows 11 and with current 10, so
 # the bootstrapper is a fallback that usually downloads nothing.

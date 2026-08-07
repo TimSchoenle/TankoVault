@@ -23,6 +23,18 @@
 @custom-variant light (&:where([data-theme="light"], [data-theme="light"] *));
 
 :root {
+  /* The UA's own widgets — scrollbars first and foremost — take their palette from this, not
+   * from our custom properties. Without it the webview falls back to the `<meta name=
+   * "color-scheme">` hint, which resolves against the *OS* preference: a reader on a light
+   * Windows with the app in dark mode got a plain white scrollbar down the right of the window.
+   *
+   * It is declared here and overridden in `[data-theme="light"]` below rather than bound to a
+   * media query, because the theme is the reader's choice and the OS is not consulted once they
+   * have made one. `color-scheme` inherits, which is what makes it reach the desktop build: its
+   * `data-theme` sits on `.ik-desktop-root` (Rust cannot address `<html>` in a wry webview), and
+   * the element that actually scrolls, `.ik-desktop-body`, is inside it. */
+  color-scheme: dark;
+
   /* Height of any app-drawn window chrome above the layout. Zero in a browser, where the
    * window's own caption is outside the page; the desktop build's title bar sets it (§4.4 of the
    * engineering guide). Every `100vh` below subtracts it, because a viewport height is the wrong
@@ -112,6 +124,8 @@
 
 /* Warm Paper light mode. */
 [data-theme="light"] {
+  /* Pairs with the `color-scheme: dark` on `:root` — see the note there. */
+  color-scheme: light;
   --bg: #efe9dc;
   --rail: #e9e2d2;
   --surface: #f7f2e7;

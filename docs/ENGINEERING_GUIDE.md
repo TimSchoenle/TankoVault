@@ -413,13 +413,35 @@ accepted over plaintext puts it on the wire for the life of the session. **The t
 never written to disk**, on either build; the settings file holds the server URL and the
 appearance choices and nothing else.
 
-**Passkeys are web-only, and this is not a gap to be closed with `eval`.** WebAuthn requires
-`rp.id` to be a registrable suffix of the *document's* origin. A wry webview serves this app
-from its own custom protocol, so a challenge naming the server's relying-party id is refused
-with `SecurityError` however the call is reached, and claiming the server's domain for
-locally-served content is not something to do. `webauthn::is_available()` answers `false` there
-and the controls hide themselves. Making it work needs the ceremony to run at the server's real
-origin in a second webview window, which has an API-side half and is not yet built.
+**Passkeys do not go through the webview, and must not.** WebAuthn *in a browser* requires
+`rp.id` to be a registrable suffix of the document's origin, and a wry webview serves this app
+from its own custom protocol — so a challenge naming the server's relying-party id is refused
+with `SecurityError` however the call is reached. That rule is the browser's: it is how a page is
+stopped from asserting an origin it does not occupy.
+
+Windows exposes the same ceremony natively through `webauthn.dll` — the API the browsers
+themselves call — and it takes the `clientDataJSON`, origin included, from the caller. The
+desktop build uses it through `webauthn-authenticator-rs`'s `win10` backend, pinned to the same
+`webauthn-rs-proto` the API verifies with, and claims the origin the reader connected to. The
+server needs no change: it already checks `clientDataJSON.origin` against the relying party it
+was configured with, and that is the same address.
+
+**[R] The origin binding is therefore the app's assertion, not a browser's guarantee.** Windows
+has no app-to-relying-party association — no equivalent of Android's Digital Asset Links — so any
+native process on that machine can request the same `rp.id`, and the server cannot tell them
+apart. A passkey proves possession of the credential; it does not prove which client asked. That
+is the accepted model for a native client, and it is the thing to weigh before widening what a
+passkey is trusted for.
+
+**[R] Windows cannot distinguish a declined prompt from a fault.** The `win10` backend maps every
+`HRESULT` onto one opaque error, so `CeremonyError::Incomplete` exists as its own outcome with
+wording that names both possibilities. Folding it into `Cancelled` would swallow a misconfigured
+relying party; folding it into `Failed` would tell a reader who pressed Cancel that something
+broke. Fixing it properly is an upstream patch.
+
+Linux has no OS passkey provider, so `is_available()` answers `false` there and the controls hide
+themselves. Hardware security keys over CTAP/HID would be a separate feature with its own
+dependency set.
 
 ---
 

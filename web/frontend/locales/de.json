@@ -1048,8 +1048,9 @@
       "badPassword": "Dieses Passwort ist nicht korrekt.",
       "cancelled": "Passkey-Abfrage geschlossen.",
       "failed": "Dein Gerät konnte den Passkey-Schritt nicht abschließen. Versuch es erneut oder nutze dein Passwort.",
+      "incomplete": "Die Passkey-Abfrage wurde ohne Ergebnis geschlossen. Wenn du sie abgebrochen hast, ist alles in Ordnung — andernfalls versuch es erneut.",
       "notRecognised": "Dieser Passkey ist hier nicht registriert. Melde dich mit deinem Passwort an oder probiere ein anderes Gerät.",
-      "unsupported": "Passkeys sind in diesem Browser nicht verfügbar."
+      "unsupported": "Passkeys sind hier nicht verfügbar."
     },
     "field": {
       "label": "Name für diesen Schlüssel",

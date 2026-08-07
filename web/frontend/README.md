@@ -19,10 +19,14 @@ Two differences are not incidental and are documented where they live:
 - **There is no served origin on desktop.** `src/views/connect.rs` asks for one on first run and
   stores it; `platform::origin()` answers from there. The access token still lives in memory
   only — the settings file holds the server URL and the appearance choices, never a credential.
-- **Passkeys are web-only.** WebAuthn requires `rp.id` to be a registrable suffix of the
-  document's origin, and a wry webview serves this app from its own custom protocol, so no
-  ceremony started here can name the server's relying-party id. `webauthn::is_available()`
-  answers `false` on desktop and the controls hide themselves. See the module contract.
+- **Passkeys go through Windows Hello on Windows, and are unavailable elsewhere.** The
+  origin rule that blocks a webview ceremony — `rp.id` must be a registrable suffix of the
+  *document's* origin — is the browser's, and a wry webview serves this app from its own custom
+  protocol. Windows exposes the same ceremony natively through `webauthn.dll`, which takes the
+  `clientDataJSON` from the caller, so the desktop build talks to it directly and claims the
+  origin the reader connected to. That makes the origin binding **this app's assertion rather
+  than a browser's guarantee**; read the module contract in `src/webauthn.rs` before relying on
+  it. Linux has no OS passkey provider, so `is_available()` answers `false` there.
 
 This crate is intentionally **excluded from the host Cargo workspace** (the web build targets
 `wasm32-unknown-unknown` via the `dx` CLI). Build and check it on its own.

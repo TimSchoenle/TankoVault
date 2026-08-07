@@ -126,8 +126,9 @@ pulldown-cmark = { version = "0.13.4", default-features = false }
 # behind it natively; see `src/platform/desktop.rs` for which.
 # ---------------------------------------------------------------------------------------------
 # The async runtime is `dioxus-desktop`'s own; this is here for `time::sleep`, which replaces
-# `gloo-timers` in the poll loops.
-tokio = { version = "1", features = ["time"], optional = true }
+# `gloo-timers` in the poll loops, and for the oneshot channel that carries a passkey ceremony
+# back off the thread it has to block on.
+tokio = { version = "1", features = ["time", "sync"], optional = true }
 # The clock. `default-features = false` + `clock` drops the localisation tables: this build needs
 # "now", "parse RFC-3339" and "which hour is it here", not formatted month names.
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"], optional = true }
@@ -148,6 +149,23 @@ eventsource-stream = { version = "0.2", optional = true }
 # per-target so the desktop build links neither it nor `wasm-bindgen`.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 uuid = { version = "1", features = ["js"] }
+
+# Windows Hello, through the platform's own `webauthn.dll` — the same API the browsers call.
+#
+# Per-target because the `win10` backend exists on Windows and nowhere else; Linux has no OS
+# passkey provider to reach for and `webauthn::is_available()` stays `false` there.
+#
+# `=0.6.1-dev` is the same pin, from the same release train, as the `webauthn-rs-proto` above and
+# the API's `webauthn-rs`. That is the whole reason this is a dependency rather than hand-written
+# FFI: all three agree about the wire types by construction, so a challenge the API minted is
+# handed to the authenticator and the result handed back without a conversion anyone wrote.
+#
+# `win10` alone, deliberately: the `ctap2`/`usb` backends would add a HID stack and its
+# dependencies for hardware keys, which is a separate feature with a separate decision behind it.
+[target.'cfg(windows)'.dependencies]
+webauthn-authenticator-rs = { version = "=0.6.1-dev", features = [
+    "win10",
+], optional = true }
 
 # One of `web` and `desktop` must be on and both may not be; `src/platform/mod.rs` says so to the
 # compiler, because a violation otherwise surfaces as a wall of unrelated resolution errors.
@@ -174,6 +192,9 @@ desktop = [
     "dep:rfd",
     "dep:sys-locale",
     "dep:tokio",
+    # Resolves to nothing off Windows — the dependency is declared per-target — so this enables
+    # Windows Hello where there is one and changes nothing where there is not.
+    "dep:webauthn-authenticator-rs",
     # `bytes_stream()`, which is what the SSE parser above is fed.
     "reqwest/stream",
 ]

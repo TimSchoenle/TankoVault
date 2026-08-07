@@ -1048,8 +1048,9 @@
       "badPassword": "That password is not correct.",
       "cancelled": "Passkey prompt closed.",
       "failed": "Your device could not complete the passkey step. Try again, or use your password.",
+      "incomplete": "The passkey prompt closed without finishing. If you cancelled it, nothing is wrong — otherwise, try again.",
       "notRecognised": "That passkey isn't registered here. Sign in with your password, or try another device.",
-      "unsupported": "Passkeys aren't available in this browser."
+      "unsupported": "Passkeys aren't available here."
     },
     "field": {
       "label": "Name this key",

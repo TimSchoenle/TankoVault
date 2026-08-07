@@ -12,6 +12,23 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [1.5.2](https://github.com/TimSchoenle/TankoVault/compare/v1.5.1...v1.5.2) (2026-08-07)
+
+
+### Bug Fixes
+
+* **adapters:** read kunmanga's latest feed from the updates slider ([#114](https://github.com/TimSchoenle/TankoVault/issues/114)) ([3efc407](https://github.com/TimSchoenle/TankoVault/commit/3efc407b51836fdd0b04b3e480c4ed7dc602d47d))
+
+
+### CI
+
+* stop SOURCE_DATE_EPOCH invalidating every build cache key ([#110](https://github.com/TimSchoenle/TankoVault/issues/110)) ([fa369db](https://github.com/TimSchoenle/TankoVault/commit/fa369db9f656110d3d3bc3eb8e9ed25209399e49))
+
+
+### Build System
+
+* check out generated artefacts as LF, and make rustfmt emit it ([#111](https://github.com/TimSchoenle/TankoVault/issues/111)) ([e695adb](https://github.com/TimSchoenle/TankoVault/commit/e695adbbebb2a1342c88286ab429baf5053fd3d0))
+
 ## [1.5.1](https://github.com/TimSchoenle/TankoVault/compare/v1.5.0...v1.5.1) (2026-08-06)
 
 

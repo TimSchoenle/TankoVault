@@ -1381,7 +1381,9 @@ jobs:
   docker:
     name: docker build (${{ matrix.bin }})
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # 60 for the same reason `docker-frontend` carries 90: with no cache to import these legs
+    # build the whole `builder` chain themselves. `render` came in at 38m against the old 45.
+    timeout-minutes: 60
     needs: [changes, lint, docker-deps]
     if: ${{ !cancelled() && !failure() && needs.changes.outputs.docker == 'true' }}
     permissions:
@@ -1571,7 +1573,12 @@ jobs:
   docker-frontend:
     name: docker build (frontend)
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # 90, matching `docker-deps`, because this leg has the longest cold path in the workflow: it
+    # consumes both lineages, so with nothing to import it builds the backend `builder` chain *and*
+    # the wasm one. That happens whenever the Dockerfile itself changes, since a pull request
+    # exports no cache and `main`'s tag is then keyed on the old file — this job timed out at
+    # exactly 45m00s on the change that fixed the toolchain mismatch, having built correctly.
+    timeout-minutes: 90
     # Both warm-ups: this image consumes both lineages — the musl binary from `backend-deps` and
     # the SPA bundle from `frontend-deps`.
     needs: [changes, lint, docker-deps, docker-wasm-deps]

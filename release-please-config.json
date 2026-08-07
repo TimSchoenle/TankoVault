@@ -7,7 +7,7 @@
     ".": {
       "release-type": "simple",
       "changelog-path": "CHANGELOG.md",
-      "draft": false,
+      "draft": true,
       "prerelease": false,
       "extra-files": [
         {

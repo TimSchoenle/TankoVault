@@ -5633,7 +5633,7 @@ Ships as: the WebAssembly bundle the frontend image serves, which executes in th
 
 Licences in this section, by number of crates:
 
-  Apache License 2.0 (Apache-2.0) — 409 crates, 30 distinct notices
+  Apache License 2.0 (Apache-2.0) — 426 crates, 31 distinct notices
   MIT License (MIT) — 142 crates, 68 distinct notices
   Unicode License v3 (Unicode-3.0) — 19 crates, 2 distinct notices
   BSD 3-Clause "New" or "Revised" License (BSD-3-Clause) — 9 crates, 6 distinct notices
@@ -5856,8 +5856,15 @@ by the block naming that crate.
   - asn1-rs 0.6.2
   - asn1-rs-derive 0.5.1
   - asn1-rs-impl 0.2.0
+  - async-channel 2.5.0
   - async-compression 0.4.43
+  - async-executor 1.14.0
+  - async-io 2.6.0
+  - async-lock 3.4.2
+  - async-process 2.5.0
   - async-recursion 1.1.1
+  - async-signal 0.2.14
+  - async-task 4.7.1
   - async-trait 0.1.91
   - atomic-waker 1.1.2
   - autocfg 1.5.1
@@ -5874,6 +5881,7 @@ by the block naming that crate.
   - block-buffer 0.10.4
   - block-buffer 0.11.0
   - block-padding 0.3.3
+  - blocking 1.6.2
   - bumpalo 3.20.3
   - bytemuck 1.25.2
   - cbc 0.1.2
@@ -5885,6 +5893,7 @@ by the block naming that crate.
   - cmake 0.1.58
   - compression-codecs 0.4.38
   - compression-core 0.4.32
+  - concurrent-queue 2.5.0
   - const-oid 0.9.6
   - const-serialize 0.7.2
   - const-serialize 0.8.0-alpha.0
@@ -6006,6 +6015,7 @@ by the block naming that crate.
   - minimal-lexical 0.2.1
   - miniz_oxide 0.8.9
   - muda 0.17.2
+  - num 0.4.3
   - num-bigint 0.4.8
   - num-bigint-dig 0.8.6
   - num-complex 0.4.6
@@ -6035,12 +6045,14 @@ by the block naming that crate.
   - pin-project 1.1.13
   - pin-project-internal 1.1.13
   - pin-project-lite 0.2.17
+  - piper 0.2.5
   - pkcs1 0.7.5
   - pkcs5 0.7.1
   - pkcs8 0.10.2
   - pkg-config 0.3.33
   - png 0.17.16
   - png 0.18.1
+  - polling 3.11.0
   - pollster 0.4.0
   - polyval 0.6.2
   - primeorder 0.13.6
@@ -6078,6 +6090,7 @@ by the block naming that crate.
   - scopeguard 1.2.0
   - scrypt 0.11.0
   - sec1 0.7.3
+  - secret-service 5.1.0
   - semver 1.0.28
   - send_wrapper 0.6.0
   - serde 1.0.229
@@ -6684,7 +6697,7 @@ by the block naming that crate.
    See the License for the specific language governing permissions and
    limitations under the License.
 
-The 13 notices below open with the same text, reproduced here once. Each block
+The 14 notices below open with the same text, reproduced here once. Each block
 that follows completes one of them: a crate's notice is this text followed
 by the block naming that crate.
 
@@ -6891,6 +6904,38 @@ APPENDIX: How to apply the Apache License to your work.
 
 Copyright (c) 2016 Alex Crichton
 Copyright (c) 2017 The Tokio Authors
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+	http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+… continued, for:
+
+  - keyring 4.1.6
+  - keyring-core 1.0.0
+  - windows-native-keyring-store 1.1.0
+  - zbus-secret-service-keyring-store 1.0.0
+
+APPENDIX: How to apply the Apache License to your work.
+
+   To apply the Apache License to your work, attach the following
+   boilerplate notice, with the fields enclosed by brackets "[]"
+   replaced with your own identifying information. (Don't include
+   the brackets!)  The text should be enclosed in the appropriate
+   comment syntax for the file format. We also recommend that a
+   file or class name and description of purpose be included on the
+   same "printed page" as the copyright notice for easier
+   identification within third-party archives.
+
+Copyright [2017] [keyring developers]
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.

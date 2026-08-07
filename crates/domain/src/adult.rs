@@ -5,7 +5,7 @@
 //! catalogue, and permanently so for any series `AniList` does not carry. Without it
 //! `series.is_adult` sits at its `false` default and an unmatched adult series reads as safe.
 //!
-//! The two never share a column: see migration 0039 for why an `AniList` refresh must not be able
+//! The two never share a column: see migration 0040 for why an `AniList` refresh must not be able
 //! to clear a verdict this made, and why this may only ever answer "yes".
 
 use crate::tag_filter::slugify;

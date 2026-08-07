@@ -86,6 +86,10 @@
    * competed with the artwork for a card barely wider than a thumbnail. */
   --card: 190px;
   --gap: 18px;
+  /* The watchlist's cover tile. Smaller than a catalogue card and unaffected by the density
+   * knob: that grid is a reader's own shelf, sized to show a lot of it at once. */
+  --tile: 172px;
+  --tile-gap: 18px;
 
   /* The measured column (layout handoff §2). `--measure` caps every band inside `.ik-main` —
    * chrome, content and footer — at one width; `--gutter` is the padding either side of it.
@@ -570,6 +574,22 @@ a { color: inherit; text-decoration: none; }
  * Cards, grids, tiles
  * ========================================================================== */
 .ik-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--card), 1fr)); gap: var(--gap); }
+
+/* The layout probe behind `components/grid.rs`. A page of covers is sized in Rust from the same
+ * two lengths `auto-fill` uses, and Rust cannot read a custom property — `getComputedStyle` is
+ * browser-only and `eval` is banned — so they are rendered here as the widths of two hidden
+ * boxes and read back through a `ResizeObserver`. Everything is declared in terms of the tokens
+ * above, which keeps this file the only place the numbers exist: retune `--card`, `--gap` or the
+ * density overrides and the page size follows on its own.
+ *
+ * The probe is zero-height and takes the width of the column it sits in, which is the width the
+ * grid beside it is laid out in. Do not give it `display: none`: an unrendered box is never
+ * observed, and the screen waits on that first measurement before it fetches. */
+.ik-fit-probe { --fit-card: var(--card); --fit-gap: var(--gap); position: relative; height: 0; overflow: hidden; }
+.ik-fit-probe.tiles { --fit-card: var(--tile); --fit-gap: var(--tile-gap); }
+.ik-fit-probe > span { position: absolute; top: 0; left: 0; height: 0; }
+.ik-fit-probe > .card { width: var(--fit-card); }
+.ik-fit-probe > .gap { width: var(--fit-gap); }
 .ik-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; transition: transform 120ms ease, border-color 120ms ease; }
 .ik-card:hover { transform: translateY(-2px); border-color: var(--acc); }
 /* `aspect-ratio` reserves the box before the bytes arrive, and `min-height: 0` keeps it from
@@ -870,7 +890,7 @@ a { color: inherit; text-decoration: none; }
 
 /* 4b — the cover grid. Seven-up at the design width, and it degrades by column
    count rather than by card size so the covers stay legible. */
-.ik-wl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(172px, 1fr)); gap: 18px; padding-top: 16px; }
+.ik-wl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--tile), 1fr)); gap: var(--tile-gap); padding-top: 16px; }
 .ik-wl-tile { min-width: 0; }
 .ik-wl-tile.selected { box-shadow: 0 0 0 2px var(--acc); border-radius: 10px; }
 .ik-wl-tile-art { position: relative; display: block; border-radius: 10px; overflow: hidden; border: 1px solid var(--border); }
@@ -1408,6 +1428,10 @@ table.ik-table { width: 100%; border-collapse: collapse; }
   :root { --card: 148px; }
   .ik-hero { grid-template-columns: 1fr; }
 }
+/* The one column rule `.ik-fit-probe` cannot report, because it replaces the track list instead
+ * of retuning `--card`: under 400px Rust derives one column from the width and the grid renders
+ * two. Harmless only because the page floor (`MIN_ITEMS` in `components/grid.rs`) is even, which
+ * a test there pins — anything that changes this rule has to keep that true. */
 @media (max-width: 400px) {
   .ik-grid { grid-template-columns: repeat(2, 1fr); }
 }

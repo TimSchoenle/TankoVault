@@ -47,12 +47,15 @@ struct Tier {
 
 /// A prioritised, round-robin view over every provider's task lanes.
 ///
-/// Not `Clone` and not shared: each worker task owns one, and takes one message at a time
+/// Not `Clone` and not shared: the consumer loop owns one, and takes one message at a time
 /// from it. Holding messages in a local buffer would be faster but wrong — a buffered task
 /// is a *claimed* task, and one waiting behind several minutes of other work would breach
 /// its redelivery deadline and be handed to a second worker. It would also defeat the
 /// prioritisation, since a fast task arriving mid-buffer would still queue behind whatever
 /// full-scan tasks were already held.
+///
+/// Concurrency lives entirely above this type: the loop executes several claimed tasks at
+/// once, but still claims them one at a time and never holds one it is not already running.
 pub(crate) struct FairQueue {
     bus: Bus,
     pool: PgPool,
@@ -99,9 +102,14 @@ impl FairQueue {
     /// Blocks — by polling with a backoff — until some lane has work. Shutdown is observed
     /// between rounds rather than mid-task, which is what lets a rolling restart drain
     /// cleanly instead of leaving claimed tasks to time out.
+    ///
+    /// `busy` names the providers that already have a task in flight; their lanes are passed
+    /// over. The caller owns that set because it owns the tasks — see [`Tier::poll_round`]
+    /// for why the filter has to happen before the pull rather than after it.
     pub(crate) async fn next_task(
         &mut self,
         shutdown: &CancellationToken,
+        busy: &HashSet<String>,
     ) -> Option<BrokerMessage> {
         let mut idle = IDLE_POLL_MIN;
         loop {
@@ -111,7 +119,7 @@ impl FairQueue {
             if Instant::now() >= self.next_refresh {
                 self.refresh_lanes().await;
             }
-            if let Some(msg) = self.poll_round().await {
+            if let Some(msg) = self.poll_round(busy).await {
                 return Some(msg);
             }
             tokio::select! {
@@ -125,10 +133,11 @@ impl FairQueue {
     /// Offer every lane a turn, highest-priority tier first, and return the first task found.
     ///
     /// A tier is exhausted before the next is touched — that is the whole of the fast-over-
-    /// full guarantee.
-    async fn poll_round(&mut self) -> Option<BrokerMessage> {
+    /// full guarantee, and it survives `busy`: a fast lane skipped for being in flight does
+    /// not promote a full lane past a fast one that is merely idle.
+    async fn poll_round(&mut self, busy: &HashSet<String>) -> Option<BrokerMessage> {
         for tier in &mut self.tiers {
-            if let Some(msg) = tier.poll_round().await {
+            if let Some(msg) = tier.poll_round(busy).await {
                 return Some(msg);
             }
         }
@@ -230,13 +239,28 @@ impl Tier {
     /// its wait from [`IDLE_POLL_MIN`] to [`IDLE_POLL_MAX`] while every tier comes back
     /// empty, so an idle pool settles at one round per lane per five seconds, not a spin.
     /// Deliberately left as is.
-    async fn poll_round(&mut self) -> Option<BrokerMessage> {
-        let lane_count = self.lanes.len();
-        if lane_count == 0 {
-            return None;
-        }
-        for _ in 0..lane_count {
-            let lane = &self.lanes[take_turn(&mut self.cursor, lane_count)];
+    ///
+    /// ## Why `busy` is filtered before the pull, never after
+    ///
+    /// The worker now runs several providers concurrently, one task each, so a lane whose
+    /// provider is already in flight has nowhere to put a message. Because a lane *is* a
+    /// provider, that is known before pulling — so the skip costs nothing and, crucially,
+    /// keeps the property the section above depends on: every message this returns is
+    /// executed immediately, so none is ever handed back and no delivery count moves.
+    /// Pulling first and returning the message on a busy provider would reintroduce exactly
+    /// the `nak` that section rejects, by a different route.
+    async fn poll_round(&mut self, busy: &HashSet<String>) -> Option<BrokerMessage> {
+        // Snapshotted up front so the cursor can advance while `self.lanes` is borrowed for
+        // the pull, and so a tier whose providers are all in flight costs no round trips
+        // at all rather than one per lane.
+        let blocked: Vec<bool> = self.lanes.iter().map(|l| busy.contains(&l.slug)).collect();
+        let mut free = blocked.iter().filter(|b| !**b).count();
+        while free > 0 {
+            free -= 1;
+            let Some(idx) = next_free_lane(&mut self.cursor, &blocked) else {
+                break;
+            };
+            let lane = &self.lanes[idx];
             match take_one(lane).await {
                 Ok(Some(msg)) => {
                     metrics::counter!(
@@ -276,6 +300,27 @@ fn take_turn(cursor: &mut usize, lane_count: usize) -> usize {
     idx
 }
 
+/// The next lane free to be served, advancing the cursor past every provider already in
+/// flight. `None` when they all are.
+///
+/// A blocked lane **spends its turn** on the way past. That is the fairness rule: the provider
+/// is already being served, so consuming its turn is what stops it being offered again ahead
+/// of an idle provider the instant it frees. Leaving the turn unspent would let one fast
+/// provider cycle through the queue while a slower one starved.
+fn next_free_lane(cursor: &mut usize, blocked: &[bool]) -> Option<usize> {
+    let lane_count = blocked.len();
+    if lane_count == 0 {
+        return None;
+    }
+    for _ in 0..lane_count {
+        let idx = take_turn(cursor, lane_count);
+        if !blocked[idx] {
+            return Some(idx);
+        }
+    }
+    None
+}
+
 /// Pull at most one task from a lane, without waiting for one to arrive.
 ///
 /// `fetch` sends a `no_wait` pull request, so an empty lane answers immediately and the
@@ -293,7 +338,7 @@ async fn take_one(lane: &Lane) -> anyhow::Result<Option<BrokerMessage>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{TIERS, take_turn};
+    use super::{TIERS, next_free_lane, take_turn};
     use tankovault_domain::ScanMode;
 
     #[test]
@@ -337,5 +382,49 @@ mod tests {
         // a shorter round must still land inside it.
         let mut cursor = 11;
         assert_eq!(round_order(&mut cursor, 3), vec![2, 0, 1]);
+    }
+
+    #[test]
+    fn a_lane_whose_provider_is_in_flight_is_passed_over() {
+        // Lane 0 is busy, so the round serves lane 1 instead of waiting on it.
+        let mut cursor = 0;
+        assert_eq!(
+            next_free_lane(&mut cursor, &[true, false, false]),
+            Some(1),
+            "a busy provider's lane must not be served"
+        );
+    }
+
+    /// A skipped lane still spends its turn.
+    ///
+    /// The fairness rule, and the one that is silently wrong if it regresses: a provider that
+    /// is already being served must not keep its place in the queue, or it is offered again
+    /// the instant it frees — ahead of a provider that has been idle the whole time. Nothing
+    /// fails loudly if this breaks; one provider simply gets scanned far more often than the
+    /// rest.
+    #[test]
+    fn a_skipped_lane_does_not_keep_its_place_in_the_queue() {
+        let mut cursor = 0;
+        // Lane 0 busy: the round spends 0's turn and serves 1, so the cursor now points at 2.
+        assert_eq!(next_free_lane(&mut cursor, &[true, false, false]), Some(1));
+        assert_eq!(
+            next_free_lane(&mut cursor, &[false, false, false]),
+            Some(2),
+            "the round after a skip must resume past the skipped lane, not at it"
+        );
+    }
+
+    #[test]
+    fn a_tier_with_every_provider_in_flight_serves_nothing() {
+        // Returned without touching the broker: with no free lane there is nowhere to put a
+        // message, and pulling one anyway is the hand-back that burns a delivery count.
+        let mut cursor = 0;
+        assert_eq!(next_free_lane(&mut cursor, &[true, true, true]), None);
+    }
+
+    #[test]
+    fn a_tier_with_no_lanes_serves_nothing() {
+        let mut cursor = 0;
+        assert_eq!(next_free_lane(&mut cursor, &[]), None);
     }
 }

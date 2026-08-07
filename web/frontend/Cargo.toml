@@ -155,6 +155,24 @@ notify-rust = { version = "4", default-features = false, features = [
 # Parses the SSE framing the browser's `EventSource` parses for us. The stream is authenticated
 # by the single-use ticket in the URL, exactly as on web, so this needs no credential handling.
 eventsource-stream = { version = "0.2", optional = true }
+# The OS credential store behind `platform::credential_*`: the Windows Credential Manager, the
+# freedesktop Secret Service over D-Bus, the macOS Keychain — one call site, no `cfg` at the
+# caller. This is what holds the refresh credential between runs; see `api::session_store` for
+# what is written to it and why a file beside `settings.json` was never an option.
+#
+# Default features (`v1`) select the native store per platform and add nothing else. On Linux
+# that resolves to `zbus-secret-service`, which reuses the pure-Rust zbus stack `notify-rust`'s
+# `z-with-tokio` already brings in, rather than linking the `libdbus` C library the alternative
+# backend would need.
+keyring = { version = "4", optional = true }
+# Reads back the `Set-Cookie` lines `api::session_store` persists. Already in this graph at this
+# exact version — it is what `reqwest`'s own cookie store parses with — so this names a crate that
+# is compiled either way rather than adding one. It has no default features.
+#
+# Splitting on `;` and `=` by hand would handle the header this server sends today and quietly
+# mis-read a quoted value. A credential that round-trips wrong signs the reader out on the next
+# start, which is the one failure this whole path exists to prevent.
+cookie = { version = "0.18", optional = true }
 
 # `uuid`'s WebCrypto backend, needed only where `v7` has no OS randomness to reach for. Declared
 # per-target so the desktop build links neither it nor `wasm-bindgen`.
@@ -197,8 +215,10 @@ web = [
 desktop = [
     "dioxus/desktop",
     "dep:chrono",
+    "dep:cookie",
     "dep:directories",
     "dep:eventsource-stream",
+    "dep:keyring",
     "dep:notify-rust",
     "dep:open",
     "dep:rfd",
@@ -211,7 +231,7 @@ desktop = [
     "reqwest/stream",
     # The refresh credential is an httpOnly cookie. On web the browser owns the jar and this is
     # free; a native `reqwest` has no jar at all unless asked, and without one it discards the
-    # cookie and the session dies at the access token's first expiry. See `api::cookie_jar`.
+    # cookie and the session dies at the access token's first expiry. See `api::session_store`.
     "reqwest/cookies",
 ]
 

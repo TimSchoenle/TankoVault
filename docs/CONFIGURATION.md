@@ -444,6 +444,7 @@ that can disagree.
 | `TANKOVAULT_WORKER__CHALLENGE_SOLVER_ENDPOINT` | `http://challenge-solver:8090` | |
 | `TANKOVAULT_WORKER__MAX_CATALOG_PAGES` | `20000` | A runaway-paginator backstop, not a budget: real termination is the adapter's `has_next` marker. Some catalogues legitimately paginate into the thousands, so a value near a real catalogue size **silently truncates it**. |
 | `TANKOVAULT_WORKER__PROVIDER_REFRESH_SECS` | `60` | How often the round-robin queue re-reads the provider list. A newly created provider does not start scanning until its lane opens on the next refresh. |
+| `TANKOVAULT_WORKER__MAX_CONCURRENT_PROVIDERS` | `4` | How many providers this worker scans at once. A worker runs **at most one task per provider**, so this is both the task concurrency and the count of distinct providers in flight. Crawl politeness is unaffected — `rps`/`concurrency` are enforced by a fetch stack cached per provider, which every task for that provider shares — but `DATABASE__MAX_CONNECTIONS` is not: size the pool for this many concurrent scans or tasks queue on `acquire` and surface as timeouts that read like a database fault. `0` is clamped to `1`, because it would otherwise deadlock the consumer loop rather than disable it; use `providers.active` to stop scanning. |
 
 ### `notifier`
 

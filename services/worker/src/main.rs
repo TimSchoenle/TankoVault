@@ -13,6 +13,7 @@ mod queue;
 use engine::{Engine, EngineSettings};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 use tankovault_bus::Bus;
@@ -22,6 +23,7 @@ use tankovault_fetch::{HttpChallengeSolver, InMemorySessionStore, SessionStore};
 use tankovault_service::health::PostgresCheck;
 use tankovault_service::{CancellationToken, Health, HttpStack, MetricsRegistry};
 use tankovault_solver::ChallengeSolver;
+use tokio::task::JoinSet;
 
 #[derive(Debug, Deserialize)]
 struct Config {
@@ -78,6 +80,16 @@ struct WorkerConfig {
     /// a minute costs nothing and keeps the query off the hot path.
     #[serde(default = "default_provider_refresh_secs")]
     provider_refresh_secs: u64,
+    /// How many providers this worker scans at once.
+    ///
+    /// A worker runs at most one task per provider, so this is both the task concurrency and
+    /// the count of distinct providers in flight. Crawl politeness is unaffected: `rps` and
+    /// `concurrency` are enforced by a fetch stack cached per provider, which every task for
+    /// that provider shares. The database pool is *not* — size `database.max_connections`
+    /// for this many concurrent scans, or tasks queue on `acquire` and report as timeouts
+    /// that read like a database fault.
+    #[serde(default = "default_max_concurrent_providers")]
+    max_concurrent_providers: usize,
 }
 
 impl Default for WorkerConfig {
@@ -86,7 +98,20 @@ impl Default for WorkerConfig {
             challenge_solver_endpoint: default_solver_endpoint(),
             max_catalog_pages: default_max_pages(),
             provider_refresh_secs: default_provider_refresh_secs(),
+            max_concurrent_providers: default_max_concurrent_providers(),
         }
+    }
+}
+
+impl WorkerConfig {
+    /// The concurrency limit, floored at one.
+    ///
+    /// Zero does not disable scanning, it deadlocks: the loop would never be under the limit,
+    /// so it would never claim a task and never spawn one to get back under it. The worker
+    /// would sit idle against a full queue with nothing in the logs to say why. `active` on
+    /// the provider is how scanning is turned off.
+    fn max_concurrent_providers(&self) -> usize {
+        self.max_concurrent_providers.max(1)
     }
 }
 
@@ -95,6 +120,12 @@ fn default_solver_endpoint() -> String {
 }
 fn default_provider_refresh_secs() -> u64 {
     60
+}
+fn default_max_concurrent_providers() -> usize {
+    // Providers, not requests: each still crawls under its own `rps`/`concurrency` budget.
+    // Four is sized to keep the blocking pool (one parse per in-flight task) and the database
+    // pool comfortable on the shipped container, not to any provider-side limit.
+    4
 }
 fn default_max_pages() -> u32 {
     // Purely a runaway-paginator backstop (real termination is the adapter's `has_next`
@@ -311,14 +342,21 @@ async fn run_inline(engine: &Engine, slug: &str, mode: &str) -> anyhow::Result<(
 ///
 /// Tasks are taken from the round-robin [`queue::FairQueue`] rather than straight off a
 /// wildcard consumer, so which provider runs next is a scheduling decision instead of
-/// whatever the stream holds at its head. Everything below the pull is unchanged: one task
-/// at a time, per-provider rate limits still governing the fetch stack.
+/// whatever the stream holds at its head.
 ///
-/// Stops between tasks on shutdown rather than being severed mid-scan. A task killed
-/// part-way through stays claimed until its visibility timeout expires, so draining
-/// cleanly is what keeps a rolling restart from stalling every in-flight run.
+/// Several tasks run at once, but **at most one per provider** — the ceiling is
+/// `max_concurrent_providers` distinct providers in flight. That cap is doing more work than
+/// it looks: a `scan_runs` row belongs to exactly one provider, so one task per provider
+/// keeps every task of a run serialised, and the run's task accounting and the `CatalogPage`
+/// fan-out ordering stay correct without any locking. Raising it to more than one task per
+/// provider would forfeit that, and buy almost nothing — tasks for one provider share a
+/// cached fetch stack, so they would queue on the same semaphore anyway.
+///
+/// Stops claiming on shutdown and then drains what is already running, rather than severing
+/// it. A task killed part-way through stays claimed until its visibility timeout expires, so
+/// draining cleanly is what keeps a rolling restart from stalling every in-flight run.
 async fn run_consumer(
-    engine: &Engine,
+    engine: &Arc<Engine>,
     cfg: &WorkerConfig,
     shutdown: tokio_util::sync::CancellationToken,
 ) -> anyhow::Result<()> {
@@ -333,92 +371,175 @@ async fn run_consumer(
         Duration::from_secs(cfg.provider_refresh_secs),
     )
     .await?;
-    tracing::info!(worker_id = %engine.worker_id, "worker consuming scan tasks");
+    let limit = cfg.max_concurrent_providers();
+    tracing::info!(
+        worker_id = %engine.worker_id,
+        max_concurrent_providers = limit,
+        "worker consuming scan tasks"
+    );
 
-    while let Some(msg) = queue.next_task(&shutdown).await {
-        match serde_json::from_slice::<ScanTaskMessage>(&msg.payload) {
-            Ok(task) => {
-                // Wrapped here rather than inside the engine: ack lifetime belongs to
-                // whoever owns the message, and doing it at the loop means *every* task
-                // kind is covered — a 20k-entry catalogue page today, whatever runs long
-                // tomorrow — instead of each slow path having to remember.
-                let started = std::time::Instant::now();
-                let result = tankovault_bus::with_ack_heartbeat(
-                    &msg,
-                    tankovault_bus::TASK_ACK_HEARTBEAT,
-                    handle_task(engine, &task),
-                )
-                .await;
-                metrics::histogram!(
-                    "scan_task_duration_seconds",
-                    "provider" => task.provider_slug.clone(),
-                    "scan" => task.mode.as_str(),
-                    "kind" => task.kind.as_str(),
-                )
-                .record(started.elapsed().as_secs_f64());
-                if let Err(e) = result {
-                    let deliveries = tankovault_bus::delivery_count(&msg);
-                    if is_retryable(&e) && deliveries < MAX_TASK_DELIVERIES {
-                        let delay = retry_delay(deliveries);
-                        log_task_failure(
-                            &task,
-                            deliveries,
-                            &e,
-                            &format!(
-                                "requeued; delivery {} of {MAX_TASK_DELIVERIES} follows in {}s",
-                                deliveries + 1,
-                                delay.as_secs()
-                            ),
-                        );
-                        if let Err(e) = tankovault_bus::retry_later(&msg, delay).await {
-                            tracing::warn!(
-                                task_id = %task.task_id,
-                                error = %e,
-                                "could not requeue task; it will be redelivered when the ack \
-                                 deadline lapses"
-                            );
-                        }
-                        settled(&task, "requeued");
-                        // Left unsettled *for the run*: it stays open for this task, and the
-                        // idempotent writes make the re-run a no-op for whatever it did do.
-                        // The counter still moves, because "retrying" is the disposition an
-                        // operator needs separated from "threw it away".
-                        continue;
-                    }
-                    let next = if is_retryable(&e) {
-                        format!(
-                            "gave up after {MAX_TASK_DELIVERIES} deliveries; recorded as failed \
-                             and the run continues without it"
-                        )
-                    } else {
-                        "will fail identically on replay; recorded as failed and the run \
-                         continues without it"
-                            .to_owned()
-                    };
-                    log_task_failure(&task, deliveries, &e, &next);
-                    settled(&task, "failed");
-                    let _ = tankovault_db::repo::scans::fail_task(
-                        &engine.pool,
-                        task.task_id,
-                        &e.to_string(),
-                    )
-                    .await;
-                } else {
-                    settled(&task, "completed");
-                }
-                // Republish progress after the task settles (done or failed) so the
-                // control-plane aggregator can finalise the run and the console can
-                // relay live progress over NATS (design §12).
-                engine.report_progress(task.run_id).await;
+    let mut inflight: JoinSet<()> = JoinSet::new();
+    // Which provider each in-flight task is scanning, keyed by task rather than carried back
+    // as the task's return value — see [`release`].
+    let mut slugs: HashMap<tokio::task::Id, String> = HashMap::new();
+    let mut busy: HashSet<String> = HashSet::new();
+
+    loop {
+        while let Some(finished) = inflight.try_join_next_with_id() {
+            release(finished, &mut slugs, &mut busy);
+        }
+        if inflight.len() >= limit {
+            // Wait for a slot rather than spinning the poll loop against a full set.
+            if let Some(finished) = inflight.join_next_with_id().await {
+                release(finished, &mut slugs, &mut busy);
             }
-            Err(e) => tracing::warn!(error = %e, "undecodable task message; dropping"),
+            continue;
         }
-        if let Err(e) = msg.ack().await {
-            tracing::warn!(error = %e, "failed to ack message");
-        }
+
+        let Some(msg) = queue.next_task(&shutdown, &busy).await else {
+            break;
+        };
+        let task = match serde_json::from_slice::<ScanTaskMessage>(&msg.payload) {
+            Ok(task) => task,
+            Err(e) => {
+                tracing::warn!(error = %e, "undecodable task message; dropping");
+                if let Err(e) = msg.ack().await {
+                    tracing::warn!(error = %e, "failed to ack message");
+                }
+                continue;
+            }
+        };
+
+        let slug = task.provider_slug.clone();
+        busy.insert(slug.clone());
+        let id = inflight.spawn(run_task(Arc::clone(engine), msg, task)).id();
+        slugs.insert(id, slug);
+        report_inflight(inflight.len());
     }
+
+    if !inflight.is_empty() {
+        tracing::info!(
+            inflight = inflight.len(),
+            "shutdown requested; draining in-flight scan tasks"
+        );
+    }
+    while let Some(finished) = inflight.join_next_with_id().await {
+        release(finished, &mut slugs, &mut busy);
+    }
+    report_inflight(0);
     tracing::info!(worker_id = %engine.worker_id, "worker stopping");
     Ok(())
+}
+
+/// Report how many scan tasks are in flight.
+///
+/// Widened through `u32` rather than cast straight to `f64`: the direct cast is a pedantic
+/// clippy failure, and the count is bounded by `max_concurrent_providers`, so the saturation
+/// is unreachable rather than merely unlikely.
+fn report_inflight(count: usize) {
+    metrics::gauge!("scan_tasks_inflight").set(f64::from(u32::try_from(count).unwrap_or(u32::MAX)));
+}
+
+/// Free the provider slot a finished task held.
+///
+/// Keyed on [`tokio::task::Id`] rather than returned by the task itself, because a panicking
+/// task returns nothing — `JoinError` still carries its id, so the slot is released on that
+/// path too. Had the slug ridden back as the task's output, a panic would leave its provider
+/// in `busy` forever, and a provider in `busy` is skipped by every future poll: one panic
+/// would silently retire that provider for the life of the process, with only the panic
+/// itself in the log and nothing connecting the two.
+fn release(
+    finished: Result<(tokio::task::Id, ()), tokio::task::JoinError>,
+    slugs: &mut HashMap<tokio::task::Id, String>,
+    busy: &mut HashSet<String>,
+) {
+    let id = match &finished {
+        Ok((id, ())) => *id,
+        Err(e) => e.id(),
+    };
+    if let Some(slug) = slugs.remove(&id) {
+        busy.remove(&slug);
+    }
+    if let Err(e) = finished {
+        tracing::error!(error = %e, "scan task panicked; released its provider slot");
+    }
+}
+
+/// Run one claimed task to a terminal disposition, then settle its message.
+///
+/// Owns its message for the whole lifetime — heartbeat, retry decision and ack all live here,
+/// so concurrent tasks cannot settle each other's messages.
+async fn run_task(engine: Arc<Engine>, msg: tankovault_bus::BrokerMessage, task: ScanTaskMessage) {
+    // Wrapped here rather than inside the engine: ack lifetime belongs to whoever owns the
+    // message, and doing it at this level means *every* task kind is covered — a 20k-entry
+    // catalogue page today, whatever runs long tomorrow — instead of each slow path having to
+    // remember.
+    let started = std::time::Instant::now();
+    let result = tankovault_bus::with_ack_heartbeat(
+        &msg,
+        tankovault_bus::TASK_ACK_HEARTBEAT,
+        handle_task(&engine, &task),
+    )
+    .await;
+    metrics::histogram!(
+        "scan_task_duration_seconds",
+        "provider" => task.provider_slug.clone(),
+        "scan" => task.mode.as_str(),
+        "kind" => task.kind.as_str(),
+    )
+    .record(started.elapsed().as_secs_f64());
+
+    if let Err(e) = result {
+        let deliveries = tankovault_bus::delivery_count(&msg);
+        if is_retryable(&e) && deliveries < MAX_TASK_DELIVERIES {
+            let delay = retry_delay(deliveries);
+            log_task_failure(
+                &task,
+                deliveries,
+                &e,
+                &format!(
+                    "requeued; delivery {} of {MAX_TASK_DELIVERIES} follows in {}s",
+                    deliveries + 1,
+                    delay.as_secs()
+                ),
+            );
+            if let Err(e) = tankovault_bus::retry_later(&msg, delay).await {
+                tracing::warn!(
+                    task_id = %task.task_id,
+                    error = %e,
+                    "could not requeue task; it will be redelivered when the ack deadline lapses"
+                );
+            }
+            settled(&task, "requeued");
+            // Returns without acking or reporting progress: `retry_later` has already settled
+            // the message, and the run stays open *for this task* — the idempotent writes make
+            // the re-run a no-op for whatever it did do. The counter still moves, because
+            // "retrying" is the disposition an operator needs separated from "threw it away".
+            return;
+        }
+        let next = if is_retryable(&e) {
+            format!(
+                "gave up after {MAX_TASK_DELIVERIES} deliveries; recorded as failed and the run \
+                 continues without it"
+            )
+        } else {
+            "will fail identically on replay; recorded as failed and the run continues without it"
+                .to_owned()
+        };
+        log_task_failure(&task, deliveries, &e, &next);
+        settled(&task, "failed");
+        let _ =
+            tankovault_db::repo::scans::fail_task(&engine.pool, task.task_id, &e.to_string()).await;
+    } else {
+        settled(&task, "completed");
+    }
+    // Republish progress after the task settles (done or failed) so the control-plane
+    // aggregator can finalise the run and the console can relay live progress over NATS
+    // (design §12).
+    engine.report_progress(task.run_id).await;
+    if let Err(e) = msg.ack().await {
+        tracing::warn!(error = %e, "failed to ack message");
+    }
 }
 
 /// Deliveries a scan task gets before its failure is treated as final.
@@ -538,6 +659,79 @@ async fn handle_task(engine: &Engine, task: &ScanTaskMessage) -> anyhow::Result<
 mod tests {
     use super::*;
     use tankovault_domain::{ProviderId, ScanMode, ScanRunId, ScanTaskId};
+
+    /// Zero concurrency must not be honoured literally.
+    ///
+    /// It reads like "turn scanning off" but it deadlocks: the loop is never under the limit,
+    /// so it never claims a task, so it never spawns one to get back under it. The worker sits
+    /// idle against a full queue and nothing in the logs says why. Turning a provider off is
+    /// what `providers.active` is for.
+    #[test]
+    fn a_concurrency_of_zero_is_clamped_rather_than_obeyed() {
+        let cfg = WorkerConfig {
+            max_concurrent_providers: 0,
+            ..WorkerConfig::default()
+        };
+        assert_eq!(cfg.max_concurrent_providers(), 1);
+        assert!(
+            WorkerConfig::default().max_concurrent_providers() >= 1,
+            "the shipped default must be able to run at least one task"
+        );
+    }
+
+    /// A panicking task must release its provider, or that provider is never scanned again.
+    ///
+    /// The slug is tracked by `tokio::task::Id` precisely because a panicked task returns no
+    /// value. Had it ridden back as the task's output, this path would leave the provider in
+    /// `busy` forever — and `busy` is consulted before every pull, so the provider would be
+    /// skipped silently for the life of the process, with only an unattributed panic in the
+    /// log. This pins the recovery.
+    #[tokio::test]
+    async fn a_panicked_task_releases_its_provider_slot() {
+        let mut inflight: JoinSet<()> = JoinSet::new();
+        let mut slugs: HashMap<tokio::task::Id, String> = HashMap::new();
+        let mut busy: HashSet<String> = HashSet::new();
+
+        let id = inflight
+            .spawn(async { panic!("adapter blew up mid-scan") })
+            .id();
+        slugs.insert(id, "kunmanga".to_owned());
+        busy.insert("kunmanga".to_owned());
+
+        let finished = inflight
+            .join_next_with_id()
+            .await
+            .expect("the task was spawned, so it must be joinable");
+        assert!(
+            finished.is_err(),
+            "the task panicked, so joining must error"
+        );
+        release(finished, &mut slugs, &mut busy);
+
+        assert!(
+            !busy.contains("kunmanga"),
+            "a panicked task left its provider marked busy; it would never be polled again"
+        );
+        assert!(slugs.is_empty(), "the slug map must not leak entries");
+    }
+
+    /// The ordinary path frees the slot too.
+    #[tokio::test]
+    async fn a_completed_task_releases_its_provider_slot() {
+        let mut inflight: JoinSet<()> = JoinSet::new();
+        let mut slugs: HashMap<tokio::task::Id, String> = HashMap::new();
+        let mut busy: HashSet<String> = HashSet::new();
+
+        let id = inflight.spawn(async {}).id();
+        slugs.insert(id, "demonicscans".to_owned());
+        busy.insert("demonicscans".to_owned());
+
+        let finished = inflight.join_next_with_id().await.expect("joinable");
+        release(finished, &mut slugs, &mut busy);
+
+        assert!(!busy.contains("demonicscans"));
+        assert!(slugs.is_empty());
+    }
 
     fn task(kind: TaskKind, target: serde_json::Value) -> ScanTaskMessage {
         ScanTaskMessage {

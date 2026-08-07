@@ -14,11 +14,18 @@ They are **mutually exclusive**; `src/platform/mod.rs` says so to the compiler, 
 alternative failure is a wall of unrelated resolution errors. Everything either build needs from
 the system it runs on is behind `src/platform`, and nothing under `src/views` knows which it is.
 
-Two differences are not incidental and are documented where they live:
+Three differences are not incidental and are documented where they live:
 
 - **There is no served origin on desktop.** `src/views/connect.rs` asks for one on first run and
   stores it; `platform::origin()` answers from there. The access token still lives in memory
   only — the settings file holds the server URL and the appearance choices, never a credential.
+- **The refresh cookie is kept in the OS credential store, not in a file.** A native `reqwest`
+  has no cookie jar unless asked for one, and one that lives only in memory ends the session
+  every time the app closes. `src/api/session_store.rs` mirrors the cookie into the Windows
+  Credential Manager or the freedesktop Secret Service instead — encrypted at rest and scoped to
+  the reader's login, which is what the browser gives the web build for free and a file in the
+  config directory would not give at all. Where no credential store is available the calls are
+  silent no-ops and the old close-signs-you-out behaviour returns.
 - **Passkeys go through Windows Hello on Windows, and are unavailable elsewhere.** The
   origin rule that blocks a webview ceremony — `rp.id` must be a registrable suffix of the
   *document's* origin — is the browser's, and a wry webview serves this app from its own custom

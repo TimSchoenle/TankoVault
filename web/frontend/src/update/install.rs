@@ -402,14 +402,15 @@ fn verify_file(path: &Path, target: &Target) -> Result<(), &'static str> {
     let mut file = fs::File::open(path).map_err(|_| "settings.update.error.staging")?;
     let mut hasher = sha2::Sha256::new();
     // Read by hand rather than `io::copy`: `digest` 0.11 dropped the `io::Write` impl on hashers.
-    // `Interrupted` is retried for the same reason `io::copy` retries it — a signal arriving
-    // mid-read is not a failed verification.
-    let mut buffer = [0_u8; 64 * 1024];
+    // `Interrupted` is ignored for the same reason `io::copy` retries it — a signal arriving
+    // mid-read is not a failed verification. Heap-allocated because a buffer this size is over
+    // the crate's stack-array ceiling, and it is read once per launch over a ~100 MB installer.
+    let mut buffer = vec![0_u8; 64 * 1024];
     loop {
         match file.read(&mut buffer) {
             Ok(0) => break,
             Ok(read) => hasher.update(&buffer[..read]),
-            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
             Err(_) => return Err("settings.update.error.staging"),
         }
     }

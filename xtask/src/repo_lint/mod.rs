@@ -57,11 +57,12 @@ pub(crate) fn run(root: &Path) -> anyhow::Result<()> {
     findings.extend(workflows::concurrency_groups_hold_one_workflow(root)?);
     findings.extend(workflows::the_oidc_token_carries_no_newline(root)?);
     findings.extend(workflows::the_build_epoch_is_one_constant(root)?);
+    findings.extend(workflows::registry_calls_in_publish_retry(root)?);
     findings.extend(floors::coverage_floors_parse(root)?);
     findings.extend(gitattributes::generated_artefacts_check_out_as_lf(root)?);
 
     if findings.is_empty() {
-        println!("repo-lint: 17 rules, no violations");
+        println!("repo-lint: 18 rules, no violations");
         return Ok(());
     }
 

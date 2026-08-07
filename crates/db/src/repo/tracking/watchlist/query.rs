@@ -1,7 +1,7 @@
 //! The query vocabulary the Watchlist board is driven by — sort, order, filter, cursor —
 //! and the view types a page is assembled into.
 
-use tankovault_domain::{ProviderState, SeriesId, WatchStatus};
+use tankovault_domain::{ProviderState, SeriesId, SeriesSourceId, WatchStatus};
 use time::OffsetDateTime;
 
 /// A watchlist row enriched with the series title + cover, the user's progress, and the
@@ -51,10 +51,12 @@ pub struct WatchlistCard {
     pub latest_chapter_at: Option<OffsetDateTime>,
     /// Display name of the provider this series is primarily carried by, for the row submeta.
     ///
-    /// There is no per-user preferred source yet (the Series view notes the same gap), so
-    /// "preferred" is derived: the source with the most chapters, tie-broken by the most
-    /// recent scan and then the provider slug so the choice is stable between requests rather
-    /// than whatever the planner emitted first.
+    /// Derived, and deliberately still user-agnostic: the source with the most chapters,
+    /// tie-broken by the most recent scan and then the provider slug so the choice is stable
+    /// between requests rather than whatever the planner emitted first. The reader's own
+    /// preference — [`Self::pinned_source_id`] and their global provider order — is resolved
+    /// where a source is *opened*, not here; folding it into this statement would put a
+    /// per-user join on the ledger's hot path for a column that only labels a row.
     pub preferred_source_name: Option<String>,
     /// Distinct providers carrying this series.
     pub source_count: i64,
@@ -68,6 +70,13 @@ pub struct WatchlistCard {
     pub source_degraded: bool,
     /// Whether this series is opted out of external sync (design v2 §A.5).
     pub sync_excluded: bool,
+    /// The source this reader pinned for this series, if any.
+    ///
+    /// The reader's explicit override, unlike the derived [`Self::preferred_source_name`]
+    /// beside it: nothing in this crate resolves the two against each other, because the pin
+    /// is honoured where a source is *opened* (the Series view) and the derived name is what
+    /// the ledger row *displays*. Cleared by the schema when the pinned source goes away.
+    pub pinned_source_id: Option<SeriesSourceId>,
     /// Every provider carrying this series, preferred first.
     ///
     /// Empty on [`watchlist_page`](super::watchlist_page) until `attach_sources` has run — it is a second statement

@@ -49,13 +49,14 @@
 #![cfg(feature = "integration")]
 
 use tankovault_db::repo::tracking::{
-    ReadProgress, WatchlistFilter, WatchlistPage, continue_reading, feed, is_sync_excluded,
-    me_stats, progress_get_full, progress_mark_read, progress_mark_unread, progress_set,
-    set_sync_excluded, watchers_for_series, watchlist_page, watchlist_upsert,
+    PinOutcome, ReadProgress, WatchlistFilter, WatchlistPage, continue_reading, feed,
+    is_sync_excluded, me_stats, progress_get_full, progress_mark_read, progress_mark_unread,
+    progress_set, set_sync_excluded, watchers_for_series, watchlist_card, watchlist_page,
+    watchlist_set_pinned_source, watchlist_upsert,
 };
 use tankovault_db::repo::users::set_notification_prefs;
 use tankovault_domain::{
-    NotificationKind, NotificationPrefs, ProviderId, SeriesId, UserId, WatchStatus,
+    NotificationKind, NotificationPrefs, ProviderId, SeriesId, SeriesSourceId, UserId, WatchStatus,
 };
 use tankovault_test_support::{TestDb, seed};
 
@@ -1281,4 +1282,119 @@ async fn a_blank_watchlist_query_is_not_a_filter() {
         assert_eq!(page.total, 3, "term={term:?}");
         assert_eq!(page.counts.all, 3, "term={term:?}");
     }
+}
+
+// ---------------------------------------------------------------------------
+// The per-series source pin
+// ---------------------------------------------------------------------------
+
+/// The `series_sources` id of a series' only source.
+async fn only_source(db: &TestDb, series_id: SeriesId) -> SeriesSourceId {
+    let id: uuid::Uuid = sqlx::query_scalar("SELECT id FROM series_sources WHERE series_id = $1")
+        .bind(series_id.as_uuid())
+        .fetch_one(&db.pool)
+        .await
+        .expect("the seeded series has a source");
+    SeriesSourceId::from_uuid(id)
+}
+
+/// A pin must be refused when the source belongs to a different series.
+///
+/// `series_sources` ids are global, and the foreign key only says "this row exists" — so without
+/// the `EXISTS` that scopes the update to `$2`, a client could point one series' entry at another
+/// series' source. Nothing downstream re-checks it: the pin is taken as the resolved answer, so
+/// every `Open` on the screen would send the reader to a source for a different work. The failure
+/// is silent, which is why it is pinned here rather than left to the handler.
+#[tokio::test]
+async fn a_pin_cannot_point_at_another_series_source() {
+    let db = TestDb::spawn().await;
+    let user = seed::user(&db, "pinner")
+        .email("pinner@example.test")
+        .create()
+        .await;
+    let provider = seed::provider(&db, "pin-provider").create().await;
+    let mine = a_series(&db, provider, "Mine", &[1.0]).await;
+    let theirs = a_series(&db, provider, "Theirs", &[1.0]).await;
+    let foreign = only_source(&db, theirs).await;
+
+    watchlist_upsert(&db.pool, user, mine, WatchStatus::Reading, true)
+        .await
+        .expect("track the series");
+
+    let outcome = watchlist_set_pinned_source(&db.pool, user, mine, Some(foreign))
+        .await
+        .expect("the write itself succeeds");
+    assert_eq!(
+        outcome,
+        PinOutcome::ForeignSource,
+        "a source carrying a different series is refused, not stored"
+    );
+
+    let own = only_source(&db, mine).await;
+    assert_eq!(
+        watchlist_set_pinned_source(&db.pool, user, mine, Some(own))
+            .await
+            .expect("pin the series' own source"),
+        PinOutcome::Written,
+    );
+}
+
+/// Pinning writes to the watchlist entry, so an untracked series has to be distinguishable from
+/// a rejected source — the API answers `404` for one and `400` for the other, and it can only do
+/// that if this layer tells them apart.
+#[tokio::test]
+async fn pinning_an_untracked_series_is_reported_as_untracked() {
+    let db = TestDb::spawn().await;
+    let user = seed::user(&db, "untracked-pinner")
+        .email("untracked-pinner@example.test")
+        .create()
+        .await;
+    let provider = seed::provider(&db, "untracked-provider").create().await;
+    let series = a_series(&db, provider, "Not tracked", &[1.0]).await;
+    let source = only_source(&db, series).await;
+
+    assert_eq!(
+        watchlist_set_pinned_source(&db.pool, user, series, Some(source))
+            .await
+            .expect("the write itself succeeds"),
+        PinOutcome::NotTracked,
+    );
+}
+
+/// A pin whose source is retired — by a merge, or a provider dropping the entry — must fall back
+/// to the reader's global order rather than leaving the entry pointing at nothing. The schema
+/// does it with `ON DELETE SET NULL`; this is what stops a later migration from "tidying" that
+/// into a cascade, which would delete the whole watchlist entry instead.
+#[tokio::test]
+async fn retiring_the_pinned_source_clears_the_pin_and_keeps_the_entry() {
+    let db = TestDb::spawn().await;
+    let user = seed::user(&db, "merge-pinner")
+        .email("merge-pinner@example.test")
+        .create()
+        .await;
+    let provider = seed::provider(&db, "merge-provider").create().await;
+    let series = a_series(&db, provider, "Merged away", &[1.0]).await;
+    let source = only_source(&db, series).await;
+
+    watchlist_upsert(&db.pool, user, series, WatchStatus::Reading, true)
+        .await
+        .expect("track the series");
+    watchlist_set_pinned_source(&db.pool, user, series, Some(source))
+        .await
+        .expect("pin the source");
+
+    sqlx::query("DELETE FROM series_sources WHERE id = $1")
+        .bind(source.as_uuid())
+        .execute(&db.pool)
+        .await
+        .expect("retire the source");
+
+    let card = watchlist_card(&db.pool, user, series)
+        .await
+        .expect("read the card")
+        .expect("the entry survives its pinned source");
+    assert_eq!(
+        card.pinned_source_id, None,
+        "the pin is cleared, not dangling"
+    );
 }

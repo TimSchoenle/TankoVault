@@ -9,6 +9,7 @@ mod passkeys;
 mod privacy;
 mod profile;
 mod security;
+mod sources;
 mod sync;
 mod taste;
 
@@ -26,6 +27,7 @@ use dioxus::prelude::*;
 enum Panel {
     Profile,
     Appearance,
+    Sources,
     Content,
     Taste,
     Security,
@@ -39,6 +41,7 @@ impl TabKind for Panel {
         &[
             Self::Profile,
             Self::Appearance,
+            Self::Sources,
             Self::Content,
             Self::Taste,
             Self::Security,
@@ -53,6 +56,7 @@ impl TabKind for Panel {
         match self {
             Self::Profile => "account.tab.profile",
             Self::Appearance => "account.tab.appearance",
+            Self::Sources => "account.tab.sources",
             Self::Content => "account.tab.content",
             Self::Taste => "account.tab.taste",
             Self::Security => "account.tab.security",
@@ -67,7 +71,10 @@ impl Panel {
     /// Whether this deployment offers the panel at all.
     fn is_visible(self, caps: &CapabilitySet) -> bool {
         match self {
-            Self::Appearance => true,
+            // Neither has a flag behind it: appearance is device-local, and the source order is
+            // ungated on the server because it only shapes outbound links — a reader who cannot
+            // change it is worse off than one who can.
+            Self::Appearance | Self::Sources => true,
             // Deliberately *not* gated on `CatalogueAdultContent`. The panel explains that the
             // deployment has it switched off; hiding it instead would mean an operator turning
             // the flag on silently activates opt-ins nobody has been able to review.
@@ -150,6 +157,7 @@ pub(crate) fn Account() -> Element {
         match current {
             Panel::Profile => rsx! { profile::ProfilePanel { name: name.clone(), tier: tier.clone() } },
             Panel::Appearance => rsx! { appearance::AppearancePanel {} },
+            Panel::Sources => rsx! { sources::SourcesPanel {} },
             Panel::Content => rsx! { content::ContentPanel {} },
             Panel::Taste => rsx! { taste::TastePanel {} },
             Panel::Security => rsx! { security::SecurityPanel {} },

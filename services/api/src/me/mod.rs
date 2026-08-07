@@ -15,6 +15,7 @@ mod passkeys;
 mod privacy;
 mod progress;
 mod recommendations;
+mod source_prefs;
 mod sync;
 mod watchlist;
 
@@ -27,5 +28,6 @@ pub use passkeys::*;
 pub use privacy::*;
 pub use progress::*;
 pub use recommendations::*;
+pub use source_prefs::*;
 pub use sync::*;
 pub use watchlist::*;

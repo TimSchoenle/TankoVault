@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use tankovault_db::repo::tracking::{
     BULK_ID_LIMIT, WatchlistCursor, WatchlistFilter, WatchlistOrder, WatchlistSort,
 };
-use tankovault_domain::{SeriesId, WatchStatus};
+use tankovault_domain::{SeriesId, SeriesSourceId, WatchStatus};
 use time::{Duration, OffsetDateTime};
 use utoipa::{IntoParams, ToSchema};
 
@@ -65,6 +65,16 @@ pub struct WatchlistItem {
     pub source_degraded: bool,
     /// Whether this series is opted out of external sync (design v2 §A.5).
     pub sync_excluded: bool,
+    /// The source this reader pinned for this series, or `null` to follow the global order.
+    ///
+    /// The reader's explicit choice, and not the same question as
+    /// [`Self::preferred_source_name`], which stays the derived richest source the ledger row
+    /// displays. Set through `PUT /v1/me/watchlist/{series_id}/source-pin`.
+    // A bare `Uuid`, not `Option<SeriesSourceId>`: an optional newtype publishes as
+    // `oneOf [null, $ref]`, which progenitor turns into a `Variant0/Variant1` wrapper enum with
+    // no conversion a caller can use. Inline `{type: [string, null], format: uuid}` costs the
+    // client one `SeriesSourceId::from(uuid)` instead.
+    pub pinned_source_id: Option<uuid::Uuid>,
 }
 
 /// The chapter a `Continue` button opens, and what the ledger's `Next unread` column shows.
@@ -125,6 +135,7 @@ impl From<tankovault_db::repo::tracking::WatchlistCard> for WatchlistItem {
             source_count: c.source_count,
             source_degraded: c.source_degraded,
             sync_excluded: c.sync_excluded,
+            pinned_source_id: c.pinned_source_id.map(SeriesSourceId::as_uuid),
         }
     }
 }
@@ -501,6 +512,90 @@ pub async fn put_watchlist(
     .await?;
     spawn_targeted_push(&state, user.user_id, series_id);
     Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+/// The source a reader wants a series to open on.
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct SourcePin {
+    /// A `series_sources` id belonging to this series; anything else is a `400`.
+    pub series_source_id: SeriesSourceId,
+}
+
+/// Pin a series' source
+///
+/// Overrides the reader's global provider order for this one series. A separate resource from
+/// the entry itself rather than a field on [`WatchlistUpsert`]: that body is a full replacement,
+/// so a reader toggling `notify` would silently drop their pin.
+#[utoipa::path(
+    put,
+    path = "/v1/me/watchlist/{series_id}/source-pin",
+    tag = ME_WATCHLIST_TAG,
+    params(("series_id" = SeriesId, Path, description = "Series id")),
+    request_body = SourcePin,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Acknowledged", body = serde_json::Value, example = json!({"ok": true})),
+        (status = 400, description = "the source does not belong to this series", body = crate::error::ProblemDetails),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 404, description = "the caller does not track this series", body = crate::error::ProblemDetails),
+    )
+)]
+pub async fn put_source_pin(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(series_id): Path<SeriesId>,
+    Json(body): Json<SourcePin>,
+) -> ApiResult<Json<serde_json::Value>> {
+    set_pin(&state, user, series_id, Some(body.series_source_id)).await
+}
+
+/// Clear a series' source pin
+///
+/// Idempotent: clearing a pin that is not set is a `200`, because the reader's intent — "stop
+/// overriding for this series" — is satisfied either way.
+#[utoipa::path(
+    delete,
+    path = "/v1/me/watchlist/{series_id}/source-pin",
+    tag = ME_WATCHLIST_TAG,
+    params(("series_id" = SeriesId, Path, description = "Series id")),
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Acknowledged", body = serde_json::Value, example = json!({"ok": true})),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 404, description = "the caller does not track this series", body = crate::error::ProblemDetails),
+    )
+)]
+pub async fn delete_source_pin(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(series_id): Path<SeriesId>,
+) -> ApiResult<Json<serde_json::Value>> {
+    set_pin(&state, user, series_id, None).await
+}
+
+/// Both pin writes, so the outcome mapping lives in one place.
+async fn set_pin(
+    state: &AppState,
+    user: AuthUser,
+    series_id: SeriesId,
+    source_id: Option<SeriesSourceId>,
+) -> ApiResult<Json<serde_json::Value>> {
+    use tankovault_db::repo::tracking::PinOutcome;
+
+    match tankovault_db::repo::tracking::watchlist_set_pinned_source(
+        &state.pool,
+        user.user_id,
+        series_id,
+        source_id,
+    )
+    .await?
+    {
+        PinOutcome::Written => Ok(Json(serde_json::json!({ "ok": true }))),
+        PinOutcome::NotTracked => Err(ApiError::NotFound),
+        PinOutcome::ForeignSource => Err(ApiError::BadRequest(
+            "series_source_id does not belong to this series".into(),
+        )),
+    }
 }
 
 /// Remove a watchlist entry

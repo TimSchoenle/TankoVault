@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (SELECT 1 FROM watchlist_entries WHERE user_id = $1 AND series_id = $2) AS \"tracked!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "tracked!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "e75e787ebc53a72c38b8fea3eda92297f9569188b420c846a5317cee2c7cfa92"
+}

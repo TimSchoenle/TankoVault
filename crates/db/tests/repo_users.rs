@@ -1210,3 +1210,89 @@ async fn only_a_completed_sign_in_advances_last_login() {
         .await
         .expect("touching an unknown id is a no-op, not an error");
 }
+
+// ---------------------------------------------------------------------------
+// Source preferences
+// ---------------------------------------------------------------------------
+
+/// The order is the whole preference, so a write has to *replace* it.
+///
+/// Written as a differential against a naive upsert: an implementation that merged instead of
+/// replacing would leave the demoted provider ranked and the positions non-contiguous, which the
+/// unique index on `(user_id, position)` would then reject on the *next* write rather than this
+/// one — a failure that surfaces one edit later, against a list the reader has moved on from.
+#[tokio::test]
+async fn saving_a_provider_order_replaces_the_previous_one() {
+    let db = TestDb::spawn().await;
+    let user = seed::user(&db, "ranker")
+        .email("ranker@example.test")
+        .create()
+        .await;
+    let first = seed::provider(&db, "alpha").create().await;
+    let second = seed::provider(&db, "beta").create().await;
+
+    users::set_provider_priority(&db.pool, user, &[first, second])
+        .await
+        .expect("save the order");
+    let ranked = users::get_provider_priority(&db.pool, user)
+        .await
+        .expect("read the order");
+    assert_eq!(
+        ranked.iter().map(|p| p.slug.as_str()).collect::<Vec<_>>(),
+        ["alpha", "beta"],
+        "the stored order is the order given, not the insertion order"
+    );
+
+    users::set_provider_priority(&db.pool, user, &[second])
+        .await
+        .expect("replace the order");
+    let ranked = users::get_provider_priority(&db.pool, user)
+        .await
+        .expect("read the replaced order");
+    assert_eq!(
+        ranked.iter().map(|p| p.slug.as_str()).collect::<Vec<_>>(),
+        ["beta"],
+        "a provider left out of the new order is unranked, not kept"
+    );
+
+    users::set_provider_priority(&db.pool, user, &[])
+        .await
+        .expect("clear the order");
+    assert!(
+        users::get_provider_priority(&db.pool, user)
+            .await
+            .expect("read the cleared order")
+            .is_empty(),
+        "an empty list clears the preference"
+    );
+}
+
+/// A disabled provider carries nothing a reader can open, so it must not come back from a read —
+/// otherwise the account panel offers a rank that can never apply and the Series screen ranks
+/// against a provider that is not in any source list.
+#[tokio::test]
+async fn a_disabled_provider_drops_out_of_the_order() {
+    let db = TestDb::spawn().await;
+    let user = seed::user(&db, "disabled-rank")
+        .email("disabled-rank@example.test")
+        .create()
+        .await;
+    let provider = seed::provider(&db, "retired").create().await;
+    users::set_provider_priority(&db.pool, user, &[provider])
+        .await
+        .expect("save the order");
+
+    sqlx::query("UPDATE providers SET state = 'disabled' WHERE id = $1")
+        .bind(provider.as_uuid())
+        .execute(&db.pool)
+        .await
+        .expect("disable the provider");
+
+    assert!(
+        users::get_provider_priority(&db.pool, user)
+            .await
+            .expect("read the order")
+            .is_empty(),
+        "a disabled provider is not offered as a ranked source"
+    );
+}

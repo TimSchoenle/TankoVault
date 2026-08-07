@@ -12,15 +12,17 @@
 
 mod chapters;
 mod model;
+mod pin;
 mod similar;
 mod tracking;
 
 use crate::api;
 use crate::components::{async_view, Cover, EmptyBox, ErrorBox, SkeletonBlock};
-use crate::hooks::{use_busy, use_reload, Reload};
+use crate::hooks::{use_busy, use_outcome, use_reload, Reload};
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
 use crate::models::*;
+use crate::state::source_order::use_source_order;
 use crate::state::use_session;
 use crate::util::{chapter_number, rel_time};
 use crate::Route;
@@ -35,15 +37,6 @@ use progenitor_client::ResponseValue;
 /// Every source's chapter list, in the order the API returned the sources.
 type SourceChapters = Vec<(SourceDto, Vec<ChapterDto>)>;
 
-/// Where a per-series source pin is remembered.
-///
-/// A pin is a per-device reading preference, stored like the appearance knobs are. TODO(api):
-/// a `preferred_source_id` on the watchlist entry would make it follow the reader across
-/// devices; until then this is honest about being local.
-fn pin_key(id: SeriesId) -> String {
-    format!("tv-src-{id}")
-}
-
 /// The route gives us a plain `String` (see `crate::Route::Series`); parse it once here so
 /// the rest of the view works with the real, compiler-checked `SeriesId`.
 #[component]
@@ -57,23 +50,17 @@ pub(crate) fn Series(id: String) -> Element {
 
     let session = use_session();
     let api = api::use_api();
+    let source_order = use_source_order();
     let reload_detail = use_reload();
     let reload_wl = use_reload();
     // One signal for read state, shared by the chapter list's toggles and the sidebar's
     // stepper — they move the same server state, so must invalidate the same fetches. Two
     // separate `Reload`s here left the sidebar showing a stale frontier until a full reload.
     let reload_progress = use_reload();
-    // The pin is read once on mount; a plain synchronous `localStorage` lookup lets the signal
-    // seed with the stored value instead of rendering unpinned and correcting itself.
-    let pinned = use_signal(|| {
-        crate::platform::store_get(&pin_key(id))
-            .and_then(|stored| stored.parse::<SeriesSourceId>().ok())
-    });
-    use_effect(move || {
-        if let Some(source) = *pinned.read() {
-            crate::platform::store_set(&pin_key(id), &source.to_string());
-        }
-    });
+    // The pin now rides the watchlist entry, so it is seeded from that fetch rather than read
+    // synchronously — see the effect below the entry resource.
+    let pinned = use_signal(|| Option::<SeriesSourceId>::None);
+    let pin_outcome = use_outcome();
 
     let detail = use_resource(move || {
         reload_detail.track();
@@ -157,6 +144,20 @@ pub(crate) fn Series(id: String) -> Element {
         }
     });
 
+    // The entry is the pin's home, so every refetch of it re-seeds the signal — including the
+    // one a successful pin write triggers, which is what reconciles the optimistic move.
+    let mut pin_signal = pinned;
+    use_effect(move || {
+        if let Some(Ok(entry)) = &*watchlist.read() {
+            pin_signal.set(
+                entry
+                    .as_ref()
+                    .and_then(|e| e.pinned_source_id)
+                    .map(SeriesSourceId::from),
+            );
+        }
+    });
+
     let loaded = match &*detail.read() {
         None => {
             return rsx! {
@@ -187,7 +188,7 @@ pub(crate) fn Series(id: String) -> Element {
         Some(Ok(rows)) => rows.clone(),
         _ => Vec::new(),
     };
-    let ranked_sources = rank_sources(&loaded.sources, pin);
+    let ranked_sources = rank_sources(&loaded.sources, pin, &source_order.slugs());
     let ordered: SourceChapters = ranked_sources
         .iter()
         .filter_map(|source| {
@@ -211,6 +212,17 @@ pub(crate) fn Series(id: String) -> Element {
 
     let entry = current_entry(&watchlist);
     let total_chapters = merged.iter().filter(|c| !c.is_part()).count();
+    // Shadowed so every component below keeps forwarding one `pinned` prop; what changed is
+    // that moving it now writes to the server instead of to this device's storage.
+    let pinned = pin::Pinned::new(
+        pinned,
+        id,
+        api,
+        i18n,
+        pin_outcome,
+        reload_wl,
+        entry.is_some(),
+    );
 
     rsx! {
         Hero {
@@ -222,6 +234,10 @@ pub(crate) fn Series(id: String) -> Element {
             authed: session.is_authenticated(),
             reload_wl,
         }
+        // A refused pin is reported here rather than inside the source menu: the write closes
+        // the menu, so a message rendered there would be dismissed by the very click that
+        // caused it.
+        crate::components::OutcomeLine { outcome: pin_outcome.read().clone() }
         div { class: "ik-body-grid", style: "margin-top:8px;",
             div { style: "min-width:0;",
                 if let Some(description) = loaded.description.clone() {
@@ -279,7 +295,7 @@ fn Hero(
     detail: SeriesDetail,
     chapters: Vec<MergedChapter>,
     sources: Vec<RankedSource>,
-    pinned: Signal<Option<SeriesSourceId>>,
+    pinned: pin::Pinned,
     entry: Option<WatchlistItem>,
     authed: bool,
     reload_wl: Reload,

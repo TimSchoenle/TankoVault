@@ -2445,6 +2445,27 @@
         },
         "type": "object"
       },
+      "PreferredProvider": {
+        "description": "One provider in the reader's order.",
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/ProviderId"
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "description": "The provider slug — the same stable client-side key the source lists are drawn with.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "name"
+        ],
+        "type": "object"
+      },
       "PresetInfo": {
         "description": "A named starting point in the permission editor.",
         "properties": {
@@ -3658,6 +3679,51 @@
         ],
         "type": "object"
       },
+      "SourcePin": {
+        "description": "The source a reader wants a series to open on.",
+        "properties": {
+          "series_source_id": {
+            "$ref": "#/components/schemas/SeriesSourceId",
+            "description": "A `series_sources` id belonging to this series; anything else is a `400`."
+          }
+        },
+        "required": [
+          "series_source_id"
+        ],
+        "type": "object"
+      },
+      "SourcePreferences": {
+        "description": "The reader's provider order, most preferred first.",
+        "properties": {
+          "providers": {
+            "description": "Ranked providers only. An absent provider is \"no opinion\", not \"last\": series carried by\nnobody on this list resolve by the objective richest-source order instead.",
+            "items": {
+              "$ref": "#/components/schemas/PreferredProvider"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "providers"
+        ],
+        "type": "object"
+      },
+      "SourcePreferencesUpdate": {
+        "description": "A replacement provider order.",
+        "properties": {
+          "provider_ids": {
+            "description": "Provider ids, most preferred first. Must be distinct and must all exist; an empty list\nclears the preference.",
+            "items": {
+              "$ref": "#/components/schemas/ProviderId"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "provider_ids"
+        ],
+        "type": "object"
+      },
       "StatusPrefs": {
         "description": "One switch per [`WatchStatus`].\n\n`dropped` and `completed` default **off**: a reader who put a series down has said so, and\nthe watchlist's own `notify` flag is a per-series override, not a way to express that.",
         "properties": {
@@ -4865,6 +4931,14 @@
           },
           "notify": {
             "type": "boolean"
+          },
+          "pinned_source_id": {
+            "description": "The source this reader pinned for this series, or `null` to follow the global order.\n\nThe reader's explicit choice, and not the same question as\n[`Self::preferred_source_name`], which stays the derived richest source the ledger row\ndisplays. Set through `PUT /v1/me/watchlist/{series_id}/source-pin`.",
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "preferred_source_name": {
             "description": "Display name of the provider this series is primarily carried by.",
@@ -11993,6 +12067,98 @@
         ]
       }
     },
+    "/v1/me/source-preferences": {
+      "get": {
+        "description": "The caller's provider order. Providers that have since been disabled are dropped rather than\nreturned — they carry nothing a reader can open, so ranking them would be a preference that\ncan never apply.",
+        "operationId": "source_preferences",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourcePreferences"
+                }
+              }
+            },
+            "description": "The caller's provider order"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Get source preferences",
+        "tags": [
+          "me-account"
+        ]
+      },
+      "put": {
+        "description": "Replaces the order wholesale: the list *is* the preference, so a provider left out of the\nbody is unranked afterwards.",
+        "operationId": "put_source_preferences",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SourcePreferencesUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourcePreferences"
+                }
+              }
+            },
+            "description": "The stored order, resolved to names"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "a duplicate or unknown provider id"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Replace source preferences",
+        "tags": [
+          "me-account"
+        ]
+      }
+    },
     "/v1/me/stats": {
       "get": {
         "description": "*Stub*: lifetime tracking stats for the Home / Profile headline (frontend §9.3). See\n[`tankovault_db::repo::tracking::MeStats`] for the honest definition of `chapters_read` and\nwhy no \"streak\" is returned.",
@@ -13291,6 +13457,142 @@
           }
         ],
         "summary": "Add or update a watchlist entry",
+        "tags": [
+          "me-watchlist"
+        ]
+      }
+    },
+    "/v1/me/watchlist/{series_id}/source-pin": {
+      "delete": {
+        "description": "Idempotent: clearing a pin that is not set is a `200`, because the reader's intent — \"stop\noverriding for this series\" — is satisfied either way.",
+        "operationId": "delete_source_pin",
+        "parameters": [
+          {
+            "description": "Series id",
+            "in": "path",
+            "name": "series_id",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/SeriesId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "ok": true
+                },
+                "schema": {}
+              }
+            },
+            "description": "Acknowledged"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "the caller does not track this series"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Clear a series' source pin",
+        "tags": [
+          "me-watchlist"
+        ]
+      },
+      "put": {
+        "description": "Overrides the reader's global provider order for this one series. A separate resource from\nthe entry itself rather than a field on [`WatchlistUpsert`]: that body is a full replacement,\nso a reader toggling `notify` would silently drop their pin.",
+        "operationId": "put_source_pin",
+        "parameters": [
+          {
+            "description": "Series id",
+            "in": "path",
+            "name": "series_id",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/SeriesId"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SourcePin"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "ok": true
+                },
+                "schema": {}
+              }
+            },
+            "description": "Acknowledged"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "the source does not belong to this series"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "the caller does not track this series"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Pin a series' source",
         "tags": [
           "me-watchlist"
         ]

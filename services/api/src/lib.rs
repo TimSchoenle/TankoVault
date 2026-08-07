@@ -320,6 +320,9 @@ fn documented_router() -> OpenApiRouter<AppState> {
             me::put_watchlist,
             me::delete_watchlist
         ))
+        // The per-series half of the source preference; the global half is under
+        // `/v1/me/source-preferences` with the other account settings.
+        .routes(routes!(me::put_source_pin, me::delete_source_pin))
         .routes(routes!(me::get_progress, me::put_progress))
         .routes(routes!(me::put_chapter_progress))
         .routes(routes!(me::mark_read_to))
@@ -346,6 +349,7 @@ fn documented_router() -> OpenApiRouter<AppState> {
         .routes(routes!(me::passkey_register_finish))
         .routes(routes!(me::rename_passkey, me::delete_passkey))
         .routes(routes!(me::notification_prefs, me::put_notification_prefs))
+        .routes(routes!(me::source_preferences, me::put_source_preferences))
         // The reader's half of the adult gate. Ungated on purpose — see `me::content`.
         .routes(routes!(me::content_prefs, me::put_content_prefs))
         .routes(routes!(me::notifications))

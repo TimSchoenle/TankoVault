@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use crate::error::DbResult;
 use sqlx::{FromRow, PgPool};
-use tankovault_domain::{ProviderState, SeriesId, UserId, WatchStatus};
+use tankovault_domain::{ProviderState, SeriesId, SeriesSourceId, UserId, WatchStatus};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -36,6 +36,7 @@ struct CardRow {
     source_count: i64,
     source_degraded: bool,
     sync_excluded: bool,
+    pinned_source_id: Option<Uuid>,
     /// The key the statement ordered by, carried out so [`WatchlistCursor`] cannot recompute
     /// it differently.
     sort_num: Option<f64>,
@@ -82,6 +83,7 @@ impl From<CardRow> for WatchlistCard {
             source_count: r.source_count,
             source_degraded: r.source_degraded,
             sync_excluded: r.sync_excluded,
+            pinned_source_id: r.pinned_source_id.map(SeriesSourceId::from_uuid),
             sources: Vec::new(),
         }
     }
@@ -231,7 +233,7 @@ async fn fetch_page(
         "WITH page AS ( \
            SELECT q.* FROM ( \
              SELECT w.series_id, s.canonical_title AS series_title, s.cover_url, w.status, \
-                    w.notify, w.added_at, w.sync_excluded, \
+                    w.notify, w.added_at, w.sync_excluded, w.pinned_source_id, \
                     rp.last_read_whole_number, rp.last_read_part_number, \
                     unr.unread, la.latest_chapter_at, \
                     src.preferred_source_name, src.source_count, src.source_degraded, \
@@ -329,7 +331,7 @@ async fn fetch_page(
                 nu.title AS \"next_unread_title?\", \
                 nu.discovered_at AS \"next_unread_at?\", p.preferred_source_name, \
                 p.source_count AS \"source_count!\", p.source_degraded AS \"source_degraded!\", \
-                p.sort_num, p.sort_text \
+                p.pinned_source_id, p.sort_num, p.sort_text \
          FROM page p \
          CROSS JOIN LATERAL ( \
            SELECT COALESCE(count(DISTINCT floor(c.number)), 0) AS total_chapters, \

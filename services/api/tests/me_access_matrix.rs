@@ -183,6 +183,16 @@ fn me_gates() -> Vec<Gate> {
                 "/v1/me/notification-prefs",
             )
         },
+        get("/v1/me/source-preferences", "/v1/me/source-preferences"),
+        Gate {
+            // An empty order is a valid whole document: it clears the preference.
+            body: || Some(json!({ "provider_ids": [] })),
+            ..gate(
+                "PUT",
+                "/v1/me/source-preferences",
+                "/v1/me/source-preferences",
+            )
+        },
         Gate {
             credential: Credential::StreamTicket,
             ..get("/v1/me/stream", "/v1/me/stream")
@@ -301,6 +311,22 @@ fn me_gates() -> Vec<Gate> {
                 "/v1/me/watchlist/00000000-0000-7000-8000-00000000000a/sync/anilist",
             )
         },
+        Gate {
+            // The admitted leg lands on `404` — the account tracks nothing — which is still an
+            // admission, and the point here is that the anonymous and suspended legs never
+            // reach the lookup at all.
+            body: || Some(json!({ "series_source_id": "00000000-0000-7000-8000-00000000000b" })),
+            ..gate(
+                "PUT",
+                "/v1/me/watchlist/{series_id}/source-pin",
+                "/v1/me/watchlist/00000000-0000-7000-8000-00000000000a/source-pin",
+            )
+        },
+        gate(
+            "DELETE",
+            "/v1/me/watchlist/{series_id}/source-pin",
+            "/v1/me/watchlist/00000000-0000-7000-8000-00000000000a/source-pin",
+        ),
         // --- external sync (proxied to `services/sync`, which is not running here; an
         //     admitted call lands on a gateway error, which is still an admission) ---
         get("/v1/me/sync/providers", "/v1/me/sync/providers"),

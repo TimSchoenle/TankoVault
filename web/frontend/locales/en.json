@@ -135,6 +135,25 @@
       "unavailable": "Password change and two-factor auth aren't available yet."
     },
     "signOut": "Sign out",
+    "sources": {
+      "empty": "Nothing ranked yet — series open on whichever source carries the most chapters.",
+      "intro": "Which provider a series opens on. Ranked providers win in this order; anything unranked falls back to whichever source carries the most chapters. A pin on a single series beats all of it.",
+      "moveDown": "Move down",
+      "moveDownOf": "Move {source} down",
+      "moveUp": "Move up",
+      "moveUpOf": "Move {source} up",
+      "rank": "Rank",
+      "rankOf": "Add {source} to the order",
+      "saved": "Source order saved.",
+      "section": {
+        "ranked": "Your order",
+        "unranked": "Not ranked"
+      },
+      "seriesCount": "{count} series",
+      "title": "Source preferences",
+      "unrank": "Remove from the order",
+      "unrankOf": "Remove {source} from the order"
+    },
     "sync": {
       "anonymousUser": "{provider} reader",
       "auto": "Automatic sync",
@@ -169,6 +188,7 @@
       "privacy": "Privacy & data",
       "profile": "Profile",
       "security": "Security & sessions",
+      "sources": "Sources",
       "sync": "Sync & integrations",
       "taste": "Taste"
     },
@@ -1340,6 +1360,7 @@
       "other": "{count} part releases"
     },
     "pinHint": "Pin a source to open it first",
+    "pinNeedsTracking": "Track this series to pin a source",
     "pinSource": "Pin for this series",
     "pinned": "pinned",
     "preferred": "preferred",
@@ -1381,6 +1402,7 @@
       "unlink": "Unlink"
     },
     "tracking": "Tracking",
+    "unpinSource": "Unpin — follow my source order",
     "unread": "Unread",
     "upTo": "up to #{number}"
   },

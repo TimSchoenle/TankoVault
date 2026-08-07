@@ -136,7 +136,12 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "std"
 directories = { version = "6", optional = true }
 # The save dialog behind `platform::save_text_file`. The personal-data export is
 # bearer-authenticated, so the document is already in memory and only needs a destination.
-rfd = { version = "0.16", optional = true }
+#
+# Matched to the version `dioxus-desktop` already depends on. A different minor here is not a
+# second opinion about file dialogs, it is a second *copy* of one — extra compilation, an entry
+# on `cargo-deny`'s duplicate budget, and two crates whose licence text the notices document has
+# to carry separately.
+rfd = { version = "0.17", optional = true }
 # Hands an OAuth consent URL to the reader's own browser, which is where their provider session
 # already is — and where several providers refuse to run a ceremony in a webview at all.
 open = { version = "5", optional = true }

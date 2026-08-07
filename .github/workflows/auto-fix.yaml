@@ -352,12 +352,8 @@ jobs:
       - name: fetch every dependency graph, for every target the notices cover
         run: |
           set -euo pipefail
-          cargo fetch --locked \
-            --target x86_64-unknown-linux-musl --target aarch64-unknown-linux-musl
-          cargo fetch --locked --manifest-path web/frontend/Cargo.toml \
-            --target wasm32-unknown-unknown \
-            --target x86_64-pc-windows-msvc \
-            --target x86_64-unknown-linux-gnu
+          cargo fetch --locked
+          cargo fetch --locked --manifest-path web/frontend/Cargo.toml
 
       # Only clippy's *machine-applicable* suggestions are applied — that is rustfix's contract,
       # not a flag. A lint with no concrete replacement (`too_many_lines`, which wants a judgement

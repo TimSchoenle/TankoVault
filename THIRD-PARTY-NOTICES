@@ -5633,8 +5633,8 @@ Ships as: the WebAssembly bundle the frontend image serves, which executes in th
 
 Licences in this section, by number of crates:
 
-  Apache License 2.0 (Apache-2.0) — 422 crates, 30 distinct notices
-  MIT License (MIT) — 144 crates, 69 distinct notices
+  Apache License 2.0 (Apache-2.0) — 409 crates, 30 distinct notices
+  MIT License (MIT) — 141 crates, 67 distinct notices
   Unicode License v3 (Unicode-3.0) — 19 crates, 2 distinct notices
   BSD 3-Clause "New" or "Revised" License (BSD-3-Clause) — 9 crates, 6 distinct notices
   Mozilla Public License 2.0 (MPL-2.0) — 7 crates
@@ -5856,17 +5856,8 @@ by the block naming that crate.
   - asn1-rs 0.6.2
   - asn1-rs-derive 0.5.1
   - asn1-rs-impl 0.2.0
-  - async-channel 2.5.0
   - async-compression 0.4.43
-  - async-executor 1.14.0
-  - async-fs 2.2.0
-  - async-io 2.6.0
-  - async-lock 3.4.2
-  - async-net 2.0.0
-  - async-process 2.5.0
   - async-recursion 1.1.1
-  - async-signal 0.2.14
-  - async-task 4.7.1
   - async-trait 0.1.91
   - atomic-waker 1.1.2
   - autocfg 1.5.1
@@ -5883,7 +5874,6 @@ by the block naming that crate.
   - block-buffer 0.10.4
   - block-buffer 0.11.0
   - block-padding 0.3.3
-  - blocking 1.6.2
   - bumpalo 3.20.3
   - bytemuck 1.25.2
   - cbc 0.1.2
@@ -5895,7 +5885,6 @@ by the block naming that crate.
   - cmake 0.1.58
   - compression-codecs 0.4.38
   - compression-core 0.4.32
-  - concurrent-queue 2.5.0
   - const-oid 0.9.6
   - const-serialize 0.7.2
   - const-serialize 0.8.0-alpha.0
@@ -6046,14 +6035,12 @@ by the block naming that crate.
   - pin-project 1.1.13
   - pin-project-internal 1.1.13
   - pin-project-lite 0.2.17
-  - piper 0.2.5
   - pkcs1 0.7.5
   - pkcs5 0.7.1
   - pkcs8 0.10.2
   - pkg-config 0.3.33
   - png 0.17.16
   - png 0.18.1
-  - polling 3.11.0
   - pollster 0.4.0
   - polyval 0.6.2
   - primeorder 0.13.6
@@ -8289,33 +8276,6 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 Applies to:
 
-  - rfd 0.16.0
-  - rfd 0.17.2
-
-MIT License
-
-Copyright (c) 2022 Bartłomiej Maryńczak
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-Applies to:
-
   - tokio 1.53.1
   - tokio-util 0.7.19
 
@@ -8348,32 +8308,6 @@ Applies to:
 MIT License
 
 Copyright (c) 2018 Luca Barbato
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-Applies to:
-
-  - ashpd 0.11.1
-
-MIT License
-
-Copyright (c) 2020 Bilal Elmoussaoui
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -9156,6 +9090,32 @@ THE SOFTWARE.
 
 Applies to:
 
+  - rfd 0.17.2
+
+MIT License
+
+Copyright (c) 2022 Bartłomiej Maryńczak
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Applies to:
+
   - rgb 0.8.53
 
 MIT License
@@ -9473,31 +9433,6 @@ Applies to:
     LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
     OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
     SOFTWARE
-
-Applies to:
-
-  - urlencoding 2.1.3
-
-© 2016 Bertram Truong
-© 2021 Kornel Lesiński
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
 
 Applies to:
 

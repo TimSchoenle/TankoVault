@@ -1164,12 +1164,8 @@ jobs:
       # Linux; the passkey backend is Windows-only); before that its graph was wasm alone.
       - name: fetch every dependency graph, for every target the notices cover
         run: |
-          cargo fetch --locked \
-            --target x86_64-unknown-linux-musl --target aarch64-unknown-linux-musl
-          cargo fetch --locked --manifest-path web/frontend/Cargo.toml \
-            --target wasm32-unknown-unknown \
-            --target x86_64-pc-windows-msvc \
-            --target x86_64-unknown-linux-gnu
+          cargo fetch --locked
+          cargo fetch --locked --manifest-path web/frontend/Cargo.toml
 
       - name: notices drift
         run: cargo run -p xtask -- notices --check

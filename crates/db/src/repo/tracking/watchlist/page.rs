@@ -380,7 +380,7 @@ async fn fetch_page(
     Ok(rows)
 }
 
-/// Every provider carrying each of `series_ids`, preferred first.
+/// Every provider carrying each of `series_ids`, preferred first — **one row per provider**.
 ///
 /// A second statement keyed on the page's ids rather than an aggregate folded into
 /// [`fetch_page`]: the ledger only renders this column above 1500px, and four more `array_agg`
@@ -390,6 +390,16 @@ async fn fetch_page(
 /// The `preferred` flag repeats [`fetch_page`]'s ranking (`chapter_count`, then the most recent
 /// scan, then the slug) because the two must name the same source; a `Sources` column whose
 /// tinted tile disagrees with the row's own submeta is worse than an untinted one.
+///
+/// # Why the `DISTINCT ON`
+///
+/// `series_sources` is unique on `(provider_id, source_path)`, not on `(series_id,
+/// provider_id)`: one provider can legitimately carry the same series under several paths, and
+/// a mis-matched scan can attach hundreds. Emitting a row each made the column repeat one
+/// carrier's monogram and overflow into a `+n` counting paths rather than providers — and it
+/// disagreed with `source_count`, which has always been `count(DISTINCT provider_id)`. The
+/// per-provider survivor is picked by the same key the ranking uses, so it is the row
+/// `preferred_source_name` would have named.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only — no other variant is reachable. A series with no sources is
@@ -412,17 +422,23 @@ async fn fetch_sources(
     }
     let rows = sqlx::query_as!(
         Row,
-        "SELECT ss.series_id AS \"series_id!\", p.slug AS \"code!\", p.name AS \"name!\", \
-                CASE WHEN p.state <> 'active' THEN p.state ELSE ss.state END \
-                  AS \"state!: ProviderState\", \
-                (row_number() OVER (PARTITION BY ss.series_id \
-                                    ORDER BY ss.chapter_count DESC, \
-                                             ss.last_scanned_at DESC NULLS LAST, \
-                                             p.slug) = 1) AS \"preferred!\" \
-         FROM series_sources ss JOIN providers p ON p.id = ss.provider_id \
-         WHERE ss.series_id = ANY($1) \
-         ORDER BY ss.series_id, ss.chapter_count DESC, \
-                  ss.last_scanned_at DESC NULLS LAST, p.slug",
+        "SELECT s.series_id AS \"series_id!\", s.code AS \"code!\", s.name AS \"name!\", \
+                s.state AS \"state!: ProviderState\", \
+                (row_number() OVER (PARTITION BY s.series_id \
+                                    ORDER BY s.chapter_count DESC, \
+                                             s.last_scanned_at DESC NULLS LAST, \
+                                             s.code) = 1) AS \"preferred!\" \
+         FROM ( \
+           SELECT DISTINCT ON (ss.series_id, ss.provider_id) \
+                  ss.series_id, p.slug AS code, p.name, \
+                  CASE WHEN p.state <> 'active' THEN p.state ELSE ss.state END AS state, \
+                  ss.chapter_count, ss.last_scanned_at \
+           FROM series_sources ss JOIN providers p ON p.id = ss.provider_id \
+           WHERE ss.series_id = ANY($1) \
+           ORDER BY ss.series_id, ss.provider_id, ss.chapter_count DESC, \
+                    ss.last_scanned_at DESC NULLS LAST, ss.id \
+         ) s \
+         ORDER BY s.series_id, s.chapter_count DESC, s.last_scanned_at DESC NULLS LAST, s.code",
         series_ids,
     )
     .fetch_all(pool)

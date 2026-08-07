@@ -266,7 +266,60 @@
       "label": "Desktop-Benachrichtigungen anzeigen",
       "title": "Benachrichtigungen"
     },
-    "title": "Einstellungen"
+    "title": "Einstellungen",
+    "update": {
+      "check": "Jetzt prüfen",
+      "days": {
+        "one": "{count} Tag",
+        "other": "{count} Tage"
+      },
+      "dismiss": "Diese Version überspringen",
+      "error": {
+        "checksum": "Der Download passte nicht zur signierten Version und wurde verworfen.",
+        "handoff": "Das Installationsprogramm konnte nicht gestartet werden.",
+        "manifest": "Diese Version beschreibt sich nicht in einer Form, die dieser Build versteht. Es wurde nichts heruntergeladen.",
+        "network": "github.com war nicht erreichbar.",
+        "noTarget": "Diese Version enthält kein Paket für diese Plattform.",
+        "staging": "Der Download konnte nicht gespeichert werden.",
+        "stale": "Die vorbereitete Aktualisierung ist nicht neuer als dieser Build.",
+        "unconfigured": "Dieser Build enthält keinen Signaturschlüssel, kann eine Aktualisierung also nicht prüfen und sucht keine.",
+        "unmanaged": "Diese Installation kann TankoVault nicht ersetzen.",
+        "untrusted": "Diese Version ist nicht mit einem Schlüssel signiert, dem dieser Build vertraut. Es wurde nichts heruntergeladen."
+      },
+      "holdBack": "Zurückhalten",
+      "holdBackHint": "Eine Version muss so alt sein, bevor sie angeboten wird — eine kurz nach der Veröffentlichung zurückgezogene Version erreicht dich damit nie. Ohne Wartezeit wird jede Version sofort übernommen.",
+      "install": "Herunterladen und installieren",
+      "notify": {
+        "available": "Version {version} kann heruntergeladen werden.",
+        "availableTitle": "TankoVault-Aktualisierung verfügbar",
+        "staged": "Version {version} wird beim nächsten Start von TankoVault installiert.",
+        "stagedTitle": "TankoVault-Aktualisierung bereit"
+      },
+      "openPage": "Veröffentlichungsseite öffnen",
+      "policy": "Wenn eine neue Version erscheint",
+      "policyOption": {
+        "auto": "Installieren",
+        "off": "Nichts tun",
+        "prompt": "Nachfragen"
+      },
+      "quit": "Zum Abschließen schließen",
+      "source": "Eine Prüfung fragt die Versionsliste bei github.com ab. Sonst verlässt nichts dieses Gerät, und es werden keine Kontodaten übertragen.",
+      "state": {
+        "available": "Version {version} ist verfügbar.",
+        "availableOnly": "Version {version} ist verfügbar, diese Installation kann sie aber nicht selbst einspielen.",
+        "checking": "Suche nach einer neueren Version…",
+        "downloading": "Wird heruntergeladen… {percent}%",
+        "idle": "Es wurde noch nicht geprüft.",
+        "staged": "Version {version} ist bereit. Sie wird beim nächsten Start von TankoVault installiert.",
+        "upToDate": "Das ist die neueste Version, die du übernehmen kannst."
+      },
+      "title": "Aktualisierungen",
+      "unmanaged": {
+        "package": "Diese Installation stammt aus dem .deb-Paket; ihre Dateien gehören deiner Paketverwaltung. Neue Versionen werden hier angezeigt, installiert werden sie von apt.",
+        "portable": "Diese Installation läuft aus einem portablen Archiv, es gibt also nichts zu aktualisieren. Ersetze den Ordner durch das neue Archiv."
+      },
+      "waiting": "Einstellungen — eine Aktualisierung wartet"
+    }
   },
   "window": {
     "maximise": "Maximieren",

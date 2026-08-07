@@ -161,6 +161,13 @@ fn AppRoot(children: Element) -> Element {
     let attributes = crate::platform::ROOT_ATTRIBUTES.read().clone();
     let mut settings_open = use_signal(|| false);
 
+    // Provided here rather than in `App` because it is desktop-only, and read by two things that
+    // both live at this level: the title bar's dot and the settings sheet. The loop it feeds waits
+    // out first paint on its own and then checks every six hours — see `crate::update`.
+    let update = use_context_provider(crate::update::UpdateState::new);
+    let i18n = crate::i18n::use_i18n();
+    use_future(move || crate::update::run(update, i18n));
+
     // Once, on the first render: shrink the window to the display if the default does not fit.
     // The builder cannot do this — it runs before there is an event loop to ask which monitor
     // the window landed on — so a laptop at 1366×768 would otherwise open a 1280×860 window
@@ -189,7 +196,10 @@ fn AppRoot(children: Element) -> Element {
             "data-accent": attributes.get("data-accent"),
             "data-density": attributes.get("data-density"),
             "data-cover": attributes.get("data-cover"),
-            TitleBar { on_settings: move |()| settings_open.set(true) }
+            TitleBar {
+                on_settings: move |()| settings_open.set(true),
+                update_waiting: update.wants_attention(),
+            }
             div { class: "ik-desktop-body", {children} }
             if settings_open() {
                 SettingsSheet { on_close: move |()| settings_open.set(false) }

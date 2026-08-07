@@ -20,6 +20,10 @@ mod models;
 mod platform;
 mod state;
 mod title;
+/// Keeping an installed desktop client current from the GitHub releases. Desktop only: a served
+/// SPA is updated by reloading it.
+#[cfg(feature = "desktop")]
+mod update;
 mod util;
 mod views;
 mod webauthn;
@@ -35,6 +39,12 @@ fn main() {
 #[cfg(feature = "desktop")]
 fn main() {
     use dioxus::desktop::{Config, LogicalSize, WindowBuilder};
+
+    // Before the window, and before anything else reads the settings file: a staged update is
+    // applied by *starting* the app, so this either hands off to the installer and never returns or
+    // falls through having cleared whatever it could not use. Doing it here rather than on window
+    // close keeps it off the event loop and keeps an elevation prompt out of a reading session.
+    update::apply_staged();
 
     dioxus::LaunchBuilder::desktop()
         .with_cfg(

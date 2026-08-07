@@ -23,8 +23,12 @@ use crate::icons::{Ic, Icon};
 use dioxus::prelude::*;
 
 /// The window header: drag area, title, settings, and the window controls.
+///
+/// `update_waiting` draws a dot on the settings button. A prop rather than a context read: this
+/// bar renders above the router and outside the sign-in gate, and the one thing it must never do
+/// is take a dependency that is missing there — see the `use_route` note below.
 #[component]
-pub(crate) fn TitleBar(on_settings: EventHandler<()>) -> Element {
+pub(crate) fn TitleBar(on_settings: EventHandler<()>, update_waiting: bool) -> Element {
     let i18n = use_i18n();
     // Not `use_route`: this bar renders *above* the router, so there is no route context to ask
     // — calling it here aborted the process on boot. `crate::title` publishes the screen's name
@@ -61,8 +65,13 @@ pub(crate) fn TitleBar(on_settings: EventHandler<()>) -> Element {
             button {
                 class: "ik-titlebar-btn",
                 r#type: "button",
-                "aria-label": i18n.t("settings.title"),
-                title: i18n.t("settings.title"),
+                // The label carries the dot's meaning too. A purely visual marker on the one
+                // control that opens the sheet tells a screen-reader user nothing at all.
+                "aria-label": if update_waiting { i18n.t("settings.update.waiting") } else { i18n.t("settings.title") },
+                title: if update_waiting { i18n.t("settings.update.waiting") } else { i18n.t("settings.title") },
+                // Drives the dot in `input.css`; absent rather than `false` so the rule is a
+                // presence selector and there is nothing to style away in the common case.
+                "data-update": if update_waiting { Some("waiting") } else { None },
                 onclick: move |_| on_settings.call(()),
                 // Sliders, not the gear the rest of the app uses for settings. The gear's path
                 // is a ring of arcs, and at the 15px a title-bar control gets they collapse into

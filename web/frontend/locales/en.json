@@ -266,7 +266,60 @@
       "label": "Show desktop notifications",
       "title": "Notifications"
     },
-    "title": "Settings"
+    "title": "Settings",
+    "update": {
+      "check": "Check now",
+      "days": {
+        "one": "{count} day",
+        "other": "{count} days"
+      },
+      "dismiss": "Skip this version",
+      "error": {
+        "checksum": "The download did not match the signed release and was discarded.",
+        "handoff": "Could not start the installer.",
+        "manifest": "That release does not describe itself in a way this build understands. Nothing was downloaded.",
+        "network": "Could not reach github.com.",
+        "noTarget": "That release carries no build for this platform.",
+        "staging": "Could not write the download to disk.",
+        "stale": "The staged update is not newer than this build.",
+        "unconfigured": "This build carries no release signing key, so it cannot verify an update and does not look for one.",
+        "unmanaged": "This copy is not one TankoVault can replace.",
+        "untrusted": "That release is not signed by a key this build trusts. Nothing was downloaded."
+      },
+      "holdBack": "Hold back",
+      "holdBackHint": "A release has to be this old before it is offered, so one withdrawn soon after publication never reaches you. Set it to no delay to take every release as it appears.",
+      "install": "Download and install",
+      "notify": {
+        "available": "Version {version} is ready to download.",
+        "availableTitle": "TankoVault update available",
+        "staged": "Version {version} installs the next time you start TankoVault.",
+        "stagedTitle": "TankoVault update ready"
+      },
+      "openPage": "Open the release page",
+      "policy": "When a new version is released",
+      "policyOption": {
+        "auto": "Install it",
+        "off": "Do nothing",
+        "prompt": "Ask me"
+      },
+      "quit": "Close to finish",
+      "source": "A check asks github.com for the release list. Nothing else leaves this machine, and no account details are sent.",
+      "state": {
+        "available": "Version {version} is available.",
+        "availableOnly": "Version {version} is available, but this copy cannot install it itself.",
+        "checking": "Checking for a newer release…",
+        "downloading": "Downloading version… {percent}%",
+        "idle": "No check has run yet.",
+        "staged": "Version {version} is ready. It installs the next time TankoVault starts.",
+        "upToDate": "This is the newest release you can take."
+      },
+      "title": "Updates",
+      "unmanaged": {
+        "package": "This copy was installed from the .deb package, so your package manager owns its files. New releases are announced here but installed by apt.",
+        "portable": "This copy runs from a portable archive, so there is no install to upgrade. Replace the folder with the new archive."
+      },
+      "waiting": "Settings — an update is waiting"
+    }
   },
   "window": {
     "maximise": "Maximise",

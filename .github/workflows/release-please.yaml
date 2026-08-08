@@ -366,15 +366,34 @@ jobs:
   #
   # `cargo chef`'s recipe masks local package versions (it rewrites them to `0.0.1`), which is why
   # importing the pre-bump `backend-deps-<arch>` is still worth doing: the `cook` layer is
-  # version-invariant and hits, so this job's worst case is the workspace compile alone. Its best
-  # case, and the normal one, is that `release-pr-deps-<arch>` already holds that compile from the
-  # release pull request; the file header explains why the two contexts are identical.
+  # version-invariant and hits, so this job's worst case is the workspace compile alone.
+  #
+  # `release-pr-deps-<arch>` is the best case — the same tree, already compiled — but it is **only**
+  # a hit if the release pull request's own `ci` finished before the merge, and that is a property
+  # of how the release is merged, not of this file. Merged promptly it is never a hit: release
+  # v3.3.0's branch head was pushed at 08:57:10 and merged at 08:59:22, while the pull request's
+  # `docker build (deps, amd64)` ran until 09:35:55 — 34 minutes after this job had already started
+  # compiling. Both warm-ups then cold-compiled all 573 crates. Waiting for the required `ci` check
+  # on the release pull request is what turns this job from a 26-37 minute compile into an import;
+  # nothing here can substitute for it, because by the time this workflow runs the tree is new and
+  # no completed run has ever seen it.
   #
   # Its own tag to write, not `backend-deps-<arch>`: `ci.yml` fires on this same push and its
   # `docker-deps` exports to that tag concurrently. Sharing one would be the write race the
   # `docker-deps` comment describes, and a release build must not be able to poison what CI reads.
   # `release-pr-deps-<arch>` is only ever read here, which is what keeps that true after the
   # pull-request export was added.
+  #
+  # **This job is the only place a tag `ci.yml` writes may be read**, and that is the invariant the
+  # legs below depend on. Reading one *there* is a race, not a fallback: `ci.yml` runs on this same
+  # push, its `docker-deps` takes 21-39 minutes, and the legs start the moment this job ends — so
+  # they import `backend-deps-<arch>` while its `mode=max` export is still uploading. BuildKit
+  # discards a record whose blobs it cannot resolve and re-runs the vertex, and the vertex is
+  # `cook`. Measured twice, both times amd64-only and both times exactly while `ci.yml`'s amd64
+  # export was in flight: release v3.3.0 (run 31249584803) lost `frontend` for 30 minutes against
+  # 49 seconds for its siblings, and the release before it (run 31241717361) lost `frontend` and
+  # `worker` for 40 and 38. Both are on the critical path — nothing publishes until every leg is
+  # done. The arm64 legs, whose `ci.yml` export had finished, hit every time.
   #
   # These tags live in GHCR rather than the Actions cache; `ci.yml`'s `docker-deps` carries the
   # reasoning, and the two files have to agree because they read each other's tags.
@@ -460,6 +479,86 @@ jobs:
             type=registry,ref=${{ steps.buildcache.outputs.ref }}:backend-deps-${{ matrix.arch }}
           cache-to: type=registry,ref=${{ steps.buildcache.outputs.ref }}:release-deps-${{ matrix.arch }},mode=max,compression=zstd,image-manifest=true,oci-mediatypes=true
 
+  # The wasm half of the same warm-up, and the reason it exists is the invariant stated above: the
+  # `frontend` leg consumes two lineages, and until this job existed the second one came from
+  # `frontend-deps-<arch>` — a tag `ci.yml`'s `docker-wasm-deps` writes on this very push. That is
+  # the same cross-workflow race, with a smaller window rather than a different mechanism.
+  #
+  # A separate job rather than a second step in `release-deps`, so the two run in parallel: this
+  # one is minutes and that one is tens of them, and a step would serialise them onto the critical
+  # path for no gain.
+  #
+  # `cook-web`, the same target `ci.yml` uses, so this job is an import and a re-export of layers
+  # that already exist rather than new work. Targeting `wasm-builder` instead would additionally
+  # take the `frontend` leg's ~3.5-minute `dx build` off the critical path — but it trades it for
+  # the export and re-import of that stage's target directory, which nothing here has measured.
+  # Measure it before making that trade.
+  #
+  # No `BIN` and no `TANKOVAULT_COMMIT`: both must stay at the Dockerfile's default here and in the
+  # legs, for the reason `release-deps` gives about `SERVICE_BINS` — a build arg this job does not
+  # pass is a build arg the legs must not pass either, or they look up a key nothing wrote.
+  release-wasm-deps:
+    name: warm the wasm build cache (${{ matrix.arch }})
+    needs: [release-please, plan]
+    # `any` before the `fromJSON`, not decoration: `images` is `''` rather than `[]` when `plan`
+    # itself was skipped, and `fromJSON('')` is an error, not a false.
+    if: ${{ needs.release-please.outputs.release_created == 'true' && needs.plan.outputs.any == 'true' && contains(fromJSON(needs.plan.outputs.images), 'frontend') }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    permissions:
+      contents: read # to check out the build context
+      packages: write # to export the layer cache to ghcr.io
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: resolve the buildkit cache repository
+        id: buildcache
+        run: echo "ref=${GHCR_REGISTRY}/${GITHUB_REPOSITORY,,}/buildcache" >> "$GITHUB_OUTPUT"
+
+      - name: log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ${{ env.GHCR_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # `frontend-deps-<arch>` is imported here and read by no leg: `ci.yml` writes it at the
+      # previous `main` commit and the wasm dependency graph rarely moves, so this is normally an
+      # import and a re-export. Importing it *here* is safe for the reason the legs may not — this
+      # job finishes before any leg starts, so a partial read costs this job time, not correctness.
+      - name: cook the wasm dependency graph
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: deploy/docker/Dockerfile
+          platforms: linux/${{ matrix.arch }}
+          target: cook-web
+          push: false
+          outputs: type=cacheonly
+          provenance: false
+          cache-from: |
+            type=registry,ref=${{ steps.buildcache.outputs.ref }}:release-wasm-deps-${{ matrix.arch }}
+            type=registry,ref=${{ steps.buildcache.outputs.ref }}:frontend-deps-${{ matrix.arch }}
+          cache-to: type=registry,ref=${{ steps.buildcache.outputs.ref }}:release-wasm-deps-${{ matrix.arch }},mode=max,compression=zstd,image-manifest=true,oci-mediatypes=true
+
   # One leg per (image, architecture). Both architectures build **natively**: `wreq` compiles
   # BoringSSL from C/C++/assembly and an emulated build of it costs upwards of an hour per
   # image, which is why there is no QEMU here and `ci.yml` says the same thing about its own
@@ -477,9 +576,11 @@ jobs:
   # publish a hand-maintained list while every other gate stayed green.
   build:
     name: ${{ matrix.bin }} (${{ matrix.arch }})
-    needs: [release-please, plan, release-deps]
+    needs: [release-please, plan, release-deps, release-wasm-deps]
     # `!cancelled() && !failure()` rather than the bare output test: an explicit `if:` replaces the
     # implicit `success()`, so the bare form would publish images from a run whose warm-up failed.
+    # `release-wasm-deps` is skipped when `frontend` is not in the plan, and a skipped `needs:` is
+    # neither, which is why the test below cannot become `success()`.
     if: ${{ !cancelled() && !failure() && needs.release-please.outputs.release_created == 'true' && needs.plan.outputs.any == 'true' }}
     environment:
       name: release
@@ -580,15 +681,16 @@ jobs:
           load: true
           tags: tankovault-${{ matrix.bin }}:release-${{ matrix.arch }}
           provenance: false
-          # `release-deps-<arch>` first: it is this commit's `builder`, so the leg's remaining work
-          # is the `COPY`s onto `scratch`. The other two are the fallbacks for the layers the
-          # warm-up imported rather than rebuilt — see its own `cache-from` for what each is.
+          # **Only tags a job in this `needs:` list has finished writing.** Both hold this commit's
+          # own layers, so there is nothing left for a fallback to add — and a fallback here is not
+          # free, it is the race `release-deps` documents: every other tag in this repository is
+          # written by `ci.yml`, which is still running on this same push. Adding one back reopens
+          # a 30-40 minute recompile on the critical path that reproduces on roughly half the amd64
+          # legs and none of the arm64 ones.
           # No `SERVICE_BINS`, for the reason stated there: it is part of `builder`'s key.
           cache-from: |
             type=registry,ref=${{ steps.params.outputs.buildcache }}:release-deps-${{ matrix.arch }}
-            type=registry,ref=${{ steps.params.outputs.buildcache }}:release-pr-deps-${{ matrix.arch }}
-            type=registry,ref=${{ steps.params.outputs.buildcache }}:backend-deps-${{ matrix.arch }}
-            ${{ matrix.bin == 'frontend' && format('type=registry,ref={0}:frontend-deps-{1}', steps.params.outputs.buildcache, matrix.arch) || '' }}
+            ${{ matrix.bin == 'frontend' && format('type=registry,ref={0}:release-wasm-deps-{1}', steps.params.outputs.buildcache, matrix.arch) || '' }}
 
       - name: install container-structure-test
         env:
@@ -657,13 +759,9 @@ jobs:
           # Eighteen legs exporting `mode=max` would each re-upload the whole imported layer chain
           # into a tag CI also reads, and a release build is the one build that must not poison
           # that, so there is no `--cache-to` here.
-          cache=(
-            --cache-from "type=registry,ref=${BUILDCACHE}:release-deps-${ARCH}"
-            --cache-from "type=registry,ref=${BUILDCACHE}:release-pr-deps-${ARCH}"
-            --cache-from "type=registry,ref=${BUILDCACHE}:backend-deps-${ARCH}"
-          )
+          cache=(--cache-from "type=registry,ref=${BUILDCACHE}:release-deps-${ARCH}")
           if [ "$BIN" = "frontend" ]; then
-            cache+=(--cache-from "type=registry,ref=${BUILDCACHE}:frontend-deps-${ARCH}")
+            cache+=(--cache-from "type=registry,ref=${BUILDCACHE}:release-wasm-deps-${ARCH}")
           fi
 
           metadata="${RUNNER_TEMP}/push-metadata.json"

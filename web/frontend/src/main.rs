@@ -40,6 +40,13 @@ fn main() {
 fn main() {
     use dioxus::desktop::{Config, LogicalSize, WindowBuilder};
 
+    // First of all, because this process may not be the app: an update hands off to a copy of
+    // this binary whose only job is to outlive the installer and then start what it produced,
+    // and that copy must never open a window of its own. See `update::install::launch`.
+    if update::run_as_relauncher() {
+        return;
+    }
+
     // Before the window, and before anything else reads the settings file: a staged update is
     // applied by *starting* the app, so this either hands off to the installer and never returns or
     // falls through having cleared whatever it could not use. Doing it here rather than on window

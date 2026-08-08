@@ -4,6 +4,7 @@
 mod appearance;
 mod callback;
 mod content;
+mod desktop;
 mod mfa;
 mod notifications;
 mod passkeys;
@@ -34,6 +35,7 @@ enum Panel {
     Security,
     Sync,
     Notifications,
+    DesktopApp,
     Privacy,
 }
 
@@ -48,6 +50,7 @@ impl TabKind for Panel {
             Self::Security,
             Self::Sync,
             Self::Notifications,
+            Self::DesktopApp,
             Self::Privacy,
         ]
     }
@@ -63,6 +66,7 @@ impl TabKind for Panel {
             Self::Security => "account.tab.security",
             Self::Sync => "account.tab.sync",
             Self::Notifications => "account.tab.notifications",
+            Self::DesktopApp => "account.tab.desktop",
             Self::Privacy => "account.tab.privacy",
         }
     }
@@ -76,6 +80,9 @@ impl Panel {
             // ungated on the server because it only shapes outbound links — a reader who cannot
             // change it is worse off than one who can.
             Self::Appearance | Self::Sources => true,
+            // The one panel gated on the *build* rather than on the deployment: it advertises
+            // the native client, and the reader of the native client already has it.
+            Self::DesktopApp => cfg!(feature = "web"),
             // Deliberately *not* gated on `CatalogueAdultContent`. The panel explains that the
             // deployment has it switched off; hiding it instead would mean an operator turning
             // the flag on silently activates opt-ins nobody has been able to review.
@@ -164,6 +171,7 @@ pub(crate) fn Account() -> Element {
             Panel::Security => rsx! { security::SecurityPanel {} },
             Panel::Sync => rsx! { sync::SyncPanel {} },
             Panel::Notifications => rsx! { notifications::NotificationsPanel {} },
+            Panel::DesktopApp => rsx! { desktop::DesktopAppPanel {} },
             Panel::Privacy => rsx! { privacy::PrivacyPanel {} },
         }
     }

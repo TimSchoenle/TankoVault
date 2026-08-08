@@ -55,6 +55,20 @@
       },
       "badge": "18+"
     },
+    "desktop": {
+      "advantage": {
+        "notifications": "Neue Kapitel kommen als Systembenachrichtigung statt in einem Browser-Tab, den du offen lassen musst.",
+        "startup": "Sie kann mit deiner Sitzung starten und ist beim Anmelden schon da.",
+        "tray": "Sie kann nach dem Schließen des Fensters im Infobereich weiterlaufen, damit diese Benachrichtigungen weiter ankommen.",
+        "updates": "Sie aktualisiert sich selbst aus signierten Veröffentlichungen und sagt dir, auf welche Version sie gewechselt ist."
+      },
+      "download": "Desktop-App herunterladen",
+      "intro": "TankoVault läuft auch als native App unter Windows und Linux. Sie spricht mit demselben Server und demselben Konto — es wird nichts kopiert und nichts getrennt gehalten.",
+      "platforms": "Die Downloadseite enthält ein Windows-Installationsprogramm, ein Debian-Paket, ein AppImage und portable Archive für beide Systeme.",
+      "serverAddress": "Adresse dieses Servers",
+      "serverAddressHint": "Die App fragt beim ersten Start danach. Das ist die Adresse, die du ihr gibst.",
+      "title": "Die Desktop-App"
+    },
     "notifications": {
       "channel": {
         "inApp": "Benachrichtigungen in der App",
@@ -181,6 +195,7 @@
     "tab": {
       "appearance": "Darstellung",
       "content": "Inhalte",
+      "desktop": "Desktop-App",
       "notifications": "Benachrichtigungen",
       "privacy": "Datenschutz",
       "profile": "Profil",
@@ -292,10 +307,20 @@
     "subtitle": "TankoVault wird selbst gehostet, deshalb muss diese Kopie wissen, welcher Server deiner ist. Du kannst das später in den Einstellungen ändern."
   },
   "settings": {
+    "about": {
+      "project": "Projektseite öffnen",
+      "title": "Diese Installation"
+    },
     "forgetServer": "Diesen Server vergessen",
     "notifications": {
       "hint": "Wird von deinem Betriebssystem angezeigt, wenn ein Kapitel erscheint, dem du folgst. Die Glocke in der App bleibt davon unberührt.",
       "label": "Desktop-Benachrichtigungen anzeigen",
+      "systemHint": "Sie werden als TankoVaults eigene Mitteilungen gesendet — dein System führt TankoVault also in seinen Benachrichtigungseinstellungen und kann sie auch dort stummschalten.",
+      "test": {
+        "action": "Testbenachrichtigung senden",
+        "body": "Benachrichtigungen funktionieren. So sieht ein neues Kapitel aus.",
+        "title": "TankoVault"
+      },
       "title": "Benachrichtigungen"
     },
     "startup": {
@@ -303,6 +328,13 @@
       "hint": "Dieselbe Option, die das Installationsprogramm angeboten hat. Hier ausgeschaltet, wird der Eintrag wieder entfernt.",
       "label": "TankoVault beim Anmelden starten",
       "title": "Autostart"
+    },
+    "tab": {
+      "about": "Über",
+      "notifications": "Benachrichtigungen",
+      "server": "Server",
+      "updates": "Aktualisierungen",
+      "window": "Fenster"
     },
     "title": "Einstellungen",
     "update": {
@@ -328,6 +360,10 @@
       "holdBackHint": "Eine Version muss so alt sein, bevor sie angeboten wird — eine kurz nach der Veröffentlichung zurückgezogene Version erreicht dich damit nie. Ohne Wartezeit wird jede Version sofort übernommen.",
       "install": "Herunterladen und installieren",
       "notify": {
+        "applied": "Du bist jetzt auf Version {version}.",
+        "appliedTitle": "TankoVault wurde aktualisiert",
+        "applying": "Version {version} wird installiert. TankoVault öffnet sich von selbst wieder, sobald das Installationsprogramm fertig ist.",
+        "applyingTitle": "TankoVault wird aktualisiert",
         "available": "Version {version} kann heruntergeladen werden.",
         "availableTitle": "TankoVault-Aktualisierung verfügbar",
         "staged": "Version {version} wird beim nächsten Start von TankoVault installiert.",
@@ -340,15 +376,16 @@
         "off": "Nichts tun",
         "prompt": "Nachfragen"
       },
-      "quit": "Zum Abschließen schließen",
+      "quit": "Zum Abschließen neu starten",
       "source": "Eine Prüfung fragt die Versionsliste bei github.com ab. Sonst verlässt nichts dieses Gerät, und es werden keine Kontodaten übertragen.",
       "state": {
+        "applied": "Auf Version {version} aktualisiert.",
         "available": "Version {version} ist verfügbar.",
         "availableOnly": "Version {version} ist verfügbar, diese Installation kann sie aber nicht selbst einspielen.",
         "checking": "Suche nach einer neueren Version…",
         "downloading": "Wird heruntergeladen… {percent}%",
         "idle": "Es wurde noch nicht geprüft.",
-        "staged": "Version {version} ist bereit. Sie wird beim nächsten Start von TankoVault installiert.",
+        "staged": "Version {version} ist bereit. Sie wird beim nächsten Start von TankoVault installiert, und TankoVault öffnet sich danach von selbst wieder.",
         "upToDate": "Das ist die neueste Version, die du übernehmen kannst."
       },
       "title": "Aktualisierungen",
@@ -357,6 +394,18 @@
         "portable": "Diese Installation läuft aus einem portablen Archiv, es gibt also nichts zu aktualisieren. Ersetze den Ordner durch das neue Archiv."
       },
       "waiting": "Einstellungen — eine Aktualisierung wartet"
+    },
+    "window": {
+      "closing": {
+        "hint": "Das Fenster verschwindet beim Schließen, die App läuft aber weiter — Kapitelbenachrichtigungen kommen also weiterhin an. Über das Symbol im Infobereich öffnest du sie wieder, und dort beendest du sie auch endgültig.",
+        "label": "TankoVault im Infobereich weiterlaufen lassen",
+        "title": "Fenster schließen"
+      },
+      "tray": {
+        "open": "TankoVault öffnen",
+        "quit": "TankoVault beenden"
+      },
+      "unsupported": "Dieses System bietet weder eine Autostart-Liste noch einen Infobereich, hier gibt es also nichts einzustellen."
     }
   },
   "window": {
@@ -1377,6 +1426,7 @@
     "copyright": "© {year} Tim Schönle",
     "dataRequests": "Datenauskunft",
     "deleteAccount": "Konto löschen",
+    "desktopApp": "Desktop-App",
     "export": "Bibliothek exportieren",
     "imprint": "Impressum",
     "legal": "Rechtliches",

@@ -51,6 +51,11 @@ pub(crate) use imp::EventStream;
 /// `autostart` entry on Linux. There is no browser equivalent and there should not be: a web page
 /// cannot arrange to be opened at login, and an installed app is the only thing entitled to ask.
 ///
+/// [`Tray`] and `close_to_tray_*` are the same shape of thing one step further on: an app that
+/// outlives its own window. A browser tab cannot, and a reader who closes the window still wants
+/// to be told a chapter landed. [`quit_app`] exists because that choice makes the close button
+/// ambiguous — it is the exit that means *exit*.
+///
 /// `credential_*` is the OS credential store — Credential Manager, Secret Service, Keychain.
 /// The web build has no counterpart because it needs none: the browser already keeps the refresh
 /// cookie encrypted, scoped to the origin and out of reach of script. On desktop that guarantee
@@ -60,10 +65,12 @@ pub(crate) use imp::EventStream;
 /// [`crate::api::session_store`].
 #[cfg(feature = "desktop")]
 pub(crate) use desktop::{
-    autostart_enabled, autostart_supported, credential_delete, credential_get, credential_set,
-    fit_window_to_display, notifications_enabled, notify, server_origin, set_autostart,
-    set_notifications_enabled, set_server_origin, set_window_heading, settings_path, window,
-    ROOT_ATTRIBUTES, STARTUP_INNER_SIZE, WINDOW_HEADING,
+    autostart_enabled, autostart_supported, close_to_tray_enabled, credential_delete,
+    credential_get, credential_set, fit_window_to_display, notifications_enabled, notify,
+    notify_now, quit_app, server_origin, set_autostart, set_close_to_tray,
+    set_notifications_enabled, set_server_origin, set_window_heading, set_window_hides_on_close,
+    settings_path, show_window, tray_supported, window, Tray, TrayCommand, ROOT_ATTRIBUTES,
+    STARTUP_INNER_SIZE, WINDOW_HEADING,
 };
 
 // ---------------------------------------------------------------------------------------------

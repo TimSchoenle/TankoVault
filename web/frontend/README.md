@@ -14,7 +14,7 @@ They are **mutually exclusive**; `src/platform/mod.rs` says so to the compiler, 
 alternative failure is a wall of unrelated resolution errors. Everything either build needs from
 the system it runs on is behind `src/platform`, and nothing under `src/views` knows which it is.
 
-Three differences are not incidental and are documented where they live:
+Four differences are not incidental and are documented where they live:
 
 - **There is no served origin on desktop.** `src/views/connect.rs` asks for one on first run and
   stores it; `platform::origin()` answers from there. The access token still lives in memory
@@ -34,6 +34,15 @@ Three differences are not incidental and are documented where they live:
   origin the reader connected to. That makes the origin binding **this app's assertion rather
   than a browser's guarantee**; read the module contract in `src/webauthn.rs` before relying on
   it. Linux has no OS passkey provider, so `is_available()` answers `false` there.
+- **The app can outlive its own window.** With "keep TankoVault running in the tray" on
+  (Settings → Window), the close button hides the window and the app keeps receiving chapter
+  pushes; the tray icon opens it again and is the only thing that ends it. `components/tray.rs`
+  owns both halves — the icon's lifetime and the window's close behaviour — because either one
+  without the other is a defect. The switch is offered only where a tray actually exists:
+  always on Windows, and on Linux only when the appindicator library is installed, which
+  `platform::desktop`'s `tray::available` probes for rather than assumes. It is not a
+  preference there — the library is opened with `dlopen` and the crate behind it *panics* when
+  it is missing, which under `panic = "abort"` ends the app.
 
 This crate is intentionally **excluded from the host Cargo workspace** (the web build targets
 `wasm32-unknown-unknown` via the `dx` CLI). Build and check it on its own.

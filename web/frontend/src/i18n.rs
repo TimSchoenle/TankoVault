@@ -224,6 +224,46 @@ fn interpolate(template: &str, args: &[(&str, &str)]) -> String {
     out
 }
 
+/// The message at `key`, with `{name}` placeholders substituted, resolved **without** the
+/// Dioxus context.
+///
+/// For the one caller that has none: `update::install`'s hand-off runs from `main`, before the
+/// app is launched, and it is the moment the reader most needs telling — the window they just
+/// opened is about to vanish for a minute while an installer runs. A [`Translator`] is a context
+/// lookup, so there is nothing to ask.
+///
+/// It resolves the language the way [`I18nRoot`] would for a first run — the system's, if it is
+/// shipped — rather than the one the reader last chose, which the desktop build does not persist.
+/// Falls back through the default catalogue and finally to the key itself, so a missing message
+/// is a visible key rather than an empty notification.
+#[cfg(feature = "desktop")]
+pub(crate) fn translate_offline(key: &str, args: &[(&str, &str)]) -> String {
+    let preferred = preferred_language();
+    let message = LOCALES
+        .iter()
+        .find(|locale| locale.code == preferred)
+        .and_then(|locale| lookup(locale.messages, key))
+        .or_else(|| {
+            LOCALES
+                .iter()
+                .find(|locale| locale.code == DEFAULT_LANGUAGE)
+                .and_then(|locale| lookup(locale.messages, key))
+        })
+        .unwrap_or_else(|| key.to_owned());
+    interpolate(&message, args)
+}
+
+/// The string at a dot path in a catalogue, or `None` for a missing or non-leaf path.
+#[cfg(feature = "desktop")]
+fn lookup(messages: &str, key: &str) -> Option<String> {
+    let catalogue: serde_json::Value = serde_json::from_str(messages).ok()?;
+    let mut node = &catalogue;
+    for segment in key.split('.') {
+        node = node.get(segment)?;
+    }
+    node.as_str().map(str::to_owned)
+}
+
 /// The default catalogue, parsed once, for [`has_key`].
 ///
 /// Only the default one: `locales_define_the_same_keys` holds every catalogue to the same key

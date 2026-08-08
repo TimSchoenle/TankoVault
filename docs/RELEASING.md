@@ -125,6 +125,24 @@ names from the product name and version and nothing here controls that string. A
 of the four extensions fails the release, rather than shipping a manifest that silently omits a
 platform.
 
+### What the reader sees when one is applied
+
+An update is *staged* while the app runs and *applied* at the next start, before there is a
+window — so the whole of it happens with nothing of ours on screen. Three things exist so that is
+not indistinguishable from the app failing to open:
+
+- a system notification naming the version, raised **before** the hand-off and waited on, because
+  a notification still queued on a thread when the process exits is never delivered;
+- **the app reopens by itself.** Neither Windows installer can replace a running executable, so
+  the process that hands over cannot also be the one that comes back: it copies itself into the
+  staging directory and gives that copy the single job of outliving the installer and starting
+  what it produced (`update::install::launch`). An `AppImage` needs none of this — it replaces
+  its own image and `exec`s it;
+- the version is recorded before the hand-off and read once by the run that follows, which
+  confirms it in the settings sheet and in a second notification — but only if the version that
+  came back is the one that was promised, so a cancelled or failed install says nothing rather
+  than something false.
+
 ### Why minisign for the client, when the images use cosign
 
 Verification has to run inside a reader's app, offline, in a process built with `panic = "abort"`.

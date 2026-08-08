@@ -48,7 +48,7 @@ use crate::i18n::Translator;
 use dioxus::prelude::*;
 use std::time::Duration;
 
-pub(crate) use install::{apply_staged, flavour};
+pub(crate) use install::{apply_staged, flavour, run_as_relauncher};
 
 /// Which release policy the reader chose.
 const POLICY_KEY: &str = "tv-update-policy";
@@ -60,6 +60,9 @@ const LAST_CHECK_KEY: &str = "tv-update-last-check";
 const DISMISSED_KEY: &str = "tv-update-dismissed";
 /// The version currently staged on disk. Read by [`install::apply_staged`] at startup.
 const STAGED_KEY: &str = "tv-update-staged";
+/// The version an installer was handed off for, written immediately before the hand-off and
+/// read once by the run that follows it. See [`adopt_applied`].
+const APPLIED_KEY: &str = "tv-update-applied";
 
 /// The default hold-back window: a release is not offered until it is this many days old.
 ///
@@ -223,6 +226,14 @@ pub(crate) enum Status {
     Staged {
         version: String,
     },
+    /// The installer ran and this is the build it produced.
+    ///
+    /// Set once, by [`adopt_applied`], at the start that follows the hand-off. It is the only
+    /// confirmation the reader ever gets that an unattended update did what it said: everything
+    /// else about that path happens with no window on screen.
+    Applied {
+        version: String,
+    },
     /// A catalogue key naming what refused.
     Failed(&'static str),
 }
@@ -250,7 +261,9 @@ impl UpdateState {
     pub(crate) fn wants_attention(self) -> bool {
         match self.status() {
             Status::Available { ref version, .. } => !is_dismissed(version),
-            Status::Staged { .. } => true,
+            // The one that is not a request: it is the receipt for an install the reader never
+            // saw, and the sheet is where it says which version arrived.
+            Status::Staged { .. } | Status::Applied { .. } => true,
             Status::Idle
             | Status::Checking
             | Status::UpToDate
@@ -260,12 +273,51 @@ impl UpdateState {
     }
 }
 
+/// Report an update this app applied to itself at the previous start.
+///
+/// The hand-off in [`install::apply_staged`] records the version and then replaces this process
+/// with an installer, so the run that comes back is a *different build* with no memory of any of
+/// it. Without this the whole automatic path is invisible: the reader starts the app, it
+/// disappears, something reopens a minute later, and the settings sheet says no check has ever
+/// run.
+///
+/// Cleared as it is read, so the confirmation is shown once rather than at every start until the
+/// next update.
+pub(crate) fn adopt_applied(state: UpdateState, i18n: Translator) {
+    let Some(version) = crate::platform::store_get(APPLIED_KEY) else {
+        return;
+    };
+    crate::platform::store_remove(APPLIED_KEY);
+    // Anything but the version this build reports means the installer did not produce what it
+    // said it would — a failed install, or a downgrade someone arranged by hand. Saying "updated
+    // to 2.4.0" while running 2.3.0 is worse than saying nothing.
+    if crate::build_info::VERSION != version {
+        return;
+    }
+    crate::platform::notify(
+        &i18n.t("settings.update.notify.appliedTitle"),
+        &i18n.args("settings.update.notify.applied", &[("version", &version)]),
+    );
+    state.set(Status::Applied { version });
+}
+
 /// Whether the reader has declined `version`.
 ///
 /// Compared by version rather than remembered as a flag, so declining 2.1.0 says nothing about
 /// 2.2.0 — a dismissal is about one release, not about updates.
 fn is_dismissed(version: &str) -> bool {
     crate::platform::store_get(DISMISSED_KEY).is_some_and(|declined| declined == version)
+}
+
+/// Retire the "updated to …" receipt once the reader has had the settings sheet open.
+///
+/// [`Status::Applied`] draws the title bar's dot, and a dot that never clears stops meaning
+/// anything. Closing the sheet is the one moment it is safe to assume the line was there to be
+/// read — clearing it when the sheet *opens* would race the reader to it.
+pub(crate) fn acknowledge_applied(state: UpdateState) {
+    if matches!(state.status(), Status::Applied { .. }) {
+        state.set(Status::UpToDate);
+    }
 }
 
 /// Stop asking about the release currently on offer.
@@ -417,6 +469,8 @@ fn announce(previous: &Status, next: &Status, i18n: Translator) {
         | Status::Checking
         | Status::UpToDate
         | Status::Downloading { .. }
+        // Announced by `adopt_applied`, which is the only thing that can set it.
+        | Status::Applied { .. }
         | Status::Failed(_) => None,
     };
     if let Some((summary, body)) = message {

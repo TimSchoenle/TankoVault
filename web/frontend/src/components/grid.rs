@@ -181,12 +181,21 @@ pub(crate) async fn unmeasured<T>() -> T {
     std::future::pending().await
 }
 
-/// The hidden boxes a [`GridFit`] measures: its own width is the width the grid is laid out in,
-/// and its two children carry `--card` and `--gap`.
+/// The hidden boxes a [`GridFit`] measures: one spanning the width the grid is laid out in, and
+/// two carrying `--card` and `--gap`.
 ///
 /// Render it as a sibling of the grid, inside the same column, and **keep it mounted while the
 /// grid is still a skeleton** — the first measurement is what releases the fetch, so a probe that
 /// only appears alongside results would deadlock the screen it belongs to.
+///
+/// **The three observed boxes are siblings, and nesting any of them inside another silently
+/// breaks the measurement.** A resize event *bubbles* in the desktop build — dioxus-desktop
+/// dispatches it to the target's ancestors as well — so a child's box was delivered to the
+/// parent's handler too. The width therefore ended up holding whichever child reported last: the
+/// probe measured 1438 px, then 190 (`--card`), then 18 (`--gap`), and Discover fetched a
+/// one-column page into a seven-column grid. It only showed on a *fresh* mount, because at
+/// startup the window's own resize fired the width box again afterwards and papered over it.
+/// `xtask repo-lint`'s `resize-probes-are-siblings` holds them at one nesting depth.
 ///
 /// `tiles` selects the watchlist's smaller cover tile (`--tile`) over the catalogue card.
 #[component]
@@ -200,7 +209,7 @@ pub(crate) fn GridFitProbe(fit: GridFit, #[props(default = false)] tiles: bool) 
         div {
             class: "{class}",
             "aria-hidden": "true",
-            onresize: move |event| fit.observe(Metric::Width, &event),
+            span { class: "width", onresize: move |event| fit.observe(Metric::Width, &event) }
             span { class: "card", onresize: move |event| fit.observe(Metric::Card, &event) }
             span { class: "gap", onresize: move |event| fit.observe(Metric::Gap, &event) }
         }

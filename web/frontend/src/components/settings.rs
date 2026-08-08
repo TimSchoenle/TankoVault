@@ -1,26 +1,74 @@
 //! The desktop client's own settings, reached from the window header.
 //!
 //! Everything here is a property of *this installation*, not of the account: which server it
-//! talks to, whether pushes raise an OS notification, and how it keeps itself up to date. Account
-//! settings stay on the account screen, where they belong and where they can be synced. A reader
-//! with two machines may reasonably want one of them current and the other pinned.
+//! talks to, how its window behaves, whether pushes raise an OS notification, and how it keeps
+//! itself up to date. Account settings stay on the account screen, where they belong and where
+//! they can be synced. A reader with two machines may reasonably want one of them current and
+//! the other pinned.
 //!
 //! **It is deliberately outside the router, and outside the sign-in gate.** The server address
 //! is the one setting a reader needs precisely when nothing else works — a typo, a moved host, a
 //! server that is down — and every routed screen needs a working server to render. Putting it
 //! behind `AuthRequired`, as an earlier revision did, meant a wrong address could only be
-//! corrected by deleting the settings file by hand.
+//! corrected by deleting the settings file by hand. It is also why [`Category::Server`] is the
+//! one the sheet opens on.
+//!
+//! The categories are a real division and not a longer sheet folded up: each one answers a
+//! different question ("what does it talk to", "what does the window do", "what may interrupt
+//! me", "what version am I on"), and the sheet used to answer all four in one scrolling column
+//! where the last of them was below the fold.
 
-use crate::components::{Field, SegControl, SliderRow};
+use crate::components::{CloseToTray, Field, SegControl, SliderRow, TabBar, TabKind};
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
 use crate::update::{self, Policy, Status, UpdateState};
 use dioxus::prelude::*;
 
+/// One group of settings. See the module note on why this is a division rather than a fold.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Category {
+    Server,
+    Window,
+    Notifications,
+    Updates,
+    About,
+}
+
+impl TabKind for Category {
+    fn all() -> &'static [Self] {
+        &[
+            Self::Server,
+            Self::Window,
+            Self::Notifications,
+            Self::Updates,
+            Self::About,
+        ]
+    }
+
+    fn label_key(self) -> &'static str {
+        match self {
+            Self::Server => "settings.tab.server",
+            Self::Window => "settings.tab.window",
+            Self::Notifications => "settings.tab.notifications",
+            Self::Updates => "settings.tab.updates",
+            Self::About => "settings.tab.about",
+        }
+    }
+}
+
 /// The settings sheet. `on_close` dismisses it.
 #[component]
 pub(crate) fn SettingsSheet(on_close: EventHandler<()>) -> Element {
     let i18n = use_i18n();
+    let mut category = use_signal(|| Category::Server);
+    let update = use_context::<UpdateState>();
+
+    // Every way out of the sheet goes through here, so the "updated to …" receipt is retired
+    // exactly once and by the reader having seen it — see `update::acknowledge_applied`.
+    let close = move |()| {
+        update::acknowledge_applied(update);
+        on_close.call(());
+    };
 
     rsx! {
         div {
@@ -28,7 +76,7 @@ pub(crate) fn SettingsSheet(on_close: EventHandler<()>) -> Element {
             // Click-outside to dismiss, and `Escape` on the sheet itself below. The scrim is a
             // presentational element, so it carries no role — the dismiss it offers is a
             // convenience duplicated by a real button.
-            onclick: move |_| on_close.call(()),
+            onclick: move |_| close(()),
             div {
                 class: "ik-prefs",
                 role: "dialog",
@@ -38,7 +86,7 @@ pub(crate) fn SettingsSheet(on_close: EventHandler<()>) -> Element {
                 onclick: move |event| event.stop_propagation(),
                 onkeydown: move |event| {
                     if event.key() == Key::Escape {
-                        on_close.call(());
+                        close(());
                     }
                 },
                 div { class: "ik-prefs-head",
@@ -48,22 +96,22 @@ pub(crate) fn SettingsSheet(on_close: EventHandler<()>) -> Element {
                         class: "ik-prefs-close",
                         r#type: "button",
                         "aria-label": i18n.t("common.close"),
-                        onclick: move |_| on_close.call(()),
+                        onclick: move |_| close(()),
                         Ic { icon: Icon::Close, size: 15 }
                     }
                 }
 
-                ServerSection {}
-                UpdateSection {}
-                NotificationSection {}
-                if crate::platform::autostart_supported() {
-                    StartupSection {}
+                TabBar {
+                    selected: category(),
+                    on_select: move |next| category.set(next),
                 }
 
-                if let Some(path) = crate::platform::settings_path() {
-                    p { class: "ik-muted", style: "font-size:11.5px;word-break:break-all;margin:4px 0 0;",
-                        {i18n.args("connect.storedAt", &[("path", &path.display().to_string())])}
-                    }
+                match category() {
+                    Category::Server => rsx! { ServerSection {} },
+                    Category::Window => rsx! { WindowSection {} },
+                    Category::Notifications => rsx! { NotificationSection {} },
+                    Category::Updates => rsx! { UpdateSection {} },
+                    Category::About => rsx! { AboutSection {} },
                 }
             }
         }
@@ -160,6 +208,166 @@ fn ServerSection() -> Element {
     }
 }
 
+/// What the window does at either end of a session: whether the app is started with the reader's,
+/// and whether closing it ends the app.
+///
+/// Both switches are absent where the platform has nothing behind them rather than shown and
+/// inert, so what is on this tab is what this machine can actually do.
+#[component]
+fn WindowSection() -> Element {
+    let i18n = use_i18n();
+    let startup = crate::platform::autostart_supported();
+    let tray = crate::platform::tray_supported();
+
+    rsx! {
+        if startup {
+            StartupSection {}
+        }
+        if tray {
+            CloseToTraySection {}
+        }
+        if !startup && !tray {
+            p { class: "ik-muted", style: "font-size:12.5px;margin:0;",
+                {i18n.t("settings.window.unsupported")}
+            }
+        }
+    }
+}
+
+/// Whether the app is in the reader's sign-in list.
+///
+/// The one switch on this sheet whose state is *not* stored by the app: it reads and writes the
+/// OS list directly (`HKCU\…\Run`, or a freedesktop `autostart` entry), because the Windows
+/// installer offers the same choice as a checkbox and both have to mean the same thing. That is
+/// also why a refusal is shown rather than swallowed — the reader can see the box move, so a
+/// change that did not take has to say so.
+#[component]
+fn StartupSection() -> Element {
+    let i18n = use_i18n();
+    let mut enabled = use_signal(crate::platform::autostart_enabled);
+    let mut refused = use_signal(|| false);
+
+    rsx! {
+        section { class: "ik-prefs-section",
+            h3 { {i18n.t("settings.startup.title")} }
+            label { class: "ik-prefs-toggle",
+                input {
+                    r#type: "checkbox",
+                    checked: enabled(),
+                    onchange: move |event| {
+                        let on = event.checked();
+                        let applied = crate::platform::set_autostart(on);
+                        // On refusal the OS list is unchanged, so the switch goes back to what it
+                        // actually reflects rather than to what was asked for.
+                        enabled.set(if applied { on } else { !on });
+                        refused.set(!applied);
+                    },
+                }
+                span { {i18n.t("settings.startup.label")} }
+            }
+            p { class: "ik-muted", style: "font-size:12.5px;margin:6px 0 0;",
+                {i18n.t("settings.startup.hint")}
+            }
+            if refused() {
+                div {
+                    class: "ik-error",
+                    role: "alert",
+                    style: "padding:10px;margin-top:8px;font-size:12.5px;",
+                    {i18n.t("settings.startup.failed")}
+                }
+            }
+        }
+    }
+}
+
+/// Whether the close button ends the app or leaves it in the tray.
+///
+/// The switch writes the setting *and* the shared signal, and the second one is what actually
+/// changes anything: `components::tray::TrayHost` watches it, puts the icon in the tray and
+/// tells the window to hide rather than close. Writing only the setting would take effect at the
+/// next start — which is exactly the shape of bug that gets reported as "the option does
+/// nothing".
+///
+/// Only rendered where [`crate::platform::tray_supported`] is true, so there is never a window
+/// that hides with nothing left to bring it back.
+#[component]
+fn CloseToTraySection() -> Element {
+    let i18n = use_i18n();
+    let mut enabled = use_context::<CloseToTray>().0;
+
+    rsx! {
+        section { class: "ik-prefs-section",
+            h3 { {i18n.t("settings.window.closing.title")} }
+            label { class: "ik-prefs-toggle",
+                input {
+                    r#type: "checkbox",
+                    checked: enabled(),
+                    onchange: move |event| {
+                        let on = event.checked();
+                        crate::platform::set_close_to_tray(on);
+                        enabled.set(on);
+                    },
+                }
+                span { {i18n.t("settings.window.closing.label")} }
+            }
+            p { class: "ik-muted", style: "font-size:12.5px;margin:6px 0 0;",
+                {i18n.t("settings.window.closing.hint")}
+            }
+        }
+    }
+}
+
+/// Whether a push raises an OS notification, and a way to find out whether one arrives.
+///
+/// The test button is not padding. A chapter landing is the *only* thing that raises a
+/// notification here, which can be days apart, so without it "did I set this up correctly" is a
+/// question the reader cannot answer — and there are now two switches that have to agree: this
+/// one and the operating system's own per-app control (see `platform::desktop`'s `identify`).
+/// One press exercises the whole path either would break.
+#[component]
+fn NotificationSection() -> Element {
+    let i18n = use_i18n();
+    let mut enabled = use_signal(crate::platform::notifications_enabled);
+
+    rsx! {
+        section { class: "ik-prefs-section",
+            h3 { {i18n.t("settings.notifications.title")} }
+            label { class: "ik-prefs-toggle",
+                input {
+                    r#type: "checkbox",
+                    checked: enabled(),
+                    onchange: move |event| {
+                        let on = event.checked();
+                        crate::platform::set_notifications_enabled(on);
+                        enabled.set(on);
+                    },
+                }
+                span { {i18n.t("settings.notifications.label")} }
+            }
+            p { class: "ik-muted", style: "font-size:12.5px;margin:6px 0 0;",
+                {i18n.t("settings.notifications.hint")}
+            }
+            p { class: "ik-muted", style: "font-size:12.5px;margin:6px 0 0;",
+                {i18n.t("settings.notifications.systemHint")}
+            }
+            div { class: "ik-prefs-actions", style: "margin-top:10px;",
+                button {
+                    class: "ik-btn",
+                    r#type: "button",
+                    disabled: !enabled(),
+                    onclick: move |_| {
+                        crate::platform::notify(
+                            &i18n.t("settings.notifications.test.title"),
+                            &i18n.t("settings.notifications.test.body"),
+                        );
+                    },
+                    {i18n.t("settings.notifications.test.action")}
+                }
+            }
+        }
+    }
+}
+
 /// How this installation keeps itself current (`crate::update`).
 ///
 /// Three states this section has to render honestly rather than hide, because each one means the
@@ -188,13 +396,6 @@ fn UpdateSection() -> Element {
     rsx! {
         section { class: "ik-prefs-section",
             h3 { {i18n.t("settings.update.title")} }
-
-            p { class: "ik-muted", style: "font-size:12.5px;margin:0 0 12px;",
-                span { "v{crate::build_info::VERSION}" }
-                if let Some(commit) = crate::build_info::commit() {
-                    span { " · {commit}" }
-                }
-            }
 
             if update::is_configured() {
                 div { class: "ik-subhead", style: "margin-bottom:8px;", {i18n.t("settings.update.policy")} }
@@ -238,6 +439,21 @@ fn UpdateSection() -> Element {
                     {i18n.t("settings.update.source")}
                 }
                 p { style: "font-size:12.5px;margin:10px 0 0;", {state_text(&status, i18n)} }
+                // The one state with a number behind it. A percentage in a sentence is easy to
+                // miss on a long download, and this is the whole of the feedback an automatic
+                // update gives before it goes quiet again.
+                if let Status::Downloading { percent } = status {
+                    div {
+                        class: "ik-progress",
+                        style: "margin-top:8px;",
+                        role: "progressbar",
+                        "aria-valuenow": "{percent}",
+                        "aria-valuemin": "0",
+                        "aria-valuemax": "100",
+                        "aria-label": i18n.t("settings.update.title"),
+                        span { style: "width:{percent}%;" }
+                    }
+                }
                 UpdateActions { state, status: status.clone(), busy, on_check: check }
             } else {
                 p { class: "ik-muted", style: "font-size:12.5px;margin:10px 0 0;",
@@ -297,14 +513,18 @@ fn UpdateActions(
                     }
                 },
                 // Applying happens at the next start, so the only thing left to offer is the
-                // restart itself — closing the window is what gets there.
+                // restart itself.
+                //
+                // `quit_app`, never `window.close()`: with close-to-tray on, closing hides the
+                // window, the process lives on and the update the reader just asked for is
+                // applied at some unrelated start days later.
                 Status::Staged { .. } => rsx! {
                     button {
                         class: "ik-btn primary",
                         r#type: "button",
                         onclick: move |_| {
                             if let Some(window) = crate::platform::window() {
-                                window.close();
+                                crate::platform::quit_app(&window);
                             }
                         },
                         {i18n.t("settings.update.quit")}
@@ -314,6 +534,7 @@ fn UpdateActions(
                 | Status::Checking
                 | Status::UpToDate
                 | Status::Downloading { .. }
+                | Status::Applied { .. }
                 | Status::Failed(_) => rsx! {},
             }
         }
@@ -346,78 +567,42 @@ fn state_text(status: &Status, i18n: crate::i18n::Translator) -> String {
         Status::Staged { version } => {
             i18n.args("settings.update.state.staged", &[("version", version)])
         }
+        Status::Applied { version } => {
+            i18n.args("settings.update.state.applied", &[("version", version)])
+        }
         Status::Failed(key) => i18n.t(key),
     }
 }
 
-/// Whether a push raises an OS notification.
-#[component]
-fn NotificationSection() -> Element {
-    let i18n = use_i18n();
-    let mut enabled = use_signal(crate::platform::notifications_enabled);
-
-    rsx! {
-        section { class: "ik-prefs-section",
-            h3 { {i18n.t("settings.notifications.title")} }
-            label { class: "ik-prefs-toggle",
-                input {
-                    r#type: "checkbox",
-                    checked: enabled(),
-                    onchange: move |event| {
-                        let on = event.checked();
-                        crate::platform::set_notifications_enabled(on);
-                        enabled.set(on);
-                    },
-                }
-                span { {i18n.t("settings.notifications.label")} }
-            }
-            p { class: "ik-muted", style: "font-size:12.5px;margin:6px 0 0;",
-                {i18n.t("settings.notifications.hint")}
-            }
-        }
-    }
-}
-
-/// Whether the app is in the reader's sign-in list.
+/// What this copy is: its version, and where it keeps what the reader has told it.
 ///
-/// The one switch on this sheet whose state is *not* stored by the app: it reads and writes the
-/// OS list directly (`HKCU\…\Run`, or a freedesktop `autostart` entry), because the Windows
-/// installer offers the same choice as a checkbox and both have to mean the same thing. That is
-/// also why a refusal is shown rather than swallowed — the reader can see the box move, so a
-/// change that did not take has to say so.
+/// The settings path is here rather than under [`Category::Server`] where it used to sit,
+/// because it is the answer to "what would I delete to start over" — a question about the
+/// installation, not about the server it happens to point at.
 #[component]
-fn StartupSection() -> Element {
+fn AboutSection() -> Element {
     let i18n = use_i18n();
-    let mut enabled = use_signal(crate::platform::autostart_enabled);
-    let mut refused = use_signal(|| false);
 
     rsx! {
         section { class: "ik-prefs-section",
-            h3 { {i18n.t("settings.startup.title")} }
-            label { class: "ik-prefs-toggle",
-                input {
-                    r#type: "checkbox",
-                    checked: enabled(),
-                    onchange: move |event| {
-                        let on = event.checked();
-                        let applied = crate::platform::set_autostart(on);
-                        // On refusal the OS list is unchanged, so the switch goes back to what it
-                        // actually reflects rather than to what was asked for.
-                        enabled.set(if applied { on } else { !on });
-                        refused.set(!applied);
-                    },
+            h3 { {i18n.t("settings.about.title")} }
+            p { style: "font-size:12.5px;margin:0;",
+                span { "v{crate::build_info::VERSION}" }
+                if let Some(commit) = crate::build_info::commit() {
+                    span { class: "ik-muted", " · {commit}" }
                 }
-                span { {i18n.t("settings.startup.label")} }
             }
-            p { class: "ik-muted", style: "font-size:12.5px;margin:6px 0 0;",
-                {i18n.t("settings.startup.hint")}
+            if let Some(path) = crate::platform::settings_path() {
+                p { class: "ik-muted", style: "font-size:11.5px;word-break:break-all;margin:10px 0 0;",
+                    {i18n.args("connect.storedAt", &[("path", &path.display().to_string())])}
+                }
             }
-            if refused() {
-                div {
-                    class: "ik-error",
-                    role: "alert",
-                    style: "padding:10px;margin-top:8px;font-size:12.5px;",
-                    {i18n.t("settings.startup.failed")}
+            div { class: "ik-prefs-actions", style: "margin-top:12px;",
+                button {
+                    class: "ik-btn",
+                    r#type: "button",
+                    onclick: move |_| crate::platform::navigate_to(crate::build_info::PROJECT_URL),
+                    {i18n.t("settings.about.project")}
                 }
             }
         }

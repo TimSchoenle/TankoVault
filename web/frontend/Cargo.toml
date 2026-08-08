@@ -237,6 +237,24 @@ webauthn-authenticator-rs = { version = "=0.6.1-dev", features = [
 # below `keyring` and `notify-rust`. The dependency-free option was shelling out to `reg.exe` and
 # reading exit codes, which is a parser for output that is not a contract.
 windows-registry = { version = "0.6", optional = true }
+# The monitor's *work area* behind `platform::fit_window_to_display` — what Windows leaves after
+# the taskbar, which `tao` does not expose (`MonitorHandle` offers only the whole monitor). The
+# window used to be sized to a fraction of the monitor and hope; this is the number the OS
+# actually keeps.
+#
+# `winsafe` rather than `windows`: reaching `GetMonitorInfo` through the latter means an `unsafe`
+# block, and this crate `forbid`s unsafe. `HMONITOR::MonitorFromRect` and `GetMonitorInfo` are
+# both safe here, and neither needs a raw handle from `tao` — the monitor is identified by the
+# rectangle `tao` already reports, so nothing is transmuted across the two crates' notions of a
+# handle.
+winsafe = { version = "0.0.28", features = ["user"], optional = true }
+
+# The Linux half of the same story: GDK reports the work area a compositor's panels leave, and
+# `tao` hands out the `gdk::Monitor` behind its own `MonitorHandle`. `gdk` rather than `gtk`
+# because the monitor is all that is wanted here, and it is the same crate at the same version
+# `tao` already compiles — a name for something in the graph, not an addition to it.
+[target.'cfg(all(unix, not(target_vendor = "apple")))'.dependencies]
+gdk = { version = "0.18", optional = true }
 
 # One of `web` and `desktop` must be on and both may not be; `src/platform/mod.rs` says so to the
 # compiler, because a violation otherwise surfaces as a wall of unrelated resolution errors.
@@ -275,6 +293,8 @@ desktop = [
     # where there is not. Linux gets its autostart entry from `std::fs`.
     "dep:webauthn-authenticator-rs",
     "dep:windows-registry",
+    "dep:winsafe",
+    "dep:gdk",
     # `bytes_stream()`, which is what the SSE parser above is fed.
     "reqwest/stream",
     # The refresh credential is an httpOnly cookie. On web the browser owns the jar and this is

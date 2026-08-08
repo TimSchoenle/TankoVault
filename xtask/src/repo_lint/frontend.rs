@@ -4,7 +4,7 @@
 use std::path::Path;
 
 use super::Finding;
-use super::text::{is_comment, scan, walk};
+use super::text::{const_str, is_comment, scan, walk};
 
 pub(super) fn no_unsafe_eval(root: &Path) -> Vec<Finding> {
     scan(
@@ -187,6 +187,138 @@ pub(super) fn autostart_entry_agrees(root: &Path) -> anyhow::Result<Vec<Finding>
     Ok(findings)
 }
 
+/// **The desktop window's ceiling is built from the layout it has to hold.**
+///
+/// `platform::desktop` sizes the window from the rail, the content gutters and the widest
+/// `--measure` any route asks for, so the window it opens is one the content column can actually
+/// fill. Two of those live in `input.css` and one in `components::shell`, and nothing compiles a
+/// Rust constant against a stylesheet — so a retuned `--rail-w` would silently leave the window
+/// short again, which is the defect the sum replaced (a 1760px ceiling gave Discover five covers
+/// across where the layout fits seven).
+pub(super) fn the_window_ceiling_matches_the_layout(root: &Path) -> anyhow::Result<Vec<Finding>> {
+    let css = root.join("web/frontend/input.css");
+    let shell = root.join("web/frontend/src/components/shell.rs");
+    let platform = root.join("web/frontend/src/platform/desktop.rs");
+    let (Ok(styles), Ok(routes), Ok(rust)) = (
+        std::fs::read_to_string(&css),
+        std::fs::read_to_string(&shell),
+        std::fs::read_to_string(&platform),
+    ) else {
+        anyhow::bail!(
+            "repo-lint: cannot read {}, {} or {} — none is optional",
+            css.display(),
+            shell.display(),
+            platform.display()
+        );
+    };
+
+    let mut findings = Vec::new();
+    let mut expect = |rust_const: &str, expected: Option<f64>, source: &str, what: &str| {
+        let Some(expected) = expected else {
+            findings.push(Finding {
+                rule: "window-ceiling-matches-the-layout",
+                file: platform.clone(),
+                line: 1,
+                detail: format!("cannot read the {what} from {source}"),
+            });
+            return;
+        };
+        let declared = const_str(&rust, rust_const).and_then(|(line, value)| {
+            value
+                .trim_end_matches("f64")
+                .parse::<f64>()
+                .ok()
+                .map(|parsed| (line, parsed))
+        });
+        let Some((line, declared)) = declared else {
+            findings.push(Finding {
+                rule: "window-ceiling-matches-the-layout",
+                file: platform.clone(),
+                line: 1,
+                detail: format!("no `const {rust_const}: f64` to hold the {what} ({expected})"),
+            });
+            return;
+        };
+        if (declared - expected).abs() > f64::EPSILON {
+            findings.push(Finding {
+                rule: "window-ceiling-matches-the-layout",
+                file: platform.clone(),
+                line,
+                detail: format!(
+                    "is {declared}, but {source} puts the {what} at {expected} — the window \
+                     would be sized for a layout that no longer exists"
+                ),
+            });
+        }
+    };
+
+    expect(
+        "RAIL_WIDTH",
+        first_css_px(&styles, "--rail-w"),
+        "input.css",
+        "navigation rail width",
+    );
+    expect(
+        "CONTENT_GUTTER",
+        first_css_px(&styles, "--gutter"),
+        "input.css",
+        "content gutter",
+    );
+    expect(
+        "WIDEST_MEASURE",
+        widest_measure(&routes),
+        "components::shell::measure_for",
+        "widest measured column",
+    );
+    Ok(findings)
+}
+
+/// The pixel value of the first `<token>:` declaration in `styles`.
+///
+/// The first, deliberately: `:root` opens the file and the narrow-viewport overrides come after,
+/// and it is the `:root` value the desktop window is sized against — no window this rule is about
+/// is narrow enough to reach those media queries.
+fn first_css_px(styles: &str, token: &str) -> Option<f64> {
+    without_block_comments(styles)
+        .split_once(&format!("{token}:"))?
+        .1
+        .trim()
+        .split_once("px")
+        .and_then(|(value, _)| value.trim().parse().ok())
+}
+
+/// `styles` with every `/* … */` span removed.
+///
+/// [`is_comment`] is line-based and knows nothing of CSS block comments, while `input.css`
+/// documents almost every token directly above the line declaring it. A scan that trusted lines
+/// would read a number straight out of the sentence explaining the rule — which is how the first
+/// draft of this reader answered `999px` to a comment.
+fn without_block_comments(styles: &str) -> String {
+    let mut out = String::with_capacity(styles.len());
+    let mut rest = styles;
+    while let Some((before, after)) = rest.split_once("/*") {
+        out.push_str(before);
+        // An unterminated comment swallows the remainder, which is what a CSS parser does too.
+        let Some((_, tail)) = after.split_once("*/") else {
+            return out;
+        };
+        rest = tail;
+    }
+    out.push_str(rest);
+    out
+}
+
+/// The largest `"<n>px"` any route's measured column is set to.
+fn widest_measure(routes: &str) -> Option<f64> {
+    let body = routes.split_once("fn measure_for")?.1;
+    body.split("=> \"")
+        .skip(1)
+        .filter_map(|rest| rest.split_once("px\"")?.0.parse::<f64>().ok())
+        .fold(None, |widest: Option<f64>, value| {
+            Some(widest.map_or(value, |w| w.max(value)))
+        })
+}
+
 /// The contents of the first double-quoted run following `prefix`, or `None` if `prefix` is absent
 /// or nothing is quoted after it on that line.
 fn quoted_after(text: &str, prefix: &str) -> Option<String> {
@@ -224,6 +356,35 @@ mod tests {
             "assert!(!csp.contains(\"'{}'\"));",
             "unsafe-eval"
         )));
+    }
+
+    /// Same reasoning again, for the window-ceiling rule's two readers. `--gutter` is the case
+    /// that matters: the narrow-viewport override comes later in the file, and taking *that* one
+    /// would size the desktop window against a media query no desktop window ever reaches.
+    #[test]
+    fn the_ceiling_rule_reads_the_root_token_not_a_later_override() {
+        let styles = "/* --rail-w: 999px in a comment */\n\
+                      :root { --rail-w: 280px; --gutter: 40px; }\n\
+                      @media (max-width: 820px) { :root { --gutter: 16px; } }\n";
+        assert_eq!(first_css_px(styles, "--rail-w"), Some(280.0));
+        assert_eq!(first_css_px(styles, "--gutter"), Some(40.0));
+        assert_eq!(first_css_px(styles, "--nothing"), None);
+    }
+
+    /// The measured column is per route and the ceiling is built from the widest of them, so the
+    /// reader has to take the maximum rather than the first — and `none` (the console's
+    /// full-bleed opt-out) is not a width.
+    #[test]
+    fn the_ceiling_rule_takes_the_widest_measured_column() {
+        let routes = "fn measure_for(route: &Route) -> &'static str {\n\
+                      match route {\n\
+                      Route::Home {} => \"1760px\",\n\
+                      Route::Account {} => \"1120px\",\n\
+                      Route::Console {} => \"none\",\n\
+                      _ => \"1600px\",\n\
+                      }\n}\n";
+        assert_eq!(widest_measure(routes), Some(1760.0));
+        assert_eq!(widest_measure("nothing here"), None);
     }
 
     /// Same reasoning as above: the autostart rule reads a value out of an NSIS `!define`, and a

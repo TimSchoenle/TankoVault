@@ -64,7 +64,7 @@ pub struct FlagView {
     responses(
         (status = 200, description = "Every feature and its current state", body = Vec<FlagView>),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn list_flags(
@@ -100,7 +100,7 @@ pub struct SetFlag {
         (status = 200, description = "Every feature and its state after the change", body = Vec<FlagView>),
         (status = 400, description = "unknown feature, or an attempt to disable a locked one", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn set_flag(
@@ -172,7 +172,7 @@ pub async fn set_flag(
         (status = 200, description = "Every feature and its state after the reset", body = Vec<FlagView>),
         (status = 400, description = "unknown feature", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn reset_flag(

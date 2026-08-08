@@ -8,21 +8,96 @@ use tankovault_db::DbError;
 use tankovault_service::problem::{IntoProblem, Problem};
 use utoipa::ToSchema;
 
+/// The closed vocabulary of `title` values an API response can carry.
+///
+/// Published as a schema enum so clients branch on a generated type rather than on string
+/// literals. That makes the list a **contract**: a token missing from here fails to deserialise
+/// in the generated client, which turns a clean error response into
+/// `progenitor_client::Error::InvalidResponsePayload` — the server's message is lost and the
+/// caller sees "unreadable response" instead of the refusal. So every problem body reachable on
+/// an API route needs a variant, including the two the shared middleware emits without ever
+/// building an [`ApiError`]: [`Self::FeatureDisabled`] and [`Self::RateLimited`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, serde::Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ProblemKind {
+    NotFound,
+    Conflict,
+    Unauthorized,
+    Forbidden,
+    EmailNotVerified,
+    AccountSuspended,
+    StepUpRequired,
+    MfaEnrolmentRequired,
+    /// Also emitted by `tankovault_service::flags::enforce`, which never builds an [`ApiError`].
+    FeatureDisabled,
+    /// Emitted only by `tankovault_service::ratelimit`, never by [`ApiError`].
+    RateLimited,
+    BadRequest,
+    Unavailable,
+    UpstreamUnavailable,
+    UpstreamTimeout,
+    Internal,
+}
+
+impl ProblemKind {
+    /// Every published token, for the tests reconciling this list against what is emitted. An
+    /// omission here fails those tests; the enum itself is what `openapi.json` is built from.
+    #[cfg(test)]
+    pub const ALL: [Self; 15] = [
+        Self::NotFound,
+        Self::Conflict,
+        Self::Unauthorized,
+        Self::Forbidden,
+        Self::EmailNotVerified,
+        Self::AccountSuspended,
+        Self::StepUpRequired,
+        Self::MfaEnrolmentRequired,
+        Self::FeatureDisabled,
+        Self::RateLimited,
+        Self::BadRequest,
+        Self::Unavailable,
+        Self::UpstreamUnavailable,
+        Self::UpstreamTimeout,
+        Self::Internal,
+    ];
+
+    /// The wire token, as it appears in `title` and in the fragment of `type`.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::NotFound => "not_found",
+            Self::Conflict => "conflict",
+            Self::Unauthorized => "unauthorized",
+            Self::Forbidden => "forbidden",
+            Self::EmailNotVerified => "email_not_verified",
+            Self::AccountSuspended => "account_suspended",
+            Self::StepUpRequired => "step_up_required",
+            Self::MfaEnrolmentRequired => "mfa_enrolment_required",
+            Self::FeatureDisabled => "feature_disabled",
+            Self::RateLimited => "rate_limited",
+            Self::BadRequest => "bad_request",
+            Self::Unavailable => "unavailable",
+            Self::UpstreamUnavailable => "upstream_unavailable",
+            Self::UpstreamTimeout => "upstream_timeout",
+            Self::Internal => "internal",
+        }
+    }
+}
+
 /// RFC 9457 `application/problem+json` error body shape produced by [`ApiError`]. Declared
 /// purely for `OpenAPI` documentation — `tankovault_service::problem` builds the JSON, so runtime
 /// callers never construct this type. It mirrors `problem::ProblemBody`; a test asserts the two
 /// agree field for field, since only this copy is published to clients.
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize, serde::Deserialize, ToSchema)]
 #[schema(example = json!({
     "type": "about:blank#not_found",
     "title": "not_found",
     "status": 404,
     "detail": "resource not found",
 }))]
-#[derive(serde::Deserialize)]
 pub struct ProblemDetails {
     pub r#type: String,
-    pub title: String,
+    pub title: ProblemKind,
     pub status: u16,
     pub detail: String,
 }
@@ -85,71 +160,71 @@ pub enum ApiError {
 }
 
 impl ApiError {
-    fn parts(&self) -> (StatusCode, &'static str, String) {
+    fn parts(&self) -> (StatusCode, ProblemKind, String) {
         match self {
             Self::NotFound => (
                 StatusCode::NOT_FOUND,
-                "not_found",
+                ProblemKind::NotFound,
                 "resource not found".into(),
             ),
-            Self::Conflict(m) => (StatusCode::CONFLICT, "conflict", m.clone()),
+            Self::Conflict(m) => (StatusCode::CONFLICT, ProblemKind::Conflict, m.clone()),
             Self::Unauthorized => (
                 StatusCode::UNAUTHORIZED,
-                "unauthorized",
+                ProblemKind::Unauthorized,
                 "authentication required".into(),
             ),
             Self::Forbidden => (
                 StatusCode::FORBIDDEN,
-                "forbidden",
+                ProblemKind::Forbidden,
                 "insufficient privileges".into(),
             ),
             Self::EmailNotVerified => (
                 StatusCode::FORBIDDEN,
-                "email_not_verified",
+                ProblemKind::EmailNotVerified,
                 "please confirm your email address before signing in".into(),
             ),
             Self::Suspended => (
                 StatusCode::FORBIDDEN,
-                "account_suspended",
+                ProblemKind::AccountSuspended,
                 "this account has been suspended; contact an administrator".into(),
             ),
             Self::StepUpRequired => (
                 StatusCode::FORBIDDEN,
-                "step_up_required",
+                ProblemKind::StepUpRequired,
                 "confirm your identity with your second factor to continue".into(),
             ),
             Self::MfaEnrolmentRequired => (
                 StatusCode::FORBIDDEN,
-                "mfa_enrolment_required",
+                ProblemKind::MfaEnrolmentRequired,
                 "set up two-factor authentication before using this".into(),
             ),
             Self::FeatureDisabled(feature) => (
                 StatusCode::NOT_FOUND,
-                "feature_disabled",
+                ProblemKind::FeatureDisabled,
                 format!(
                     "the \"{}\" feature is switched off on this deployment",
                     feature.title()
                 ),
             ),
-            Self::BadRequest(m) => (StatusCode::BAD_REQUEST, "bad_request", m.clone()),
+            Self::BadRequest(m) => (StatusCode::BAD_REQUEST, ProblemKind::BadRequest, m.clone()),
             Self::Unavailable => (
                 StatusCode::SERVICE_UNAVAILABLE,
-                "unavailable",
+                ProblemKind::Unavailable,
                 "the live notification stream is temporarily unavailable".into(),
             ),
             Self::BadGateway => (
                 StatusCode::BAD_GATEWAY,
-                "upstream_unavailable",
+                ProblemKind::UpstreamUnavailable,
                 "a service this request depends on is unavailable; please try again".into(),
             ),
             Self::GatewayTimeout => (
                 StatusCode::GATEWAY_TIMEOUT,
-                "upstream_timeout",
+                ProblemKind::UpstreamTimeout,
                 "a service this request depends on did not respond in time".into(),
             ),
             Self::Internal => (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                "internal",
+                ProblemKind::Internal,
                 "internal server error".into(),
             ),
         }
@@ -159,7 +234,7 @@ impl ApiError {
 impl IntoProblem for ApiError {
     fn into_problem(self) -> Problem {
         let (status, kind, detail) = self.parts();
-        Problem::new(status, kind, detail)
+        Problem::new(status, kind.as_str(), detail)
     }
 }
 
@@ -199,12 +274,66 @@ pub type ApiResult<T> = Result<T, ApiError>;
 
 #[cfg(test)]
 mod tests {
-    use super::{ApiError, ProblemDetails};
+    use super::{ApiError, ProblemDetails, ProblemKind};
     use axum::body::to_bytes;
     use axum::http::StatusCode;
     use axum::http::header::CONTENT_TYPE;
-    use axum::response::IntoResponse as _;
+    use axum::response::{IntoResponse as _, Response};
+    use tankovault_domain::Feature;
     use tankovault_service::problem::{IntoProblem as _, PROBLEM_JSON};
+
+    /// Every `ApiError` variant, so the loops below cannot quietly stop covering one.
+    ///
+    /// The exhaustive match below the list is what makes that hold: a new variant stops this
+    /// file compiling, so it cannot reach the wire without someone standing here deciding what
+    /// its status and token are. The previous version of these tests was a hand-picked list and
+    /// silently omitted the three `403`s the console branches on.
+    fn every_variant() -> Vec<ApiError> {
+        let all = vec![
+            ApiError::NotFound,
+            ApiError::Conflict("dup".to_owned()),
+            ApiError::Unauthorized,
+            ApiError::Forbidden,
+            ApiError::EmailNotVerified,
+            ApiError::Suspended,
+            ApiError::StepUpRequired,
+            ApiError::MfaEnrolmentRequired,
+            ApiError::FeatureDisabled(Feature::AccountsMfa),
+            ApiError::BadRequest("bad".to_owned()),
+            ApiError::Unavailable,
+            ApiError::BadGateway,
+            ApiError::GatewayTimeout,
+            ApiError::Internal,
+        ];
+        for error in &all {
+            match error {
+                ApiError::NotFound
+                | ApiError::Conflict(_)
+                | ApiError::Unauthorized
+                | ApiError::Forbidden
+                | ApiError::EmailNotVerified
+                | ApiError::Suspended
+                | ApiError::StepUpRequired
+                | ApiError::MfaEnrolmentRequired
+                | ApiError::FeatureDisabled(_)
+                | ApiError::BadRequest(_)
+                | ApiError::Unavailable
+                | ApiError::BadGateway
+                | ApiError::GatewayTimeout
+                | ApiError::Internal => {}
+            }
+        }
+        all
+    }
+
+    async fn documented_body(response: Response) -> ProblemDetails {
+        let bytes = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("read body");
+        // Deserializing into the *documented* type is the assertion: a member renamed or dropped
+        // on either side fails here, and now so does a `title` outside the published vocabulary.
+        serde_json::from_slice(&bytes).expect("body matches the published schema")
+    }
 
     /// `ProblemDetails` is documentation only — `tankovault_service::problem` builds the runtime
     /// body. Two declarations of one wire shape is exactly the drift that made hand-mirrored DTOs
@@ -221,63 +350,75 @@ mod tests {
                 .and_then(|v| v.to_str().ok()),
             Some(PROBLEM_JSON)
         );
-        let bytes = to_bytes(response.into_body(), usize::MAX)
-            .await
-            .expect("read body");
 
-        // Deserializing into the *documented* type is the assertion: a member renamed or dropped
-        // on either side fails here.
-        let documented: ProblemDetails =
-            serde_json::from_slice(&bytes).expect("body matches schema");
+        let documented = documented_body(response).await;
         assert_eq!(documented.r#type, "about:blank#not_found");
-        assert_eq!(documented.title, "not_found");
+        assert_eq!(documented.title, ProblemKind::NotFound);
         assert_eq!(documented.status, 404);
         assert_eq!(documented.detail, "resource not found");
     }
 
-    /// The three `403`s the operator surfaces answer with, pinned by the token clients branch on.
-    ///
-    /// The bug: the console read the bare status and reported every one of them as "you don't
-    /// have permission to do that" — including the step-up demand, which is a question the
-    /// reader can answer, and the enrolment demand, which names its own remedy. `web/frontend`
-    /// is a separate workspace and shares no types with this crate, so its `api::Refusal` matches
-    /// these strings; renaming one here silently turns the prompt back into a dead end.
-    #[test]
-    fn the_console_branches_on_these_problem_types() {
-        for (error, expected) in [
-            (ApiError::StepUpRequired, "step_up_required"),
-            (ApiError::MfaEnrolmentRequired, "mfa_enrolment_required"),
-            (ApiError::Forbidden, "forbidden"),
-        ] {
-            let (status, kind, _) = error.parts();
-            assert_eq!(status, StatusCode::FORBIDDEN);
-            assert_eq!(kind, expected);
+    /// Every variant's status must agree with the `status` member in its own body, or a client
+    /// that reads one and not the other sees a different error than the one that happened. Every
+    /// variant, not a hand-picked list: the previous version of this test omitted the three
+    /// `403`s the console branches on, which are the ones a mistake here would hurt most.
+    #[tokio::test]
+    async fn every_variant_echoes_its_own_status() {
+        for error in every_variant() {
+            let expected = error.parts().0;
+            let response = error.into_response();
+            assert_eq!(response.status(), expected);
+
+            let documented = documented_body(response).await;
+            assert_eq!(documented.status, expected.as_u16());
+            assert_eq!(
+                documented.r#type,
+                format!("about:blank#{}", documented.title.as_str())
+            );
+            assert!(expected.is_client_error() || expected.is_server_error());
         }
     }
 
-    /// Every variant's status must agree with the `status` member in its own body, or a client
-    /// that reads one and not the other sees a different error than the one that happened.
+    /// The vocabulary published in `openapi.json` is closed, so a token emitted on an API route
+    /// but missing from it deserialises as nothing at all in the generated client: the caller
+    /// gets `InvalidResponsePayload` and the server's message is lost. This is what proves the
+    /// list may be closed — it has to name *every* producer, and two of them never build an
+    /// `ApiError`.
     #[test]
-    fn every_variant_echoes_its_own_status() {
-        for error in [
-            ApiError::NotFound,
-            ApiError::Conflict("dup".to_owned()),
-            ApiError::Unauthorized,
-            ApiError::Forbidden,
-            ApiError::EmailNotVerified,
-            ApiError::Suspended,
-            ApiError::BadRequest("bad".to_owned()),
-            ApiError::Unavailable,
-            ApiError::BadGateway,
-            ApiError::GatewayTimeout,
-            ApiError::Internal,
-        ] {
-            let problem = error.into_problem();
+    fn every_problem_body_an_api_route_can_emit_is_in_the_vocabulary() {
+        let published: Vec<&str> = ProblemKind::ALL.iter().map(|k| k.as_str()).collect();
+
+        for error in every_variant() {
+            let kind = error.parts().1;
             assert!(
-                !problem.kind.is_empty(),
-                "every variant needs a machine-readable kind"
+                published.contains(&kind.as_str()),
+                "`{}` is emitted but not published",
+                kind.as_str()
             );
-            assert!(problem.status.is_client_error() || problem.status.is_server_error());
+        }
+
+        // The shared middleware writes its problem body by hand rather than through `ApiError`,
+        // so neither of these is reachable from the loop above.
+        for kind in [
+            tankovault_service::ratelimit::RATE_LIMITED_KIND,
+            tankovault_service::flags::FEATURE_DISABLED_KIND,
+        ] {
+            assert!(
+                published.contains(&kind),
+                "the shared middleware emits `{kind}`, which the API does not publish"
+            );
+        }
+    }
+
+    /// The token is the contract; `ProblemKind`'s serde encoding and its `as_str` are two ways of
+    /// spelling it, and only one of them reaches the wire.
+    #[test]
+    fn the_serde_encoding_and_the_wire_token_agree() {
+        for kind in ProblemKind::ALL {
+            assert_eq!(
+                serde_json::to_value(kind).expect("kind serializes"),
+                serde_json::Value::String(kind.as_str().to_owned())
+            );
         }
     }
 

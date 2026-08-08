@@ -430,14 +430,20 @@ pub async fn enforce(
     response
 }
 
+/// The [`crate::problem::Problem::kind`] this layer answers with.
+///
+/// Named because it is the one problem token no service's error enum produces — a client's
+/// vocabulary has to carry it anyway, and `services/api` reconciles against this constant.
+pub const RATE_LIMITED_KIND: &str = "rate_limited";
+
 /// `429` with `Retry-After` and the standard problem body.
 fn too_many_requests(decision: &RateLimitDecision) -> Response {
     // Round up: a `Retry-After: 0` invites an immediate retry that is certain to fail.
     let retry_secs = decision.retry_after.as_secs().max(1);
 
     let body = axum::Json(serde_json::json!({
-        "type": "about:blank#rate_limited",
-        "title": "rate_limited",
+        "type": format!("about:blank#{RATE_LIMITED_KIND}"),
+        "title": RATE_LIMITED_KIND,
         "status": StatusCode::TOO_MANY_REQUESTS.as_u16(),
         "detail": "too many requests; slow down and retry shortly",
     }));

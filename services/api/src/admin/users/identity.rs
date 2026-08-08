@@ -39,7 +39,7 @@ pub struct AdminProfileUpdate {
     responses(
         (status = 200, description = "The updated account", body = UserDetailResponse),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 404, description = "no such user", body = crate::error::ProblemDetails),
         (status = 409, description = "email or username already taken", body = crate::error::ProblemDetails),
     )
@@ -103,7 +103,7 @@ pub async fn update_user(
     responses(
         (status = 200, description = "The updated account", body = UserDetailResponse),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 404, description = "no such user", body = crate::error::ProblemDetails),
     )
 )]

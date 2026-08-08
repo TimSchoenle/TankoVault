@@ -64,7 +64,7 @@ pub struct TunableView {
     responses(
         (status = 200, description = "Every tunable and its current value", body = Vec<TunableView>),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn list_tunables(
@@ -101,7 +101,7 @@ pub struct SetTunable {
         (status = 200, description = "Every tunable and its value after the change", body = Vec<TunableView>),
         (status = 400, description = "unknown tunable, a value outside its range, or a write that would zero every score weight", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn set_tunable(
@@ -201,7 +201,7 @@ pub async fn set_tunable(
         (status = 200, description = "Every tunable and its value after the reset", body = Vec<TunableView>),
         (status = 400, description = "unknown tunable", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn reset_tunable(
@@ -279,7 +279,7 @@ pub struct ModelHealthView {
     responses(
         (status = 200, description = "The model's current state", body = ModelHealthView),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn model_health(
@@ -344,7 +344,7 @@ pub struct RebuildRequest {
     responses(
         (status = 200, description = "Whether a build was started", body = RecsysBuildView),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 502, description = "the control plane is unreachable", body = crate::error::ProblemDetails),
     )
 )]

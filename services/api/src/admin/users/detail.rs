@@ -48,7 +48,7 @@ pub(crate) async fn user_detail_response(
     responses(
         (status = 200, description = "The account and its grants", body = UserDetailResponse),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 404, description = "no such user", body = crate::error::ProblemDetails),
     )
 )]

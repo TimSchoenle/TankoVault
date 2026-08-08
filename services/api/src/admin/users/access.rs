@@ -54,7 +54,7 @@ fn default_true() -> bool {
         (status = 200, description = "The updated account", body = UserDetailResponse),
         (status = 400, description = "cannot suspend your own account, the super user, or the last administrator", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 404, description = "no such user", body = crate::error::ProblemDetails),
     )
 )]
@@ -115,7 +115,7 @@ pub async fn set_user_status(
     responses(
         (status = 200, description = "How many sessions were revoked", body = serde_json::Value, example = json!({"revoked": 3})),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn revoke_user_sessions(

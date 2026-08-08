@@ -237,5 +237,6 @@ impl Modify for SecurityAddon {
     crate::admin::FulfilErasure,
     // --- errors ---
     crate::error::ProblemDetails,
+    crate::error::ProblemKind,
 )))]
 pub struct ApiDoc;

@@ -2875,7 +2875,7 @@
             "type": "integer"
           },
           "title": {
-            "type": "string"
+            "$ref": "#/components/schemas/ProblemKind"
           },
           "type": {
             "type": "string"
@@ -2888,6 +2888,27 @@
           "detail"
         ],
         "type": "object"
+      },
+      "ProblemKind": {
+        "description": "The closed vocabulary of `title` values an API response can carry.\n\nPublished as a schema enum so clients branch on a generated type rather than on string\nliterals. That makes the list a **contract**: a token missing from here fails to deserialise\nin the generated client, which turns a clean error response into\n`progenitor_client::Error::InvalidResponsePayload` — the server's message is lost and the\ncaller sees \"unreadable response\" instead of the refusal. So every problem body reachable on\nan API route needs a variant, including the two the shared middleware emits without ever\nbuilding an [`ApiError`]: [`Self::FeatureDisabled`] and [`Self::RateLimited`].",
+        "enum": [
+          "not_found",
+          "conflict",
+          "unauthorized",
+          "forbidden",
+          "email_not_verified",
+          "account_suspended",
+          "step_up_required",
+          "mfa_enrolment_required",
+          "feature_disabled",
+          "rate_limited",
+          "bad_request",
+          "unavailable",
+          "upstream_unavailable",
+          "upstream_timeout",
+          "internal"
+        ],
+        "type": "string"
       },
       "ProfileDto": {
         "properties": {
@@ -5880,7 +5901,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, or the caller does not hold the required permission"
           },
           "404": {
             "content": {
@@ -5940,7 +5961,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, or the caller does not hold the required permission"
           },
           "404": {
             "content": {
@@ -6017,7 +6038,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission"
           }
         },
         "security": [
@@ -6129,7 +6150,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, or the caller does not hold the required permission"
           }
         },
         "security": [
@@ -6196,7 +6217,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission"
           }
         },
         "security": [
@@ -6243,7 +6264,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, or the caller does not hold the required permission"
           }
         },
         "security": [
@@ -6293,7 +6314,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, or the caller does not hold the required permission"
           }
         },
         "security": [
@@ -6364,7 +6385,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission"
           }
         },
         "security": [
@@ -6443,7 +6464,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission"
           }
         },
         "security": [
@@ -6490,7 +6511,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission"
           }
         },
         "security": [
@@ -6555,7 +6576,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, or the caller does not hold the required permission"
           }
         },
         "security": [
@@ -6613,7 +6634,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission"
           }
         },
         "security": [
@@ -6660,7 +6681,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission"
           },
           "404": {
             "content": {
@@ -6798,7 +6819,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, or the caller does not hold the required permission"
           }
         },
         "security": [
@@ -6878,7 +6899,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission"
           },
           "404": {
             "content": {
@@ -6967,7 +6988,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission"
           },
           "404": {
             "content": {
@@ -7034,7 +7055,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, or the caller does not hold the required permission"
           }
         },
         "security": [
@@ -7095,7 +7116,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, or the caller does not hold the required permission"
           }
         },
         "security": [
@@ -7154,7 +7175,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission"
           },
           "404": {
             "content": {
@@ -7241,7 +7262,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission"
           },
           "404": {
             "content": {
@@ -7330,7 +7351,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission"
           },
           "404": {
             "content": {
@@ -7419,7 +7440,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permissions"
+            "description": "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission"
           },
           "404": {
             "content": {
@@ -7508,7 +7529,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission"
           },
           "404": {
             "content": {
@@ -7577,7 +7598,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, or the caller does not hold the required permission"
           }
         },
         "security": [
@@ -7641,7 +7662,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission"
           },
           "409": {
             "content": {
@@ -7701,7 +7722,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, or the caller does not hold the required permission"
           }
         },
         "security": [
@@ -7760,7 +7781,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission"
           },
           "404": {
             "content": {
@@ -7836,7 +7857,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission"
           },
           "404": {
             "content": {
@@ -7904,7 +7925,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, or the caller does not hold the required permission"
           },
           "404": {
             "content": {
@@ -7982,7 +8003,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission"
           },
           "404": {
             "content": {
@@ -8082,7 +8103,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, or the caller does not hold the required permission"
           },
           "404": {
             "content": {
@@ -8139,7 +8160,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, or the caller does not hold the required permission"
           }
         },
         "security": [
@@ -8196,7 +8217,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission"
           },
           "502": {
             "content": {
@@ -8256,7 +8277,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, or the caller does not hold the required permission"
           }
         },
         "security": [
@@ -8327,7 +8348,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission"
           }
         },
         "security": [
@@ -8406,7 +8427,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission"
           }
         },
         "security": [
@@ -8495,7 +8516,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, or the caller does not hold the required permission"
           }
         },
         "security": [
@@ -8584,7 +8605,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, or the caller does not hold the required permission"
           }
         },
         "security": [
@@ -8713,7 +8734,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, or the caller does not hold the required permission"
           }
         },
         "security": [
@@ -8768,7 +8789,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission"
           },
           "404": {
             "content": {
@@ -8821,7 +8842,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, or the caller does not hold the required permission"
           }
         },
         "security": [
@@ -8878,7 +8899,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, or the caller does not hold the required permission"
           },
           "404": {
             "content": {
@@ -8946,7 +8967,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission"
           },
           "404": {
             "content": {
@@ -9013,7 +9034,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, or the caller does not hold the required permission"
           },
           "404": {
             "content": {
@@ -9137,7 +9158,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, or the caller does not hold the required permission"
           }
         },
         "security": [
@@ -9205,7 +9226,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission"
           }
         },
         "security": [
@@ -9359,7 +9380,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, or the caller does not hold the required permission"
           }
         },
         "security": [
@@ -9439,7 +9460,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission"
           },
           "404": {
             "content": {
@@ -9528,7 +9549,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission"
           },
           "404": {
             "content": {
@@ -9595,7 +9616,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, or the caller does not hold the required permission"
           }
         },
         "security": [
@@ -9645,7 +9666,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, or the caller does not hold the required permission"
           }
         },
         "security": [
@@ -9711,7 +9732,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission"
           }
         },
         "security": [
@@ -9769,7 +9790,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission"
           }
         },
         "security": [
@@ -9824,7 +9845,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission"
           },
           "409": {
             "content": {
@@ -9889,7 +9910,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission"
           },
           "409": {
             "content": {
@@ -9960,7 +9981,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, or the caller does not hold the required permission"
           }
         },
         "security": [
@@ -10040,7 +10061,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, or the caller does not hold the required permission"
           }
         },
         "security": [
@@ -10095,7 +10116,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission"
           }
         },
         "security": [
@@ -10175,7 +10196,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, or the caller does not hold the required permission"
           }
         },
         "security": [
@@ -10255,7 +10276,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, or the caller does not hold the required permission"
           }
         },
         "security": [
@@ -10340,7 +10361,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, or the caller does not hold the required permission"
           }
         },
         "security": [
@@ -10412,7 +10433,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission"
           },
           "404": {
             "content": {
@@ -10479,7 +10500,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, or the caller does not hold the required permission"
           },
           "404": {
             "content": {
@@ -10556,7 +10577,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission"
           },
           "404": {
             "content": {
@@ -10655,7 +10676,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission"
           },
           "404": {
             "content": {
@@ -10725,7 +10746,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission"
           }
         },
         "security": [
@@ -10804,7 +10825,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission"
           },
           "404": {
             "content": {
@@ -10873,7 +10894,7 @@
                 }
               }
             },
-            "description": "caller does not hold the required permission"
+            "description": "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission"
           },
           "404": {
             "content": {

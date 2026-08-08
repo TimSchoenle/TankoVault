@@ -941,6 +941,8 @@
           "accounts.profile",
           "accounts.sessions",
           "accounts.passkeys",
+          "accounts.mfa",
+          "accounts.mfa_required",
           "privacy.self_export",
           "privacy.self_erasure",
           "privacy.requests",
@@ -1381,6 +1383,34 @@
         ],
         "type": "object"
       },
+      "LoginResponse": {
+        "description": "What `POST /v1/auth/login` answers.\n\nA discriminated struct rather than two response bodies on two status codes, or an untagged\nunion: one status and one schema means the generated client gets a single struct to\ndeserialise instead of a `oneOf` enum, which this generator renders awkwardly enough that it\nhas caused trouble here before. `status` is the field a client branches on; the two payloads\nare mutually exclusive and each absent when the other is present.\n\n[`TokenResponse`] is left untouched by this, so `refresh` and `register` — which answer with\na session and never a challenge — keep the shape they had.",
+        "properties": {
+          "mfa": {
+            "$ref": "#/components/schemas/MfaChallenge",
+            "description": "Present iff `status` is `mfa_required`."
+          },
+          "session": {
+            "$ref": "#/components/schemas/TokenResponse",
+            "description": "Present iff `status` is `authenticated`."
+          },
+          "status": {
+            "$ref": "#/components/schemas/LoginStatus"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "type": "object"
+      },
+      "LoginStatus": {
+        "description": "How far a sign-in got.",
+        "enum": [
+          "authenticated",
+          "mfa_required"
+        ],
+        "type": "string"
+      },
       "MarkRead": {
         "properties": {
           "all": {
@@ -1811,6 +1841,135 @@
           "distinct",
           "deferred",
           "blocked"
+        ],
+        "type": "object"
+      },
+      "MfaChallenge": {
+        "description": "What a client must do to finish signing in.",
+        "properties": {
+          "challenge_token": {
+            "description": "Present this alongside a factor at `POST /v1/auth/mfa/verify`.",
+            "type": "string"
+          },
+          "expires_in": {
+            "description": "Seconds until the pending sign-in lapses.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "methods": {
+            "description": "Which factors this account can actually present, so the client offers only those.\n\nNever the account's *identity* — this response is reachable with a password alone, so\nanything beyond \"an authenticator app and two security keys exist here\" would be a\ndisclosure bought with a credential the attacker already spent.",
+            "items": {
+              "$ref": "#/components/schemas/MfaMethod"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "challenge_token",
+          "methods",
+          "expires_in"
+        ],
+        "type": "object"
+      },
+      "MfaChallengeRequest": {
+        "description": "The handle alone, to fetch a security-key challenge for the pending sign-in.",
+        "properties": {
+          "challenge_token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "challenge_token"
+        ],
+        "type": "object"
+      },
+      "MfaMethod": {
+        "description": "A factor a pending sign-in may be finished with.",
+        "enum": [
+          "totp",
+          "security_key",
+          "recovery_code"
+        ],
+        "type": "string"
+      },
+      "MfaStatus": {
+        "description": "The caller's second-factor state, as the account page renders it.",
+        "properties": {
+          "enrolled": {
+            "description": "Whether any usable factor exists. The single answer the passkey gate and the privileged\nrequirement both consult — clients must not recompute it from the fields below.",
+            "type": "boolean"
+          },
+          "recovery_codes_remaining": {
+            "description": "Unused recovery codes. Zero with a factor enrolled is a state worth warning about: the\naccount has a second factor and no way past it if the factor is lost.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "required": {
+            "description": "Whether this deployment requires every account to enrol, not just privileged ones.",
+            "type": "boolean"
+          },
+          "security_keys": {
+            "items": {
+              "$ref": "#/components/schemas/SecurityKeyDto"
+            },
+            "type": "array"
+          },
+          "totp_available": {
+            "description": "Whether authenticator-app enrolment is available at all. `false` when the operator has\nconfigured no sealing key, in which case the client offers security keys only rather\nthan a button that answers `503`.",
+            "type": "boolean"
+          },
+          "totp_confirmed_at": {
+            "description": "When the authenticator app was confirmed, or absent if there is none.\n\nAn enrolment that was started and never confirmed reads as absent here, on purpose: it\nis not a factor, and showing it as one would tell a user they are protected when they\nare not.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "enrolled",
+          "security_keys",
+          "recovery_codes_remaining",
+          "required",
+          "totp_available"
+        ],
+        "type": "object"
+      },
+      "MfaVerifyRequest": {
+        "description": "The handle the first leg issued, plus exactly one factor.",
+        "properties": {
+          "challenge_token": {
+            "description": "The `challenge_token` from the sign-in response.",
+            "type": "string"
+          },
+          "recovery_code": {
+            "description": "One unused recovery code.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "security_key": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SecurityKeyAssertion",
+                "description": "A completed security-key assertion, from [`mfa_security_key_start`]."
+              }
+            ]
+          },
+          "totp_code": {
+            "description": "A code from the enrolled authenticator app.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "challenge_token"
         ],
         "type": "object"
       },
@@ -2259,12 +2418,8 @@
         "type": "object"
       },
       "PasskeyRegisterStart": {
-        "description": "Proof of the current password, plus what to call the new key.",
+        "description": "What to call the new key.",
         "properties": {
-          "current_password": {
-            "description": "The caller's current password. Required — see [`passkey_register_start`].",
-            "type": "string"
-          },
           "label": {
             "description": "What to call the key in the revoke list. Defaults to \"Passkey\" when absent or blank.",
             "type": [
@@ -2273,9 +2428,6 @@
             ]
           }
         },
-        "required": [
-          "current_password"
-        ],
         "type": "object"
       },
       "PasskeyRename": {
@@ -2292,15 +2444,11 @@
       },
       "PasswordChange": {
         "properties": {
-          "current_password": {
-            "type": "string"
-          },
           "new_password": {
             "type": "string"
           }
         },
         "required": [
-          "current_password",
           "new_password"
         ],
         "type": "object"
@@ -2546,13 +2694,6 @@
       },
       "ProfileUpdate": {
         "properties": {
-          "current_password": {
-            "description": "Required when `email` changes the address on the account. See [`patch_profile`].",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "email": {
             "type": [
               "string",
@@ -2951,6 +3092,22 @@
         ],
         "type": "object"
       },
+      "RecoveryCodes": {
+        "description": "A recovery-code set, returned exactly once.",
+        "properties": {
+          "codes": {
+            "description": "The plaintext codes. Only the digests are stored, so this response is the only copy\nthat will ever exist — a client that does not show them has lost them.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "codes"
+        ],
+        "type": "object"
+      },
       "RecsysBuildMode": {
         "description": "Which kind of recommendation-model build to run.\n\nLives here rather than in either service because both sides of the internal hop parse it: the\nAPI validates the operator's request body and the control plane acts on it. A hand-mirrored\nsecond copy is the drift this crate exists to prevent.",
         "enum": [
@@ -3328,6 +3485,152 @@
         },
         "required": [
           "run_ids"
+        ],
+        "type": "object"
+      },
+      "SecurityKeyAssertion": {
+        "description": "The assertion `navigator.credentials.get()` produced.",
+        "properties": {
+          "ceremony_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "credential": {
+            "description": "The `PublicKeyCredential` the browser produced, serialised as the `WebAuthn`\nspecification defines it.",
+            "type": "object"
+          }
+        },
+        "required": [
+          "ceremony_id",
+          "credential"
+        ],
+        "type": "object"
+      },
+      "SecurityKeyChallenge": {
+        "description": "A `WebAuthn` assertion challenge for the caller's security keys, plus the handle that\ncompletes it.",
+        "properties": {
+          "ceremony_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "options": {
+            "description": "A W3C `PublicKeyCredentialRequestOptions` envelope. Hand it to the browser unmodified.",
+            "type": "object"
+          }
+        },
+        "required": [
+          "ceremony_id",
+          "options"
+        ],
+        "type": "object"
+      },
+      "SecurityKeyDto": {
+        "description": "A registered security key, as the account page shows it.\n\nDeliberately without the credential id, for the reason `PasskeyDto` gives: it is the lookup\nkey a sign-in resolves from, and publishing every account's ids on an authenticated page\nhands whoever compromises one session the material to recognise that user's authenticator\nelsewhere.",
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "last_used_at": {
+            "description": "When this key was last presented; absent if it never has been.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "SecurityKeyRegisterChallenge": {
+        "description": "The creation challenge, plus the handle the client echoes back.",
+        "properties": {
+          "ceremony_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "options": {
+            "description": "A W3C `PublicKeyCredentialCreationOptions` envelope. Hand it to the browser unmodified.",
+            "type": "object"
+          }
+        },
+        "required": [
+          "ceremony_id",
+          "options"
+        ],
+        "type": "object"
+      },
+      "SecurityKeyRegisterFinish": {
+        "description": "The attestation `navigator.credentials.create()` produced.",
+        "properties": {
+          "ceremony_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "credential": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "ceremony_id",
+          "credential"
+        ],
+        "type": "object"
+      },
+      "SecurityKeyRegisterStart": {
+        "description": "What to call a new security key.",
+        "properties": {
+          "label": {
+            "description": "Defaults to \"Security key\" when absent or blank.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "SecurityKeyRegistered": {
+        "description": "A newly registered security key, plus the recovery codes if it was the first factor.",
+        "properties": {
+          "key": {
+            "$ref": "#/components/schemas/SecurityKeyDto"
+          },
+          "recovery_codes": {
+            "description": "Present only when this registration was the account's first second factor. Shown once.",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "key"
+        ],
+        "type": "object"
+      },
+      "SecurityKeyRename": {
+        "description": "A new name for an existing key.",
+        "properties": {
+          "label": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "label"
         ],
         "type": "object"
       },
@@ -3747,6 +4050,52 @@
           "reading": {
             "default": true,
             "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "StepUpGrant": {
+        "description": "A step-up elevation, handed to the client once.",
+        "properties": {
+          "expires_in": {
+            "description": "Seconds until the elevation lapses and the next sensitive action prompts again.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "token": {
+            "description": "Present this in the `X-Step-Up` header on the sensitive request.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "expires_in"
+        ],
+        "type": "object"
+      },
+      "StepUpRequest": {
+        "description": "One factor, presented to earn an elevation.\n\nExactly one field must be set. A flat struct rather than a tagged enum because the generated\nclient renders a `oneOf` as an enum that is awkward to construct, and because \"exactly one of\nthese\" is checked here in one place either way.",
+        "properties": {
+          "password": {
+            "description": "The account password. Accepted **only** while no second factor is enrolled — see the\nhandler.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "recovery_code": {
+            "description": "One unused recovery code.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "totp_code": {
+            "description": "A code from the enrolled authenticator app.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "type": "object"
@@ -4387,6 +4736,36 @@
           "access_token",
           "token_type",
           "expires_in"
+        ],
+        "type": "object"
+      },
+      "TotpConfirm": {
+        "description": "A code proving the user stored the secret.",
+        "properties": {
+          "code": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "type": "object"
+      },
+      "TotpEnrolmentChallenge": {
+        "description": "A freshly issued authenticator-app secret. Shown once, never retrievable again.",
+        "properties": {
+          "provisioning_uri": {
+            "description": "The `otpauth://` URI the client renders as a QR code. Carries the secret, so it is as\nsensitive as the field above.",
+            "type": "string"
+          },
+          "secret": {
+            "description": "The shared secret, base32-encoded, for a user whose app cannot scan a QR code.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "secret",
+          "provisioning_uri"
         ],
         "type": "object"
       },
@@ -9981,7 +10360,7 @@
     },
     "/v1/auth/login": {
       "post": {
-        "description": "Authenticates by email or username + password. Issues an access token and a rotating\nrefresh-token cookie.\n\nEvery outcome — success, unknown identifier, bad password, unverified address — is\naudited. An authentication log that only records successes cannot answer the question\nanyone actually asks it after an incident.",
+        "description": "Authenticates by email or username + password.\n\nAnswers one of two things, told apart by `status`. An account with **no** second factor gets\na session outright, as before. An account **with** one gets a challenge and no session at\nall — no access token, no refresh cookie — and finishes at `POST /v1/auth/mfa/verify`. That\nis the whole point: a caller who has the password but not the factor must come away with\nstrictly less than they arrived with.\n\nEvery outcome — success, unknown identifier, bad password, unverified address, second factor\nowed — is audited. An authentication log that only records successes cannot answer the\nquestion anyone actually asks it after an incident.",
         "operationId": "login",
         "requestBody": {
           "content": {
@@ -9998,11 +10377,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TokenResponse"
+                  "$ref": "#/components/schemas/LoginResponse"
                 }
               }
             },
-            "description": "Authenticated; access token issued"
+            "description": "Authenticated, or a second factor is owed"
           },
           "401": {
             "content": {
@@ -10051,6 +10430,140 @@
           }
         },
         "summary": "Log out",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/v1/auth/mfa/security-key/start": {
+      "post": {
+        "description": "The assertion options for the account behind `challenge_token`. Separate from\n`/v1/me/step-up/security-key/start` because there is no session yet — the caller is\nhalf-signed-in, and the handle is the only thing naming the account.",
+        "operationId": "mfa_security_key_start",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MfaChallengeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecurityKeyChallenge"
+                }
+              }
+            },
+            "description": "Challenge issued"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "No security key is registered to this account"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unknown or expired challenge"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "This deployment has no WebAuthn relying party configured"
+          }
+        },
+        "summary": "Begin a security-key challenge for a pending sign-in",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/v1/auth/mfa/verify": {
+      "post": {
+        "description": "Trades the pending sign-in plus one factor for the session the first leg withheld.\n\nEvery outcome is audited, success and failure alike — an authentication log that records only\nsuccesses cannot answer the question anyone actually asks it after an incident.",
+        "operationId": "mfa_verify",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MfaVerifyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            },
+            "description": "Authenticated; access token issued"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "No factor was presented, or more than one"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unknown, expired or exhausted challenge, or a wrong factor"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "The account was suspended since the first leg"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Too many attempts; retry later"
+          }
+        },
+        "summary": "Finish signing in",
         "tags": [
           "auth"
         ]
@@ -10493,6 +11006,9 @@
           "401": {
             "description": "Unauthenticated"
           },
+          "403": {
+            "description": "a step-up is required"
+          },
           "404": {
             "description": "self-service deletion is switched off; file an erasure request instead"
           }
@@ -10689,7 +11205,7 @@
     },
     "/v1/me/export": {
       "get": {
-        "description": "Everything the system holds about the authenticated user, as a single JSON document\n(GDPR Art. 20, right to data portability).\n\nServed as an attachment rather than an inline body: the response is the user's entire\npersonal record and a browser should offer to save it rather than render it.\nCredentials — password hash, session token hashes, third-party OAuth tokens — are\nexcluded; see `tankovault_db::repo::privacy::export_user_data`.",
+        "description": "Everything the system holds about the authenticated user, as a single JSON document\n(GDPR Art. 20, right to data portability).\n\nServed as an attachment rather than an inline body: the response is the user's entire\npersonal record and a browser should offer to save it rather than render it.\nCredentials — password hash, session token hashes, third-party OAuth tokens, the TOTP\nsecret — are excluded; see `tankovault_db::repo::privacy::export_user_data`.\n\nBehind a step-up. This one response is every reading habit, every linked account and every\naddress the system holds about one person, assembled into a file designed to be saved and\nmailed. It is the single highest-value thing a stolen session can ask for.",
         "operationId": "export_data",
         "responses": {
           "200": {
@@ -10702,6 +11218,9 @@
           },
           "401": {
             "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "a step-up is required"
           },
           "404": {
             "description": "self-service export is switched off; file an access request instead"
@@ -10755,6 +11274,557 @@
         "summary": "Get the unread-chapters feed",
         "tags": [
           "me-dashboard"
+        ]
+      }
+    },
+    "/v1/me/mfa": {
+      "get": {
+        "description": "Everything the account page needs to render the second-factor section, in one read.",
+        "operationId": "mfa_status",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MfaStatus"
+                }
+              }
+            },
+            "description": "The caller's second-factor state"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Get my two-factor status",
+        "tags": [
+          "me-account"
+        ]
+      }
+    },
+    "/v1/me/mfa/recovery-codes": {
+      "post": {
+        "description": "Issues a fresh set and invalidates every previous code. Returned once.",
+        "operationId": "regenerate_recovery_codes",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecoveryCodes"
+                }
+              }
+            },
+            "description": "A fresh set, shown once"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "a step-up is required"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Regenerate my recovery codes",
+        "tags": [
+          "me-account"
+        ]
+      }
+    },
+    "/v1/me/mfa/security-keys/register/finish": {
+      "post": {
+        "description": "Verifies the attestation and stores the credential as a second factor.\n\nWhen this is the caller's **first** factor, a recovery-code set is issued with it and\nreturned once — the same rule authenticator-app enrolment follows, for the same reason.",
+        "operationId": "security_key_register_finish",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SecurityKeyRegisterFinish"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecurityKeyRegistered"
+                }
+              }
+            },
+            "description": "Registered; recovery codes when this is the first factor"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required, or verification failed"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "this authenticator is already registered"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "this deployment has no WebAuthn relying party configured"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Finish registering a security key",
+        "tags": [
+          "me-account"
+        ]
+      }
+    },
+    "/v1/me/mfa/security-keys/register/start": {
+      "post": {
+        "description": "Issues a `WebAuthn` creation challenge hinted toward a cross-platform authenticator.\n\nThe exclusion list is every credential already registered to the account — passkeys\n**included**. That cross-purpose exclusion is the point: an authenticator that already holds\nthis account's passkey must not also become its second factor, or one touch would clear both\nlegs of a sign-in that is supposed to need two independent proofs.",
+        "operationId": "security_key_register_start",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SecurityKeyRegisterStart"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecurityKeyRegisterChallenge"
+                }
+              }
+            },
+            "description": "Challenge issued"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "The label is too long"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "a step-up is required"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "this deployment has no WebAuthn relying party configured"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Begin registering a security key",
+        "tags": [
+          "me-account"
+        ]
+      }
+    },
+    "/v1/me/mfa/security-keys/{id}": {
+      "delete": {
+        "description": "Revokes every step-up grant with it, for the reason [`delete_totp`] gives.",
+        "operationId": "delete_security_key",
+        "parameters": [
+          {
+            "description": "The key's id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Revoked"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "a step-up is required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "no such key on this account"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Revoke a security key",
+        "tags": [
+          "me-account"
+        ]
+      },
+      "patch": {
+        "operationId": "rename_security_key",
+        "parameters": [
+          {
+            "description": "The key's id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SecurityKeyRename"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Renamed"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "The label is too long"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "a step-up is required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "no such key on this account"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Rename a security key",
+        "tags": [
+          "me-account"
+        ]
+      }
+    },
+    "/v1/me/mfa/totp": {
+      "delete": {
+        "description": "Every step-up grant the caller holds is revoked with it: an elevation earned by the factor\nbeing removed must not outlive it, or the window it opened stays usable after the credential\nis gone.",
+        "operationId": "delete_totp",
+        "responses": {
+          "204": {
+            "description": "Removed"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "a step-up is required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "no authenticator app is enrolled"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Remove the authenticator app",
+        "tags": [
+          "me-account"
+        ]
+      },
+      "post": {
+        "description": "Issues a fresh shared secret and the `otpauth://` URI for it. Nothing is a usable factor\nuntil [`confirm_totp`] accepts a code generated from it.\n\nRestarting is allowed and simply replaces the pending secret — a user whose QR code never\nreached their phone asks again. Replacing a *confirmed* enrolment is refused; remove it\nfirst, which costs a step-up, so a stolen session cannot swap the owner's factor for its own.",
+        "operationId": "begin_totp",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TotpEnrolmentChallenge"
+                }
+              }
+            },
+            "description": "Secret issued; confirm it to enrol"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "a step-up is required, or a confirmed enrolment already exists"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "an authenticator app is already enrolled"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "this deployment configured no auth.mfa_encryption_key"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Begin authenticator-app enrolment",
+        "tags": [
+          "me-account"
+        ]
+      }
+    },
+    "/v1/me/mfa/totp/confirm": {
+      "post": {
+        "description": "Accepts a code generated from the pending secret, which is the only proof the user actually\nstored it. On success the enrolment becomes a live factor and a **recovery-code set is\nissued** — returned here and never again.\n\nThe codes come with the first factor rather than being a separate opt-in step, because a\nsecond factor without an escape hatch is a way to lose an account, and an escape hatch\nnobody clicked through to is the same thing.",
+        "operationId": "confirm_totp",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TotpConfirm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecoveryCodes"
+                }
+              }
+            },
+            "description": "Enrolled; recovery codes issued, shown once"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "No enrolment is pending"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required, or the code is wrong"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "this deployment configured no auth.mfa_encryption_key"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Confirm authenticator-app enrolment",
+        "tags": [
+          "me-account"
         ]
       }
     },
@@ -11092,7 +12162,7 @@
     },
     "/v1/me/passkeys/register/start": {
       "post": {
-        "description": "Issues a `WebAuthn` creation challenge for the caller's account.\n\n# Why this asks for the password\n\nBecause a passkey is a **permanent** credential, and an access token is a 15-minute one.\nWithout this check, anyone who got hold of a token for those fifteen minutes — a shared\nbrowser, a proxy log, an XSS payload that survives one page — could register their own\nauthenticator and keep the account forever, surviving every password change and session\nrevocation the real owner performs. That is a strictly worse version of the takeover\n`patch_profile` blocks by requiring the password before an email change, and it is the same\nanswer: installing a credential requires proving you hold one.\n\nThe cost is that a user who signed in *with* a passkey must type their password to add a\nsecond one. That is the trade every major implementation makes, and the friction lands on a\nonce-per-device action rather than on sign-in.\n\nCredentials already registered to the account are sent as the exclusion list, so an\nauthenticator that already holds one for this account says so at the prompt instead of\nsilently minting an indistinguishable duplicate.",
+        "description": "Issues a `WebAuthn` creation challenge for the caller's account.\n\n# Two gates, and why a passkey has the strictest one on the account\n\nA passkey is a **permanent** credential, and an access token is a 15-minute one. Anyone who\ngot hold of a token for those fifteen minutes — a shared browser, a proxy log, an XSS\npayload that survives one page — could otherwise register their own authenticator and keep\nthe account forever, surviving every password change and session revocation the real owner\nperforms. So installing a credential requires proving you hold one:\n\n1. **A second factor must already be enrolled.** Not merely presented — enrolled. A passkey\n   signs in on its own, with no second leg, so minting one is the act of creating a\n   single-factor bypass of everything below it. An account that has not yet decided to hold\n   a second factor has not earned the right to create something that outranks it.\n2. **A step-up.** The factor must be presented *now*, not merely exist.\n\nThis used to take `current_password` instead, which defended against the wrong attacker: the\nperson most likely to be holding a stolen token is the person who phished the password to\nopen it.\n\nCredentials already registered to the account — passkeys **and** security keys — are sent as\nthe exclusion list, so an authenticator that already holds one for this account says so at\nthe prompt instead of silently minting a second credential that would let one touch satisfy\nboth legs of a sign-in.",
         "operationId": "passkey_register_start",
         "requestBody": {
           "content": {
@@ -11133,7 +12203,17 @@
                 }
               }
             },
-            "description": "authentication required, or current_password is wrong"
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "a step-up is required, or no second factor is enrolled"
           },
           "503": {
             "content": {
@@ -11281,7 +12361,7 @@
     },
     "/v1/me/password": {
       "post": {
-        "description": "Change the caller's password, proving knowledge of the current one.\n\nThere was previously **no authenticated path to a new password at all** — the only route\nwas the emailed reset link, so a signed-in user who simply wanted to rotate their password\nhad to go through an out-of-band channel, and a user whose email had been taken over could\nnot lock the attacker out.\n\nEvery session is revoked on success, including the caller's: a password change is exactly\nwhen you want the other device signed out, and leaving the caller's own session alive would\nmean special-casing the one session an attacker is most likely to be holding.",
+        "description": "Change the caller's password, behind a step-up.\n\nThere was previously **no authenticated path to a new password at all** — the only route\nwas the emailed reset link, so a signed-in user who simply wanted to rotate their password\nhad to go through an out-of-band channel, and a user whose email had been taken over could\nnot lock the attacker out.\n\nThe proof is a step-up, not the old password. Against the attacker this exists to stop —\nsomeone holding a stolen session, usually because they phished the password to open it —\nre-typing the password proved nothing. `crate::step_up` carries the argument in full.\n\nEvery session is revoked on success, including the caller's: a password change is exactly\nwhen you want the other device signed out, and leaving the caller's own session alive would\nmean special-casing the one session an attacker is most likely to be holding. Every step-up\ngrant goes with them, for the same reason — an elevation earned before the credential\nchanged must not outlive it.",
         "operationId": "change_password",
         "requestBody": {
           "content": {
@@ -11315,7 +12395,17 @@
                 }
               }
             },
-            "description": "authentication required, or current_password is wrong"
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "a step-up is required"
           }
         },
         "security": [
@@ -11422,6 +12512,16 @@
             },
             "description": "authentication required"
           },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "a step-up is required"
+          },
           "404": {
             "content": {
               "application/json": {
@@ -11474,6 +12574,16 @@
             },
             "description": "authentication required"
           },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "a step-up is required"
+          },
           "404": {
             "content": {
               "application/json": {
@@ -11498,7 +12608,7 @@
     },
     "/v1/me/profile": {
       "patch": {
-        "description": "Update the caller's username and/or email (frontend §9.4). A duplicate email/username\nsurfaces as `409 Conflict`.\n\nChanging the **email address** additionally requires `current_password`, because the\naddress is the account's recovery channel. Without that check, anyone holding an access\ntoken for 15 minutes — a shared browser, a proxy log, a leaked SSE URL — could point the\naccount at their own address, request a password reset to it, and take the account over;\n`reset_password` would then revoke the real owner's sessions on the attacker's behalf.\n\nOn a successful change the new address starts **unverified**\n(`repo::users::update_profile` clears `email_verified_at`), a confirmation link is sent to\nit, a warning is sent to the *old* address, and every session is revoked — matching what\n`reset_password` already does for the other credential.",
+        "description": "Update the caller's username and/or email (frontend §9.4). A duplicate email/username\nsurfaces as `409 Conflict`.\n\nRequires a **step-up**, because the address is the account's recovery channel. Without that\ncheck, anyone holding an access token for 15 minutes — a shared browser, a proxy log, a\nleaked SSE URL — could point the account at their own address, request a password reset to\nit, and take the account over; `reset_password` would then revoke the real owner's sessions\non the attacker's behalf.\n\nThis used to take `current_password`, which defended against the wrong attacker: the person\nmost likely to be holding a stolen token is the person who phished the password to get it.\n`crate::step_up` carries the full argument.\n\nOn a successful change the new address starts **unverified**\n(`repo::users::update_profile` clears `email_verified_at`), a confirmation link is sent to\nit, a warning is sent to the *old* address, and every session is revoked — matching what\n`reset_password` already does for the other credential.",
         "operationId": "patch_profile",
         "requestBody": {
           "content": {
@@ -11539,7 +12649,17 @@
                 }
               }
             },
-            "description": "authentication required, or current_password is wrong"
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "a step-up is required"
           },
           "409": {
             "content": {
@@ -12010,7 +13130,7 @@
     },
     "/v1/me/sessions/{id}": {
       "delete": {
-        "description": "Revoke one of the caller's own sessions (frontend §9.4). Scoped to ownership; a\nforeign/unknown id yields `404`.",
+        "description": "Revoke one of the caller's own sessions (frontend §9.4). Scoped to ownership; a\nforeign/unknown id yields `404`.\n\nBehind a step-up: the session list is where an owner *responds* to a compromise, and an\nattacker holding one of those sessions must not be able to use it to sign the owner out of\nthe others first.",
         "operationId": "delete_session",
         "parameters": [
           {
@@ -12045,6 +13165,16 @@
               }
             },
             "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "a step-up is required"
           },
           "404": {
             "content": {
@@ -12194,6 +13324,176 @@
         "summary": "Get lifetime tracking stats",
         "tags": [
           "me-dashboard"
+        ]
+      }
+    },
+    "/v1/me/step-up": {
+      "post": {
+        "description": "Trades a second factor for a short-lived elevation, presented in `X-Step-Up` on the\nsensitive request that demanded it.\n\n# The password branch\n\nAccepted only while the account has **no** factor enrolled. Such an account has no stronger\nproof to offer, and refusing it would leave the sensitive routes unreachable — including the\nenrolment that would fix that. The moment a factor exists the branch is refused here, and\ngrants it already issued stop being honoured (`crate::step_up`), so enrolling never leaves a\nweaker proof usable beside the stronger one.",
+        "operationId": "step_up",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StepUpRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StepUpGrant"
+                }
+              }
+            },
+            "description": "Elevated"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "No factor was presented, or more than one"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required, or the factor is wrong"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Step up",
+        "tags": [
+          "me-account"
+        ]
+      }
+    },
+    "/v1/me/step-up/security-key/finish": {
+      "post": {
+        "operationId": "step_up_security_key_finish",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SecurityKeyAssertion"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StepUpGrant"
+                }
+              }
+            },
+            "description": "Elevated"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required, or verification failed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "this deployment has no WebAuthn relying party configured"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Finish a security-key step-up",
+        "tags": [
+          "me-account"
+        ]
+      }
+    },
+    "/v1/me/step-up/security-key/start": {
+      "post": {
+        "description": "Issues an assertion challenge for the caller's registered security keys.",
+        "operationId": "step_up_security_key_start",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecurityKeyChallenge"
+                }
+              }
+            },
+            "description": "Challenge issued"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "No security key is registered"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "this deployment has no WebAuthn relying party configured"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Begin a security-key step-up",
+        "tags": [
+          "me-account"
         ]
       }
     },
@@ -12546,6 +13846,16 @@
               }
             },
             "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "a step-up is required"
           }
         },
         "security": [
@@ -12561,7 +13871,7 @@
     },
     "/v1/me/sync/{provider}/authorize": {
       "get": {
-        "description": "Returns the provider's consent URL (proxied). The body type is shared with the sync\nservice via `tankovault_contracts::sync`.",
+        "description": "Returns the provider's consent URL (proxied). The body type is shared with the sync\nservice via `tankovault_contracts::sync`.\n\nBehind a step-up: following this URL grants a third party a standing OAuth token against the\ncaller's account there, which is an authorisation that outlives the session and is not\nrevoked by anything this system does.",
         "operationId": "sync_authorize_url",
         "parameters": [
           {
@@ -12594,6 +13904,16 @@
               }
             },
             "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "a step-up is required"
           }
         },
         "security": [

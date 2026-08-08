@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM step_up_grants WHERE expires_at <= now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "ed7bec4d6c397b6d9162ace02c5bd23f1397198070ad5a292cdb70a76b0ebd8e"
+}

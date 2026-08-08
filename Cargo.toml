@@ -236,9 +236,28 @@ aes-gcm = "0.11"
 rand = "0.10"
 sha2 = "0.11"
 base64 = "0.23"
-# Constant-time comparison for the internal service-to-service token. Already in the tree
-# transitively (aes-gcm, argon2); declared here so the comparison is not hand-rolled.
+# Constant-time comparison for the internal service-to-service token, and for the TOTP digit
+# string. Already in the tree transitively (aes-gcm, argon2); declared here so the comparison is
+# not hand-rolled.
 subtle = "2"
+# TOTP (RFC 6238). Three small crates rather than one `totp-rs`, because all three are already
+# in `Cargo.lock` transitively at these versions — so this adds nothing to the dependency graph
+# — and because the algorithm is ~30 lines that the RFC's own published test vectors pin
+# exactly (`crates/auth/src/totp.rs`). A crate whose job is to concatenate an HMAC and a modulo
+# is a supply-chain edge bought for no work saved.
+#
+# `hmac` 0.13 / `sha1` 0.11 are the `digest` 0.11 generation, matching the `sha2` line above;
+# mixing generations would pull a second copy of `digest` into the tree.
+hmac = "0.13"
+sha1 = "0.11"
+# base32, for the authenticator-app secret and the `otpauth://` provisioning URI. The `base64`
+# crate above cannot do base32, and RFC 4648 §6 is what every authenticator reads.
+data-encoding = "2.11"
+# Escaping the issuer and account names in that URI. Already in the tree via `url` (webauthn-rs)
+# and `reqwest`, so this is a declaration rather than an addition — and the label is
+# operator- and user-supplied text going into a `:`-delimited URI path, which is not a thing to
+# hand-roll an escaper for.
+percent-encoding = "2.3"
 # Passkeys: the WebAuthn relying-party half. Two things about this line are deliberate.
 #
 # **`=0.6.1-dev`, an exact pre-release pin.** The stable line is 0.5.x, and it is not usable

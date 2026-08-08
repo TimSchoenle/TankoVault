@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO user_recovery_codes (user_id, code_hash) SELECT $1, hash FROM unnest($2::text[]) AS hash",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c2ee537863cae3b359d4d9bfc1ce869e08a26acea69218ec7bba0ad11f179fd3"
+}

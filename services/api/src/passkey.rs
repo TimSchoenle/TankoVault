@@ -36,7 +36,7 @@ use webauthn_rs::prelude::{Url, Webauthn, WebauthnBuilder, WebauthnError};
 
 use crate::error::{ApiError, ApiResult};
 use crate::state::AppState;
-use tankovault_db::repo::users::passkeys::CeremonyKind;
+use tankovault_db::repo::users::webauthn::CeremonyKind;
 
 /// How long the browser is told it may keep the authenticator prompt open.
 ///
@@ -188,7 +188,7 @@ pub(crate) async fn begin_ceremony<S: serde::Serialize>(
         ApiError::Internal
     })?;
     let id = Uuid::new_v4();
-    tankovault_db::repo::users::passkeys::insert_ceremony(
+    tankovault_db::repo::users::webauthn::insert_ceremony(
         &state.pool,
         id,
         user_id,
@@ -213,7 +213,7 @@ pub(crate) async fn take_ceremony<S: serde::de::DeserializeOwned>(
     id: Uuid,
     kind: CeremonyKind,
 ) -> ApiResult<(Option<tankovault_domain::UserId>, S)> {
-    let ceremony = tankovault_db::repo::users::passkeys::take_ceremony(&state.pool, id, kind)
+    let ceremony = tankovault_db::repo::users::webauthn::take_ceremony(&state.pool, id, kind)
         .await?
         .ok_or(ApiError::Unauthorized)?;
     let parsed = serde_json::from_value(ceremony.state).map_err(|e| {

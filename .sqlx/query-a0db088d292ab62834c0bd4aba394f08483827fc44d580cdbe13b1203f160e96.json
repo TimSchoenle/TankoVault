@@ -1,0 +1,59 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT u.status AS \"status: AccountStatus\", coalesce(array_agg(p.permission) FILTER (WHERE p.permission IS NOT NULL), '{}'::text[]) AS \"permissions!\", (u.adult_opt_in AND u.age_attested_at IS NOT NULL) AS \"adult_opt_in!\", (EXISTS (SELECT 1 FROM user_totp t WHERE t.user_id = u.id AND t.confirmed_at IS NOT NULL) OR EXISTS (SELECT 1 FROM user_webauthn_credentials c WHERE c.user_id = u.id AND c.purpose = 'security_key')) AS \"mfa_enrolled!\" FROM users u LEFT JOIN user_permissions p ON p.user_id = u.id WHERE u.id = $1 GROUP BY u.id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "status: AccountStatus",
+        "type_info": {
+          "Custom": {
+            "name": "account_status",
+            "kind": {
+              "Enum": [
+                "active",
+                "suspended"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "permissions!",
+        "type_info": "TextArray",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "adult_opt_in!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "mfa_enrolled!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "a0db088d292ab62834c0bd4aba394f08483827fc44d580cdbe13b1203f160e96"
+}

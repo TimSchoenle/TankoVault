@@ -5,7 +5,24 @@
 use axum::http::StatusCode;
 use serde_json::json;
 use tankovault_api_test_support::TestApp;
+use tankovault_db::repo::users::mfa::StepUpMethod;
 use tankovault_domain::{AccountStatus, Permission};
+
+/// Seed an administrative account and return the two headers every privileged call now needs.
+///
+/// A privileged account without a second factor is refused before any capability is consulted,
+/// and a *mutating* capability additionally needs a fresh step-up. Both rules live in
+/// `AuthUser::require_all` and are pinned by `mfa.rs`; here they are scaffolding, so this helper
+/// keeps them out of the assertions that are actually the subject.
+async fn admin(
+    app: &TestApp,
+    username: &str,
+    perms: &[Permission],
+    status: AccountStatus,
+) -> (String, String) {
+    let user = app.seed_user(username, perms, status).await;
+    (app.bearer(user), app.enrolled_and_elevated(user).await)
+}
 
 /// Permission-gated read endpoints paired with the capability each requires.
 fn gated_read_routes() -> Vec<(Permission, &'static str)> {
@@ -43,14 +60,16 @@ async fn permission_gated_routes_enforce_the_full_matrix() {
             "GET {path} without {permission} must be 403"
         );
 
-        let holder = app
-            .seed_user(
-                &format!("holder_{permission}"),
-                &[permission],
-                AccountStatus::Active,
-            )
+        let (bearer, step_up) = admin(
+            &app,
+            &format!("holder_{permission}"),
+            &[permission],
+            AccountStatus::Active,
+        )
+        .await;
+        let (status, _) = app
+            .call_elevated("GET", path, Some(&bearer), Some(&step_up), None)
             .await;
-        let (status, _) = app.call("GET", path, Some(&app.bearer(holder)), None).await;
         assert!(
             status.is_success(),
             "GET {path} with {permission} must succeed, got {status}"
@@ -65,13 +84,18 @@ async fn permission_gated_routes_enforce_the_full_matrix() {
 #[tokio::test]
 async fn the_super_user_passes_every_capability_check() {
     let app = TestApp::spawn().await;
-    let owner = app
-        .seed_user("owner", &[Permission::SuperUser], AccountStatus::Active)
-        .await;
-    let bearer = app.bearer(owner);
+    let (bearer, step_up) = admin(
+        &app,
+        "owner",
+        &[Permission::SuperUser],
+        AccountStatus::Active,
+    )
+    .await;
 
     for (permission, path) in gated_read_routes() {
-        let (status, _) = app.call("GET", path, Some(&bearer), None).await;
+        let (status, _) = app
+            .call_elevated("GET", path, Some(&bearer), Some(&step_up), None)
+            .await;
         assert!(
             status.is_success(),
             "GET {path} needs {permission}, which the super user holds implicitly, got {status}"
@@ -85,20 +109,21 @@ async fn the_super_user_passes_every_capability_check() {
 #[tokio::test]
 async fn the_super_user_grant_cannot_be_handed_out_by_an_administrator() {
     let app = TestApp::spawn().await;
-    let admin = app
-        .seed_user(
-            "granter",
-            &[Permission::UsersPermissions],
-            AccountStatus::Active,
-        )
-        .await;
+    let (bearer, step_up) = admin(
+        &app,
+        "granter",
+        &[Permission::UsersPermissions],
+        AccountStatus::Active,
+    )
+    .await;
     let target = app.seed_user("target", &[], AccountStatus::Active).await;
 
     let (status, _) = app
-        .call(
+        .call_elevated(
             "PUT",
             &format!("/v1/admin/users/{}/permissions", target.as_uuid()),
-            Some(&app.bearer(admin)),
+            Some(&bearer),
+            Some(&step_up),
             Some(json!({ "permissions": ["system.superuser", "users.read"] })),
         )
         .await;
@@ -118,19 +143,20 @@ async fn the_super_user_grant_cannot_be_handed_out_by_an_administrator() {
 #[tokio::test]
 async fn the_permission_catalogue_does_not_offer_the_super_user() {
     let app = TestApp::spawn().await;
-    let reader = app
-        .seed_user(
-            "cataloguer",
-            &[Permission::UsersRead],
-            AccountStatus::Active,
-        )
-        .await;
+    let (bearer, step_up) = admin(
+        &app,
+        "cataloguer",
+        &[Permission::UsersRead],
+        AccountStatus::Active,
+    )
+    .await;
 
     let (status, body) = app
-        .call(
+        .call_elevated(
             "GET",
             "/v1/admin/permissions",
-            Some(&app.bearer(reader)),
+            Some(&bearer),
+            Some(&step_up),
             None,
         )
         .await;
@@ -143,14 +169,27 @@ async fn the_permission_catalogue_does_not_offer_the_super_user() {
     );
 }
 
+/// A refused privilege escalation is recorded, not merely rejected — and the record names the
+/// capability that was missing.
+///
+/// The caller is enrolled and elevated deliberately. Without a second factor the authorization
+/// funnel refuses at its *first* gate and never reaches the capability check, so the denial
+/// would name no missing permission and this test would be asserting a different refusal than
+/// the one it describes.
 #[tokio::test]
 async fn a_denied_call_emits_an_authz_denied_audit_event() {
     let app = TestApp::spawn().await;
     let nobody = app.seed_user("auditless", &[], AccountStatus::Active).await;
+    let step_up = app.enrolled_and_elevated(nobody).await;
 
-    // A refused privilege escalation must be recorded, not just rejected.
     let (status, _) = app
-        .call("GET", "/v1/admin/stats", Some(&app.bearer(nobody)), None)
+        .call_elevated(
+            "GET",
+            "/v1/admin/stats",
+            Some(&app.bearer(nobody)),
+            Some(&step_up),
+            None,
+        )
         .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
 
@@ -199,12 +238,18 @@ async fn a_privacy_request_cannot_be_cancelled_by_another_user() {
     let app = TestApp::spawn().await;
     let owner = app.seed_user("subject", &[], AccountStatus::Active).await;
     let stranger = app.seed_user("meddler", &[], AccountStatus::Active).await;
+    // Filing and withdrawing are both behind a step-up now. Neither account has a factor, so a
+    // password-earned grant is the strongest proof each can offer — and the one the fallback
+    // exists for.
+    let owner_step_up = app.step_up(owner, StepUpMethod::Password).await;
+    let stranger_step_up = app.step_up(stranger, StepUpMethod::Password).await;
 
     let (status, body) = app
-        .call(
+        .call_elevated(
             "POST",
             "/v1/me/privacy/requests",
             Some(&app.bearer(owner)),
+            Some(&owner_step_up),
             Some(json!({ "kind": "access" })),
         )
         .await;
@@ -213,10 +258,11 @@ async fn a_privacy_request_cannot_be_cancelled_by_another_user() {
 
     // Ownership scoping turns this into a 404, same as a nonexistent request.
     let (status, _) = app
-        .call(
+        .call_elevated(
             "DELETE",
             &format!("/v1/me/privacy/requests/{id}"),
             Some(&app.bearer(stranger)),
+            Some(&stranger_step_up),
             None,
         )
         .await;
@@ -227,10 +273,11 @@ async fn a_privacy_request_cannot_be_cancelled_by_another_user() {
     );
 
     let (status, _) = app
-        .call(
+        .call_elevated(
             "DELETE",
             &format!("/v1/me/privacy/requests/{id}"),
             Some(&app.bearer(owner)),
+            Some(&owner_step_up),
             None,
         )
         .await;

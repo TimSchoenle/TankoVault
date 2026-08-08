@@ -62,6 +62,19 @@ pub struct AppState {
     /// The `WebAuthn` relying party, or `None` when this deployment configured no origin for
     /// it. `None` is a working state, not a broken one — passkeys are simply unavailable.
     pub webauthn: Option<crate::passkey::SharedRelyingParty>,
+    /// Seals TOTP secrets at rest, or `None` when `auth.mfa_encryption_key` is unset.
+    ///
+    /// `None` is a working state, like [`Self::webauthn`]: TOTP enrolment answers `503` naming
+    /// the setting, while security keys and recovery codes keep working. Storing the secret
+    /// unsealed instead is not an option — it is symmetric, so the database row would be a
+    /// working second factor for whoever reads it.
+    pub mfa_sealer: Option<tankovault_auth::Sealer>,
+    /// The issuer an authenticator app files this deployment's entry under.
+    pub totp_issuer: String,
+    /// How long a step-up elevation lasts.
+    pub step_up_ttl: time::Duration,
+    /// How long a half-finished sign-in may sit before it has to be restarted.
+    pub mfa_challenge_ttl: time::Duration,
     /// Transactional email back-end (welcome, password reset). A no-op mailer when email
     /// is unconfigured, so these flows degrade gracefully rather than failing.
     pub mailer: Arc<dyn tankovault_email::EmailService>,
@@ -134,6 +147,22 @@ pub struct AuthUser {
     pub adult_opt_in: bool,
     /// Request origin, attached to any audit record this principal produces.
     pub client: ClientContext,
+    /// Whether this account holds a second factor — a confirmed authenticator-app enrolment or
+    /// a security key.
+    ///
+    /// Read on every authenticated request, alongside the permission set, so a factor removed a
+    /// second ago is already gone. Consulted by [`Self::require_all`] and by the passkey gate.
+    pub mfa_enrolled: bool,
+    /// Whether this request carried a live step-up grant in `X-Step-Up`.
+    ///
+    /// Resolved here rather than by a second extractor so that [`Self::require_all`] — the
+    /// funnel every privileged handler already passes through — can demand it for a mutating
+    /// capability without each of forty admin handlers being edited to ask. `crate::step_up`
+    /// reads the same field for the `/v1/me` routes, which do not go through `require_all`.
+    ///
+    /// A grant earned by password is **not** counted once a factor is enrolled: see
+    /// `crate::step_up` for why.
+    pub elevated: bool,
     /// Carried so [`Self::require`] can record a refused privileged action without every
     /// handler having to thread `AppState` into its authorization check.
     audit: Arc<dyn AuditSink>,
@@ -156,9 +185,61 @@ impl AuthUser {
     /// Permissions deliberately do not imply one another, so a dual-purpose handler asks for
     /// both at once — keeping the audit record for a refusal naming everything missing.
     ///
+    /// # Two gates before the grants
+    ///
+    /// Both are checked here, and here rather than anywhere else, because this is the one
+    /// funnel every privileged handler already passes through — every call site of this method
+    /// lives under `services/api/src/admin/`. A middleware keyed on path prefix would let a
+    /// privileged route added outside `/v1/admin` escape silently; this way a handler cannot
+    /// ask for a capability without also asking for what guards it.
+    ///
+    /// 1. **The account must hold a second factor at all.** An administrator without one is a
+    ///    password away from being someone else.
+    /// 2. **A mutating capability additionally needs a fresh step-up.** Reads are exempt:
+    ///    prompting to load a dashboard would keep a standing elevation open all day, which is
+    ///    worse than not prompting. [`Permission::is_mutating`] draws the line, exhaustively.
+    ///
+    /// Both are ordered before the grant check on purpose: an unenrolled administrator is told
+    /// to enrol rather than told their permissions are insufficient, which is the difference
+    /// between an actionable message and a support ticket.
+    ///
     /// # Errors
+    /// [`ApiError::MfaEnrolmentRequired`] if the caller has no second factor;
+    /// [`ApiError::StepUpRequired`] if a mutating capability was asked for without one;
     /// [`ApiError::Forbidden`] if any of `required` is missing.
     pub async fn require_all(&self, required: &[Permission]) -> Result<(), ApiError> {
+        if !self.mfa_enrolled {
+            self.audit
+                .record(
+                    AuditEvent::new("authz.denied")
+                        .actor(self.user_id)
+                        .detail(serde_json::json!({
+                            "reason": "mfa_enrolment_required",
+                            "required": required.iter().map(|p| p.as_str()).collect::<Vec<_>>(),
+                        }))
+                        .denied()
+                        .client(self.client.ip.clone(), self.client.user_agent.clone()),
+                )
+                .await;
+            return Err(ApiError::MfaEnrolmentRequired);
+        }
+
+        if !self.elevated && required.iter().copied().any(Permission::is_mutating) {
+            self.audit
+                .record(
+                    AuditEvent::new("authz.denied")
+                        .actor(self.user_id)
+                        .detail(serde_json::json!({
+                            "reason": "step_up_required",
+                            "required": required.iter().map(|p| p.as_str()).collect::<Vec<_>>(),
+                        }))
+                        .denied()
+                        .client(self.client.ip.clone(), self.client.user_agent.clone()),
+                )
+                .await;
+            return Err(ApiError::StepUpRequired);
+        }
+
         let missing: Vec<&'static str> = required
             .iter()
             .filter(|p| !self.permissions.has(**p))
@@ -222,14 +303,52 @@ impl FromRequestParts<AppState> for AuthUser {
             return Err(ApiError::Suspended);
         }
 
+        // The deployment-wide requirement, distinct from the privileged-account one in
+        // `require_all`. Enforced here because it applies to *every* authenticated route, and
+        // exempting the enrolment surface is what stops it bricking the deployment the moment
+        // an operator switches it on.
+        if !principal.mfa_enrolled
+            && state
+                .features
+                .is_enabled(tankovault_domain::Feature::AccountsMfaRequired)
+            && !exempt_from_mandatory_mfa(parts.uri.path())
+        {
+            return Err(ApiError::MfaEnrolmentRequired);
+        }
+
         Ok(Self {
             user_id,
             permissions: principal.permissions,
             adult_opt_in: principal.adult_opt_in,
             client: ClientContext::from_parts(parts),
+            mfa_enrolled: principal.mfa_enrolled,
+            elevated: crate::step_up::resolve(
+                state,
+                user_id,
+                principal.mfa_enrolled,
+                &parts.headers,
+            )
+            .await?,
             audit: Arc::clone(&state.audit),
         })
     }
+}
+
+/// Routes an unenrolled account may still reach while `accounts.mfa_required` is on.
+///
+/// Exactly the surface needed to *become* enrolled, plus the probe the client uses to discover
+/// that it must. Without this the flag is a deployment-wide lockout: every account without a
+/// factor is refused everywhere, including the page that would give them one, and the only
+/// recovery is a database edit.
+///
+/// Prefix-matched rather than exact, because `/v1/me/mfa` fans out into enrolment,
+/// confirmation, security keys and recovery codes, and a list of exact paths is a list that
+/// falls behind the router. Nothing outside `/v1/me/mfa` and `/v1/me/step-up` is exempt, and
+/// neither prefix carries a route that does anything but enrol or elevate.
+fn exempt_from_mandatory_mfa(path: &str) -> bool {
+    path.starts_with("/v1/me/mfa")
+        || path.starts_with("/v1/me/step-up")
+        || path == "/v1/me/capabilities"
 }
 
 /// Extract an [`AuthUser`] on a route that also serves anonymous callers.

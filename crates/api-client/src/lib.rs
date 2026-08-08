@@ -2171,6 +2171,8 @@ pub mod types {
     #[doc = "    \"accounts.profile\","]
     #[doc = "    \"accounts.sessions\","]
     #[doc = "    \"accounts.passkeys\","]
+    #[doc = "    \"accounts.mfa\","]
+    #[doc = "    \"accounts.mfa_required\","]
     #[doc = "    \"privacy.self_export\","]
     #[doc = "    \"privacy.self_erasure\","]
     #[doc = "    \"privacy.requests\","]
@@ -2239,6 +2241,10 @@ pub mod types {
         AccountsSessions,
         #[serde(rename = "accounts.passkeys")]
         AccountsPasskeys,
+        #[serde(rename = "accounts.mfa")]
+        AccountsMfa,
+        #[serde(rename = "accounts.mfa_required")]
+        AccountsMfaRequired,
         #[serde(rename = "privacy.self_export")]
         PrivacySelfExport,
         #[serde(rename = "privacy.self_erasure")]
@@ -2315,6 +2321,8 @@ pub mod types {
                 Self::AccountsProfile => f.write_str("accounts.profile"),
                 Self::AccountsSessions => f.write_str("accounts.sessions"),
                 Self::AccountsPasskeys => f.write_str("accounts.passkeys"),
+                Self::AccountsMfa => f.write_str("accounts.mfa"),
+                Self::AccountsMfaRequired => f.write_str("accounts.mfa_required"),
                 Self::PrivacySelfExport => f.write_str("privacy.self_export"),
                 Self::PrivacySelfErasure => f.write_str("privacy.self_erasure"),
                 Self::PrivacyRequests => f.write_str("privacy.requests"),
@@ -2363,6 +2371,8 @@ pub mod types {
                 "accounts.profile" => Ok(Self::AccountsProfile),
                 "accounts.sessions" => Ok(Self::AccountsSessions),
                 "accounts.passkeys" => Ok(Self::AccountsPasskeys),
+                "accounts.mfa" => Ok(Self::AccountsMfa),
+                "accounts.mfa_required" => Ok(Self::AccountsMfaRequired),
                 "privacy.self_export" => Ok(Self::PrivacySelfExport),
                 "privacy.self_erasure" => Ok(Self::PrivacySelfErasure),
                 "privacy.requests" => Ok(Self::PrivacyRequests),
@@ -3346,6 +3356,117 @@ pub mod types {
             Default::default()
         }
     }
+    #[doc = "What `POST /v1/auth/login` answers.\n\nA discriminated struct rather than two response bodies on two status codes, or an untagged\nunion: one status and one schema means the generated client gets a single struct to\ndeserialise instead of a `oneOf` enum, which this generator renders awkwardly enough that it\nhas caused trouble here before. `status` is the field a client branches on; the two payloads\nare mutually exclusive and each absent when the other is present.\n\n[`TokenResponse`] is left untouched by this, so `refresh` and `register` — which answer with\na session and never a challenge — keep the shape they had."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"What `POST /v1/auth/login` answers.\\n\\nA discriminated struct rather than two response bodies on two status codes, or an untagged\\nunion: one status and one schema means the generated client gets a single struct to\\ndeserialise instead of a `oneOf` enum, which this generator renders awkwardly enough that it\\nhas caused trouble here before. `status` is the field a client branches on; the two payloads\\nare mutually exclusive and each absent when the other is present.\\n\\n[`TokenResponse`] is left untouched by this, so `refresh` and `register` — which answer with\\na session and never a challenge — keep the shape they had.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"status\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"mfa\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/MfaChallenge\""]
+    #[doc = "    },"]
+    #[doc = "    \"session\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/TokenResponse\""]
+    #[doc = "    },"]
+    #[doc = "    \"status\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/LoginStatus\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct LoginResponse {
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub mfa: ::std::option::Option<MfaChallenge>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub session: ::std::option::Option<TokenResponse>,
+        pub status: LoginStatus,
+    }
+    impl LoginResponse {
+        pub fn builder() -> builder::LoginResponse {
+            Default::default()
+        }
+    }
+    #[doc = "How far a sign-in got."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"How far a sign-in got.\","]
+    #[doc = "  \"type\": \"string\","]
+    #[doc = "  \"enum\": ["]
+    #[doc = "    \"authenticated\","]
+    #[doc = "    \"mfa_required\""]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+    )]
+    pub enum LoginStatus {
+        #[serde(rename = "authenticated")]
+        Authenticated,
+        #[serde(rename = "mfa_required")]
+        MfaRequired,
+    }
+    impl ::std::fmt::Display for LoginStatus {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Authenticated => f.write_str("authenticated"),
+                Self::MfaRequired => f.write_str("mfa_required"),
+            }
+        }
+    }
+    impl ::std::str::FromStr for LoginStatus {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "authenticated" => Ok(Self::Authenticated),
+                "mfa_required" => Ok(Self::MfaRequired),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+    impl ::std::convert::TryFrom<&str> for LoginStatus {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    impl ::std::convert::TryFrom<&::std::string::String> for LoginStatus {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    impl ::std::convert::TryFrom<::std::string::String> for LoginStatus {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
     #[doc = "`MarkRead`"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -4060,6 +4181,321 @@ pub mod types {
     impl MergeSweepView {
         pub fn builder() -> builder::MergeSweepView {
             Default::default()
+        }
+    }
+    #[doc = "What a client must do to finish signing in."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"What a client must do to finish signing in.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"challenge_token\","]
+    #[doc = "    \"expires_in\","]
+    #[doc = "    \"methods\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"challenge_token\": {"]
+    #[doc = "      \"description\": \"Present this alongside a factor at `POST /v1/auth/mfa/verify`.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"expires_in\": {"]
+    #[doc = "      \"description\": \"Seconds until the pending sign-in lapses.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"methods\": {"]
+    #[doc = "      \"description\": \"Which factors this account can actually present, so the client offers only those.\\n\\nNever the account's *identity* — this response is reachable with a password alone, so\\nanything beyond \\\"an authenticator app and two security keys exist here\\\" would be a\\ndisclosure bought with a credential the attacker already spent.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/MfaMethod\""]
+    #[doc = "      }"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct MfaChallenge {
+        #[doc = "Present this alongside a factor at `POST /v1/auth/mfa/verify`."]
+        pub challenge_token: ::std::string::String,
+        #[doc = "Seconds until the pending sign-in lapses."]
+        pub expires_in: i64,
+        #[doc = "Which factors this account can actually present, so the client offers only those.\n\nNever the account's *identity* — this response is reachable with a password alone, so\nanything beyond \"an authenticator app and two security keys exist here\" would be a\ndisclosure bought with a credential the attacker already spent."]
+        pub methods: ::std::vec::Vec<MfaMethod>,
+    }
+    impl MfaChallenge {
+        pub fn builder() -> builder::MfaChallenge {
+            Default::default()
+        }
+    }
+    #[doc = "The handle alone, to fetch a security-key challenge for the pending sign-in."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"The handle alone, to fetch a security-key challenge for the pending sign-in.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"challenge_token\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"challenge_token\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct MfaChallengeRequest {
+        pub challenge_token: ::std::string::String,
+    }
+    impl MfaChallengeRequest {
+        pub fn builder() -> builder::MfaChallengeRequest {
+            Default::default()
+        }
+    }
+    #[doc = "A factor a pending sign-in may be finished with."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"A factor a pending sign-in may be finished with.\","]
+    #[doc = "  \"type\": \"string\","]
+    #[doc = "  \"enum\": ["]
+    #[doc = "    \"totp\","]
+    #[doc = "    \"security_key\","]
+    #[doc = "    \"recovery_code\""]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+    )]
+    pub enum MfaMethod {
+        #[serde(rename = "totp")]
+        Totp,
+        #[serde(rename = "security_key")]
+        SecurityKey,
+        #[serde(rename = "recovery_code")]
+        RecoveryCode,
+    }
+    impl ::std::fmt::Display for MfaMethod {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Totp => f.write_str("totp"),
+                Self::SecurityKey => f.write_str("security_key"),
+                Self::RecoveryCode => f.write_str("recovery_code"),
+            }
+        }
+    }
+    impl ::std::str::FromStr for MfaMethod {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "totp" => Ok(Self::Totp),
+                "security_key" => Ok(Self::SecurityKey),
+                "recovery_code" => Ok(Self::RecoveryCode),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+    impl ::std::convert::TryFrom<&str> for MfaMethod {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    impl ::std::convert::TryFrom<&::std::string::String> for MfaMethod {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    impl ::std::convert::TryFrom<::std::string::String> for MfaMethod {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    #[doc = "The caller's second-factor state, as the account page renders it."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"The caller's second-factor state, as the account page renders it.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"enrolled\","]
+    #[doc = "    \"recovery_codes_remaining\","]
+    #[doc = "    \"required\","]
+    #[doc = "    \"security_keys\","]
+    #[doc = "    \"totp_available\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"enrolled\": {"]
+    #[doc = "      \"description\": \"Whether any usable factor exists. The single answer the passkey gate and the privileged\\nrequirement both consult — clients must not recompute it from the fields below.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"recovery_codes_remaining\": {"]
+    #[doc = "      \"description\": \"Unused recovery codes. Zero with a factor enrolled is a state worth warning about: the\\naccount has a second factor and no way past it if the factor is lost.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"required\": {"]
+    #[doc = "      \"description\": \"Whether this deployment requires every account to enrol, not just privileged ones.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"security_keys\": {"]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/SecurityKeyDto\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"totp_available\": {"]
+    #[doc = "      \"description\": \"Whether authenticator-app enrolment is available at all. `false` when the operator has\\nconfigured no sealing key, in which case the client offers security keys only rather\\nthan a button that answers `503`.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"totp_confirmed_at\": {"]
+    #[doc = "      \"description\": \"When the authenticator app was confirmed, or absent if there is none.\\n\\nAn enrolment that was started and never confirmed reads as absent here, on purpose: it\\nis not a factor, and showing it as one would tell a user they are protected when they\\nare not.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct MfaStatus {
+        #[doc = "Whether any usable factor exists. The single answer the passkey gate and the privileged\nrequirement both consult — clients must not recompute it from the fields below."]
+        pub enrolled: bool,
+        #[doc = "Unused recovery codes. Zero with a factor enrolled is a state worth warning about: the\naccount has a second factor and no way past it if the factor is lost."]
+        pub recovery_codes_remaining: i64,
+        #[doc = "Whether this deployment requires every account to enrol, not just privileged ones."]
+        pub required: bool,
+        pub security_keys: ::std::vec::Vec<SecurityKeyDto>,
+        #[doc = "Whether authenticator-app enrolment is available at all. `false` when the operator has\nconfigured no sealing key, in which case the client offers security keys only rather\nthan a button that answers `503`."]
+        pub totp_available: bool,
+        #[doc = "When the authenticator app was confirmed, or absent if there is none.\n\nAn enrolment that was started and never confirmed reads as absent here, on purpose: it\nis not a factor, and showing it as one would tell a user they are protected when they\nare not."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub totp_confirmed_at: ::std::option::Option<::std::string::String>,
+    }
+    impl MfaStatus {
+        pub fn builder() -> builder::MfaStatus {
+            Default::default()
+        }
+    }
+    #[doc = "The handle the first leg issued, plus exactly one factor."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"The handle the first leg issued, plus exactly one factor.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"challenge_token\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"challenge_token\": {"]
+    #[doc = "      \"description\": \"The `challenge_token` from the sign-in response.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"recovery_code\": {"]
+    #[doc = "      \"description\": \"One unused recovery code.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"security_key\": {"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {},"]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/SecurityKeyAssertion\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"totp_code\": {"]
+    #[doc = "      \"description\": \"A code from the enrolled authenticator app.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct MfaVerifyRequest {
+        #[doc = "The `challenge_token` from the sign-in response."]
+        pub challenge_token: ::std::string::String,
+        #[doc = "One unused recovery code."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub recovery_code: ::std::option::Option<::std::string::String>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub security_key: ::std::option::Option<MfaVerifyRequestSecurityKey>,
+        #[doc = "A code from the enrolled authenticator app."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub totp_code: ::std::option::Option<::std::string::String>,
+    }
+    impl MfaVerifyRequest {
+        pub fn builder() -> builder::MfaVerifyRequest {
+            Default::default()
+        }
+    }
+    #[doc = "`MfaVerifyRequestSecurityKey`"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {},"]
+    #[doc = "    {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/SecurityKeyAssertion\""]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    #[serde(untagged)]
+    pub enum MfaVerifyRequestSecurityKey {
+        Variant0(::serde_json::Value),
+        Variant1(SecurityKeyAssertion),
+    }
+    impl ::std::convert::From<::serde_json::Value> for MfaVerifyRequestSecurityKey {
+        fn from(value: ::serde_json::Value) -> Self {
+            Self::Variant0(value)
+        }
+    }
+    impl ::std::convert::From<SecurityKeyAssertion> for MfaVerifyRequestSecurityKey {
+        fn from(value: SecurityKeyAssertion) -> Self {
+            Self::Variant1(value)
         }
     }
     #[doc = "The recommendation model's current state, as an operator needs it before touching anything."]
@@ -4845,22 +5281,15 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "Proof of the current password, plus what to call the new key."]
+    #[doc = "What to call the new key."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Proof of the current password, plus what to call the new key.\","]
+    #[doc = "  \"description\": \"What to call the new key.\","]
     #[doc = "  \"type\": \"object\","]
-    #[doc = "  \"required\": ["]
-    #[doc = "    \"current_password\""]
-    #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
-    #[doc = "    \"current_password\": {"]
-    #[doc = "      \"description\": \"The caller's current password. Required — see [`passkey_register_start`].\","]
-    #[doc = "      \"type\": \"string\""]
-    #[doc = "    },"]
     #[doc = "    \"label\": {"]
     #[doc = "      \"description\": \"What to call the key in the revoke list. Defaults to \\\"Passkey\\\" when absent or blank.\","]
     #[doc = "      \"type\": ["]
@@ -4874,11 +5303,16 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct PasskeyRegisterStart {
-        #[doc = "The caller's current password. Required — see [`passkey_register_start`]."]
-        pub current_password: ::std::string::String,
         #[doc = "What to call the key in the revoke list. Defaults to \"Passkey\" when absent or blank."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub label: ::std::option::Option<::std::string::String>,
+    }
+    impl ::std::default::Default for PasskeyRegisterStart {
+        fn default() -> Self {
+            Self {
+                label: Default::default(),
+            }
+        }
     }
     impl PasskeyRegisterStart {
         pub fn builder() -> builder::PasskeyRegisterStart {
@@ -4921,13 +5355,9 @@ pub mod types {
     #[doc = "{"]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
-    #[doc = "    \"current_password\","]
     #[doc = "    \"new_password\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
-    #[doc = "    \"current_password\": {"]
-    #[doc = "      \"type\": \"string\""]
-    #[doc = "    },"]
     #[doc = "    \"new_password\": {"]
     #[doc = "      \"type\": \"string\""]
     #[doc = "    }"]
@@ -4937,7 +5367,6 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct PasswordChange {
-        pub current_password: ::std::string::String,
         pub new_password: ::std::string::String,
     }
     impl PasswordChange {
@@ -5710,13 +6139,6 @@ pub mod types {
     #[doc = "{"]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"properties\": {"]
-    #[doc = "    \"current_password\": {"]
-    #[doc = "      \"description\": \"Required when `email` changes the address on the account. See [`patch_profile`].\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"string\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ]"]
-    #[doc = "    },"]
     #[doc = "    \"email\": {"]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
@@ -5735,9 +6157,6 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct ProfileUpdate {
-        #[doc = "Required when `email` changes the address on the account. See [`patch_profile`]."]
-        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub current_password: ::std::option::Option<::std::string::String>,
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub email: ::std::option::Option<::std::string::String>,
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
@@ -5746,7 +6165,6 @@ pub mod types {
     impl ::std::default::Default for ProfileUpdate {
         fn default() -> Self {
             Self {
-                current_password: Default::default(),
                 email: Default::default(),
                 username: Default::default(),
             }
@@ -6533,6 +6951,39 @@ pub mod types {
     impl ::std::convert::From<SeriesId> for RecommendationBecauseSeriesId {
         fn from(value: SeriesId) -> Self {
             Self::Variant1(value)
+        }
+    }
+    #[doc = "A recovery-code set, returned exactly once."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"A recovery-code set, returned exactly once.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"codes\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"codes\": {"]
+    #[doc = "      \"description\": \"The plaintext codes. Only the digests are stored, so this response is the only copy\\nthat will ever exist — a client that does not show them has lost them.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"type\": \"string\""]
+    #[doc = "      }"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct RecoveryCodes {
+        #[doc = "The plaintext codes. Only the digests are stored, so this response is the only copy\nthat will ever exist — a client that does not show them has lost them."]
+        pub codes: ::std::vec::Vec<::std::string::String>,
+    }
+    impl RecoveryCodes {
+        pub fn builder() -> builder::RecoveryCodes {
+            Default::default()
         }
     }
     #[doc = "Which kind of recommendation-model build to run.\n\nLives here rather than in either service because both sides of the internal hop parse it: the\nAPI validates the operator's request body and the control plane acts on it. A hand-mirrored\nsecond copy is the drift this crate exists to prevent."]
@@ -7660,6 +8111,304 @@ pub mod types {
             Default::default()
         }
     }
+    #[doc = "The assertion `navigator.credentials.get()` produced."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"The assertion `navigator.credentials.get()` produced.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"ceremony_id\","]
+    #[doc = "    \"credential\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"ceremony_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"credential\": {"]
+    #[doc = "      \"description\": \"The `PublicKeyCredential` the browser produced, serialised as the `WebAuthn`\\nspecification defines it.\","]
+    #[doc = "      \"type\": \"object\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct SecurityKeyAssertion {
+        pub ceremony_id: ::uuid::Uuid,
+        #[doc = "The `PublicKeyCredential` the browser produced, serialised as the `WebAuthn`\nspecification defines it."]
+        pub credential: ::serde_json::Map<::std::string::String, ::serde_json::Value>,
+    }
+    impl SecurityKeyAssertion {
+        pub fn builder() -> builder::SecurityKeyAssertion {
+            Default::default()
+        }
+    }
+    #[doc = "A `WebAuthn` assertion challenge for the caller's security keys, plus the handle that\ncompletes it."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"A `WebAuthn` assertion challenge for the caller's security keys, plus the handle that\\ncompletes it.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"ceremony_id\","]
+    #[doc = "    \"options\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"ceremony_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"options\": {"]
+    #[doc = "      \"description\": \"A W3C `PublicKeyCredentialRequestOptions` envelope. Hand it to the browser unmodified.\","]
+    #[doc = "      \"type\": \"object\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct SecurityKeyChallenge {
+        pub ceremony_id: ::uuid::Uuid,
+        #[doc = "A W3C `PublicKeyCredentialRequestOptions` envelope. Hand it to the browser unmodified."]
+        pub options: ::serde_json::Map<::std::string::String, ::serde_json::Value>,
+    }
+    impl SecurityKeyChallenge {
+        pub fn builder() -> builder::SecurityKeyChallenge {
+            Default::default()
+        }
+    }
+    #[doc = "A registered security key, as the account page shows it.\n\nDeliberately without the credential id, for the reason `PasskeyDto` gives: it is the lookup\nkey a sign-in resolves from, and publishing every account's ids on an authenticated page\nhands whoever compromises one session the material to recognise that user's authenticator\nelsewhere."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"A registered security key, as the account page shows it.\\n\\nDeliberately without the credential id, for the reason `PasskeyDto` gives: it is the lookup\\nkey a sign-in resolves from, and publishing every account's ids on an authenticated page\\nhands whoever compromises one session the material to recognise that user's authenticator\\nelsewhere.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"created_at\","]
+    #[doc = "    \"id\","]
+    #[doc = "    \"label\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"created_at\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"label\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"last_used_at\": {"]
+    #[doc = "      \"description\": \"When this key was last presented; absent if it never has been.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct SecurityKeyDto {
+        pub created_at: ::std::string::String,
+        pub id: ::uuid::Uuid,
+        pub label: ::std::string::String,
+        #[doc = "When this key was last presented; absent if it never has been."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub last_used_at: ::std::option::Option<::std::string::String>,
+    }
+    impl SecurityKeyDto {
+        pub fn builder() -> builder::SecurityKeyDto {
+            Default::default()
+        }
+    }
+    #[doc = "The creation challenge, plus the handle the client echoes back."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"The creation challenge, plus the handle the client echoes back.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"ceremony_id\","]
+    #[doc = "    \"options\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"ceremony_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"options\": {"]
+    #[doc = "      \"description\": \"A W3C `PublicKeyCredentialCreationOptions` envelope. Hand it to the browser unmodified.\","]
+    #[doc = "      \"type\": \"object\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct SecurityKeyRegisterChallenge {
+        pub ceremony_id: ::uuid::Uuid,
+        #[doc = "A W3C `PublicKeyCredentialCreationOptions` envelope. Hand it to the browser unmodified."]
+        pub options: ::serde_json::Map<::std::string::String, ::serde_json::Value>,
+    }
+    impl SecurityKeyRegisterChallenge {
+        pub fn builder() -> builder::SecurityKeyRegisterChallenge {
+            Default::default()
+        }
+    }
+    #[doc = "The attestation `navigator.credentials.create()` produced."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"The attestation `navigator.credentials.create()` produced.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"ceremony_id\","]
+    #[doc = "    \"credential\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"ceremony_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"credential\": {"]
+    #[doc = "      \"type\": \"object\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct SecurityKeyRegisterFinish {
+        pub ceremony_id: ::uuid::Uuid,
+        pub credential: ::serde_json::Map<::std::string::String, ::serde_json::Value>,
+    }
+    impl SecurityKeyRegisterFinish {
+        pub fn builder() -> builder::SecurityKeyRegisterFinish {
+            Default::default()
+        }
+    }
+    #[doc = "What to call a new security key."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"What to call a new security key.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"label\": {"]
+    #[doc = "      \"description\": \"Defaults to \\\"Security key\\\" when absent or blank.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct SecurityKeyRegisterStart {
+        #[doc = "Defaults to \"Security key\" when absent or blank."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub label: ::std::option::Option<::std::string::String>,
+    }
+    impl ::std::default::Default for SecurityKeyRegisterStart {
+        fn default() -> Self {
+            Self {
+                label: Default::default(),
+            }
+        }
+    }
+    impl SecurityKeyRegisterStart {
+        pub fn builder() -> builder::SecurityKeyRegisterStart {
+            Default::default()
+        }
+    }
+    #[doc = "A newly registered security key, plus the recovery codes if it was the first factor."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"A newly registered security key, plus the recovery codes if it was the first factor.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"key\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"key\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/SecurityKeyDto\""]
+    #[doc = "    },"]
+    #[doc = "    \"recovery_codes\": {"]
+    #[doc = "      \"description\": \"Present only when this registration was the account's first second factor. Shown once.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"array\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"type\": \"string\""]
+    #[doc = "      }"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct SecurityKeyRegistered {
+        pub key: SecurityKeyDto,
+        #[doc = "Present only when this registration was the account's first second factor. Shown once."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub recovery_codes: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+    }
+    impl SecurityKeyRegistered {
+        pub fn builder() -> builder::SecurityKeyRegistered {
+            Default::default()
+        }
+    }
+    #[doc = "A new name for an existing key."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"A new name for an existing key.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"label\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"label\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct SecurityKeyRename {
+        pub label: ::std::string::String,
+    }
+    impl SecurityKeyRename {
+        pub fn builder() -> builder::SecurityKeyRename {
+            Default::default()
+        }
+    }
     #[doc = "`SeriesDetail`"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -8589,6 +9338,104 @@ pub mod types {
     }
     impl StatusPrefs {
         pub fn builder() -> builder::StatusPrefs {
+            Default::default()
+        }
+    }
+    #[doc = "A step-up elevation, handed to the client once."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"A step-up elevation, handed to the client once.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"expires_in\","]
+    #[doc = "    \"token\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"expires_in\": {"]
+    #[doc = "      \"description\": \"Seconds until the elevation lapses and the next sensitive action prompts again.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"token\": {"]
+    #[doc = "      \"description\": \"Present this in the `X-Step-Up` header on the sensitive request.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct StepUpGrant {
+        #[doc = "Seconds until the elevation lapses and the next sensitive action prompts again."]
+        pub expires_in: i64,
+        #[doc = "Present this in the `X-Step-Up` header on the sensitive request."]
+        pub token: ::std::string::String,
+    }
+    impl StepUpGrant {
+        pub fn builder() -> builder::StepUpGrant {
+            Default::default()
+        }
+    }
+    #[doc = "One factor, presented to earn an elevation.\n\nExactly one field must be set. A flat struct rather than a tagged enum because the generated\nclient renders a `oneOf` as an enum that is awkward to construct, and because \"exactly one of\nthese\" is checked here in one place either way."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One factor, presented to earn an elevation.\\n\\nExactly one field must be set. A flat struct rather than a tagged enum because the generated\\nclient renders a `oneOf` as an enum that is awkward to construct, and because \\\"exactly one of\\nthese\\\" is checked here in one place either way.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"password\": {"]
+    #[doc = "      \"description\": \"The account password. Accepted **only** while no second factor is enrolled — see the\\nhandler.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"recovery_code\": {"]
+    #[doc = "      \"description\": \"One unused recovery code.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"totp_code\": {"]
+    #[doc = "      \"description\": \"A code from the enrolled authenticator app.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct StepUpRequest {
+        #[doc = "The account password. Accepted **only** while no second factor is enrolled — see the\nhandler."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub password: ::std::option::Option<::std::string::String>,
+        #[doc = "One unused recovery code."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub recovery_code: ::std::option::Option<::std::string::String>,
+        #[doc = "A code from the enrolled authenticator app."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub totp_code: ::std::option::Option<::std::string::String>,
+    }
+    impl ::std::default::Default for StepUpRequest {
+        fn default() -> Self {
+            Self {
+                password: Default::default(),
+                recovery_code: Default::default(),
+                totp_code: Default::default(),
+            }
+        }
+    }
+    impl StepUpRequest {
+        pub fn builder() -> builder::StepUpRequest {
             Default::default()
         }
     }
@@ -9972,6 +10819,71 @@ pub mod types {
     }
     impl TokenResponse {
         pub fn builder() -> builder::TokenResponse {
+            Default::default()
+        }
+    }
+    #[doc = "A code proving the user stored the secret."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"A code proving the user stored the secret.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"code\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"code\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct TotpConfirm {
+        pub code: ::std::string::String,
+    }
+    impl TotpConfirm {
+        pub fn builder() -> builder::TotpConfirm {
+            Default::default()
+        }
+    }
+    #[doc = "A freshly issued authenticator-app secret. Shown once, never retrievable again."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"A freshly issued authenticator-app secret. Shown once, never retrievable again.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"provisioning_uri\","]
+    #[doc = "    \"secret\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"provisioning_uri\": {"]
+    #[doc = "      \"description\": \"The `otpauth://` URI the client renders as a QR code. Carries the secret, so it is as\\nsensitive as the field above.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"secret\": {"]
+    #[doc = "      \"description\": \"The shared secret, base32-encoded, for a user whose app cannot scan a QR code.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct TotpEnrolmentChallenge {
+        #[doc = "The `otpauth://` URI the client renders as a QR code. Carries the secret, so it is as\nsensitive as the field above."]
+        pub provisioning_uri: ::std::string::String,
+        #[doc = "The shared secret, base32-encoded, for a user whose app cannot scan a QR code."]
+        pub secret: ::std::string::String,
+    }
+    impl TotpEnrolmentChallenge {
+        pub fn builder() -> builder::TotpEnrolmentChallenge {
             Default::default()
         }
     }
@@ -15556,6 +16468,80 @@ pub mod types {
             }
         }
         #[derive(Clone, Debug)]
+        pub struct LoginResponse {
+            mfa: ::std::result::Result<
+                ::std::option::Option<super::MfaChallenge>,
+                ::std::string::String,
+            >,
+            session: ::std::result::Result<
+                ::std::option::Option<super::TokenResponse>,
+                ::std::string::String,
+            >,
+            status: ::std::result::Result<super::LoginStatus, ::std::string::String>,
+        }
+        impl ::std::default::Default for LoginResponse {
+            fn default() -> Self {
+                Self {
+                    mfa: Ok(Default::default()),
+                    session: Ok(Default::default()),
+                    status: Err("no value supplied for status".to_string()),
+                }
+            }
+        }
+        impl LoginResponse {
+            pub fn mfa<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<super::MfaChallenge>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.mfa = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for mfa: {e}"));
+                self
+            }
+            pub fn session<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<super::TokenResponse>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.session = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for session: {e}"));
+                self
+            }
+            pub fn status<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::LoginStatus>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.status = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for status: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<LoginResponse> for super::LoginResponse {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: LoginResponse,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    mfa: value.mfa?,
+                    session: value.session?,
+                    status: value.status?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::LoginResponse> for LoginResponse {
+            fn from(value: super::LoginResponse) -> Self {
+                Self {
+                    mfa: Ok(value.mfa),
+                    session: Ok(value.session),
+                    status: Ok(value.status),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
         pub struct MarkRead {
             all: ::std::result::Result<::std::option::Option<bool>, ::std::string::String>,
             ids: ::std::result::Result<::std::vec::Vec<::uuid::Uuid>, ::std::string::String>,
@@ -16750,6 +17736,326 @@ pub mod types {
             }
         }
         #[derive(Clone, Debug)]
+        pub struct MfaChallenge {
+            challenge_token: ::std::result::Result<::std::string::String, ::std::string::String>,
+            expires_in: ::std::result::Result<i64, ::std::string::String>,
+            methods:
+                ::std::result::Result<::std::vec::Vec<super::MfaMethod>, ::std::string::String>,
+        }
+        impl ::std::default::Default for MfaChallenge {
+            fn default() -> Self {
+                Self {
+                    challenge_token: Err("no value supplied for challenge_token".to_string()),
+                    expires_in: Err("no value supplied for expires_in".to_string()),
+                    methods: Err("no value supplied for methods".to_string()),
+                }
+            }
+        }
+        impl MfaChallenge {
+            pub fn challenge_token<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.challenge_token = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for challenge_token: {e}")
+                });
+                self
+            }
+            pub fn expires_in<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.expires_in = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for expires_in: {e}"));
+                self
+            }
+            pub fn methods<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::MfaMethod>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.methods = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for methods: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<MfaChallenge> for super::MfaChallenge {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: MfaChallenge,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    challenge_token: value.challenge_token?,
+                    expires_in: value.expires_in?,
+                    methods: value.methods?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::MfaChallenge> for MfaChallenge {
+            fn from(value: super::MfaChallenge) -> Self {
+                Self {
+                    challenge_token: Ok(value.challenge_token),
+                    expires_in: Ok(value.expires_in),
+                    methods: Ok(value.methods),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct MfaChallengeRequest {
+            challenge_token: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+        impl ::std::default::Default for MfaChallengeRequest {
+            fn default() -> Self {
+                Self {
+                    challenge_token: Err("no value supplied for challenge_token".to_string()),
+                }
+            }
+        }
+        impl MfaChallengeRequest {
+            pub fn challenge_token<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.challenge_token = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for challenge_token: {e}")
+                });
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<MfaChallengeRequest> for super::MfaChallengeRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: MfaChallengeRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    challenge_token: value.challenge_token?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::MfaChallengeRequest> for MfaChallengeRequest {
+            fn from(value: super::MfaChallengeRequest) -> Self {
+                Self {
+                    challenge_token: Ok(value.challenge_token),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct MfaStatus {
+            enrolled: ::std::result::Result<bool, ::std::string::String>,
+            recovery_codes_remaining: ::std::result::Result<i64, ::std::string::String>,
+            required: ::std::result::Result<bool, ::std::string::String>,
+            security_keys: ::std::result::Result<
+                ::std::vec::Vec<super::SecurityKeyDto>,
+                ::std::string::String,
+            >,
+            totp_available: ::std::result::Result<bool, ::std::string::String>,
+            totp_confirmed_at: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+        impl ::std::default::Default for MfaStatus {
+            fn default() -> Self {
+                Self {
+                    enrolled: Err("no value supplied for enrolled".to_string()),
+                    recovery_codes_remaining: Err(
+                        "no value supplied for recovery_codes_remaining".to_string()
+                    ),
+                    required: Err("no value supplied for required".to_string()),
+                    security_keys: Err("no value supplied for security_keys".to_string()),
+                    totp_available: Err("no value supplied for totp_available".to_string()),
+                    totp_confirmed_at: Ok(Default::default()),
+                }
+            }
+        }
+        impl MfaStatus {
+            pub fn enrolled<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.enrolled = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for enrolled: {e}"));
+                self
+            }
+            pub fn recovery_codes_remaining<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.recovery_codes_remaining = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for recovery_codes_remaining: {e}")
+                });
+                self
+            }
+            pub fn required<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.required = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for required: {e}"));
+                self
+            }
+            pub fn security_keys<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::SecurityKeyDto>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.security_keys = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for security_keys: {e}"));
+                self
+            }
+            pub fn totp_available<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.totp_available = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for totp_available: {e}")
+                });
+                self
+            }
+            pub fn totp_confirmed_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.totp_confirmed_at = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for totp_confirmed_at: {e}")
+                });
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<MfaStatus> for super::MfaStatus {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: MfaStatus,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    enrolled: value.enrolled?,
+                    recovery_codes_remaining: value.recovery_codes_remaining?,
+                    required: value.required?,
+                    security_keys: value.security_keys?,
+                    totp_available: value.totp_available?,
+                    totp_confirmed_at: value.totp_confirmed_at?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::MfaStatus> for MfaStatus {
+            fn from(value: super::MfaStatus) -> Self {
+                Self {
+                    enrolled: Ok(value.enrolled),
+                    recovery_codes_remaining: Ok(value.recovery_codes_remaining),
+                    required: Ok(value.required),
+                    security_keys: Ok(value.security_keys),
+                    totp_available: Ok(value.totp_available),
+                    totp_confirmed_at: Ok(value.totp_confirmed_at),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct MfaVerifyRequest {
+            challenge_token: ::std::result::Result<::std::string::String, ::std::string::String>,
+            recovery_code: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            security_key: ::std::result::Result<
+                ::std::option::Option<super::MfaVerifyRequestSecurityKey>,
+                ::std::string::String,
+            >,
+            totp_code: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+        impl ::std::default::Default for MfaVerifyRequest {
+            fn default() -> Self {
+                Self {
+                    challenge_token: Err("no value supplied for challenge_token".to_string()),
+                    recovery_code: Ok(Default::default()),
+                    security_key: Ok(Default::default()),
+                    totp_code: Ok(Default::default()),
+                }
+            }
+        }
+        impl MfaVerifyRequest {
+            pub fn challenge_token<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.challenge_token = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for challenge_token: {e}")
+                });
+                self
+            }
+            pub fn recovery_code<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.recovery_code = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for recovery_code: {e}"));
+                self
+            }
+            pub fn security_key<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<super::MfaVerifyRequestSecurityKey>,
+                    >,
+                T::Error: ::std::fmt::Display,
+            {
+                self.security_key = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for security_key: {e}"));
+                self
+            }
+            pub fn totp_code<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.totp_code = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for totp_code: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<MfaVerifyRequest> for super::MfaVerifyRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: MfaVerifyRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    challenge_token: value.challenge_token?,
+                    recovery_code: value.recovery_code?,
+                    security_key: value.security_key?,
+                    totp_code: value.totp_code?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::MfaVerifyRequest> for MfaVerifyRequest {
+            fn from(value: super::MfaVerifyRequest) -> Self {
+                Self {
+                    challenge_token: Ok(value.challenge_token),
+                    recovery_code: Ok(value.recovery_code),
+                    security_key: Ok(value.security_key),
+                    totp_code: Ok(value.totp_code),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
         pub struct ModelHealthView {
             building: ::std::result::Result<bool, ::std::string::String>,
             dense_dims: ::std::result::Result<i32, ::std::string::String>,
@@ -17873,7 +19179,6 @@ pub mod types {
         }
         #[derive(Clone, Debug)]
         pub struct PasskeyRegisterStart {
-            current_password: ::std::result::Result<::std::string::String, ::std::string::String>,
             label: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
@@ -17882,22 +19187,11 @@ pub mod types {
         impl ::std::default::Default for PasskeyRegisterStart {
             fn default() -> Self {
                 Self {
-                    current_password: Err("no value supplied for current_password".to_string()),
                     label: Ok(Default::default()),
                 }
             }
         }
         impl PasskeyRegisterStart {
-            pub fn current_password<T>(mut self, value: T) -> Self
-            where
-                T: ::std::convert::TryInto<::std::string::String>,
-                T::Error: ::std::fmt::Display,
-            {
-                self.current_password = value.try_into().map_err(|e| {
-                    format!("error converting supplied value for current_password: {e}")
-                });
-                self
-            }
             pub fn label<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
@@ -17915,7 +19209,6 @@ pub mod types {
                 value: PasskeyRegisterStart,
             ) -> ::std::result::Result<Self, super::error::ConversionError> {
                 Ok(Self {
-                    current_password: value.current_password?,
                     label: value.label?,
                 })
             }
@@ -17923,7 +19216,6 @@ pub mod types {
         impl ::std::convert::From<super::PasskeyRegisterStart> for PasskeyRegisterStart {
             fn from(value: super::PasskeyRegisterStart) -> Self {
                 Self {
-                    current_password: Ok(value.current_password),
                     label: Ok(value.label),
                 }
             }
@@ -17970,28 +19262,16 @@ pub mod types {
         }
         #[derive(Clone, Debug)]
         pub struct PasswordChange {
-            current_password: ::std::result::Result<::std::string::String, ::std::string::String>,
             new_password: ::std::result::Result<::std::string::String, ::std::string::String>,
         }
         impl ::std::default::Default for PasswordChange {
             fn default() -> Self {
                 Self {
-                    current_password: Err("no value supplied for current_password".to_string()),
                     new_password: Err("no value supplied for new_password".to_string()),
                 }
             }
         }
         impl PasswordChange {
-            pub fn current_password<T>(mut self, value: T) -> Self
-            where
-                T: ::std::convert::TryInto<::std::string::String>,
-                T::Error: ::std::fmt::Display,
-            {
-                self.current_password = value.try_into().map_err(|e| {
-                    format!("error converting supplied value for current_password: {e}")
-                });
-                self
-            }
             pub fn new_password<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::std::string::String>,
@@ -18009,7 +19289,6 @@ pub mod types {
                 value: PasswordChange,
             ) -> ::std::result::Result<Self, super::error::ConversionError> {
                 Ok(Self {
-                    current_password: value.current_password?,
                     new_password: value.new_password?,
                 })
             }
@@ -18017,7 +19296,6 @@ pub mod types {
         impl ::std::convert::From<super::PasswordChange> for PasswordChange {
             fn from(value: super::PasswordChange) -> Self {
                 Self {
-                    current_password: Ok(value.current_password),
                     new_password: Ok(value.new_password),
                 }
             }
@@ -18540,10 +19818,6 @@ pub mod types {
         }
         #[derive(Clone, Debug)]
         pub struct ProfileUpdate {
-            current_password: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
-                ::std::string::String,
-            >,
             email: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
@@ -18556,23 +19830,12 @@ pub mod types {
         impl ::std::default::Default for ProfileUpdate {
             fn default() -> Self {
                 Self {
-                    current_password: Ok(Default::default()),
                     email: Ok(Default::default()),
                     username: Ok(Default::default()),
                 }
             }
         }
         impl ProfileUpdate {
-            pub fn current_password<T>(mut self, value: T) -> Self
-            where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
-                T::Error: ::std::fmt::Display,
-            {
-                self.current_password = value.try_into().map_err(|e| {
-                    format!("error converting supplied value for current_password: {e}")
-                });
-                self
-            }
             pub fn email<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
@@ -18600,7 +19863,6 @@ pub mod types {
                 value: ProfileUpdate,
             ) -> ::std::result::Result<Self, super::error::ConversionError> {
                 Ok(Self {
-                    current_password: value.current_password?,
                     email: value.email?,
                     username: value.username?,
                 })
@@ -18609,7 +19871,6 @@ pub mod types {
         impl ::std::convert::From<super::ProfileUpdate> for ProfileUpdate {
             fn from(value: super::ProfileUpdate) -> Self {
                 Self {
-                    current_password: Ok(value.current_password),
                     email: Ok(value.email),
                     username: Ok(value.username),
                 }
@@ -19659,6 +20920,49 @@ pub mod types {
             }
         }
         #[derive(Clone, Debug)]
+        pub struct RecoveryCodes {
+            codes: ::std::result::Result<
+                ::std::vec::Vec<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+        impl ::std::default::Default for RecoveryCodes {
+            fn default() -> Self {
+                Self {
+                    codes: Err("no value supplied for codes".to_string()),
+                }
+            }
+        }
+        impl RecoveryCodes {
+            pub fn codes<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.codes = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for codes: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<RecoveryCodes> for super::RecoveryCodes {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: RecoveryCodes,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    codes: value.codes?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::RecoveryCodes> for RecoveryCodes {
+            fn from(value: super::RecoveryCodes) -> Self {
+                Self {
+                    codes: Ok(value.codes),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
         pub struct RecsysBuildView {
             generation: ::std::result::Result<i32, ::std::string::String>,
             started: ::std::result::Result<bool, ::std::string::String>,
@@ -20610,6 +21914,469 @@ pub mod types {
             fn from(value: super::ScanTriggered) -> Self {
                 Self {
                     run_ids: Ok(value.run_ids),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct SecurityKeyAssertion {
+            ceremony_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            credential: ::std::result::Result<
+                ::serde_json::Map<::std::string::String, ::serde_json::Value>,
+                ::std::string::String,
+            >,
+        }
+        impl ::std::default::Default for SecurityKeyAssertion {
+            fn default() -> Self {
+                Self {
+                    ceremony_id: Err("no value supplied for ceremony_id".to_string()),
+                    credential: Err("no value supplied for credential".to_string()),
+                }
+            }
+        }
+        impl SecurityKeyAssertion {
+            pub fn ceremony_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.ceremony_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for ceremony_id: {e}"));
+                self
+            }
+            pub fn credential<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<
+                        ::serde_json::Map<::std::string::String, ::serde_json::Value>,
+                    >,
+                T::Error: ::std::fmt::Display,
+            {
+                self.credential = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for credential: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<SecurityKeyAssertion> for super::SecurityKeyAssertion {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: SecurityKeyAssertion,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    ceremony_id: value.ceremony_id?,
+                    credential: value.credential?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::SecurityKeyAssertion> for SecurityKeyAssertion {
+            fn from(value: super::SecurityKeyAssertion) -> Self {
+                Self {
+                    ceremony_id: Ok(value.ceremony_id),
+                    credential: Ok(value.credential),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct SecurityKeyChallenge {
+            ceremony_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            options: ::std::result::Result<
+                ::serde_json::Map<::std::string::String, ::serde_json::Value>,
+                ::std::string::String,
+            >,
+        }
+        impl ::std::default::Default for SecurityKeyChallenge {
+            fn default() -> Self {
+                Self {
+                    ceremony_id: Err("no value supplied for ceremony_id".to_string()),
+                    options: Err("no value supplied for options".to_string()),
+                }
+            }
+        }
+        impl SecurityKeyChallenge {
+            pub fn ceremony_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.ceremony_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for ceremony_id: {e}"));
+                self
+            }
+            pub fn options<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<
+                        ::serde_json::Map<::std::string::String, ::serde_json::Value>,
+                    >,
+                T::Error: ::std::fmt::Display,
+            {
+                self.options = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for options: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<SecurityKeyChallenge> for super::SecurityKeyChallenge {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: SecurityKeyChallenge,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    ceremony_id: value.ceremony_id?,
+                    options: value.options?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::SecurityKeyChallenge> for SecurityKeyChallenge {
+            fn from(value: super::SecurityKeyChallenge) -> Self {
+                Self {
+                    ceremony_id: Ok(value.ceremony_id),
+                    options: Ok(value.options),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct SecurityKeyDto {
+            created_at: ::std::result::Result<::std::string::String, ::std::string::String>,
+            id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            label: ::std::result::Result<::std::string::String, ::std::string::String>,
+            last_used_at: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+        impl ::std::default::Default for SecurityKeyDto {
+            fn default() -> Self {
+                Self {
+                    created_at: Err("no value supplied for created_at".to_string()),
+                    id: Err("no value supplied for id".to_string()),
+                    label: Err("no value supplied for label".to_string()),
+                    last_used_at: Ok(Default::default()),
+                }
+            }
+        }
+        impl SecurityKeyDto {
+            pub fn created_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.created_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for created_at: {e}"));
+                self
+            }
+            pub fn id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for id: {e}"));
+                self
+            }
+            pub fn label<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.label = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for label: {e}"));
+                self
+            }
+            pub fn last_used_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.last_used_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for last_used_at: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<SecurityKeyDto> for super::SecurityKeyDto {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: SecurityKeyDto,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    created_at: value.created_at?,
+                    id: value.id?,
+                    label: value.label?,
+                    last_used_at: value.last_used_at?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::SecurityKeyDto> for SecurityKeyDto {
+            fn from(value: super::SecurityKeyDto) -> Self {
+                Self {
+                    created_at: Ok(value.created_at),
+                    id: Ok(value.id),
+                    label: Ok(value.label),
+                    last_used_at: Ok(value.last_used_at),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct SecurityKeyRegisterChallenge {
+            ceremony_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            options: ::std::result::Result<
+                ::serde_json::Map<::std::string::String, ::serde_json::Value>,
+                ::std::string::String,
+            >,
+        }
+        impl ::std::default::Default for SecurityKeyRegisterChallenge {
+            fn default() -> Self {
+                Self {
+                    ceremony_id: Err("no value supplied for ceremony_id".to_string()),
+                    options: Err("no value supplied for options".to_string()),
+                }
+            }
+        }
+        impl SecurityKeyRegisterChallenge {
+            pub fn ceremony_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.ceremony_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for ceremony_id: {e}"));
+                self
+            }
+            pub fn options<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<
+                        ::serde_json::Map<::std::string::String, ::serde_json::Value>,
+                    >,
+                T::Error: ::std::fmt::Display,
+            {
+                self.options = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for options: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<SecurityKeyRegisterChallenge> for super::SecurityKeyRegisterChallenge {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: SecurityKeyRegisterChallenge,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    ceremony_id: value.ceremony_id?,
+                    options: value.options?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::SecurityKeyRegisterChallenge> for SecurityKeyRegisterChallenge {
+            fn from(value: super::SecurityKeyRegisterChallenge) -> Self {
+                Self {
+                    ceremony_id: Ok(value.ceremony_id),
+                    options: Ok(value.options),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct SecurityKeyRegisterFinish {
+            ceremony_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            credential: ::std::result::Result<
+                ::serde_json::Map<::std::string::String, ::serde_json::Value>,
+                ::std::string::String,
+            >,
+        }
+        impl ::std::default::Default for SecurityKeyRegisterFinish {
+            fn default() -> Self {
+                Self {
+                    ceremony_id: Err("no value supplied for ceremony_id".to_string()),
+                    credential: Err("no value supplied for credential".to_string()),
+                }
+            }
+        }
+        impl SecurityKeyRegisterFinish {
+            pub fn ceremony_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.ceremony_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for ceremony_id: {e}"));
+                self
+            }
+            pub fn credential<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<
+                        ::serde_json::Map<::std::string::String, ::serde_json::Value>,
+                    >,
+                T::Error: ::std::fmt::Display,
+            {
+                self.credential = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for credential: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<SecurityKeyRegisterFinish> for super::SecurityKeyRegisterFinish {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: SecurityKeyRegisterFinish,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    ceremony_id: value.ceremony_id?,
+                    credential: value.credential?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::SecurityKeyRegisterFinish> for SecurityKeyRegisterFinish {
+            fn from(value: super::SecurityKeyRegisterFinish) -> Self {
+                Self {
+                    ceremony_id: Ok(value.ceremony_id),
+                    credential: Ok(value.credential),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct SecurityKeyRegisterStart {
+            label: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+        impl ::std::default::Default for SecurityKeyRegisterStart {
+            fn default() -> Self {
+                Self {
+                    label: Ok(Default::default()),
+                }
+            }
+        }
+        impl SecurityKeyRegisterStart {
+            pub fn label<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.label = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for label: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<SecurityKeyRegisterStart> for super::SecurityKeyRegisterStart {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: SecurityKeyRegisterStart,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    label: value.label?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::SecurityKeyRegisterStart> for SecurityKeyRegisterStart {
+            fn from(value: super::SecurityKeyRegisterStart) -> Self {
+                Self {
+                    label: Ok(value.label),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct SecurityKeyRegistered {
+            key: ::std::result::Result<super::SecurityKeyDto, ::std::string::String>,
+            recovery_codes: ::std::result::Result<
+                ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+                ::std::string::String,
+            >,
+        }
+        impl ::std::default::Default for SecurityKeyRegistered {
+            fn default() -> Self {
+                Self {
+                    key: Err("no value supplied for key".to_string()),
+                    recovery_codes: Ok(Default::default()),
+                }
+            }
+        }
+        impl SecurityKeyRegistered {
+            pub fn key<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::SecurityKeyDto>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.key = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for key: {e}"));
+                self
+            }
+            pub fn recovery_codes<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+                    >,
+                T::Error: ::std::fmt::Display,
+            {
+                self.recovery_codes = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for recovery_codes: {e}")
+                });
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<SecurityKeyRegistered> for super::SecurityKeyRegistered {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: SecurityKeyRegistered,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    key: value.key?,
+                    recovery_codes: value.recovery_codes?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::SecurityKeyRegistered> for SecurityKeyRegistered {
+            fn from(value: super::SecurityKeyRegistered) -> Self {
+                Self {
+                    key: Ok(value.key),
+                    recovery_codes: Ok(value.recovery_codes),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct SecurityKeyRename {
+            label: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+        impl ::std::default::Default for SecurityKeyRename {
+            fn default() -> Self {
+                Self {
+                    label: Err("no value supplied for label".to_string()),
+                }
+            }
+        }
+        impl SecurityKeyRename {
+            pub fn label<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.label = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for label: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<SecurityKeyRename> for super::SecurityKeyRename {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: SecurityKeyRename,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    label: value.label?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::SecurityKeyRename> for SecurityKeyRename {
+            fn from(value: super::SecurityKeyRename) -> Self {
+                Self {
+                    label: Ok(value.label),
                 }
             }
         }
@@ -21915,6 +23682,137 @@ pub mod types {
                     paused: Ok(value.paused),
                     planned: Ok(value.planned),
                     reading: Ok(value.reading),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct StepUpGrant {
+            expires_in: ::std::result::Result<i64, ::std::string::String>,
+            token: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+        impl ::std::default::Default for StepUpGrant {
+            fn default() -> Self {
+                Self {
+                    expires_in: Err("no value supplied for expires_in".to_string()),
+                    token: Err("no value supplied for token".to_string()),
+                }
+            }
+        }
+        impl StepUpGrant {
+            pub fn expires_in<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.expires_in = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for expires_in: {e}"));
+                self
+            }
+            pub fn token<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.token = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for token: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<StepUpGrant> for super::StepUpGrant {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: StepUpGrant,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    expires_in: value.expires_in?,
+                    token: value.token?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::StepUpGrant> for StepUpGrant {
+            fn from(value: super::StepUpGrant) -> Self {
+                Self {
+                    expires_in: Ok(value.expires_in),
+                    token: Ok(value.token),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct StepUpRequest {
+            password: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            recovery_code: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            totp_code: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+        impl ::std::default::Default for StepUpRequest {
+            fn default() -> Self {
+                Self {
+                    password: Ok(Default::default()),
+                    recovery_code: Ok(Default::default()),
+                    totp_code: Ok(Default::default()),
+                }
+            }
+        }
+        impl StepUpRequest {
+            pub fn password<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.password = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for password: {e}"));
+                self
+            }
+            pub fn recovery_code<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.recovery_code = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for recovery_code: {e}"));
+                self
+            }
+            pub fn totp_code<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.totp_code = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for totp_code: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<StepUpRequest> for super::StepUpRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: StepUpRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    password: value.password?,
+                    recovery_code: value.recovery_code?,
+                    totp_code: value.totp_code?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::StepUpRequest> for StepUpRequest {
+            fn from(value: super::StepUpRequest) -> Self {
+                Self {
+                    password: Ok(value.password),
+                    recovery_code: Ok(value.recovery_code),
+                    totp_code: Ok(value.totp_code),
                 }
             }
         }
@@ -23700,6 +25598,98 @@ pub mod types {
                     access_token: Ok(value.access_token),
                     expires_in: Ok(value.expires_in),
                     token_type: Ok(value.token_type),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct TotpConfirm {
+            code: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+        impl ::std::default::Default for TotpConfirm {
+            fn default() -> Self {
+                Self {
+                    code: Err("no value supplied for code".to_string()),
+                }
+            }
+        }
+        impl TotpConfirm {
+            pub fn code<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.code = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for code: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<TotpConfirm> for super::TotpConfirm {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: TotpConfirm,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self { code: value.code? })
+            }
+        }
+        impl ::std::convert::From<super::TotpConfirm> for TotpConfirm {
+            fn from(value: super::TotpConfirm) -> Self {
+                Self {
+                    code: Ok(value.code),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct TotpEnrolmentChallenge {
+            provisioning_uri: ::std::result::Result<::std::string::String, ::std::string::String>,
+            secret: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+        impl ::std::default::Default for TotpEnrolmentChallenge {
+            fn default() -> Self {
+                Self {
+                    provisioning_uri: Err("no value supplied for provisioning_uri".to_string()),
+                    secret: Err("no value supplied for secret".to_string()),
+                }
+            }
+        }
+        impl TotpEnrolmentChallenge {
+            pub fn provisioning_uri<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.provisioning_uri = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for provisioning_uri: {e}")
+                });
+                self
+            }
+            pub fn secret<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.secret = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for secret: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<TotpEnrolmentChallenge> for super::TotpEnrolmentChallenge {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: TotpEnrolmentChallenge,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    provisioning_uri: value.provisioning_uri?,
+                    secret: value.secret?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::TotpEnrolmentChallenge> for TotpEnrolmentChallenge {
+            fn from(value: super::TotpEnrolmentChallenge) -> Self {
+                Self {
+                    provisioning_uri: Ok(value.provisioning_uri),
+                    secret: Ok(value.secret),
                 }
             }
         }
@@ -25857,13 +27847,21 @@ impl Client {
     pub fn verify_user_email(&self) -> builder::VerifyUserEmail<'_> {
         builder::VerifyUserEmail::new(self)
     }
-    #[doc = "Log in\n\nAuthenticates by email or username + password. Issues an access token and a rotating\nrefresh-token cookie.\n\nEvery outcome — success, unknown identifier, bad password, unverified address — is\naudited. An authentication log that only records successes cannot answer the question\nanyone actually asks it after an incident.\n\nSends a `POST` request to `/v1/auth/login`\n\n```ignore\nlet response = client.login()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Log in\n\nAuthenticates by email or username + password.\n\nAnswers one of two things, told apart by `status`. An account with **no** second factor gets\na session outright, as before. An account **with** one gets a challenge and no session at\nall — no access token, no refresh cookie — and finishes at `POST /v1/auth/mfa/verify`. That\nis the whole point: a caller who has the password but not the factor must come away with\nstrictly less than they arrived with.\n\nEvery outcome — success, unknown identifier, bad password, unverified address, second factor\nowed — is audited. An authentication log that only records successes cannot answer the\nquestion anyone actually asks it after an incident.\n\nSends a `POST` request to `/v1/auth/login`\n\n```ignore\nlet response = client.login()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn login(&self) -> builder::Login<'_> {
         builder::Login::new(self)
     }
     #[doc = "Log out\n\nRevokes the presented refresh-token family (if any) and clears the cookie.\n\nSends a `POST` request to `/v1/auth/logout`\n\n```ignore\nlet response = client.logout()\n    .send()\n    .await;\n```"]
     pub fn logout(&self) -> builder::Logout<'_> {
         builder::Logout::new(self)
+    }
+    #[doc = "Begin a security-key challenge for a pending sign-in\n\nThe assertion options for the account behind `challenge_token`. Separate from\n`/v1/me/step-up/security-key/start` because there is no session yet — the caller is\nhalf-signed-in, and the handle is the only thing naming the account.\n\nSends a `POST` request to `/v1/auth/mfa/security-key/start`\n\n```ignore\nlet response = client.mfa_security_key_start()\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn mfa_security_key_start(&self) -> builder::MfaSecurityKeyStart<'_> {
+        builder::MfaSecurityKeyStart::new(self)
+    }
+    #[doc = "Finish signing in\n\nTrades the pending sign-in plus one factor for the session the first leg withheld.\n\nEvery outcome is audited, success and failure alike — an authentication log that records only\nsuccesses cannot answer the question anyone actually asks it after an incident.\n\nSends a `POST` request to `/v1/auth/mfa/verify`\n\n```ignore\nlet response = client.mfa_verify()\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn mfa_verify(&self) -> builder::MfaVerify<'_> {
+        builder::MfaVerify::new(self)
     }
     #[doc = "Complete a passkey sign-in\n\nVerifies the assertion against the challenge issued by\n[`passkey_login_start`](passkey_login_start) and, on success, issues an access token and a\nrotating refresh cookie — the same session a password sign-in produces.\n\nEvery outcome is audited under `auth.passkey_login`, matching\n[`login`](super::login::login): an authentication log that only records successes cannot\nanswer the question anyone asks it after an incident.\n\nSends a `POST` request to `/v1/auth/passkey/login/finish`\n\n```ignore\nlet response = client.passkey_login_finish()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn passkey_login_finish(&self) -> builder::PasskeyLoginFinish<'_> {
@@ -25925,13 +27923,49 @@ impl Client {
     pub fn continue_reading(&self) -> builder::ContinueReading<'_> {
         builder::ContinueReading::new(self)
     }
-    #[doc = "Export my data\n\nEverything the system holds about the authenticated user, as a single JSON document\n(GDPR Art. 20, right to data portability).\n\nServed as an attachment rather than an inline body: the response is the user's entire\npersonal record and a browser should offer to save it rather than render it.\nCredentials — password hash, session token hashes, third-party OAuth tokens — are\nexcluded; see `tankovault_db::repo::privacy::export_user_data`.\n\nSends a `GET` request to `/v1/me/export`\n\n```ignore\nlet response = client.export_data()\n    .send()\n    .await;\n```"]
+    #[doc = "Export my data\n\nEverything the system holds about the authenticated user, as a single JSON document\n(GDPR Art. 20, right to data portability).\n\nServed as an attachment rather than an inline body: the response is the user's entire\npersonal record and a browser should offer to save it rather than render it.\nCredentials — password hash, session token hashes, third-party OAuth tokens, the TOTP\nsecret — are excluded; see `tankovault_db::repo::privacy::export_user_data`.\n\nBehind a step-up. This one response is every reading habit, every linked account and every\naddress the system holds about one person, assembled into a file designed to be saved and\nmailed. It is the single highest-value thing a stolen session can ask for.\n\nSends a `GET` request to `/v1/me/export`\n\n```ignore\nlet response = client.export_data()\n    .send()\n    .await;\n```"]
     pub fn export_data(&self) -> builder::ExportData<'_> {
         builder::ExportData::new(self)
     }
     #[doc = "Get the unread-chapters feed\n\nUnread chapters across the watchlist (the reading dashboard).\n\nSends a `GET` request to `/v1/me/feed`\n\n```ignore\nlet response = client.feed()\n    .send()\n    .await;\n```"]
     pub fn feed(&self) -> builder::Feed<'_> {
         builder::Feed::new(self)
+    }
+    #[doc = "Get my two-factor status\n\nEverything the account page needs to render the second-factor section, in one read.\n\nSends a `GET` request to `/v1/me/mfa`\n\n```ignore\nlet response = client.mfa_status()\n    .send()\n    .await;\n```"]
+    pub fn mfa_status(&self) -> builder::MfaStatus<'_> {
+        builder::MfaStatus::new(self)
+    }
+    #[doc = "Regenerate my recovery codes\n\nIssues a fresh set and invalidates every previous code. Returned once.\n\nSends a `POST` request to `/v1/me/mfa/recovery-codes`\n\n```ignore\nlet response = client.regenerate_recovery_codes()\n    .send()\n    .await;\n```"]
+    pub fn regenerate_recovery_codes(&self) -> builder::RegenerateRecoveryCodes<'_> {
+        builder::RegenerateRecoveryCodes::new(self)
+    }
+    #[doc = "Finish registering a security key\n\nVerifies the attestation and stores the credential as a second factor.\n\nWhen this is the caller's **first** factor, a recovery-code set is issued with it and\nreturned once — the same rule authenticator-app enrolment follows, for the same reason.\n\nSends a `POST` request to `/v1/me/mfa/security-keys/register/finish`\n\n```ignore\nlet response = client.security_key_register_finish()\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn security_key_register_finish(&self) -> builder::SecurityKeyRegisterFinish<'_> {
+        builder::SecurityKeyRegisterFinish::new(self)
+    }
+    #[doc = "Begin registering a security key\n\nIssues a `WebAuthn` creation challenge hinted toward a cross-platform authenticator.\n\nThe exclusion list is every credential already registered to the account — passkeys\n**included**. That cross-purpose exclusion is the point: an authenticator that already holds\nthis account's passkey must not also become its second factor, or one touch would clear both\nlegs of a sign-in that is supposed to need two independent proofs.\n\nSends a `POST` request to `/v1/me/mfa/security-keys/register/start`\n\n```ignore\nlet response = client.security_key_register_start()\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn security_key_register_start(&self) -> builder::SecurityKeyRegisterStart<'_> {
+        builder::SecurityKeyRegisterStart::new(self)
+    }
+    #[doc = "Revoke a security key\n\nRevokes every step-up grant with it, for the reason [`delete_totp`] gives.\n\nSends a `DELETE` request to `/v1/me/mfa/security-keys/{id}`\n\nArguments:\n- `id`: The key's id\n```ignore\nlet response = client.delete_security_key()\n    .id(id)\n    .send()\n    .await;\n```"]
+    pub fn delete_security_key(&self) -> builder::DeleteSecurityKey<'_> {
+        builder::DeleteSecurityKey::new(self)
+    }
+    #[doc = "Rename a security key\n\nSends a `PATCH` request to `/v1/me/mfa/security-keys/{id}`\n\nArguments:\n- `id`: The key's id\n- `body`\n```ignore\nlet response = client.rename_security_key()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn rename_security_key(&self) -> builder::RenameSecurityKey<'_> {
+        builder::RenameSecurityKey::new(self)
+    }
+    #[doc = "Begin authenticator-app enrolment\n\nIssues a fresh shared secret and the `otpauth://` URI for it. Nothing is a usable factor\nuntil [`confirm_totp`] accepts a code generated from it.\n\nRestarting is allowed and simply replaces the pending secret — a user whose QR code never\nreached their phone asks again. Replacing a *confirmed* enrolment is refused; remove it\nfirst, which costs a step-up, so a stolen session cannot swap the owner's factor for its own.\n\nSends a `POST` request to `/v1/me/mfa/totp`\n\n```ignore\nlet response = client.begin_totp()\n    .send()\n    .await;\n```"]
+    pub fn begin_totp(&self) -> builder::BeginTotp<'_> {
+        builder::BeginTotp::new(self)
+    }
+    #[doc = "Remove the authenticator app\n\nEvery step-up grant the caller holds is revoked with it: an elevation earned by the factor\nbeing removed must not outlive it, or the window it opened stays usable after the credential\nis gone.\n\nSends a `DELETE` request to `/v1/me/mfa/totp`\n\n```ignore\nlet response = client.delete_totp()\n    .send()\n    .await;\n```"]
+    pub fn delete_totp(&self) -> builder::DeleteTotp<'_> {
+        builder::DeleteTotp::new(self)
+    }
+    #[doc = "Confirm authenticator-app enrolment\n\nAccepts a code generated from the pending secret, which is the only proof the user actually\nstored it. On success the enrolment becomes a live factor and a **recovery-code set is\nissued** — returned here and never again.\n\nThe codes come with the first factor rather than being a separate opt-in step, because a\nsecond factor without an escape hatch is a way to lose an account, and an escape hatch\nnobody clicked through to is the same thing.\n\nSends a `POST` request to `/v1/me/mfa/totp/confirm`\n\n```ignore\nlet response = client.confirm_totp()\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn confirm_totp(&self) -> builder::ConfirmTotp<'_> {
+        builder::ConfirmTotp::new(self)
     }
     #[doc = "Get notification preferences\n\nThe caller's effective notification preferences. A reader who has never saved any gets the\nproduct defaults, fully populated, rather than an empty object the client would have to know\nhow to fill in.\n\nSends a `GET` request to `/v1/me/notification-prefs`\n\n```ignore\nlet response = client.notification_prefs()\n    .send()\n    .await;\n```"]
     pub fn notification_prefs(&self) -> builder::NotificationPrefs<'_> {
@@ -25957,7 +27991,7 @@ impl Client {
     pub fn passkey_register_finish(&self) -> builder::PasskeyRegisterFinish<'_> {
         builder::PasskeyRegisterFinish::new(self)
     }
-    #[doc = "Begin registering a passkey\n\nIssues a `WebAuthn` creation challenge for the caller's account.\n\n# Why this asks for the password\n\nBecause a passkey is a **permanent** credential, and an access token is a 15-minute one.\nWithout this check, anyone who got hold of a token for those fifteen minutes — a shared\nbrowser, a proxy log, an XSS payload that survives one page — could register their own\nauthenticator and keep the account forever, surviving every password change and session\nrevocation the real owner performs. That is a strictly worse version of the takeover\n`patch_profile` blocks by requiring the password before an email change, and it is the same\nanswer: installing a credential requires proving you hold one.\n\nThe cost is that a user who signed in *with* a passkey must type their password to add a\nsecond one. That is the trade every major implementation makes, and the friction lands on a\nonce-per-device action rather than on sign-in.\n\nCredentials already registered to the account are sent as the exclusion list, so an\nauthenticator that already holds one for this account says so at the prompt instead of\nsilently minting an indistinguishable duplicate.\n\nSends a `POST` request to `/v1/me/passkeys/register/start`\n\n```ignore\nlet response = client.passkey_register_start()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Begin registering a passkey\n\nIssues a `WebAuthn` creation challenge for the caller's account.\n\n# Two gates, and why a passkey has the strictest one on the account\n\nA passkey is a **permanent** credential, and an access token is a 15-minute one. Anyone who\ngot hold of a token for those fifteen minutes — a shared browser, a proxy log, an XSS\npayload that survives one page — could otherwise register their own authenticator and keep\nthe account forever, surviving every password change and session revocation the real owner\nperforms. So installing a credential requires proving you hold one:\n\n1. **A second factor must already be enrolled.** Not merely presented — enrolled. A passkey\n   signs in on its own, with no second leg, so minting one is the act of creating a\n   single-factor bypass of everything below it. An account that has not yet decided to hold\n   a second factor has not earned the right to create something that outranks it.\n2. **A step-up.** The factor must be presented *now*, not merely exist.\n\nThis used to take `current_password` instead, which defended against the wrong attacker: the\nperson most likely to be holding a stolen token is the person who phished the password to\nopen it.\n\nCredentials already registered to the account — passkeys **and** security keys — are sent as\nthe exclusion list, so an authenticator that already holds one for this account says so at\nthe prompt instead of silently minting a second credential that would let one touch satisfy\nboth legs of a sign-in.\n\nSends a `POST` request to `/v1/me/passkeys/register/start`\n\n```ignore\nlet response = client.passkey_register_start()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn passkey_register_start(&self) -> builder::PasskeyRegisterStart<'_> {
         builder::PasskeyRegisterStart::new(self)
     }
@@ -25969,7 +28003,7 @@ impl Client {
     pub fn rename_passkey(&self) -> builder::RenamePasskey<'_> {
         builder::RenamePasskey::new(self)
     }
-    #[doc = "Change the password\n\nChange the caller's password, proving knowledge of the current one.\n\nThere was previously **no authenticated path to a new password at all** — the only route\nwas the emailed reset link, so a signed-in user who simply wanted to rotate their password\nhad to go through an out-of-band channel, and a user whose email had been taken over could\nnot lock the attacker out.\n\nEvery session is revoked on success, including the caller's: a password change is exactly\nwhen you want the other device signed out, and leaving the caller's own session alive would\nmean special-casing the one session an attacker is most likely to be holding.\n\nSends a `POST` request to `/v1/me/password`\n\n```ignore\nlet response = client.change_password()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Change the password\n\nChange the caller's password, behind a step-up.\n\nThere was previously **no authenticated path to a new password at all** — the only route\nwas the emailed reset link, so a signed-in user who simply wanted to rotate their password\nhad to go through an out-of-band channel, and a user whose email had been taken over could\nnot lock the attacker out.\n\nThe proof is a step-up, not the old password. Against the attacker this exists to stop —\nsomeone holding a stolen session, usually because they phished the password to open it —\nre-typing the password proved nothing. `crate::step_up` carries the argument in full.\n\nEvery session is revoked on success, including the caller's: a password change is exactly\nwhen you want the other device signed out, and leaving the caller's own session alive would\nmean special-casing the one session an attacker is most likely to be holding. Every step-up\ngrant goes with them, for the same reason — an elevation earned before the credential\nchanged must not outlive it.\n\nSends a `POST` request to `/v1/me/password`\n\n```ignore\nlet response = client.change_password()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn change_password(&self) -> builder::ChangePassword<'_> {
         builder::ChangePassword::new(self)
     }
@@ -25985,7 +28019,7 @@ impl Client {
     pub fn cancel_privacy_request(&self) -> builder::CancelPrivacyRequest<'_> {
         builder::CancelPrivacyRequest::new(self)
     }
-    #[doc = "Update the profile\n\nUpdate the caller's username and/or email (frontend §9.4). A duplicate email/username\nsurfaces as `409 Conflict`.\n\nChanging the **email address** additionally requires `current_password`, because the\naddress is the account's recovery channel. Without that check, anyone holding an access\ntoken for 15 minutes — a shared browser, a proxy log, a leaked SSE URL — could point the\naccount at their own address, request a password reset to it, and take the account over;\n`reset_password` would then revoke the real owner's sessions on the attacker's behalf.\n\nOn a successful change the new address starts **unverified**\n(`repo::users::update_profile` clears `email_verified_at`), a confirmation link is sent to\nit, a warning is sent to the *old* address, and every session is revoked — matching what\n`reset_password` already does for the other credential.\n\nSends a `PATCH` request to `/v1/me/profile`\n\n```ignore\nlet response = client.patch_profile()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Update the profile\n\nUpdate the caller's username and/or email (frontend §9.4). A duplicate email/username\nsurfaces as `409 Conflict`.\n\nRequires a **step-up**, because the address is the account's recovery channel. Without that\ncheck, anyone holding an access token for 15 minutes — a shared browser, a proxy log, a\nleaked SSE URL — could point the account at their own address, request a password reset to\nit, and take the account over; `reset_password` would then revoke the real owner's sessions\non the attacker's behalf.\n\nThis used to take `current_password`, which defended against the wrong attacker: the person\nmost likely to be holding a stolen token is the person who phished the password to get it.\n`crate::step_up` carries the full argument.\n\nOn a successful change the new address starts **unverified**\n(`repo::users::update_profile` clears `email_verified_at`), a confirmation link is sent to\nit, a warning is sent to the *old* address, and every session is revoked — matching what\n`reset_password` already does for the other credential.\n\nSends a `PATCH` request to `/v1/me/profile`\n\n```ignore\nlet response = client.patch_profile()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn patch_profile(&self) -> builder::PatchProfile<'_> {
         builder::PatchProfile::new(self)
     }
@@ -26021,7 +28055,7 @@ impl Client {
     pub fn sessions(&self) -> builder::Sessions<'_> {
         builder::Sessions::new(self)
     }
-    #[doc = "Revoke a session\n\nRevoke one of the caller's own sessions (frontend §9.4). Scoped to ownership; a\nforeign/unknown id yields `404`.\n\nSends a `DELETE` request to `/v1/me/sessions/{id}`\n\nArguments:\n- `id`: Session id\n```ignore\nlet response = client.delete_session()\n    .id(id)\n    .send()\n    .await;\n```"]
+    #[doc = "Revoke a session\n\nRevoke one of the caller's own sessions (frontend §9.4). Scoped to ownership; a\nforeign/unknown id yields `404`.\n\nBehind a step-up: the session list is where an owner *responds* to a compromise, and an\nattacker holding one of those sessions must not be able to use it to sign the owner out of\nthe others first.\n\nSends a `DELETE` request to `/v1/me/sessions/{id}`\n\nArguments:\n- `id`: Session id\n```ignore\nlet response = client.delete_session()\n    .id(id)\n    .send()\n    .await;\n```"]
     pub fn delete_session(&self) -> builder::DeleteSession<'_> {
         builder::DeleteSession::new(self)
     }
@@ -26036,6 +28070,18 @@ impl Client {
     #[doc = "Get lifetime tracking stats\n\n*Stub*: lifetime tracking stats for the Home / Profile headline (frontend §9.3). See\n[`tankovault_db::repo::tracking::MeStats`] for the honest definition of `chapters_read` and\nwhy no \"streak\" is returned.\n\nSends a `GET` request to `/v1/me/stats`\n\n```ignore\nlet response = client.stats()\n    .send()\n    .await;\n```"]
     pub fn stats(&self) -> builder::Stats<'_> {
         builder::Stats::new(self)
+    }
+    #[doc = "Step up\n\nTrades a second factor for a short-lived elevation, presented in `X-Step-Up` on the\nsensitive request that demanded it.\n\n# The password branch\n\nAccepted only while the account has **no** factor enrolled. Such an account has no stronger\nproof to offer, and refusing it would leave the sensitive routes unreachable — including the\nenrolment that would fix that. The moment a factor exists the branch is refused here, and\ngrants it already issued stop being honoured (`crate::step_up`), so enrolling never leaves a\nweaker proof usable beside the stronger one.\n\nSends a `POST` request to `/v1/me/step-up`\n\n```ignore\nlet response = client.step_up()\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn step_up(&self) -> builder::StepUp<'_> {
+        builder::StepUp::new(self)
+    }
+    #[doc = "Finish a security-key step-up\n\nSends a `POST` request to `/v1/me/step-up/security-key/finish`\n\n```ignore\nlet response = client.step_up_security_key_finish()\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn step_up_security_key_finish(&self) -> builder::StepUpSecurityKeyFinish<'_> {
+        builder::StepUpSecurityKeyFinish::new(self)
+    }
+    #[doc = "Begin a security-key step-up\n\nIssues an assertion challenge for the caller's registered security keys.\n\nSends a `POST` request to `/v1/me/step-up/security-key/start`\n\n```ignore\nlet response = client.step_up_security_key_start()\n    .send()\n    .await;\n```"]
+    pub fn step_up_security_key_start(&self) -> builder::StepUpSecurityKeyStart<'_> {
+        builder::StepUpSecurityKeyStart::new(self)
     }
     #[doc = "Live notification stream\n\nServer-Sent Events of live per-user notifications (design §14, §17.4). Authenticated by a\nsingle-use `ticket` query parameter obtained from `POST /v1/me/stream-ticket` — not the\n`Authorization` header, which `EventSource` cannot set. It subscribes to the ticket's own\nuser's core-NATS subject and relays each `UserNotification` as a `notification` SSE event,\nwith a periodic keep-alive comment so proxies keep the connection open. Ownership is\nimplicit: the subscription is scoped to the user the ticket was minted for.\n\nThe ticket is consumed here, so `EventSource`'s *automatic* reconnect cannot re-open this\nstream — the client has to mint a new ticket per attempt (`web/frontend/src/live.rs` does).\nThat is a feature rather than a cost: re-minting goes through `AuthUser`, so a suspension\napplied mid-stream is caught by the mint call as well as by the check below.\n\nSends a `GET` request to `/v1/me/stream`\n\nArguments:\n- `ticket`: Single-use ticket from `POST /v1/me/stream-ticket`, passed as a query parameter because\nthe browser `EventSource` API cannot attach an `Authorization` header (design §17.4).\n\nWas the raw access token until SEC-8. A query string is recorded by `TraceLayer` as a\nspan field, preserved verbatim by the frontend proxy, written to every reverse-proxy\naccess log and kept in browser history — so the credential that rides here must be worth\nnothing by the time anyone reads it back. This one is spent by the request that carries\nit, expires in 30 seconds, and opens nothing but this stream.\n```ignore\nlet response = client.stream()\n    .ticket(ticket)\n    .send()\n    .await;\n```"]
     pub fn stream(&self) -> builder::Stream<'_> {
@@ -26065,7 +28111,7 @@ impl Client {
     pub fn sync_disconnect(&self) -> builder::SyncDisconnect<'_> {
         builder::SyncDisconnect::new(self)
     }
-    #[doc = "Get a provider's OAuth consent URL\n\nReturns the provider's consent URL (proxied). The body type is shared with the sync\nservice via `tankovault_contracts::sync`.\n\nSends a `GET` request to `/v1/me/sync/{provider}/authorize`\n\nArguments:\n- `provider`: Provider slug\n```ignore\nlet response = client.sync_authorize_url()\n    .provider(provider)\n    .send()\n    .await;\n```"]
+    #[doc = "Get a provider's OAuth consent URL\n\nReturns the provider's consent URL (proxied). The body type is shared with the sync\nservice via `tankovault_contracts::sync`.\n\nBehind a step-up: following this URL grants a third party a standing OAuth token against the\ncaller's account there, which is an authorisation that outlives the session and is not\nrevoked by anything this system does.\n\nSends a `GET` request to `/v1/me/sync/{provider}/authorize`\n\nArguments:\n- `provider`: Provider slug\n```ignore\nlet response = client.sync_authorize_url()\n    .provider(provider)\n    .send()\n    .await;\n```"]
     pub fn sync_authorize_url(&self) -> builder::SyncAuthorizeUrl<'_> {
         builder::SyncAuthorizeUrl::new(self)
     }
@@ -31527,7 +33573,7 @@ pub mod builder {
         #[doc = "Sends a `POST` request to `/v1/auth/login`"]
         pub async fn send(
             self,
-        ) -> Result<ResponseValue<types::TokenResponse>, Error<types::ProblemDetails>> {
+        ) -> Result<ResponseValue<types::LoginResponse>, Error<types::ProblemDetails>> {
             let Self { client, body } = self;
             let body = body
                 .and_then(|v| types::LoginRequest::try_from(v).map_err(|e| e.to_string()))
@@ -31600,6 +33646,170 @@ pub mod builder {
             let response = result?;
             match response.status().as_u16() {
                 200u16 => Ok(ResponseValue::empty(response)),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::mfa_security_key_start`]\n\n[`Client::mfa_security_key_start`]: super::Client::mfa_security_key_start"]
+    #[derive(Debug, Clone)]
+    pub struct MfaSecurityKeyStart<'a> {
+        client: &'a super::Client,
+        body: Result<types::builder::MfaChallengeRequest, String>,
+    }
+    impl<'a> MfaSecurityKeyStart<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::MfaChallengeRequest>,
+            <V as std::convert::TryInto<types::MfaChallengeRequest>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `MfaChallengeRequest` for body failed: {}", s));
+            self
+        }
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::MfaChallengeRequest,
+                ) -> types::builder::MfaChallengeRequest,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+        #[doc = "Sends a `POST` request to `/v1/auth/mfa/security-key/start`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::SecurityKeyChallenge>, Error<types::ProblemDetails>>
+        {
+            let Self { client, body } = self;
+            let body = body
+                .and_then(|v| types::MfaChallengeRequest::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v1/auth/mfa/security-key/start", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "mfa_security_key_start",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                503u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::mfa_verify`]\n\n[`Client::mfa_verify`]: super::Client::mfa_verify"]
+    #[derive(Debug, Clone)]
+    pub struct MfaVerify<'a> {
+        client: &'a super::Client,
+        body: Result<types::builder::MfaVerifyRequest, String>,
+    }
+    impl<'a> MfaVerify<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::MfaVerifyRequest>,
+            <V as std::convert::TryInto<types::MfaVerifyRequest>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `MfaVerifyRequest` for body failed: {}", s));
+            self
+        }
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::MfaVerifyRequest,
+                ) -> types::builder::MfaVerifyRequest,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+        #[doc = "Sends a `POST` request to `/v1/auth/mfa/verify`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::TokenResponse>, Error<types::ProblemDetails>> {
+            let Self { client, body } = self;
+            let body = body
+                .and_then(|v| types::MfaVerifyRequest::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v1/auth/mfa/verify", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "mfa_verify",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                429u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
                 _ => Err(Error::UnexpectedResponse(response)),
             }
         }
@@ -32338,6 +34548,7 @@ pub mod builder {
                 204u16 => Ok(ResponseValue::empty(response)),
                 400u16 => Err(Error::ErrorResponse(ResponseValue::empty(response))),
                 401u16 => Err(Error::ErrorResponse(ResponseValue::empty(response))),
+                403u16 => Err(Error::ErrorResponse(ResponseValue::empty(response))),
                 404u16 => Err(Error::ErrorResponse(ResponseValue::empty(response))),
                 _ => Err(Error::UnexpectedResponse(response)),
             }
@@ -32600,6 +34811,7 @@ pub mod builder {
             match response.status().as_u16() {
                 200u16 => ResponseValue::from_response(response).await,
                 401u16 => Err(Error::ErrorResponse(ResponseValue::empty(response))),
+                403u16 => Err(Error::ErrorResponse(ResponseValue::empty(response))),
                 404u16 => Err(Error::ErrorResponse(ResponseValue::empty(response))),
                 _ => Err(Error::UnexpectedResponse(response)),
             }
@@ -32646,6 +34858,624 @@ pub mod builder {
             match response.status().as_u16() {
                 200u16 => ResponseValue::from_response(response).await,
                 401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::mfa_status`]\n\n[`Client::mfa_status`]: super::Client::mfa_status"]
+    #[derive(Debug, Clone)]
+    pub struct MfaStatus<'a> {
+        client: &'a super::Client,
+    }
+    impl<'a> MfaStatus<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+        #[doc = "Sends a `GET` request to `/v1/me/mfa`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::MfaStatus>, Error<types::ProblemDetails>> {
+            let Self { client } = self;
+            let url = format!("{}/v1/me/mfa", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "mfa_status",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::regenerate_recovery_codes`]\n\n[`Client::regenerate_recovery_codes`]: super::Client::regenerate_recovery_codes"]
+    #[derive(Debug, Clone)]
+    pub struct RegenerateRecoveryCodes<'a> {
+        client: &'a super::Client,
+    }
+    impl<'a> RegenerateRecoveryCodes<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+        #[doc = "Sends a `POST` request to `/v1/me/mfa/recovery-codes`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::RecoveryCodes>, Error<types::ProblemDetails>> {
+            let Self { client } = self;
+            let url = format!("{}/v1/me/mfa/recovery-codes", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "regenerate_recovery_codes",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::security_key_register_finish`]\n\n[`Client::security_key_register_finish`]: super::Client::security_key_register_finish"]
+    #[derive(Debug, Clone)]
+    pub struct SecurityKeyRegisterFinish<'a> {
+        client: &'a super::Client,
+        body: Result<types::builder::SecurityKeyRegisterFinish, String>,
+    }
+    impl<'a> SecurityKeyRegisterFinish<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::SecurityKeyRegisterFinish>,
+            <V as std::convert::TryInto<types::SecurityKeyRegisterFinish>>::Error:
+                std::fmt::Display,
+        {
+            self.body = value.try_into().map(From::from).map_err(|s| {
+                format!(
+                    "conversion to `SecurityKeyRegisterFinish` for body failed: {}",
+                    s
+                )
+            });
+            self
+        }
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::SecurityKeyRegisterFinish,
+                ) -> types::builder::SecurityKeyRegisterFinish,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+        #[doc = "Sends a `POST` request to `/v1/me/mfa/security-keys/register/finish`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::SecurityKeyRegistered>, Error<types::ProblemDetails>>
+        {
+            let Self { client, body } = self;
+            let body = body
+                .and_then(|v| {
+                    types::SecurityKeyRegisterFinish::try_from(v).map_err(|e| e.to_string())
+                })
+                .map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v1/me/mfa/security-keys/register/finish", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "security_key_register_finish",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                409u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                503u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::security_key_register_start`]\n\n[`Client::security_key_register_start`]: super::Client::security_key_register_start"]
+    #[derive(Debug, Clone)]
+    pub struct SecurityKeyRegisterStart<'a> {
+        client: &'a super::Client,
+        body: Result<types::builder::SecurityKeyRegisterStart, String>,
+    }
+    impl<'a> SecurityKeyRegisterStart<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::SecurityKeyRegisterStart>,
+            <V as std::convert::TryInto<types::SecurityKeyRegisterStart>>::Error: std::fmt::Display,
+        {
+            self.body = value.try_into().map(From::from).map_err(|s| {
+                format!(
+                    "conversion to `SecurityKeyRegisterStart` for body failed: {}",
+                    s
+                )
+            });
+            self
+        }
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::SecurityKeyRegisterStart,
+                ) -> types::builder::SecurityKeyRegisterStart,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+        #[doc = "Sends a `POST` request to `/v1/me/mfa/security-keys/register/start`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::SecurityKeyRegisterChallenge>, Error<types::ProblemDetails>>
+        {
+            let Self { client, body } = self;
+            let body = body
+                .and_then(|v| {
+                    types::SecurityKeyRegisterStart::try_from(v).map_err(|e| e.to_string())
+                })
+                .map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v1/me/mfa/security-keys/register/start", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "security_key_register_start",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                503u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::delete_security_key`]\n\n[`Client::delete_security_key`]: super::Client::delete_security_key"]
+    #[derive(Debug, Clone)]
+    pub struct DeleteSecurityKey<'a> {
+        client: &'a super::Client,
+        id: Result<::uuid::Uuid, String>,
+    }
+    impl<'a> DeleteSecurityKey<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                id: Err("id was not initialized".to_string()),
+            }
+        }
+        pub fn id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for id failed".to_string());
+            self
+        }
+        #[doc = "Sends a `DELETE` request to `/v1/me/mfa/security-keys/{id}`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::ProblemDetails>> {
+            let Self { client, id } = self;
+            let id = id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/me/mfa/security-keys/{}",
+                client.baseurl,
+                encode_path(&id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .delete(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "delete_security_key",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                204u16 => Ok(ResponseValue::empty(response)),
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                404u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::rename_security_key`]\n\n[`Client::rename_security_key`]: super::Client::rename_security_key"]
+    #[derive(Debug, Clone)]
+    pub struct RenameSecurityKey<'a> {
+        client: &'a super::Client,
+        id: Result<::uuid::Uuid, String>,
+        body: Result<types::builder::SecurityKeyRename, String>,
+    }
+    impl<'a> RenameSecurityKey<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                id: Err("id was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+        pub fn id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for id failed".to_string());
+            self
+        }
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::SecurityKeyRename>,
+            <V as std::convert::TryInto<types::SecurityKeyRename>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `SecurityKeyRename` for body failed: {}", s));
+            self
+        }
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::SecurityKeyRename,
+                ) -> types::builder::SecurityKeyRename,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+        #[doc = "Sends a `PATCH` request to `/v1/me/mfa/security-keys/{id}`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::ProblemDetails>> {
+            let Self { client, id, body } = self;
+            let id = id.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::SecurityKeyRename::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/me/mfa/security-keys/{}",
+                client.baseurl,
+                encode_path(&id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .patch(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "rename_security_key",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                204u16 => Ok(ResponseValue::empty(response)),
+                400u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                404u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::begin_totp`]\n\n[`Client::begin_totp`]: super::Client::begin_totp"]
+    #[derive(Debug, Clone)]
+    pub struct BeginTotp<'a> {
+        client: &'a super::Client,
+    }
+    impl<'a> BeginTotp<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+        #[doc = "Sends a `POST` request to `/v1/me/mfa/totp`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::TotpEnrolmentChallenge>, Error<types::ProblemDetails>>
+        {
+            let Self { client } = self;
+            let url = format!("{}/v1/me/mfa/totp", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "begin_totp",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                409u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                503u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::delete_totp`]\n\n[`Client::delete_totp`]: super::Client::delete_totp"]
+    #[derive(Debug, Clone)]
+    pub struct DeleteTotp<'a> {
+        client: &'a super::Client,
+    }
+    impl<'a> DeleteTotp<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+        #[doc = "Sends a `DELETE` request to `/v1/me/mfa/totp`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::ProblemDetails>> {
+            let Self { client } = self;
+            let url = format!("{}/v1/me/mfa/totp", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .delete(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "delete_totp",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                204u16 => Ok(ResponseValue::empty(response)),
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                404u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::confirm_totp`]\n\n[`Client::confirm_totp`]: super::Client::confirm_totp"]
+    #[derive(Debug, Clone)]
+    pub struct ConfirmTotp<'a> {
+        client: &'a super::Client,
+        body: Result<types::builder::TotpConfirm, String>,
+    }
+    impl<'a> ConfirmTotp<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::TotpConfirm>,
+            <V as std::convert::TryInto<types::TotpConfirm>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `TotpConfirm` for body failed: {}", s));
+            self
+        }
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(types::builder::TotpConfirm) -> types::builder::TotpConfirm,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+        #[doc = "Sends a `POST` request to `/v1/me/mfa/totp/confirm`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::RecoveryCodes>, Error<types::ProblemDetails>> {
+            let Self { client, body } = self;
+            let body = body
+                .and_then(|v| types::TotpConfirm::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v1/me/mfa/totp/confirm", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "confirm_totp",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                503u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
                 _ => Err(Error::UnexpectedResponse(response)),
@@ -33164,6 +35994,9 @@ pub mod builder {
                 401u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
                 503u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
@@ -33397,6 +36230,9 @@ pub mod builder {
                 401u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
                 _ => Err(Error::UnexpectedResponse(response)),
             }
         }
@@ -33524,6 +36360,9 @@ pub mod builder {
                 401u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
                 404u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
@@ -33587,6 +36426,9 @@ pub mod builder {
             match response.status().as_u16() {
                 204u16 => Ok(ResponseValue::empty(response)),
                 401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
                 404u16 => Err(Error::ErrorResponse(
@@ -33665,6 +36507,9 @@ pub mod builder {
                     ResponseValue::from_response(response).await?,
                 )),
                 401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
                 409u16 => Err(Error::ErrorResponse(
@@ -34370,6 +37215,9 @@ pub mod builder {
                 401u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
                 404u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
@@ -34544,6 +37392,213 @@ pub mod builder {
             match response.status().as_u16() {
                 200u16 => ResponseValue::from_response(response).await,
                 401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::step_up`]\n\n[`Client::step_up`]: super::Client::step_up"]
+    #[derive(Debug, Clone)]
+    pub struct StepUp<'a> {
+        client: &'a super::Client,
+        body: Result<types::builder::StepUpRequest, String>,
+    }
+    impl<'a> StepUp<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::StepUpRequest>,
+            <V as std::convert::TryInto<types::StepUpRequest>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `StepUpRequest` for body failed: {}", s));
+            self
+        }
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(types::builder::StepUpRequest) -> types::builder::StepUpRequest,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+        #[doc = "Sends a `POST` request to `/v1/me/step-up`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::StepUpGrant>, Error<types::ProblemDetails>> {
+            let Self { client, body } = self;
+            let body = body
+                .and_then(|v| types::StepUpRequest::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v1/me/step-up", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "step_up",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::step_up_security_key_finish`]\n\n[`Client::step_up_security_key_finish`]: super::Client::step_up_security_key_finish"]
+    #[derive(Debug, Clone)]
+    pub struct StepUpSecurityKeyFinish<'a> {
+        client: &'a super::Client,
+        body: Result<types::builder::SecurityKeyAssertion, String>,
+    }
+    impl<'a> StepUpSecurityKeyFinish<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::SecurityKeyAssertion>,
+            <V as std::convert::TryInto<types::SecurityKeyAssertion>>::Error: std::fmt::Display,
+        {
+            self.body = value.try_into().map(From::from).map_err(|s| {
+                format!(
+                    "conversion to `SecurityKeyAssertion` for body failed: {}",
+                    s
+                )
+            });
+            self
+        }
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::SecurityKeyAssertion,
+                ) -> types::builder::SecurityKeyAssertion,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+        #[doc = "Sends a `POST` request to `/v1/me/step-up/security-key/finish`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::StepUpGrant>, Error<types::ProblemDetails>> {
+            let Self { client, body } = self;
+            let body = body
+                .and_then(|v| types::SecurityKeyAssertion::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v1/me/step-up/security-key/finish", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "step_up_security_key_finish",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                503u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::step_up_security_key_start`]\n\n[`Client::step_up_security_key_start`]: super::Client::step_up_security_key_start"]
+    #[derive(Debug, Clone)]
+    pub struct StepUpSecurityKeyStart<'a> {
+        client: &'a super::Client,
+    }
+    impl<'a> StepUpSecurityKeyStart<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+        #[doc = "Sends a `POST` request to `/v1/me/step-up/security-key/start`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::SecurityKeyChallenge>, Error<types::ProblemDetails>>
+        {
+            let Self { client } = self;
+            let url = format!("{}/v1/me/step-up/security-key/start", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "step_up_security_key_start",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                503u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
                 _ => Err(Error::UnexpectedResponse(response)),
@@ -34997,6 +38052,9 @@ pub mod builder {
                 401u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
                 _ => Err(Error::UnexpectedResponse(response)),
             }
         }
@@ -35059,6 +38117,9 @@ pub mod builder {
             match response.status().as_u16() {
                 200u16 => ResponseValue::from_response(response).await,
                 401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
                 _ => Err(Error::UnexpectedResponse(response)),

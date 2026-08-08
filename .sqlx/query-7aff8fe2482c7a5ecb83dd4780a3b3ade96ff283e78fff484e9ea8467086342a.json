@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT (EXISTS (SELECT 1 FROM user_totp WHERE user_id = $1 AND confirmed_at IS NOT NULL) OR EXISTS (SELECT 1 FROM user_webauthn_credentials WHERE user_id = $1 AND purpose = 'security_key')) AS \"enrolled!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "enrolled!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "7aff8fe2482c7a5ecb83dd4780a3b3ade96ff283e78fff484e9ea8467086342a"
+}

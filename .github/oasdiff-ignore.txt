@@ -42,3 +42,14 @@ in api post /v1/admin/recommendations/rebuild removed the required property `den
 # body that was never a preference document, such as a bare string or array. Consumed only by
 # `web/frontend`, updated in the same commit.
 in api put /v1/me/notification-prefs the request's body `type` changed from `any` to `object`
+
+# Two-factor authentication. `POST /v1/auth/login` used to answer with a session unconditionally;
+# it now answers `{ status, session?, mfa? }`, because an account holding a second factor must come
+# away from the password leg with *no* session at all — a token issued beside the challenge would
+# leave the password a complete credential for anyone who skipped the prompt. `TokenResponse`
+# itself is untouched, so `/v1/auth/refresh` and `/v1/auth/register` keep the shape they had, and
+# the three properties below moved into `session` rather than disappearing. Consumed only by
+# `web/frontend`, updated in the same commit.
+in api post /v1/auth/login removed the required property `access_token` from the response with the `200` status
+in api post /v1/auth/login removed the required property `token_type` from the response with the `200` status
+in api post /v1/auth/login removed the required property `expires_in` from the response with the `200` status

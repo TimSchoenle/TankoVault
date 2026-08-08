@@ -52,6 +52,24 @@ pub enum Feature {
     /// credentials are kept, not deleted, so switching it back on restores them.
     #[serde(rename = "accounts.passkeys")]
     AccountsPasskeys,
+    /// Two-factor authentication: enrolling an authenticator app or a hardware security key,
+    /// and the step-up prompt that guards sensitive actions.
+    ///
+    /// Off hides the whole surface and refuses enrolment, but does **not** disarm the factors
+    /// already enrolled — a sign-in still asks for the second leg, and a step-up is still
+    /// required. Disarming them would turn a flag flip into a silent downgrade of every
+    /// protected account, which is the one thing a feature switch must never do; an operator
+    /// who genuinely needs that removes the enrolments.
+    #[serde(rename = "accounts.mfa")]
+    AccountsMfa,
+    /// Require every account to hold a second factor, not just privileged ones.
+    ///
+    /// Ships **off**. Privileged accounts are required to enrol regardless of this flag —
+    /// that requirement is in the authorization path, not here. This extends it to ordinary
+    /// readers, and turning it on means every account without a factor is confined to the
+    /// enrolment surface until it has one.
+    #[serde(rename = "accounts.mfa_required")]
+    AccountsMfaRequired,
 
     /// Self-service personal-data export (GDPR Art. 20).
     #[serde(rename = "privacy.self_export")]
@@ -174,6 +192,8 @@ impl Feature {
             Self::AccountsProfile,
             Self::AccountsSessions,
             Self::AccountsPasskeys,
+            Self::AccountsMfa,
+            Self::AccountsMfaRequired,
             Self::PrivacySelfExport,
             Self::PrivacySelfErasure,
             Self::PrivacyRequests,
@@ -223,6 +243,8 @@ impl Feature {
             Self::AccountsProfile => "accounts.profile",
             Self::AccountsSessions => "accounts.sessions",
             Self::AccountsPasskeys => "accounts.passkeys",
+            Self::AccountsMfa => "accounts.mfa",
+            Self::AccountsMfaRequired => "accounts.mfa_required",
             Self::PrivacySelfExport => "privacy.self_export",
             Self::PrivacySelfErasure => "privacy.self_erasure",
             Self::PrivacyRequests => "privacy.requests",
@@ -272,7 +294,14 @@ impl Feature {
     pub const fn default_enabled(self) -> bool {
         !matches!(
             self,
-            Self::NotificationsWebhook | Self::NotificationsDiscord | Self::CatalogueAdultContent
+            Self::NotificationsWebhook
+                | Self::NotificationsDiscord
+                | Self::CatalogueAdultContent
+                // Ships off because turning it on confines every account without a second
+                // factor to the enrolment surface. That is the right end state for many
+                // deployments and a catastrophic *first* impression for all of them: a fresh
+                // install would lock its own installer out of everything but enrolment.
+                | Self::AccountsMfaRequired
         )
     }
 
@@ -300,7 +329,9 @@ impl Feature {
             | Self::AccountsEmailVerification
             | Self::AccountsProfile
             | Self::AccountsSessions
-            | Self::AccountsPasskeys => FeatureGroup::Accounts,
+            | Self::AccountsPasskeys
+            | Self::AccountsMfa
+            | Self::AccountsMfaRequired => FeatureGroup::Accounts,
             Self::PrivacySelfExport | Self::PrivacySelfErasure | Self::PrivacyRequests => {
                 FeatureGroup::Privacy
             }
@@ -349,6 +380,8 @@ impl Feature {
             Self::AccountsProfile => "Profile editing",
             Self::AccountsSessions => "Session management",
             Self::AccountsPasskeys => "Passkeys",
+            Self::AccountsMfa => "Two-factor authentication",
+            Self::AccountsMfaRequired => "Require two-factor for everyone",
             Self::PrivacySelfExport => "Self-service data export",
             Self::PrivacySelfErasure => "Self-service account deletion",
             Self::PrivacyRequests => "Data-subject requests",
@@ -427,6 +460,18 @@ impl Feature {
                 "Off: passkeys cannot be registered or used to sign in, and the account page \
                  hides them. Registered keys are kept, so switching it back on restores them; \
                  password sign-in is unaffected either way."
+            }
+            Self::AccountsMfa => {
+                "Off: nobody can enrol an authenticator app or a security key, and the account \
+                 page hides them. Factors already enrolled keep working — sign-in still asks \
+                 for the second leg and sensitive actions still prompt — because switching a \
+                 flag must not quietly downgrade an account that opted into protection."
+            }
+            Self::AccountsMfaRequired => {
+                "Off (the default): two-factor is each reader's choice, and only accounts \
+                 holding administrative permissions are required to enrol. On: every account \
+                 must enrol before it can do anything but sign in and enrol. Expect support \
+                 traffic the day you turn it on."
             }
             Self::PrivacySelfExport => {
                 "Off: users cannot download their own data. File an access request instead."
@@ -594,7 +639,7 @@ mod tests {
 
     #[test]
     fn all_lists_every_variant() {
-        assert_eq!(Feature::all().len(), 41);
+        assert_eq!(Feature::all().len(), 43);
     }
 
     #[test]
@@ -616,16 +661,17 @@ mod tests {
     /// The exact set that ships off, so adding a feature cannot quietly join it.
     ///
     /// A fresh install is supposed to arrive working; every entry here is a deliberate
-    /// exception with a reason in [`Feature::default_enabled`], and a fourth one appearing
+    /// exception with a reason in [`Feature::default_enabled`], and a fifth one appearing
     /// without that reason being written down is the failure this pins.
     #[test]
-    fn only_third_party_egress_and_the_adult_gate_ship_off() {
+    fn only_third_party_egress_the_adult_gate_and_mandatory_mfa_ship_off() {
         for &f in Feature::all() {
             let expected_off = matches!(
                 f,
                 Feature::NotificationsWebhook
                     | Feature::NotificationsDiscord
                     | Feature::CatalogueAdultContent
+                    | Feature::AccountsMfaRequired
             );
             assert_eq!(!f.default_enabled(), expected_off, "{f} default");
         }

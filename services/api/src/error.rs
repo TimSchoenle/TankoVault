@@ -46,6 +46,21 @@ pub enum ApiError {
     /// suspension means the account may not act at all, not that it lacks a grantable permission.
     #[error("account suspended")]
     Suspended,
+    /// The route needs a fresh second-factor presentation and the request carried none.
+    ///
+    /// `403`, not `401`, and the distinction is load-bearing: the caller *is* authenticated, and
+    /// a `401` would drive the SPA's sign-out path — turning "confirm it is you" into "you have
+    /// been logged out". The distinct problem type is what the client branches on to open its
+    /// re-authentication prompt and retry.
+    #[error("step-up authentication required")]
+    StepUpRequired,
+    /// The caller holds a privileged grant (or the deployment requires it of everyone) but has
+    /// no second factor enrolled.
+    ///
+    /// Also `403` with its own type, so the console can route to the enrolment page rather than
+    /// showing "insufficient privileges" to someone whose privileges are fine.
+    #[error("two-factor enrolment required")]
+    MfaEnrolmentRequired,
     /// The requested capability exists in the code but is switched off for this deployment.
     ///
     /// `404`, matching `tankovault_service::flags::enforce`. Handlers use this where
@@ -97,6 +112,16 @@ impl ApiError {
                 StatusCode::FORBIDDEN,
                 "account_suspended",
                 "this account has been suspended; contact an administrator".into(),
+            ),
+            Self::StepUpRequired => (
+                StatusCode::FORBIDDEN,
+                "step_up_required",
+                "confirm your identity with your second factor to continue".into(),
+            ),
+            Self::MfaEnrolmentRequired => (
+                StatusCode::FORBIDDEN,
+                "mfa_enrolment_required",
+                "set up two-factor authentication before using this".into(),
             ),
             Self::FeatureDisabled(feature) => (
                 StatusCode::NOT_FOUND,

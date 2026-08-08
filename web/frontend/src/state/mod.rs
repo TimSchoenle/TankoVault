@@ -17,6 +17,7 @@ mod jwt;
 pub(crate) mod legal;
 pub(crate) mod prefs;
 pub(crate) mod source_order;
+pub(crate) mod step_up;
 
 use dioxus::prelude::*;
 

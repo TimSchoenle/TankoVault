@@ -23,7 +23,7 @@ use crate::error::{ApiError, ApiResult};
 use crate::openapi::AUTH_TAG;
 use crate::passkey::{begin_ceremony, relying_party, take_ceremony, verification_failed};
 use crate::state::{AppState, ClientContext};
-use tankovault_db::repo::users::passkeys::CeremonyKind;
+use tankovault_db::repo::users::webauthn::{CeremonyKind, CredentialPurpose};
 
 /// The challenge, plus the handle the client echoes back to complete it.
 ///
@@ -135,10 +135,15 @@ pub async fn passkey_login_finish(
         .identify_discoverable_authentication(&credential)
         .map_err(|e| verification_failed(&e))?;
 
-    let record =
-        tankovault_db::repo::users::passkeys::find_by_credential_id(&state.pool, credential_id)
-            .await?
-            .ok_or(ApiError::Unauthorized)?;
+    // Scoped to `Passkey`: a security key is a *second* factor, and resolving one here would
+    // let it sign in on its own — which is the whole thing the second factor is for.
+    let record = tankovault_db::repo::users::webauthn::find_by_credential_id(
+        &state.pool,
+        credential_id,
+        CredentialPurpose::Passkey,
+    )
+    .await?
+    .ok_or(ApiError::Unauthorized)?;
 
     // The two claims must agree with each other and with the database, or an attacker holding
     // their own valid credential could name the victim's handle and have the session issued
@@ -196,7 +201,7 @@ pub async fn passkey_login_finish(
     if result.needs_update() {
         passkey.update_credential(&result);
     }
-    if let Err(e) = tankovault_db::repo::users::passkeys::record_use(
+    if let Err(e) = tankovault_db::repo::users::webauthn::record_use(
         &state.pool,
         &record.credential_id,
         &serde_json::to_value(&passkey).unwrap_or(record.credential),

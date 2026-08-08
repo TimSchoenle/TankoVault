@@ -83,6 +83,9 @@ tankovault-control-plane = { path = "../control-plane" }
 # repository-layer suites no longer compile this service to run SQL tests.
 tankovault-api-test-support = { path = "test-support" }
 tankovault-test-support = { path = "../../crates/test-support" }
+# `mfa.rs` decodes the base32 secret an enrolment response hands back, so it can produce the
+# code that confirms it. The same crate `crates/auth` encodes it with.
+data-encoding = { workspace = true }
 
 [lints]
 workspace = true

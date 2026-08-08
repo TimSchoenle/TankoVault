@@ -40,6 +40,45 @@ pub(crate) fn expose_option_onto_wire<S: Serializer>(
     }
 }
 
+/// [`expose_onto_wire`] for a list, as recovery codes are handed to their single display.
+///
+/// A separate helper for the same reason [`expose_option_onto_wire`] is one: `serialize_with`
+/// replaces the whole field's serialisation, so the scalar form cannot be reused inside a `Vec`.
+///
+/// # Errors
+/// Propagates whatever the underlying [`Serializer`] returns.
+pub(crate) fn expose_list_onto_wire<S: Serializer>(
+    secrets: &[SecretString],
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeSeq as _;
+    let mut seq = serializer.serialize_seq(Some(secrets.len()))?;
+    for secret in secrets {
+        seq.serialize_element(secret.expose_secret())?;
+    }
+    seq.end()
+}
+
+/// [`expose_list_onto_wire`] for an optional list — recovery codes ride along only with the
+/// registration that was the account's *first* factor.
+///
+/// # Errors
+/// Propagates whatever the underlying [`Serializer`] returns.
+#[expect(
+    clippy::ref_option,
+    reason = "serde's serialize_with fixes the signature to &T of the field's own type, which \
+              here is Option<Vec<SecretString>>; Option<&[SecretString]> does not satisfy it"
+)]
+pub(crate) fn expose_optional_list_onto_wire<S: Serializer>(
+    secrets: &Option<Vec<SecretString>>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    match secrets {
+        Some(values) => expose_list_onto_wire(values, serializer),
+        None => serializer.serialize_none(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use secrecy::SecretString;
@@ -65,6 +104,25 @@ mod tests {
             json,
             r#"{"access_token":"header.payload.signature","expires_in":900}"#
         );
+    }
+
+    #[derive(Serialize)]
+    struct Codes {
+        #[serde(serialize_with = "super::expose_list_onto_wire")]
+        codes: Vec<SecretString>,
+    }
+
+    /// A list opts in the same way, and lands as plain strings rather than as objects.
+    #[test]
+    fn an_opted_in_list_serialises_as_plain_strings() {
+        let json = serde_json::to_string(&Codes {
+            codes: vec![
+                SecretString::from("AAAA-BBBB"),
+                SecretString::from("CCCC-DDDD"),
+            ],
+        })
+        .expect("serialises");
+        assert_eq!(json, r#"{"codes":["AAAA-BBBB","CCCC-DDDD"]}"#);
     }
 
     /// The half easy to lose in a refactor: without the attribute the struct must not compile

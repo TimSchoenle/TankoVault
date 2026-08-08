@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE user_webauthn_credentials SET label = $3 WHERE id = $2 AND user_id = $1 AND purpose = $4",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c663c7d820a59d36edc3d026456073017136911cd3137a5f94860d7535adb3bc"
+}

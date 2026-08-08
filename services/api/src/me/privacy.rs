@@ -8,6 +8,7 @@ use crate::audit::{audit, audit_failure};
 use crate::error::{ApiError, ApiResult};
 use crate::openapi::ME_ACCOUNT_TAG;
 use crate::state::{AppState, AuthUser};
+use crate::step_up::Elevated;
 use crate::views::{IntoStored, IntoView};
 use axum::Json;
 use axum::extract::{Path, State};
@@ -26,8 +27,12 @@ use uuid::Uuid;
 ///
 /// Served as an attachment rather than an inline body: the response is the user's entire
 /// personal record and a browser should offer to save it rather than render it.
-/// Credentials — password hash, session token hashes, third-party OAuth tokens — are
-/// excluded; see `tankovault_db::repo::privacy::export_user_data`.
+/// Credentials — password hash, session token hashes, third-party OAuth tokens, the TOTP
+/// secret — are excluded; see `tankovault_db::repo::privacy::export_user_data`.
+///
+/// Behind a step-up. This one response is every reading habit, every linked account and every
+/// address the system holds about one person, assembled into a file designed to be saved and
+/// mailed. It is the single highest-value thing a stolen session can ask for.
 #[utoipa::path(
     get,
     path = "/v1/me/export",
@@ -36,10 +41,14 @@ use uuid::Uuid;
     responses(
         (status = 200, description = "Complete personal-data export", body = serde_json::Value),
         (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "a step-up is required"),
         (status = 404, description = "self-service export is switched off; file an access request instead"),
     )
 )]
-pub async fn export_data(State(state): State<AppState>, user: AuthUser) -> ApiResult<Response> {
+pub async fn export_data(
+    State(state): State<AppState>,
+    Elevated(user): Elevated,
+) -> ApiResult<Response> {
     let export = tankovault_db::repo::privacy::export_user_data(&state.pool, user.user_id).await?;
 
     // The export is itself the highest-value artefact this system produces, so it's audited too.
@@ -96,12 +105,16 @@ pub struct DeleteAccount {
         (status = 204, description = "Account and all owned data erased"),
         (status = 400, description = "Confirmation did not match"),
         (status = 401, description = "Unauthenticated"),
+        (status = 403, description = "a step-up is required"),
         (status = 404, description = "self-service deletion is switched off; file an erasure request instead"),
     )
 )]
 pub async fn delete_account(
     State(state): State<AppState>,
-    user: AuthUser,
+    // Behind a step-up *in addition to* the typed-username confirmation below. The confirmation
+    // guards against a misclick; it is not a credential, and on its own it left the single
+    // irreversible action on the account reachable by anyone holding a token.
+    Elevated(user): Elevated,
     Json(req): Json<DeleteAccount>,
 ) -> ApiResult<StatusCode> {
     let account = tankovault_db::repo::users::get(&state.pool, user.user_id).await?;
@@ -196,12 +209,16 @@ pub struct NewPrivacyRequest {
         (status = 201, description = "The filed request, with its response deadline", body = PrivacyRequestView),
         (status = 400, description = "rectification without detail, or a duplicate open request", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "a step-up is required", body = crate::error::ProblemDetails),
         (status = 404, description = "the data-subject request queue is switched off", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn create_privacy_request(
     State(state): State<AppState>,
-    user: AuthUser,
+    // A filed access request ends with an operator handing the caller's whole record to
+    // whatever address the account carries, and an erasure request ends with the account gone.
+    // Both are the export and the deletion above, taking a slower route.
+    Elevated(user): Elevated,
     Json(body): Json<NewPrivacyRequest>,
 ) -> ApiResult<(StatusCode, Json<PrivacyRequestView>)> {
     let detail = body
@@ -285,12 +302,15 @@ pub async fn list_privacy_requests(
     responses(
         (status = 204, description = "Withdrawn"),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "a step-up is required", body = crate::error::ProblemDetails),
         (status = 404, description = "no such open request for this caller", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn cancel_privacy_request(
     State(state): State<AppState>,
-    user: AuthUser,
+    // Withdrawing is how an attacker would silence the rectification request their victim filed
+    // about the change they made.
+    Elevated(user): Elevated,
     Path(id): Path<Uuid>,
 ) -> ApiResult<StatusCode> {
     let cancelled = tankovault_db::repo::gdpr::cancel_own(&state.pool, id, user.user_id).await?;

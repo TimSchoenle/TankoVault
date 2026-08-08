@@ -4,6 +4,7 @@
 //! alongside each handler in `lib.rs`'s route table.
 
 pub mod login;
+pub mod mfa;
 pub mod passkey;
 pub mod password;
 pub mod register;
@@ -12,6 +13,7 @@ pub mod validate;
 pub mod verification;
 
 pub use login::*;
+pub use mfa::*;
 pub use passkey::*;
 pub use password::*;
 pub use register::*;

@@ -196,6 +196,9 @@ pub async fn logout(State(state): State<AppState>, jar: CookieJar) -> ApiResult<
             tankovault_db::repo::users::find_refresh(&state.pool, &hash_refresh_token(&raw)).await?
     {
         tankovault_db::repo::users::revoke_family(&state.pool, record.family_id).await?;
+        // A step-up outliving the sign-out that ended it would leave the next holder of the
+        // browser an elevation the previous one earned.
+        tankovault_db::repo::users::mfa::revoke_step_ups(&state.pool, record.user_id).await?;
     }
     // The removal must match the cookie's name and path, or the browser keeps its old copy.
     // `Secure` matters too: a `__Host-` removal without it is refused by the browser rather

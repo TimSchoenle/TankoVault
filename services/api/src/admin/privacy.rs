@@ -43,7 +43,7 @@ pub struct QueueQuery {
     responses(
         (status = 200, description = "The request queue", body = Vec<AdminPrivacyRequestView>),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn list_privacy_queue(
@@ -71,7 +71,7 @@ pub async fn list_privacy_queue(
         (status = 200, description = "The claimed request", body = AdminPrivacyRequestView),
         (status = 409, description = "already claimed or already resolved", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 404, description = "no such request", body = crate::error::ProblemDetails),
     )
 )]
@@ -139,7 +139,7 @@ pub struct ResolveRequest {
         (status = 400, description = "invalid target status, or a rejection with no reason", body = crate::error::ProblemDetails),
         (status = 409, description = "the request was already resolved", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 404, description = "no such request", body = crate::error::ProblemDetails),
     )
 )]
@@ -228,7 +228,7 @@ pub struct ExtendRequest {
         (status = 200, description = "The request with its new deadline", body = AdminPrivacyRequestView),
         (status = 400, description = "the request is resolved, or the new date is not later", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 404, description = "no such request", body = crate::error::ProblemDetails),
     )
 )]
@@ -291,7 +291,7 @@ pub async fn extend_privacy_request(
         (status = 200, description = "The subject's complete personal-data export", body = serde_json::Value),
         (status = 400, description = "this request kind does not call for an export", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 404, description = "no such request, or its subject no longer exists", body = crate::error::ProblemDetails),
     )
 )]
@@ -367,7 +367,7 @@ pub struct FulfilErasure {
         (status = 200, description = "The completed request", body = AdminPrivacyRequestView),
         (status = 400, description = "not an erasure request, or the confirmation did not match", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permissions", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 404, description = "no such request, or its subject no longer exists", body = crate::error::ProblemDetails),
     )
 )]

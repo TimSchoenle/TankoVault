@@ -4,7 +4,7 @@
 //! faults into one enum; this maps it to a short sentence and, occasionally, the raw status code.
 
 use crate::i18n::Translator;
-use crate::wire::types::ProblemDetails;
+use crate::wire::types::{ProblemDetails, ProblemKind};
 use progenitor_client::Error as ApiOpError;
 
 /// The HTTP status of a failed operation, when the failure was an error *response* rather
@@ -52,18 +52,37 @@ pub(crate) enum Refusal {
 }
 
 impl Refusal {
-    /// Read the refusal off the server's problem body.
+    /// Classify a published problem kind.
     ///
-    /// The tokens are matched as strings because `web/frontend` is a separate workspace and
-    /// shares no types with the API; `services/api`'s `the_console_branches_on_these_problem_types`
-    /// pins them from the other side.
+    /// Exhaustive on purpose: `openapi.json` is the only thing connecting this workspace to the
+    /// API, so a token added there arrives here as a new generated variant and this match stops
+    /// compiling until someone decides what the console should do with it. That is the whole
+    /// point of publishing the vocabulary as an enum — the previous version matched string
+    /// literals, and a renamed token would have compiled and silently classified as `Other`.
+    pub(crate) fn from_kind(kind: ProblemKind) -> Self {
+        match kind {
+            ProblemKind::StepUpRequired => Self::StepUp,
+            ProblemKind::MfaEnrolmentRequired => Self::MfaEnrolment,
+            ProblemKind::NotFound
+            | ProblemKind::Conflict
+            | ProblemKind::Unauthorized
+            | ProblemKind::Forbidden
+            | ProblemKind::EmailNotVerified
+            | ProblemKind::AccountSuspended
+            | ProblemKind::FeatureDisabled
+            | ProblemKind::RateLimited
+            | ProblemKind::BadRequest
+            | ProblemKind::Unavailable
+            | ProblemKind::UpstreamUnavailable
+            | ProblemKind::UpstreamTimeout
+            | ProblemKind::Internal => Self::Other,
+        }
+    }
+
+    /// Read the refusal off the server's problem body.
     pub(crate) fn of(err: &ApiOpError<ProblemDetails>) -> Self {
-        let ApiOpError::ErrorResponse(response) = err else {
-            return Self::Other;
-        };
-        match response.title.as_str() {
-            "step_up_required" => Self::StepUp,
-            "mfa_enrolment_required" => Self::MfaEnrolment,
+        match err {
+            ApiOpError::ErrorResponse(response) => Self::from_kind(response.title),
             _ => Self::Other,
         }
     }
@@ -158,11 +177,11 @@ mod tests {
         assert_eq!(status_key(418), None);
     }
 
-    fn refusal_of(title: &str) -> Refusal {
+    fn refusal_of(title: ProblemKind) -> Refusal {
         let body = ProblemDetails {
             detail: String::new(),
             status: 403,
-            title: title.to_owned(),
+            title,
             type_: serde_json::Value::String(format!("about:blank#{title}")),
         };
         Refusal::of(&ApiOpError::ErrorResponse(
@@ -174,14 +193,58 @@ mod tests {
         ))
     }
 
-    /// The bug: every operator action reported "you don't have permission to do that" for a
-    /// refusal that was the server asking for a second factor. The console read the `403` and
-    /// nothing else, so the one answer with a remedy was indistinguishable from the one without.
+    /// Every problem kind the API publishes must be one this workspace classifies, under the
+    /// token the API actually sends.
+    ///
+    /// Read out of the committed `openapi.json`, the artefact `crates/api-client` is generated
+    /// from and the only thing that connects these two workspaces (`web/frontend` is outside the
+    /// host workspace, so no compiler relates the API's enum to the generated one here). The
+    /// parse is the assertion: a token published but absent from the generated vocabulary means
+    /// the client is stale, and a real response carrying it would decode as
+    /// `InvalidResponsePayload` — the server's message dropped, the reader shown "unreadable".
+    ///
+    /// The defect this closes: the console matched these tokens as string literals across the
+    /// workspace boundary. Renaming one on the API side compiled on both sides and silently
+    /// turned the step-up prompt back into "you don't have permission to do that" — the exact
+    /// dead end the prompt exists to avoid.
     #[test]
-    fn the_three_forbidden_answers_are_told_apart() {
-        assert_eq!(refusal_of("step_up_required"), Refusal::StepUp);
-        assert_eq!(refusal_of("mfa_enrolment_required"), Refusal::MfaEnrolment);
-        assert_eq!(refusal_of("forbidden"), Refusal::Other);
+    fn every_published_problem_kind_is_classified() {
+        const SPEC: &str = include_str!("../../../../openapi.json");
+        let spec: serde_json::Value = serde_json::from_str(SPEC).expect("openapi.json parses");
+
+        let published: Vec<String> = spec["components"]["schemas"]["ProblemKind"]["enum"]
+            .as_array()
+            .expect("the document declares the ProblemKind vocabulary")
+            .iter()
+            .map(|v| v.as_str().expect("problem tokens are strings").to_owned())
+            .collect();
+        assert!(!published.is_empty());
+
+        for token in &published {
+            let kind: ProblemKind = token.parse().unwrap_or_else(|_| {
+                panic!(
+                    "the API publishes `{token}`, which the generated client does not carry; \
+                     regenerate with `cargo run -p xtask -- openapi`"
+                )
+            });
+            // Total by construction — `from_kind` is exhaustive — but this pins that the
+            // published token, not just the variant, reaches a decision.
+            let _ = Refusal::from_kind(kind);
+        }
+
+        // The three answers `403` has on a guarded route, each still published under the name
+        // the console branches on.
+        for (kind, expected) in [
+            (ProblemKind::StepUpRequired, Refusal::StepUp),
+            (ProblemKind::MfaEnrolmentRequired, Refusal::MfaEnrolment),
+            (ProblemKind::Forbidden, Refusal::Other),
+        ] {
+            assert!(
+                published.contains(&kind.to_string()),
+                "`{kind}` is no longer published; the console branches on it"
+            );
+            assert_eq!(refusal_of(kind), expected);
+        }
     }
 
     /// A transport or decode fault carries no problem body, and must not open a prompt: there is

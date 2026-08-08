@@ -92,7 +92,7 @@ pub struct MergeDecisionFilter {
     responses(
         (status = 200, description = "A page of the merge decision journal", body = Vec<MergeDecisionView>),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn list_merge_decisions(
@@ -142,7 +142,7 @@ pub struct JudgementRequest {
         (status = 200, description = "What was put back", body = MergeRevertedView),
         (status = 400, description = "no reason given", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 404, description = "no such decision", body = crate::error::ProblemDetails),
         (status = 409, description = "already reverted, merged nothing, or the absorbed id is live again", body = crate::error::ProblemDetails),
     )
@@ -203,7 +203,7 @@ pub async fn revert_merge_decision(
         (status = 200, description = "Whether this call was the one that flagged it", body = serde_json::Value, example = json!({"flagged": true})),
         (status = 400, description = "no reason given", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 404, description = "no such decision", body = crate::error::ProblemDetails),
     )
 )]
@@ -274,7 +274,7 @@ pub struct SyncDecisionFilter {
     responses(
         (status = 200, description = "A page of the sync decision journal", body = Vec<SyncDecisionView>),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn list_sync_decisions(
@@ -321,7 +321,7 @@ pub async fn list_sync_decisions(
         (status = 200, description = "What was put back", body = SyncRevertedView),
         (status = 400, description = "no reason given", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 404, description = "no such decision", body = crate::error::ProblemDetails),
         (status = 409, description = "already reverted, changed nothing, or has no inverse", body = crate::error::ProblemDetails),
     )
@@ -381,7 +381,7 @@ pub struct SyncFlagRequest {
         (status = 200, description = "Whether this call was the one that flagged it", body = serde_json::Value, example = json!({"flagged": true})),
         (status = 400, description = "no reason given", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 404, description = "no such decision", body = crate::error::ProblemDetails),
     )
 )]

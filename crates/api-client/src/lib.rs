@@ -6535,7 +6535,7 @@ pub mod types {
     #[doc = "      \"minimum\": 0.0"]
     #[doc = "    },"]
     #[doc = "    \"title\": {"]
-    #[doc = "      \"type\": \"string\""]
+    #[doc = "      \"$ref\": \"#/components/schemas/ProblemKind\""]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -6545,13 +6545,151 @@ pub mod types {
     pub struct ProblemDetails {
         pub detail: ::std::string::String,
         pub status: i32,
-        pub title: ::std::string::String,
+        pub title: ProblemKind,
         #[serde(rename = "type")]
         pub type_: ::serde_json::Value,
     }
     impl ProblemDetails {
         pub fn builder() -> builder::ProblemDetails {
             Default::default()
+        }
+    }
+    #[doc = "The closed vocabulary of `title` values an API response can carry.\n\nPublished as a schema enum so clients branch on a generated type rather than on string\nliterals. That makes the list a **contract**: a token missing from here fails to deserialise\nin the generated client, which turns a clean error response into\n`progenitor_client::Error::InvalidResponsePayload` — the server's message is lost and the\ncaller sees \"unreadable response\" instead of the refusal. So every problem body reachable on\nan API route needs a variant, including the two the shared middleware emits without ever\nbuilding an [`ApiError`]: [`Self::FeatureDisabled`] and [`Self::RateLimited`]."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"The closed vocabulary of `title` values an API response can carry.\\n\\nPublished as a schema enum so clients branch on a generated type rather than on string\\nliterals. That makes the list a **contract**: a token missing from here fails to deserialise\\nin the generated client, which turns a clean error response into\\n`progenitor_client::Error::InvalidResponsePayload` — the server's message is lost and the\\ncaller sees \\\"unreadable response\\\" instead of the refusal. So every problem body reachable on\\nan API route needs a variant, including the two the shared middleware emits without ever\\nbuilding an [`ApiError`]: [`Self::FeatureDisabled`] and [`Self::RateLimited`].\","]
+    #[doc = "  \"type\": \"string\","]
+    #[doc = "  \"enum\": ["]
+    #[doc = "    \"not_found\","]
+    #[doc = "    \"conflict\","]
+    #[doc = "    \"unauthorized\","]
+    #[doc = "    \"forbidden\","]
+    #[doc = "    \"email_not_verified\","]
+    #[doc = "    \"account_suspended\","]
+    #[doc = "    \"step_up_required\","]
+    #[doc = "    \"mfa_enrolment_required\","]
+    #[doc = "    \"feature_disabled\","]
+    #[doc = "    \"rate_limited\","]
+    #[doc = "    \"bad_request\","]
+    #[doc = "    \"unavailable\","]
+    #[doc = "    \"upstream_unavailable\","]
+    #[doc = "    \"upstream_timeout\","]
+    #[doc = "    \"internal\""]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+    )]
+    pub enum ProblemKind {
+        #[serde(rename = "not_found")]
+        NotFound,
+        #[serde(rename = "conflict")]
+        Conflict,
+        #[serde(rename = "unauthorized")]
+        Unauthorized,
+        #[serde(rename = "forbidden")]
+        Forbidden,
+        #[serde(rename = "email_not_verified")]
+        EmailNotVerified,
+        #[serde(rename = "account_suspended")]
+        AccountSuspended,
+        #[serde(rename = "step_up_required")]
+        StepUpRequired,
+        #[serde(rename = "mfa_enrolment_required")]
+        MfaEnrolmentRequired,
+        #[serde(rename = "feature_disabled")]
+        FeatureDisabled,
+        #[serde(rename = "rate_limited")]
+        RateLimited,
+        #[serde(rename = "bad_request")]
+        BadRequest,
+        #[serde(rename = "unavailable")]
+        Unavailable,
+        #[serde(rename = "upstream_unavailable")]
+        UpstreamUnavailable,
+        #[serde(rename = "upstream_timeout")]
+        UpstreamTimeout,
+        #[serde(rename = "internal")]
+        Internal,
+    }
+    impl ::std::fmt::Display for ProblemKind {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::NotFound => f.write_str("not_found"),
+                Self::Conflict => f.write_str("conflict"),
+                Self::Unauthorized => f.write_str("unauthorized"),
+                Self::Forbidden => f.write_str("forbidden"),
+                Self::EmailNotVerified => f.write_str("email_not_verified"),
+                Self::AccountSuspended => f.write_str("account_suspended"),
+                Self::StepUpRequired => f.write_str("step_up_required"),
+                Self::MfaEnrolmentRequired => f.write_str("mfa_enrolment_required"),
+                Self::FeatureDisabled => f.write_str("feature_disabled"),
+                Self::RateLimited => f.write_str("rate_limited"),
+                Self::BadRequest => f.write_str("bad_request"),
+                Self::Unavailable => f.write_str("unavailable"),
+                Self::UpstreamUnavailable => f.write_str("upstream_unavailable"),
+                Self::UpstreamTimeout => f.write_str("upstream_timeout"),
+                Self::Internal => f.write_str("internal"),
+            }
+        }
+    }
+    impl ::std::str::FromStr for ProblemKind {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "not_found" => Ok(Self::NotFound),
+                "conflict" => Ok(Self::Conflict),
+                "unauthorized" => Ok(Self::Unauthorized),
+                "forbidden" => Ok(Self::Forbidden),
+                "email_not_verified" => Ok(Self::EmailNotVerified),
+                "account_suspended" => Ok(Self::AccountSuspended),
+                "step_up_required" => Ok(Self::StepUpRequired),
+                "mfa_enrolment_required" => Ok(Self::MfaEnrolmentRequired),
+                "feature_disabled" => Ok(Self::FeatureDisabled),
+                "rate_limited" => Ok(Self::RateLimited),
+                "bad_request" => Ok(Self::BadRequest),
+                "unavailable" => Ok(Self::Unavailable),
+                "upstream_unavailable" => Ok(Self::UpstreamUnavailable),
+                "upstream_timeout" => Ok(Self::UpstreamTimeout),
+                "internal" => Ok(Self::Internal),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+    impl ::std::convert::TryFrom<&str> for ProblemKind {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    impl ::std::convert::TryFrom<&::std::string::String> for ProblemKind {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    impl ::std::convert::TryFrom<::std::string::String> for ProblemKind {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
         }
     }
     #[doc = "`ProfileDto`"]
@@ -20824,7 +20962,7 @@ pub mod types {
         pub struct ProblemDetails {
             detail: ::std::result::Result<::std::string::String, ::std::string::String>,
             status: ::std::result::Result<i32, ::std::string::String>,
-            title: ::std::result::Result<::std::string::String, ::std::string::String>,
+            title: ::std::result::Result<super::ProblemKind, ::std::string::String>,
             type_: ::std::result::Result<::serde_json::Value, ::std::string::String>,
         }
         impl ::std::default::Default for ProblemDetails {
@@ -20860,7 +20998,7 @@ pub mod types {
             }
             pub fn title<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::string::String>,
+                T: ::std::convert::TryInto<super::ProblemKind>,
                 T::Error: ::std::fmt::Display,
             {
                 self.title = value

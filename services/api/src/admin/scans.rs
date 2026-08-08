@@ -37,7 +37,7 @@ pub struct TriggerScan {
     responses(
         (status = 200, description = "Scan queued, forwarded from the control-plane", body = tankovault_contracts::admin::ScanTriggeredView),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 404, description = "manual scanning, or full scans specifically, are switched off", body = crate::error::ProblemDetails),
     )
 )]
@@ -77,7 +77,7 @@ pub async fn trigger_scan(
     responses(
         (status = 200, description = "Scan run", body = ScanRun),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 404, description = "Scan run not found", body = crate::error::ProblemDetails),
     )
 )]
@@ -134,7 +134,7 @@ pub struct RunQuery {
     responses(
         (status = 200, description = "A page of scan runs", body = tankovault_contracts::admin::ScanRunPageView),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn list_scans(
@@ -190,7 +190,7 @@ pub struct FailureQuery {
     responses(
         (status = 200, description = "Recent failed tasks, newest first", body = Vec<tankovault_contracts::admin::FailedTaskView>),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn scan_failures(
@@ -229,7 +229,7 @@ pub async fn scan_failures(
     responses(
         (status = 200, description = "Distinct failures with counts and affected providers", body = Vec<tankovault_contracts::admin::FailureGroupView>),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn scan_failure_groups(
@@ -268,7 +268,7 @@ pub async fn scan_failure_groups(
     responses(
         (status = 200, description = "SSE stream of `runs` events", content_type = "text/event-stream"),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn scan_stream(

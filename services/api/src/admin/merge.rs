@@ -42,7 +42,7 @@ pub struct CandidateFilter {
     responses(
         (status = 200, description = "Up to 200 open merge candidates, highest score first", body = Vec<MergeCandidateView>),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn list_merge_candidates(
@@ -81,7 +81,7 @@ pub struct MergeRequest {
     responses(
         (status = 200, description = "Acknowledged", body = serde_json::Value, example = json!({"ok": true})),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 404, description = "One or both series not found", body = crate::error::ProblemDetails),
         (status = 409, description = "`keep` and `merge` are the same series", body = crate::error::ProblemDetails),
     )
@@ -131,7 +131,7 @@ pub struct DismissRequest {
     responses(
         (status = 200, description = "Whether a candidate was actually dismissed", body = serde_json::Value, example = json!({"dismissed": true})),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn dismiss_merge_candidate(
@@ -174,7 +174,7 @@ pub async fn dismiss_merge_candidate(
     responses(
         (status = 200, description = "What the sweep did", body = MergeSweepView),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 404, description = "automatic duplicate merging is switched off", body = crate::error::ProblemDetails),
     )
 )]
@@ -224,7 +224,7 @@ pub async fn sweep_merge_candidates(
     responses(
         (status = 200, description = "What the rebuild changed", body = KeyRebuildView),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn rebuild_matching_keys(

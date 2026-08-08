@@ -46,7 +46,7 @@ pub struct DeleteUser {
         (status = 204, description = "Account and all owned data erased"),
         (status = 400, description = "confirmation mismatch, own account, the super user, or the last administrator", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 404, description = "no such user", body = crate::error::ProblemDetails),
     )
 )]

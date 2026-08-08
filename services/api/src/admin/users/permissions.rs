@@ -42,7 +42,7 @@ pub struct SetPermissions {
         (status = 200, description = "The updated account and its grants", body = UserDetailResponse),
         (status = 400, description = "cannot edit your own permissions, strip the last administrator, or grant the super user", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 404, description = "no such user", body = crate::error::ProblemDetails),
     )
 )]
@@ -151,7 +151,7 @@ pub struct PermissionCatalogue {
     responses(
         (status = 200, description = "The permission catalogue", body = PermissionCatalogue),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn permission_catalogue(user: AuthUser) -> ApiResult<Json<PermissionCatalogue>> {

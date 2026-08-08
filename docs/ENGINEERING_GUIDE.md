@@ -365,6 +365,15 @@ hashes, and only the browser console says they match nothing on the page.
 **[E] The shell loads nothing off-origin** — `xtask repo-lint`. `default-src 'self'` refuses a
 CDN asset at runtime and nothing refuses it at build time.
 
+**The two `TANKOVAULT_FRONTEND__CLOUDFLARE__*` flags are the only sanctioned widening, and they
+are an operator's decision, not a developer's.** They exist because Cloudflare's bot products
+inject script into the served HTML *at the edge*, after this service has hashed the shell — a
+class of problem no code change here can reach. Both default off, both are argued at their
+definition and in [`docs/CONFIGURATION.md`](CONFIGURATION.md), and neither grants `'unsafe-eval'`
+or `'unsafe-inline'`. Non-negotiable 1 is unchanged: nothing in this repository widens the policy
+so that code in this repository works. If you find yourself reaching for one of these flags to
+fix the app, you are fixing the wrong thing.
+
 ### 4.2 The browser boundary
 
 **[E] `document::eval` is banned**, along with `js_sys::Function::new_*` and `js_sys::eval`

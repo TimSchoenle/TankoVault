@@ -1612,9 +1612,13 @@
     "confirm": "Confirm",
     "confirmed": "Confirmed. You can carry on for the next few minutes without being asked again.",
     "confirmedRetry": "Confirmed — try that again.",
+    "confirmWithKey": "Confirm with your security key",
     "useRecovery": "Use a recovery code instead",
     "useCode": "Use an authenticator code instead",
+    "useKey": "Use your security key instead",
+    "usePassword": "Use your password instead",
     "error": {
+      "keyRejected": "That security key wasn't recognised. Try it again, or use another factor.",
       "wrongFactor": "That isn't right. Check the code your app is showing now, or use a recovery code."
     },
     "field": {
@@ -1623,6 +1627,7 @@
       "password": "Your password"
     },
     "hint": {
+      "key": "Your browser or device will ask you to touch your security key.",
       "code": "The six-digit code from your authenticator app.",
       "recovery": "One of the codes you saved when you set up two-factor authentication. Each works once.",
       "password": "You haven't set up a second factor yet, so your password is what we can ask for."

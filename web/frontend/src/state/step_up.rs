@@ -12,7 +12,7 @@
 use dioxus::prelude::*;
 
 /// The current elevation, if the reader has confirmed themselves recently.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct StepUp {
     token: Signal<Option<String>>,
 }
@@ -37,6 +37,17 @@ impl StepUp {
     /// Forget the grant — on sign-out, or after the API refuses it.
     pub(crate) fn clear(mut self) {
         self.token.set(None);
+    }
+
+    /// A client carrying the current elevation, or the plain one when there is none.
+    ///
+    /// The plain client is deliberate rather than a refusal: without a grant the API answers
+    /// `403 step_up_required`, and that is what opens the prompt. Deciding here instead would
+    /// put the server's policy in the client, where it would be wrong the first time the policy
+    /// moved.
+    pub(crate) fn client(self, api: crate::api::Api) -> tankovault_api_client::Client {
+        self.token()
+            .map_or_else(|| api.client(), |token| api.elevated_client(&token))
     }
 }
 

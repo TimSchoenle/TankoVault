@@ -1612,9 +1612,13 @@
     "confirm": "Bestätigen",
     "confirmed": "Bestätigt. Die nächsten Minuten fragen wir nicht noch einmal.",
     "confirmedRetry": "Bestätigt — versuche es noch einmal.",
+    "confirmWithKey": "Mit Sicherheitsschlüssel bestätigen",
     "useRecovery": "Stattdessen einen Wiederherstellungscode verwenden",
     "useCode": "Stattdessen einen Authenticator-Code verwenden",
+    "useKey": "Stattdessen deinen Sicherheitsschlüssel verwenden",
+    "usePassword": "Stattdessen dein Passwort verwenden",
     "error": {
+      "keyRejected": "Dieser Sicherheitsschlüssel wurde nicht erkannt. Versuche es noch einmal, oder nimm einen anderen Faktor.",
       "wrongFactor": "Das stimmt nicht. Prüfe den Code, den deine App gerade anzeigt, oder nimm einen Wiederherstellungscode."
     },
     "field": {
@@ -1623,6 +1627,7 @@
       "password": "Dein Passwort"
     },
     "hint": {
+      "key": "Dein Browser oder Gerät fragt dich gleich nach deinem Sicherheitsschlüssel.",
       "code": "Der sechsstellige Code aus deiner Authenticator-App.",
       "recovery": "Einer der Codes, die du beim Einrichten gespeichert hast. Jeder funktioniert genau einmal.",
       "password": "Du hast noch keinen zweiten Faktor eingerichtet, deshalb fragen wir nach deinem Passwort."

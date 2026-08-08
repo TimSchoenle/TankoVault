@@ -10,7 +10,7 @@
 //! change still has no screen.
 
 use crate::api;
-use crate::components::{async_list, PanelCard};
+use crate::components::{async_list, use_step_up_gate, PanelCard, StepUpGate, StepUpPrompt};
 use crate::hooks::{use_busy, use_reload, Reload};
 use crate::i18n::use_i18n;
 use crate::icons::Icon;
@@ -27,6 +27,7 @@ pub(crate) fn SecurityPanel() -> Element {
     let i18n = use_i18n();
     let api = api::use_api();
     let caps = use_capabilities();
+    let gate = use_step_up_gate();
     let reload = use_reload();
 
     // Read once, above the resource: skips a fetch to a route that doesn't exist here, which
@@ -66,6 +67,11 @@ pub(crate) fn SecurityPanel() -> Element {
             p { class: "ik-muted", style: "font-size:13px;margin-top:0;",
                 {i18n.t("account.security.intro")}
             }
+            // Revoking a session is behind a step-up, so a refusal on any row opens this one
+            // prompt. Without it the button simply did nothing, which reads as a broken control.
+            if gate.is_open() {
+                StepUpPrompt { enrolled: true, on_done: move |()| gate.close() }
+            }
             {
                 async_list(
                     &sessions,
@@ -80,6 +86,7 @@ pub(crate) fn SecurityPanel() -> Element {
                                 created_at: row.created_at,
                                 expires_at: row.expires_at,
                                 reload,
+                                gate,
                             }
                         }
                     },
@@ -93,12 +100,17 @@ pub(crate) fn SecurityPanel() -> Element {
     }
 }
 
+/// One active session, with the revoke that ends its whole rotation family.
+///
+/// `gate` belongs to the card: a refusal has to open the one prompt it renders rather than a
+/// prompt per row.
 #[component]
 fn SessionRow(
     session_id: String,
     created_at: String,
     expires_at: String,
     reload: Reload,
+    gate: StepUpGate,
 ) -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
@@ -111,10 +123,15 @@ fn SessionRow(
             return;
         }
         let id = session_id.clone();
-        let client = api.client();
+        let client = gate.client(api);
         spawn(async move {
-            if client.delete_session().id(id).send().await.is_ok() {
-                reload.bump();
+            match client.delete_session().id(id).send().await {
+                Ok(_) => reload.bump(),
+                // The row has no error line of its own; a `403` opens the card's prompt, and
+                // anything else leaves the list as it was, as it did before the gate existed.
+                Err(e) => {
+                    let _refused = gate.refused(api::error_status(&e));
+                }
             }
             busy.release();
         });

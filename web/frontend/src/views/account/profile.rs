@@ -1,11 +1,10 @@
 //! Profile panel — display name and email (`PATCH /v1/me/profile`).
 
 use crate::api;
-use crate::components::{OutcomeLine, StepUpPrompt};
+use crate::components::{use_step_up_gate, OutcomeLine, StepUpPrompt};
 use crate::hooks::{use_busy, use_outcome};
 use crate::i18n::use_i18n;
 use crate::models::ProfileUpdate;
-use crate::state::step_up::use_step_up;
 use crate::state::use_session;
 use crate::util::initial;
 use dioxus::prelude::*;
@@ -15,15 +14,11 @@ pub(crate) fn ProfilePanel(name: String, tier: String) -> Element {
     let session = use_session();
     let i18n = use_i18n();
     let api = api::use_api();
-    let step_up = use_step_up();
+    let gate = use_step_up_gate();
     let busy = use_busy();
     let mut outcome = use_outcome();
     let mut username = use_signal(|| name.clone());
     let mut email = use_signal(String::new);
-    // Whether the confirm-it-is-you form is open. Opened by the server's `403`, never
-    // pre-emptively — a reader who came to fix a typo in their display name should not be
-    // challenged before they have asked for anything.
-    let mut prompting = use_signal(|| false);
 
     let save = move |_| {
         let new_username = username.peek().trim().to_owned();
@@ -39,9 +34,7 @@ pub(crate) fn ProfilePanel(name: String, tier: String) -> Element {
         outcome.set(None);
         // The elevation the server demands. Absent is not a refusal here: the `403` is what
         // opens the prompt, which keeps the policy on the server where it belongs.
-        let client = step_up
-            .token()
-            .map_or_else(|| api.client(), |token| api.elevated_client(&token));
+        let client = gate.client(api);
         spawn(async move {
             let update = ProfileUpdate {
                 username: (!new_username.is_empty()).then_some(new_username),
@@ -66,11 +59,7 @@ pub(crate) fn ProfilePanel(name: String, tier: String) -> Element {
                     // `403` means "confirm it is you", not "you may not". Reporting the raw
                     // problem would tell a reader entitled to rename themselves that their
                     // privileges are insufficient.
-                    if api::error_status(&e) == Some(403) {
-                        step_up.clear();
-                        prompting.set(true);
-                        outcome.set(None);
-                    } else {
+                    if !gate.refused(api::error_status(&e)) {
                         outcome.set(Some(Err(api::friendly_error(i18n, e))));
                     }
                 }
@@ -117,11 +106,11 @@ pub(crate) fn ProfilePanel(name: String, tier: String) -> Element {
             // wrong attacker. Whoever stole the session to get here is, more often than not,
             // whoever phished the password to open it. The prompt below asks for the second
             // factor instead, and only once the server has said it needs one.
-            if *prompting.read() {
+            if gate.is_open() {
                 StepUpPrompt {
                     enrolled: true,
                     on_done: move |()| {
-                        prompting.set(false);
+                        gate.close();
                         outcome.set(Some(Ok(i18n.t("stepUp.confirmedRetry"))));
                     },
                 }

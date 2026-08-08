@@ -7,11 +7,12 @@
 //! partial state between them, and a cancelled prompt leaves the list exactly as it was.
 
 use crate::api;
-use crate::components::{async_list, Field, InlineConfirm, PanelCard, SkeletonBlock, StepUpPrompt};
+use crate::components::{
+    async_list, use_step_up_gate, Field, InlineConfirm, PanelCard, SkeletonBlock, StepUpPrompt,
+};
 use crate::hooks::{use_busy, use_reload, Reload};
 use crate::i18n::use_i18n;
 use crate::icons::Icon;
-use crate::state::step_up::use_step_up;
 use crate::state::use_session;
 use crate::util::iso_date;
 use crate::webauthn::{self, CeremonyError};
@@ -28,7 +29,7 @@ pub(crate) fn PasskeysCard() -> Element {
     let reload = use_reload();
     let busy = use_busy();
 
-    let step_up = use_step_up();
+    let gate = use_step_up_gate();
     let mut label = use_signal(String::new);
     let mut error = use_signal(|| Option::<String>::None);
     let mut info = use_signal(|| Option::<String>::None);
@@ -36,9 +37,6 @@ pub(crate) fn PasskeysCard() -> Element {
     // for a password — the form is now just a name, but a collapsed card still keeps the list
     // the reader came to read the thing they see first.
     let mut adding = use_signal(|| false);
-    // Whether the confirm-it-is-you form is open. Opened by a `403` from the ceremony's first
-    // leg, never pre-emptively.
-    let mut prompting = use_signal(|| false);
 
     let passkeys = use_resource(move || {
         reload.track();
@@ -66,9 +64,7 @@ pub(crate) fn PasskeysCard() -> Element {
         let label_v = label.read().trim().to_owned();
         // The elevation the ceremony's first leg demands. Absent is not a refusal here: the API
         // answers `403` and that is what opens the prompt, which keeps the policy in one place.
-        let client = step_up
-            .token()
-            .map_or_else(|| api.client(), |token| api.elevated_client(&token));
+        let client = gate.client(api);
 
         spawn(async move {
             // Leg 1: the API mints a challenge, after checking the password.
@@ -90,10 +86,8 @@ pub(crate) fn PasskeysCard() -> Element {
                     // one is and has not been presented. Both are answered by the prompt, and
                     // the *type* is what tells them apart — reporting the raw problem would show
                     // "insufficient privileges" to someone perfectly entitled to be here.
-                    if api::error_status(&e) == Some(403) {
-                        let detail = api::problem_detail(&e);
-                        step_up.clear();
-                        prompting.set(true);
+                    let detail = api::problem_detail(&e);
+                    if gate.refused(api::error_status(&e)) {
                         error.set(detail);
                     } else {
                         error.set(Some(api::friendly_error(i18n, e)));
@@ -162,11 +156,11 @@ pub(crate) fn PasskeysCard() -> Element {
                 div { class: "ik-note", style: "padding:10px;margin:10px 0;", "{msg}" }
             }
 
-            if *prompting.read() {
+            if gate.is_open() {
                 StepUpPrompt {
                     enrolled: true,
                     on_done: move |()| {
-                        prompting.set(false);
+                        gate.close();
                         error.set(None);
                     },
                 }

@@ -6,7 +6,9 @@
 //! erasure as a kind an operator can act on.
 
 use crate::api;
-use crate::components::{async_list, OutcomeLine, PanelCard, SkeletonRows};
+use crate::components::{
+    async_list, use_step_up_gate, OutcomeLine, PanelCard, SkeletonRows, StepUpGate, StepUpPrompt,
+};
 use crate::hooks::{use_busy, use_outcome, use_reload, Reload};
 use crate::i18n::use_i18n;
 use crate::icons::Icon;
@@ -44,6 +46,7 @@ pub(crate) fn PrivacyPanel() -> Element {
 fn ExportCard() -> Element {
     let i18n = use_i18n();
     let api = api::use_api();
+    let gate = use_step_up_gate();
     let busy = use_busy();
     let mut outcome = use_outcome();
 
@@ -52,7 +55,7 @@ fn ExportCard() -> Element {
             return;
         }
         outcome.set(None);
-        let client = api.client();
+        let client = gate.client(api);
         spawn(async move {
             match client.export_data().send().await {
                 Ok(response) => {
@@ -75,7 +78,15 @@ fn ExportCard() -> Element {
                         Err(_) => outcome.set(Some(Err(i18n.t("account.privacy.export.failed")))),
                     }
                 }
-                Err(e) => outcome.set(Some(Err(api::friendly_error(i18n, e)))),
+                // A `403` here is "confirm it is you", not "you may not". The export is the
+                // single highest-value thing a stolen session can ask for, so the API demands an
+                // elevation — and reporting the raw problem told the owner they lacked
+                // permission to download their own record.
+                Err(e) => {
+                    if !gate.refused(api::error_status(&e)) {
+                        outcome.set(Some(Err(api::friendly_error(i18n, e))));
+                    }
+                }
             }
             busy.release();
         });
@@ -87,6 +98,15 @@ fn ExportCard() -> Element {
                 {i18n.t("account.privacy.export.intro")}
             }
             OutcomeLine { outcome: outcome.read().clone() }
+            if gate.is_open() {
+                StepUpPrompt {
+                    enrolled: true,
+                    on_done: move |()| {
+                        gate.close();
+                        outcome.set(Some(Ok(i18n.t("stepUp.confirmedRetry"))));
+                    },
+                }
+            }
             button {
                 class: "ik-btn primary",
                 style: "margin-top:12px;",
@@ -118,6 +138,7 @@ fn RequestsCard() -> Element {
     let i18n = use_i18n();
     let api = api::use_api();
     let session = use_session();
+    let gate = use_step_up_gate();
     let reload = use_reload();
     let busy = use_busy();
     let mut outcome = use_outcome();
@@ -153,7 +174,10 @@ fn RequestsCard() -> Element {
                 (!text.is_empty()).then_some(text)
             },
         };
-        let client = api.client();
+        // Elevated: an access request ends with an operator mailing the caller's whole record,
+        // and an erasure request ends with the account gone. Both are the export and the
+        // deletion above, taking a slower route.
+        let client = gate.client(api);
         spawn(async move {
             match client.create_privacy_request().body(body).send().await {
                 Ok(_) => {
@@ -161,7 +185,11 @@ fn RequestsCard() -> Element {
                     outcome.set(Some(Ok(i18n.t("account.privacy.requests.filed"))));
                     reload.bump();
                 }
-                Err(e) => outcome.set(Some(Err(api::friendly_error(i18n, e)))),
+                Err(e) => {
+                    if !gate.refused(api::error_status(&e)) {
+                        outcome.set(Some(Err(api::friendly_error(i18n, e))));
+                    }
+                }
             }
             busy.release();
         });
@@ -198,6 +226,18 @@ fn RequestsCard() -> Element {
                 }
             }
             OutcomeLine { outcome: outcome.read().clone() }
+            // One prompt for the card, shared with the withdraw button on every row below: the
+            // grant a reader earns for one of these covers the others for the next few minutes,
+            // so a second copy of the question would only be a second place to ask it.
+            if gate.is_open() {
+                StepUpPrompt {
+                    enrolled: true,
+                    on_done: move |()| {
+                        gate.close();
+                        outcome.set(Some(Ok(i18n.t("stepUp.confirmedRetry"))));
+                    },
+                }
+            }
             button {
                 class: "ik-btn primary",
                 style: "margin-top:12px;",
@@ -221,7 +261,7 @@ fn RequestsCard() -> Element {
                     &i18n.t("account.privacy.requests.empty"),
                     |rows| rsx! {
                         for row in rows.iter().cloned() {
-                            RequestRowView { key: "{row.id}", request: row, reload }
+                            RequestRowView { key: "{row.id}", request: row, reload, gate }
                         }
                     },
                 )
@@ -231,8 +271,11 @@ fn RequestsCard() -> Element {
 }
 
 /// One of the reader's own requests, with a withdraw action while it is still open.
+///
+/// `gate` belongs to the card rather than the row: withdrawing needs an elevation, and a refusal
+/// has to open the one prompt the card renders instead of a prompt per row.
 #[component]
-fn RequestRowView(request: RequestRow, reload: Reload) -> Element {
+fn RequestRowView(request: RequestRow, reload: Reload, gate: StepUpGate) -> Element {
     let i18n = use_i18n();
     let api = api::use_api();
     let busy = use_busy();
@@ -242,10 +285,18 @@ fn RequestRowView(request: RequestRow, reload: Reload) -> Element {
         if !busy.claim() {
             return;
         }
-        let client = api.client();
+        // Elevated: withdrawing is how an attacker would silence the rectification request their
+        // victim filed about the change they made.
+        let client = gate.client(api);
         spawn(async move {
-            if client.cancel_privacy_request().id(id).send().await.is_ok() {
-                reload.bump();
+            match client.cancel_privacy_request().id(id).send().await {
+                Ok(_) => reload.bump(),
+                // The row has no error line of its own. A `403` opens the card's prompt, which
+                // is the only outcome a reader can act on; anything else leaves the row as it
+                // was, as it did before the gate existed.
+                Err(e) => {
+                    let _refused = gate.refused(api::error_status(&e));
+                }
             }
             busy.release();
         });
@@ -295,6 +346,7 @@ fn DeleteAccountCard() -> Element {
     let api = api::use_api();
     let session = use_session();
     let caps = use_capabilities();
+    let gate = use_step_up_gate();
     let busy = use_busy();
     let mut outcome = use_outcome();
     let mut armed = use_signal(|| false);
@@ -311,7 +363,10 @@ fn DeleteAccountCard() -> Element {
         let body = DeleteAccount {
             confirm_username: typed.peek().trim().to_owned(),
         };
-        let client = api.client();
+        // Elevated in addition to the typed username: the confirmation guards against a
+        // misclick, it is not a credential, and on its own it left the single irreversible
+        // action on the account reachable by anyone holding a token.
+        let client = gate.client(api);
         spawn(async move {
             match client.delete_account().body(body).send().await {
                 Ok(_) => {
@@ -321,7 +376,9 @@ fn DeleteAccountCard() -> Element {
                     caps.clear();
                 }
                 Err(e) => {
-                    outcome.set(Some(Err(api::friendly_error(i18n, e))));
+                    if !gate.refused(api::error_status(&e)) {
+                        outcome.set(Some(Err(api::friendly_error(i18n, e))));
+                    }
                     busy.release();
                 }
             }
@@ -332,6 +389,15 @@ fn DeleteAccountCard() -> Element {
         PanelCard { icon: Icon::Delete, title: i18n.t("account.privacy.delete.title"),
             p { class: "ik-muted", style: "font-size:13px;margin-top:0;",
                 {i18n.t("account.privacy.delete.intro")}
+            }
+            if gate.is_open() {
+                StepUpPrompt {
+                    enrolled: true,
+                    on_done: move |()| {
+                        gate.close();
+                        outcome.set(Some(Ok(i18n.t("stepUp.confirmedRetry"))));
+                    },
+                }
             }
             if *armed.read() {
                 div { class: "ik-field", style: "margin-top:12px;",

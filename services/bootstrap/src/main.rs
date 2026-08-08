@@ -109,9 +109,9 @@ async fn seed_admin(pool: &tankovault_db::PgPool, cfg: &Config) -> anyhow::Resul
             if super_user {
                 println!("{username} is this deployment's super user");
             } else {
-                println!(
-                    "{username} did not claim the super user; the database already had accounts"
-                );
+                // Names no account: the line above already did, and repeating the username
+                // here is what `rust/cleartext-logging` flags.
+                println!("the super user was not claimed; the database already had accounts");
             }
         }
         AdminOutcome::AlreadyPresent => println!("administrator already present; nothing changed"),

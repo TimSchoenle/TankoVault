@@ -24,8 +24,8 @@
 //! file or directory), `TANKOVAULT_SECRETS_DIR`, and anything ending `_FILE` (a path holding one
 //! value). A reproducer whose behaviour depends on a file elsewhere on the machine isn't a
 //! reproducer. The value *parsing* those layers feed is the same code this target already
-//! covers through the environment; what they add is I/O, which belongs in the unit tests in
-//! `crates/config/src/secrets.rs`.
+//! covers through the environment; what they add is I/O, which belongs to `terrace-config` —
+//! it owns those providers and fuzzes them itself.
 
 #![no_main]
 

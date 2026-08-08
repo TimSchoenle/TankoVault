@@ -1,7 +1,8 @@
 //! The configuration surface, read out of the config structs themselves: [`Table`]/[`walk`]
 //! descend `#[derive(Deserialize)]` structs from each service's root `Config`, and
-//! [`direct_env_keys`] finds `std::env::var("TANKOVAULT_…")` call sites that bypass the
-//! layering entirely. The walker **refuses** any `serde` attribute it doesn't model
+//! [`direct_env_keys`] finds the keys no config struct has a field for: `std::env::var("…")`
+//! call sites that bypass the layering, and the loader-builder calls that name the variables
+//! driving it. The walker **refuses** any `serde` attribute it doesn't model
 //! (`flatten`, `rename_all`) rather than guessing, since a gate that quietly mis-derives
 //! blesses a wrong document with a green tick.
 
@@ -368,17 +369,34 @@ fn type_ref(ty: &syn::Type) -> Option<TypeRef> {
 
 // --- direct environment reads --------------------------------------------------------------
 
-/// `TANKOVAULT_*` keys read straight from the environment rather than through the layered
-/// config, found by their `std::env::var` call site.
+/// `TANKOVAULT_*` keys that are not fields of any config struct, found by the call sites that
+/// name them.
 ///
-/// Textual on purpose. These are `env::var("LITERAL")` calls, so the literal *is* the key and
-/// a parser would add nothing; what matters is that the list is derived rather than kept by
-/// hand, which is how `TANKOVAULT_CONFIRM_RESET` went undocumented until someone read for it.
+/// Two kinds, and both have to be here or the document would promise a key nothing reads:
+///
+/// * `env::var("LITERAL")` — read straight from the environment, bypassing the layering.
+/// * the `terrace_config::Terrace` builder calls that name the variables *driving* the
+///   layering. `TANKOVAULT_CONFIG` and `TANKOVAULT_SECRETS_DIR` are read inside the
+///   dependency, from a name it derives from the prefix, so no `env::var` literal for them
+///   exists in this tree — `crates/config/src/loader.rs` spells them out to the builder for
+///   exactly this reason. `reserve` is scanned for the same reason in reverse: a reserved key
+///   is one a file may not supply, which is behaviour an operator has to be told about.
+///
+/// Textual on purpose. Every one of these is a bare string literal, so the literal *is* the
+/// key and a parser would add nothing; what matters is that the list is derived rather than
+/// kept by hand, which is how `TANKOVAULT_CONFIRM_RESET` went undocumented until someone read
+/// for it.
 ///
 /// # Errors
 /// An unreadable source file.
 pub(super) fn direct_env_keys(dirs: &[std::path::PathBuf]) -> Result<BTreeSet<String>> {
-    const CALLS: [&str; 2] = ["env::var(\"", "env::var_os(\""];
+    const CALLS: [&str; 5] = [
+        "env::var(\"",
+        "env::var_os(\"",
+        "config_var(\"",
+        "secrets_dir_var(\"",
+        "reserve(\"",
+    ];
     let mut keys = BTreeSet::new();
     for dir in dirs {
         for path in rust_sources(dir)? {

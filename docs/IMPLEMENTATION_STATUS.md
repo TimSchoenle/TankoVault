@@ -536,7 +536,7 @@ Legend: ✅ done & compiling · 🟡 partial/skeleton · ⬜ not started
 | Crate | Status | Notes |
 |---|---|---|
 | `domain` | ✅ | Entities, typed UUIDv7 ids, enums, `resolve_link` (tested), title normalize, politeness+ceilings. **+ the two registries the whole system authorizes and switches against: `Permission` (24 capabilities, groups, presets) and `Feature` (38 flags, defaults, locked set)** — `UserRole` removed. 38 tests. |
-| `config` | ✅ | Figment layered load (defaults → TOML → `TANKOVAULT_*` env). `ConfigError` boxes the large `figment::Error`. Tested. |
+| `config` | ✅ | The typed blocks, plus the TankoVault dialect of `terrace-config` (defaults → TOML → `TANKOVAULT_*` env → secrets directory → `_FILE`). The layering itself is the dependency's; `ConfigError` is its `Error`, re-exported. Tested. |
 | `contracts` | ✅ | NATS subjects/streams + task/progress/chapter/provider-state messages. Tested. |
 | `bus` | ✅ | `async-nats` JetStream client: stream provisioning, task publish/consume, chapter events. **+ core-NATS client** for non-durable live pushes (`publish_user_notification`/`subscribe_user_notifications`; `BusError::Nats`). |
 | `service` | ✅ | **New (Session 16).** The shared production runtime: `init_tracing`, togglable `MetricsRegistry`, `install_shutdown` + `shutdown::every`, `Health`/`HealthCheck` (+`PostgresCheck`), `HttpStack` (request-id → trace → metrics → security headers → CORS → rate limit → timeout → body cap → compression), `ops_router`, `serve` with graceful drain, `RateLimitStore` (memory + Redis) and `AuditSink` (Postgres + no-op). **+ `flags`: the runtime `FeatureGate` (DB-backed snapshot + refresh loop) and the declarative `RouteFeatures` middleware.** Features: `db`, `redis`. 48 tests. |

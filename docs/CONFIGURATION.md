@@ -13,7 +13,11 @@ limiter buckets, what the audit sink records). This is the *surface*: the keys t
 
 ## 1. How configuration is loaded
 
-Layered, lowest precedence first ([`crates/config/src/lib.rs`](../crates/config/src/lib.rs)):
+Layered, lowest precedence first. The layering is
+[`terrace-config`](https://github.com/TimSchoenle/terrace-config); which variable names this
+deployment spells, and which keys a file may not supply, is
+[`crates/config/src/loader.rs`](../crates/config/src/loader.rs); the blocks themselves are the
+rest of [`crates/config`](../crates/config/src/lib.rs).
 
 1. The `#[serde(default)]` value compiled into each field.
 2. TOML at `$TANKOVAULT_CONFIG` (default: `./config.toml`, silently skipped if absent). If it

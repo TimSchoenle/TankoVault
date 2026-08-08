@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-use crate::error::ConfigError;
+use crate::ConfigError;
 
 /// Where the legal documents live and what they are.
 ///

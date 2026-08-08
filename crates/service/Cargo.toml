@@ -30,7 +30,6 @@ futures.workspace = true
 governor.workspace = true
 metrics.workspace = true
 metrics-exporter-prometheus.workspace = true
-notify.workspace = true
 secrecy.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -43,6 +42,10 @@ tower.workspace = true
 tower-http.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+# `reload` only: the rebuild supervisor behind `crate::reload`, which brings the filesystem
+# watcher and its debouncer with it. The `loader` half arrives through `tankovault-config`
+# instead, so this crate never names a figment.
+terrace-config = { workspace = true, features = ["reload"] }
 
 tankovault-db = { workspace = true, optional = true }
 sqlx = { workspace = true, optional = true }
@@ -55,6 +58,9 @@ tokio = { workspace = true, features = ["macros", "rt-multi-thread", "test-util"
 # `Jail` for the reload tests: it sandboxes the environment *and* a temp directory, and
 # `std::env::set_var` is `unsafe` in edition 2024, which `unsafe_code = "forbid"` rules out.
 figment = { workspace = true, features = ["test"] }
+# The runtime error type the reload test instantiates the supervisor with, which is what every
+# service's `main` actually passes.
+anyhow = { workspace = true }
 # `tests/prop_ratelimit.rs` (TEST P-07). Already in the lockfile via five other members, so
 # this adds no new resolution and nothing to `cargo deny`'s duplicate budget.
 proptest = { workspace = true }

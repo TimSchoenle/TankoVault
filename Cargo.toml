@@ -205,6 +205,23 @@ uuid = { version = "1", features = ["v4", "v7", "serde", "std"] }
 time = { version = "0.3", features = ["serde", "macros", "formatting", "parsing"] }
 thiserror = "2"
 anyhow = "1"
+# The layered configuration loader and the reload supervisor every service boots through:
+# struct defaults, TOML, `TANKOVAULT_*` variables, `$TANKOVAULT_SECRETS_DIR`,
+# `TANKOVAULT_<KEY>_FILE`, and the rebuild that lets a running service pick up a rotated
+# mounted secret. It is the extraction of what used to be `crates/config`'s loader and
+# `crates/service/src/reload.rs`, and replaces both wholesale.
+#
+# Pinned by **tag**, not branch: `Cargo.lock` records the resolved revision either way, but a
+# branch dependency lets `cargo update` move silently across arbitrary commits, whereas a tag
+# makes every bump a manifest edit that shows up in review. `deny.toml`'s `[sources] allow-git`
+# is the other half — an unlisted git source fails that gate.
+#
+# Features are opted into per consumer (`loader` in `crates/config`, `reload` in
+# `crates/service`) so that a crate which only reads a config file at boot links neither the
+# filesystem watcher nor its debouncer.
+terrace-config = { git = "https://github.com/TimSchoenle/terrace-config", tag = "v0.2.0", default-features = false }
+# Dev-only: `figment::Jail` is how the config tests set `TANKOVAULT_*` without `env::set_var`.
+# The loader itself reaches figment through `terrace-config`, which re-exports it.
 figment = { version = "0.10", features = ["toml", "env"] }
 
 # --- auth / security ---
@@ -296,11 +313,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt"]
 # `crates/service/src/telemetry.rs`, or not at all.
 metrics = "0.24"
 metrics-exporter-prometheus = { version = "0.18", default-features = false }
-# Filesystem watching for `crates/service/src/reload.rs`. Default features only: the optional
-# `serde`/`crossbeam-channel`/`flume` back-ends are for shapes this crate does not use — the
-# watcher hands events to a bounded `tokio::sync::mpsc` and coalesces them itself, because a
-# Kubernetes volume update fires several events for one logical change.
-notify = "8.2"
 
 
 # --- email ---

@@ -262,12 +262,44 @@ pub(crate) fn window() -> Option<dioxus::desktop::DesktopContext> {
 /// against it: this is a placeholder, and the contract is that no screen is ever *laid out* at it.
 pub(crate) const STARTUP_INNER_SIZE: (f64, f64) = (1280.0, 860.0);
 
-/// Of the monitor's dimensions, before the ceilings below apply.
+/// Of the monitor, in both directions.
+///
+/// The shortfall is what leaves the taskbar or dock its edge: `tao` reports the monitor rather
+/// than its *work area*, so the window is sized to sit inside whatever the system has reserved
+/// instead of being measured against it. A second `0.92` ceiling used to stand beside this one
+/// claiming that job; it never once bound, because `0.82 * w` is smaller than `0.92 * w` at every
+/// width there is.
 const PREFERRED_FRACTION: f64 = 0.82;
-/// Never past this much of the monitor, so the taskbar keeps its edge.
-const MAX_FRACTION: f64 = 0.92;
-const MAX_WIDTH: f64 = 1760.0;
-const MAX_HEIGHT: f64 = 1120.0;
+
+/// What the window carries besides the content column, and what the ceiling below is built from.
+///
+/// These mirror `--rail-w` and `--gutter` in `input.css` and the widest `--measure` any route
+/// asks for in `crate::components::shell`. Nothing compiles a Rust constant against a stylesheet,
+/// so `xtask repo-lint`'s `window-ceiling-matches-the-layout` reconciles them.
+const RAIL_WIDTH: f64 = 280.0;
+/// Padding either side of the content band. The `:root` value: the narrow-viewport override is
+/// far below any width this ceiling is about.
+const CONTENT_GUTTER: f64 = 40.0;
+/// `.ik-desktop-body` scrolls rather than the window, and its scrollbar takes layout width.
+const SCROLLBAR_WIDTH: f64 = 15.0;
+/// The widest measured content column any route asks for.
+const WIDEST_MEASURE: f64 = 1760.0;
+
+/// The widest window the layout can still fill.
+///
+/// Past this, a wider window buys margin rather than covers: every band inside `.ik-main` is
+/// capped at `--measure`, so the extra pixels land in the gutters either side of a column that
+/// has stopped growing. It also stops a window spanning an ultrawide, where that capped column
+/// would sit in a narrow strip down the middle of a very wide frame.
+///
+/// A sum rather than a number because the number was wrong. `1760` was hardcoded here — but that
+/// is the cap on the *content column*, and the window also carries the rail, both gutters and the
+/// body's scrollbar. A 1760px window therefore left Discover a 1063px results column: five covers
+/// across, where the same layout fits seven once the window is wide enough to reach the cap. A
+/// ceiling stated in the units of the thing it bounds cannot drift from it that way.
+fn widest_useful_window() -> f64 {
+    RAIL_WIDTH + 2.0 * CONTENT_GUTTER + SCROLLBAR_WIDTH + WIDEST_MEASURE
+}
 
 /// Longest [`fit_window_to_display`] waits for the window to report its new size before letting
 /// the app render anyway. A backstop, not a delay — the ordinary case resolves in a frame or two.
@@ -282,22 +314,18 @@ const FIT_POLL_MS: u32 = 16;
 /// large display or taller than the screen on a laptop, and this app's densest screen — the
 /// watchlist — reveals two more columns at 1500px, so the space is worth taking when it exists.
 ///
-/// The bounds are what stop that being silly. [`MAX_FRACTION`] leaves the taskbar or dock room,
-/// because `tao` reports the monitor rather than its *work area*; the pixel ceiling stops a
-/// window spanning an ultrawide, where the measure-capped content would sit in a narrow strip
-/// down the middle of a very wide frame.
+/// Only the width is capped, by [`widest_useful_window`]. Height is not: nothing in the layout
+/// caps a page's height, so a taller window is always more rows, and the display is the only
+/// limit worth having. It used to be capped at a flat 1120px, which cost a 1440p display 60px of
+/// covers and a 4K one 650px.
 fn fitted_inner_size(available: (f64, f64)) -> Option<(f64, f64)> {
     let (width, height) = available;
     if width <= 0.0 || height <= 0.0 {
         return None;
     }
     Some((
-        (width * PREFERRED_FRACTION)
-            .min(MAX_WIDTH)
-            .min(width * MAX_FRACTION),
-        (height * PREFERRED_FRACTION)
-            .min(MAX_HEIGHT)
-            .min(height * MAX_FRACTION),
+        (width * PREFERRED_FRACTION).min(widest_useful_window()),
+        height * PREFERRED_FRACTION,
     ))
 }
 
@@ -800,21 +828,48 @@ mod tests {
         }
     }
 
-    /// Both ceilings hold and the window always stays inside the monitor it opened on, so a
-    /// laptop is not handed a window taller than its screen and an ultrawide is not spanned.
+    /// The window always fits the display it opened on, so a laptop is never handed a window
+    /// taller than its own screen, and the width ceiling is never exceeded on an ultrawide.
     #[test]
-    fn the_fit_stays_inside_the_monitor_and_under_the_ceilings() {
+    fn the_window_fits_the_display_and_stays_under_the_ceiling() {
         for display in DISPLAYS {
             let (width, height) = fitted_inner_size(display).expect("a real monitor is fitted to");
             assert!(
-                width <= MAX_WIDTH && height <= MAX_HEIGHT,
-                "{display:?} fits over the ceiling"
+                width <= display.0 && height <= display.1,
+                "{display:?} is handed a window bigger than itself"
             );
             assert!(
-                width <= display.0 * MAX_FRACTION && height <= display.1 * MAX_FRACTION,
-                "{display:?} fits past its own edge"
+                width <= widest_useful_window(),
+                "{display:?} is handed a window past the ceiling"
             );
         }
+    }
+
+    /// The bug the ceiling is a sum for. It used to be a flat `1760` — the cap on the *content
+    /// column* — applied to the *window*, which also carries the rail, both gutters and the body's
+    /// scrollbar. That left the column 335px short of its own cap: five covers across Discover
+    /// where the layout fits seven. A ceiling has to be stated in the units of the thing it bounds,
+    /// so this pins that the window it allows is one the content column can actually fill.
+    #[test]
+    fn the_ceiling_leaves_room_for_the_chrome_around_the_content_column() {
+        let column = widest_useful_window() - RAIL_WIDTH - 2.0 * CONTENT_GUTTER - SCROLLBAR_WIDTH;
+        assert!(
+            (column - WIDEST_MEASURE).abs() <= 1.0,
+            "the ceiling gives the content column {column}px, not the {WIDEST_MEASURE}px it caps at"
+        );
+    }
+
+    /// Height is bounded by the display and nothing else. A flat 1120px cap cost a 1440p display
+    /// 60px of covers and a 4K one 650px, for no layout reason: no band inside `.ik-main` caps its
+    /// own height, so a taller window is simply more rows.
+    #[test]
+    fn a_tall_display_is_not_capped_to_a_fixed_height() {
+        let (_, tall) = fitted_inner_size((3840.0, 2160.0)).expect("a real monitor is fitted to");
+        let (_, short) = fitted_inner_size((1920.0, 1080.0)).expect("a real monitor is fitted to");
+        assert!(
+            tall > short * 1.9,
+            "a display twice as tall yields {tall}px against {short}px"
+        );
     }
 
     /// A monitor that reports no usable size leaves the window alone rather than collapsing it —

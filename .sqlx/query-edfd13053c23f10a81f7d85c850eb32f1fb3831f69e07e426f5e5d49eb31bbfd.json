@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT credential_id FROM user_webauthn_credentials WHERE user_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "credential_id",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "user_webauthn_credentials",
+            "name": "credential_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "edfd13053c23f10a81f7d85c850eb32f1fb3831f69e07e426f5e5d49eb31bbfd"
+}

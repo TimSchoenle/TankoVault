@@ -22,6 +22,17 @@ async fn operator(app: &TestApp) -> UserId {
     .await
 }
 
+/// The two headers every administrative call needs: a session, and the elevation a *mutating*
+/// capability demands.
+///
+/// A privileged account without a second factor is refused before any capability is consulted,
+/// and `recsys.write` is mutating, so a write additionally needs a fresh step-up. Both rules are
+/// `mfa.rs`'s subject; here they are scaffolding, and this helper keeps them out of the
+/// assertions that are.
+async fn credentials(app: &TestApp, user: UserId) -> (String, String) {
+    (app.bearer(user), app.enrolled_and_elevated(user).await)
+}
+
 /// One tunable's row out of the list response.
 fn row<'a>(body: &'a Value, key: &str) -> &'a Value {
     body.as_array()
@@ -41,16 +52,17 @@ fn row<'a>(body: &'a Value, key: &str) -> &'a Value {
 #[tokio::test]
 async fn the_cooccurrence_privacy_floor_cannot_be_lowered() {
     let app = TestApp::spawn_with(TestConfig::new().without_rate_limiting()).await;
-    let bearer = app.bearer(operator(&app).await);
+    let (bearer, step_up) = credentials(&app, operator(&app).await).await;
     let key = Tunable::CooccurrenceMinSupport.key();
     let path = format!("/v1/admin/recommendations/tunables/{key}");
 
     for attempt in [0.0, 1.0, 4.0, -3.0] {
         let (status, body) = app
-            .call(
+            .call_elevated(
                 "PUT",
                 &path,
                 Some(&bearer),
+                Some(&step_up),
                 Some(json!({ "value": attempt })),
             )
             .await;
@@ -70,10 +82,11 @@ async fn the_cooccurrence_privacy_floor_cannot_be_lowered() {
 
     // Nothing was stored, and the published value is still the floor.
     let (_, body) = app
-        .call(
+        .call_elevated(
             "GET",
             "/v1/admin/recommendations/tunables",
             Some(&bearer),
+            Some(&step_up),
             None,
         )
         .await;
@@ -90,7 +103,13 @@ async fn the_cooccurrence_privacy_floor_cannot_be_lowered() {
     // The inverse leg: the knob is otherwise a normal knob. A test that only proved refusal
     // would also pass against an endpoint that refused everything.
     let (status, _) = app
-        .call("PUT", &path, Some(&bearer), Some(json!({ "value": 20.0 })))
+        .call_elevated(
+            "PUT",
+            &path,
+            Some(&bearer),
+            Some(&step_up),
+            Some(json!({ "value": 20.0 })),
+        )
         .await;
     assert_eq!(status, StatusCode::OK);
 }
@@ -99,7 +118,7 @@ async fn the_cooccurrence_privacy_floor_cannot_be_lowered() {
 #[tokio::test]
 async fn a_value_outside_its_range_is_refused_at_both_ends() {
     let app = TestApp::spawn_with(TestConfig::new().without_rate_limiting()).await;
-    let bearer = app.bearer(operator(&app).await);
+    let (bearer, step_up) = credentials(&app, operator(&app).await).await;
 
     for (tunable, value) in [
         (Tunable::DiversityLambda, 5.0),
@@ -109,10 +128,11 @@ async fn a_value_outside_its_range_is_refused_at_both_ends() {
         (Tunable::AffinityDroppedFloor, 0.5),
     ] {
         let (status, body) = app
-            .call(
+            .call_elevated(
                 "PUT",
                 &format!("/v1/admin/recommendations/tunables/{}", tunable.key()),
                 Some(&bearer),
+                Some(&step_up),
                 Some(json!({ "value": value })),
             )
             .await;
@@ -124,10 +144,11 @@ async fn a_value_outside_its_range_is_refused_at_both_ends() {
     }
 
     let (status, _) = app
-        .call(
+        .call_elevated(
             "PUT",
             "/v1/admin/recommendations/tunables/recsys.diversity.teleport",
             Some(&bearer),
+            Some(&step_up),
             Some(json!({ "value": 1.0 })),
         )
         .await;
@@ -143,7 +164,7 @@ async fn a_value_outside_its_range_is_refused_at_both_ends() {
 #[tokio::test]
 async fn zeroing_every_score_weight_is_refused() {
     let app = TestApp::spawn_with(TestConfig::new().without_rate_limiting()).await;
-    let bearer = app.bearer(operator(&app).await);
+    let (bearer, step_up) = credentials(&app, operator(&app).await).await;
 
     let weights = Tunable::score_weights();
     let (last, rest) = weights.split_last().expect("five weights");
@@ -151,10 +172,11 @@ async fn zeroing_every_score_weight_is_refused() {
     // Four zeroes are legitimate — that is how an operator pins the shelf to one retrieval path.
     for tunable in rest {
         let (status, body) = app
-            .call(
+            .call_elevated(
                 "PUT",
                 &format!("/v1/admin/recommendations/tunables/{}", tunable.key()),
                 Some(&bearer),
+                Some(&step_up),
                 Some(json!({ "value": 0.0 })),
             )
             .await;
@@ -166,10 +188,11 @@ async fn zeroing_every_score_weight_is_refused() {
     }
 
     let (status, body) = app
-        .call(
+        .call_elevated(
             "PUT",
             &format!("/v1/admin/recommendations/tunables/{}", last.key()),
             Some(&bearer),
+            Some(&step_up),
             Some(json!({ "value": 0.0 })),
         )
         .await;
@@ -189,13 +212,14 @@ async fn zeroing_every_score_weight_is_refused() {
 #[tokio::test]
 async fn the_listing_is_the_compiled_registry() {
     let app = TestApp::spawn_with(TestConfig::new().without_rate_limiting()).await;
-    let bearer = app.bearer(operator(&app).await);
+    let (bearer, step_up) = credentials(&app, operator(&app).await).await;
 
     let (status, body) = app
-        .call(
+        .call_elevated(
             "GET",
             "/v1/admin/recommendations/tunables",
             Some(&bearer),
+            Some(&step_up),
             None,
         )
         .await;
@@ -231,15 +255,16 @@ async fn the_listing_is_the_compiled_registry() {
 async fn a_write_is_audited_and_a_reset_restores_the_default() {
     let app = TestApp::spawn_with(TestConfig::new().without_rate_limiting()).await;
     let user = operator(&app).await;
-    let bearer = app.bearer(user);
+    let (bearer, step_up) = credentials(&app, user).await;
     let key = Tunable::DiversityLambda.key();
     let path = format!("/v1/admin/recommendations/tunables/{key}");
 
     let (status, body) = app
-        .call(
+        .call_elevated(
             "PUT",
             &path,
             Some(&bearer),
+            Some(&step_up),
             Some(json!({ "value": 0.2, "note": "too samey" })),
         )
         .await;
@@ -258,7 +283,9 @@ async fn a_write_is_audited_and_a_reset_restores_the_default() {
     assert_eq!(recorded.target.as_deref(), Some(key));
     assert_eq!(recorded.detail["value"], json!(0.2));
 
-    let (status, body) = app.call("DELETE", &path, Some(&bearer), None).await;
+    let (status, body) = app
+        .call_elevated("DELETE", &path, Some(&bearer), Some(&step_up), None)
+        .await;
     assert_eq!(status, StatusCode::OK);
     let reset = row(&body, key);
     assert_eq!(reset["value"], json!(0.7));
@@ -273,23 +300,25 @@ async fn a_reader_without_the_write_grant_cannot_change_anything() {
     let reader = app
         .seed_user("looker", &[Permission::RecsysRead], AccountStatus::Active)
         .await;
-    let bearer = app.bearer(reader);
+    let (bearer, step_up) = credentials(&app, reader).await;
 
     let (status, _) = app
-        .call(
+        .call_elevated(
             "GET",
             "/v1/admin/recommendations/tunables",
             Some(&bearer),
+            Some(&step_up),
             None,
         )
         .await;
     assert_eq!(status, StatusCode::OK, "read-only access still reads");
 
     let (status, _) = app
-        .call(
+        .call_elevated(
             "PUT",
             "/v1/admin/recommendations/tunables/recsys.diversity.lambda",
             Some(&bearer),
+            Some(&step_up),
             Some(json!({ "value": 0.5 })),
         )
         .await;
@@ -300,13 +329,14 @@ async fn a_reader_without_the_write_grant_cannot_change_anything() {
 #[tokio::test]
 async fn model_health_reports_an_unbuilt_model_rather_than_failing() {
     let app = TestApp::spawn_with(TestConfig::new().without_rate_limiting()).await;
-    let bearer = app.bearer(operator(&app).await);
+    let (bearer, step_up) = credentials(&app, operator(&app).await).await;
 
     let (status, body) = app
-        .call(
+        .call_elevated(
             "GET",
             "/v1/admin/recommendations/health",
             Some(&bearer),
+            Some(&step_up),
             None,
         )
         .await;

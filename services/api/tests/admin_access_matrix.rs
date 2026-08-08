@@ -556,11 +556,28 @@ fn admin_gates() -> Vec<Gate> {
     ]
 }
 
-/// Mints (and caches) bearer tokens for a given capability set so the matrix seeds ~25 accounts
+/// An administrative caller: a session, and the elevation every mutating route now demands.
+///
+/// Both are needed on every leg because the authorization funnel checks three things in order —
+/// the account holds a second factor, a mutating capability was elevated, and the grants are
+/// present — and a matrix that only supplied the third would fail every route on the first two
+/// with a `403` that says nothing about the capability under test.
+#[derive(Clone)]
+struct Caller {
+    bearer: String,
+    step_up: String,
+}
+
+/// Mints (and caches) callers for a given capability set so the matrix seeds ~25 accounts
 /// rather than one per leg per route.
+///
+/// Every seeded account is enrolled with an authenticator app and holds a live step-up. That is
+/// not incidental scaffolding: an administrator *without* a second factor is refused before any
+/// capability is consulted (`AuthUser::require_all`), which is a rule `mfa.rs` pins and this
+/// matrix must satisfy rather than re-test.
 struct Callers<'a> {
     app: &'a TestApp,
-    cache: HashMap<Vec<Permission>, String>,
+    cache: HashMap<Vec<Permission>, Caller>,
     next: usize,
 }
 
@@ -573,13 +590,13 @@ impl<'a> Callers<'a> {
         }
     }
 
-    /// A bearer for an active account holding exactly `perms`.
-    async fn holding(&mut self, perms: &[Permission]) -> String {
+    /// An enrolled, elevated account holding exactly `perms`.
+    async fn holding(&mut self, perms: &[Permission]) -> Caller {
         let mut key = perms.to_vec();
         key.sort_unstable();
         key.dedup();
-        if let Some(bearer) = self.cache.get(&key) {
-            return bearer.clone();
+        if let Some(caller) = self.cache.get(&key) {
+            return caller.clone();
         }
         let username = format!("matrix{:03}", self.next);
         self.next += 1;
@@ -587,16 +604,19 @@ impl<'a> Callers<'a> {
             .app
             .seed_user(&username, &key, AccountStatus::Active)
             .await;
-        let bearer = self.app.bearer(user);
-        self.cache.insert(key, bearer.clone());
-        bearer
+        let caller = Caller {
+            bearer: self.app.bearer(user),
+            step_up: self.app.enrolled_and_elevated(user).await,
+        };
+        self.cache.insert(key, caller.clone());
+        caller
     }
 
-    /// A bearer for an active account holding every capability *except* `withheld`.
+    /// An enrolled, elevated account holding every capability *except* `withheld`.
     ///
     /// `grantable()`, not `all()`: seeding the super user grant would answer every check and
     /// turn every expected 403 in the matrix into a pass.
-    async fn holding_all_but(&mut self, withheld: &[Permission]) -> String {
+    async fn holding_all_but(&mut self, withheld: &[Permission]) -> Caller {
         let perms: Vec<Permission> = Permission::grantable()
             .into_iter()
             .filter(|p| !withheld.contains(p))
@@ -611,12 +631,13 @@ async fn status_of(
     app: &TestApp,
     method: &str,
     path: &str,
-    bearer: Option<&str>,
+    caller: Option<&Caller>,
     body: Option<Value>,
 ) -> StatusCode {
     let mut builder = Request::builder().method(method).uri(path);
-    if let Some(bearer) = bearer {
-        builder = builder.header(header::AUTHORIZATION, bearer);
+    if let Some(caller) = caller {
+        builder = builder.header(header::AUTHORIZATION, &caller.bearer);
+        builder = builder.header(tankovault_api::STEP_UP_HEADER, &caller.step_up);
     }
     let request = match body {
         Some(json) => builder
@@ -653,11 +674,11 @@ async fn every_admin_endpoint_refuses_a_caller_missing_exactly_its_own_capabilit
         // One pass per declared capability: withholding both at once wouldn't catch a handler
         // that only checks the first.
         for withheld in gate.required {
-            let bearer = callers.holding_all_but(&[*withheld]).await;
+            let caller = callers.holding_all_but(&[*withheld]).await;
             let before = app.audit.denials().len();
 
             let status =
-                status_of(&app, gate.method, gate.path, Some(&bearer), (gate.body)()).await;
+                status_of(&app, gate.method, gate.path, Some(&caller), (gate.body)()).await;
             assert_eq!(
                 status,
                 StatusCode::FORBIDDEN,
@@ -696,8 +717,8 @@ async fn every_admin_endpoint_admits_a_caller_holding_exactly_its_capability() {
     let mut callers = Callers::new(&app);
 
     for gate in admin_gates() {
-        let bearer = callers.holding(gate.required).await;
-        let status = status_of(&app, gate.method, gate.path, Some(&bearer), (gate.body)()).await;
+        let caller = callers.holding(gate.required).await;
+        let status = status_of(&app, gate.method, gate.path, Some(&caller), (gate.body)()).await;
 
         // Deliberately not `is_success()`: these requests name absent rows on purpose, so
         // `404`/`409`/`502` are correct. Only 401/403 would mean the wrong capability is enforced.
@@ -747,7 +768,10 @@ async fn the_console_stream_refuses_a_session_that_holds_none_of_its_permissions
         &app,
         "GET",
         "/v1/admin/stream",
-        Some(&app.bearer(user)),
+        Some(&Caller {
+            bearer: app.bearer(user),
+            step_up: app.enrolled_and_elevated(user).await,
+        }),
         None,
     )
     .await;

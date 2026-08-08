@@ -204,6 +204,58 @@ impl Permission {
             .collect()
     }
 
+    /// Whether exercising this capability changes durable state, or reaches into another
+    /// person's account.
+    ///
+    /// Consulted by the API's authorization funnel, which demands a fresh second-factor
+    /// presentation (a "step-up") before any mutating capability is exercised. Reading the
+    /// console is left alone: an administrator who had to re-authenticate to load a dashboard
+    /// would keep a standing elevation open all day, which is worse than not prompting at all.
+    ///
+    /// Exhaustive by construction — a capability added later does not compile until it is
+    /// classified here, which is the point. Guessing from the token's `.write` suffix would
+    /// leave `scans.run`, `merge.revert` and `users.sessions` silently on the read side.
+    ///
+    /// `privacy.export` counts as mutating despite reading nothing of this system's own: it
+    /// discloses another person's entire record, which is the single highest-consequence thing
+    /// an operator can do with one request.
+    #[must_use]
+    pub const fn is_mutating(self) -> bool {
+        match self {
+            Self::ProvidersRead
+            | Self::ProvidersTest
+            | Self::ScansRead
+            | Self::MergeRead
+            | Self::MergeAudit
+            | Self::RecsysRead
+            | Self::SyncAdminRead
+            | Self::SyncAudit
+            | Self::UsersRead
+            | Self::PrivacyRead
+            | Self::SystemStats
+            | Self::AuditRead
+            | Self::FlagsRead => false,
+            Self::ProvidersWrite
+            | Self::ProvidersCreate
+            | Self::ProvidersDelete
+            | Self::ProvidersState
+            | Self::ScansRun
+            | Self::MergeWrite
+            | Self::MergeRevert
+            | Self::RecsysWrite
+            | Self::SyncAdminWrite
+            | Self::SyncRevert
+            | Self::UsersWrite
+            | Self::UsersPermissions
+            | Self::UsersDelete
+            | Self::UsersSessions
+            | Self::PrivacyWrite
+            | Self::PrivacyExport
+            | Self::FlagsWrite
+            | Self::SuperUser => true,
+        }
+    }
+
     /// Whether this is the grant that answers every check.
     #[must_use]
     pub const fn is_super_user(self) -> bool {
@@ -595,6 +647,49 @@ impl<'de> Deserialize<'de> for PermissionSet {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The exact read-only set, spelled out so a capability cannot join it by accident.
+    ///
+    /// The bug this pins is a quiet one: classify a mutating capability as read-only and the
+    /// step-up prompt in front of it simply stops appearing. Nothing fails, no test goes red,
+    /// and the protection is gone from that one action until somebody notices the console no
+    /// longer asks. `.write`-suffix guessing produces exactly that outcome for `scans.run`,
+    /// `merge.revert`, `users.sessions` and `privacy.export`, which is why the classification is
+    /// an exhaustive match and this list is its mirror.
+    #[test]
+    fn only_the_declared_capabilities_are_read_only() {
+        let read_only: BTreeSet<Permission> = [
+            Permission::ProvidersRead,
+            Permission::ProvidersTest,
+            Permission::ScansRead,
+            Permission::MergeRead,
+            Permission::MergeAudit,
+            Permission::RecsysRead,
+            Permission::SyncAdminRead,
+            Permission::SyncAudit,
+            Permission::UsersRead,
+            Permission::PrivacyRead,
+            Permission::SystemStats,
+            Permission::AuditRead,
+            Permission::FlagsRead,
+        ]
+        .into_iter()
+        .collect();
+
+        for &p in Permission::all() {
+            assert_eq!(
+                !p.is_mutating(),
+                read_only.contains(&p),
+                "{} is classified {}, which this list disagrees with",
+                p.as_str(),
+                if p.is_mutating() {
+                    "mutating"
+                } else {
+                    "read-only"
+                }
+            );
+        }
+    }
 
     #[test]
     fn every_token_round_trips_and_is_unique() {

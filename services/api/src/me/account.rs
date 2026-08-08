@@ -3,6 +3,7 @@
 use crate::error::{ApiError, ApiResult};
 use crate::openapi::{ME_ACCOUNT_TAG, ME_NOTIFICATIONS_TAG};
 use crate::state::{AppState, AuthUser};
+use crate::step_up::Elevated;
 use axum::Json;
 use axum::extract::{Path, State};
 use secrecy::SecretString;
@@ -18,10 +19,6 @@ pub struct ProfileUpdate {
     pub username: Option<String>,
     #[serde(default)]
     pub email: Option<String>,
-    /// Required when `email` changes the address on the account. See [`patch_profile`].
-    #[schema(value_type = Option<String>)]
-    #[serde(default)]
-    pub current_password: Option<SecretString>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -41,11 +38,15 @@ pub struct ProfileDto {
 /// Update the caller's username and/or email (frontend §9.4). A duplicate email/username
 /// surfaces as `409 Conflict`.
 ///
-/// Changing the **email address** additionally requires `current_password`, because the
-/// address is the account's recovery channel. Without that check, anyone holding an access
-/// token for 15 minutes — a shared browser, a proxy log, a leaked SSE URL — could point the
-/// account at their own address, request a password reset to it, and take the account over;
-/// `reset_password` would then revoke the real owner's sessions on the attacker's behalf.
+/// Requires a **step-up**, because the address is the account's recovery channel. Without that
+/// check, anyone holding an access token for 15 minutes — a shared browser, a proxy log, a
+/// leaked SSE URL — could point the account at their own address, request a password reset to
+/// it, and take the account over; `reset_password` would then revoke the real owner's sessions
+/// on the attacker's behalf.
+///
+/// This used to take `current_password`, which defended against the wrong attacker: the person
+/// most likely to be holding a stolen token is the person who phished the password to get it.
+/// `crate::step_up` carries the full argument.
 ///
 /// On a successful change the new address starts **unverified**
 /// (`repo::users::update_profile` clears `email_verified_at`), a confirmation link is sent to
@@ -60,13 +61,14 @@ pub struct ProfileDto {
     responses(
         (status = 200, description = "Updated profile", body = ProfileDto),
         (status = 400, description = "Invalid username or email", body = crate::error::ProblemDetails),
-        (status = 401, description = "authentication required, or current_password is wrong", body = crate::error::ProblemDetails),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "a step-up is required", body = crate::error::ProblemDetails),
         (status = 409, description = "Email or username already taken", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn patch_profile(
     State(state): State<AppState>,
-    user: AuthUser,
+    Elevated(user): Elevated,
     Json(body): Json<ProfileUpdate>,
 ) -> ApiResult<Json<ProfileDto>> {
     let username = body
@@ -90,25 +92,6 @@ pub async fn patch_profile(
     let before = tankovault_db::repo::users::get(&state.pool, user.user_id).await?;
     // `citext` is case-insensitive; match that so a case-only change isn't treated as an address change.
     let email_changing = email.is_some_and(|e| !e.eq_ignore_ascii_case(&before.email));
-
-    if email_changing {
-        let current = body.current_password.as_ref().ok_or_else(|| {
-            ApiError::BadRequest("current_password is required to change the email address".into())
-        })?;
-        let credentials =
-            tankovault_db::repo::users::find_credentials(&state.pool, &before.username)
-                .await?
-                .ok_or(ApiError::Unauthorized)?;
-        let ok = tankovault_auth::verify_password(
-            current,
-            &credentials.password_hash,
-            &state.password_pepper,
-        )
-        .map_err(|_| ApiError::Internal)?;
-        if !ok {
-            return Err(ApiError::Unauthorized);
-        }
-    }
 
     let updated =
         tankovault_db::repo::users::update_profile(&state.pool, user.user_id, username, email)
@@ -136,23 +119,27 @@ pub async fn patch_profile(
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct PasswordChange {
     #[schema(value_type = String)]
-    pub current_password: SecretString,
-    #[schema(value_type = String)]
     pub new_password: SecretString,
 }
 
 /// Change the password
 ///
-/// Change the caller's password, proving knowledge of the current one.
+/// Change the caller's password, behind a step-up.
 ///
 /// There was previously **no authenticated path to a new password at all** — the only route
 /// was the emailed reset link, so a signed-in user who simply wanted to rotate their password
 /// had to go through an out-of-band channel, and a user whose email had been taken over could
 /// not lock the attacker out.
 ///
+/// The proof is a step-up, not the old password. Against the attacker this exists to stop —
+/// someone holding a stolen session, usually because they phished the password to open it —
+/// re-typing the password proved nothing. `crate::step_up` carries the argument in full.
+///
 /// Every session is revoked on success, including the caller's: a password change is exactly
 /// when you want the other device signed out, and leaving the caller's own session alive would
-/// mean special-casing the one session an attacker is most likely to be holding.
+/// mean special-casing the one session an attacker is most likely to be holding. Every step-up
+/// grant goes with them, for the same reason — an elevation earned before the credential
+/// changed must not outlive it.
 #[utoipa::path(
     post,
     path = "/v1/me/password",
@@ -162,34 +149,22 @@ pub struct PasswordChange {
     responses(
         (status = 204, description = "Password changed; every session was revoked"),
         (status = 400, description = "New password fails the policy", body = crate::error::ProblemDetails),
-        (status = 401, description = "authentication required, or current_password is wrong", body = crate::error::ProblemDetails),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "a step-up is required", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn change_password(
     State(state): State<AppState>,
-    user: AuthUser,
+    Elevated(user): Elevated,
     Json(body): Json<PasswordChange>,
 ) -> ApiResult<axum::http::StatusCode> {
     crate::auth::validate_password(&body.new_password)?;
-
-    let current = tankovault_db::repo::users::get(&state.pool, user.user_id).await?;
-    let credentials = tankovault_db::repo::users::find_credentials(&state.pool, &current.username)
-        .await?
-        .ok_or(ApiError::Unauthorized)?;
-    let ok = tankovault_auth::verify_password(
-        &body.current_password,
-        &credentials.password_hash,
-        &state.password_pepper,
-    )
-    .map_err(|_| ApiError::Internal)?;
-    if !ok {
-        return Err(ApiError::Unauthorized);
-    }
 
     let hash = tankovault_auth::hash_password(&body.new_password, &state.password_pepper)
         .map_err(|_| ApiError::Internal)?;
     tankovault_db::repo::users::update_password(&state.pool, user.user_id, &hash).await?;
     tankovault_db::repo::users::revoke_all_for_user(&state.pool, user.user_id).await?;
+    tankovault_db::repo::users::mfa::revoke_step_ups(&state.pool, user.user_id).await?;
 
     Ok(axum::http::StatusCode::NO_CONTENT)
 }
@@ -240,6 +215,10 @@ pub async fn sessions(
 ///
 /// Revoke one of the caller's own sessions (frontend §9.4). Scoped to ownership; a
 /// foreign/unknown id yields `404`.
+///
+/// Behind a step-up: the session list is where an owner *responds* to a compromise, and an
+/// attacker holding one of those sessions must not be able to use it to sign the owner out of
+/// the others first.
 #[utoipa::path(
     delete,
     path = "/v1/me/sessions/{id}",
@@ -249,12 +228,13 @@ pub async fn sessions(
     responses(
         (status = 200, description = "Revoked", body = serde_json::Value, example = json!({"revoked": 1})),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "a step-up is required", body = crate::error::ProblemDetails),
         (status = 404, description = "No such session for this caller", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn delete_session(
     State(state): State<AppState>,
-    user: AuthUser,
+    Elevated(user): Elevated,
     Path(id): Path<Uuid>,
 ) -> ApiResult<Json<serde_json::Value>> {
     let revoked = tankovault_db::repo::users::revoke_session(&state.pool, user.user_id, id).await?;

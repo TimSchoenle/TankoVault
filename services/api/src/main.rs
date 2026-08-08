@@ -95,6 +95,26 @@ struct AuthConfig {
     /// The name the authenticator shows in its prompt ("Save a passkey for …"); purely cosmetic.
     #[serde(default)]
     webauthn_rp_name: Option<String>,
+    /// Base64 (standard alphabet) 32-byte key that seals TOTP secrets at rest.
+    ///
+    /// Deliberately *not* derived from [`Self::jwt_secret`]: rotating the signing key is a
+    /// routine operation, and deriving from it would silently invalidate every enrolled
+    /// authenticator app — the same class of failure as rotating `password_pepper` and
+    /// stranding the seeded admin. Unset disables TOTP enrolment only; security keys and
+    /// recovery codes are unaffected, since neither stores a symmetric secret.
+    #[serde(default)]
+    mfa_encryption_key: Option<SecretString>,
+    /// The issuer name an authenticator app files the entry under. Defaults to
+    /// [`Self::webauthn_rp_name`], then to the product name — one label for both prompts.
+    #[serde(default)]
+    totp_issuer: Option<String>,
+    /// How long a step-up elevation lasts before a sensitive action prompts again.
+    #[serde(default = "default_step_up_minutes")]
+    step_up_ttl_minutes: i64,
+    /// How long a half-finished sign-in — password accepted, second factor still owed — may
+    /// sit before the user has to start again.
+    #[serde(default = "default_mfa_challenge_minutes")]
+    mfa_challenge_ttl_minutes: i64,
 }
 
 fn default_bind() -> String {
@@ -118,6 +138,16 @@ fn default_access_minutes() -> i64 {
 }
 fn default_refresh_days() -> i64 {
     30
+}
+/// Five minutes: long enough to change a password and revoke a session without a second
+/// prompt, short enough that a walked-away-from laptop is not a standing elevation.
+fn default_step_up_minutes() -> i64 {
+    5
+}
+/// Five minutes, matching the `WebAuthn` ceremony timeout — a sign-in that offers a security
+/// key must not expire its own challenge before the authenticator prompt does.
+fn default_mfa_challenge_minutes() -> i64 {
+    5
 }
 
 /// Rows deleted per audit-retention sweep.
@@ -318,10 +348,12 @@ async fn serve_once(
     // `None` origin is a valid "no passkeys" state; a *malformed* one is fatal — it would
     // otherwise surface as browsers refusing every ceremony with an opaque `SecurityError`.
     let webauthn = build_relying_party(&cfg.auth, &cfg.email.base_url)?;
+    let mfa_sealer = build_mfa_sealer(&cfg.auth)?;
 
     // Abandoned ceremonies — a user who closed the tab at the authenticator prompt — are
-    // already unusable, so this reclaims rows rather than enforcing anything.
-    spawn_ceremony_sweep(&pool, webauthn.is_some(), shutdown.clone());
+    // already unusable, so this reclaims rows rather than enforcing anything. The same sweep
+    // clears expired sign-in challenges and step-up grants, which have the same shape.
+    spawn_credential_sweep(&pool, shutdown.clone());
 
     let state = AppState {
         pool: pool.clone(),
@@ -355,7 +387,16 @@ async fn serve_once(
         features,
         tunables,
         cookie_secure: cfg.auth.cookie_secure,
+        totp_issuer: cfg
+            .auth
+            .totp_issuer
+            .clone()
+            .or_else(|| cfg.auth.webauthn_rp_name.clone())
+            .unwrap_or_else(|| "TankoVault".to_owned()),
+        step_up_ttl: time::Duration::minutes(cfg.auth.step_up_ttl_minutes),
+        mfa_challenge_ttl: time::Duration::minutes(cfg.auth.mfa_challenge_ttl_minutes),
         webauthn,
+        mfa_sealer,
         mailer,
         email_base_url: cfg.email.base_url.clone(),
         legal: tankovault_api::LegalDocs::new(cfg.legal.clone()),
@@ -485,47 +526,95 @@ fn build_relying_party(
     Ok(Some(Arc::new(rp)))
 }
 
-/// How often abandoned `WebAuthn` ceremonies are swept.
+/// Build the sealer that protects TOTP secrets at rest, or `None` when unconfigured.
 ///
-/// Generous: expiry is already enforced in the read (`take_ceremony` filters on
-/// `expires_at`), so an unswept row is unusable, not dangerous — this only stops table growth.
-const CEREMONY_SWEEP_INTERVAL: Duration = Duration::from_secs(15 * 60);
+/// Logged loudly rather than fatal, matching [`build_relying_party`]: TOTP is one factor of an
+/// application that must still start without it, and security keys remain available. A bad key
+/// *is* fatal, because it means the operator configured one and it will not work — silently
+/// falling back to "TOTP disabled" would hide a typo behind a feature that quietly vanished.
+///
+/// # Errors
+/// When the value is not base64 or does not decode to exactly 32 bytes.
+fn build_mfa_sealer(auth: &AuthConfig) -> anyhow::Result<Option<tankovault_auth::Sealer>> {
+    let Some(key) = auth
+        .mfa_encryption_key
+        .as_ref()
+        .filter(|k| !k.expose_secret().trim().is_empty())
+    else {
+        tracing::warn!(
+            "no auth.mfa_encryption_key configured; authenticator-app (TOTP) enrolment is \
+             unavailable. Set TANKOVAULT_AUTH__MFA_ENCRYPTION_KEY to a base64-encoded 32-byte \
+             key. Security keys and recovery codes are unaffected."
+        );
+        return Ok(None);
+    };
 
-/// Start the abandoned-ceremony sweep, unless this deployment has no relying party.
+    let sealer = tankovault_auth::Sealer::from_base64_key(key).map_err(|e| {
+        anyhow::anyhow!(
+            "auth.mfa_encryption_key is not usable: {e}. Expected base64 (standard alphabet) \
+             of exactly 32 bytes, e.g. `openssl rand -base64 32`"
+        )
+    })?;
+    tracing::info!("authenticator-app (TOTP) enrolment enabled; secrets are sealed at rest");
+    Ok(Some(sealer))
+}
+
+/// How often abandoned credential state is swept.
 ///
-/// Skipped when passkeys are off — nothing would write ceremonies. Idempotent like the audit
-/// sweep, so racing replicas just share the work.
-fn spawn_ceremony_sweep(
+/// Generous: expiry is already enforced in every read (`take_ceremony`,
+/// `charge_challenge_attempt` and `find_step_up` all filter on `expires_at`), so an unswept row
+/// is unusable, not dangerous — this only stops three tables growing without bound.
+const CREDENTIAL_SWEEP_INTERVAL: Duration = Duration::from_secs(15 * 60);
+
+/// Start the sweep over abandoned `WebAuthn` ceremonies, half-finished sign-ins and expired
+/// step-up grants.
+///
+/// Runs unconditionally, unlike the passkey-only version it replaced: sign-in challenges and
+/// step-up grants are written whenever a second factor is enrolled, which does not require a
+/// relying party — an account with TOTP alone produces both. Idempotent like the audit sweep,
+/// so racing replicas just share the work.
+fn spawn_credential_sweep(
     pool: &tankovault_db::PgPool,
-    enabled: bool,
     shutdown: tokio_util::sync::CancellationToken,
 ) {
-    if !enabled {
-        return;
-    }
     let pool = pool.clone();
     tokio::spawn(async move {
         tankovault_service::shutdown::every(
-            CEREMONY_SWEEP_INTERVAL,
+            CREDENTIAL_SWEEP_INTERVAL,
             shutdown,
-            "webauthn-ceremony-sweep",
+            "credential-state-sweep",
             move || {
                 let pool = pool.clone();
                 async move {
-                    match tankovault_db::repo::users::passkeys::prune_expired_ceremonies(&pool)
-                        .await
-                    {
-                        Ok(0) => {}
-                        Ok(deleted) => {
-                            tracing::debug!(deleted, "pruned abandoned webauthn ceremonies");
-                        }
-                        Err(e) => tracing::warn!(error = %e, "webauthn ceremony sweep failed"),
-                    }
+                    sweep_once(&pool).await;
                 }
             },
         )
         .await;
     });
+}
+
+/// One pass of the credential sweep. Each table is independent: a failure on one is logged and
+/// the others still run, because a sweep that gives up on the first error leaves the *other*
+/// two growing for reasons nothing names.
+async fn sweep_once(pool: &tankovault_db::PgPool) {
+    use tankovault_db::repo::users::{mfa, webauthn};
+
+    match webauthn::prune_expired_ceremonies(pool).await {
+        Ok(0) => {}
+        Ok(deleted) => tracing::debug!(deleted, "pruned abandoned webauthn ceremonies"),
+        Err(e) => tracing::warn!(error = %e, "webauthn ceremony sweep failed"),
+    }
+    match mfa::prune_expired_challenges(pool).await {
+        Ok(0) => {}
+        Ok(deleted) => tracing::debug!(deleted, "pruned expired sign-in challenges"),
+        Err(e) => tracing::warn!(error = %e, "sign-in challenge sweep failed"),
+    }
+    match mfa::prune_expired_step_ups(pool).await {
+        Ok(0) => {}
+        Ok(deleted) => tracing::debug!(deleted, "pruned expired step-up grants"),
+        Err(e) => tracing::warn!(error = %e, "step-up grant sweep failed"),
+    }
 }
 
 /// Connect Redis, or `None` when unconfigured/unreachable.
@@ -598,6 +687,10 @@ mod tests {
             webauthn_origin: None,
             webauthn_rp_id: None,
             webauthn_rp_name: None,
+            mfa_encryption_key: None,
+            totp_issuer: None,
+            step_up_ttl_minutes: 5,
+            mfa_challenge_ttl_minutes: 5,
         }
     }
 

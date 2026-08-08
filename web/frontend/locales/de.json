@@ -114,9 +114,6 @@
       }
     },
     "profile": {
-      "currentPassword": "Aktuelles Passwort",
-      "currentPasswordHint": "Erforderlich, um deine E-Mail-Adresse zu ändern. Alle Sitzungen werden beendet, und die neue Adresse muss bestätigt werden, bevor du dich damit anmelden oder dein Passwort zurücksetzen kannst.",
-      "currentPasswordMissing": "Gib dein aktuelles Passwort ein, um die E-Mail-Adresse zu ändern.",
       "displayName": "Anzeigename",
       "emailChanged": "E-Mail aktualisiert. Prüfe die neue Adresse auf den Bestätigungslink — du wurdest überall abgemeldet.",
       "emailPlaceholder": "neue E-Mail-Adresse",
@@ -229,6 +226,17 @@
       "heading": "Willkommen zurück",
       "subtitle": "Melde dich an, um deine Bibliothek zu synchronisieren.",
       "toggle": "Neu hier? Konto erstellen"
+    },
+    "mfa": {
+      "intro": "Dein Passwort wurde akzeptiert. Gib den Code aus deiner Authenticator-App ein, um die Anmeldung abzuschließen.",
+      "verify": "Bestätigen",
+      "wrongCode": "Dieser Code ist ungültig. Prüfe den Code, den deine App gerade anzeigt — er wechselt alle 30 Sekunden.",
+      "useCode": "Stattdessen einen Authenticator-Code verwenden",
+      "useRecovery": "Stattdessen einen Wiederherstellungscode verwenden",
+      "field": {
+        "code": "Authenticator-Code",
+        "recovery": "Wiederherstellungscode"
+      }
     }
   },
   "common": {
@@ -254,7 +262,11 @@
     "seeAll": "Alle ansehen",
     "signIn": "Anmelden",
     "tryAgain": "Erneut versuchen",
-    "working": "Wird ausgeführt…"
+    "working": "Wird ausgeführt…",
+    "confirm": "Bestätigen",
+    "rename": "Umbenennen",
+    "revoke": "Widerrufen",
+    "signInRequired": "Melde dich an, um das zu sehen."
   },
   "connect": {
     "action": "Verbinden",
@@ -1176,7 +1188,8 @@
     "truncated": "Die Antwort des Servers war unvollständig. Bitte versuche es erneut.",
     "unbuildable": "Diese Anfrage konnte nicht erstellt werden. Das ist ein Fehler — bitte melde ihn.",
     "unreachable": "Server nicht erreichbar. Prüfe deine Verbindung und versuche es erneut.",
-    "unreadable": "Der Server hat etwas gesendet, das diese App nicht lesen konnte."
+    "unreadable": "Der Server hat etwas gesendet, das diese App nicht lesen konnte.",
+    "unexpected": "Der Server hat mit etwas geantwortet, das diese Version nicht kennt. Versuche es erneut oder lade die Seite neu."
   },
   "feedback": {
     "failed": "Etwas ist schiefgelaufen: {message}",
@@ -1300,7 +1313,6 @@
     "empty": "Noch keine Passkeys.",
     "error": {
       "alreadyRegistered": "Dieses Gerät hat bereits einen Passkey für dieses Konto.",
-      "badPassword": "Dieses Passwort ist nicht korrekt.",
       "cancelled": "Passkey-Abfrage geschlossen.",
       "failed": "Dein Gerät konnte den Passkey-Schritt nicht abschließen. Versuch es erneut oder nutze dein Passwort.",
       "incomplete": "Die Passkey-Abfrage wurde ohne Ergebnis geschlossen. Wenn du sie abgebrochen hast, ist alles in Ordnung — andernfalls versuch es erneut.",
@@ -1308,8 +1320,7 @@
       "unsupported": "Passkeys sind hier nicht verfügbar."
     },
     "field": {
-      "label": "Name für diesen Schlüssel",
-      "password": "Aktuelles Passwort"
+      "label": "Name für diesen Schlüssel"
     },
     "intro": "Ein Passkey meldet dich mit der Bildschirmsperre deines Geräts an, statt mit einem Passwort. Er verlässt das Gerät nie, auf dem er erstellt wurde, und lässt sich nicht per Phishing abgreifen — er funktioniert nur auf dieser Seite.",
     "lastUsed": "zuletzt verwendet am {date}",
@@ -1321,8 +1332,7 @@
       "title": "„{label}“ widerrufen?"
     },
     "signIn": "Mit Passkey anmelden",
-    "title": "Passkeys",
-    "whyPassword": "Dein Passwort ist nötig, weil ein Passkey dauerhaft gilt: ohne diese Prüfung könnte jede Person mit Zugriff auf deinen angemeldeten Browser einen hinzufügen und den Zugang unbegrenzt behalten."
+    "title": "Passkeys"
   },
   "password": {
     "forgot": {
@@ -1579,5 +1589,76 @@
     "viewGrid": "Rasteransicht",
     "viewList": "Listenansicht",
     "viewToggle": "Liste oder Raster"
+  },
+  "stepUp": {
+    "title": "Bist du das?",
+    "intro": "Diese Aktion ändert dein Konto, deshalb fragen wir vorher nach deinem zweiten Faktor.",
+    "confirm": "Bestätigen",
+    "confirmed": "Bestätigt. Die nächsten Minuten fragen wir nicht noch einmal.",
+    "confirmedRetry": "Bestätigt — versuche es noch einmal.",
+    "useRecovery": "Stattdessen einen Wiederherstellungscode verwenden",
+    "useCode": "Stattdessen einen Authenticator-Code verwenden",
+    "error": {
+      "wrongFactor": "Das stimmt nicht. Prüfe den Code, den deine App gerade anzeigt, oder nimm einen Wiederherstellungscode."
+    },
+    "field": {
+      "code": "Authenticator-Code",
+      "recovery": "Wiederherstellungscode",
+      "password": "Dein Passwort"
+    },
+    "hint": {
+      "code": "Der sechsstellige Code aus deiner Authenticator-App.",
+      "recovery": "Einer der Codes, die du beim Einrichten gespeichert hast. Jeder funktioniert genau einmal.",
+      "password": "Du hast noch keinen zweiten Faktor eingerichtet, deshalb fragen wir nach deinem Passwort."
+    }
+  },
+  "mfa": {
+    "title": "Zwei-Faktor-Authentifizierung",
+    "intro": "Mit einem zweiten Faktor genügt dein Passwort allein nicht mehr zum Anmelden. Er schaltet außerdem Passkeys frei — ein Passkey meldet dich allein an, deshalb brauchst du vorher einen zweiten Faktor.",
+    "error": {
+      "wrongCode": "Dieser Code ist ungültig. Prüfe den Code, den deine App gerade anzeigt — er wechselt alle 30 Sekunden.",
+      "alreadyRegistered": "Dieses Gerät ist für dieses Konto bereits registriert."
+    },
+    "totp": {
+      "title": "Authenticator-App",
+      "add": "Authenticator-App einrichten",
+      "confirm": "Bestätigen und aktivieren",
+      "enrolled": "Authenticator-App aktiviert.",
+      "enrolledOn": "Aktiviert",
+      "removed": "Authenticator-App entfernt.",
+      "scan": "Scanne das mit deiner Authenticator-App oder tippe den Schlüssel darunter ein. Er wird nur dieses eine Mal angezeigt.",
+      "unavailable": "Authenticator-Apps sind auf diesem Server nicht verfügbar. Ein Sicherheitsschlüssel geht trotzdem.",
+      "field": {
+        "code": "Code aus deiner App"
+      },
+      "remove": {
+        "title": "Authenticator-App entfernen?",
+        "body": "Dein Konto fällt auf die anderen Faktoren zurück, die du hältst. Hältst du keine, genügt wieder dein Passwort allein."
+      }
+    },
+    "key": {
+      "title": "Sicherheitsschlüssel",
+      "add": "Sicherheitsschlüssel hinzufügen",
+      "added": "Sicherheitsschlüssel registriert.",
+      "addedOn": "Hinzugefügt",
+      "empty": "Noch keine Sicherheitsschlüssel.",
+      "lastUsed": "zuletzt genutzt",
+      "unsupported": "Sicherheitsschlüssel sind hier nicht verfügbar.",
+      "field": {
+        "label": "Diesen Schlüssel benennen"
+      },
+      "revoke": {
+        "title": "Diesen Sicherheitsschlüssel widerrufen?",
+        "body": "Er wird nicht mehr als zweiter Faktor akzeptiert. Eine gerade laufende Bestätigung endet damit ebenfalls."
+      }
+    },
+    "recovery": {
+      "heading": "Wiederherstellungscodes",
+      "title": "Speichere diese Wiederherstellungscodes",
+      "warning": "Sie werden nur dieses eine Mal angezeigt. Jeder funktioniert einmal, und sie sind dein Weg zurück, wenn du dein Telefon oder deinen Schlüssel verlierst.",
+      "saved": "Gespeichert",
+      "remaining": "Verbleibende Codes:",
+      "regenerate": "Neuen Satz erzeugen"
+    }
   }
 }

@@ -4,6 +4,7 @@ use crate::error::ApiResult;
 use crate::openapi::ME_SYNC_TAG;
 use crate::slug::ProviderSlug;
 use crate::state::{AppState, AuthUser};
+use crate::step_up::Elevated;
 use axum::Json;
 use axum::extract::{Path, Query, State};
 use serde::Deserialize;
@@ -42,6 +43,10 @@ pub async fn sync_providers(
 ///
 /// Returns the provider's consent URL (proxied). The body type is shared with the sync
 /// service via `tankovault_contracts::sync`.
+///
+/// Behind a step-up: following this URL grants a third party a standing OAuth token against the
+/// caller's account there, which is an authorisation that outlives the session and is not
+/// revoked by anything this system does.
 #[utoipa::path(
     get,
     path = "/v1/me/sync/{provider}/authorize",
@@ -51,11 +56,12 @@ pub async fn sync_providers(
     responses(
         (status = 200, description = "Consent URL, forwarded from the sync service", body = tankovault_contracts::sync::AuthorizeUrl),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "a step-up is required", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn sync_authorize_url(
     State(state): State<AppState>,
-    _user: AuthUser,
+    Elevated(_user): Elevated,
     Path(provider): Path<ProviderSlug>,
 ) -> ApiResult<Json<AuthorizeUrl>> {
     state
@@ -108,11 +114,12 @@ pub async fn sync_status(
     responses(
         (status = 200, description = "Unlinked, forwarded from the sync service", body = serde_json::Value),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "a step-up is required", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn sync_disconnect(
     State(state): State<AppState>,
-    user: AuthUser,
+    Elevated(user): Elevated,
     Path(provider): Path<ProviderSlug>,
 ) -> ApiResult<Json<serde_json::Value>> {
     state

@@ -11,7 +11,7 @@ use crate::state::capabilities::use_capabilities;
 use crate::state::legal::{legal_title, published};
 use crate::state::use_session;
 use crate::webauthn::{self, CeremonyError};
-use crate::wire::types::Feature;
+use crate::wire::types::{Feature, MfaVerifyRequest};
 use crate::Route;
 use dioxus::prelude::*;
 use webauthn_rs_proto::RequestChallengeResponse;
@@ -49,6 +49,13 @@ pub(crate) fn Login() -> Element {
     let mut info = use_signal(|| Option::<String>::None);
     // Set when refused for an unconfirmed address, to surface "resend confirmation".
     let mut needs_verification = use_signal(|| false);
+    // The handle a half-finished sign-in is resumed by: the password verified and a second
+    // factor is owed. Holding it is safe — it authorises nothing but the attempt to finish, and
+    // **no session was issued** alongside it.
+    let mut pending_mfa = use_signal(|| Option::<String>::None);
+    let mut second_factor = use_signal(String::new);
+    // Whether the reader is presenting a recovery code rather than an authenticator code.
+    let mut using_recovery = use_signal(|| false);
     let busy = use_busy();
     // `Api` is `Copy`, so every callback below captures the same handle without cloning, and
     // each resolves the live bearer token when it actually fires.
@@ -108,8 +115,27 @@ pub(crate) fn Login() -> Element {
                     .await
                 {
                     Ok(res) => {
-                        session.set_token(res.into_inner().access_token);
-                        nav.push(Route::Discover {});
+                        let body = res.into_inner();
+                        match body.session {
+                            // No second factor on this account: signed in, as it always was.
+                            Some(session_tokens) => {
+                                session.set_token(session_tokens.access_token);
+                                nav.push(Route::Discover {});
+                            }
+                            // A second factor is owed. **No session was issued** — the handle
+                            // below authorises nothing except the attempt to finish, so holding
+                            // it while the reader finds their phone is safe.
+                            None => match body.mfa {
+                                Some(challenge) => {
+                                    pending_mfa.set(Some(challenge.challenge_token));
+                                    password.set(String::new());
+                                }
+                                // Neither branch present: a server that answered something this
+                                // build does not understand. Say so rather than silently doing
+                                // nothing, which reads as a dead button.
+                                None => error.set(Some(i18n.t("error.unexpected"))),
+                            },
+                        }
                     }
                     Err(e) => match sign_in_failure(api::error_status(&e)) {
                         Some((key, offer_resend)) => {
@@ -119,6 +145,49 @@ pub(crate) fn Login() -> Element {
                         None => error.set(Some(api::friendly_error(i18n, e))),
                     },
                 }
+            }
+            busy.release();
+        });
+    });
+
+    // The second leg: trade the pending sign-in plus one factor for the session the first leg
+    // withheld. A wrong code is `401` and simply says so — the challenge survives, up to its
+    // own attempt cap, which the server enforces and this screen does not duplicate.
+    let finish_mfa = use_callback(move |()| {
+        if !busy.claim() {
+            return;
+        }
+        error.set(None);
+        let Some(handle) = pending_mfa.read().clone() else {
+            busy.release();
+            return;
+        };
+        let entered = second_factor.read().trim().to_owned();
+        if entered.is_empty() {
+            busy.release();
+            return;
+        }
+        let recovery = *using_recovery.read();
+        let client = api.client();
+
+        spawn(async move {
+            let body = MfaVerifyRequest {
+                challenge_token: handle,
+                totp_code: (!recovery).then(|| entered.clone()),
+                recovery_code: recovery.then_some(entered),
+                security_key: None,
+            };
+            match client.mfa_verify().body(body).send().await {
+                Ok(res) => {
+                    session.set_token(res.into_inner().access_token);
+                    pending_mfa.set(None);
+                    second_factor.set(String::new());
+                    nav.push(Route::Discover {});
+                }
+                Err(e) => error.set(Some(match api::error_status(&e) {
+                    Some(401) => i18n.t("auth.mfa.wrongCode"),
+                    _ => api::friendly_error(i18n, e),
+                })),
             }
             busy.release();
         });
@@ -257,7 +326,65 @@ pub(crate) fn Login() -> Element {
                 }
             }
 
-            if is_register {
+            // The second leg takes over the whole form rather than appearing beside it: the
+            // password has already been accepted, and leaving it on screen invites a reader who
+            // mistypes their code to retype the password instead and wonder why nothing happens.
+            if pending_mfa.read().is_some() {
+                p { class: "ik-muted", style: "text-align:left;", {i18n.t("auth.mfa.intro")} }
+                Field {
+                    id: "tv-auth-mfa",
+                    label: if *using_recovery.read() {
+                        i18n.t("auth.mfa.field.recovery")
+                    } else {
+                        i18n.t("auth.mfa.field.code")
+                    },
+                    autocomplete: if *using_recovery.read() { "off" } else { "one-time-code" },
+                    value: second_factor(),
+                    on_input: move |v| second_factor.set(v),
+                    on_enter: move |()| finish_mfa.call(()),
+                }
+                button {
+                    class: "ik-btn primary",
+                    style: "width:100%;margin-top:10px;",
+                    disabled: busy.is_busy(),
+                    r#type: "button",
+                    onclick: move |_| finish_mfa.call(()),
+                    if busy.is_busy() {
+                        {i18n.t("common.working")}
+                    } else {
+                        {i18n.t("auth.mfa.verify")}
+                    }
+                }
+                button {
+                    class: "ik-btn",
+                    style: "width:100%;margin-top:8px;",
+                    r#type: "button",
+                    onclick: move |_| {
+                        let next = !*using_recovery.read();
+                        using_recovery.set(next);
+                        second_factor.set(String::new());
+                        error.set(None);
+                    },
+                    if *using_recovery.read() {
+                        {i18n.t("auth.mfa.useCode")}
+                    } else {
+                        {i18n.t("auth.mfa.useRecovery")}
+                    }
+                }
+                button {
+                    class: "ik-btn",
+                    style: "width:100%;margin-top:8px;",
+                    r#type: "button",
+                    onclick: move |_| {
+                        // Abandoning the challenge leaves it to expire on its own; there is no
+                        // session to tear down, because none was issued.
+                        pending_mfa.set(None);
+                        second_factor.set(String::new());
+                        error.set(None);
+                    },
+                    {i18n.t("common.cancel")}
+                }
+            } else if is_register {
                 Field {
                     id: "tv-auth-email",
                     label: i18n.t("auth.field.email"),

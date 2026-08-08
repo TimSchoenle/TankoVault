@@ -1,13 +1,9 @@
 //! JWT access tokens and opaque refresh tokens.
 
 use crate::error::AuthError;
-use base64::Engine;
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
-use rand::Rng as _;
 use secrecy::{ExposeSecret as _, SecretSlice, SecretString};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
-use std::fmt::Write as _;
 use std::str::FromStr;
 use tankovault_domain::UserId;
 use time::{Duration, OffsetDateTime};
@@ -145,28 +141,27 @@ pub fn verify_access_token(
 /// [`SecretString`] on the way out.
 #[must_use]
 pub fn generate_refresh_token() -> SecretString {
-    let mut bytes = [0u8; 32];
-    rand::rng().fill_bytes(&mut bytes);
-    SecretString::from(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes))
+    crate::opaque::generate_handle()
 }
 
 /// SHA-256 hash (hex) of a refresh token — the only representation stored server-side.
 ///
 /// Not wrapped: the digest discloses nothing about the raw token, and wrapping it would put
 /// `expose_secret()` on every database call.
+///
+/// Delegates to [`crate::opaque::hash_handle`], which every other opaque credential in this
+/// system is stored through. The encoding is load-bearing across all of them — see that
+/// module — so there is exactly one implementation of it.
 #[must_use]
 pub fn hash_refresh_token(raw: &SecretString) -> String {
-    let digest = Sha256::digest(raw.expose_secret().as_bytes());
-    let mut out = String::with_capacity(digest.len() * 2);
-    for b in digest {
-        let _ = write!(out, "{b:02x}");
-    }
-    out
+    crate::opaque::hash_handle(raw)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    // Only the claims test needs it, to decode a JWT payload the crate itself never parses.
+    use base64::Engine as _;
 
     fn key(bytes: &[u8]) -> SecretSlice<u8> {
         SecretSlice::from(bytes.to_vec())

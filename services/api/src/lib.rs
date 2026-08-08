@@ -19,11 +19,13 @@ mod error;
 mod legal;
 mod mailer;
 mod me;
+mod mfa;
 pub mod passkey;
 mod secret;
 mod series;
 mod slug;
 mod state;
+mod step_up;
 pub mod stream_tickets;
 mod upstream;
 mod views;
@@ -33,6 +35,9 @@ pub use cache::{ADMIN_STATS_TTL, Cached};
 pub use legal::LegalDocs;
 pub use passkey::{RelyingParty, SharedRelyingParty};
 pub use state::AppState;
+// The header a step-up grant is presented in. Public so the test harness can set it without
+// hard-coding a string that would then be free to drift from the extractor that reads it.
+pub use step_up::STEP_UP_HEADER;
 use tankovault_config::{RateLimitConfig, SecurityConfig};
 use tankovault_domain::Feature;
 use tankovault_service::{
@@ -62,6 +67,14 @@ pub fn route_classifier() -> RouteClassifier {
         // Verifies an argon2id hash before issuing a challenge — same guessing surface as
         // `/v1/auth`, so a stolen access token must not buy a looser-rate password oracle.
         .auth("/v1/me/passkeys/register/start")
+        // The step-up prompt takes a six-digit code, a recovery code, or a password. It is the
+        // online-guessing surface of the second factor and, unlike the sign-in second leg, it
+        // has no per-challenge attempt counter to fall back on — the session is already valid,
+        // so there is no challenge row to exhaust. The rate limit is the whole bound here.
+        .auth("/v1/me/step-up")
+        // Enrolment writes ceremony rows and issues secrets on demand, from an authenticated
+        // caller. Same reasoning as `/v1/me/passkeys/register/start`.
+        .auth("/v1/me/mfa")
         // Cheap to ask for, expensive to serve — genuinely heavy however they are called.
         .expensive("/v1/me/export")
         .expensive("/v1/me/sync/{provider}/push")
@@ -120,6 +133,12 @@ pub fn route_features() -> RouteFeatures {
         // disabling management would leave a live credential the owner can't revoke.
         .gate("/v1/auth/passkey", Feature::AccountsPasskeys)
         .gate("/v1/me/passkeys", Feature::AccountsPasskeys)
+        // Enrolment only. Neither `/v1/auth/mfa/*` (the sign-in second leg) nor `/v1/me/step-up`
+        // is gated, and that is deliberate: switching the feature off must not disarm the
+        // factors already enrolled. A gated sign-in leg would let a flag flip turn "this
+        // account needs a second factor" into "this account cannot finish signing in", and a
+        // gated step-up would leave every sensitive action permanently refused.
+        .gate("/v1/me/mfa", Feature::AccountsMfa)
         // --- privacy ---
         .gate("/v1/me/export", Feature::PrivacySelfExport)
         // Exact: `DELETE /v1/me` is self-service erasure, and `/v1/me` is the prefix of the
@@ -294,6 +313,8 @@ fn documented_router() -> OpenApiRouter<AppState> {
         // auth — passkey login (two legs: challenge, then signed assertion)
         .routes(routes!(auth::passkey_login_start))
         .routes(routes!(auth::passkey_login_finish))
+        .routes(routes!(auth::mfa_security_key_start))
+        .routes(routes!(auth::mfa_verify))
         // public series
         .routes(routes!(series::list))
         .routes(routes!(series::detail))
@@ -348,6 +369,16 @@ fn documented_router() -> OpenApiRouter<AppState> {
         .routes(routes!(me::passkey_register_start))
         .routes(routes!(me::passkey_register_finish))
         .routes(routes!(me::rename_passkey, me::delete_passkey))
+        .routes(routes!(me::mfa_status))
+        .routes(routes!(me::begin_totp, me::delete_totp))
+        .routes(routes!(me::confirm_totp))
+        .routes(routes!(me::security_key_register_start))
+        .routes(routes!(me::security_key_register_finish))
+        .routes(routes!(me::rename_security_key, me::delete_security_key))
+        .routes(routes!(me::regenerate_recovery_codes))
+        .routes(routes!(me::step_up))
+        .routes(routes!(me::step_up_security_key_start))
+        .routes(routes!(me::step_up_security_key_finish))
         .routes(routes!(me::notification_prefs, me::put_notification_prefs))
         .routes(routes!(me::source_preferences, me::put_source_preferences))
         // The reader's half of the adult gate. Ungated on purpose — see `me::content`.
@@ -632,6 +663,12 @@ mod tests {
             Feature::SyncScheduledPull,
             Feature::ScanningScheduler,
             Feature::ScanningFull,
+            // Not a route either, and deliberately not: it is a *requirement placed on the
+            // caller*, checked in the `AuthUser` extractor for every authenticated route at
+            // once. Gating a path would be the opposite of what it does — the enrolment
+            // surface has to stay reachable precisely when the flag is on, or turning it on
+            // confines every account to a page it cannot reach. See `crate::state`.
+            Feature::AccountsMfaRequired,
         ];
         for feature in Feature::all() {
             assert!(

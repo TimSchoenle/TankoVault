@@ -12,9 +12,10 @@ use tankovault_domain::UserId;
 /// round trip, so it can't interleave with concurrent writes).
 ///
 /// Credentials (password hash, session/OAuth tokens) are excluded — an export is a
-/// commonly-emailed file. Passkeys carry their metadata only: the serialised credential is the
-/// library's business, and `credential_id` is withheld because observing one is the first half
-/// of the registration-collision takeover `0022_passkeys.up.sql` blocks with its `UNIQUE`. The
+/// commonly-emailed file. `WebAuthn` credentials carry their metadata only: the serialised
+/// credential is the library's business, and `credential_id` is withheld because observing one is
+/// the first half of the registration-collision takeover `0022_passkeys.up.sql` blocks with its
+/// `UNIQUE`. A TOTP secret is withheld outright — see the comment on that key. The
 /// subject's own `audit_log` rows are projected, not dumped (no `detail`; `target` only when it
 /// names the subject), so an operator's export can't leak another subject's identity
 /// (Art. 15(4)).
@@ -28,9 +29,23 @@ pub async fn export_user_data<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -
            'profile', (SELECT to_jsonb(u) - 'password_hash' FROM users u WHERE u.id = $1), \
            'sessions', (SELECT coalesce(json_agg(to_jsonb(r) - 'token_hash' ORDER BY r.created_at), '[]'::json) \
                           FROM refresh_tokens r WHERE r.user_id = $1), \
-           'passkeys', (SELECT coalesce(json_agg(to_jsonb(k) - 'credential' - 'credential_id' - 'user_id' \
-                                                 ORDER BY k.created_at), '[]'::json) \
-                          FROM user_passkeys k WHERE k.user_id = $1), \
+           'webauthn_credentials', (SELECT coalesce(json_agg(to_jsonb(k) - 'credential' - 'credential_id' - 'user_id' \
+                                                             ORDER BY k.created_at), '[]'::json) \
+                                      FROM user_webauthn_credentials k WHERE k.user_id = $1), \
+           /* Second-factor enrolment, metadata only. `secret` is withheld absolutely: it is a \
+              *symmetric* shared secret, so unlike a password hash it is not merely a cracking \
+              target — whoever reads it can mint codes, and an export travels by email. \
+              `last_step` goes with it, since it discloses when the factor was last used to a \
+              30-second resolution and is of no use to the subject. */ \
+           'two_factor', (SELECT coalesce(json_agg(to_jsonb(t) - 'secret' - 'last_step' - 'user_id'), \
+                                          '[]'::json) \
+                            FROM user_totp t WHERE t.user_id = $1), \
+           /* Which recovery codes remain, never the codes: `code_hash` is live credential \
+              material by the same argument as `password_reset_tokens`, which is excluded \
+              entirely. What the subject gains from this is the count and the usage dates. */ \
+           'recovery_codes', (SELECT coalesce(json_agg(to_jsonb(rc) - 'code_hash' - 'user_id' \
+                                                       ORDER BY rc.created_at), '[]'::json) \
+                                FROM user_recovery_codes rc WHERE rc.user_id = $1), \
            'watchlist', (SELECT coalesce(json_agg(to_jsonb(w) ORDER BY w.added_at), '[]'::json) \
                            FROM watchlist_entries w WHERE w.user_id = $1), \
            'read_progress', (SELECT coalesce(json_agg(to_jsonb(p) ORDER BY p.updated_at), '[]'::json) \

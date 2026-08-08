@@ -54,6 +54,11 @@ tankovault-domain = { path = "../../crates/domain" }
 gloo-timers = { version = "0.4", features = ["futures"], optional = true }
 futures-util = "0.3"
 base64 = "0.23"
+# The TOTP enrolment QR code. Rendered as `<rect>` elements from the module matrix rather than
+# as injected markup: the served CSP carries no `'unsafe-eval'` and this crate bans
+# `document::eval`, so anything that reaches for a JS QR library is a non-starter. Default
+# features off — `image` and `svg` would pull an encoder this crate has no use for.
+qrcode = { version = "0.14", default-features = false }
 # Live notification stream: read `MessageEvent.data()` from the SSE subscription.
 # `Window`/`Location` let the API client resolve the served page's absolute origin — reqwest
 # (unlike the browser's own fetch) rejects the relative `/v1/...` paths with a "builder error".

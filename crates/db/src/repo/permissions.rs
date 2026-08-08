@@ -25,6 +25,18 @@ pub struct Principal {
     /// Only half the answer: the deployment flag is the other half, and both must be true. See
     /// `services/api/src/content_gate.rs`.
     pub adult_opt_in: bool,
+    /// Whether this account holds a usable second factor — a *confirmed* TOTP enrolment or at
+    /// least one security key.
+    ///
+    /// Resolved here for the same reason [`Self::adult_opt_in`] is: it is consulted by
+    /// `AuthUser::require`, which every privileged handler funnels through, and a second round
+    /// trip per privileged request to answer one boolean is not worth it when this query already
+    /// has the row open.
+    ///
+    /// An *unconfirmed* TOTP row does not count. It means the secret was issued and the user
+    /// never proved they stored it; counting it would let a half-finished enrolment satisfy the
+    /// requirement and then fail every sign-in.
+    pub mfa_enrolled: bool,
 }
 
 /// Resolve a principal's account status and permission grants in one round trip (`LEFT JOIN`,
@@ -42,6 +54,7 @@ pub async fn resolve<'e, E: PgExecutor<'e>>(
         status: AccountStatus,
         permissions: Vec<String>,
         adult_opt_in: bool,
+        mfa_enrolled: bool,
     }
     let row = sqlx::query_as!(
         Row,
@@ -49,14 +62,24 @@ pub async fn resolve<'e, E: PgExecutor<'e>>(
         // the preference, and the pair is the entitlement. A caller reading only the preference
         // would be right today — a schema constraint keeps them consistent — and wrong the first
         // time attestation gains an expiry.
+        //
+        // `GROUP BY u.id` rather than the projected columns: the id is the table's primary key,
+        // so Postgres derives the rest by functional dependency, and a column added to the
+        // projection later does not have to be added here too — which is how the grouped list
+        // and the projected list drift apart.
         "SELECT u.status AS \"status: AccountStatus\", \
                 coalesce(array_agg(p.permission) FILTER (WHERE p.permission IS NOT NULL), \
                          '{}'::text[]) AS \"permissions!\", \
-                (u.adult_opt_in AND u.age_attested_at IS NOT NULL) AS \"adult_opt_in!\" \
+                (u.adult_opt_in AND u.age_attested_at IS NOT NULL) AS \"adult_opt_in!\", \
+                (EXISTS (SELECT 1 FROM user_totp t \
+                          WHERE t.user_id = u.id AND t.confirmed_at IS NOT NULL) \
+                 OR EXISTS (SELECT 1 FROM user_webauthn_credentials c \
+                             WHERE c.user_id = u.id AND c.purpose = 'security_key')) \
+                  AS \"mfa_enrolled!\" \
          FROM users u \
          LEFT JOIN user_permissions p ON p.user_id = u.id \
          WHERE u.id = $1 \
-         GROUP BY u.status, u.adult_opt_in, u.age_attested_at",
+         GROUP BY u.id",
         user_id.as_uuid(),
     )
     .fetch_optional(exec)
@@ -69,6 +92,7 @@ pub async fn resolve<'e, E: PgExecutor<'e>>(
             tracing::warn!(%token, user_id = %user_id.as_uuid(), "ignoring unknown permission grant");
         }),
         adult_opt_in: r.adult_opt_in,
+        mfa_enrolled: r.mfa_enrolled,
     }))
 }
 

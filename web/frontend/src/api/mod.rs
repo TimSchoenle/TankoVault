@@ -49,6 +49,18 @@ impl Api {
         self.base.read().clone()
     }
 
+    /// A client that also presents a step-up grant, for a call the API guards with one.
+    ///
+    /// Built fresh rather than memoised, unlike [`Self::client`]: an elevation is short-lived and
+    /// is presented by a handful of calls, so caching it would mean holding an expiring
+    /// credential in a slot the *unelevated* path also reads from — and a stale one there would
+    /// attach an elevation to every request in the app.
+    pub(crate) fn elevated_client(&self, step_up: &str) -> Client {
+        let token = self.session.token.read();
+        let http = build_http_client_with(token.as_deref(), Some(step_up));
+        Client::new_with_client(&self.base.read(), http)
+    }
+
     /// A client carrying an explicit token — for the rare call that must pin one.
     fn client_for(&self, token: Option<&str>) -> Client {
         let http = {
@@ -98,13 +110,33 @@ pub(crate) fn use_api() -> Api {
 /// header on every request. A malformed token yields an unauthenticated client — the server
 /// then answers 401 — rather than panicking and taking the whole SPA down.
 fn build_http_client(token: Option<&str>) -> reqwest::Client {
+    build_http_client_with(token, None)
+}
+
+/// The header a step-up grant is presented in. Must match `tankovault_api::STEP_UP_HEADER`;
+/// this crate is a separate workspace and shares no types with the API, so `openapi.json` and
+/// this constant are the only connectors — the same arrangement every other route detail here
+/// lives under.
+const STEP_UP_HEADER: &str = "x-step-up";
+
+/// [`build_http_client`], optionally also attaching a step-up grant.
+fn build_http_client_with(token: Option<&str>, step_up: Option<&str>) -> reqwest::Client {
     let mut builder = reqwest::ClientBuilder::new();
+    let mut headers = reqwest::header::HeaderMap::new();
     if let Some(token) = token {
         if let Ok(value) = reqwest::header::HeaderValue::from_str(&format!("Bearer {token}")) {
-            let mut headers = reqwest::header::HeaderMap::new();
             headers.insert(reqwest::header::AUTHORIZATION, value);
-            builder = builder.default_headers(headers);
         }
+    }
+    if let Some(step_up) = step_up {
+        if let Ok(value) = reqwest::header::HeaderValue::from_str(step_up) {
+            if let Ok(name) = reqwest::header::HeaderName::from_bytes(STEP_UP_HEADER.as_bytes()) {
+                headers.insert(name, value);
+            }
+        }
+    }
+    if !headers.is_empty() {
+        builder = builder.default_headers(headers);
     }
     // Web needs none of this: requests go through the window's own `fetch`, so the browser's
     // cookie store handles the refresh cookie and is already scoped, persisted and protected.

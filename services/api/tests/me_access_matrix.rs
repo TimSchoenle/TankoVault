@@ -38,6 +38,15 @@ struct Gate {
     /// answer `401` for a *second*, non-session reason, where the status cannot distinguish
     /// "no session" from "wrong secret".
     admitted_leg_skipped: Option<&'static str>,
+    /// Whether the route demands a step-up (`crate::step_up::Elevated`).
+    ///
+    /// The admitted leg presents a grant for these and not for the others, which makes the flag
+    /// load-bearing in both directions: a route that gains the extractor without gaining the
+    /// flag fails the admitted leg with a `403`, and a route that keeps the flag after losing
+    /// the extractor is simply carrying a header nobody reads — harmless, and caught by review
+    /// rather than by a red build. The first direction is the one that matters, and it is the
+    /// one the compiler cannot check.
+    elevated: bool,
 }
 
 fn empty() -> Option<Value> {
@@ -53,6 +62,7 @@ const fn get(template: &'static str, path: &'static str) -> Gate {
         credential: Credential::Header,
         body: empty,
         admitted_leg_skipped: None,
+        elevated: false,
     }
 }
 
@@ -64,6 +74,15 @@ const fn gate(method: &'static str, template: &'static str, path: &'static str) 
         credential: Credential::Header,
         body: empty,
         admitted_leg_skipped: None,
+        elevated: false,
+    }
+}
+
+/// A [`Gate`] on a route that demands a step-up.
+const fn elevated(method: &'static str, template: &'static str, path: &'static str) -> Gate {
+    Gate {
+        elevated: true,
+        ..gate(method, template, path)
     }
 }
 
@@ -81,30 +100,27 @@ fn me_gates() -> Vec<Gate> {
         Gate {
             // Deliberately wrong, so the admitted leg reaches a `400` rather than deleting the caller.
             body: || Some(json!({ "confirm_username": "not-the-caller" })),
-            ..gate("DELETE", "/v1/me", "/v1/me")
+            ..elevated("DELETE", "/v1/me", "/v1/me")
         },
         get("/v1/me/capabilities", "/v1/me/capabilities"),
-        get("/v1/me/export", "/v1/me/export"),
+        Gate {
+            elevated: true,
+            ..get("/v1/me/export", "/v1/me/export")
+        },
         Gate {
             // Every field is optional, so an empty patch cannot disturb the account later legs reuse.
             body: || Some(json!({})),
-            ..gate("PATCH", "/v1/me/profile", "/v1/me/profile")
+            ..elevated("PATCH", "/v1/me/profile", "/v1/me/profile")
         },
         Gate {
-            body: || {
-                Some(json!({
-                    "current_password": "not-the-seeded-hash",
-                    "new_password": "correct horse battery staple",
-                }))
-            },
-            admitted_leg_skipped: Some(
-                "answers 401 for a wrong `current_password`, which is the same status as \
-                 no session; the authenticated path is covered by auth_lifecycle.rs",
-            ),
-            ..gate("POST", "/v1/me/password", "/v1/me/password")
+            // No `current_password` any more — the step-up is the proof — so the admitted leg
+            // can be asserted rather than skipped. It really does change the seeded account's
+            // password; no later leg depends on the old one.
+            body: || Some(json!({ "new_password": "correct horse battery staple" })),
+            ..elevated("POST", "/v1/me/password", "/v1/me/password")
         },
         get("/v1/me/sessions", "/v1/me/sessions"),
-        gate(
+        elevated(
             "DELETE",
             "/v1/me/sessions/{id}",
             "/v1/me/sessions/00000000-0000-7000-8000-00000000000a",
@@ -112,17 +128,11 @@ fn me_gates() -> Vec<Gate> {
         // --- passkeys (the management half; the sign-in half is unauthenticated by design) ---
         get("/v1/me/passkeys", "/v1/me/passkeys"),
         Gate {
-            body: || {
-                Some(json!({
-                    "current_password": "not-the-seeded-hash",
-                    "label": "matrix",
-                }))
-            },
+            body: || Some(json!({ "label": "matrix" })),
             admitted_leg_skipped: Some(
-                "answers 401 for a wrong `current_password`, which is the same status as \
-                 no session; the authenticated path is covered by passkeys.rs",
+                "additionally requires a second factor to be *enrolled*, not merely presented;                  the shared admitted-leg caller deliberately is not, since enrolling it would                  make every other gate's elevation unrepresentative. Covered by passkeys.rs",
             ),
-            ..gate(
+            ..elevated(
                 "POST",
                 "/v1/me/passkeys/register/start",
                 "/v1/me/passkeys/register/start",
@@ -156,6 +166,106 @@ fn me_gates() -> Vec<Gate> {
             "/v1/me/passkeys/{id}",
             "/v1/me/passkeys/00000000-0000-7000-8000-00000000000a",
         ),
+        // --- second factor and step-up ---
+        get("/v1/me/mfa", "/v1/me/mfa"),
+        Gate {
+            // Restarting enrolment is idempotent for an account with no confirmed factor, so the
+            // admitted leg leaves the shared caller exactly as it found it.
+            body: || Some(json!({})),
+            ..gate("POST", "/v1/me/mfa/totp", "/v1/me/mfa/totp")
+        },
+        Gate {
+            body: || Some(json!({ "code": "000000" })),
+            admitted_leg_skipped: Some(
+                "answers 401 for a wrong code, which is the same status as no session — and it                  *will* be a wrong code, because the gate above leaves a pending enrolment on                  the shared caller. Covered by mfa.rs",
+            ),
+            ..gate("POST", "/v1/me/mfa/totp/confirm", "/v1/me/mfa/totp/confirm")
+        },
+        Gate {
+            admitted_leg_skipped: Some(
+                "answers 404 for an account with no enrolment, which is an admission — but the                  shared caller has none to remove, and enrolling one here would make every                  other gate's elevation unrepresentative. Covered by mfa.rs",
+            ),
+            ..elevated("DELETE", "/v1/me/mfa/totp", "/v1/me/mfa/totp")
+        },
+        Gate {
+            body: || Some(json!({ "label": "matrix" })),
+            ..gate(
+                "POST",
+                "/v1/me/mfa/security-keys/register/start",
+                "/v1/me/mfa/security-keys/register/start",
+            )
+        },
+        Gate {
+            // An unparseable credential is refused (401) before the ceremony is looked up; the
+            // admitted leg therefore needs no live ceremony. Same shape as the passkey finish.
+            body: || {
+                Some(json!({
+                    "ceremony_id": "00000000-0000-7000-8000-00000000000a",
+                    "credential": {},
+                }))
+            },
+            admitted_leg_skipped: Some(
+                "answers 401 for an unverifiable assertion, which is the same status as no                  session. Covered by mfa.rs",
+            ),
+            ..gate(
+                "POST",
+                "/v1/me/mfa/security-keys/register/finish",
+                "/v1/me/mfa/security-keys/register/finish",
+            )
+        },
+        Gate {
+            body: || Some(json!({ "label": "matrix" })),
+            ..elevated(
+                "PATCH",
+                "/v1/me/mfa/security-keys/{id}",
+                "/v1/me/mfa/security-keys/00000000-0000-7000-8000-00000000000a",
+            )
+        },
+        elevated(
+            "DELETE",
+            "/v1/me/mfa/security-keys/{id}",
+            "/v1/me/mfa/security-keys/00000000-0000-7000-8000-00000000000a",
+        ),
+        elevated(
+            "POST",
+            "/v1/me/mfa/recovery-codes",
+            "/v1/me/mfa/recovery-codes",
+        ),
+        Gate {
+            // A wrong password, so the admitted leg reaches the refusal rather than minting a
+            // grant the rest of the matrix would then be running under.
+            body: || Some(json!({ "password": "not-the-seeded-hash" })),
+            admitted_leg_skipped: Some(
+                "answers 401 for a wrong factor, which is the same status as no session.                  Covered by mfa.rs",
+            ),
+            ..gate("POST", "/v1/me/step-up", "/v1/me/step-up")
+        },
+        Gate {
+            admitted_leg_skipped: Some(
+                "answers 400 for an account with no security key — an admission — but only                  because the shared caller has none. Covered by mfa.rs",
+            ),
+            ..gate(
+                "POST",
+                "/v1/me/step-up/security-key/start",
+                "/v1/me/step-up/security-key/start",
+            )
+        },
+        Gate {
+            body: || {
+                Some(json!({
+                    "ceremony_id": "00000000-0000-7000-8000-00000000000a",
+                    "credential": {},
+                }))
+            },
+            admitted_leg_skipped: Some(
+                "answers 401 for an unverifiable assertion, which is the same status as no                  session. Covered by mfa.rs",
+            ),
+            ..gate(
+                "POST",
+                "/v1/me/step-up/security-key/finish",
+                "/v1/me/step-up/security-key/finish",
+            )
+        },
         // --- notifications ---
         get("/v1/me/notifications", "/v1/me/notifications"),
         Gate {
@@ -216,9 +326,9 @@ fn me_gates() -> Vec<Gate> {
         get("/v1/me/privacy/requests", "/v1/me/privacy/requests"),
         Gate {
             body: || Some(json!({ "kind": "access" })),
-            ..gate("POST", "/v1/me/privacy/requests", "/v1/me/privacy/requests")
+            ..elevated("POST", "/v1/me/privacy/requests", "/v1/me/privacy/requests")
         },
-        gate(
+        elevated(
             "DELETE",
             "/v1/me/privacy/requests/{id}",
             "/v1/me/privacy/requests/00000000-0000-7000-8000-00000000000a",
@@ -340,11 +450,14 @@ fn me_gates() -> Vec<Gate> {
             )
         },
         get("/v1/me/sync/history", "/v1/me/sync/history"),
-        gate("DELETE", "/v1/me/sync/{provider}", "/v1/me/sync/anilist"),
-        get(
-            "/v1/me/sync/{provider}/authorize",
-            "/v1/me/sync/anilist/authorize",
-        ),
+        elevated("DELETE", "/v1/me/sync/{provider}", "/v1/me/sync/anilist"),
+        Gate {
+            elevated: true,
+            ..get(
+                "/v1/me/sync/{provider}/authorize",
+                "/v1/me/sync/anilist/authorize",
+            )
+        },
         get(
             "/v1/me/sync/{provider}/callback",
             "/v1/me/sync/anilist/callback?code=matrix",
@@ -436,6 +549,13 @@ fn covered_elsewhere() -> Vec<(&'static str, &'static str)> {
         "POST /v1/auth/passkey/login/start",
         "POST /v1/auth/passkey/login/finish",
     ];
+    // The sign-in second leg is reachable only with a live challenge handle, which the first leg
+    // issues and which neither leg of this matrix holds. A bearer token is not what these read,
+    // so all three legs would answer `401` for the same uninteresting reason.
+    let mfa_second_leg = [
+        "POST /v1/auth/mfa/verify",
+        "POST /v1/auth/mfa/security-key/start",
+    ];
     auth.into_iter()
         .map(|op| {
             (
@@ -448,10 +568,15 @@ fn covered_elsewhere() -> Vec<(&'static str, &'static str)> {
                 .into_iter()
                 .map(|op| (op, "passkeys.rs, with real ceremonies")),
         )
+        .chain(
+            mfa_second_leg
+                .into_iter()
+                .map(|op| (op, "mfa.rs, with a real sign-in challenge")),
+        )
         .collect()
 }
 
-/// A seeded account, in the two forms the matrix has to present it in.
+/// A seeded account, in the forms the matrix has to present it in.
 struct Caller {
     bearer: String,
     user: UserId,
@@ -477,6 +602,40 @@ async fn credential_for(
     }
 }
 
+/// The step-up grant a leg presents, if any.
+///
+/// `None` for the anonymous and suspended legs, whatever the gate says: both must be refused
+/// *before* the elevation is consulted, and handing them a grant would hide a route that had
+/// stopped checking the session at all.
+///
+/// Minted **per request**, not once per caller, and that is not tidiness — it is required.
+/// `POST /v1/me/password` revokes every grant the caller holds, which is the right behaviour and
+/// which, with one shared grant, silently killed the elevation for every gate the loop reached
+/// afterwards. The first symptom was `DELETE /v1/me/sessions/{id}` answering `403` for reasons
+/// that had nothing to do with `DELETE /v1/me/sessions/{id}`.
+///
+/// Earned by *password*, which is what an account with no enrolled factor can offer — and which
+/// is exactly what this leg's caller is. Enrolling it would make every gate below run as an
+/// account that has opted into two-factor, which is not the ordinary account being represented.
+async fn step_up_for(
+    app: &TestApp,
+    gate: &Gate,
+    caller: Option<&Caller>,
+    elevated_leg: bool,
+) -> Option<String> {
+    let caller = caller?;
+    if !(gate.elevated && elevated_leg) {
+        return None;
+    }
+    Some(
+        app.step_up(
+            caller.user,
+            tankovault_db::repo::users::mfa::StepUpMethod::Password,
+        )
+        .await,
+    )
+}
+
 /// Append the query credential the `Credential::StreamTicket` routes read.
 fn with_ticket(path: &str, ticket: &str) -> String {
     let separator = if path.contains('?') { '&' } else { '?' };
@@ -484,10 +643,13 @@ fn with_ticket(path: &str, ticket: &str) -> String {
 }
 
 /// Assemble the request for one leg, given the URI and header `credential_for` decided.
-fn build(gate: &Gate, uri: String, bearer: Option<String>) -> Request<Body> {
+fn build(gate: &Gate, uri: String, bearer: Option<String>, step_up: Option<&str>) -> Request<Body> {
     let mut builder = Request::builder().method(gate.method).uri(uri);
     if let Some(value) = bearer {
         builder = builder.header(header::AUTHORIZATION, value);
+    }
+    if let Some(value) = step_up {
+        builder = builder.header(tankovault_api::STEP_UP_HEADER, value);
     }
     match (gate.body)() {
         Some(json) => builder
@@ -500,15 +662,23 @@ fn build(gate: &Gate, uri: String, bearer: Option<String>) -> Request<Body> {
 
 /// Drive one request and return its status **without draining the body** — `/v1/me/stream` is an
 /// SSE stream that never ends, and draining it would hang the suite.
-async fn status_of(app: &TestApp, gate: &Gate, caller: Option<&Caller>) -> StatusCode {
+async fn status_of(
+    app: &TestApp,
+    gate: &Gate,
+    caller: Option<&Caller>,
+    elevated_leg: bool,
+) -> StatusCode {
     let (uri, bearer) = credential_for(app, gate, caller).await;
-    app.request(build(gate, uri, bearer)).await.status()
+    let step_up = step_up_for(app, gate, caller, elevated_leg).await;
+    app.request(build(gate, uri, bearer, step_up.as_deref()))
+        .await
+        .status()
 }
 
 /// Read a response body as JSON, for the legs that assert on the problem document.
 async fn problem_of(app: &TestApp, gate: &Gate, caller: &Caller) -> (StatusCode, Value) {
     let (uri, bearer) = credential_for(app, gate, Some(caller)).await;
-    let response = app.request(build(gate, uri, bearer)).await;
+    let response = app.request(build(gate, uri, bearer, None)).await;
     let status = response.status();
     let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
@@ -538,7 +708,7 @@ async fn no_me_endpoint_answers_without_a_session() {
     let app = TestApp::spawn_with(TestConfig::new().without_rate_limiting()).await;
 
     for gate in me_gates() {
-        let status = status_of(&app, &gate, None).await;
+        let status = status_of(&app, &gate, None, false).await;
         assert_eq!(
             status,
             StatusCode::UNAUTHORIZED,
@@ -590,7 +760,7 @@ async fn every_me_endpoint_admits_an_ordinary_account() {
         if gate.admitted_leg_skipped.is_some() {
             continue;
         }
-        let status = status_of(&app, &gate, Some(&plain)).await;
+        let status = status_of(&app, &gate, Some(&plain), true).await;
         assert!(
             status != StatusCode::UNAUTHORIZED && status != StatusCode::FORBIDDEN,
             "{} {} must admit an ordinary account, got {status}",

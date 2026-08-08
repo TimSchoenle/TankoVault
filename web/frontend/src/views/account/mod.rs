@@ -4,6 +4,7 @@
 mod appearance;
 mod callback;
 mod content;
+mod mfa;
 mod notifications;
 mod passkeys;
 mod privacy;

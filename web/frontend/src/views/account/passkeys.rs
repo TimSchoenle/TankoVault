@@ -7,10 +7,11 @@
 //! partial state between them, and a cancelled prompt leaves the list exactly as it was.
 
 use crate::api;
-use crate::components::{async_list, Field, InlineConfirm, PanelCard, SkeletonBlock};
+use crate::components::{async_list, Field, InlineConfirm, PanelCard, SkeletonBlock, StepUpPrompt};
 use crate::hooks::{use_busy, use_reload, Reload};
 use crate::i18n::use_i18n;
 use crate::icons::Icon;
+use crate::state::step_up::use_step_up;
 use crate::state::use_session;
 use crate::util::iso_date;
 use crate::webauthn::{self, CeremonyError};
@@ -27,14 +28,17 @@ pub(crate) fn PasskeysCard() -> Element {
     let reload = use_reload();
     let busy = use_busy();
 
-    let mut password = use_signal(String::new);
+    let step_up = use_step_up();
     let mut label = use_signal(String::new);
     let mut error = use_signal(|| Option::<String>::None);
     let mut info = use_signal(|| Option::<String>::None);
-    // Whether the "add a passkey" form is open. Collapsed by default: it asks for a password,
-    // and a password field sitting open on a page nobody came here to authenticate on invites
-    // browsers to autofill it into a request the reader never made.
+    // Whether the "add a passkey" form is open. Collapsed by default, as it was when it asked
+    // for a password — the form is now just a name, but a collapsed card still keeps the list
+    // the reader came to read the thing they see first.
     let mut adding = use_signal(|| false);
+    // Whether the confirm-it-is-you form is open. Opened by a `403` from the ceremony's first
+    // leg, never pre-emptively.
+    let mut prompting = use_signal(|| false);
 
     let passkeys = use_resource(move || {
         reload.track();
@@ -59,16 +63,18 @@ pub(crate) fn PasskeysCard() -> Element {
         }
         error.set(None);
         info.set(None);
-        let password_v = password.read().clone();
         let label_v = label.read().trim().to_owned();
-        let client = api.client();
+        // The elevation the ceremony's first leg demands. Absent is not a refusal here: the API
+        // answers `403` and that is what opens the prompt, which keeps the policy in one place.
+        let client = step_up
+            .token()
+            .map_or_else(|| api.client(), |token| api.elevated_client(&token));
 
         spawn(async move {
             // Leg 1: the API mints a challenge, after checking the password.
             let started = client
                 .passkey_register_start()
                 .body(PasskeyRegisterStart {
-                    current_password: password_v,
                     label: if label_v.is_empty() {
                         None
                     } else {
@@ -80,14 +86,18 @@ pub(crate) fn PasskeysCard() -> Element {
             let started = match started {
                 Ok(res) => res.into_inner(),
                 Err(e) => {
-                    // A `401` here means the password was wrong, not that the session expired —
-                    // the request carried a valid bearer token or it would not have reached the
-                    // handler. The shared catalogue's "you need to sign in" would send the
-                    // reader looking for a session problem that does not exist.
-                    error.set(Some(match api::error_status(&e) {
-                        Some(401) => i18n.t("passkey.error.badPassword"),
-                        _ => api::friendly_error(i18n, e),
-                    }));
+                    // `403` is the gate, not a failure: either no second factor is enrolled, or
+                    // one is and has not been presented. Both are answered by the prompt, and
+                    // the *type* is what tells them apart — reporting the raw problem would show
+                    // "insufficient privileges" to someone perfectly entitled to be here.
+                    if api::error_status(&e) == Some(403) {
+                        let detail = api::problem_detail(&e);
+                        step_up.clear();
+                        prompting.set(true);
+                        error.set(detail);
+                    } else {
+                        error.set(Some(api::friendly_error(i18n, e)));
+                    }
                     busy.release();
                     return;
                 }
@@ -119,7 +129,6 @@ pub(crate) fn PasskeysCard() -> Element {
                 .await
             {
                 Ok(_) => {
-                    password.set(String::new());
                     label.set(String::new());
                     adding.set(false);
                     info.set(Some(i18n.t("passkey.added")));
@@ -151,6 +160,16 @@ pub(crate) fn PasskeysCard() -> Element {
             }
             if let Some(msg) = info.read().clone() {
                 div { class: "ik-note", style: "padding:10px;margin:10px 0;", "{msg}" }
+            }
+
+            if *prompting.read() {
+                StepUpPrompt {
+                    enrolled: true,
+                    on_done: move |()| {
+                        prompting.set(false);
+                        error.set(None);
+                    },
+                }
             }
 
             {
@@ -187,16 +206,6 @@ pub(crate) fn PasskeysCard() -> Element {
                         on_input: move |v| label.set(v),
                         on_enter: move |()| register.call(()),
                     }
-                    Field {
-                        id: "tv-passkey-password",
-                        label: i18n.t("passkey.field.password"),
-                        kind: "password",
-                        autocomplete: "current-password",
-                        value: password(),
-                        on_input: move |v| password.set(v),
-                        on_enter: move |()| register.call(()),
-                        hint: i18n.t("passkey.whyPassword"),
-                    }
                     div { class: "ik-flex", style: "gap:6px;",
                         button {
                             class: "ik-btn primary",
@@ -213,7 +222,6 @@ pub(crate) fn PasskeysCard() -> Element {
                             r#type: "button",
                             onclick: move |_| {
                                 adding.set(false);
-                                password.set(String::new());
                                 error.set(None);
                             },
                             {i18n.t("common.cancel")}

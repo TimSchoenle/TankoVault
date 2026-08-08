@@ -16,7 +16,14 @@ use tankovault_test_support::TestDb;
 const EXPORTED: &[(&str, &str)] = &[
     ("users", "profile"),
     ("refresh_tokens", "sessions"),
-    ("user_passkeys", "passkeys"),
+    // Passkeys and second-factor security keys share a table; the export keeps them in one key
+    // with their `purpose`, rather than splitting them into two, so the document says what the
+    // schema says.
+    ("user_webauthn_credentials", "webauthn_credentials"),
+    // Metadata only — the shared secret is withheld. See the key's comment in `privacy.rs`.
+    ("user_totp", "two_factor"),
+    // Which codes remain and when they were spent; never the hashes.
+    ("user_recovery_codes", "recovery_codes"),
     ("watchlist_entries", "watchlist"),
     ("read_progress", "read_progress"),
     ("notifications", "notifications"),
@@ -68,6 +75,18 @@ const NOT_EXPORTED: &[(&str, &str)] = &[
         "an in-flight challenge, deleted on use and expired within minutes — and the state it \
          holds is the value the authenticator's response is verified against, which is the one \
          thing that must never travel to the client (see 0022_passkeys.up.sql)",
+    ),
+    (
+        "mfa_challenges",
+        "a half-finished sign-in, deleted on use and expired within minutes. Its `token_hash` \
+         is the digest of a live bearer handle, and the row exists only between the password \
+         leg and the second-factor leg of one sign-in",
+    ),
+    (
+        "step_up_grants",
+        "live credential material — a grant is what a sensitive action is authorised by, so one \
+         reaching an emailed export is an elevation handed to whoever reads the mailbox. The \
+         subject learns nothing from it that `audit_log` does not already say",
     ),
     (
         "notification_dedup",
@@ -212,6 +231,27 @@ async fn the_export_carries_no_credential_material() {
     .await
     .expect("seed a session");
 
+    // A second factor, so its redaction is exercised too. The TOTP secret is the worst thing in
+    // this schema to leak: it is symmetric, so a reader of the export can mint the subject's
+    // codes — unlike `password_hash`, which is only a cracking target.
+    users::mfa::begin_totp_enrolment(
+        &db.pool,
+        subject,
+        b"a-recognisable-sealed-totp-secret",
+        "credentialed",
+    )
+    .await
+    .expect("seed a TOTP enrolment");
+    let mut conn = db.pool.acquire().await.expect("a connection");
+    users::mfa::replace_recovery_codes(
+        &mut conn,
+        subject,
+        &["a-recognisable-recovery-code-hash".to_owned()],
+    )
+    .await
+    .expect("seed a recovery code");
+    drop(conn);
+
     let export = privacy::export_user_data(&db.pool, subject)
         .await
         .expect("export the subject");
@@ -222,6 +262,20 @@ async fn the_export_carries_no_credential_material() {
             .is_empty(),
         "the session fixture did not land, so this test would pass vacuously"
     );
+    assert!(
+        !export["two_factor"]
+            .as_array()
+            .expect("two_factor is an array")
+            .is_empty(),
+        "the TOTP fixture did not land, so its redaction would pass vacuously"
+    );
+    assert!(
+        !export["recovery_codes"]
+            .as_array()
+            .expect("recovery_codes is an array")
+            .is_empty(),
+        "the recovery-code fixture did not land, so its redaction would pass vacuously"
+    );
 
     let rendered = export.to_string();
     for secret in [
@@ -231,6 +285,9 @@ async fn the_export_carries_no_credential_material() {
         "access_token",
         "refresh_token",
         "$argon2id$seed",
+        "secret",
+        "code_hash",
+        "a-recognisable-recovery-code-hash",
     ] {
         assert!(
             !rendered.contains(secret),

@@ -18,6 +18,7 @@ mod recommend;
 #[cfg(feature = "desktop")]
 mod settings;
 mod shell;
+mod step_up;
 mod tabs;
 #[cfg(feature = "desktop")]
 mod titlebar;
@@ -41,6 +42,7 @@ pub(crate) use recommend::RecCard;
 #[cfg(feature = "desktop")]
 pub(crate) use settings::SettingsSheet;
 pub(crate) use shell::Shell;
+pub(crate) use step_up::StepUpPrompt;
 pub(crate) use tabs::{TabBar, TabKind};
 #[cfg(feature = "desktop")]
 pub(crate) use titlebar::TitleBar;

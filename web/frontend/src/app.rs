@@ -96,6 +96,9 @@ pub(crate) fn App() -> Element {
     use_context_provider(PageTitle::new);
     // Registered on mount by the two fields, read by the shortcut that focuses them.
     use_context_provider(FocusTargets::new);
+    // The short-lived elevation the sensitive screens present. In memory only, like the access
+    // token, and for the same reason — see `state::step_up`.
+    crate::state::step_up::provide_step_up();
     crate::api::provide_api();
 
     // Applies the stored appearance choices to the document root. A no-op on web beyond

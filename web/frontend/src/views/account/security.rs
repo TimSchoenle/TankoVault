@@ -51,7 +51,12 @@ pub(crate) fn SecurityPanel() -> Element {
     });
 
     rsx! {
-        // Passkeys first: the credential a reader came to add, not audit.
+        // Two-factor first: it is the prerequisite for a passkey, so a reader who arrives
+        // wanting one meets the thing they need before the thing they came for.
+        if caps.has_feature(Feature::AccountsMfa) {
+            super::mfa::MfaCard {}
+        }
+
         if caps.has_feature(Feature::AccountsPasskeys) {
             super::passkeys::PasskeysCard {}
         }

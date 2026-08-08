@@ -20,6 +20,16 @@ argon2 = { workspace = true }
 aes-gcm = { workspace = true }
 jsonwebtoken = { workspace = true }
 sha2 = { workspace = true }
+# RFC 6238 TOTP: HMAC-SHA1 over the time step, base32 for the secret the user's authenticator
+# app reads, and a constant-time compare of the resulting digits. SHA-1 is the algorithm every
+# authenticator implements and the only one the `otpauth://` URI's consumers can be assumed to
+# support; it is used here as an HMAC, where the collision weaknesses that retired it for
+# signatures do not apply.
+hmac = { workspace = true }
+sha1 = { workspace = true }
+data-encoding = { workspace = true }
+percent-encoding = { workspace = true }
+subtle = { workspace = true }
 rand = { workspace = true }
 base64 = { workspace = true }
 thiserror = { workspace = true }

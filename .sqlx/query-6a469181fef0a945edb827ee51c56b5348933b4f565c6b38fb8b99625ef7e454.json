@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE step_up_grants SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6a469181fef0a945edb827ee51c56b5348933b4f565c6b38fb8b99625ef7e454"
+}

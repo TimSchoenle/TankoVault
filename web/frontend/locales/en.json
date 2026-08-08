@@ -114,9 +114,6 @@
       }
     },
     "profile": {
-      "currentPassword": "Current password",
-      "currentPasswordHint": "Required to change your email address. Everyone will be signed out, and the new address must be confirmed before it can be used to sign in or reset your password.",
-      "currentPasswordMissing": "Enter your current password to change your email address.",
       "displayName": "Display name",
       "emailChanged": "Email updated. Check the new address for a confirmation link — you have been signed out everywhere.",
       "emailPlaceholder": "new email address",
@@ -229,6 +226,17 @@
       "heading": "Welcome back",
       "subtitle": "Sign in to sync your library.",
       "toggle": "New here? Create an account"
+    },
+    "mfa": {
+      "intro": "Your password was accepted. Enter the code from your authenticator app to finish signing in.",
+      "verify": "Verify",
+      "wrongCode": "That code is not valid. Check the code your app is showing now — they change every 30 seconds.",
+      "useCode": "Use an authenticator code instead",
+      "useRecovery": "Use a recovery code instead",
+      "field": {
+        "code": "Authenticator code",
+        "recovery": "Recovery code"
+      }
     }
   },
   "common": {
@@ -254,7 +262,11 @@
     "seeAll": "See all",
     "signIn": "Sign in",
     "tryAgain": "Try again",
-    "working": "Working…"
+    "working": "Working…",
+    "confirm": "Confirm",
+    "rename": "Rename",
+    "revoke": "Revoke",
+    "signInRequired": "Sign in to see this."
   },
   "connect": {
     "action": "Connect",
@@ -1176,7 +1188,8 @@
     "truncated": "The server's reply was cut short. Please retry.",
     "unbuildable": "That request couldn't be built. This is a bug — please report it.",
     "unreachable": "Couldn't reach the server. Check your connection and retry.",
-    "unreadable": "The server sent something this app couldn't read."
+    "unreadable": "The server sent something this app couldn't read.",
+    "unexpected": "The server answered with something this version doesn't understand. Try again, or reload the page."
   },
   "feedback": {
     "failed": "Something went wrong: {message}",
@@ -1300,7 +1313,6 @@
     "empty": "No passkeys yet.",
     "error": {
       "alreadyRegistered": "That device already has a passkey for this account.",
-      "badPassword": "That password is not correct.",
       "cancelled": "Passkey prompt closed.",
       "failed": "Your device could not complete the passkey step. Try again, or use your password.",
       "incomplete": "The passkey prompt closed without finishing. If you cancelled it, nothing is wrong — otherwise, try again.",
@@ -1308,8 +1320,7 @@
       "unsupported": "Passkeys aren't available here."
     },
     "field": {
-      "label": "Name this key",
-      "password": "Current password"
+      "label": "Name this key"
     },
     "intro": "A passkey signs you in with your device's screen lock instead of a password. It never leaves the device it was created on, and it cannot be phished — it only works on this site.",
     "lastUsed": "last used {date}",
@@ -1321,8 +1332,7 @@
       "title": "Revoke “{label}”?"
     },
     "signIn": "Sign in with a passkey",
-    "title": "Passkeys",
-    "whyPassword": "Your password is required because a passkey is a permanent credential: without this check, anyone who got hold of your signed-in browser could add one and keep access indefinitely."
+    "title": "Passkeys"
   },
   "password": {
     "forgot": {
@@ -1579,5 +1589,76 @@
     "viewGrid": "Grid view",
     "viewList": "List view",
     "viewToggle": "List or grid"
+  },
+  "stepUp": {
+    "title": "Confirm it's you",
+    "intro": "This action changes your account, so we ask for your second factor before it runs.",
+    "confirm": "Confirm",
+    "confirmed": "Confirmed. You can carry on for the next few minutes without being asked again.",
+    "confirmedRetry": "Confirmed — try that again.",
+    "useRecovery": "Use a recovery code instead",
+    "useCode": "Use an authenticator code instead",
+    "error": {
+      "wrongFactor": "That isn't right. Check the code your app is showing now, or use a recovery code."
+    },
+    "field": {
+      "code": "Authenticator code",
+      "recovery": "Recovery code",
+      "password": "Your password"
+    },
+    "hint": {
+      "code": "The six-digit code from your authenticator app.",
+      "recovery": "One of the codes you saved when you set up two-factor authentication. Each works once.",
+      "password": "You haven't set up a second factor yet, so your password is what we can ask for."
+    }
+  },
+  "mfa": {
+    "title": "Two-factor authentication",
+    "intro": "A second factor means your password alone is no longer enough to sign in. It is also what unlocks passkeys — a passkey signs you in on its own, so we ask you to hold a second factor before you create one.",
+    "error": {
+      "wrongCode": "That code is not valid. Check the code your app is showing now — they change every 30 seconds.",
+      "alreadyRegistered": "That device is already registered to this account."
+    },
+    "totp": {
+      "title": "Authenticator app",
+      "add": "Set up an authenticator app",
+      "confirm": "Confirm and enrol",
+      "enrolled": "Authenticator app enrolled.",
+      "enrolledOn": "Enrolled",
+      "removed": "Authenticator app removed.",
+      "scan": "Scan this with your authenticator app, or type the key below into it. This is the only time it will be shown.",
+      "unavailable": "Authenticator apps aren't available on this server. You can still use a security key.",
+      "field": {
+        "code": "Code from your app"
+      },
+      "remove": {
+        "title": "Remove your authenticator app?",
+        "body": "Your account will fall back to whatever other factors you hold. If it holds none, your password alone will sign you in again."
+      }
+    },
+    "key": {
+      "title": "Security keys",
+      "add": "Add a security key",
+      "added": "Security key registered.",
+      "addedOn": "Added",
+      "empty": "No security keys yet.",
+      "lastUsed": "last used",
+      "unsupported": "Security keys aren't available here.",
+      "field": {
+        "label": "Name this key"
+      },
+      "revoke": {
+        "title": "Revoke this security key?",
+        "body": "It will no longer be accepted as your second factor. Any elevation you're currently holding ends with it."
+      }
+    },
+    "recovery": {
+      "heading": "Recovery codes",
+      "title": "Save these recovery codes",
+      "warning": "This is the only time they will be shown. Each one works once, and they are what gets you back in if you lose your phone or your key.",
+      "saved": "I've saved them",
+      "remaining": "Codes remaining:",
+      "regenerate": "Generate a new set"
+    }
   }
 }

@@ -24,6 +24,14 @@ tankovault-test-support = { path = "../../../crates/test-support" }
 tankovault-config = { workspace = true }
 tankovault-service = { workspace = true }
 tankovault-domain = { workspace = true }
+# The `Sealer` the harness hands `AppState`, so TOTP enrolment is exercised for real rather
+# than answering the `503` of an unconfigured deployment. Suites also use `totp::code_at_step`
+# to produce a code the server will accept.
+tankovault-auth = { workspace = true }
+# `seed_totp`/`step_up` write second-factor rows directly, so a suite testing a *guarded* route
+# does not have to drive the enrolment surface first — a failure there would surface as a
+# failure in whatever the suite was actually checking.
+tankovault-db = { workspace = true }
 tankovault-email = { workspace = true }
 axum = { workspace = true }
 tower = { workspace = true }

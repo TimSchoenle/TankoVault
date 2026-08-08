@@ -20,6 +20,7 @@ use secrecy::ExposeSecret as _;
 use tankovault_api::AppState;
 use tankovault_api::stream_tickets::{MemoryStreamTickets, StreamTicketStore as _};
 use tankovault_config::RateLimitConfig;
+use tankovault_db::repo::users::mfa::StepUpMethod;
 use tankovault_domain::{AccountStatus, Permission, UserId};
 use tankovault_email::EmailService;
 use tankovault_service::{FeatureGate, Health, MetricsRegistry};
@@ -211,6 +212,13 @@ impl TestApp {
             // only the surrounding surface (auth gates, feature flags, ownership scoping) is
             // exercised.
             webauthn: cfg.webauthn,
+            // A fixed key, so TOTP enrolment answers its real statuses rather than the `503` an
+            // unconfigured deployment gets. Fixed rather than random because a suite that seals
+            // a secret in one request and opens it in the next needs both to use the same key.
+            mfa_sealer: Some(test_sealer()),
+            totp_issuer: "TankoVault Test".to_owned(),
+            step_up_ttl: Duration::minutes(5),
+            mfa_challenge_ttl: Duration::minutes(5),
             mailer: cfg.mailer,
             email_base_url: "http://localhost".to_owned(),
             legal: tankovault_api::LegalDocs::new(cfg.legal.clone()),
@@ -267,6 +275,62 @@ impl TestApp {
         bearer(user)
     }
 
+    /// Enrol a confirmed authenticator app for `user`, returning its secret.
+    ///
+    /// Goes through the repository rather than the HTTP surface because the HTTP surface is
+    /// often the thing under test: a suite checking that admin writes demand a step-up should
+    /// not have to drive four enrolment requests first, and a failure in one of those would
+    /// surface as a confusing failure in the other.
+    ///
+    /// The secret is sealed with the same fixed key `spawn_with` hands `AppState`, so codes
+    /// produced from the returned value are codes the server will accept. Feed it to
+    /// [`totp_code`].
+    pub async fn seed_totp(&self, user: UserId) -> secrecy::SecretSlice<u8> {
+        use secrecy::ExposeSecret as _;
+        let secret = tankovault_auth::totp::generate_secret();
+        let sealed = test_sealer()
+            .seal(secret.expose_secret())
+            .expect("seal a test TOTP secret");
+        tankovault_db::repo::users::mfa::begin_totp_enrolment(&self.db.pool, user, &sealed, "test")
+            .await
+            .expect("store the enrolment");
+        // Step `0`, i.e. the Unix epoch, is far enough in the past to be no replay floor at all.
+        tankovault_db::repo::users::mfa::confirm_totp(&self.db.pool, user, 0)
+            .await
+            .expect("confirm the enrolment");
+        secret
+    }
+
+    /// Mint a live step-up grant for `user`, returning the `X-Step-Up` header value.
+    ///
+    /// Minted through the store rather than `POST /v1/me/step-up`, for the same reason
+    /// [`Self::seed_totp`] bypasses the enrolment endpoints — and because the endpoint's own
+    /// gate would mask the check under test on the route the grant is being used for.
+    ///
+    /// `method` decides whether the grant survives enrolment: a `Password` grant stops counting
+    /// the moment a factor exists, which is itself a thing worth testing.
+    pub async fn step_up(&self, user: UserId, method: StepUpMethod) -> String {
+        use secrecy::ExposeSecret as _;
+        let token = tankovault_auth::generate_handle();
+        tankovault_db::repo::users::mfa::insert_step_up(
+            &self.db.pool,
+            user,
+            &tankovault_auth::hash_handle(&token),
+            method,
+            time::OffsetDateTime::now_utc() + Duration::minutes(5),
+        )
+        .await
+        .expect("store the step-up grant");
+        token.expose_secret().to_owned()
+    }
+
+    /// Enrol a factor **and** elevate in one call — what most suites want, since almost every
+    /// sensitive route needs both and neither is what they are testing.
+    pub async fn enrolled_and_elevated(&self, user: UserId) -> String {
+        self.seed_totp(user).await;
+        self.step_up(user, StepUpMethod::Totp).await
+    }
+
     /// Drive a raw request through the real router.
     pub async fn request(&self, req: Request<Body>) -> Response<Body> {
         self.router
@@ -285,9 +349,27 @@ impl TestApp {
         bearer: Option<&str>,
         body: Option<serde_json::Value>,
     ) -> (StatusCode, serde_json::Value) {
+        self.call_elevated(method, path, bearer, None, body).await
+    }
+
+    /// [`Self::call`], additionally presenting a step-up grant in `X-Step-Up`.
+    ///
+    /// A separate entry point rather than a sixth parameter on `call`, because the overwhelming
+    /// majority of calls carry no elevation and a `None` in every one of them would be noise.
+    pub async fn call_elevated(
+        &self,
+        method: &str,
+        path: &str,
+        bearer: Option<&str>,
+        step_up: Option<&str>,
+        body: Option<serde_json::Value>,
+    ) -> (StatusCode, serde_json::Value) {
         let mut builder = Request::builder().method(method).uri(path);
         if let Some(bearer) = bearer {
             builder = builder.header(axum::http::header::AUTHORIZATION, bearer);
+        }
+        if let Some(step_up) = step_up {
+            builder = builder.header(tankovault_api::STEP_UP_HEADER, step_up);
         }
         let request = match body {
             Some(json) => builder
@@ -311,4 +393,28 @@ impl TestApp {
         };
         (status, json)
     }
+}
+
+/// The fixed sealing key every harness instance uses for TOTP secrets.
+///
+/// Fixed rather than random because a suite that seals a secret through [`TestApp::seed_totp`]
+/// and opens it through a request in the next line needs both halves to agree, and because a
+/// failure caused by two different random keys reads as "the code was wrong" — the least
+/// diagnosable outcome available.
+fn test_sealer() -> tankovault_auth::Sealer {
+    tankovault_auth::Sealer::new(&[0x2a; 32])
+}
+
+/// The code `secret` produces right now, for driving a sign-in or a step-up.
+///
+/// Computed with the server's own implementation rather than a second one written for tests: a
+/// hand-rolled copy that agreed with the RFC but disagreed with this build would fail every
+/// suite with "wrong code" and point at nothing.
+#[must_use]
+pub fn totp_code(secret: &secrecy::SecretSlice<u8>) -> String {
+    use secrecy::ExposeSecret as _;
+    let step = tankovault_auth::totp::step_at(time::OffsetDateTime::now_utc());
+    tankovault_auth::totp::code_at_step(secret, step)
+        .expose_secret()
+        .to_owned()
 }

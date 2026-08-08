@@ -8,6 +8,7 @@
 use axum::http::StatusCode;
 use serde_json::json;
 use tankovault_api_test_support::{TestApp, TestConfig};
+use tankovault_db::repo::users::webauthn::CredentialPurpose;
 use tankovault_domain::{AccountStatus, Feature};
 use uuid::Uuid;
 
@@ -161,12 +162,13 @@ async fn one_account_cannot_touch_anothers_passkeys() {
     let owner = app.seed_user("owner", &[], AccountStatus::Active).await;
     let stranger = app.seed_user("stranger", &[], AccountStatus::Active).await;
 
-    let record = tankovault_db::repo::users::passkeys::insert(
+    let record = tankovault_db::repo::users::webauthn::insert(
         &app.db.pool,
         owner,
         b"a-credential-id",
         &json!({ "cred": "opaque to this layer" }),
         "Owner's phone",
+        CredentialPurpose::Passkey,
     )
     .await
     .expect("seed a passkey");
@@ -188,9 +190,13 @@ async fn one_account_cannot_touch_anothers_passkeys() {
     assert_eq!(deleted, StatusCode::NOT_FOUND);
 
     // And the row is untouched, which the status alone does not prove.
-    let still_there = tankovault_db::repo::users::passkeys::list_for_user(&app.db.pool, owner)
-        .await
-        .expect("list");
+    let still_there = tankovault_db::repo::users::webauthn::list_for_user(
+        &app.db.pool,
+        owner,
+        CredentialPurpose::Passkey,
+    )
+    .await
+    .expect("list");
     assert_eq!(still_there.len(), 1);
     assert_eq!(still_there[0].label, "Owner's phone");
 
@@ -208,14 +214,23 @@ async fn one_account_cannot_touch_anothers_passkeys() {
     assert_eq!(deleted, StatusCode::NO_CONTENT);
 }
 
-/// Adding a passkey needs the password, not just a session.
+/// Adding a passkey needs a second factor enrolled **and** presented, not just a session.
 ///
-/// A passkey is permanent while an access token lasts fifteen minutes; without this check, a
-/// stolen token could install a credential surviving every password change. The seeded fixture
-/// hash doesn't parse, so a wrong password surfaces as `500` here, not `401` — what matters is
-/// that the ceremony is refused at all.
+/// A passkey is permanent while an access token lasts fifteen minutes, and it signs in on its
+/// own with no second leg — so minting one is the act of creating a single-factor bypass of
+/// everything below it. Three states, three answers:
+///
+/// * no session at all — `401`;
+/// * a session, no factor enrolled — `403 mfa_enrolment_required`, the gate this change exists
+///   for. It is checked separately from the elevation because an unenrolled account *can* still
+///   elevate, using the password fallback, so the elevation alone does not imply enrolment;
+/// * a factor enrolled but not presented — `403 step_up_required`.
+///
+/// The suite deliberately asserts the problem *type*, not just the status: both refusals are
+/// `403`, and a client that cannot tell them apart sends a user to re-authenticate when what
+/// they need is to enrol.
 #[tokio::test]
-async fn registering_a_passkey_is_refused_without_the_password() {
+async fn registering_a_passkey_needs_a_second_factor_enrolled_and_presented() {
     let app = TestApp::spawn_with(TestConfig::new().without_rate_limiting()).await;
     let user = app.seed_user("reader", &[], AccountStatus::Active).await;
     let token = app.bearer(user);
@@ -225,24 +240,62 @@ async fn registering_a_passkey_is_refused_without_the_password() {
             "POST",
             "/v1/me/passkeys/register/start",
             None,
-            Some(json!({ "current_password": "whatever" })),
+            Some(json!({})),
         )
         .await;
     assert_eq!(anonymous, StatusCode::UNAUTHORIZED);
 
-    let (wrong, _) = app
+    // Elevated by password, which is all an account with no factor can offer — and still
+    // refused, because the gate is on enrolment rather than on the elevation.
+    let password_grant = app
+        .step_up(
+            user,
+            tankovault_db::repo::users::mfa::StepUpMethod::Password,
+        )
+        .await;
+    let (unenrolled, body) = app
+        .call_elevated(
+            "POST",
+            "/v1/me/passkeys/register/start",
+            Some(&token),
+            Some(&password_grant),
+            Some(json!({})),
+        )
+        .await;
+    assert_eq!(unenrolled, StatusCode::FORBIDDEN);
+    assert_eq!(
+        body["type"], "about:blank#mfa_enrolment_required",
+        "the client must be able to tell 'enrol first' from 'confirm it is you'"
+    );
+
+    // Enrolled, but nothing presented.
+    app.seed_totp(user).await;
+    let (unelevated, body) = app
         .call(
             "POST",
             "/v1/me/passkeys/register/start",
             Some(&token),
-            Some(json!({ "current_password": "not the password" })),
+            Some(json!({})),
         )
         .await;
-    assert_ne!(
-        wrong,
-        StatusCode::OK,
-        "a session alone must not be enough to start installing a permanent credential"
-    );
+    assert_eq!(unelevated, StatusCode::FORBIDDEN);
+    assert_eq!(body["type"], "about:blank#step_up_required");
+
+    // Enrolled and presented: the ceremony starts.
+    let grant = app
+        .step_up(user, tankovault_db::repo::users::mfa::StepUpMethod::Totp)
+        .await;
+    let (allowed, body) = app
+        .call_elevated(
+            "POST",
+            "/v1/me/passkeys/register/start",
+            Some(&token),
+            Some(&grant),
+            Some(json!({})),
+        )
+        .await;
+    assert_eq!(allowed, StatusCode::OK, "{body}");
+    assert!(body["ceremony_id"].is_string());
 }
 
 /// A deployment that configured no origin answers `503`, not `404`.

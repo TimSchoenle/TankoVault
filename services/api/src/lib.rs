@@ -297,17 +297,23 @@ pub async fn install_tunables(
     set
 }
 
-/// Reconcile the deployment's owner at boot: if no account holds the super user grant, promote
-/// the one [`tankovault_db::repo::permissions::ensure_super_user`] names.
+/// Reconcile the deployment's owner at boot: promote an account to super user if none holds the
+/// grant, then give whoever holds it a stored row for every grantable capability it lacks.
 ///
-/// Runs here because the installer's claim only covers an empty database. Any deployment that
-/// gained accounts before it was seeded, or that erased its owner, has no route back to an owner
-/// otherwise — the grant is deliberately unforgeable through the API, so no administrator can
-/// restore it, and the console gives no sign that it is missing.
+/// The promotion runs here because the installer's claim only covers an empty database. Any
+/// deployment that gained accounts before it was seeded, or that erased its owner, has no route
+/// back to an owner otherwise — the grant is deliberately unforgeable through the API, so no
+/// administrator can restore it, and the console gives no sign that it is missing.
 ///
-/// A failure is logged and does not abort the boot. Every permission check keeps working without
-/// an owner; refusing to serve the whole edge over a reconciliation query would turn a missing
-/// grant into an outage.
+/// The top-up runs here because the seed that writes an owner's grants is create-only. Every
+/// capability the codebase gains after an account is created is one the console will never show
+/// against it, so the owner's checklist reads as a shrinking subset of the deployment while
+/// their actual access is unchanged. Boot is the one moment the set of capabilities this build
+/// defines is known and the database is reachable.
+///
+/// A failure of either is logged and does not abort the boot. Every permission check keeps
+/// working — the super user grant answers them by implication — and refusing to serve the whole
+/// edge over a reconciliation query would turn a cosmetic gap into an outage.
 pub async fn ensure_deployment_owner(pool: &tankovault_db::PgPool) {
     match tankovault_db::repo::permissions::ensure_super_user(pool).await {
         Ok(Some(user_id)) => tracing::warn!(
@@ -318,6 +324,21 @@ pub async fn ensure_deployment_owner(pool: &tankovault_db::PgPool) {
         Err(error) => tracing::error!(
             %error,
             "could not reconcile the deployment's super user; continuing without it"
+        ),
+    }
+
+    // Attempted even when the step above failed: that failure may just mean an owner already
+    // exists, and the top-up is what makes a capability added this release visible on the
+    // owner's account.
+    match tankovault_db::repo::permissions::grant_all_to_super_user(pool).await {
+        Ok(added) if !added.is_empty() => tracing::info!(
+            granted = ?added,
+            "granted the super user the capabilities added since their account was created"
+        ),
+        Ok(_) => {}
+        Err(error) => tracing::error!(
+            %error,
+            "could not top up the super user's stored grants; their access is unaffected"
         ),
     }
 }

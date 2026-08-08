@@ -12,23 +12,66 @@ decisions a human still has to make.
 
 ```
 commit to main (conventional commits)
-  └─ release-please.yaml → opens/updates the release PR
-        ├─ bumps [workspace.package] version in Cargo.toml
-        └─ writes CHANGELOG.md
+  └─ release-please.yaml
+        release-pr        → opens/updates the release PR
+              ├─ bumps [workspace.package] version in Cargo.toml
+              └─ writes CHANGELOG.md
      auto-fix.yaml        → syncs both Cargo.lock files, regenerates openapi.json and the
                             client at the new version, commits all of it once
      ci.yml               → the required `ci` check runs against the bumped tree
      auto-merge-release-please.yml → approves + merges after the delay
-  └─ merge → release-please tags vX.Y.Z and creates the GitHub release
-        └─ plan (xtask release-plan: which images changed since each one's published tag)
-              └─ release-deps (2 legs: one `builder` compile per architecture)
-                    └─ build (2 legs per planned image: amd64 + arm64, native runners)
-                          └─ manifest (1 job per planned image: list, cosign sign, SBOM attest)
-                                └─ helm-release → chart bump PR against TimSchoenle/helm-charts
+  └─ merge → release-please.yaml
+        release-please    → creates the GitHub release for vX.Y.Z as a **draft**. No tag yet.
+        ├─ plan (xtask release-plan: which images changed since each one's published tag)
+        │     └─ release-deps (2 legs: one `builder` compile per architecture)
+        │           └─ build (2 legs per planned image: amd64 + arm64, native runners)
+        │                 └─ manifest (1 job per planned image: list, cosign sign, SBOM attest)
+        │                       └─ helm-release → chart bump PR against TimSchoenle/helm-charts
+        └─ desktop (installer matrix)
+              └─ desktop-release → attaches them, publishes the draft. **This creates the tag.**
+                    └─ release-pr → opens the *next* release PR, against the tag just created
 ```
 
 A release in which no image changed — a documentation or CI release — stops after `plan`:
 nothing is built, nothing is published, and no chart pull request is opened.
+
+## Why release-please runs twice
+
+`release-please.yaml` invokes the action in two jobs, `release-please`
+(`skip-github-pull-request`) and `release-pr` (`skip-github-release`), with `desktop-release`
+between them. That split is load-bearing, not tidiness.
+
+The action tags a release and opens the pull request for the next one in a single process, and
+the two halves disagree about when a tag exists. Because releases here are created as **drafts**
+— see [the desktop update channel](#the-desktop-update-channel) for why — GitHub materialises no
+tag until `desktop-release` publishes one, minutes later. The pull-request half resolves "the
+previous release" by looking that tag up, so in one process it looks for a tag its own
+predecessor has not created yet.
+
+It does not fail when it cannot find one. It falls back to the version in
+`.release-please-manifest.json` — so the version stays right — and takes the commit range from
+the beginning of history. Release v3.1.0 logged
+
+```
+❯ looking for tagName: v3.1.0
+✔ No latest release found for path: ., component: , but a previous version (3.1.0) was specified in the manifest.
+✔ Considering: 259 commits
+```
+
+and opened [#138]: a 245-line changelog re-listing every commit ever merged, and a 4.0.0 major
+bump from re-counting `!` commits released a dozen tags earlier — for a `main` that had nothing
+on it since v3.1.0 at all. Nothing downstream would have caught it; the action succeeded, the
+release published normally, and `auto-merge-release-please.yml` merges release pull requests on a
+schedule. `repo-lint`'s `release-please-tags-before-it-proposes` is what holds the two halves
+apart now.
+
+If `desktop-release` fails, the release stays a draft, `vX.Y.Z` is never tagged and `release-pr`
+is skipped rather than run against a base that does not exist — so no release pull request is
+opened until the next push to `main`. The run summary says so. A `workflow_dispatch` of
+`release-please.yaml` is the manual equivalent: with nothing left to tag it reaches `release-pr`
+directly.
+
+[#138]: https://github.com/TimSchoenle/TankoVault/pull/138
 
 ## What is published
 

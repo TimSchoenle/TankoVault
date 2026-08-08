@@ -134,7 +134,7 @@ env:
 
 jobs:
   release-please:
-    name: Release Please
+    name: tag the release
     environment:
       name: release
       deployment: false
@@ -184,12 +184,18 @@ jobs:
       # changed or removed, so a release published here is a release that can never carry the
       # desktop builds. A draft has no such lock — and no git tag either, which is why the
       # `desktop` job checks out `github.sha`.
+      #
+      # `skip-github-pull-request: true` is the consequence, and it is not optional: the action
+      # does two independent things, and only tagging may run before the tag exists. The
+      # `release-pr` job at the end of this file does the other half, after `desktop-release` has
+      # published the draft, and carries what happened when the two shared one process.
       - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5
         id: release
         with:
           token: ${{ steps.generate_token.outputs.token }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+          skip-github-pull-request: true
 
   # Which images this release has to publish, and which are already published and stay where they
   # are. Everything downstream is a matrix over `images`.
@@ -1533,9 +1539,86 @@ jobs:
             echo "first run; verify a manual download against the checksums file."
           } >> "$GITHUB_STEP_SUMMARY"
 
+  # release-please's other half: the pull request proposing the release *after* this one.
+  #
+  # ---------------------------------------------------------------------------------------------
+  # Why this is a second job and not the same invocation
+  # ---------------------------------------------------------------------------------------------
+  # The action tags releases and opens the release pull request in one process, and the two halves
+  # disagree about when a tag exists. `draft: true` means the release the job at the top of this
+  # file creates carries **no git tag** — GitHub materialises one only on publish, which is
+  # `desktop-release`, minutes later. The pull-request half resolves "the previous release" by
+  # looking that tag up — so in one process it looks for a tag the half before it has not created
+  # yet. Release v3.1.0 logged exactly that:
+  #
+  #     ❯ looking for tagName: v3.1.0
+  #     ✔ No latest release found for path: ., component: , but a previous version (3.1.0) was
+  #       specified in the manifest.
+  #     ✔ Considering: 259 commits
+  #
+  # The version still came from the manifest, so the failure was not visible there — but with no
+  # release commit to bound the walk, the changelog became the entire history of the repository
+  # re-listed and every `!` commit ever merged was counted again. #138 proposed 4.0.0 for a `main`
+  # that had **nothing** on it since v3.1.0, and `auto-merge-release-please.yml` would have cut
+  # that release on schedule.
+  #
+  # So the halves are ordered against the thing they disagree about: tag (draft, no tag) →
+  # `desktop-release` (publish, tag exists) → pull request. A `workflow_dispatch` of this file is
+  # the manual equivalent, since with nothing to tag it reaches this job directly.
+  #
+  # `desktop-release` failing leaves the release a draft and untagged, and this job is skipped
+  # rather than run against a base that does not exist — the release pull request then stays absent
+  # until the next push to `main`, which is the honest state. `summary` reports it.
+  release-pr:
+    name: open the release pull request
+    needs: [release-please, desktop-release]
+    # Skipped, not failed, when there was nothing to release: `desktop-release` only runs behind
+    # `release_created`, so on an ordinary push to `main` it reports `skipped` and the previous
+    # release's tag — the base this job needs — has been in place for as long as that release has.
+    if: ${{ !cancelled() && needs.release-please.result == 'success' && (needs.desktop-release.result == 'success' || needs.desktop-release.result == 'skipped') }}
+    # Required, not decorative: `RELEASE_BOT_*` are `release` environment secrets, and a job that
+    # omits the environment reads them as empty strings.
+    environment:
+      name: release
+      deployment: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # to push the release branch
+      issues: write # to label the release PR
+      pull-requests: write # to open and maintain the release PR
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
+        with:
+          egress-policy: audit
+
+      # The same app token and the same narrowing as the tagging job, for the same reason: a push
+      # made with `GITHUB_TOKEN` triggers no workflows, so the release pull request would never run
+      # CI and the required `ci` check could never pass.
+      - name: Generate Bot Token
+        id: generate_token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.RELEASE_BOT_APP_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      # `skip-github-release: true` is what keeps this the *other* half. Without it this job would
+      # re-run the tagging pass — harmless today, because a release pull request already tagged is
+      # relabelled `autorelease: tagged` and skipped, but that is the action's bookkeeping and not
+      # a property of this workflow.
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5
+        with:
+          token: ${{ steps.generate_token.outputs.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          skip-github-release: true
+
   summary:
     name: release summary
-    needs: [release-please, plan, release-deps, build, manifest, helm-release, desktop-release]
+    needs: [release-please, plan, release-deps, build, manifest, helm-release, desktop-release, release-pr]
     if: always() && needs.release-please.outputs.release_created == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -1557,6 +1640,7 @@ jobs:
           CHART_PR: ${{ needs.helm-release.outputs.pr_url }}
           CHART_VERSION: ${{ needs.helm-release.outputs.chart_version }}
           RELEASED: ${{ needs.desktop-release.result }}
+          NEXT_PR: ${{ needs.release-pr.result }}
         run: |
           # Case-folded to match what was actually pushed; see the `build` job's `params` step.
           GHCR_PREFIX="${GHCR_REGISTRY}/${GITHUB_REPOSITORY,,}"
@@ -1613,5 +1697,14 @@ jobs:
               echo "Attaching the desktop builds reported \`${RELEASED}\` — **the release is still a"
               echo "draft and \`${TAG}\` was never tagged**. Re-run this run's desktop jobs; the"
               echo "draft is publishable once its installers are attached."
+            fi
+            echo
+            # The pull request for the *next* release is built from the tag this run published, so
+            # it is the one job that cannot run until the draft is out. Not opening it is safe —
+            # the next push to `main` opens it — but it is invisible from anywhere else.
+            if [ "$NEXT_PR" != "success" ]; then
+              echo "The next release pull request reported \`${NEXT_PR}\` and was **not opened**."
+              echo "Re-run this workflow by hand (\`workflow_dispatch\`) once \`${TAG}\` is tagged,"
+              echo "or wait for the next push to \`main\`."
             fi
           } >> "$GITHUB_STEP_SUMMARY"

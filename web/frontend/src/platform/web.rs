@@ -3,6 +3,7 @@
 //! Read the module contract in `mod.rs` before adding anything here — in particular, why none of
 //! this may be written as `document::eval`.
 
+use dioxus::history::History;
 use futures_util::StreamExt as _;
 use wasm_bindgen::JsCast as _;
 
@@ -75,6 +76,103 @@ pub(crate) fn select_focused_text() {
         return;
     };
     field.select();
+}
+
+/// The history provider the router is launched with: `dioxus-web`'s own, with one behaviour
+/// taken out.
+///
+/// [`WebHistory`](dioxus::web::WebHistory) ends *every* navigation by scrolling the window back
+/// to the top — a replace exactly as much as a push. That is right for a push and wrong for a
+/// replace, because a replace is how a screen corrects its own address without navigating: the
+/// moment Discover's second page of covers came into view it recorded the position in `?at=`,
+/// the window jumped to the top, the first page reported itself as the topmost one again, and
+/// `at` was replaced straight back to nothing — the reader could not get past the first page.
+/// The debounced filter boxes on the watchlist and in the console replace per keystroke for the
+/// same reason and paid the same price. Only the browser build ever showed it: the desktop
+/// renderer routes through `MemoryHistory`, which has no scroll position to move.
+pub(crate) fn history_provider() -> std::rc::Rc<dyn History> {
+    std::rc::Rc::new(InPlaceHistory {
+        inner: dioxus::web::WebHistory::default(),
+    })
+}
+
+/// [`history_provider`]'s type. Everything is `WebHistory`'s except [`History::replace`].
+struct InPlaceHistory {
+    inner: dioxus::web::WebHistory,
+}
+
+impl History for InPlaceHistory {
+    fn current_route(&self) -> String {
+        self.inner.current_route()
+    }
+
+    fn current_prefix(&self) -> Option<String> {
+        self.inner.current_prefix()
+    }
+
+    fn can_go_back(&self) -> bool {
+        self.inner.can_go_back()
+    }
+
+    fn go_back(&self) {
+        self.inner.go_back();
+    }
+
+    fn can_go_forward(&self) -> bool {
+        self.inner.can_go_forward()
+    }
+
+    fn go_forward(&self) {
+        self.inner.go_forward();
+    }
+
+    fn push(&self, route: String) {
+        self.inner.push(route);
+    }
+
+    /// The current entry, re-addressed and left where it is.
+    ///
+    /// The `[x, y]` state shape is `WebHistory`'s and has to stay it: its own `popstate` handler
+    /// reads the entry back to restore the scroll position on a back, and anything else there
+    /// reads as "no position recorded".
+    fn replace(&self, route: String) {
+        let Some(window) = web_sys::window() else {
+            return;
+        };
+        let Ok(history) = window.history() else {
+            return;
+        };
+        let state = js_sys::Array::new();
+        state.push(&wasm_bindgen::JsValue::from_f64(
+            window.scroll_x().unwrap_or_default(),
+        ));
+        state.push(&wasm_bindgen::JsValue::from_f64(
+            window.scroll_y().unwrap_or_default(),
+        ));
+        let url = full_path(self.inner.current_prefix().as_deref(), &route);
+        let _ = history.replace_state_with_url(&state, "", Some(&url));
+    }
+
+    fn external(&self, url: String) -> bool {
+        self.inner.external(url)
+    }
+
+    fn updater(&self, callback: std::sync::Arc<dyn Fn() + Send + Sync>) {
+        self.inner.updater(callback);
+    }
+
+    fn include_prevent_default(&self) -> bool {
+        self.inner.include_prevent_default()
+    }
+}
+
+/// The URL a route addresses: the router speaks in prefix-less routes, so a deployment served
+/// under a base path has it put back on here.
+fn full_path(prefix: Option<&str>, route: &str) -> String {
+    match prefix {
+        Some(prefix) => format!("{prefix}{route}"),
+        None => route.to_owned(),
+    }
 }
 
 pub(crate) fn now_ms() -> f64 {
@@ -206,4 +304,22 @@ pub(crate) async fn subscribe(url: &str, events: &[&str]) -> Option<EventStream>
         source,
         events: merged,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::full_path;
+
+    /// A replace builds its own URL here rather than going through `WebHistory`, and losing the
+    /// deployment's base path is the way that goes wrong without anything failing: the address
+    /// bar would read `/discover` under an app served from `/app`, and the reader would find out
+    /// on the next reload.
+    #[test]
+    fn a_replace_keeps_the_deployment_prefix() {
+        assert_eq!(full_path(None, "/discover?at=24"), "/discover?at=24");
+        assert_eq!(
+            full_path(Some("/app"), "/discover?at=24"),
+            "/app/discover?at=24"
+        );
+    }
 }

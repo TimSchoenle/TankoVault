@@ -73,7 +73,7 @@ qrcode = { version = "0.14", default-features = false }
 # are `navigator.credentials.create()` / `.get()`, and there is no other way to reach them —
 # the ceremony is a browser API by construction, not an HTTP call the API client could make.
 web-sys = { version = "0.3", features = [
-    "MessageEvent", "Window", "Location", "Navigator",
+    "MessageEvent", "Window", "Location", "Navigator", "History",
     "Blob", "BlobPropertyBag", "Url", "Document", "Element", "HtmlAnchorElement",
     "Storage", "HtmlElement", "HtmlInputElement",
     "Credential", "CredentialsContainer", "CredentialCreationOptions",

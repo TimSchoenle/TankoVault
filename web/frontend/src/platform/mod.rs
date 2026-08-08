@@ -73,6 +73,14 @@ pub(crate) use desktop::{
     STARTUP_INNER_SIZE, WINDOW_HEADING,
 };
 
+/// Web-only surface: the router's history provider, handed to the renderer in `main`.
+///
+/// There is no desktop counterpart because there is no desktop address bar — that build routes
+/// through Dioxus's in-memory history and needs nothing from the system. See the function's own
+/// doc comment for the one behaviour of the browser provider this app cannot keep.
+#[cfg(feature = "web")]
+pub(crate) use web::history_provider;
+
 // ---------------------------------------------------------------------------------------------
 // Persistent key/value settings
 // ---------------------------------------------------------------------------------------------

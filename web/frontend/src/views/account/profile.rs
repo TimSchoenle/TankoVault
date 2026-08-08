@@ -59,7 +59,7 @@ pub(crate) fn ProfilePanel(name: String, tier: String) -> Element {
                     // `403` means "confirm it is you", not "you may not". Reporting the raw
                     // problem would tell a reader entitled to rename themselves that their
                     // privileges are insufficient.
-                    if !gate.refused(api::error_status(&e)) {
+                    if !gate.refused(api::Refusal::of(&e)) {
                         outcome.set(Some(Err(api::friendly_error(i18n, e))));
                     }
                 }

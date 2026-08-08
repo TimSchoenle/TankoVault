@@ -211,7 +211,7 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
                         reload.bump();
                     }
                     Err(e) => {
-                        if !gate.refused(api::error_status(&e)) {
+                        if !gate.refused(api::Refusal::of(&e)) {
                             outcome.set(Some(Err(api::friendly_error(i18n, e))));
                         }
                     }

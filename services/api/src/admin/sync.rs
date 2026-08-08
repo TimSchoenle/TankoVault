@@ -25,7 +25,7 @@ use uuid::Uuid;
     responses(
         (status = 200, description = "Up to 200 linked accounts", body = Vec<tankovault_contracts::admin::SyncAccountView>),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn list_sync_accounts(
@@ -48,7 +48,7 @@ pub async fn list_sync_accounts(
     responses(
         (status = 200, description = "Up to 200 mappings", body = Vec<tankovault_contracts::admin::SyncMappingView>),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn list_sync_mappings(
@@ -83,7 +83,7 @@ pub struct SyncAccountTarget {
     responses(
         (status = 200, description = "Pulled, forwarded from the sync service", body = serde_json::Value),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 409, description = "Account not linked", body = crate::error::ProblemDetails),
     )
 )]
@@ -123,7 +123,7 @@ pub async fn admin_sync_pull(
     responses(
         (status = 200, description = "Pushed, forwarded from the sync service", body = serde_json::Value),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 409, description = "Account not linked", body = crate::error::ProblemDetails),
     )
 )]
@@ -163,7 +163,7 @@ pub async fn admin_sync_push(
     responses(
         (status = 200, description = "Unlinked, forwarded from the sync service", body = serde_json::Value),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn admin_sync_unlink(
@@ -209,7 +209,7 @@ pub struct SyncMappingTarget {
     responses(
         (status = 200, description = "Whether a mapping was actually removed", body = serde_json::Value, example = json!({"removed": true})),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn clear_sync_mapping(
@@ -254,7 +254,7 @@ pub struct UpsertMapping {
         (status = 200, description = "Acknowledged", body = serde_json::Value, example = json!({"ok": true})),
         (status = 400, description = "provider or external_id is empty", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn upsert_sync_mapping(
@@ -296,7 +296,7 @@ pub async fn upsert_sync_mapping(
     responses(
         (status = 200, description = "Mappings for this series", body = Vec<tankovault_contracts::admin::SyncMappingView>),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn list_sync_mappings_for_series(
@@ -335,7 +335,7 @@ pub struct UnmappedQuery {
         (status = 200, description = "Up to 100 unmapped series", body = Vec<tankovault_contracts::admin::UnmappedSeriesView>),
         (status = 400, description = "provider is empty", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn list_unmapped_series(
@@ -373,7 +373,7 @@ pub async fn list_unmapped_series(
         (status = 200, description = "Up to 200 unmatched remote entries", body = Vec<tankovault_contracts::admin::RemoteEntryView>),
         (status = 400, description = "provider is empty", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn list_unmatched_remote(
@@ -437,7 +437,7 @@ pub struct SuggestedMatch {
     responses(
         (status = 200, description = "Up to 8 ranked suggestions, best score first", body = Vec<SuggestedMatch>),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn list_suggestions(
@@ -524,7 +524,7 @@ pub struct AssignRemoteEntry {
         (status = 200, description = "Acknowledged", body = serde_json::Value, example = json!({"ok": true})),
         (status = 400, description = "Missing provider/external_id, no such remote entry, or the stored entry has an invalid status", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn assign_remote_entry(
@@ -639,7 +639,7 @@ pub struct EnrichmentSweepView {
     responses(
         (status = 200, description = "The sweep's current state", body = EnrichmentSweepView),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn enrichment_status(

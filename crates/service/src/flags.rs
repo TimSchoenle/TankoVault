@@ -411,12 +411,16 @@ pub async fn enforce(State(layer): State<FeatureLayer>, req: Request, next: Next
     next.run(req).await
 }
 
+/// The [`crate::problem::Problem::kind`] this layer answers with. Also produced by
+/// `services/api`'s own error enum, which reconciles its published vocabulary against this.
+pub const FEATURE_DISABLED_KIND: &str = "feature_disabled";
+
 /// `404` with the same RFC 9457 `problem+json` shape the API's own error type produces, so a
 /// client parses one error format everywhere.
 fn feature_disabled(feature: Feature) -> Response {
     let body = axum::Json(serde_json::json!({
-        "type": "about:blank#feature_disabled",
-        "title": "feature_disabled",
+        "type": format!("about:blank#{FEATURE_DISABLED_KIND}"),
+        "title": FEATURE_DISABLED_KIND,
         "status": StatusCode::NOT_FOUND.as_u16(),
         "detail": format!("the \"{}\" feature is switched off on this deployment", feature.title()),
         "feature": feature.key(),

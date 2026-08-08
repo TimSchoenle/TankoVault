@@ -5,7 +5,7 @@ mod inspector;
 mod queues;
 
 use crate::api;
-use crate::components::async_block_list;
+use crate::components::{async_block_list, use_step_up_gate, StepUpGate, StepUpPrompt};
 use crate::hooks::{use_reload, Reload};
 use crate::i18n::use_i18n;
 use crate::models::*;
@@ -17,11 +17,25 @@ use progenitor_client::ResponseValue;
 use queues::AssignQueue;
 use queues::UnmatchedRemoteQueue;
 
+/// The sync panel's step-up gate, for any component below it.
+///
+/// Context rather than a prop, unlike the other console panels: the actions that need the
+/// elevation sit four components deep across three sub-modules, and threading one handle
+/// through every row in between would put it in signatures that otherwise have no interest in
+/// it. Provided once by [`SyncAdminPanel`], which is also the only component that renders the
+/// prompt.
+pub(super) fn use_sync_gate() -> StepUpGate {
+    use_context::<StepUpGate>()
+}
+
 #[component]
 pub(super) fn SyncAdminPanel() -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
     let reload = use_reload();
+    let gate = use_step_up_gate();
+    use_context_provider(|| gate);
+    let mut confirmed = use_signal(String::new);
 
     let accounts = {
         use_resource(move || {
@@ -53,6 +67,19 @@ pub(super) fn SyncAdminPanel() -> Element {
     });
 
     rsx! {
+        if gate.is_open() {
+            StepUpPrompt {
+                enrolled: true,
+                intro: Some(i18n.t("console.stepUp.intro")),
+                on_done: move |()| {
+                    gate.close();
+                    confirmed.set(i18n.t("stepUp.confirmedRetry"));
+                },
+            }
+        }
+        if !confirmed.read().is_empty() {
+            p { class: "ik-muted", style: "font-size:12px;", "{confirmed}" }
+        }
         // First, not last: this is the only surface that says whether the catalogue-wide half of
         // the AniList integration is running at all, and every account row below it is about the
         // other half.
@@ -95,6 +122,7 @@ pub(super) fn SyncAdminPanel() -> Element {
 pub(super) fn SyncAccountRow(account: Signal<AdminSyncAccount>, reload: Reload) -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
+    let gate = use_sync_gate();
     let mut busy = use_signal(|| false);
     let acc = account.read();
     let last_sync = rel_time(i18n, acc.last_synced_at.as_deref());
@@ -110,10 +138,16 @@ pub(super) fn SyncAccountRow(account: Signal<AdminSyncAccount>, reload: Reload) 
             busy.set(true);
             let provider = provider.clone();
             spawn(async move {
-                let client = api.client();
+                let client = gate.client(api);
                 let body = tankovault_api_client::types::SyncAccountTarget { provider, user_id };
-                if client.admin_sync_pull().body(body).send().await.is_ok() {
-                    reload.bump();
+                match client.admin_sync_pull().body(body).send().await {
+                    Ok(_) => reload.bump(),
+                    // The row has no error line, so every other failure stays as silent as it
+                    // was; an elevation demand has to reach the panel's prompt or the button
+                    // does nothing for the rest of the session.
+                    Err(e) => {
+                        let _refused = gate.refused(api::Refusal::of(&e));
+                    }
                 }
                 busy.set(false);
             });
@@ -131,10 +165,14 @@ pub(super) fn SyncAccountRow(account: Signal<AdminSyncAccount>, reload: Reload) 
             busy.set(true);
             let provider = provider.clone();
             spawn(async move {
-                let client = api.client();
+                let client = gate.client(api);
                 let body = tankovault_api_client::types::SyncAccountTarget { provider, user_id };
-                if client.admin_sync_push().body(body).send().await.is_ok() {
-                    reload.bump();
+                match client.admin_sync_push().body(body).send().await {
+                    Ok(_) => reload.bump(),
+                    // See `pull` above.
+                    Err(e) => {
+                        let _refused = gate.refused(api::Refusal::of(&e));
+                    }
                 }
                 busy.set(false);
             });
@@ -152,10 +190,14 @@ pub(super) fn SyncAccountRow(account: Signal<AdminSyncAccount>, reload: Reload) 
             busy.set(true);
             let provider = provider.clone();
             spawn(async move {
-                let client = api.client();
+                let client = gate.client(api);
                 let body = tankovault_api_client::types::SyncAccountTarget { provider, user_id };
-                if client.admin_sync_unlink().body(body).send().await.is_ok() {
-                    reload.bump();
+                match client.admin_sync_unlink().body(body).send().await {
+                    Ok(_) => reload.bump(),
+                    // See `pull` above.
+                    Err(e) => {
+                        let _refused = gate.refused(api::Refusal::of(&e));
+                    }
                 }
                 busy.set(false);
             });

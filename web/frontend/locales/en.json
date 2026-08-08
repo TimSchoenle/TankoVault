@@ -1109,6 +1109,9 @@
       "title": "Provider statistics",
       "unavailable": "Provider stats unavailable: {message}"
     },
+    "stepUp": {
+      "intro": "This action changes the deployment, so we ask for your second factor before it runs."
+    },
     "sync": {
       "accounts": "Linked accounts",
       "assign": "Assign",
@@ -1415,7 +1418,8 @@
     "unbuildable": "That request couldn't be built. This is a bug — please report it.",
     "unreachable": "Couldn't reach the server. Check your connection and retry.",
     "unreadable": "The server sent something this app couldn't read.",
-    "unexpected": "The server answered with something this version doesn't understand. Try again, or reload the page."
+    "unexpected": "The server answered with something this version doesn't understand. Try again, or reload the page.",
+    "mfaEnrolmentRequired": "Set up two-factor authentication on your account before using this. Account → Security."
   },
   "feedback": {
     "failed": "Something went wrong: {message}",

@@ -7,7 +7,7 @@
 //! not a rolled-back no-op: the purge is resumable, and pressing it again continues.
 
 use crate::api;
-use crate::components::{OutcomeLine, Section, TypeToConfirm};
+use crate::components::{use_step_up_gate, OutcomeLine, Section, StepUpPrompt, TypeToConfirm};
 use crate::hooks::{use_busy, use_outcome, Reload};
 use crate::i18n::use_i18n;
 use crate::util::thousands;
@@ -36,6 +36,7 @@ struct Progress {
 pub(super) fn PurgePanel(totals: Option<CatalogueSummary>, reload: Reload) -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
+    let gate = use_step_up_gate();
     let busy = use_busy();
     let mut outcome = use_outcome();
     let mut progress = use_signal(Progress::default);
@@ -57,7 +58,9 @@ pub(super) fn PurgePanel(totals: Option<CatalogueSummary>, reload: Reload) -> El
             running: true,
             ..Progress::default()
         });
-        let client = api.client();
+        // Elevated, and built once for the whole loop: the grant outlives the batches, so a
+        // purge that took a hundred calls asks for the second factor once rather than per batch.
+        let client = gate.client(api);
         spawn(async move {
             let confirm = match scope {
                 PurgeScope::Chapters => "chapters",
@@ -78,7 +81,12 @@ pub(super) fn PurgePanel(totals: Option<CatalogueSummary>, reload: Reload) -> El
                 let batch = match call {
                     Ok(batch) => batch,
                     Err(e) => {
-                        outcome.set(Some(Err(api::friendly_error(i18n, e))));
+                        // Mid-loop as much as on the first call: a grant that lapses between
+                        // batches leaves a half-emptied catalogue, and the operator needs the
+                        // prompt to finish it rather than "you don't have permission".
+                        if !gate.refused(api::Refusal::of(&e)) {
+                            outcome.set(Some(Err(api::guarded_error(i18n, e))));
+                        }
                         break;
                     }
                 };
@@ -153,6 +161,16 @@ pub(super) fn PurgePanel(totals: Option<CatalogueSummary>, reload: Reload) -> El
                             ],
                         )
                     }
+                }
+            }
+            if gate.is_open() {
+                StepUpPrompt {
+                    enrolled: true,
+                    intro: Some(i18n.t("console.stepUp.intro")),
+                    on_done: move |()| {
+                        gate.close();
+                        outcome.set(Some(Ok(i18n.t("stepUp.confirmedRetry"))));
+                    },
                 }
             }
             OutcomeLine { outcome: outcome.read().clone() }

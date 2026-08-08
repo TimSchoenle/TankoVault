@@ -14,8 +14,8 @@ mod sync;
 
 use crate::api;
 use crate::components::{
-    async_view, CompactPager, Kpi, ListSearch, NoSelection, OutcomeLine, Section, SegControl,
-    SkeletonBlock, TabBar, TabKind, TypeToConfirm, Window,
+    async_view, use_step_up_gate, CompactPager, Kpi, ListSearch, NoSelection, OutcomeLine, Section,
+    SegControl, SkeletonBlock, StepUpPrompt, TabBar, TabKind, TypeToConfirm, Window,
 };
 use crate::hooks::{use_busy, use_outcome, use_reload, Reload};
 use crate::i18n::use_i18n;
@@ -407,6 +407,9 @@ fn UserEditor(
     let mut outcome = use_outcome();
     let nav = use_console_nav();
     let tab = Tab::parse(nav.query().tab_token());
+    // One gate for the whole editor: identity, status, grants, sessions and erasure are all
+    // mutating operator capabilities, and the editor has one outcome line to answer through.
+    let gate = use_step_up_gate();
 
     let can_write = caps.can(Permission::UsersWrite);
     let can_grant = caps.can(Permission::UsersPermissions);
@@ -470,15 +473,22 @@ fn UserEditor(
             let grants = (can_grant && grants_dirty).then(|| SetPermissions {
                 permissions: chosen.peek().iter().copied().collect(),
             });
-            let client = api.client();
+            let client = gate.client(api);
             spawn(async move {
                 let mut failure = None;
+                // A step-up demand is not a failure to report: it stops the chain and opens the
+                // prompt, so the two later calls do not run against an elevation the first one
+                // has just proved absent.
+                let mut demanded = false;
                 if let Some(body) = identity {
                     if let Err(e) = client.update_user().id(id.clone()).body(body).send().await {
-                        failure = Some(api::friendly_error(i18n, e));
+                        demanded = gate.refused(api::Refusal::of(&e));
+                        if !demanded {
+                            failure = Some(api::guarded_error(i18n, e));
+                        }
                     }
                 }
-                if failure.is_none() {
+                if failure.is_none() && !demanded {
                     if let Some(body) = status {
                         if let Err(e) = client
                             .set_user_status()
@@ -487,11 +497,14 @@ fn UserEditor(
                             .send()
                             .await
                         {
-                            failure = Some(api::friendly_error(i18n, e));
+                            demanded = gate.refused(api::Refusal::of(&e));
+                            if !demanded {
+                                failure = Some(api::guarded_error(i18n, e));
+                            }
                         }
                     }
                 }
-                if failure.is_none() {
+                if failure.is_none() && !demanded {
                     if let Some(body) = grants {
                         if let Err(e) = client
                             .set_user_permissions()
@@ -500,18 +513,23 @@ fn UserEditor(
                             .send()
                             .await
                         {
-                            failure = Some(api::friendly_error(i18n, e));
+                            demanded = gate.refused(api::Refusal::of(&e));
+                            if !demanded {
+                                failure = Some(api::guarded_error(i18n, e));
+                            }
                         }
                     }
                 }
-                match failure {
-                    None => {
-                        outcome.set(Some(Ok(i18n.t("console.users.saved"))));
-                        suspend_reason.set(String::new());
-                        detail_reload.bump();
-                        reload.bump();
-                    }
-                    Some(message) => outcome.set(Some(Err(message))),
+                if demanded {
+                    // The prompt is on screen; the operator presses Save again once confirmed,
+                    // and the fields still hold everything they typed.
+                } else if let Some(message) = failure {
+                    outcome.set(Some(Err(message)));
+                } else {
+                    outcome.set(Some(Ok(i18n.t("console.users.saved"))));
+                    suspend_reason.set(String::new());
+                    detail_reload.bump();
+                    reload.bump();
                 }
                 busy.release();
             });
@@ -579,7 +597,15 @@ fn UserEditor(
                             class: "ik-btn sm",
                             disabled: busy.is_busy() || user.active_sessions == 0,
                             onclick: move |_| {
-                                revoke_all(api, i18n, busy, outcome, detail_reload, id_header.clone());
+                                revoke_all(
+                                    api,
+                                    i18n,
+                                    busy,
+                                    outcome,
+                                    detail_reload,
+                                    id_header.clone(),
+                                    gate,
+                                );
                             },
                             {i18n.t("console.users.revokeSessions")}
                         }
@@ -604,6 +630,16 @@ fn UserEditor(
             if is_self {
                 p { class: "ik-muted", style: "font-size:12px;margin:12px 0 0;",
                     {i18n.t("console.users.selfNotice")}
+                }
+            }
+            if gate.is_open() {
+                StepUpPrompt {
+                    enrolled: true,
+                    intro: Some(i18n.t("console.stepUp.intro")),
+                    on_done: move |()| {
+                        gate.close();
+                        outcome.set(Some(Ok(i18n.t("stepUp.confirmedRetry"))));
+                    },
                 }
             }
             OutcomeLine { outcome: outcome.read().clone() }
@@ -650,6 +686,7 @@ fn UserEditor(
                                             enabled: can_write && !is_self,
                                             reload,
                                             detail_reload,
+                                            gate,
                                         }
                                     }
                                 }
@@ -743,6 +780,7 @@ fn UserEditor(
                                                     outcome,
                                                     detail_reload,
                                                     id_sessions.clone(),
+                                                    gate,
                                                 );
                                             },
                                             {i18n.t("console.users.revokeSessions")}
@@ -826,6 +864,7 @@ fn UserEditor(
                                                 erase_reason.peek().trim().to_owned(),
                                                 reload,
                                                 on_erased,
+                                                gate,
                                             );
                                         },
                                     }

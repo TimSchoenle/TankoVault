@@ -1,7 +1,7 @@
 //! Registering a new provider.
 
 use crate::api;
-use crate::components::OutcomeLine;
+use crate::components::{use_step_up_gate, OutcomeLine, StepUpPrompt};
 use crate::hooks::{use_busy, use_outcome, Reload};
 use crate::i18n::use_i18n;
 use crate::models::*;
@@ -71,6 +71,9 @@ pub(super) fn CreateProviderForm(reload: Reload, on_done: EventHandler<()>) -> E
     let i18n = use_i18n();
     let busy = use_busy();
     let mut outcome = use_outcome();
+    // Elevated: registering a provider is a mutating operator capability, and the API answers
+    // `403 step_up_required` until a second factor has been presented.
+    let gate = use_step_up_gate();
     let mut slug = use_signal(String::new);
     let mut name = use_signal(String::new);
     let mut base_url = use_signal(String::new);
@@ -96,7 +99,7 @@ pub(super) fn CreateProviderForm(reload: Reload, on_done: EventHandler<()>) -> E
                 return;
             }
         };
-        let client = api.client();
+        let client = gate.client(api);
         spawn(async move {
             match client.create_provider().body(body).send().await {
                 Ok(_) => {
@@ -107,7 +110,11 @@ pub(super) fn CreateProviderForm(reload: Reload, on_done: EventHandler<()>) -> E
                     reload.bump();
                     on_done.call(());
                 }
-                Err(e) => outcome.set(Some(Err(api::friendly_error(i18n, e)))),
+                Err(e) => {
+                    if !gate.refused(api::Refusal::of(&e)) {
+                        outcome.set(Some(Err(api::guarded_error(i18n, e))));
+                    }
+                }
             }
             busy.release();
         });
@@ -174,6 +181,16 @@ pub(super) fn CreateProviderForm(reload: Reload, on_done: EventHandler<()>) -> E
                         "aria-label": i18n.t("console.providers.adapterConfig"),
                         value: "{config}",
                         oninput: move |e| config.set(e.value()),
+                    }
+                }
+                if gate.is_open() {
+                    StepUpPrompt {
+                        enrolled: true,
+                        intro: Some(i18n.t("console.stepUp.intro")),
+                        on_done: move |()| {
+                            gate.close();
+                            outcome.set(Some(Ok(i18n.t("stepUp.confirmedRetry"))));
+                        },
                     }
                 }
                 OutcomeLine { outcome: outcome.read().clone() }

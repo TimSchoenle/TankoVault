@@ -23,7 +23,7 @@ use uuid::Uuid;
     responses(
         (status = 200, description = "System-wide stats", body = tankovault_contracts::admin::SystemStatsView),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 404, description = "the system statistics feature is disabled", body = crate::error::ProblemDetails),
     )
 )]
@@ -96,7 +96,7 @@ pub struct AuditQuery {
     responses(
         (status = 200, description = "A page of the audit trail", body = tankovault_contracts::admin::AuditPageView),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 404, description = "the audit trail feature is disabled", body = crate::error::ProblemDetails),
     )
 )]
@@ -142,7 +142,7 @@ pub async fn audit_log(
     responses(
         (status = 200, description = "Distinct action keys, sorted", body = Vec<String>),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 404, description = "the audit trail feature is disabled", body = crate::error::ProblemDetails),
     )
 )]

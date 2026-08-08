@@ -87,7 +87,7 @@ pub(crate) fn PasskeysCard() -> Element {
                     // the *type* is what tells them apart — reporting the raw problem would show
                     // "insufficient privileges" to someone perfectly entitled to be here.
                     let detail = api::problem_detail(&e);
-                    if gate.refused(api::error_status(&e)) {
+                    if gate.refused(api::Refusal::of(&e)) {
                         error.set(detail);
                     } else {
                         error.set(Some(api::friendly_error(i18n, e)));

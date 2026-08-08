@@ -81,11 +81,11 @@ pub(crate) fn MfaCard() -> Element {
     // written once. A handler that reported the raw problem instead would show the reader
     // "insufficient privileges" for an action they are perfectly entitled to take.
     //
-    // Takes the *extracted* status and message rather than the error itself: every generated
-    // operation has its own error type, so one callback cannot accept them all — and one
-    // callback is the point.
-    let handle_refusal = use_callback(move |(status, message): (Option<u16>, String)| {
-        if gate.refused(status) {
+    // Takes the *classified* refusal and the message rather than the error itself: every
+    // generated operation has its own error type, so one callback cannot accept them all — and
+    // one callback is the point.
+    let handle_refusal = use_callback(move |(refused, message): (api::Refusal, String)| {
+        if gate.refused(refused) {
             error.set(None);
         } else {
             error.set(Some(message));
@@ -501,7 +501,7 @@ fn SecurityKeyRow(
                     reload.bump();
                 }
                 Err(e) => {
-                    if !gate.refused(api::error_status(&e)) {
+                    if !gate.refused(api::Refusal::of(&e)) {
                         error.set(Some(api::friendly_error(i18n, e)));
                     }
                 }
@@ -525,7 +525,7 @@ fn SecurityKeyRow(
                     reload.bump();
                 }
                 Err(e) => {
-                    if !gate.refused(api::error_status(&e)) {
+                    if !gate.refused(api::Refusal::of(&e)) {
                         error.set(Some(api::friendly_error(i18n, e)));
                     }
                 }
@@ -601,13 +601,11 @@ fn SecurityKeyRow(
     }
 }
 
-/// Split a failed call into the pair `handle_refusal` reads.
-fn refusal<E>(
+fn refusal(
     i18n: crate::i18n::Translator,
-    err: progenitor_client::Error<E>,
-) -> (Option<u16>, String) {
-    let status = api::error_status(&err);
-    (status, api::friendly_error(i18n, err))
+    err: progenitor_client::Error<crate::wire::types::ProblemDetails>,
+) -> (api::Refusal, String) {
+    (api::Refusal::of(&err), api::friendly_error(i18n, err))
 }
 
 /// Report a ceremony outcome and release the busy latch.

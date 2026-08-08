@@ -6,7 +6,9 @@
 //! everything pointing at it breaks.
 
 use crate::api;
-use crate::components::{async_block, async_block_list, Cover};
+use crate::components::{
+    async_block, async_block_list, use_step_up_gate, Cover, StepUpGate, StepUpPrompt,
+};
 use crate::hooks::{use_reload, Reload};
 use crate::i18n::use_i18n;
 use crate::models::*;
@@ -27,6 +29,10 @@ pub(super) fn MergeQueue() -> Element {
     let band = nav.query().band;
     let mut notice = use_signal(String::new);
     let mut busy = use_signal(|| false);
+    // One gate for the whole queue, handed down to the rows: the elevation it earns covers
+    // every action on the panel, and a prompt per row would put the same question on screen
+    // once for each candidate.
+    let gate = use_step_up_gate();
 
     let resource = use_resource(move || {
         reload.track();
@@ -48,7 +54,7 @@ pub(super) fn MergeQueue() -> Element {
         let list = list.to_vec();
         rsx! {
             for c in list {
-                MergeRow { key: "{c.id}", candidate: Signal::new(c), reload }
+                MergeRow { key: "{c.id}", candidate: Signal::new(c), reload, gate }
             }
         }
     });
@@ -62,7 +68,7 @@ pub(super) fn MergeQueue() -> Element {
         busy.set(true);
         notice.set(String::new());
         spawn(async move {
-            let client = api.client();
+            let client = gate.client(api);
             if session.token_value().is_some() {
                 match client.sweep_merge_candidates().send().await {
                     Ok(r) => {
@@ -82,10 +88,14 @@ pub(super) fn MergeQueue() -> Element {
                         ));
                         reload.bump();
                     }
-                    Err(e) => notice.set(i18n.args(
-                        "console.merge.actionFailed",
-                        &[("message", &api::friendly_error(i18n, e))],
-                    )),
+                    Err(e) => {
+                        if !gate.refused(api::Refusal::of(&e)) {
+                            notice.set(i18n.args(
+                                "console.merge.actionFailed",
+                                &[("message", &api::guarded_error(i18n, e))],
+                            ));
+                        }
+                    }
                 }
             }
             busy.set(false);
@@ -99,7 +109,7 @@ pub(super) fn MergeQueue() -> Element {
         busy.set(true);
         notice.set(String::new());
         spawn(async move {
-            let client = api.client();
+            let client = gate.client(api);
             if session.token_value().is_some() {
                 match client.rebuild_matching_keys().send().await {
                     Ok(r) => {
@@ -113,10 +123,14 @@ pub(super) fn MergeQueue() -> Element {
                         ));
                         reload.bump();
                     }
-                    Err(e) => notice.set(i18n.args(
-                        "console.merge.actionFailed",
-                        &[("message", &api::friendly_error(i18n, e))],
-                    )),
+                    Err(e) => {
+                        if !gate.refused(api::Refusal::of(&e)) {
+                            notice.set(i18n.args(
+                                "console.merge.actionFailed",
+                                &[("message", &api::guarded_error(i18n, e))],
+                            ));
+                        }
+                    }
                 }
             }
             busy.set(false);
@@ -145,6 +159,16 @@ pub(super) fn MergeQueue() -> Element {
                     {i18n.t("console.merge.rebuildKeys")}
                 }
             }
+            if gate.is_open() {
+                StepUpPrompt {
+                    enrolled: true,
+                    intro: Some(i18n.t("console.stepUp.intro")),
+                    on_done: move |()| {
+                        gate.close();
+                        notice.set(i18n.t("stepUp.confirmedRetry"));
+                    },
+                }
+            }
             if !notice.read().is_empty() {
                 div { class: "ik-card", style: "margin-bottom:12px;padding:10px;",
                     "{notice}"
@@ -156,7 +180,13 @@ pub(super) fn MergeQueue() -> Element {
 }
 
 #[component]
-pub(super) fn MergeRow(candidate: Signal<MergeCandidate>, reload: Reload) -> Element {
+pub(super) fn MergeRow(
+    candidate: Signal<MergeCandidate>,
+    reload: Reload,
+    /// The queue's gate, so a refusal opens the one prompt above the list rather than a
+    /// duplicate inside every row.
+    gate: StepUpGate,
+) -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
     let session = use_session();
@@ -200,9 +230,9 @@ pub(super) fn MergeRow(candidate: Signal<MergeCandidate>, reload: Reload) -> Ele
         }
         busy.set(true);
         spawn(async move {
-            let client = api.client();
-            if session.token_value().is_some()
-                && client
+            let client = gate.client(api);
+            if session.token_value().is_some() {
+                match client
                     .merge_series()
                     .body(MergeRequest {
                         keep: keep_id,
@@ -210,9 +240,15 @@ pub(super) fn MergeRow(candidate: Signal<MergeCandidate>, reload: Reload) -> Ele
                     })
                     .send()
                     .await
-                    .is_ok()
-            {
-                reload.bump();
+                {
+                    Ok(_) => reload.bump(),
+                    // The row has no error line of its own, so anything but a step-up demand
+                    // still leaves the queue as it was — but the demand has to reach the
+                    // panel's prompt, or the button silently does nothing forever.
+                    Err(e) => {
+                        let _refused = gate.refused(api::Refusal::of(&e));
+                    }
+                }
             }
             busy.set(false);
         });
@@ -224,16 +260,21 @@ pub(super) fn MergeRow(candidate: Signal<MergeCandidate>, reload: Reload) -> Ele
         }
         busy.set(true);
         spawn(async move {
-            let client = api.client();
-            if session.token_value().is_some()
-                && client
+            let client = gate.client(api);
+            if session.token_value().is_some() {
+                match client
                     .dismiss_merge_candidate()
                     .body(DismissRequest { id })
                     .send()
                     .await
-                    .is_ok()
-            {
-                reload.bump();
+                {
+                    Ok(_) => reload.bump(),
+                    // See the merge above: the demand reaches the panel's prompt, everything
+                    // else leaves the row alone.
+                    Err(e) => {
+                        let _refused = gate.refused(api::Refusal::of(&e));
+                    }
+                }
             }
             busy.set(false);
         });

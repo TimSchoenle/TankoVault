@@ -25,7 +25,7 @@ use utoipa::ToSchema;
     responses(
         (status = 200, description = "All providers", body = Vec<Provider>),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn list_providers(
@@ -77,7 +77,7 @@ async fn validate_base_url(base_url: &str) -> ApiResult<()> {
     responses(
         (status = 200, description = "Created", body = Provider),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 400, description = "Provider slug is not a legal bus token", body = crate::error::ProblemDetails),
         (status = 409, description = "Provider slug already exists", body = crate::error::ProblemDetails),
     )
@@ -149,7 +149,7 @@ pub struct UpdateProvider {
     responses(
         (status = 200, description = "Updated", body = Provider),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 404, description = "Provider not found", body = crate::error::ProblemDetails),
     )
 )]
@@ -203,7 +203,7 @@ pub async fn update_provider(
     responses(
         (status = 200, description = "Acknowledged", body = serde_json::Value, example = json!({"ok": true})),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 404, description = "Provider not found", body = crate::error::ProblemDetails),
     )
 )]
@@ -246,7 +246,7 @@ pub struct SetProviderState {
     responses(
         (status = 200, description = "Updated", body = Provider),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 404, description = "Provider not found", body = crate::error::ProblemDetails),
     )
 )]
@@ -284,7 +284,7 @@ pub async fn set_provider_state(
     responses(
         (status = 200, description = "Scan queued, forwarded from the control-plane", body = tankovault_contracts::admin::ScanTriggeredView),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 404, description = "Provider not found", body = crate::error::ProblemDetails),
     )
 )]
@@ -325,7 +325,7 @@ pub async fn resolve_provider(
     responses(
         (status = 200, description = "Per-provider stats", body = Vec<tankovault_contracts::admin::ProviderStatView>),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn provider_stats(
@@ -374,7 +374,7 @@ pub struct TestAdapterRequest {
         (status = 200, description = "Dry-run sample (adapter list/fetch results, each individually ok/error)", body = serde_json::Value, example = json!({"provider": "kunmanga", "latest": {"ok": true, "items": []}})),
         (status = 400, description = "Adapter build failed or the dry-run timed out", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 404, description = "Provider not found", body = crate::error::ProblemDetails),
     )
 )]

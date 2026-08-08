@@ -220,7 +220,7 @@ pub struct PurgeView {
     responses(
         (status = 200, description = "A page of the catalogue", body = CataloguePageView),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn list_catalogue(
@@ -275,7 +275,7 @@ pub async fn list_catalogue(
     responses(
         (status = 200, description = "Deployment-wide catalogue totals", body = CatalogueSummaryView),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn catalogue_summary(
@@ -310,7 +310,7 @@ pub async fn catalogue_summary(
         (status = 200, description = "What was removed", body = DeletionView),
         (status = 400, description = "no ids, or more than the per-request cap", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn bulk_delete_series(
@@ -378,7 +378,7 @@ pub async fn bulk_delete_series(
         (status = 200, description = "What this batch removed and what is left", body = PurgeView),
         (status = 400, description = "`confirm` does not echo the scope", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
-        (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn purge_catalogue(

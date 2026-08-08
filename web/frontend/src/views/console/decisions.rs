@@ -7,7 +7,7 @@
 //! and only the terms say which title matched and what each rule contributed.
 
 use crate::api;
-use crate::components::{async_view, SkeletonRows};
+use crate::components::{async_view, use_step_up_gate, SkeletonRows, StepUpGate, StepUpPrompt};
 use crate::i18n::{use_i18n, Translator};
 use crate::models::*;
 use crate::state::capabilities::use_capabilities;
@@ -98,7 +98,10 @@ fn MergeJournal(tick: RefreshTick) -> Element {
     let can_revert = caps.can(Permission::MergeRevert);
     let mut outcome = use_signal(String::new);
     let mut blocked_only = use_signal(|| false);
-    let notice = use_signal(String::new);
+    let mut notice = use_signal(String::new);
+    // One gate for the journal, shared with every row: the rows report through the same
+    // `notice`, so the prompt belongs beside it rather than duplicated per decision.
+    let gate = use_step_up_gate();
 
     let filter_outcome = outcome.read().clone();
     let only_blocked = *blocked_only.read();
@@ -144,6 +147,16 @@ fn MergeJournal(tick: RefreshTick) -> Element {
                 span { {i18n.t("console.decisions.filter.blockedOnly")} }
             }
         }
+        if gate.is_open() {
+            StepUpPrompt {
+                enrolled: true,
+                intro: Some(i18n.t("console.stepUp.intro")),
+                on_done: move |()| {
+                    gate.close();
+                    notice.set(i18n.t("stepUp.confirmedRetry"));
+                },
+            }
+        }
         if !notice.read().is_empty() {
             div { class: "ik-note", style: "margin-bottom:10px;", "{notice}" }
         }
@@ -170,6 +183,7 @@ fn MergeJournal(tick: RefreshTick) -> Element {
                                     can_revert,
                                     notice,
                                     tick,
+                                    gate,
                                 }
                             }
                         }
@@ -187,6 +201,8 @@ fn MergeDecisionRow(
     can_revert: bool,
     notice: Signal<String>,
     tick: RefreshTick,
+    /// The journal's gate, so a refusal opens the one prompt beside the notice.
+    gate: StepUpGate,
 ) -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
@@ -211,7 +227,7 @@ fn MergeDecisionRow(
         busy.set(true);
         let mut notice = notice;
         spawn(async move {
-            let client = api.client();
+            let client = gate.client(api);
             let outcome = if revert {
                 client
                     .revert_merge_decision()
@@ -241,10 +257,14 @@ fn MergeDecisionRow(
                     reason.set(String::new());
                     tick.bump();
                 }
-                Err(e) => notice.set(i18n.args(
-                    "console.decisions.actionFailed",
-                    &[("message", &api::friendly_error(i18n, e))],
-                )),
+                Err(e) => {
+                    if !gate.refused(api::Refusal::of(&e)) {
+                        notice.set(i18n.args(
+                            "console.decisions.actionFailed",
+                            &[("message", &api::guarded_error(i18n, e))],
+                        ));
+                    }
+                }
             }
             busy.set(false);
         });
@@ -419,7 +439,9 @@ fn SyncJournal(tick: RefreshTick) -> Element {
     // Default on: a reconciliation is mostly considerations, and an operator opening this panel
     // is almost always asking what actually changed.
     let mut applied_only = use_signal(|| true);
-    let notice = use_signal(String::new);
+    let mut notice = use_signal(String::new);
+    // See `MergeJournal`: one gate, shared with the rows that report through `notice`.
+    let gate = use_step_up_gate();
 
     let filter_action = action.read().clone();
     let only_applied = *applied_only.read();
@@ -465,6 +487,16 @@ fn SyncJournal(tick: RefreshTick) -> Element {
                 span { {i18n.t("console.decisions.filter.appliedOnly")} }
             }
         }
+        if gate.is_open() {
+            StepUpPrompt {
+                enrolled: true,
+                intro: Some(i18n.t("console.stepUp.intro")),
+                on_done: move |()| {
+                    gate.close();
+                    notice.set(i18n.t("stepUp.confirmedRetry"));
+                },
+            }
+        }
         if !notice.read().is_empty() {
             div { class: "ik-note", style: "margin-bottom:10px;", "{notice}" }
         }
@@ -491,6 +523,7 @@ fn SyncJournal(tick: RefreshTick) -> Element {
                                     can_revert,
                                     notice,
                                     tick,
+                                    gate,
                                 }
                             }
                         }
@@ -508,6 +541,8 @@ fn SyncDecisionRow(
     can_revert: bool,
     notice: Signal<String>,
     tick: RefreshTick,
+    /// The journal's gate, so a refusal opens the one prompt beside the notice.
+    gate: StepUpGate,
 ) -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
@@ -534,7 +569,7 @@ fn SyncDecisionRow(
         busy.set(true);
         let mut notice = notice;
         spawn(async move {
-            let client = api.client();
+            let client = gate.client(api);
             let outcome = if revert {
                 client
                     .revert_sync_decision()
@@ -570,10 +605,14 @@ fn SyncDecisionRow(
                     reason.set(String::new());
                     tick.bump();
                 }
-                Err(e) => notice.set(i18n.args(
-                    "console.decisions.actionFailed",
-                    &[("message", &api::friendly_error(i18n, e))],
-                )),
+                Err(e) => {
+                    if !gate.refused(api::Refusal::of(&e)) {
+                        notice.set(i18n.args(
+                            "console.decisions.actionFailed",
+                            &[("message", &api::guarded_error(i18n, e))],
+                        ));
+                    }
+                }
             }
             busy.set(false);
         });

@@ -68,6 +68,43 @@ struct FrontendConfig {
     /// an SSE stream stays open indefinitely.
     #[serde(default = "FrontendConfig::default_connect_timeout_secs")]
     connect_timeout_secs: u64,
+    /// Opt-ins for running behind Cloudflare. See [`CloudflareConfig`].
+    #[serde(default)]
+    cloudflare: CloudflareConfig,
+}
+
+/// What this tier's Content-Security-Policy concedes to Cloudflare, one flag per product.
+///
+/// Both default off, and both stay off for a deployment that is not behind Cloudflare: each one
+/// admits something the policy otherwise refuses, and an unused concession is only a weakness.
+#[derive(Debug, Clone, Default, Deserialize)]
+struct CloudflareConfig {
+    /// Send a freshly minted `'nonce-…'` in `script-src` on every response.
+    ///
+    /// Cloudflare's bot products (Bot Fight Mode, JavaScript Detections, the challenge platform)
+    /// inject an inline `<script>` into the served HTML at the edge, after this service has
+    /// hashed the shell — so `script-src` refuses it and the detection silently never runs.
+    /// Cloudflare's documented answer is a nonce: it parses the `Content-Security-Policy`
+    /// *response header* and copies the nonce onto what it injects. That is why nothing is
+    /// stamped into the shell here — the header is the whole contract, and the shell's own
+    /// inline scripts keep running by hash either way.
+    ///
+    /// The concession is real but narrow: an injected script that can already run could read
+    /// this header back off a same-origin fetch and admit further inline script. It cannot
+    /// forge one ahead of time (128 CSPRNG bits, minted per response), and it still cannot
+    /// reach `'unsafe-eval'` or an off-origin host. Load-bearing for that: the shell is served
+    /// `Cache-Control: no-cache`. A cached shell would pin one nonce across every reader for
+    /// the lifetime of the entry, which is `'unsafe-inline'` with extra steps.
+    #[serde(default)]
+    script_nonce: bool,
+    /// Admit `https://challenges.cloudflare.com` in `script-src` and `frame-src`, for an
+    /// embedded Turnstile widget.
+    ///
+    /// Only for a widget rendered *in* a page this service serves; a managed-challenge
+    /// interstitial is a Cloudflare-served document carrying its own policy, and needs nothing
+    /// here. The origin is Turnstile's only host and `'self'` can never cover it.
+    #[serde(default)]
+    turnstile: bool,
 }
 
 impl FrontendConfig {
@@ -96,6 +133,7 @@ impl Default for FrontendConfig {
             api_upstream: Self::default_api_upstream(),
             max_body_bytes: Self::default_max_body_bytes(),
             connect_timeout_secs: Self::default_connect_timeout_secs(),
+            cloudflare: CloudflareConfig::default(),
         }
     }
 }
@@ -171,14 +209,7 @@ async fn serve_once(
     // bucket tight enough to matter throttles a legit cold load. The API applies the limits
     // that protect state, and sees the real client via the X-Forwarded-For this hop appends.
     let health = upstream_health(&state);
-    let app = build_app(
-        &cfg.frontend.static_dir,
-        &cfg.frontend.notices_path,
-        state,
-        &stack_security(&cfg.frontend),
-        &metrics,
-        health,
-    );
+    let app = build_app(&cfg.frontend, state, &metrics, health);
     tankovault_service::serve(&cfg.bind_addr, app, shutdown).await?;
     Ok(())
 }
@@ -225,19 +256,59 @@ fn upstream_health(state: &AppState) -> Health {
 /// the ops probes merged *outside* it — so a body cap or a timeout can never make a healthy
 /// replica look unhealthy to its orchestrator.
 fn build_app(
-    static_dir: &str,
-    notices_path: &str,
+    frontend: &FrontendConfig,
     state: AppState,
-    security: &SecurityConfig,
     metrics: &MetricsRegistry,
     health: Health,
 ) -> Router {
-    HttpStack::new(security, metrics.clone())
-        .apply(build_router(static_dir, notices_path, state))
+    HttpStack::new(&stack_security(frontend), metrics.clone())
+        .apply(build_router(frontend, state))
         .merge(tankovault_service::ops_router(health, metrics.clone()))
 }
 
-/// Content-Security-Policy for the SPA shell.
+/// The Content-Security-Policy for the SPA shell, assembled once and split where a per-response
+/// nonce is spliced in.
+///
+/// Two halves rather than one string only because of [`CloudflareConfig::script_nonce`]: the
+/// nonce has to differ per response, and everything either side of it is fixed at startup.
+struct Policy {
+    /// The policy through the last `script-src` source expression.
+    head: String,
+    /// The directives after `script-src`, opening with the `;` that closes it.
+    tail: String,
+    /// Whether each response splices a freshly minted `'nonce-…'` between the two.
+    nonce: bool,
+}
+
+impl Policy {
+    /// The header value for one response.
+    fn header_value(&self) -> HeaderValue {
+        let policy = if self.nonce {
+            format!("{} 'nonce-{}'{}", self.head, mint_nonce(), self.tail)
+        } else {
+            format!("{}{}", self.head, self.tail)
+        };
+        // Unreachable in practice (the policy is assembled from ASCII only), but a hashless CSP
+        // still beats refusing to serve.
+        HeaderValue::from_str(&policy)
+            .unwrap_or_else(|_| HeaderValue::from_static("default-src 'self'"))
+    }
+}
+
+/// A CSP nonce: 128 bits from the OS CSPRNG, base64 as the grammar requires.
+///
+/// Unpredictability is the entire security property — a nonce an attacker can guess or reuse is
+/// `'unsafe-inline'`, so this must stay a cryptographic RNG and must stay per response.
+fn mint_nonce() -> String {
+    use base64::Engine as _;
+    use rand::Rng as _;
+
+    let mut bytes = [0u8; 16];
+    rand::rng().fill_bytes(&mut bytes);
+    base64::engine::general_purpose::STANDARD_NO_PAD.encode(bytes)
+}
+
+/// Build the Content-Security-Policy for the SPA shell.
 ///
 /// The access token lives only in memory; this CSP is the ceiling on where an injected script
 /// could send it. No `'unsafe-eval'`: `'wasm-unsafe-eval'` covers WebAssembly instantiation, and
@@ -248,8 +319,11 @@ fn build_app(
 /// error surfaced.
 ///
 /// `connect-src 'self'` is the exfiltration ceiling (widen only for a split-origin deployment);
-/// `img-src` allows any `https:`/`data:` host for provider-sourced cover art.
-fn content_security_policy(static_dir: &str) -> String {
+/// `img-src` allows any `https:`/`data:` host for provider-sourced cover art. `connect-src` also
+/// covers Cloudflare's `/cdn-cgi/challenge-platform/` beacons, and `script-src 'self'` its
+/// scripts, since both are served from this origin — the flags in [`CloudflareConfig`] exist for
+/// the two things that are *not* reachable from `'self'`.
+fn content_security_policy(static_dir: &str, cloudflare: &CloudflareConfig) -> Policy {
     let shell = Path::new(static_dir).join("index.html");
     let hashes = match std::fs::read_to_string(&shell) {
         Ok(html) => inline_script_hashes(&html),
@@ -270,18 +344,46 @@ fn content_security_policy(static_dir: &str) -> String {
         scripts.push_str(hash);
         scripts.push('\'');
     }
-    format!(
-        "default-src 'self'; \
-         script-src 'self' 'wasm-unsafe-eval'{scripts}; \
-         style-src 'self' 'unsafe-inline'; \
-         connect-src 'self'; \
-         img-src 'self' https: data:; \
-         font-src 'self' data:; \
-         object-src 'none'; \
-         base-uri 'none'; \
-         form-action 'self'; \
-         frame-ancestors 'none'"
-    )
+    // Kept as one origin in two directives: Turnstile loads `api.js` and then frames the widget
+    // from the same host, and admitting the script without the frame renders an empty box.
+    let (turnstile_script, turnstile_frame) = if cloudflare.turnstile {
+        (
+            " https://challenges.cloudflare.com",
+            " frame-src 'self' https://challenges.cloudflare.com;",
+        )
+    } else {
+        ("", "")
+    };
+
+    Policy {
+        head: format!(
+            "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'{scripts}{turnstile_script}"
+        ),
+        tail: format!(
+            "; style-src 'self' 'unsafe-inline'; \
+             connect-src 'self'; \
+             img-src 'self' https: data:; \
+             font-src 'self' data:; \
+             object-src 'none'; \
+             base-uri 'none'; \
+             form-action 'self';{turnstile_frame} \
+             frame-ancestors 'none'"
+        ),
+        nonce: cloudflare.script_nonce,
+    }
+}
+
+/// Supplies the `Content-Security-Policy` value for each static response.
+///
+/// A maker rather than a constant `HeaderValue` only because of the nonce; with the flag off it
+/// hands back the same policy every time.
+#[derive(Clone)]
+struct CspHeader(Arc<Policy>);
+
+impl<T> tower_http::set_header::MakeHeaderValue<T> for CspHeader {
+    fn make_header_value(&mut self, _response: &T) -> Option<HeaderValue> {
+        Some(self.0.header_value())
+    }
 }
 
 /// The `sha256-…` source expressions for every inline `<script>` in `html`.
@@ -394,17 +496,19 @@ const NOTICES_ROUTE: &str = "/third-party-notices";
 
 /// Assemble the router: the health probe, the licence notices, the `/v1/*` proxy, and the
 /// static bundle (with SPA fallback and hardening headers) catching everything else.
-fn build_router(static_dir: &str, notices_path: &str, state: AppState) -> Router {
+fn build_router(frontend: &FrontendConfig, state: AppState) -> Router {
+    let static_dir = frontend.static_dir.as_str();
     // SPA fallback: any path with no matching file resolves to the app shell so client-side
     // routing (`/series/…`, `/account/…`) works on a hard refresh or a deep link.
     let index = format!("{}/index.html", static_dir.trim_end_matches('/'));
     let bundle = ServeDir::new(static_dir).fallback(ServeFile::new(index));
 
-    // Built once from the shell on disk, not per response, since the hashes cover a file that
-    // can't change without a redeploy. The fallback below is unreachable in practice (the
-    // policy is assembled from ASCII only), but a hashless CSP still beats refusing to serve.
-    let csp = HeaderValue::from_str(&content_security_policy(static_dir))
-        .unwrap_or_else(|_| HeaderValue::from_static("default-src 'self'"));
+    // Assembled once from the shell on disk, since the hashes cover a file that can't change
+    // without a redeploy; only the optional nonce is per response.
+    let csp = CspHeader(Arc::new(content_security_policy(
+        static_dir,
+        &frontend.cloudflare,
+    )));
 
     // Baseline hardening on the app shell only: `if_not_present` never clobbers a value a
     // served file already carries, and `/v1/*` responses keep the API's own headers untouched.
@@ -452,7 +556,7 @@ fn build_router(static_dir: &str, notices_path: &str, state: AppState) -> Router
             header::X_CONTENT_TYPE_OPTIONS,
             HeaderValue::from_static("nosniff"),
         ))
-        .service(ServeFile::new(notices_path));
+        .service(ServeFile::new(&frontend.notices_path));
 
     Router::new()
         .route("/healthz", get(healthz))
@@ -635,6 +739,40 @@ mod tests {
                          <script type=\"module\" src=\"/app.js\"></script></head>\
                          <body>INDEX</body></html>";
 
+    /// The service configuration these tests run against: the written bundle, its notices file
+    /// beside it, and a body cap small enough to be reached deliberately.
+    fn test_config(static_dir: &str) -> FrontendConfig {
+        FrontendConfig {
+            static_dir: static_dir.to_owned(),
+            notices_path: format!("{static_dir}/{NOTICES_FILE}"),
+            max_body_bytes: 1024 * 1024,
+            ..FrontendConfig::default()
+        }
+    }
+
+    /// The `Content-Security-Policy` the shell is actually served with.
+    async fn served_csp(front: SocketAddr) -> String {
+        reqwest::get(format!("http://{front}/"))
+            .await
+            .unwrap()
+            .headers()
+            .get("content-security-policy")
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default()
+            .to_owned()
+    }
+
+    /// The `script-src` directive of `csp`, without the `;` that closes it.
+    ///
+    /// Split out because `style-src` legitimately carries `'unsafe-inline'`: an assertion over
+    /// the whole policy string cannot tell the two apart, and the one that matters is scripts.
+    fn script_src(csp: &str) -> &str {
+        csp.split(';')
+            .map(str::trim)
+            .find(|directive| directive.starts_with("script-src "))
+            .unwrap_or_else(|| panic!("no script-src directive in {csp}"))
+    }
+
     /// Stand up the real frontend application — the shared stack included — against a stub
     /// upstream on an ephemeral port.
     ///
@@ -642,25 +780,11 @@ mod tests {
     /// missing (request id, ops probes) lives in the stack, so testing only the inner router
     /// would miss a regression.
     async fn spawn_frontend(static_dir: &str, upstream: SocketAddr) -> SocketAddr {
-        spawn_frontend_with_notices(
-            static_dir,
-            &format!("{static_dir}/{NOTICES_FILE}"),
-            upstream,
-        )
-        .await
+        spawn_frontend_with(test_config(static_dir), upstream).await
     }
 
-    /// As [`spawn_frontend`], with the notices document somewhere of the caller's choosing —
-    /// including nowhere.
-    async fn spawn_frontend_with_notices(
-        static_dir: &str,
-        notices_path: &str,
-        upstream: SocketAddr,
-    ) -> SocketAddr {
-        let frontend = FrontendConfig {
-            max_body_bytes: 1024 * 1024,
-            ..FrontendConfig::default()
-        };
+    /// As [`spawn_frontend`], for a caller that needs a configuration of its own.
+    async fn spawn_frontend_with(frontend: FrontendConfig, upstream: SocketAddr) -> SocketAddr {
         let state = AppState {
             client: reqwest::Client::builder()
                 .gzip(false)
@@ -672,10 +796,8 @@ mod tests {
         };
         let health = upstream_health(&state);
         let app = build_app(
-            static_dir,
-            notices_path,
+            &frontend,
             state,
-            &stack_security(&frontend),
             // No recorder: installing the process-wide Prometheus recorder twice fails, and
             // these tests share a process.
             &MetricsRegistry::disabled(),
@@ -759,13 +881,7 @@ mod tests {
         let dir = write_bundle();
         let front = spawn_frontend(dir.to_str().unwrap(), upstream).await;
 
-        let response = reqwest::get(format!("http://{front}/")).await.unwrap();
-        let csp = response
-            .headers()
-            .get("content-security-policy")
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or_default()
-            .to_owned();
+        let csp = served_csp(front).await;
         assert!(
             csp.contains("wasm-unsafe-eval"),
             "the API's CSP clobbered the SPA's: {csp}"
@@ -868,11 +984,103 @@ mod tests {
     /// asset still work, only the inline scripts are refused.
     #[test]
     fn a_missing_shell_degrades_to_a_hashless_policy() {
-        let csp = content_security_policy("./no-such-directory");
+        let policy = content_security_policy("./no-such-directory", &CloudflareConfig::default());
+        let csp = policy.header_value();
+        let csp = csp.to_str().unwrap();
         assert!(
             csp.contains("script-src 'self' 'wasm-unsafe-eval';"),
             "{csp}"
         );
+    }
+
+    /// Cloudflare's bot products (Bot Fight Mode, JavaScript Detections, the challenge platform)
+    /// inject an inline `<script>` at the edge, long after this service hashed the shell. The
+    /// documented way to admit it is a nonce, which Cloudflare copies out of the response
+    /// header — so a *fresh* one has to reach every response. A constant nonce would pass a
+    /// naive "contains `nonce-`" assertion while being `'unsafe-inline'` under another name,
+    /// which is why this asserts the two differ.
+    #[tokio::test]
+    async fn the_cloudflare_nonce_is_fresh_on_every_response() {
+        let upstream = spawn_stub_upstream().await;
+        let dir = write_bundle();
+        let front = spawn_frontend_with(
+            FrontendConfig {
+                cloudflare: CloudflareConfig {
+                    script_nonce: true,
+                    turnstile: false,
+                },
+                ..test_config(dir.to_str().unwrap())
+            },
+            upstream,
+        )
+        .await;
+
+        let (first, second) = (served_csp(front).await, served_csp(front).await);
+        for csp in [&first, &second] {
+            assert!(
+                script_src(csp).contains("'nonce-"),
+                "no nonce in script-src: {csp}"
+            );
+            // The nonce is an addition, not a replacement: the shell's own inline scripts are
+            // still admitted by hash, so a Cloudflare-less request path is unaffected.
+            assert!(
+                csp.contains(&format!("'{}'", sha256_source("window.tv=1;"))),
+                "the nonce displaced the shell's inline-script hashes: {csp}"
+            );
+            // Neither concession the nonce exists to avoid may ride along with it.
+            assert!(!csp.contains("'unsafe-eval'"), "{csp}");
+            assert!(!script_src(csp).contains("'unsafe-inline'"), "{csp}");
+        }
+        assert_ne!(first, second, "the same nonce was reused across responses");
+    }
+
+    /// Off by default, and off is the whole policy unchanged — a deployment that is not behind
+    /// Cloudflare must not carry either concession.
+    #[tokio::test]
+    async fn the_cloudflare_flags_are_off_by_default() {
+        let upstream = spawn_stub_upstream().await;
+        let dir = write_bundle();
+        let front = spawn_frontend(dir.to_str().unwrap(), upstream).await;
+
+        let csp = served_csp(front).await;
+        assert!(!csp.contains("nonce-"), "{csp}");
+        assert!(!csp.contains("challenges.cloudflare.com"), "{csp}");
+        assert!(!csp.contains("frame-src"), "{csp}");
+        // Two responses are byte-identical without the flag, so the header stays cacheable.
+        assert_eq!(csp, served_csp(front).await);
+    }
+
+    /// Turnstile serves `api.js` and the widget's iframe from one origin `'self'` cannot cover,
+    /// and admitting the script without the frame renders an empty box — so the flag has to
+    /// reach both directives.
+    #[tokio::test]
+    async fn the_turnstile_flag_admits_the_widget_origin_in_both_directives() {
+        let upstream = spawn_stub_upstream().await;
+        let dir = write_bundle();
+        let front = spawn_frontend_with(
+            FrontendConfig {
+                cloudflare: CloudflareConfig {
+                    script_nonce: false,
+                    turnstile: true,
+                },
+                ..test_config(dir.to_str().unwrap())
+            },
+            upstream,
+        )
+        .await;
+
+        let csp = served_csp(front).await;
+        assert!(
+            script_src(&csp).contains("https://challenges.cloudflare.com"),
+            "{csp}"
+        );
+        assert!(
+            csp.contains("frame-src 'self' https://challenges.cloudflare.com;"),
+            "{csp}"
+        );
+        // `frame-ancestors` is what stops this app being framed; the widget being framed *by*
+        // it is the opposite direction and must not have loosened it.
+        assert!(csp.contains("frame-ancestors 'none'"), "{csp}");
     }
 
     #[tokio::test]
@@ -941,9 +1149,14 @@ mod tests {
     async fn missing_notices_are_a_404_rather_than_the_app_shell() {
         let upstream = spawn_stub_upstream().await;
         let dir = write_bundle();
-        let front =
-            spawn_frontend_with_notices(dir.to_str().unwrap(), "./no-such-notices-file", upstream)
-                .await;
+        let front = spawn_frontend_with(
+            FrontendConfig {
+                notices_path: "./no-such-notices-file".to_owned(),
+                ..test_config(dir.to_str().unwrap())
+            },
+            upstream,
+        )
+        .await;
 
         let response = reqwest::get(format!("http://{front}{NOTICES_ROUTE}"))
             .await

@@ -34,6 +34,9 @@ tower-http = { workspace = true, features = ["fs", "compression-full"] }
 # is a browser refusing to run it.
 sha2 = { workspace = true }
 base64 = { workspace = true }
+# Only for the optional per-response CSP nonce (`TANKOVAULT_FRONTEND__CLOUDFLARE__SCRIPT_NONCE`).
+# A guessable nonce is `'unsafe-inline'`, so this has to be the CSPRNG and not a counter.
+rand = { workspace = true }
 
 [lints]
 workspace = true

@@ -254,7 +254,7 @@ pub(super) fn MergeRow(candidate: Signal<MergeCandidate>, reload: Reload) -> Ele
                     div { class: "ik-flex", style: "gap:4px;margin-top:6px;flex-wrap:wrap;",
                         for s in signals.iter() {
                             span { key: "{s}", class: "ik-pill", style: "font-size:11px;",
-                                {i18n.t(&format!("console.merge.signal.{s}"))}
+                                {crate::views::console::signal_label(i18n, s)}
                             }
                         }
                     }

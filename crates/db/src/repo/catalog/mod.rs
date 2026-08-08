@@ -5,6 +5,7 @@ pub mod browse;
 pub mod chapters;
 pub mod enrichment;
 pub mod ingest;
+pub mod maintenance;
 pub mod metadata;
 pub mod series;
 pub mod sources;

@@ -4,6 +4,7 @@
 //! `__path_<handler>` type alongside each handler, so a named re-export would compile here and
 //! then fail at the route table.
 
+mod catalogue;
 mod decisions;
 mod flags;
 mod merge;
@@ -16,6 +17,7 @@ mod sync;
 mod system;
 mod users;
 
+pub use catalogue::*;
 pub use decisions::*;
 pub use flags::*;
 pub use merge::*;

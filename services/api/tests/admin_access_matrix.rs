@@ -110,6 +110,39 @@ fn admin_gates() -> Vec<Gate> {
             // outcome is a `502` — after the permission check the matrix is here to assert.
             body: || Some(json!({ "mode": "incremental" })),
         },
+        // --- catalogue maintenance ---
+        Gate {
+            method: "GET",
+            template: "/v1/admin/catalogue/series",
+            path: "/v1/admin/catalogue/series",
+            required: &[Permission::CatalogueRead],
+            body: empty,
+        },
+        Gate {
+            method: "GET",
+            template: "/v1/admin/catalogue/summary",
+            path: "/v1/admin/catalogue/summary",
+            required: &[Permission::CatalogueRead],
+            body: empty,
+        },
+        Gate {
+            method: "POST",
+            template: "/v1/admin/catalogue/series/delete",
+            path: "/v1/admin/catalogue/series/delete",
+            // Deliberately not `merge.write`, which also removes series: leg 2 fails if the two
+            // ever collapse into one capability.
+            required: &[Permission::CatalogueDelete],
+            body: || Some(json!({ "series_ids": [ABSENT_A] })),
+        },
+        Gate {
+            method: "POST",
+            template: "/v1/admin/catalogue/purge",
+            path: "/v1/admin/catalogue/purge",
+            required: &[Permission::CatalogueDelete],
+            // A confirmation that does not echo the scope, so the leg-3 outcome is a clean `400`
+            // instead of this matrix emptying the fixture catalogue out from under the suite.
+            body: || Some(json!({ "scope": "everything", "confirm": "no" })),
+        },
         // --- merge queue ---
         Gate {
             method: "GET",

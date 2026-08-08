@@ -160,6 +160,16 @@ fn known_permissions(grants: &[GrantRow]) -> BTreeSet<Permission> {
         .collect()
 }
 
+/// Whether these grants are the deployment owner's.
+///
+/// Asked of the grant list rather than of a count, because the super user holds exactly one
+/// grant: counting says "an operator with one capability", which is the opposite of the truth.
+/// The token is also absent from the permission catalogue by design, so the checklist below
+/// renders it nowhere — hence the explicit notice this drives.
+fn is_super_user(grants: &[GrantRow]) -> bool {
+    known_permissions(grants).contains(&Permission::SystemSuperuser)
+}
+
 /// The list pane and the inspector pane, as the console shell's two grid children.
 #[component]
 pub(super) fn UsersEntity() -> Element {
@@ -511,6 +521,7 @@ fn UserEditor(
     // One clone per consumer: `rsx!` moves each into its own closure or child component.
     let (id_header, id_sessions, id_verify, id_sync, id_erase) =
         (id.clone(), id.clone(), id.clone(), id.clone(), id);
+    let owner = is_super_user(&data.permissions);
     let staff = !data.permissions.is_empty();
     let joined = iso_date(Some(&user.created_at)).to_owned();
     let last_seen = rel_time(i18n, user.last_login_at.as_deref());
@@ -527,11 +538,17 @@ fn UserEditor(
                 div { style: "min-width:0;flex:1;",
                     div { class: "ik-flex", style: "gap:10px;flex-wrap:wrap;",
                         h2 { class: "ik-insp-title", "{user.username}" }
-                        span { class: if staff { "ik-pill acc" } else { "ik-pill" }, style: "font-size:10px;",
-                            if staff {
-                                {i18n.t("console.users.role.staff")}
-                            } else {
-                                {i18n.t("console.users.role.reader")}
+                        if owner {
+                            span { class: "ik-pill star", style: "font-size:10px;",
+                                {i18n.t("console.users.role.owner")}
+                            }
+                        } else {
+                            span { class: if staff { "ik-pill acc" } else { "ik-pill" }, style: "font-size:10px;",
+                                if staff {
+                                    {i18n.t("console.users.role.staff")}
+                                } else {
+                                    {i18n.t("console.users.role.reader")}
+                                }
                             }
                         }
                         if user.status == AccountStatus::Suspended {
@@ -686,6 +703,7 @@ fn UserEditor(
                                 grants: data.permissions.clone(),
                                 chosen,
                                 editable: !is_self,
+                                owner,
                             }
                         }
                     }

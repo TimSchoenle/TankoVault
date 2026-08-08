@@ -380,6 +380,107 @@
       "running": "Läuft…"
     },
     "audit": {
+      "action": {
+        "account": {
+          "delete": "Konto gelöscht",
+          "export": "Kontodaten exportiert"
+        },
+        "auth": {
+          "step_up": "Erneute Authentifizierung"
+        },
+        "catalogue": {
+          "purge": "Katalog bereinigt",
+          "series": {
+            "delete": "Serien gelöscht"
+          }
+        },
+        "flag": {
+          "reset": "Feature-Flag zurückgesetzt",
+          "set": "Feature-Flag gesetzt"
+        },
+        "matching": {
+          "rebuild_keys": "Match-Schlüssel neu aufgebaut"
+        },
+        "me": {
+          "mfa": {
+            "enrol": "Zwei-Faktor eingerichtet",
+            "recovery_codes": "Wiederherstellungscodes neu erzeugt",
+            "remove": "Zwei-Faktor entfernt"
+          },
+          "passkey_register": "Passkey registriert",
+          "passkey_revoke": "Passkey widerrufen"
+        },
+        "merge": {
+          "sweep": "Merge-Lauf ausgeführt"
+        },
+        "merge_candidate": {
+          "dismiss": "Merge-Kandidat verworfen"
+        },
+        "merge_decision": {
+          "flag": "Merge-Entscheidung markiert",
+          "revert": "Merge rückgängig gemacht"
+        },
+        "privacy": {
+          "request": {
+            "cancel": "Datenschutzanfrage abgebrochen",
+            "claim": "Datenschutzanfrage übernommen",
+            "create": "Datenschutzanfrage eröffnet",
+            "extend": "Datenschutzanfrage verlängert",
+            "fulfil_erasure": "Löschung durchgeführt",
+            "resolve": "Datenschutzanfrage abgeschlossen"
+          },
+          "subject": {
+            "export": "Betroffenendaten exportiert"
+          }
+        },
+        "provider": {
+          "create": "Anbieter registriert",
+          "delete": "Anbieter gelöscht",
+          "resolve": "Anbieter-Challenge neu gelöst",
+          "set_state": "Anbieterstatus geändert",
+          "test": "Anbieter-Testlauf",
+          "update": "Anbieter aktualisiert"
+        },
+        "recsys": {
+          "rebuild": "Empfehlungsmodell neu aufgebaut",
+          "tunable": {
+            "reset": "Stellgröße zurückgesetzt",
+            "set": "Stellgröße gesetzt"
+          }
+        },
+        "scan": {
+          "trigger": "Scan ausgelöst"
+        },
+        "series": {
+          "merge": "Serien zusammengeführt"
+        },
+        "sync": {
+          "mapping": {
+            "clear": "Sync-Zuordnung entfernt",
+            "upsert": "Sync-Zuordnung gesetzt"
+          },
+          "pull": "Sync-Abruf erzwungen",
+          "push": "Sync-Übertragung erzwungen",
+          "remote": {
+            "assign": "Externe Serie zugewiesen"
+          },
+          "unlink": "Tracker getrennt"
+        },
+        "sync_decision": {
+          "flag": "Sync-Entscheidung markiert",
+          "revert": "Sync-Entscheidung rückgängig gemacht"
+        },
+        "user": {
+          "delete": "Benutzer gelöscht",
+          "permissions": "Berechtigungen geändert",
+          "sessions": {
+            "revoke": "Sitzungen widerrufen"
+          },
+          "status": "Kontostatus geändert",
+          "update": "Benutzer aktualisiert",
+          "verify_email": "E-Mail durch Operator bestätigt"
+        }
+      },
       "col": {
         "action": "Aktion",
         "actor": "Akteur",
@@ -399,6 +500,63 @@
       "system": "System",
       "title": "Audit-Protokoll",
       "unavailable": "Audit-Protokoll nicht verfügbar: {message}"
+    },
+    "catalogue": {
+      "bulk": {
+        "delete": "Auswahl löschen…",
+        "deleteCta": "Löschen"
+      },
+      "bulkActions": "Sammelaktionen",
+      "clearSelection": "Auswahl aufheben",
+      "col": {
+        "added": "Hinzugefügt",
+        "chapters": "Kapitel",
+        "providers": "Anbieter",
+        "title": "Serie",
+        "watchers": "Merklisten"
+      },
+      "danger": "Gefahrenbereich",
+      "deleteRadius": {
+        "one": "Löscht 1 Serie samt allen Kapiteln, Quellen, Merklisten-Einträgen und Lesepositionen. Ein erneuter Scan stellt die Kapitel wieder her, die Lesepositionen nicht.",
+        "other": "Löscht {count} Serien samt allen Kapiteln, Quellen, Merklisten-Einträgen und Lesepositionen. Ein erneuter Scan stellt die Kapitel wieder her, die Lesepositionen nicht."
+      },
+      "deleted": "{series} Serien, {chapters} Kapitel und {watchers} Merklisten-Einträge gelöscht.",
+      "empty": "Keine Serie passt zu diesem Filter.",
+      "health": {
+        "any": "Alle",
+        "empty": "Ohne Kapitel",
+        "orphaned": "Ohne Quelle"
+      },
+      "hits": {
+        "one": "1 Serie",
+        "other": "{count} Serien"
+      },
+      "intro": "Alles, was die Scanner gesammelt haben. Zeilen ankreuzen, um sie gesammelt zu löschen, oder den Katalog unten im Gefahrenbereich komplett leeren.",
+      "noProvider": "Verwaist",
+      "purgeAll": "Gesamten Katalog leeren",
+      "purgeAllCta": "Alles löschen",
+      "purgeAllWhy": "Entfernt alle {series} Serien, {chapters} Kapitel, {watchers} Merklisten-Einträge und {progress} Lesepositionen. Anbieter und Benutzerkonten bleiben erhalten. Läuft in Stapeln und kann nach einer Unterbrechung fortgesetzt werden.",
+      "purgeChapters": "Alle Kapitel entfernen",
+      "purgeChaptersCta": "Kapitel entfernen",
+      "purgeChaptersWhy": "Entfernt alle {chapters} Kapitel. Serien und ihre Anbieterquellen bleiben erhalten, der nächste vollständige Scan füllt sie wieder auf.",
+      "purgeDone": "Bereinigung abgeschlossen: {count} Zeilen entfernt.",
+      "purgeProgress": "{done} entfernt, {left} verbleiben…",
+      "purgeStalled": "Die Bereinigung kam nicht mehr voran und wurde angehalten. Bitte vor einem neuen Versuch die Server-Protokolle prüfen.",
+      "searchPlaceholder": "Titel suchen…",
+      "select": "{title} auswählen",
+      "selectPage": "Alle Serien auf dieser Seite auswählen",
+      "selected": {
+        "one": "1 ausgewählt",
+        "other": "{count} ausgewählt"
+      },
+      "stat": {
+        "chapters": "Kapitel",
+        "empty": "Ohne Kapitel",
+        "orphaned": "Verwaist",
+        "series": "Serien",
+        "sources": "Quellen"
+      },
+      "title": "Katalog"
     },
     "confirm": {
       "label": "Tippe {value}, um zu bestätigen",
@@ -970,6 +1128,7 @@
     "tab": {
       "adapterTest": "Adapter-Test",
       "audit": "Audit",
+      "catalogue": "Katalog",
       "decisions": "Entscheidungen",
       "flags": "Funktionen",
       "liveScans": "Live-Scans",
@@ -1023,6 +1182,7 @@
       "recentActions": "Letzte Aktionen dieses Kontos",
       "revokeSessions": "Überall abmelden",
       "role": {
+        "owner": "Eigentümer",
         "reader": "Leser",
         "staff": "Team"
       },
@@ -1039,6 +1199,7 @@
         "tracked": "Verfolgt"
       },
       "status": "Status",
+      "superUserNotice": "Dies ist das Eigentümerkonto der Installation. Es besitzt jede Berechtigung, auch solche aus späteren Versionen — die Liste unten bestimmt also nicht, was es darf. Die Berechtigung wurde beim Einrichten erzeugt und kann hier weder vergeben noch entzogen werden.",
       "suspendReason": "Grund",
       "suspendReasonPlaceholder": "Wird angezeigt, wer als Nächstes auf dieses Konto sieht",
       "suspendedFor": "Gesperrt: {reason}",

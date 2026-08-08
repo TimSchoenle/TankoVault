@@ -580,6 +580,10 @@ a { color: inherit; text-decoration: none; }
   font-size: 13px;
 }
 
+/* The one note that reports authority rather than status: the deployment owner's grant, which
+ * the permission checklist beside it cannot show because the catalogue omits it. */
+.ik-note.star { padding: 9px 11px; border-color: color-mix(in srgb, var(--star) 45%, transparent); background: color-mix(in srgb, var(--star) 10%, transparent); color: var(--text); }
+
 /* Section heading with an icon. */
 .ik-section-head { display: flex; align-items: center; gap: 9px; margin: 26px 0 14px; }
 .ik-section-head svg { color: var(--acc); }
@@ -672,6 +676,10 @@ a { color: inherit; text-decoration: none; }
 .ik-pill.run { color: var(--jade-bright); border-color: color-mix(in srgb, var(--jade) 55%, transparent); }
 /* Amber: needs attention but is not a failure — a suspended account, a degraded provider. */
 .ik-pill.star { color: var(--star); border-color: color-mix(in srgb, var(--star) 50%, transparent); background: color-mix(in srgb, var(--star) 12%, transparent); }
+/* `amber` is the caution tone `.star` carries; three call sites already asked for it by that
+ * name and got an unstyled pill, so the audit trail drew a permission change the same neutral
+ * grey as a scan trigger — the exact distinction that tone exists to make. */
+.ik-pill.amber { color: var(--star-ink); border-color: color-mix(in srgb, var(--star) 50%, transparent); background: color-mix(in srgb, var(--star) 12%, transparent); }
 
 .ik-btn { font: inherit; font-weight: 600; font-size: 14px; border-radius: 10px; padding: 9px 16px; border: 1px solid var(--border-ctl); background: var(--surface); color: var(--text-3); cursor: pointer; display: inline-flex; align-items: center; gap: 7px; }
 .ik-btn:hover { border-color: var(--acc); color: var(--text); }
@@ -1037,6 +1045,16 @@ table.ik-table { width: 100%; border-collapse: collapse; }
 .ik-table-compact th, .ik-table-compact td { padding: 8px 10px; font-size: 13px; vertical-align: middle; }
 .ik-table-compact th { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; white-space: nowrap; }
 
+/* A selectable table row. `.ik-cons-row` is the list-pane affordance and sets `display: block`,
+ * which on a `<tr>` takes the row out of the table and detaches every cell from its column
+ * heading — so the two cannot share one class. Backgrounds go on the cells because a collapsed
+ * border model paints the row behind them. */
+.ik-table tr.ik-row-pick { cursor: pointer; }
+.ik-table tr.ik-row-pick:hover > td { background: var(--surface-2); }
+.ik-table tr.ik-row-pick.selected > td { background: color-mix(in srgb, var(--acc) 8%, transparent); }
+.ik-table tr.ik-row-pick.selected > td:first-child { box-shadow: inset 3px 0 0 var(--acc); }
+.ik-table tr.ik-row-pick:focus-visible { outline: 2px solid var(--acc); outline-offset: -2px; }
+
 .ik-kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
 /* Above ~1900px the extra width goes into the tiles rather than into four of them stretched
  * across the whole measured column. */
@@ -1291,7 +1309,10 @@ table.ik-table { width: 100%; border-collapse: collapse; }
 .ik-cons-row:focus-visible { outline: 2px solid var(--acc); outline-offset: -2px; }
 .ik-cons-foot { margin-top: auto; padding: 10px 12px; border-top: 1px solid var(--border); font-family: var(--font-mono); font-size: 11px; color: var(--faint); display: flex; gap: 10px; }
 .ik-cons-foot .hint { margin-left: auto; }
-/* Selection bar, shown only while rows are ticked. */
+/* Selection bar, shown only while rows are ticked. Tinted with the accent because everything
+ * it launches is destructive, and it has to read as armed rather than as another filter row. */
+.ik-cons-selbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; padding: 8px 11px; border-radius: 10px; border: 1px solid color-mix(in srgb, var(--acc) 40%, transparent); background: color-mix(in srgb, var(--acc) 7%, transparent); }
+.ik-cons-selbar .cnt { font-family: var(--font-mono); font-size: 12px; color: var(--acc3); font-weight: 500; }
 
 .ik-cons-insp { grid-area: insp; min-width: 0; display: flex; flex-direction: column; }
 .ik-cons-insphead { padding: 18px 22px 0; border-bottom: 1px solid var(--border); }

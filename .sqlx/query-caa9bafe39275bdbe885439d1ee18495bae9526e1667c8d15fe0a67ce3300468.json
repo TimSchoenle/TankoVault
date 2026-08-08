@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM chapters WHERE id IN (SELECT id FROM chapters LIMIT $1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "caa9bafe39275bdbe885439d1ee18495bae9526e1667c8d15fe0a67ce3300468"
+}

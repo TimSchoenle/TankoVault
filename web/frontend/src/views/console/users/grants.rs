@@ -22,6 +22,10 @@ pub(super) fn PermissionGrants(
     grants: Vec<GrantRow>,
     chosen: Signal<BTreeSet<Permission>>,
     editable: bool,
+    /// Whether this account holds the super-user grant. The checklist cannot show it — the
+    /// catalogue deliberately omits it — so an unannotated checklist would render the deployment
+    /// owner as holding nothing at all.
+    owner: bool,
 ) -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
@@ -53,6 +57,13 @@ pub(super) fn PermissionGrants(
                 },
                 _ => rsx! {},
             },
+            if owner {
+                p {
+                    class: "ik-note star",
+                    style: "font-size:11.5px;line-height:1.5;margin:0 0 9px;",
+                    {i18n.t("console.users.superUserNotice")}
+                }
+            }
             if !unknown.is_empty() {
                 ErrorLine {
                     message: i18n.args("console.users.unknownGrants", &[("tokens", &unknown.join(", "))]),

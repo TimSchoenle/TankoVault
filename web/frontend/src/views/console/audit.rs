@@ -33,22 +33,14 @@ fn action_tone(action: &str) -> &'static str {
     }
 }
 
-/// The catalogue key wording an action, falling back to the raw token.
+/// The catalogue wording for an action, falling back to the raw token.
 ///
 /// A server-side action this build has never heard of renders as itself rather than as a
 /// missing key: the vocabulary lives in the handlers, and the console must not need a release
 /// to display a new one.
 fn action_label(i18n: crate::i18n::Translator, action: &str) -> String {
-    let key = format!("console.audit.action.{action}");
-    let worded = i18n.t(&key);
-    // A missing key resolves to the key itself, which is how the fallback is detected — there
-    // is no runtime membership test, and rendering `console.audit.action.foo` to an operator
-    // is worse than rendering `foo`.
-    if worded == key {
-        action.to_owned()
-    } else {
-        worded
-    }
+    i18n.t_opt(&format!("console.audit.action.{action}"))
+        .unwrap_or_else(|| action.to_owned())
 }
 
 /// Privileged-action audit trail: filters, paging, and a per-row detail expander.

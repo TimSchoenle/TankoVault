@@ -17,6 +17,7 @@ pub const ME_SYNC_TAG: &str = "me-sync";
 pub const ADMIN_PROVIDERS_TAG: &str = "admin-providers";
 pub const ADMIN_SCANS_TAG: &str = "admin-scans";
 pub const ADMIN_MATCHING_TAG: &str = "admin-matching";
+pub const ADMIN_CATALOGUE_TAG: &str = "admin-catalogue";
 pub const ADMIN_SYNC_TAG: &str = "admin-sync";
 pub const ADMIN_USERS_TAG: &str = "admin-users";
 pub const ADMIN_PRIVACY_TAG: &str = "admin-privacy";
@@ -73,6 +74,7 @@ impl Modify for SecurityAddon {
         (name = ADMIN_PROVIDERS_TAG, description = "Operator provider CRUD, state and health"),
         (name = ADMIN_SCANS_TAG, description = "Scan run history, failures, live scan stream"),
         (name = ADMIN_MATCHING_TAG, description = "Series merge-candidate review"),
+        (name = ADMIN_CATALOGUE_TAG, description = "Catalogue maintenance: the series list, bulk deletion and the purge"),
         (name = ADMIN_SYNC_TAG, description = "Operator visibility into external sync mappings"),
         (name = ADMIN_USERS_TAG, description = "User directory, identity, suspension and permission grants"),
         (name = ADMIN_PRIVACY_TAG, description = "The GDPR data-subject request queue and its fulfilment"),
@@ -194,6 +196,16 @@ impl Modify for SecurityAddon {
     crate::admin::TriggerScan,
     crate::admin::MergeRequest,
     crate::admin::DismissRequest,
+    // --- admin: catalogue maintenance ---
+    crate::admin::HealthFilter,
+    crate::admin::CatalogueRowView,
+    crate::admin::CataloguePageView,
+    crate::admin::CatalogueSummaryView,
+    crate::admin::DeletionView,
+    crate::admin::BulkDeleteSeries,
+    crate::admin::PurgeScope,
+    crate::admin::PurgeRequest,
+    crate::admin::PurgeView,
     crate::admin::TestAdapterRequest,
     crate::admin::SyncAccountTarget,
     crate::admin::SyncMappingTarget,

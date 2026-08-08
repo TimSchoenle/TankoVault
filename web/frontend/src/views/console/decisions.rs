@@ -12,7 +12,7 @@ use crate::i18n::{use_i18n, Translator};
 use crate::models::*;
 use crate::state::capabilities::use_capabilities;
 use crate::util::rel_time;
-use crate::views::console::RefreshTick;
+use crate::views::console::{signal_label, RefreshTick};
 use crate::wire::types::Permission;
 use dioxus::prelude::*;
 use progenitor_client::ResponseValue;
@@ -713,33 +713,10 @@ fn outcome_tone(outcome: &str) -> &'static str {
     }
 }
 
-/// The catalogue wording for a scoring rule or signal slug, falling back to the slug.
-///
-/// The vocabulary lives in the scorer, and the console must not need a release to display a rule
-/// someone has just added. A missing key resolves to the key itself, which is how the fallback is
-/// detected — rendering `console.merge.signal.foo` to an operator is worse than rendering `foo`.
-fn signal_label(i18n: Translator, slug: &str) -> String {
-    for key in [
-        format!("console.merge.signal.{slug}"),
-        format!("console.decisions.term.{slug}"),
-    ] {
-        let worded = i18n.t(&key);
-        if worded != key {
-            return worded;
-        }
-    }
-    slug.to_owned()
-}
-
 /// The catalogue wording for a decision's reason slug, falling back to the slug.
 fn reason_label(i18n: Translator, slug: &str) -> String {
-    let key = format!("console.decisions.reason.{slug}");
-    let worded = i18n.t(&key);
-    if worded == key {
-        slug.to_owned()
-    } else {
-        worded
-    }
+    i18n.t_opt(&format!("console.decisions.reason.{slug}"))
+        .unwrap_or_else(|| slug.to_owned())
 }
 
 /// A score as a whole-number percentage, matching how the merge queue renders one.

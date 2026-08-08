@@ -85,6 +85,10 @@ pub fn route_classifier() -> RouteClassifier {
         // title — the heaviest calls the console can make.
         .expensive("/v1/admin/merge-candidates/sweep")
         .expensive("/v1/admin/matching/rebuild-keys")
+        // Each call cascades a batch of series into a dozen tables, and a purge is a *loop* of
+        // them — the one console action that deliberately calls the same endpoint hundreds of
+        // times. Reads of the same family stay on the global budget.
+        .expensive_write("/v1/admin/catalogue")
         // A model rebuild walks the whole catalogue: the same class as a merge sweep, and for
         // the same reason.
         .expensive("/v1/admin/recommendations/rebuild")
@@ -182,6 +186,7 @@ pub fn route_features() -> RouteFeatures {
             Feature::ScanningAutoMerge,
         )
         .gate("/v1/admin/matching", Feature::ScanningMergeQueue)
+        .gate("/v1/admin/catalogue", Feature::AdminCatalogue)
         // The merge journal follows the sweep it records: with automatic merging switched off
         // there are no new decisions, but the ones already taken are exactly what an operator
         // switching it off wants to read, so the *reads* stay open and only the revert closes.
@@ -474,6 +479,11 @@ fn documented_router() -> OpenApiRouter<AppState> {
         .routes(routes!(admin::admin_stream))
         .routes(routes!(admin::scan_stream))
         .routes(routes!(admin::get_scan))
+        // admin — catalogue maintenance: the operator's series list, bulk deletion, the purge
+        .routes(routes!(admin::list_catalogue))
+        .routes(routes!(admin::catalogue_summary))
+        .routes(routes!(admin::bulk_delete_series))
+        .routes(routes!(admin::purge_catalogue))
         .routes(routes!(admin::list_merge_candidates))
         .routes(routes!(admin::dismiss_merge_candidate))
         .routes(routes!(admin::merge_series))

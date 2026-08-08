@@ -482,7 +482,9 @@ pub(super) fn RunHistoryRow(run: Signal<ScanRun>) -> Element {
     };
     rsx! {
         tr {
-            class: if selected { "ik-cons-row selected" } else { "ik-cons-row" },
+            // `ik-row-pick`, not the list pane's `ik-cons-row`: that one is `display: block`,
+            // which collapses a `<tr>` and unhooks its cells from the column headings.
+            class: if selected { "ik-row-pick selected" } else { "ik-row-pick" },
             tabindex: "0",
             role: "button",
             "aria-selected": if selected { "true" } else { "false" },

@@ -9,6 +9,7 @@
 //! work surfaces, and a background refetch landing on a half-filled form would discard it.
 
 mod audit;
+mod catalogue;
 mod controls;
 mod decisions;
 mod flags;
@@ -76,6 +77,7 @@ impl RefreshTick {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ConsoleEntity {
     Overview,
+    Catalogue,
     Merge,
     Decisions,
     Recommendations,
@@ -96,6 +98,7 @@ const RAIL: &[(&str, &[ConsoleEntity])] = &[
     (
         "console.group.catalogue",
         &[
+            ConsoleEntity::Catalogue,
             ConsoleEntity::Merge,
             ConsoleEntity::Decisions,
             ConsoleEntity::Recommendations,
@@ -125,8 +128,9 @@ const RAIL: &[(&str, &[ConsoleEntity])] = &[
 impl ConsoleEntity {
     /// Every entity, in rail order. Kept in step with [`RAIL`] by
     /// `the_rail_and_the_entity_list_hold_the_same_entities`.
-    pub(crate) const ALL: [ConsoleEntity; 13] = [
+    pub(crate) const ALL: [ConsoleEntity; 14] = [
         Self::Overview,
+        Self::Catalogue,
         Self::Merge,
         Self::Decisions,
         Self::Recommendations,
@@ -145,6 +149,7 @@ impl ConsoleEntity {
     fn label_key(self) -> &'static str {
         match self {
             Self::Overview => "console.tab.overview",
+            Self::Catalogue => "console.tab.catalogue",
             Self::Merge => "console.tab.merge",
             Self::Decisions => "console.tab.decisions",
             Self::Recommendations => "console.tab.recommendations",
@@ -164,6 +169,8 @@ impl ConsoleEntity {
     fn icon(self) -> Icon {
         match self {
             Self::Overview => Icon::Dashboard,
+            // The catalogue itself, as opposed to the queues that groom it.
+            Self::Catalogue => Icon::MenuBook,
             Self::Merge => Icon::Merge,
             // A judgement surface for two automatic engines, not a queue to work — and
             // distinct from Audit, which records what *people* did.
@@ -187,6 +194,7 @@ impl ConsoleEntity {
     pub(crate) fn slug(self) -> &'static str {
         match self {
             Self::Overview => "overview",
+            Self::Catalogue => "catalogue",
             Self::Merge => "merge-queue",
             Self::Decisions => "decisions",
             Self::Recommendations => "recommendations",
@@ -207,6 +215,7 @@ impl ConsoleEntity {
     fn requires(self) -> (Permission, Feature) {
         match self {
             Self::Overview => (Permission::SystemStats, Feature::AdminStats),
+            Self::Catalogue => (Permission::CatalogueRead, Feature::AdminCatalogue),
             Self::Scans => (Permission::ScansRead, Feature::ScanningManual),
             // Solver health is provider health from the fetch pipeline's side: same data and permission.
             Self::Providers | Self::Solver => (Permission::ProvidersRead, Feature::AdminProviders),
@@ -246,7 +255,7 @@ impl ConsoleEntity {
     fn auto_refreshes(self) -> bool {
         !matches!(
             self,
-            Self::Providers | Self::Users | Self::Flags | Self::Recommendations
+            Self::Providers | Self::Users | Self::Flags | Self::Recommendations | Self::Catalogue
         )
     }
 }
@@ -552,6 +561,7 @@ pub(crate) fn ConsoleSection(entity: ConsoleEntity, query: ConsoleQuery) -> Elem
                 solver::AdapterTestTab {}
             }
         },
+        ConsoleEntity::Catalogue => rsx! { catalogue::CatalogueEntity {} },
         ConsoleEntity::Merge => rsx! {
             div { class: "ik-cons-pane",
                 merge::MergeQueue {}
@@ -649,6 +659,7 @@ fn RailCount(entity: ConsoleEntity, counts: Option<SystemStats>) -> Element {
                 CountTone::Plain
             },
         ),
+        ConsoleEntity::Catalogue => (stats.series_total, CountTone::Plain),
         ConsoleEntity::Providers => (stats.providers_total, CountTone::Plain),
         ConsoleEntity::Scans => (
             stats.runs_active,
@@ -708,6 +719,22 @@ pub(super) fn run_state_pill(state: RunState) -> &'static str {
         RunState::Queued | RunState::Cancelled => "ik-pill",
         RunState::Failed => "ik-pill vermilion",
     }
+}
+
+/// The catalogue wording for a scoring rule or signal slug, falling back to the slug.
+///
+/// The vocabulary lives in the scorer, and the console must not need a release to display a rule
+/// someone has just added — rendering `console.merge.signal.foo` to an operator is worse than
+/// rendering `foo`. Shared by the merge queue and the decision journal, which score the same
+/// pairs and so name the same signals.
+pub(super) fn signal_label(i18n: crate::i18n::Translator, slug: &str) -> String {
+    [
+        format!("console.merge.signal.{slug}"),
+        format!("console.decisions.term.{slug}"),
+    ]
+    .iter()
+    .find_map(|key| i18n.t_opt(key))
+    .unwrap_or_else(|| slug.to_owned())
 }
 
 /// Pretty-print a stored adapter config for the editor (empty / null → `{}`).

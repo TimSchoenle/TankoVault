@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 rust-version.workspace = true
-description = "Layered typed configuration loading."
+description = "The typed configuration blocks every TankoVault service reads, and the TankoVault dialect of the terrace-config loader."
 # Not published: this is a workspace-internal crate. Also what lets `cargo deny`
 # skip license-checking our own code.
 publish = false
@@ -23,10 +23,15 @@ serde = { workspace = true }
 # service reads out of `TANKOVAULT_DATABASE__URL` stays wrapped all the way to the pool
 # builder. `figment` deserialises into it through the crate's `serde` feature.
 secrecy = { workspace = true }
-figment = { workspace = true }
-thiserror = { workspace = true }
+# The loader itself: this crate owns the *schema* and the TankoVault dialect
+# (`src/loader.rs`), and nothing of the layering, the secrets-directory provider or the
+# shadow-key rejection. `loader` only — the reload supervisor is `crates/service`'s half, and
+# taking it here would link notify into every consumer of a config struct.
+terrace-config = { workspace = true, features = ["loader"] }
 
 [dev-dependencies]
+# `figment::Jail` sets `TANKOVAULT_*` and restores it, which is how these tests avoid
+# `env::set_var`. The same figment `terrace-config` resolves, plus its `test` feature.
 figment = { workspace = true, features = ["test"] }
 
 [lints]

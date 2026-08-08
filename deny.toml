@@ -163,3 +163,9 @@ skip = [
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+# The one git dependency: `terrace-config`, the layered config loader and reload supervisor,
+# extracted out of this workspace and pinned by tag in the root manifest. Listed here because
+# `unknown-git = "deny"` above is what stops a *second* one arriving unnoticed — a git source is
+# a dependency with no registry, no version resolution and no yank mechanism, so each one is a
+# deliberate decision rather than something a transitive bump can introduce.
+allow-git = ["https://github.com/TimSchoenle/terrace-config"]

@@ -3,7 +3,7 @@
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 
-use crate::error::ConfigError;
+use crate::ConfigError;
 
 /// Authentication for service-to-service calls on the internal network.
 ///

@@ -72,7 +72,8 @@ const SERVICES: &[Service] = &[
     },
 ];
 
-/// Trees scanned for `std::env::var("TANKOVAULT_…")`, which bypasses the layered config.
+/// Trees scanned for the keys no config struct declares: direct `std::env::var` reads, and the
+/// `terrace_config::Terrace` builder calls that name the variables driving the layering.
 const DIRECT_ENV_ROOTS: &[&str] = &["crates", "services", "xtask/src"];
 
 /// The document this gate reads.

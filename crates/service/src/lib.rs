@@ -77,9 +77,4 @@ pub enum ServiceError {
     /// The listener could not be bound, or the server exited with an I/O error.
     #[error("http server error: {0}")]
     Server(#[from] std::io::Error),
-    /// The configuration-reload watcher could not be installed. Fatal at boot for the same
-    /// reason the rest of these are: a service that silently never reloads is one whose
-    /// rotated credentials never take effect.
-    #[error("failed to watch configuration files: {0}")]
-    Watch(String),
 }

@@ -114,9 +114,13 @@ handler's `#[utoipa::path]` or a `crates/contracts` type, then run
 
 Same shape, same rule, for the SQL cache: change any `query!` *text* and run
 `cargo run -p xtask -- sqlx-prepare`. **[E]** CI's `sqlx` job. And for the config surface:
-**[E]** `xtask config-docs --check` derives the `TANKOVAULT_*` list from the config structs and
-the `std::env::var` call sites and compares it to `docs/CONFIGURATION.md`, failing in either
-direction.
+**[E]** `xtask config-docs --check` derives the `TANKOVAULT_*` list from the config structs, the
+`std::env::var` call sites and the `terrace_config::Terrace` builder calls that name a variable,
+and compares it to `docs/CONFIGURATION.md`, failing in either direction. That last source is why
+`crates/config/src/loader.rs` spells `TANKOVAULT_CONFIG` and `TANKOVAULT_SECRETS_DIR` out to the
+builder instead of letting it derive them from the prefix: a name that exists only as a
+derivation inside a dependency is one this gate cannot see, and the document would go on
+promising two keys nothing in the tree reads.
 
 `THIRD-PARTY-NOTICES` is the fourth, and the one whose input is a *lockfile* rather than code:
 move either `Cargo.lock` and run `cargo run -p xtask -- notices`. **[E]** CI's `notices` job.

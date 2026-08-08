@@ -6,7 +6,7 @@
 //! its own writes instead.
 
 use crate::api;
-use crate::components::async_view;
+use crate::components::{async_view, use_step_up_gate, StepUpGate, StepUpPrompt};
 use crate::hooks::{use_busy, use_reload, Busy, Reload};
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
@@ -38,6 +38,10 @@ pub(super) fn FeatureFlagsPanel() -> Element {
     let caps = use_capabilities();
     let reload = use_reload();
     let can_write = caps.can(Permission::FlagsWrite);
+    // One gate for the whole board: an operator flipping five switches confirms once, and the
+    // prompt has a single place to appear rather than one inside every row.
+    let gate = use_step_up_gate();
+    let mut notice = use_signal(String::new);
 
     let flags = use_resource(move || {
         reload.track();
@@ -63,6 +67,19 @@ pub(super) fn FeatureFlagsPanel() -> Element {
                     {i18n.t("console.flags.readOnly")}
                 }
             }
+            if gate.is_open() {
+                StepUpPrompt {
+                    enrolled: true,
+                    intro: Some(i18n.t("console.stepUp.intro")),
+                    on_done: move |()| {
+                        gate.close();
+                        notice.set(i18n.t("stepUp.confirmedRetry"));
+                    },
+                }
+            }
+            if !notice.read().is_empty() {
+                p { class: "ik-muted", style: "font-size:12px;", "{notice}" }
+            }
             {
                 async_view(
                     &flags,
@@ -76,6 +93,7 @@ pub(super) fn FeatureFlagsPanel() -> Element {
                                 flags: rows.iter().filter(|f| f.group == group).cloned().collect::<Vec<_>>(),
                                 can_write,
                                 reload,
+                                gate,
                             }
                         }
                     },
@@ -88,7 +106,13 @@ pub(super) fn FeatureFlagsPanel() -> Element {
 /// One group heading and its rows. Rendered even when empty is avoided: a heading over nothing
 /// reads as a loading failure.
 #[component]
-fn FlagGroup(title: String, flags: Vec<FlagView>, can_write: bool, reload: Reload) -> Element {
+fn FlagGroup(
+    title: String,
+    flags: Vec<FlagView>,
+    can_write: bool,
+    reload: Reload,
+    gate: StepUpGate,
+) -> Element {
     if flags.is_empty() {
         return rsx! {};
     }
@@ -96,7 +120,7 @@ fn FlagGroup(title: String, flags: Vec<FlagView>, can_write: bool, reload: Reloa
         div { class: "ik-subhead", style: "margin-top:18px;", "{title}" }
         div { class: "ik-tablewrap",
             for flag in flags {
-                FlagRow { key: "{flag.key}", flag, can_write, reload }
+                FlagRow { key: "{flag.key}", flag, can_write, reload, gate }
             }
         }
     }
@@ -104,7 +128,7 @@ fn FlagGroup(title: String, flags: Vec<FlagView>, can_write: bool, reload: Reloa
 
 /// One feature: its state, what switching it off does, and the controls to change it.
 #[component]
-fn FlagRow(flag: FlagView, can_write: bool, reload: Reload) -> Element {
+fn FlagRow(flag: FlagView, can_write: bool, reload: Reload, gate: StepUpGate) -> Element {
     let i18n = use_i18n();
     let busy = use_busy();
 
@@ -163,10 +187,11 @@ fn FlagRow(flag: FlagView, can_write: bool, reload: Reload) -> Element {
                         label: toggle_label,
                         busy,
                         reload,
+                        gate,
                     }
                     // Only offered when there's an override to withdraw; otherwise reset would do nothing.
                     if flag.overridden {
-                        ResetButton { feature: key.clone(), busy, reload }
+                        ResetButton { feature: key.clone(), busy, reload, gate }
                     }
                 }
             }
@@ -182,6 +207,7 @@ fn ToggleButton(
     label: String,
     busy: Busy,
     reload: Reload,
+    gate: StepUpGate,
 ) -> Element {
     let api = api::use_api();
     let click = move |_| {
@@ -189,9 +215,9 @@ fn ToggleButton(
             return;
         }
         let key = feature.clone();
-        let client = api.client();
+        let client = gate.client(api);
         spawn(async move {
-            let _ = client
+            if let Err(e) = client
                 .set_flag()
                 .key(key)
                 .body(SetFlag {
@@ -199,7 +225,13 @@ fn ToggleButton(
                     note: None,
                 })
                 .send()
-                .await;
+                .await
+            {
+                // The refetch below is what reports every other failure — the switch simply
+                // comes back unchanged. A step-up demand has no such tell, so it is the one
+                // outcome that has to be raised.
+                let _refused = gate.refused(api::Refusal::of(&e));
+            }
             // Refetch either way: the list is what tells the reader whether it actually changed.
             reload.bump();
             busy.release();
@@ -217,7 +249,7 @@ fn ToggleButton(
 
 /// Withdraw the stored override, returning the feature to its shipped default.
 #[component]
-fn ResetButton(feature: String, busy: Busy, reload: Reload) -> Element {
+fn ResetButton(feature: String, busy: Busy, reload: Reload, gate: StepUpGate) -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
     let click = move |_| {
@@ -225,9 +257,12 @@ fn ResetButton(feature: String, busy: Busy, reload: Reload) -> Element {
             return;
         }
         let key = feature.clone();
-        let client = api.client();
+        let client = gate.client(api);
         spawn(async move {
-            let _ = client.reset_flag().key(key).send().await;
+            if let Err(e) = client.reset_flag().key(key).send().await {
+                // See `ToggleButton`: the refetch reports everything but the elevation demand.
+                let _refused = gate.refused(api::Refusal::of(&e));
+            }
             reload.bump();
             busy.release();
         });

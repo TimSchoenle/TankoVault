@@ -9,7 +9,10 @@
 //! pipeline reads it, and a second copy in a locale file would drift the moment either moved.
 
 use crate::api;
-use crate::components::{async_view, ErrorLine, Kpi, OutcomeLine, SkeletonBlock};
+use crate::components::{
+    async_view, use_step_up_gate, ErrorLine, Kpi, OutcomeLine, SkeletonBlock, StepUpGate,
+    StepUpPrompt,
+};
 use crate::hooks::{use_busy, use_outcome, use_reload, Busy, Outcome, Reload};
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
@@ -68,6 +71,10 @@ pub(super) fn RecommendationsPanel() -> Element {
     let caps = use_capabilities();
     let reload = use_reload();
     let can_write = caps.can(Permission::RecsysWrite);
+    // One gate for the panel: the rebuild and every knob below it are the same capability, so
+    // an operator confirms once and the prompt has a single place to appear.
+    let gate = use_step_up_gate();
+    let mut confirmed = use_signal(String::new);
 
     let tunables = use_resource(move || {
         reload.track();
@@ -91,8 +98,21 @@ pub(super) fn RecommendationsPanel() -> Element {
             if !can_write {
                 p { class: "ik-muted", style: "font-size:12px;", {i18n.t("console.recsys.readOnly")} }
             }
+            if gate.is_open() {
+                StepUpPrompt {
+                    enrolled: true,
+                    intro: Some(i18n.t("console.stepUp.intro")),
+                    on_done: move |()| {
+                        gate.close();
+                        confirmed.set(i18n.t("stepUp.confirmedRetry"));
+                    },
+                }
+            }
+            if !confirmed.read().is_empty() {
+                p { class: "ik-muted", style: "font-size:12px;", "{confirmed}" }
+            }
 
-            ModelHealth { can_write, reload }
+            ModelHealth { can_write, reload, gate }
 
             div { class: "ik-subhead", style: "margin-top:22px;", {i18n.t("console.recsys.tuning")} }
             {
@@ -108,6 +128,7 @@ pub(super) fn RecommendationsPanel() -> Element {
                                 rows: rows.iter().filter(|row| row.group == group).cloned().collect::<Vec<_>>(),
                                 can_write,
                                 reload,
+                                gate,
                             }
                         }
                     },
@@ -125,7 +146,7 @@ pub(super) fn RecommendationsPanel() -> Element {
 /// pressed the button has no other way to tell a run that is working from one that has hung,
 /// short of reloading the page repeatedly.
 #[component]
-fn ModelHealth(can_write: bool, reload: Reload) -> Element {
+fn ModelHealth(can_write: bool, reload: Reload, gate: StepUpGate) -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
     let tick = use_reload();
@@ -161,7 +182,7 @@ fn ModelHealth(can_write: bool, reload: Reload) -> Element {
                 &health,
                 reload,
                 || rsx! { SkeletonBlock { height: 180 } },
-                |view| rsx! { HealthBody { view: view.clone(), can_write, reload } },
+                |view| rsx! { HealthBody { view: view.clone(), can_write, reload, gate } },
             )
         }
     }
@@ -169,7 +190,7 @@ fn ModelHealth(can_write: bool, reload: Reload) -> Element {
 
 /// The health figures themselves, once loaded.
 #[component]
-fn HealthBody(view: ModelHealthView, can_write: bool, reload: Reload) -> Element {
+fn HealthBody(view: ModelHealthView, can_write: bool, reload: Reload, gate: StepUpGate) -> Element {
     let i18n = use_i18n();
 
     // The gap between what has an embedding and what may be recommended is the figure that
@@ -211,6 +232,7 @@ fn HealthBody(view: ModelHealthView, can_write: bool, reload: Reload) -> Element
                         hint: i18n.t("console.recsys.rebuildIncrementalHint"),
                         building: view.building,
                         reload,
+                        gate,
                     }
                     RebuildButton {
                         mode: RecsysBuildMode::Full,
@@ -218,6 +240,7 @@ fn HealthBody(view: ModelHealthView, can_write: bool, reload: Reload) -> Element
                         hint: i18n.t("console.recsys.rebuildFullHint"),
                         building: view.building,
                         reload,
+                        gate,
                     }
                 }
             }
@@ -379,6 +402,7 @@ fn RebuildButton(
     hint: String,
     building: bool,
     reload: Reload,
+    gate: StepUpGate,
 ) -> Element {
     let api = api::use_api();
     let busy = use_busy();
@@ -386,13 +410,19 @@ fn RebuildButton(
         if !busy.claim() {
             return;
         }
-        let client = api.client();
+        let client = gate.client(api);
         spawn(async move {
-            let _ = client
+            if let Err(e) = client
                 .rebuild_model()
                 .body(RebuildRequest { mode })
                 .send()
-                .await;
+                .await
+            {
+                // The refetch below reports every other failure — health is what says whether
+                // the run happened. A step-up demand leaves health unchanged and so has no
+                // tell of its own.
+                let _refused = gate.refused(api::Refusal::of(&e));
+            }
             // Refetch either way: health is what says whether the run happened and how it ended.
             reload.bump();
             busy.release();
@@ -419,6 +449,7 @@ fn TunableGroupSection(
     rows: Vec<TunableView>,
     can_write: bool,
     reload: Reload,
+    gate: StepUpGate,
 ) -> Element {
     if rows.is_empty() {
         return rsx! {};
@@ -427,7 +458,7 @@ fn TunableGroupSection(
         div { class: "ik-subhead", style: "margin-top:18px;", "{title}" }
         div { class: "ik-tablewrap",
             for row in rows {
-                TunableRow { key: "{row.key}", row, can_write, reload }
+                TunableRow { key: "{row.key}", row, can_write, reload, gate }
             }
         }
     }
@@ -435,7 +466,7 @@ fn TunableGroupSection(
 
 /// One tuning value: what it does, what it is, and the controls to change it.
 #[component]
-fn TunableRow(row: TunableView, can_write: bool, reload: Reload) -> Element {
+fn TunableRow(row: TunableView, can_write: bool, reload: Reload, gate: StepUpGate) -> Element {
     let i18n = use_i18n();
     let busy = use_busy();
     let outcome = use_outcome();
@@ -535,10 +566,11 @@ fn TunableRow(row: TunableView, can_write: bool, reload: Reload) -> Element {
                         busy,
                         outcome,
                         reload,
+                        gate,
                     }
                     // Only when there is an override to withdraw; otherwise reset does nothing.
                     if row.overridden {
-                        ResetButton { tunable: key.clone(), busy, outcome, reload }
+                        ResetButton { tunable: key.clone(), busy, outcome, reload, gate }
                     }
                 }
             } else {
@@ -577,6 +609,7 @@ fn SaveButton(
     busy: Busy,
     outcome: Signal<Outcome>,
     reload: Reload,
+    gate: StepUpGate,
 ) -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
@@ -589,7 +622,7 @@ fn SaveButton(
         }
         let key = tunable.clone();
         let written = note.peek().trim().to_owned();
-        let client = api.client();
+        let client = gate.client(api);
         outcome.set(None);
         spawn(async move {
             let result = client
@@ -609,9 +642,11 @@ fn SaveButton(
                 // The server's own sentence: a refused write carries the rule it broke, and
                 // "the request was rejected" would leave the operator retrying it.
                 Err(e) => {
-                    let message =
-                        api::problem_detail(&e).unwrap_or_else(|| api::friendly_error(i18n, e));
-                    outcome.set(Some(Err(message)));
+                    if !gate.refused(api::Refusal::of(&e)) {
+                        let message =
+                            api::problem_detail(&e).unwrap_or_else(|| api::guarded_error(i18n, e));
+                        outcome.set(Some(Err(message)));
+                    }
                 }
             }
             busy.release();
@@ -635,7 +670,13 @@ fn SaveButton(
 /// Distinct from writing that same number, which records a decision that would survive a future
 /// change of the default — so this is its own control rather than a "type the default" hint.
 #[component]
-fn ResetButton(tunable: String, busy: Busy, outcome: Signal<Outcome>, reload: Reload) -> Element {
+fn ResetButton(
+    tunable: String,
+    busy: Busy,
+    outcome: Signal<Outcome>,
+    reload: Reload,
+    gate: StepUpGate,
+) -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
     let mut outcome = outcome;
@@ -645,13 +686,15 @@ fn ResetButton(tunable: String, busy: Busy, outcome: Signal<Outcome>, reload: Re
             return;
         }
         let key = tunable.clone();
-        let client = api.client();
+        let client = gate.client(api);
         outcome.set(None);
         spawn(async move {
             if let Err(e) = client.reset_tunable().key(key).send().await {
-                let message =
-                    api::problem_detail(&e).unwrap_or_else(|| api::friendly_error(i18n, e));
-                outcome.set(Some(Err(message)));
+                if !gate.refused(api::Refusal::of(&e)) {
+                    let message =
+                        api::problem_detail(&e).unwrap_or_else(|| api::guarded_error(i18n, e));
+                    outcome.set(Some(Err(message)));
+                }
             }
             busy.release();
             reload.bump();

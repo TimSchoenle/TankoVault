@@ -130,7 +130,7 @@ fn SessionRow(
                 // The row has no error line of its own; a `403` opens the card's prompt, and
                 // anything else leaves the list as it was, as it did before the gate existed.
                 Err(e) => {
-                    let _refused = gate.refused(api::error_status(&e));
+                    let _refused = gate.refused(api::Refusal::of(&e));
                 }
             }
             busy.release();

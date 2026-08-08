@@ -1,7 +1,7 @@
 //! Challenge & solver, plus the standalone adapter-test tab.
 
 use crate::api;
-use crate::components::{async_block_list, HealthPill};
+use crate::components::{async_block_list, use_step_up_gate, HealthPill, StepUpGate, StepUpPrompt};
 use crate::hooks::{use_reload, Reload};
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
@@ -18,6 +18,9 @@ pub(super) fn SolverPanel(tick: RefreshTick) -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
     let reload = tick.reload();
+    // One gate for the panel: every row's actions are the same capability, so an operator
+    // confirms once and the prompt appears above the list rather than inside a row.
+    let gate = use_step_up_gate();
     let res = use_resource(move || {
         tick.track();
         let client = api.client();
@@ -36,7 +39,7 @@ pub(super) fn SolverPanel(tick: RefreshTick) -> Element {
         let rows = rows.to_vec();
         rsx! {
             for p in rows {
-                SolverRow { key: "{p.id}", provider: p, reload }
+                SolverRow { key: "{p.id}", provider: p, reload, gate }
             }
         }
     });
@@ -62,13 +65,25 @@ pub(super) fn SolverPanel(tick: RefreshTick) -> Element {
                 }
             }
             h3 { {i18n.t("console.solver.providerStates")} }
+            if gate.is_open() {
+                StepUpPrompt {
+                    enrolled: true,
+                    intro: Some(i18n.t("console.stepUp.intro")),
+                    on_done: move |()| gate.close(),
+                }
+            }
             {body}
         }
     }
 }
 
 #[component]
-pub(super) fn SolverRow(provider: Provider, reload: Reload) -> Element {
+pub(super) fn SolverRow(
+    provider: Provider,
+    reload: Reload,
+    /// The panel's gate, so a refusal opens the one prompt above the list.
+    gate: StepUpGate,
+) -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
     let session = use_session();
@@ -81,11 +96,17 @@ pub(super) fn SolverRow(provider: Provider, reload: Reload) -> Element {
     let resolve = {
         move |_| {
             spawn(async move {
-                let client = api.client();
-                if session.token_value().is_some()
-                    && client.resolve_provider().id(id).send().await.is_ok()
-                {
-                    reload.bump();
+                let client = gate.client(api);
+                if session.token_value().is_some() {
+                    match client.resolve_provider().id(id).send().await {
+                        Ok(_) => reload.bump(),
+                        // The row has no error line, so every other failure stays silent as it
+                        // always did — but an elevation demand has to reach the panel's prompt,
+                        // or the button does nothing for the rest of the session.
+                        Err(e) => {
+                            let _refused = gate.refused(api::Refusal::of(&e));
+                        }
+                    }
                 }
             });
         }
@@ -93,9 +114,9 @@ pub(super) fn SolverRow(provider: Provider, reload: Reload) -> Element {
     let reenable = {
         move |_| {
             spawn(async move {
-                let client = api.client();
-                if session.token_value().is_some()
-                    && client
+                let client = gate.client(api);
+                if session.token_value().is_some() {
+                    match client
                         .set_provider_state()
                         .id(id)
                         .body(SetProviderStateBody {
@@ -103,9 +124,13 @@ pub(super) fn SolverRow(provider: Provider, reload: Reload) -> Element {
                         })
                         .send()
                         .await
-                        .is_ok()
-                {
-                    reload.bump();
+                    {
+                        Ok(_) => reload.bump(),
+                        // See `resolve` above.
+                        Err(e) => {
+                            let _refused = gate.refused(api::Refusal::of(&e));
+                        }
+                    }
                 }
             });
         }

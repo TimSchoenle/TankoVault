@@ -5,7 +5,7 @@ mod error;
 #[cfg(feature = "desktop")]
 pub(crate) mod session_store;
 
-pub(crate) use error::{error_status, friendly_error, problem_detail};
+pub(crate) use error::{error_status, friendly_error, guarded_error, problem_detail, Refusal};
 
 use crate::state::Session;
 use dioxus::prelude::*;

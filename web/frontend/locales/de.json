@@ -1109,6 +1109,9 @@
       "title": "Anbieterstatistiken",
       "unavailable": "Anbieterstatistiken nicht verfügbar: {message}"
     },
+    "stepUp": {
+      "intro": "Diese Aktion ändert die Installation, deshalb fragen wir vorher nach deinem zweiten Faktor."
+    },
     "sync": {
       "accounts": "Verknüpfte Konten",
       "assign": "Zuweisen",
@@ -1415,7 +1418,8 @@
     "unbuildable": "Diese Anfrage konnte nicht erstellt werden. Das ist ein Fehler — bitte melde ihn.",
     "unreachable": "Server nicht erreichbar. Prüfe deine Verbindung und versuche es erneut.",
     "unreadable": "Der Server hat etwas gesendet, das diese App nicht lesen konnte.",
-    "unexpected": "Der Server hat mit etwas geantwortet, das diese Version nicht kennt. Versuche es erneut oder lade die Seite neu."
+    "unexpected": "Der Server hat mit etwas geantwortet, das diese Version nicht kennt. Versuche es erneut oder lade die Seite neu.",
+    "mfaEnrolmentRequired": "Richte zuerst die Zwei-Faktor-Authentifizierung für dein Konto ein. Konto → Sicherheit."
   },
   "feedback": {
     "failed": "Etwas ist schiefgelaufen: {message}",

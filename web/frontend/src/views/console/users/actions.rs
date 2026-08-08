@@ -5,6 +5,7 @@
 //! which matters when the header and a tab body both offer the same action.
 
 use crate::api;
+use crate::components::StepUpGate;
 use crate::hooks::{use_busy, Reload};
 use crate::i18n::use_i18n;
 use crate::wire::types::DeleteUser;
@@ -26,13 +27,14 @@ pub(super) fn erase(
     reason: String,
     reload: Reload,
     on_erased: EventHandler<()>,
+    gate: StepUpGate,
 ) {
     if !busy.claim() {
         return;
     }
     let mut outcome = outcome;
     outcome.set(None);
-    let client = api.client();
+    let client = gate.client(api);
     spawn(async move {
         let body = DeleteUser {
             // The server re-checks this against the account it is about to erase;
@@ -45,7 +47,11 @@ pub(super) fn erase(
                 on_erased.call(());
                 reload.bump();
             }
-            Err(e) => outcome.set(Some(Err(api::friendly_error(i18n, e)))),
+            Err(e) => {
+                if !gate.refused(api::Refusal::of(&e)) {
+                    outcome.set(Some(Err(api::guarded_error(i18n, e))));
+                }
+            }
         }
         busy.release();
     });
@@ -59,20 +65,25 @@ pub(super) fn revoke_all(
     outcome: Signal<crate::hooks::Outcome>,
     detail_reload: Reload,
     user_id: String,
+    gate: StepUpGate,
 ) {
     if !busy.claim() {
         return;
     }
     let mut outcome = outcome;
     outcome.set(None);
-    let client = api.client();
+    let client = gate.client(api);
     spawn(async move {
         match client.revoke_user_sessions().id(user_id).send().await {
             Ok(_) => {
                 outcome.set(Some(Ok(i18n.t("console.users.signedOutEverywhere"))));
                 detail_reload.bump();
             }
-            Err(e) => outcome.set(Some(Err(api::friendly_error(i18n, e)))),
+            Err(e) => {
+                if !gate.refused(api::Refusal::of(&e)) {
+                    outcome.set(Some(Err(api::guarded_error(i18n, e))));
+                }
+            }
         }
         busy.release();
     });
@@ -85,6 +96,7 @@ pub(super) fn VerifyEmailAction(
     enabled: bool,
     reload: Reload,
     detail_reload: Reload,
+    gate: StepUpGate,
 ) -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
@@ -95,11 +107,19 @@ pub(super) fn VerifyEmailAction(
             return;
         }
         let id = user_id.clone();
-        let client = api.client();
+        let client = gate.client(api);
         spawn(async move {
-            if client.verify_user_email().id(id).send().await.is_ok() {
-                detail_reload.bump();
-                reload.bump();
+            match client.verify_user_email().id(id).send().await {
+                Ok(_) => {
+                    detail_reload.bump();
+                    reload.bump();
+                }
+                // This control has no error line of its own; the refetch is what reports every
+                // other failure. An elevation demand changes nothing to refetch, so it is the
+                // one outcome that has to be raised to the editor's prompt.
+                Err(e) => {
+                    let _refused = gate.refused(api::Refusal::of(&e));
+                }
             }
             busy.release();
         });

@@ -16,8 +16,8 @@ pub(in crate::views::console) use test::AdapterTestPanel;
 
 use crate::api;
 use crate::components::{
-    async_view, HealthPill, ListFooter, ListSearch, NoSelection, OutcomeLine, Section,
-    SkeletonBlock, SliderRow, TabBar, TabKind,
+    async_view, use_step_up_gate, HealthPill, ListFooter, ListSearch, NoSelection, OutcomeLine,
+    Section, SkeletonBlock, SliderRow, StepUpPrompt, TabBar, TabKind,
 };
 use crate::hooks::{use_busy, use_outcome, use_reload, Reload};
 use crate::i18n::use_i18n;
@@ -278,6 +278,9 @@ fn ProviderInspector(
     let mut scan_mode = use_signal(|| ScanMode::Fast);
     let busy = use_busy();
     let mut outcome = use_outcome();
+    // One gate for the inspector: saving, changing state and triggering a scan are all mutating
+    // operator capabilities, and the inspector has one outcome line to answer through.
+    let gate = use_step_up_gate();
 
     let mut name = use_signal(|| provider.name.clone());
     let mut base_url = use_signal(|| provider.base_url.clone());
@@ -341,7 +344,7 @@ fn ProviderInspector(
                 config: Some(parsed),
                 politeness: Some(politeness),
             };
-            let client = api.client();
+            let client = gate.client(api);
             spawn(async move {
                 match client.update_provider().id(id).body(body).send().await {
                     Ok(_) => {
@@ -353,7 +356,11 @@ fn ProviderInspector(
                         dry_run_passed.set(false);
                         reload.bump();
                     }
-                    Err(e) => outcome.set(Some(Err(api::friendly_error(i18n, e)))),
+                    Err(e) => {
+                        if !gate.refused(api::Refusal::of(&e)) {
+                            outcome.set(Some(Err(api::guarded_error(i18n, e))));
+                        }
+                    }
                 }
                 busy.release();
             });
@@ -365,7 +372,7 @@ fn ProviderInspector(
             return;
         }
         outcome.set(None);
-        let client = api.client();
+        let client = gate.client(api);
         spawn(async move {
             match client
                 .set_provider_state()
@@ -375,7 +382,11 @@ fn ProviderInspector(
                 .await
             {
                 Ok(_) => reload.bump(),
-                Err(e) => outcome.set(Some(Err(api::friendly_error(i18n, e)))),
+                Err(e) => {
+                    if !gate.refused(api::Refusal::of(&e)) {
+                        outcome.set(Some(Err(api::guarded_error(i18n, e))));
+                    }
+                }
             }
             busy.release();
         });
@@ -383,7 +394,7 @@ fn ProviderInspector(
 
     let scan = move |_| {
         outcome.set(None);
-        let client = api.client();
+        let client = gate.client(api);
         spawn(async move {
             let body = TriggerScan {
                 mode: *scan_mode.peek(),
@@ -391,7 +402,11 @@ fn ProviderInspector(
             };
             match client.trigger_scan().body(body).send().await {
                 Ok(_) => outcome.set(Some(Ok(i18n.t("console.providers.scanQueued")))),
-                Err(e) => outcome.set(Some(Err(api::friendly_error(i18n, e)))),
+                Err(e) => {
+                    if !gate.refused(api::Refusal::of(&e)) {
+                        outcome.set(Some(Err(api::guarded_error(i18n, e))));
+                    }
+                }
             }
         });
     };
@@ -518,6 +533,16 @@ fn ProviderInspector(
                 }
             }
             div { style: "padding:0 22px;",
+                if gate.is_open() {
+                    StepUpPrompt {
+                        enrolled: true,
+                        intro: Some(i18n.t("console.stepUp.intro")),
+                        on_done: move |()| {
+                            gate.close();
+                            outcome.set(Some(Ok(i18n.t("stepUp.confirmedRetry"))));
+                        },
+                    }
+                }
                 OutcomeLine { outcome: outcome.read().clone() }
             }
             match tab {

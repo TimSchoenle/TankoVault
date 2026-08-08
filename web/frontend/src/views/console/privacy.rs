@@ -8,7 +8,7 @@
 //! username typed back.
 
 use crate::api;
-use crate::components::async_list;
+use crate::components::{async_list, use_step_up_gate, StepUpGate, StepUpPrompt};
 use crate::hooks::{use_busy, use_outcome, use_reload, Busy, Reload};
 use crate::i18n::use_i18n;
 use crate::models::{RequestKindExt as _, RequestStatusExt as _};
@@ -158,9 +158,12 @@ pub(super) fn PrivacyQueuePanel(tick: RefreshTick) -> Element {
 fn QueueRow(row: AdminRequestRow, permits: QueuePermits, reload: Reload) -> Element {
     let i18n = use_i18n();
     let busy = use_busy();
+    // Per row, beside the row's own outcome line: only the request the operator acted on is
+    // refused, and a queue-wide prompt would not say which one it was about.
+    let gate = use_step_up_gate();
     let mut confirm_erase = use_signal(|| false);
     let mut typed = use_signal(String::new);
-    let outcome = use_outcome();
+    let mut outcome = use_outcome();
 
     let id = row.request.id;
     let open = row.request.status.is_open();
@@ -210,6 +213,16 @@ fn QueueRow(row: AdminRequestRow, permits: QueuePermits, reload: Reload) -> Elem
                         {i18n.args("console.privacy.claimedBy", &[("user", &by)])}
                     }
                 }
+                if gate.is_open() {
+                    StepUpPrompt {
+                        enrolled: true,
+                        intro: Some(i18n.t("console.stepUp.intro")),
+                        on_done: move |()| {
+                            gate.close();
+                            outcome.set(Some(Ok(i18n.t("stepUp.confirmedRetry"))));
+                        },
+                    }
+                }
                 crate::components::OutcomeLine { outcome: outcome.read().clone() }
 
                 if *confirm_erase.read() {
@@ -233,6 +246,7 @@ fn QueueRow(row: AdminRequestRow, permits: QueuePermits, reload: Reload) -> Elem
                             busy,
                             reload,
                             outcome,
+                            gate,
                         }
                         button {
                             class: "ik-btn",
@@ -255,10 +269,11 @@ fn QueueRow(row: AdminRequestRow, permits: QueuePermits, reload: Reload) -> Elem
                         busy,
                         reload,
                         outcome,
+                        gate,
                     }
                 }
                 if offers(&row, permits, RowAction::Export) {
-                    ExportButton { id, busy, outcome }
+                    ExportButton { id, busy, outcome, gate }
                 }
                 if can_erase && !*confirm_erase.read() {
                     button {
@@ -276,11 +291,13 @@ fn QueueRow(row: AdminRequestRow, permits: QueuePermits, reload: Reload) -> Elem
                         busy,
                         reload,
                         outcome,
+                        gate,
                     }
                     ActionButton {
                         id,
                         action: QueueAction::Reject,
                         label: i18n.t("console.privacy.reject"),
+                        gate,
                         busy,
                         reload,
                         outcome,
@@ -308,6 +325,7 @@ fn ActionButton(
     busy: Busy,
     reload: Reload,
     outcome: Signal<crate::hooks::Outcome>,
+    gate: StepUpGate,
 ) -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
@@ -318,7 +336,7 @@ fn ActionButton(
             return;
         }
         outcome.set(None);
-        let client = api.client();
+        let client = gate.client(api);
         spawn(async move {
             let result = match action {
                 QueueAction::Claim => client
@@ -351,7 +369,11 @@ fn ActionButton(
             };
             match result {
                 Ok(()) => reload.bump(),
-                Err(e) => outcome.set(Some(Err(api::friendly_error(i18n, e)))),
+                Err(e) => {
+                    if !gate.refused(api::Refusal::of(&e)) {
+                        outcome.set(Some(Err(api::guarded_error(i18n, e))));
+                    }
+                }
             }
             busy.release();
         });
@@ -364,7 +386,12 @@ fn ActionButton(
 
 /// Download the subject's export to fulfil an access or portability request.
 #[component]
-fn ExportButton(id: uuid::Uuid, busy: Busy, outcome: Signal<crate::hooks::Outcome>) -> Element {
+fn ExportButton(
+    id: uuid::Uuid,
+    busy: Busy,
+    outcome: Signal<crate::hooks::Outcome>,
+    gate: StepUpGate,
+) -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
     let mut outcome = outcome;
@@ -374,7 +401,7 @@ fn ExportButton(id: uuid::Uuid, busy: Busy, outcome: Signal<crate::hooks::Outcom
             return;
         }
         outcome.set(None);
-        let client = api.client();
+        let client = gate.client(api);
         spawn(async move {
             // Filename carries the request id, not the subject's: naming it after a person risks
             // the export becoming personal data in someone's downloads folder.
@@ -394,7 +421,11 @@ fn ExportButton(id: uuid::Uuid, busy: Busy, outcome: Signal<crate::hooks::Outcom
                         Err(key) => outcome.set(Some(Err(i18n.t(key)))),
                     }
                 }
-                Err(e) => outcome.set(Some(Err(api::friendly_error(i18n, e)))),
+                Err(e) => {
+                    if !gate.refused(api::Refusal::of(&e)) {
+                        outcome.set(Some(Err(api::guarded_error(i18n, e))));
+                    }
+                }
             }
             busy.release();
         });
@@ -416,6 +447,7 @@ fn EraseButton(
     busy: Busy,
     reload: Reload,
     outcome: Signal<crate::hooks::Outcome>,
+    gate: StepUpGate,
 ) -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
@@ -429,11 +461,15 @@ fn EraseButton(
         let body = FulfilErasure {
             confirm_username: confirm.clone(),
         };
-        let client = api.client();
+        let client = gate.client(api);
         spawn(async move {
             match client.fulfil_erasure().id(id).body(body).send().await {
                 Ok(_) => reload.bump(),
-                Err(e) => outcome.set(Some(Err(api::friendly_error(i18n, e)))),
+                Err(e) => {
+                    if !gate.refused(api::Refusal::of(&e)) {
+                        outcome.set(Some(Err(api::guarded_error(i18n, e))));
+                    }
+                }
             }
             busy.release();
         });

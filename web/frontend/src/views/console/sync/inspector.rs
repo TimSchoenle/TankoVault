@@ -9,6 +9,7 @@ use crate::models::*;
 use crate::state::use_session;
 use crate::util::rel_time;
 use crate::views::console::merge::SeriesMiniCard;
+use crate::views::console::sync::use_sync_gate;
 use crate::views::console::use_console_nav;
 use dioxus::prelude::*;
 use progenitor_client::ResponseValue;
@@ -299,9 +300,9 @@ pub(super) fn MappingEditorRow(
         "ik-pill"
     };
 
+    let gate = use_sync_gate();
     let save = {
         let provider = provider.clone();
-        let _client = api.client();
         move |_| {
             if *busy.peek() {
                 return;
@@ -313,9 +314,9 @@ pub(super) fn MappingEditorRow(
             busy.set(true);
             let provider = provider.clone();
             spawn(async move {
-                let client = api.client();
-                if session.token_value().is_some()
-                    && client
+                let client = gate.client(api);
+                if session.token_value().is_some() {
+                    match client
                         .upsert_sync_mapping()
                         .body(UpsertMapping {
                             series_id,
@@ -324,9 +325,14 @@ pub(super) fn MappingEditorRow(
                         })
                         .send()
                         .await
-                        .is_ok()
-                {
-                    reload.bump();
+                    {
+                        Ok(_) => reload.bump(),
+                        // The row has no error line; only the elevation demand has to reach the
+                        // panel's prompt, or the button silently stops working.
+                        Err(e) => {
+                            let _refused = gate.refused(api::Refusal::of(&e));
+                        }
+                    }
                 }
                 busy.set(false);
             });
@@ -335,7 +341,6 @@ pub(super) fn MappingEditorRow(
 
     let clear = {
         let provider = provider.clone();
-        let _client = api.client();
         move |_| {
             if *busy.peek() {
                 return;
@@ -343,15 +348,19 @@ pub(super) fn MappingEditorRow(
             busy.set(true);
             let provider = provider.clone();
             spawn(async move {
-                let client = api.client();
+                let client = gate.client(api);
                 let body = tankovault_api_client::types::SyncMappingTarget {
                     provider,
                     series_id,
                 };
-                if session.token_value().is_some()
-                    && client.clear_sync_mapping().body(body).send().await.is_ok()
-                {
-                    reload.bump();
+                if session.token_value().is_some() {
+                    match client.clear_sync_mapping().body(body).send().await {
+                        Ok(_) => reload.bump(),
+                        // See `save` above.
+                        Err(e) => {
+                            let _refused = gate.refused(api::Refusal::of(&e));
+                        }
+                    }
                 }
                 busy.set(false);
             });

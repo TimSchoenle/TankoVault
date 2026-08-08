@@ -9,6 +9,7 @@ use crate::models::*;
 use crate::state::use_session;
 use crate::views::console::merge::SeriesMiniCard;
 use crate::views::console::query::QueueFilter;
+use crate::views::console::sync::use_sync_gate;
 use crate::views::console::{use_console_nav, ConsoleQuery};
 use dioxus::prelude::*;
 use progenitor_client::ResponseValue;
@@ -128,10 +129,10 @@ pub(super) fn AssignRow(
     let mut busy = use_signal(|| false);
     let s = series.read();
 
+    let gate = use_sync_gate();
     let assign = {
         let series_id = SeriesId(s.series_id);
         let provider = provider.clone();
-        let _client = api.client();
         move |_| {
             if *busy.peek() {
                 return;
@@ -143,9 +144,9 @@ pub(super) fn AssignRow(
             busy.set(true);
             let provider = provider.clone();
             spawn(async move {
-                let client = api.client();
-                if session.token_value().is_some()
-                    && client
+                let client = gate.client(api);
+                if session.token_value().is_some() {
+                    match client
                         .upsert_sync_mapping()
                         .body(UpsertMapping {
                             series_id,
@@ -154,9 +155,14 @@ pub(super) fn AssignRow(
                         })
                         .send()
                         .await
-                        .is_ok()
-                {
-                    reload.bump();
+                    {
+                        Ok(_) => reload.bump(),
+                        // The row has no error line; only the elevation demand has to reach the
+                        // panel's prompt, or the button silently stops working.
+                        Err(e) => {
+                            let _refused = gate.refused(api::Refusal::of(&e));
+                        }
+                    }
                 }
                 busy.set(false);
             });
@@ -489,6 +495,7 @@ pub(super) fn CandidateMatchRow(
 ) -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
+    let gate = use_sync_gate();
     let mut busy = use_signal(|| false);
     let mut show = use_signal(|| false);
 
@@ -502,17 +509,21 @@ pub(super) fn CandidateMatchRow(
             busy.set(true);
             let provider = provider.clone();
             let external_id = external_id.clone();
-            let _client = api.client();
+            let client = gate.client(api);
             spawn(async move {
-                let client = api.client();
                 let body = AssignRemoteEntry {
                     user_id,
                     provider: provider.clone(),
                     series_id,
                     external_id: external_id.clone(),
                 };
-                if client.assign_remote_entry().body(body).send().await.is_ok() {
-                    reload.bump();
+                match client.assign_remote_entry().body(body).send().await {
+                    Ok(_) => reload.bump(),
+                    // See `AssignRow`: the demand reaches the panel's prompt, everything else
+                    // leaves the row as it was.
+                    Err(e) => {
+                        let _refused = gate.refused(api::Refusal::of(&e));
+                    }
                 }
                 busy.set(false);
             });

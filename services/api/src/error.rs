@@ -235,6 +235,26 @@ mod tests {
         assert_eq!(documented.detail, "resource not found");
     }
 
+    /// The three `403`s the operator surfaces answer with, pinned by the token clients branch on.
+    ///
+    /// The bug: the console read the bare status and reported every one of them as "you don't
+    /// have permission to do that" — including the step-up demand, which is a question the
+    /// reader can answer, and the enrolment demand, which names its own remedy. `web/frontend`
+    /// is a separate workspace and shares no types with this crate, so its `api::Refusal` matches
+    /// these strings; renaming one here silently turns the prompt back into a dead end.
+    #[test]
+    fn the_console_branches_on_these_problem_types() {
+        for (error, expected) in [
+            (ApiError::StepUpRequired, "step_up_required"),
+            (ApiError::MfaEnrolmentRequired, "mfa_enrolment_required"),
+            (ApiError::Forbidden, "forbidden"),
+        ] {
+            let (status, kind, _) = error.parts();
+            assert_eq!(status, StatusCode::FORBIDDEN);
+            assert_eq!(kind, expected);
+        }
+    }
+
     /// Every variant's status must agree with the `status` member in its own body, or a client
     /// that reads one and not the other sees a different error than the one that happened.
     #[test]

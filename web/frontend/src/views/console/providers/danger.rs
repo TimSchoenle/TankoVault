@@ -2,7 +2,9 @@
 //! radius with real counts rather than asking "are you sure".
 
 use crate::api;
-use crate::components::{InlineConfirm, OutcomeLine, Section, TypeToConfirm};
+use crate::components::{
+    use_step_up_gate, InlineConfirm, OutcomeLine, Section, StepUpPrompt, TypeToConfirm,
+};
 use crate::hooks::{use_busy, use_outcome, Reload};
 use crate::i18n::use_i18n;
 use crate::models::{Provider, ProviderStat, ProviderState, SetProviderStateBody};
@@ -24,6 +26,9 @@ pub(super) fn DangerTab(
     let i18n = use_i18n();
     let busy = use_busy();
     let mut outcome = use_outcome();
+    // Elevated: blocklisting and deleting a provider are mutating operator capabilities, and
+    // the API answers `403 step_up_required` until a second factor has been presented.
+    let gate = use_step_up_gate();
     let mut confirming_block = use_signal(|| false);
     let id = provider.id;
     let blocked = provider.state == ProviderState::Blocked;
@@ -33,7 +38,7 @@ pub(super) fn DangerTab(
             return;
         }
         outcome.set(None);
-        let client = api.client();
+        let client = gate.client(api);
         spawn(async move {
             match client
                 .set_provider_state()
@@ -46,7 +51,11 @@ pub(super) fn DangerTab(
                     confirming_block.set(false);
                     reload.bump();
                 }
-                Err(e) => outcome.set(Some(Err(api::friendly_error(i18n, e)))),
+                Err(e) => {
+                    if !gate.refused(api::Refusal::of(&e)) {
+                        outcome.set(Some(Err(api::guarded_error(i18n, e))));
+                    }
+                }
             }
             busy.release();
         });
@@ -57,14 +66,18 @@ pub(super) fn DangerTab(
             return;
         }
         outcome.set(None);
-        let client = api.client();
+        let client = gate.client(api);
         spawn(async move {
             match client.delete_provider().id(id).send().await {
                 Ok(_) => {
                     on_deleted.call(());
                     reload.bump();
                 }
-                Err(e) => outcome.set(Some(Err(api::friendly_error(i18n, e)))),
+                Err(e) => {
+                    if !gate.refused(api::Refusal::of(&e)) {
+                        outcome.set(Some(Err(api::guarded_error(i18n, e))));
+                    }
+                }
             }
             busy.release();
         });
@@ -137,6 +150,16 @@ pub(super) fn DangerTab(
                         busy: busy.is_busy(),
                         on_confirm: delete,
                     }
+                }
+            }
+            if gate.is_open() {
+                StepUpPrompt {
+                    enrolled: true,
+                    intro: Some(i18n.t("console.stepUp.intro")),
+                    on_done: move |()| {
+                        gate.close();
+                        outcome.set(Some(Ok(i18n.t("stepUp.confirmedRetry"))));
+                    },
                 }
             }
             OutcomeLine { outcome: outcome.read().clone() }

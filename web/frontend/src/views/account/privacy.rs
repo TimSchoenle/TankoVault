@@ -83,7 +83,7 @@ fn ExportCard() -> Element {
                 // elevation — and reporting the raw problem told the owner they lacked
                 // permission to download their own record.
                 Err(e) => {
-                    if !gate.refused(api::error_status(&e)) {
+                    if !gate.refused(api::Refusal::from_status(api::error_status(&e))) {
                         outcome.set(Some(Err(api::friendly_error(i18n, e))));
                     }
                 }
@@ -186,7 +186,7 @@ fn RequestsCard() -> Element {
                     reload.bump();
                 }
                 Err(e) => {
-                    if !gate.refused(api::error_status(&e)) {
+                    if !gate.refused(api::Refusal::of(&e)) {
                         outcome.set(Some(Err(api::friendly_error(i18n, e))));
                     }
                 }
@@ -295,7 +295,7 @@ fn RequestRowView(request: RequestRow, reload: Reload, gate: StepUpGate) -> Elem
                 // is the only outcome a reader can act on; anything else leaves the row as it
                 // was, as it did before the gate existed.
                 Err(e) => {
-                    let _refused = gate.refused(api::error_status(&e));
+                    let _refused = gate.refused(api::Refusal::of(&e));
                 }
             }
             busy.release();
@@ -376,7 +376,7 @@ fn DeleteAccountCard() -> Element {
                     caps.clear();
                 }
                 Err(e) => {
-                    if !gate.refused(api::error_status(&e)) {
+                    if !gate.refused(api::Refusal::from_status(api::error_status(&e))) {
                         outcome.set(Some(Err(api::friendly_error(i18n, e))));
                     }
                     busy.release();

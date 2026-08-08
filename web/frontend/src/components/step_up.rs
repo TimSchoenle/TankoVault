@@ -17,7 +17,7 @@
 //! the same branch the moment a factor exists, so this is a mirror of the server's rule rather
 //! than a second copy of the decision.
 
-use crate::api;
+use crate::api::{self, Refusal};
 use crate::components::Field;
 use crate::hooks::use_busy;
 use crate::i18n::use_i18n;
@@ -92,9 +92,14 @@ fn offered_factors(
 ///
 /// `enrolled` is the caller's best guess, used only until the account's real factor list
 /// arrives. `on_done` fires once the grant is stored, so the caller can retry whatever it was
-/// doing.
+/// doing. `intro` replaces the default sentence, which says the action changes *your account* —
+/// true of every reader-facing use and of none of the operator ones.
 #[component]
-pub(crate) fn StepUpPrompt(enrolled: bool, on_done: EventHandler<()>) -> Element {
+pub(crate) fn StepUpPrompt(
+    enrolled: bool,
+    on_done: EventHandler<()>,
+    #[props(default)] intro: Option<String>,
+) -> Element {
     let i18n = use_i18n();
     let api = api::use_api();
     let step_up = use_step_up();
@@ -253,7 +258,7 @@ pub(crate) fn StepUpPrompt(enrolled: bool, on_done: EventHandler<()>) -> Element
         div { class: "ik-note", style: "padding:12px;margin:12px 0;",
             p { style: "margin:0 0 8px;font-weight:600;", {i18n.t("stepUp.title")} }
             p { class: "ik-muted", style: "font-size:13px;margin:0 0 10px;",
-                {i18n.t("stepUp.intro")}
+                {intro.clone().unwrap_or_else(|| i18n.t("stepUp.intro"))}
             }
 
             if let Some(msg) = error.read().clone() {
@@ -363,11 +368,16 @@ impl StepUpGate {
     /// Route a failed call. `true` means it was a step-up demand and the prompt is now open, so
     /// the caller reports nothing; `false` means the failure is the caller's to word.
     ///
-    /// Takes the *extracted* status rather than the error: every generated operation has its own
-    /// error type, so one method could not accept them all — and one is the point.
+    /// Takes the *classified* refusal rather than the error: every generated operation has its
+    /// own error type, so one method could not accept them all — and one is the point.
+    ///
+    /// It is [`Refusal`] rather than the bare status because the guarded surfaces answer `403`
+    /// three ways, and only one of them is a question this prompt can answer. Opening for the
+    /// other two would leave an operator confirming themselves against a refusal that a
+    /// confirmation does not change.
     #[must_use]
-    pub(crate) fn refused(mut self, status: Option<u16>) -> bool {
-        if status != Some(403) {
+    pub(crate) fn refused(mut self, refusal: Refusal) -> bool {
+        if refusal != Refusal::StepUp {
             return false;
         }
         // A grant the API has stopped honouring is worse than none: the screen would keep

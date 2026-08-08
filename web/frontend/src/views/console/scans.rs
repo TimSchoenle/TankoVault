@@ -2,7 +2,7 @@
 //! and triage the most recent task failures with their errors.
 
 use crate::api;
-use crate::components::async_block;
+use crate::components::{async_block, use_step_up_gate, StepUpPrompt};
 use crate::hooks::use_reload;
 use crate::i18n::use_i18n;
 use crate::models::*;
@@ -22,6 +22,7 @@ pub(super) fn ScanQueue(tick: RefreshTick) -> Element {
     let i18n = use_i18n();
     let mut mode = use_signal(|| ScanMode::Fast);
     let mut message = use_signal(|| Option::<String>::None);
+    let gate = use_step_up_gate();
 
     // Pushed every two seconds by the console stream; this fetch is the first paint and the
     // manual-refresh path, not the cadence. A run in flight changes faster than any poll this
@@ -106,27 +107,25 @@ pub(super) fn ScanQueue(tick: RefreshTick) -> Element {
         move |_| {
             let m = *mode.read();
             let tick = tick;
-            let _client = api.client();
+            // Elevated: triggering a run is a mutating operator capability, which the API
+            // answers `403 step_up_required` to until it has a second factor.
+            let client = gate.client(api);
             spawn(async move {
-                let client = api.client();
                 let body = TriggerScan {
                     mode: m,
                     provider_id: None,
                 };
-                match client
-                    .trigger_scan()
-                    .body(body)
-                    .send()
-                    .await
-                    .map(ResponseValue::into_inner)
-                    .map_err(|e| api::friendly_error(i18n, e))
-                {
+                match client.trigger_scan().body(body).send().await {
                     // Body carries the planner's run_ids, which this view doesn't render.
                     Ok(_) => {
                         message.set(Some(i18n.t("console.scans.queued")));
                         tick.bump();
                     }
-                    Err(e) => message.set(Some(e)),
+                    Err(e) => {
+                        if !gate.refused(api::Refusal::of(&e)) {
+                            message.set(Some(api::guarded_error(i18n, e)));
+                        }
+                    }
                 }
             });
         }
@@ -206,6 +205,16 @@ pub(super) fn ScanQueue(tick: RefreshTick) -> Element {
                             provider: (!slug.trim().is_empty()).then_some(slug),
                             ..nav.query()
                         });
+                    },
+                }
+            }
+            if gate.is_open() {
+                StepUpPrompt {
+                    enrolled: true,
+                    intro: Some(i18n.t("console.stepUp.intro")),
+                    on_done: move |()| {
+                        gate.close();
+                        message.set(Some(i18n.t("stepUp.confirmedRetry")));
                     },
                 }
             }

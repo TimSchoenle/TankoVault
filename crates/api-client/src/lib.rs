@@ -29061,7 +29061,7 @@ impl Client {
     pub fn get_user(&self) -> builder::GetUser<'_> {
         builder::GetUser::new(self)
     }
-    #[doc = "Erase a user\n\nDeletes the account and every row it owns, using the same cascade as self-service erasure\n(GDPR Art. 17) so there is one implementation rather than two that can diverge. The\naccount's audit records survive in pseudonymised form; see\n`tankovault_db::repo::privacy::erase_user`.\n\nIrreversible. Requires the username back, refuses the caller's own account, and refuses the\nlast active administrator.\n\nSends a `DELETE` request to `/v1/admin/users/{id}`\n\nArguments:\n- `id`: User id\n- `body`\n```ignore\nlet response = client.delete_user()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Erase a user\n\nDeletes the account and every row it owns, using the same cascade as self-service erasure\n(GDPR Art. 17) so there is one implementation rather than two that can diverge. The\naccount's audit records survive in pseudonymised form; see\n`tankovault_db::repo::privacy::erase_user`.\n\nIrreversible. Requires the username back, refuses the caller's own account, the deployment's\nsuper user, and the last active administrator.\n\nSends a `DELETE` request to `/v1/admin/users/{id}`\n\nArguments:\n- `id`: User id\n- `body`\n```ignore\nlet response = client.delete_user()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn delete_user(&self) -> builder::DeleteUser<'_> {
         builder::DeleteUser::new(self)
     }
@@ -29077,7 +29077,7 @@ impl Client {
     pub fn revoke_user_sessions(&self) -> builder::RevokeUserSessions<'_> {
         builder::RevokeUserSessions::new(self)
     }
-    #[doc = "Suspend or reinstate a user\n\nA suspended account cannot sign in, refresh a session, or take any action — the check\nhappens before authorization, so it is not something a permission can override. Nothing the\naccount owns is deleted, so the change is fully reversible.\n\nSends a `POST` request to `/v1/admin/users/{id}/status`\n\nArguments:\n- `id`: User id\n- `body`\n```ignore\nlet response = client.set_user_status()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Suspend or reinstate a user\n\nA suspended account cannot sign in, refresh a session, or take any action — the check\nhappens before authorization, so it is not something a permission can override. Nothing the\naccount owns is deleted, so the change is fully reversible.\n\nRefuses the deployment's super user: suspending the owner cannot be undone by the owner.\n\nSends a `POST` request to `/v1/admin/users/{id}/status`\n\nArguments:\n- `id`: User id\n- `body`\n```ignore\nlet response = client.set_user_status()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn set_user_status(&self) -> builder::SetUserStatus<'_> {
         builder::SetUserStatus::new(self)
     }

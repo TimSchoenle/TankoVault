@@ -283,12 +283,30 @@ It is created by the installer and by nothing else:
   anything. A deployment whose accounts include no such holder gets no super user.
 - A partial unique index makes a second one impossible, whatever writes the row.
 
+**A deployment with no super user is reconciled at boot.** The installer's claim only covers an
+empty database, so it misses the deployment whose users registered before the seed job ran, and
+the one whose owner was erased — and nothing in the API can mint the grant afterwards, so
+neither state is recoverable by hand. `tankovault_db::repo::permissions::ensure_super_user`
+therefore runs from the api's startup (and again from `bootstrap seed-admin`) and promotes
+migration `0042`'s candidate: the **earliest active account holding `users.permissions`**, which
+is nobody who could not already grant themselves everything enumerable. It is a no-op on an owned
+deployment, and logs a warning (`promoted its earliest active administrator`) when it is not.
+Suspended candidates are skipped — the grant is single-slot, and spending it on an account that
+cannot sign in would leave the deployment unowned in a way that looks fixed.
+
+**The owner cannot be suspended or erased from the console** (400, audited as
+`super_user_target`). The last-administrator guard is not enough here: it permits the action as
+soon as a second administrator exists, and unlike an ordinary grant this one dies with the row it
+sits on, so the administrator who erases the owner ends the deployment's ownership and is then
+the reconciler's own next candidate.
+
 The permission editor cannot hand it out: it is absent from `GET /v1/admin/permissions`, from
 every preset, and `PUT /v1/admin/users/{id}/permissions` refuses (400, audited) a request that
 would add one. An edit that *omits* it leaves it alone rather than revoking it — the console's
 checklist omits it on every save, so any other behaviour would demote the owner on their first
-edit. Removing it is therefore a deliberate `DELETE` against `user_permissions`, or erasing the
-account.
+edit. Removing it is therefore a deliberate `DELETE` against `user_permissions`, or the account
+erasing itself — an administrator cannot erase it (below), and the next boot would reconcile the
+vacancy either way.
 
 ### Account status
 

@@ -41,24 +41,46 @@ pub enum AdminOutcome {
     AlreadyPresent,
 }
 
+/// Everything a run of [`seed_admin`] has to report: what happened to the configured account,
+/// and whether the deployment gained an owner along the way.
+pub struct AdminReport {
+    pub outcome: AdminOutcome,
+    /// The account this run promoted to super user because the deployment had none — by
+    /// username, since that is what an install log can be read against.
+    ///
+    /// `None` in the ordinary case, including the fresh install where
+    /// [`AdminOutcome::Created`] already claimed ownership for the account it made.
+    pub promoted_owner: Option<String>,
+}
+
 /// Create the first administrator, with every grantable permission — plus the super user grant
-/// if this is the deployment's first account.
+/// if this is the deployment's first account — and leave the deployment with an owner either way.
 ///
 /// Idempotent: an existing account is left exactly as it is, permissions included, so re-running
 /// an install job cannot re-grant something an operator has deliberately revoked. Running it a
 /// second time under a different address creates an ordinary administrator: the super user grant
 /// is claimed only while no other account exists, and the database refuses a second one.
 ///
+/// The ownership reconciliation is the exception to "leave an existing installation untouched",
+/// and a deliberate one: the super user grant cannot be revoked through the API — the permission
+/// editor filters it out of both sides of an edit — so there is no operator decision to
+/// overwrite, only the absence of one. See
+/// [`tankovault_db::repo::permissions::ensure_super_user`] for who it promotes and why that is
+/// nobody who could not already promote themselves.
+///
 /// Registration mints no privilege anywhere else in the system — this is the one deliberate
 /// exception, and without it no account could ever grant `users.permissions` to another, so a
 /// fresh installation would have no way in.
 ///
 /// # Errors
-/// Hashing the password, or any of the inserts other than the "already present" conflict.
-pub async fn seed_admin(pool: &PgPool, seed: &AdminSeed<'_>) -> anyhow::Result<AdminOutcome> {
+/// Hashing the password, the ownership reconciliation, or any of the inserts other than the
+/// "already present" conflict.
+pub async fn seed_admin(pool: &PgPool, seed: &AdminSeed<'_>) -> anyhow::Result<AdminReport> {
     let hash = tankovault_auth::hash_password(seed.password, seed.pepper)
         .map_err(|e| anyhow::anyhow!("hash failed: {e}"))?;
-    match tankovault_db::repo::users::create(pool, seed.email, seed.username, &hash).await {
+    let outcome = match tankovault_db::repo::users::create(pool, seed.email, seed.username, &hash)
+        .await
+    {
         Ok(user) => {
             // Provisioned by the operator rather than through the email-confirmation flow, so
             // the address is marked verified — otherwise the login gate locks the account out
@@ -71,16 +93,33 @@ pub async fn seed_admin(pool: &PgPool, seed: &AdminSeed<'_>) -> anyhow::Result<A
             // this account only if someone re-grants it. The super user grant does not.
             let super_user =
                 tankovault_db::repo::permissions::claim_super_user(pool, user.id).await?;
-            Ok(AdminOutcome::Created {
+            AdminOutcome::Created {
                 username: user.username,
                 super_user,
-            })
+            }
         }
         Err(e) if e.is_unique_violation() || matches!(e, tankovault_db::DbError::Conflict(_)) => {
-            Ok(AdminOutcome::AlreadyPresent)
+            AdminOutcome::AlreadyPresent
         }
-        Err(e) => Err(e.into()),
-    }
+        Err(e) => return Err(e.into()),
+    };
+
+    // The claim above only fires for the first account of an empty database, which is not every
+    // installation that ends up running this job. Reconcile the rest here so the install cannot
+    // finish reporting success on a deployment that has no owner at all.
+    let promoted_owner = match tankovault_db::repo::permissions::ensure_super_user(pool).await? {
+        Some(user_id) => Some(
+            tankovault_db::repo::users::get(pool, user_id)
+                .await?
+                .username,
+        ),
+        None => None,
+    };
+
+    Ok(AdminReport {
+        outcome,
+        promoted_owner,
+    })
 }
 
 /// One provider preset's fate, for reporting.

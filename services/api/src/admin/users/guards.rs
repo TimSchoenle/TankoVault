@@ -1,4 +1,4 @@
-//! The two refusals every account-writing path in this module shares. Neither is expressible
+//! The refusals every account-writing path in this module shares. None of them is expressible
 //! as a database constraint, so every path touching these columns must call them explicitly.
 
 use crate::audit::audit_failure;
@@ -70,6 +70,48 @@ pub(crate) async fn guard_not_last_administrator(
     Err(ApiError::BadRequest(
         "this is the only active account that can administer permissions; grant that \
          permission to someone else first"
+            .to_owned(),
+    ))
+}
+
+/// Refuses an action that would take the deployment's super user out of service — suspension or
+/// erasure, aimed at the one account [`Permission::SuperUser`] belongs to.
+///
+/// [`guard_not_last_administrator`] does not cover this. It permits the action as soon as any
+/// other active administrator exists, and the super user grant is not like the grants that
+/// administrator holds: it is single-slot, cannot be minted through the API, and dies with the
+/// row it sits on. So an administrator who suspends or erases the owner ends the deployment's
+/// ownership permanently, and — since the reconciler promotes the earliest remaining
+/// administrator — may well end it in their own favour. Nothing about holding `users.write` or
+/// `users.delete` implies that.
+///
+/// The owner is not locked out by their own tools: this refuses actions *aimed at* the super
+/// user, and administrative actions cannot be aimed at yourself in the first place
+/// ([`guard_not_self`]).
+pub(crate) async fn guard_not_super_user(
+    state: &AppState,
+    user: &AuthUser,
+    target: UserId,
+    action: &'static str,
+) -> ApiResult<()> {
+    let target_is_owner = tankovault_db::repo::permissions::resolve(&state.pool, target)
+        .await?
+        .is_some_and(|p| p.permissions.is_super_user());
+    if !target_is_owner {
+        return Ok(());
+    }
+
+    audit_failure(
+        state,
+        user,
+        action,
+        &target.as_uuid().to_string(),
+        &serde_json::json!({ "reason": "super_user_target" }),
+    )
+    .await;
+    Err(ApiError::BadRequest(
+        "this is the deployment's super user; the account that owns the installation cannot be \
+         suspended or erased from here"
             .to_owned(),
     ))
 }

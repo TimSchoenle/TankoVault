@@ -564,7 +564,8 @@ async fn seed(pool: &tankovault_db::PgPool) -> anyhow::Result<()> {
         password: &password,
         pepper: &pepper,
     };
-    match tankovault_bootstrap::seed_admin(pool, &seed).await? {
+    let report = tankovault_bootstrap::seed_admin(pool, &seed).await?;
+    match report.outcome {
         // Printed on purpose: this command's whole output is the account you can now log in
         // with, on a local database, so `expose_secret` here is deliberate.
         tankovault_bootstrap::AdminOutcome::Created {
@@ -579,6 +580,9 @@ async fn seed(pool: &tankovault_db::PgPool) -> anyhow::Result<()> {
         tankovault_bootstrap::AdminOutcome::AlreadyPresent => {
             println!("admin user already present; skipping");
         }
+    }
+    if let Some(owner) = report.promoted_owner {
+        println!("no super user existed; promoted {owner}");
     }
 
     for outcome in tankovault_bootstrap::seed_providers(pool).await? {

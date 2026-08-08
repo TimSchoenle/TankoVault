@@ -92,7 +92,8 @@ async fn seed_admin(pool: &tankovault_db::PgPool, cfg: &Config) -> anyhow::Resul
         password,
         pepper: &pepper,
     };
-    match tankovault_bootstrap::seed_admin(pool, &seed).await? {
+    let report = tankovault_bootstrap::seed_admin(pool, &seed).await?;
+    match report.outcome {
         // The password is not echoed, unlike `xtask seed`: whoever runs this already set it,
         // and a `Job`'s logs outlive the shell that started it.
         AdminOutcome::Created {
@@ -109,12 +110,16 @@ async fn seed_admin(pool: &tankovault_db::PgPool, cfg: &Config) -> anyhow::Resul
                 println!("{username} is this deployment's super user");
             } else {
                 println!(
-                    "{username} is not the super user; the database already had accounts, so \
-                     nothing was promoted"
+                    "{username} did not claim the super user; the database already had accounts"
                 );
             }
         }
         AdminOutcome::AlreadyPresent => println!("administrator already present; nothing changed"),
+    }
+    // Printed whichever branch ran: this is the deployment going from unowned to owned, which
+    // is a bigger event than what happened to the configured account.
+    if let Some(owner) = report.promoted_owner {
+        println!("this deployment had no super user; promoted {owner}");
     }
     Ok(())
 }

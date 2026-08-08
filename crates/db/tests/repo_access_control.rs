@@ -340,6 +340,107 @@ async fn ensure_super_user_never_displaces_an_existing_owner() {
     );
 }
 
+/// The owner's *stored* grants used to stop at whatever the codebase defined the day their
+/// account was seeded. The seed is create-only, so `catalogue.read` and `catalogue.delete` —
+/// added long after — were never written against the deployment owner, and every surface that
+/// reads the rows rather than calling `PermissionSet::has` showed them as not holding the
+/// capability. The access was fine; the console said otherwise, which is indistinguishable from
+/// a broken grant when you are staring at an unticked box.
+#[tokio::test]
+async fn the_super_user_gains_a_stored_row_for_every_capability_added_after_their_account() {
+    let db = TestDb::spawn().await;
+    let owner = db
+        .seed_user(
+            "owner",
+            &[Permission::SuperUser, Permission::UsersPermissions],
+            AccountStatus::Active,
+        )
+        .await;
+    let staff = db
+        .seed_user("staff", &[Permission::UsersRead], AccountStatus::Active)
+        .await;
+
+    let added = permissions::grant_all_to_super_user(&db.pool)
+        .await
+        .expect("top up");
+    assert!(
+        added.contains(&Permission::CatalogueDelete.as_str().to_owned()),
+        "a capability the owner lacked must be reported as newly granted"
+    );
+    assert!(
+        !added.contains(&Permission::UsersPermissions.as_str().to_owned()),
+        "a capability already held must not be reported as newly granted"
+    );
+
+    let held = permissions::resolve(&db.pool, owner)
+        .await
+        .expect("resolve")
+        .expect("exists")
+        .permissions;
+    for permission in Permission::grantable() {
+        assert!(
+            held.iter().any(|p| p == permission),
+            "{} must be stored against the owner, not merely implied",
+            permission.as_str()
+        );
+    }
+    assert!(
+        held.is_super_user(),
+        "the top-up must leave the grant that earned it in place"
+    );
+
+    // Nobody else is touched: the statement keys on the single super user row, so a deployment
+    // with an administrator beside the owner does not quietly promote them too.
+    assert_eq!(
+        permissions::resolve(&db.pool, staff)
+            .await
+            .expect("resolve")
+            .expect("exists")
+            .permissions
+            .len(),
+        1
+    );
+
+    // Idempotent: every replica runs this at boot, and it runs again on the next one.
+    assert!(
+        permissions::grant_all_to_super_user(&db.pool)
+            .await
+            .expect("top up")
+            .is_empty()
+    );
+}
+
+/// A deployment with no owner must not have the top-up write grants to somebody. The statement
+/// is driven by the super user row itself, so "no owner" has to mean "no rows written" rather
+/// than falling back to a first-account guess.
+#[tokio::test]
+async fn the_top_up_writes_nothing_when_the_deployment_has_no_super_user() {
+    let db = TestDb::spawn().await;
+    let staff = db
+        .seed_user(
+            "staff",
+            &[Permission::UsersPermissions],
+            AccountStatus::Active,
+        )
+        .await;
+
+    assert!(
+        permissions::grant_all_to_super_user(&db.pool)
+            .await
+            .expect("top up")
+            .is_empty()
+    );
+    assert_eq!(
+        permissions::resolve(&db.pool, staff)
+            .await
+            .expect("resolve")
+            .expect("exists")
+            .permissions
+            .len(),
+        1
+    );
+}
+
 /// The lockout guard asks "does anyone else hold this?" before every revoke, suspend and erase.
 /// Counting the exact token alone would answer no while the super user was sitting there able
 /// to grant it back, refusing an operation that was never dangerous.

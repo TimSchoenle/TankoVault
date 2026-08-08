@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO user_permissions (user_id, permission) SELECT owner.user_id, token FROM user_permissions owner CROSS JOIN unnest($1::text[]) AS token WHERE owner.permission = $2::text ON CONFLICT (user_id, permission) DO NOTHING RETURNING permission AS \"permission!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "permission!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "user_permissions",
+            "name": "permission"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "TextArray",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "883b81a2f2f5c1a5897416a3cfa1dd61d57d6528df4c03f98a96704fc78f9d51"
+}

@@ -359,6 +359,48 @@ pub async fn ensure_super_user<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Optio
     Ok(promoted.map(UserId::from_uuid))
 }
 
+/// Write an explicit row for every grantable capability the deployment's super user is missing,
+/// returning the tokens newly stored.
+///
+/// This changes no authorization outcome: [`PermissionSet::has`] already answers true to
+/// everything for the grant, and it keeps doing so for capabilities added after this ran. What
+/// it fixes is everything that reads the stored set *literally* rather than through that
+/// implication — the permission editor renders the owner's checklist from these rows, the
+/// directory counts them, and an operator auditing "who can do what" reads rows too. Without it
+/// the owner is displayed holding a set that silently falls further behind the codebase every
+/// release: the seed is create-only, so nothing ever tops up an account created before a
+/// capability existed, and the console gives no sign that the gap is cosmetic.
+///
+/// [`Permission::grantable`] is the source list, so [`Permission::SuperUser`] is excluded and
+/// the single-super-user index is never contended. A deployment with no super user writes
+/// nothing — [`ensure_super_user`] runs first for that reason.
+///
+/// Safe to call from every replica at boot, and a no-op on every boot after the first:
+/// `ON CONFLICT DO NOTHING` absorbs both the re-run and a concurrent identical insert.
+///
+/// # Errors
+/// `Sqlx` only.
+pub async fn grant_all_to_super_user<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<String>> {
+    let grantable: Vec<String> = Permission::grantable()
+        .into_iter()
+        .map(|p| p.as_str().to_owned())
+        .collect();
+    let added: Vec<String> = sqlx::query_scalar!(
+        "INSERT INTO user_permissions (user_id, permission) \
+         SELECT owner.user_id, token \
+         FROM user_permissions owner \
+         CROSS JOIN unnest($1::text[]) AS token \
+         WHERE owner.permission = $2::text \
+         ON CONFLICT (user_id, permission) DO NOTHING \
+         RETURNING permission AS \"permission!\"",
+        &grantable,
+        Permission::SuperUser.as_str(),
+    )
+    .fetch_all(exec)
+    .await?;
+    Ok(added)
+}
+
 /// Grant counts for a batch of users (avoids an N+1 per-row subquery), for the directory's
 /// "permissions" column.
 ///

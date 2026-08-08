@@ -33,7 +33,12 @@ pub(crate) use app::Route;
 
 #[cfg(feature = "web")]
 fn main() {
-    dioxus::launch(app::App);
+    // Not `dioxus::launch`: the router's history is configured rather than defaulted, because
+    // the stock browser provider scrolls to the top of the page on a *replace* — see
+    // `platform::history_provider` for what that did to Discover.
+    dioxus::LaunchBuilder::web()
+        .with_cfg(dioxus::web::Config::new().history(platform::history_provider()))
+        .launch(app::App);
 }
 
 #[cfg(feature = "desktop")]

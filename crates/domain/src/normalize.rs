@@ -27,7 +27,13 @@ const NOISE_WORDS: &[&str] = &[
 /// Produce the normalized matching key for a title.
 ///
 /// The result is lowercase ASCII-ish, punctuation-free, noise-word-free, and
-/// single-spaced. Empty input yields an empty string.
+/// single-spaced.
+///
+/// A title with no content left after folding yields an empty key, and callers match on that
+/// rather than assuming non-empty input gives a non-empty key. "No content left" is wider than
+/// it looks: [`char::is_alphanumeric`] is true for combining marks and for the modifier letters
+/// used as apostrophes, all of which are elided here, so a title of nothing but those is empty
+/// too. `crates/domain/tests/prop_normalize.rs` pins the exact set.
 ///
 /// This key decides whether two providers' listings are the same work, so the examples below
 /// are the contract rather than illustration: every one of them is a pair a real catalogue
@@ -66,8 +72,10 @@ const NOISE_WORDS: &[&str] = &[
 /// // empty key, and every empty key collides with every other one.
 /// assert_eq!(normalize_title("Manga"), "manga");
 ///
-/// // Only genuinely empty input yields an empty key.
+/// // Input with nothing left after folding yields an empty key — whitespace, but also a title
+/// // made only of characters that are elided rather than kept.
 /// assert_eq!(normalize_title("   "), "");
+/// assert_eq!(normalize_title("\u{0363}"), "");
 /// ```
 #[must_use]
 pub fn normalize_title(title: &str) -> String {
@@ -234,6 +242,19 @@ mod tests {
     #[test]
     fn empty_stays_empty() {
         assert_eq!(normalize_title("   "), "");
+    }
+
+    /// A title of nothing but elided characters is empty *on purpose*. `char::is_alphanumeric`
+    /// is true for combining marks, so a property test read this as a bug; the fix was the
+    /// property, not the folding. Keeping such a character would index a key made of a bare
+    /// combining mark, and no provider lists a title that is only marks.
+    #[test]
+    fn a_title_of_only_elided_characters_normalizes_to_an_empty_key() {
+        assert_eq!(normalize_title("\u{0363}"), "");
+        assert_eq!(normalize_title("\u{02BC}"), "");
+        // The same characters attached to a letter still fold into it rather than vanishing.
+        assert_eq!(normalize_title("a\u{0363}"), "a");
+        assert_eq!(normalize_title("i\u{02BC}m"), "im");
     }
 
     /// An apostrophe joins a word; it does not split one — treating it as a separator put

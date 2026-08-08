@@ -1,0 +1,14 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+#
+# This seed generates a title of one combining mark. It failed the non-empty-key property,
+# which assumed `char::is_alphanumeric` was the class of characters normalization keeps —
+# it is not, and eliding combining marks is deliberate (an NFD title has to fold onto its
+# NFC twin). The property was narrowed rather than the folding changed; see
+# `is_elided_though_alphanumeric` in prop_normalize.rs. Kept because the seed is the input
+# that exposed the wrong assumption, and it is cheap to keep asserting the narrowed one.
+cc 1587b25cccd931f9c4ecf7f86430f820d2401b243de80a8d8dff327b0c9790a6 # shrinks to title = "\u{363}"

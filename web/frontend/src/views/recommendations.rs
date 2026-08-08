@@ -87,7 +87,7 @@ pub(crate) fn Recommendations() -> Element {
                                     p { class: "ik-muted", style: "font-size:13px;",
                                         {i18n.t("recommendations.empty.hint")}
                                     }
-                                    Link { to: crate::Route::Discover {}, class: "ik-btn", style: "margin-top:10px;",
+                                    Link { to: crate::Route::Discover { query: crate::views::DiscoverQuery::default() }, class: "ik-btn", style: "margin-top:10px;",
                                         {i18n.t("nav.discover")}
                                     }
                                 }

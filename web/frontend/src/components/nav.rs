@@ -6,7 +6,7 @@ use crate::icons::{Ic, Icon};
 use crate::state::capabilities::{use_capabilities, CapabilitySet};
 use crate::state::use_session;
 use crate::util::initial;
-use crate::views::WatchlistQuery;
+use crate::views::{DiscoverQuery, WatchlistQuery};
 use crate::wire::types::Feature;
 use crate::Route;
 use dioxus::prelude::*;
@@ -46,7 +46,7 @@ pub(crate) fn Rail() -> Element {
             NavGroup { label: i18n.t("nav.group.main") }
             NavLink { to: Route::Home {}, label: i18n.t("nav.home"), icon: Icon::Home, current: route.clone() }
             if show_discover {
-                NavLink { to: Route::Discover {}, label: i18n.t("nav.discover"), icon: Icon::Explore, current: route.clone() }
+                NavLink { to: Route::Discover { query: DiscoverQuery::default() }, label: i18n.t("nav.discover"), icon: Icon::Explore, current: route.clone() }
             }
             if show_search {
                 NavLink { to: Route::Search { q: String::new() }, label: i18n.t("nav.search"), icon: Icon::Search, current: route.clone() }
@@ -138,7 +138,9 @@ pub(crate) fn tab_destinations(
     }];
     if caps.has_feature(Feature::CatalogueBrowse) {
         out.push(Destination {
-            route: Route::Discover {},
+            route: Route::Discover {
+                query: DiscoverQuery::default(),
+            },
             short: i18n.t("nav.discover"),
             icon: Icon::Explore,
             badge: 0,
@@ -224,7 +226,9 @@ fn same_screen(a: &Route, b: &Route) -> bool {
     use std::mem::discriminant;
     // Series detail lives under Discover in the rail's mental model.
     let normalise = |route: &Route| match route {
-        Route::Series { .. } => Route::Discover {},
+        Route::Series { .. } => Route::Discover {
+            query: DiscoverQuery::default(),
+        },
         other => other.clone(),
     };
     discriminant(&normalise(a)) == discriminant(&normalise(b))

@@ -23,6 +23,18 @@
 @custom-variant light (&:where([data-theme="light"], [data-theme="light"] *));
 
 :root {
+  /* The UA's own widgets — scrollbars first and foremost — take their palette from this, not
+   * from our custom properties. Without it the webview falls back to the `<meta name=
+   * "color-scheme">` hint, which resolves against the *OS* preference: a reader on a light
+   * Windows with the app in dark mode got a plain white scrollbar down the right of the window.
+   *
+   * It is declared here and overridden in `[data-theme="light"]` below rather than bound to a
+   * media query, because the theme is the reader's choice and the OS is not consulted once they
+   * have made one. `color-scheme` inherits, which is what makes it reach the desktop build: its
+   * `data-theme` sits on `.ik-desktop-root` (Rust cannot address `<html>` in a wry webview), and
+   * the element that actually scrolls, `.ik-desktop-body`, is inside it. */
+  color-scheme: dark;
+
   /* Height of any app-drawn window chrome above the layout. Zero in a browser, where the
    * window's own caption is outside the page; the desktop build's title bar sets it (§4.4 of the
    * engineering guide). Every `100vh` below subtracts it, because a viewport height is the wrong
@@ -112,6 +124,8 @@
 
 /* Warm Paper light mode. */
 [data-theme="light"] {
+  /* Pairs with the `color-scheme: dark` on `:root` — see the note there. */
+  color-scheme: light;
   --bg: #efe9dc;
   --rail: #e9e2d2;
   --surface: #f7f2e7;
@@ -947,8 +961,22 @@ a { color: inherit; text-decoration: none; }
 .ik-afchip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid color-mix(in srgb, var(--acc) 40%, transparent); background: color-mix(in srgb, var(--acc) 12%, transparent); color: var(--acc3); border-radius: 20px; padding: 3px 6px 3px 11px; font-size: 12px; }
 .ik-afchip button { background: none; border: none; color: inherit; cursor: pointer; display: inline-flex; padding: 2px; border-radius: 999px; }
 .ik-afchip button:hover { background: rgba(255,255,255,.1); }
-.ik-count-line { color: var(--muted); font-size: 13px; margin-bottom: 12px; }
+.ik-count-line { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; color: var(--muted); font-size: 13px; margin-bottom: 12px; }
 .ik-count-line .ik-mono { color: var(--text-3); }
+
+/* Discover's infinitely scrolling grid. One `.ik-scroll-page` per fetched page, stacked so the
+ * columns stay aligned across the boundaries: every page is a whole number of rows (see
+ * `components::grid`), so a shared `--gap` between the blocks is indistinguishable from the gap
+ * inside one. `.ik-page-mark` covers its page rather than marking its top edge — it is what the
+ * IntersectionObserver reports the reader's position from, and a 1px marker can pass a fast
+ * scroll entirely between two frames without ever being reported as intersecting. */
+.ik-scroll-pages { display: flex; flex-direction: column; gap: var(--gap); }
+.ik-scroll-page { position: relative; }
+.ik-page-mark { position: absolute; inset: 0; pointer-events: none; }
+.ik-scroll-sentinel { height: 1px; }
+.ik-scroll-foot { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 14px 0 4px; font-size: 12px; color: var(--faint); }
+.ik-scroll-more { background: none; border: none; font: inherit; font-size: 12px; color: var(--acc3); cursor: pointer; padding: 0; }
+.ik-scroll-more:hover { text-decoration: underline; }
 .ik-panel-toggle { display: inline-grid; place-items: center; width: 40px; height: 40px; border-radius: 10px; border: 1px solid var(--border-ctl); background: var(--surface); color: var(--text-3); cursor: pointer; flex: none; }
 .ik-panel-toggle:hover { border-color: var(--acc); color: var(--text); }
 

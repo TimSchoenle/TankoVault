@@ -85,7 +85,7 @@ fn is_compact(route: &Route) -> bool {
 /// is how the console keeps its full-bleed opt-out.
 fn measure_for(route: &Route) -> &'static str {
     match route {
-        Route::Home {} | Route::Discover {} | Route::Search { .. } => "1760px",
+        Route::Home {} | Route::Discover { .. } | Route::Search { .. } => "1760px",
         Route::Account {} | Route::AnilistCallback { .. } | Route::Legal { .. } => "1120px",
         Route::Console {} => "none",
         _ => "1600px",

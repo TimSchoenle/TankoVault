@@ -22,7 +22,7 @@ use futures_util::StreamExt as _;
 use sha2::Digest as _;
 use std::convert::Infallible;
 use std::fs;
-use std::io::Write as _;
+use std::io::{Read as _, Write as _};
 use std::path::{Path, PathBuf};
 
 /// The directory staged updates live in, beside `settings.json`.
@@ -110,8 +110,9 @@ pub(crate) fn flavour() -> Flavour {
 /// a second install** with its own entry in Apps & Features, so anything not recognisably one or
 /// the other is left alone.
 ///
-/// It therefore depends on the bundler's NSIS default install mode. If `dx` ever grows a knob for
-/// it, `Dioxus.toml` should set it explicitly so this reads a decision rather than a default.
+/// It therefore depends on the NSIS install mode, which `Dioxus.toml` now states explicitly
+/// (`[bundle.windows.nsis] install_mode`) rather than leaving to the bundler's default — so this
+/// reads a decision, and changing it there is visibly a change to this rule.
 // Compiled on every host on purpose. This rule decides which installer is handed to a Windows
 // install, and handing over the wrong one produces a second install rather than an upgrade — so
 // it is the per-OS rule that most needs the CI gate, which runs on Linux, to test it.
@@ -400,7 +401,19 @@ fn verify_file(path: &Path, target: &Target) -> Result<(), &'static str> {
     }
     let mut file = fs::File::open(path).map_err(|_| "settings.update.error.staging")?;
     let mut hasher = sha2::Sha256::new();
-    std::io::copy(&mut file, &mut hasher).map_err(|_| "settings.update.error.staging")?;
+    // Read by hand rather than `io::copy`: `digest` 0.11 dropped the `io::Write` impl on hashers.
+    // `Interrupted` is ignored for the same reason `io::copy` retries it — a signal arriving
+    // mid-read is not a failed verification. Heap-allocated because a buffer this size is over
+    // the crate's stack-array ceiling, and it is read once per launch over a ~100 MB installer.
+    let mut buffer = vec![0_u8; 64 * 1024];
+    loop {
+        match file.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(read) => hasher.update(&buffer[..read]),
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(_) => return Err("settings.update.error.staging"),
+        }
+    }
     if hex::encode(hasher.finalize()) == target.sha256.to_ascii_lowercase() {
         Ok(())
     } else {

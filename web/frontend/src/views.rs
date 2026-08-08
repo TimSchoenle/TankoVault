@@ -25,7 +25,7 @@ pub(crate) use auth::{Login, VerifyEmail};
 #[cfg(feature = "desktop")]
 pub(crate) use connect::ConnectServer;
 pub(crate) use console::{Console, ConsoleEntity, ConsoleQuery, ConsoleSection};
-pub(crate) use discover::Discover;
+pub(crate) use discover::{Discover, DiscoverQuery};
 pub(crate) use home::Home;
 pub(crate) use legal::Legal;
 pub(crate) use notifications::Notifications;

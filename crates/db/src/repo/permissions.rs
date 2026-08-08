@@ -314,6 +314,51 @@ pub async fn claim_super_user<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -
     Ok(result.rows_affected() > 0)
 }
 
+/// Make sure this deployment still has a super user, promoting the owner candidate when it does
+/// not. Returns who was promoted, or `None` when one already exists (the normal case) or there
+/// is no candidate.
+///
+/// [`claim_super_user`] covers the install: the first account of an empty database takes
+/// ownership. It cannot cover everything after that, and the gap is not theoretical — a
+/// deployment whose users registered before the seed job ran never had a first account to
+/// promote, and erasing the owner drops the only row the grant can live in. Neither state is
+/// recoverable by hand, because nothing in the API can mint the grant; the deployment would keep
+/// serving with no account that outlives the next capability the codebase gains.
+///
+/// The candidate is migration `0042`'s rule, kept identical on purpose so a reconciled
+/// deployment and a freshly migrated one name the same account: the **earliest account that
+/// still administers permissions**. `users.permissions` is documented as equivalent to full
+/// control, so this promotes nobody who could not already grant themselves everything
+/// enumerable. Suspended accounts are skipped — they cannot sign in, and the grant is
+/// single-slot, so promoting one would spend the deployment's only ownership on an account that
+/// can do nothing with it.
+///
+/// Safe to call from every replica at boot: the `NOT EXISTS` decides, and the partial unique
+/// index settles a race by turning the loser's insert into a no-op.
+///
+/// # Errors
+/// `Sqlx` only. Must propagate — treating a failed reconciliation as "already owned" is what
+/// would leave the deployment unowned silently.
+pub async fn ensure_super_user<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Option<UserId>> {
+    let promoted: Option<Uuid> = sqlx::query_scalar!(
+        "INSERT INTO user_permissions (user_id, permission) \
+         SELECT u.id, $1::text FROM users u \
+         WHERE u.status = 'active' \
+           AND EXISTS (SELECT 1 FROM user_permissions p \
+                        WHERE p.user_id = u.id AND p.permission = $2::text) \
+           AND NOT EXISTS (SELECT 1 FROM user_permissions s WHERE s.permission = $1::text) \
+         ORDER BY u.created_at, u.id \
+         LIMIT 1 \
+         ON CONFLICT DO NOTHING \
+         RETURNING user_id",
+        Permission::SuperUser.as_str(),
+        Permission::UsersPermissions.as_str(),
+    )
+    .fetch_optional(exec)
+    .await?;
+    Ok(promoted.map(UserId::from_uuid))
+}
+
 /// Grant counts for a batch of users (avoids an N+1 per-row subquery), for the directory's
 /// "permissions" column.
 ///

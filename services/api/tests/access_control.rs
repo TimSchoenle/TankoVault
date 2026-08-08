@@ -138,6 +138,70 @@ async fn the_super_user_grant_cannot_be_handed_out_by_an_administrator() {
     assert!(principal.permissions.is_empty());
 }
 
+/// The owner's grant lives on one row of one account, cannot be minted through the API, and dies
+/// with the account it sits on — so suspending or erasing the owner ends the deployment's
+/// ownership for good.
+///
+/// The last-administrator guard does not catch this: it waves the action through the moment a
+/// second administrator exists, which is why the caller here is given `users.permissions` too.
+/// Without a refusal of its own, an administrator could erase the owner and be promoted into the
+/// vacancy by the next boot's reconciliation.
+#[tokio::test]
+async fn an_administrator_cannot_suspend_or_erase_the_deployment_owner() {
+    let app = TestApp::spawn().await;
+    let (bearer, step_up) = admin(
+        &app,
+        "deputy",
+        &[
+            Permission::UsersWrite,
+            Permission::UsersDelete,
+            Permission::UsersPermissions,
+        ],
+        AccountStatus::Active,
+    )
+    .await;
+    let owner = app
+        .seed_user("owner", &[Permission::SuperUser], AccountStatus::Active)
+        .await;
+
+    let (status, _) = app
+        .call_elevated(
+            "POST",
+            &format!("/v1/admin/users/{}/status", owner.as_uuid()),
+            Some(&bearer),
+            Some(&step_up),
+            Some(json!({ "status": "suspended", "reason": "because I can" })),
+        )
+        .await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "the owner cannot be suspended"
+    );
+
+    let (status, _) = app
+        .call_elevated(
+            "DELETE",
+            &format!("/v1/admin/users/{}", owner.as_uuid()),
+            Some(&bearer),
+            Some(&step_up),
+            Some(json!({ "confirm_username": "owner" })),
+        )
+        .await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "the owner cannot be erased"
+    );
+
+    let principal = tankovault_db::repo::permissions::resolve(&app.db.pool, owner)
+        .await
+        .expect("resolve")
+        .expect("owner exists");
+    assert_eq!(principal.status, AccountStatus::Active);
+    assert!(principal.permissions.is_super_user());
+}
+
 /// The catalogue is what the editor renders its checklist from, so a super user entry there
 /// would be a checkbox whose every submission the write path rejects.
 #[tokio::test]

@@ -14,7 +14,7 @@ use tankovault_domain::{Permission, UserId};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use super::{guard_not_last_administrator, guard_not_self};
+use super::{guard_not_last_administrator, guard_not_self, guard_not_super_user};
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct DeleteUser {
@@ -33,8 +33,8 @@ pub struct DeleteUser {
 /// account's audit records survive in pseudonymised form; see
 /// `tankovault_db::repo::privacy::erase_user`.
 ///
-/// Irreversible. Requires the username back, refuses the caller's own account, and refuses the
-/// last active administrator.
+/// Irreversible. Requires the username back, refuses the caller's own account, the deployment's
+/// super user, and the last active administrator.
 #[utoipa::path(
     delete,
     path = "/v1/admin/users/{id}",
@@ -44,7 +44,7 @@ pub struct DeleteUser {
     security(("bearer_auth" = [])),
     responses(
         (status = 204, description = "Account and all owned data erased"),
-        (status = 400, description = "confirmation mismatch, own account, or the last administrator", body = crate::error::ProblemDetails),
+        (status = 400, description = "confirmation mismatch, own account, the super user, or the last administrator", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 404, description = "no such user", body = crate::error::ProblemDetails),
@@ -59,6 +59,7 @@ pub async fn delete_user(
     user.require(Permission::UsersDelete).await?;
     let target = UserId::from_uuid(id);
     guard_not_self(&state, &user, target, "user.delete").await?;
+    guard_not_super_user(&state, &user, target, "user.delete").await?;
     guard_not_last_administrator(&state, &user, target, "user.delete").await?;
 
     let account = tankovault_db::repo::users::get(&state.pool, target).await?;

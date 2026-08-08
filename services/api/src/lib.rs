@@ -297,6 +297,31 @@ pub async fn install_tunables(
     set
 }
 
+/// Reconcile the deployment's owner at boot: if no account holds the super user grant, promote
+/// the one [`tankovault_db::repo::permissions::ensure_super_user`] names.
+///
+/// Runs here because the installer's claim only covers an empty database. Any deployment that
+/// gained accounts before it was seeded, or that erased its owner, has no route back to an owner
+/// otherwise — the grant is deliberately unforgeable through the API, so no administrator can
+/// restore it, and the console gives no sign that it is missing.
+///
+/// A failure is logged and does not abort the boot. Every permission check keeps working without
+/// an owner; refusing to serve the whole edge over a reconciliation query would turn a missing
+/// grant into an outage.
+pub async fn ensure_deployment_owner(pool: &tankovault_db::PgPool) {
+    match tankovault_db::repo::permissions::ensure_super_user(pool).await {
+        Ok(Some(user_id)) => tracing::warn!(
+            user_id = %user_id.as_uuid(),
+            "this deployment had no super user; promoted its earliest active administrator"
+        ),
+        Ok(None) => {}
+        Err(error) => tracing::error!(
+            %error,
+            "could not reconcile the deployment's super user; continuing without it"
+        ),
+    }
+}
+
 /// Registers every documented endpoint, shared by [`full_openapi`] and [`build_router`] so
 /// the two can never drift apart.
 #[expect(

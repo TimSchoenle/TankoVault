@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO user_permissions (user_id, permission) SELECT u.id, $1::text FROM users u WHERE u.status = 'active' AND EXISTS (SELECT 1 FROM user_permissions p WHERE p.user_id = u.id AND p.permission = $2::text) AND NOT EXISTS (SELECT 1 FROM user_permissions s WHERE s.permission = $1::text) ORDER BY u.created_at, u.id LIMIT 1 ON CONFLICT DO NOTHING RETURNING user_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "user_permissions",
+            "name": "user_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "b4735fa3a484723960dd15ceef9481b6f5ee042355ae65bee503e07dbf0db39b"
+}

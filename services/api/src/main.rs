@@ -314,6 +314,11 @@ async fn serve_once(
     .await?;
     tankovault_service::metrics::spawn_pool_sampler(pool.clone(), shutdown.clone());
 
+    // Awaited before anything serves: a deployment with no super user has no account that
+    // outlives the next capability the codebase gains, and nothing in the API can mint the grant
+    // afterwards.
+    tankovault_api::ensure_deployment_owner(&pool).await;
+
     // Connect to NATS for the live SSE relay. A broker outage must not stop the public edge
     // from booting, so a failure here degrades the feature to `503` rather than aborting.
     let bus = tankovault_api::connect_bus(cfg.nats.as_ref()).await;

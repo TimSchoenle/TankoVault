@@ -10356,7 +10356,7 @@
     },
     "/v1/admin/users/{id}": {
       "delete": {
-        "description": "Deletes the account and every row it owns, using the same cascade as self-service erasure\n(GDPR Art. 17) so there is one implementation rather than two that can diverge. The\naccount's audit records survive in pseudonymised form; see\n`tankovault_db::repo::privacy::erase_user`.\n\nIrreversible. Requires the username back, refuses the caller's own account, and refuses the\nlast active administrator.",
+        "description": "Deletes the account and every row it owns, using the same cascade as self-service erasure\n(GDPR Art. 17) so there is one implementation rather than two that can diverge. The\naccount's audit records survive in pseudonymised form; see\n`tankovault_db::repo::privacy::erase_user`.\n\nIrreversible. Requires the username back, refuses the caller's own account, the deployment's\nsuper user, and the last active administrator.",
         "operationId": "delete_user",
         "parameters": [
           {
@@ -10392,7 +10392,7 @@
                 }
               }
             },
-            "description": "confirmation mismatch, own account, or the last administrator"
+            "description": "confirmation mismatch, own account, the super user, or the last administrator"
           },
           "401": {
             "content": {
@@ -10741,7 +10741,7 @@
     },
     "/v1/admin/users/{id}/status": {
       "post": {
-        "description": "A suspended account cannot sign in, refresh a session, or take any action — the check\nhappens before authorization, so it is not something a permission can override. Nothing the\naccount owns is deleted, so the change is fully reversible.",
+        "description": "A suspended account cannot sign in, refresh a session, or take any action — the check\nhappens before authorization, so it is not something a permission can override. Nothing the\naccount owns is deleted, so the change is fully reversible.\n\nRefuses the deployment's super user: suspending the owner cannot be undone by the owner.",
         "operationId": "set_user_status",
         "parameters": [
           {
@@ -10784,7 +10784,7 @@
                 }
               }
             },
-            "description": "cannot suspend your own account, or the last administrator"
+            "description": "cannot suspend your own account, the super user, or the last administrator"
           },
           "401": {
             "content": {

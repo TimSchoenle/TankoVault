@@ -197,6 +197,149 @@ async fn only_the_deployments_first_account_can_claim_the_super_user() {
     );
 }
 
+/// Make `user` look older than everything else seeded in the test.
+///
+/// `ensure_super_user` orders by `created_at`, and accounts seeded back to back are microseconds
+/// apart — close enough that asserting on "the earliest" without saying which one is earliest
+/// would pin the clock rather than the rule.
+async fn backdate(pool: &tankovault_db::PgPool, user: tankovault_domain::UserId) {
+    sqlx::query("UPDATE users SET created_at = created_at - interval '1 day' WHERE id = $1")
+        .bind(user.as_uuid())
+        .execute(pool)
+        .await
+        .expect("backdate");
+}
+
+/// A deployment can end up with no super user at all: accounts registered before the seed job
+/// ran (so the installer's claim found the database populated and did nothing), or the owner was
+/// erased. Neither state is recoverable by hand — the grant is unforgeable through the API — so
+/// the deployment would keep serving with nobody holding the capabilities a later release adds.
+#[tokio::test]
+async fn ensure_super_user_promotes_the_earliest_active_administrator_when_there_is_none() {
+    let db = TestDb::spawn().await;
+    let reader = db.seed_user("reader", &[], AccountStatus::Active).await;
+    let elder = db
+        .seed_user(
+            "elder",
+            &[Permission::UsersPermissions],
+            AccountStatus::Active,
+        )
+        .await;
+    db.seed_user(
+        "younger",
+        &[Permission::UsersPermissions],
+        AccountStatus::Active,
+    )
+    .await;
+    // The oldest account in the deployment holds nothing: ownership follows the capability, not
+    // the registration date, or whoever signed up first on a later-bootstrapped server would get
+    // the deployment.
+    backdate(&db.pool, reader).await;
+    backdate(&db.pool, reader).await;
+    backdate(&db.pool, elder).await;
+
+    let promoted = permissions::ensure_super_user(&db.pool)
+        .await
+        .expect("reconcile");
+    assert_eq!(promoted, Some(elder));
+    assert!(
+        permissions::resolve(&db.pool, elder)
+            .await
+            .expect("resolve")
+            .expect("exists")
+            .permissions
+            .is_super_user()
+    );
+
+    assert_eq!(
+        permissions::ensure_super_user(&db.pool)
+            .await
+            .expect("reconcile again"),
+        None,
+        "an owned deployment is left alone, so every boot after the first is a no-op"
+    );
+}
+
+/// The grant is single-slot and cannot be moved once written, so spending it on an account that
+/// cannot sign in would leave the deployment permanently unowned in a way that looks fixed.
+#[tokio::test]
+async fn ensure_super_user_skips_a_suspended_candidate_and_waits_for_a_real_one() {
+    let db = TestDb::spawn().await;
+
+    assert_eq!(
+        permissions::ensure_super_user(&db.pool)
+            .await
+            .expect("reconcile an empty deployment"),
+        None,
+        "nobody administers permissions yet, so there is no candidate to promote"
+    );
+
+    let suspended = db
+        .seed_user(
+            "suspended-elder",
+            &[Permission::UsersPermissions],
+            AccountStatus::Suspended,
+        )
+        .await;
+    backdate(&db.pool, suspended).await;
+    let active = db
+        .seed_user(
+            "active-deputy",
+            &[Permission::UsersPermissions],
+            AccountStatus::Active,
+        )
+        .await;
+
+    assert_eq!(
+        permissions::ensure_super_user(&db.pool)
+            .await
+            .expect("reconcile"),
+        Some(active),
+        "the earliest candidate is suspended, so the earliest usable one takes ownership"
+    );
+}
+
+/// Reconciliation fills an absence; it never re-decides ownership. An owner who is suspended, or
+/// simply younger than some administrator, still owns the deployment.
+#[tokio::test]
+async fn ensure_super_user_never_displaces_an_existing_owner() {
+    let db = TestDb::spawn().await;
+    let elder = db
+        .seed_user(
+            "elder",
+            &[Permission::UsersPermissions],
+            AccountStatus::Active,
+        )
+        .await;
+    backdate(&db.pool, elder).await;
+    let owner = db
+        .seed_user("owner", &[Permission::SuperUser], AccountStatus::Suspended)
+        .await;
+
+    assert_eq!(
+        permissions::ensure_super_user(&db.pool)
+            .await
+            .expect("reconcile"),
+        None
+    );
+    assert!(
+        !permissions::resolve(&db.pool, elder)
+            .await
+            .expect("resolve")
+            .expect("exists")
+            .permissions
+            .is_super_user()
+    );
+    assert!(
+        permissions::resolve(&db.pool, owner)
+            .await
+            .expect("resolve")
+            .expect("exists")
+            .permissions
+            .is_super_user()
+    );
+}
+
 /// The lockout guard asks "does anyone else hold this?" before every revoke, suspend and erase.
 /// Counting the exact token alone would answer no while the super user was sitting there able
 /// to grant it back, refusing an operation that was never dangerous.

@@ -13,7 +13,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use super::detail::{UserDetailResponse, user_detail_response};
-use super::{guard_not_last_administrator, guard_not_self};
+use super::{guard_not_last_administrator, guard_not_self, guard_not_super_user};
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct SetUserStatus {
@@ -41,6 +41,8 @@ fn default_true() -> bool {
 /// A suspended account cannot sign in, refresh a session, or take any action — the check
 /// happens before authorization, so it is not something a permission can override. Nothing the
 /// account owns is deleted, so the change is fully reversible.
+///
+/// Refuses the deployment's super user: suspending the owner cannot be undone by the owner.
 #[utoipa::path(
     post,
     path = "/v1/admin/users/{id}/status",
@@ -50,7 +52,7 @@ fn default_true() -> bool {
     security(("bearer_auth" = [])),
     responses(
         (status = 200, description = "The updated account", body = UserDetailResponse),
-        (status = 400, description = "cannot suspend your own account, or the last administrator", body = crate::error::ProblemDetails),
+        (status = 400, description = "cannot suspend your own account, the super user, or the last administrator", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 403, description = "caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 404, description = "no such user", body = crate::error::ProblemDetails),
@@ -67,6 +69,7 @@ pub async fn set_user_status(
     guard_not_self(&state, &user, target, "user.status").await?;
 
     if body.status == AccountStatus::Suspended {
+        guard_not_super_user(&state, &user, target, "user.status").await?;
         guard_not_last_administrator(&state, &user, target, "user.status").await?;
     }
 

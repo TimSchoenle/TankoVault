@@ -12,6 +12,27 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [3.3.0](https://github.com/TimSchoenle/TankoVault/compare/v3.2.0...v3.3.0) (2026-08-08)
+
+
+### Features
+
+* **console:** catalogue maintenance — bulk delete, purge, and three console fixes ([#146](https://github.com/TimSchoenle/TankoVault/issues/146)) ([e01bd9d](https://github.com/TimSchoenle/TankoVault/commit/e01bd9db537130697b3364d62ac1436969e24066))
+* **frontend:** accept a security key at the confirm-it-is-you prompt ([#148](https://github.com/TimSchoenle/TankoVault/issues/148)) ([8a94d8d](https://github.com/TimSchoenle/TankoVault/commit/8a94d8d0bb6f2f7da6e3e4f44a25a57051d715f5))
+* **frontend:** admit cloudflare's edge-injected scripts behind two csp flags ([#149](https://github.com/TimSchoenle/TankoVault/issues/149)) ([f7e06c2](https://github.com/TimSchoenle/TankoVault/commit/f7e06c2af3083d40d4238ef7e8fae4f2403331e3))
+
+
+### Bug Fixes
+
+* **frontend:** hold the desktop UI back until the window is fitted ([#142](https://github.com/TimSchoenle/TankoVault/issues/142)) ([5adb4d7](https://github.com/TimSchoenle/TankoVault/commit/5adb4d7123e23ef72891eac5637eb0a9c0a8717c))
+* **frontend:** size the desktop window from the layout and the OS work area ([#145](https://github.com/TimSchoenle/TankoVault/issues/145)) ([4f6abe1](https://github.com/TimSchoenle/TankoVault/commit/4f6abe1dd3c989ff8ac54ee455c683adc4e015d8))
+* **xtask:** exempt git-ignored paths from build-inputs-are-classified ([#147](https://github.com/TimSchoenle/TankoVault/issues/147)) ([4457323](https://github.com/TimSchoenle/TankoVault/commit/4457323397d76e1f7e21e8d9c87458c6debee166))
+
+
+### Tests
+
+* **domain:** narrow the non-empty-key property to characters folding keeps ([#143](https://github.com/TimSchoenle/TankoVault/issues/143)) ([6b2e9e4](https://github.com/TimSchoenle/TankoVault/commit/6b2e9e4e5cd7430e80354226eae089faf2c93ab1))
+
 ## [3.2.0](https://github.com/TimSchoenle/TankoVault/compare/v3.1.0...v3.2.0) (2026-08-08)
 
 

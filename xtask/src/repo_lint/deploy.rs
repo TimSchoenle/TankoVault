@@ -1,7 +1,10 @@
 //! Rules tying the workspace manifest to what actually ships: every binary built, nothing
 //! published that the deploy blacklist excludes, every build input classified.
 
+use std::collections::BTreeSet;
+use std::io::Write;
 use std::path::Path;
+use std::process::{Command, Stdio};
 
 use super::Finding;
 use super::text::{is_comment, walk};
@@ -190,6 +193,13 @@ pub(super) fn deploy_blacklist_is_honoured(root: &Path) -> anyhow::Result<Vec<Fi
 /// treats it as a change to everything and says so on stderr, but nobody reads a release log that
 /// published successfully. This makes the omission fail on the pull request that introduces it,
 /// while the person who knows whether the new directory reaches an image is still looking.
+///
+/// **Paths git ignores are exempt, and that exemption is load-bearing.** The planner classifies
+/// the output of `git diff --name-only`, which no ignored path can appear in, so a `RULES` entry
+/// for one would never be consulted — while its absence aborted the whole local `xtask ci` run for
+/// anyone holding a `.idea/`, invisibly to CI, whose checkout has none. Asking `git check-ignore`
+/// rather than naming each editor keeps `RULES` from growing an entry per tool, and stays honest:
+/// `check-ignore` never reports a *tracked* path, so committing one puts it back under the rule.
 pub(super) fn build_inputs_are_classified(root: &Path) -> anyhow::Result<Vec<Finding>> {
     const RULE: &str = "build-inputs-are-classified";
 
@@ -209,28 +219,75 @@ pub(super) fn build_inputs_are_classified(root: &Path) -> anyhow::Result<Vec<Fin
     let Ok(entries) = std::fs::read_dir(root) else {
         anyhow::bail!("repo-lint: cannot read {}", root.display());
     };
-    let mut findings = Vec::new();
+    let mut unclassified = Vec::new();
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
         // Not part of any build context and not a repository artefact.
         if name == ".git" {
             continue;
         }
-        if crate::release_plan::top_level_is_classified(&name, &roots) {
-            continue;
+        if !crate::release_plan::top_level_is_classified(&name, &roots) {
+            unclassified.push((name, entry.path()));
         }
-        findings.push(Finding {
+    }
+    if unclassified.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let names: Vec<&str> = unclassified.iter().map(|(name, _)| name.as_str()).collect();
+    let ignored = git_ignored(root, &names);
+    Ok(unclassified
+        .into_iter()
+        .filter(|(name, _)| !ignored.contains(name.as_str()))
+        .map(|(name, path)| Finding {
             rule: RULE,
-            file: entry.path(),
+            file: path,
             line: 1,
             detail: format!(
                 "`{name}` belongs to no workspace member and matches no rule in \
                  xtask/src/release_plan.rs. Add it to RULES — `Every` if a published image is \
-                 built from it, `Inert` if it cannot reach one"
+                 built from it, `Inert` if it cannot reach one. Purely local tooling belongs in \
+                 `.gitignore` instead, which exempts it from this rule"
             ),
-        });
-    }
-    Ok(findings)
+        })
+        .collect())
+}
+
+/// Which of `names` git ignores, as paths relative to `root`.
+///
+/// Empty when git cannot answer — no git on `PATH`, no checkout, a failing invocation — so the
+/// rule falls back to demanding a classification for everything rather than passing silently.
+fn git_ignored(root: &Path, names: &[&str]) -> BTreeSet<String> {
+    let ignored = || -> Option<BTreeSet<String>> {
+        let mut child = Command::new("git")
+            .current_dir(root)
+            .args(["check-ignore", "--stdin"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .ok()?;
+        // Writing the whole query before reading the reply cannot deadlock at this size: the
+        // answer is a subset of the top-level entries, one short line each.
+        let mut stdin = child.stdin.take()?;
+        for name in names {
+            writeln!(stdin, "{name}").ok()?;
+        }
+        drop(stdin);
+        let output = child.wait_with_output().ok()?;
+        // 0 is "some are ignored" and 1 "none are"; anything else is git declining to answer.
+        if !matches!(output.status.code(), Some(0 | 1)) {
+            return None;
+        }
+        // Each reply line is one of the queried paths, echoed as it was given.
+        Some(
+            String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .map(str::to_owned)
+                .collect(),
+        )
+    };
+    ignored().unwrap_or_default()
 }
 
 /// The `SERVICE_BINS` value from a Dockerfile, with its 1-based line number.
@@ -371,6 +428,60 @@ fn image_matrices(workflow: &str) -> Vec<(usize, Vec<String>)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::repo_lint::tempdir;
+
+    /// The bug: an IDE's `.idea/` in the working copy failed this rule, so `xtask ci` aborted
+    /// before the gates after it ran — while CI, whose checkout has no such directory, stayed
+    /// green. An ignored path cannot appear in the `git diff` the planner classifies, so it needs
+    /// no verdict. The second half is the half that keeps this honest: the exemption is git's
+    /// answer, not a list of editor names, so a path that stops being ignored is covered again.
+    #[test]
+    fn a_git_ignored_directory_needs_no_classification() {
+        let root = tempdir("build-inputs");
+        std::fs::write(
+            root.join("Cargo.toml"),
+            "[workspace]\nmembers = [\n    \"xtask\",\n]\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join(".idea")).unwrap();
+        std::fs::write(root.join(".idea/workspace.xml"), "<project/>\n").unwrap();
+        std::fs::create_dir_all(root.join("newthing")).unwrap();
+
+        let git = |args: &[&str]| {
+            let status = Command::new("git")
+                .current_dir(&root)
+                .args(args)
+                .status()
+                .expect("git is on PATH — the rule delegates the ignore question to it");
+            assert!(status.success(), "git {args:?}");
+        };
+        git(&["init", "--quiet"]);
+        // Whoever runs this may have `.idea/` in their own global ignore file, which would make
+        // the unignored half pass for the wrong reason. `.git/` is not a top-level entry the rule
+        // judges, so the replacement can live there.
+        let excludes = root.join(".git/excludes");
+        std::fs::write(&excludes, "").unwrap();
+        git(&[
+            "config",
+            "core.excludesFile",
+            &excludes.display().to_string().replace('\\', "/"),
+        ]);
+
+        let offenders = |ignore: &str| {
+            std::fs::write(root.join(".gitignore"), ignore).unwrap();
+            let mut names: Vec<String> = build_inputs_are_classified(&root)
+                .expect("the rule runs")
+                .iter()
+                .filter_map(|finding| finding.file.file_name())
+                .map(|name| name.to_string_lossy().into_owned())
+                .collect();
+            names.sort();
+            names
+        };
+
+        assert_eq!(offenders(".idea/\n"), ["newthing"]);
+        assert_eq!(offenders("\n"), [".idea", "newthing"]);
+    }
 
     #[test]
     fn service_bins_is_read_off_the_arg_line() {

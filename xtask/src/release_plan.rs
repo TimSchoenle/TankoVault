@@ -75,7 +75,10 @@ const RULES: &[(&str, Rule)] = &[
     ("openapi.json", Rule::Package("tankovault-api-client")),
     // The SPA is its own workspace; `spa_roots` connects it back to this one.
     ("web/", Rule::Spa),
-    // Inputs to a gate, a document or an editor — never to an image.
+    // Inputs to a gate, a document or an editor — never to an image. A path git *ignores* needs no
+    // entry: it cannot reach the diff this classifies, and `build-inputs-are-classified` exempts
+    // it — which is why `.idea/` and `.vscode/` are deliberately absent rather than overlooked.
+    // The build-output entries below predate that exemption and stay for its no-git fallback.
     ("deploy/", Rule::Inert),
     (".github/", Rule::Inert),
     ("docs/", Rule::Inert),

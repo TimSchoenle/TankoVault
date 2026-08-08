@@ -195,6 +195,86 @@ pub(super) fn autostart_entry_agrees(root: &Path) -> anyhow::Result<Vec<Finding>
 /// Rust constant against a stylesheet — so a retuned `--rail-w` would silently leave the window
 /// short again, which is the defect the sum replaced (a 1760px ceiling gave Discover five covers
 /// across where the layout fits seven).
+/// The grid probe's three measured boxes must be siblings, never nested.
+///
+/// **A resize event bubbles in the desktop build.** dioxus-desktop dispatches it to the target's
+/// ancestors as well, so a box observed *inside* another delivers its own width to the outer
+/// box's handler too — and the outer one holds the width the whole page size is derived from.
+/// The probe used to be exactly that shape: a full-width `div` with the `--card` and `--gap`
+/// spans inside it. Discover measured 1438 px, then 190, then 18, settled on one column and
+/// fetched a one-column page into a seven-column grid. It survived review because on the *first*
+/// screen of a session the window's own resize fires the outer box again afterwards and hides
+/// it; only a fresh navigation shows it.
+///
+/// Nesting is checked as brace depth rather than by parsing `rsx!`: the three handlers are
+/// written as siblings in one element, so they sit at one depth, and any re-nesting moves one of
+/// them. Depth is counted over the whole file, which is why an unbalanced brace inside a string
+/// would confuse it — there are none, and a false positive here is a failed lint, not a shipped
+/// bug.
+pub(super) fn resize_probes_are_siblings(root: &Path) -> anyhow::Result<Vec<Finding>> {
+    let file = root.join("web/frontend/src/components/grid.rs");
+    let Ok(source) = std::fs::read_to_string(&file) else {
+        anyhow::bail!(
+            "repo-lint: cannot read {} — it is not optional",
+            file.display()
+        );
+    };
+
+    let observed = resize_handler_depths(&source);
+    let mut findings = Vec::new();
+    if observed.len() < 2 {
+        findings.push(Finding {
+            rule: "resize-probes-are-siblings",
+            file: file.clone(),
+            line: 1,
+            detail: format!(
+                "expected the probe's resize handlers here and found {}. If the probe moved, \
+                 move this rule with it — it is the only thing holding the boxes apart",
+                observed.len()
+            ),
+        });
+    }
+    let Some((_, expected)) = observed.first().copied() else {
+        return Ok(findings);
+    };
+    for (line, depth) in observed {
+        if depth != expected {
+            findings.push(Finding {
+                rule: "resize-probes-are-siblings",
+                file: file.clone(),
+                line,
+                detail: "this `onresize` is nested inside another probe box. A resize event \
+                         bubbles in the desktop build, so the outer box reports the inner \
+                         one's width and the page size is derived from it — see `GridFitProbe`"
+                    .to_owned(),
+            });
+        }
+    }
+    Ok(findings)
+}
+
+/// Every `onresize` in `source`, as (1-based line, brace depth at that line).
+fn resize_handler_depths(source: &str) -> Vec<(usize, i32)> {
+    let mut depths = Vec::new();
+    let mut depth = 0_i32;
+    for (number, line) in source.lines().enumerate() {
+        if !is_comment(line) && line.contains("onresize:") {
+            depths.push((number + 1, depth));
+        }
+        if is_comment(line) {
+            continue;
+        }
+        for character in line.chars() {
+            match character {
+                '{' => depth += 1,
+                '}' => depth -= 1,
+                _ => {}
+            }
+        }
+    }
+    depths
+}
+
 pub(super) fn the_window_ceiling_matches_the_layout(root: &Path) -> anyhow::Result<Vec<Finding>> {
     let css = root.join("web/frontend/input.css");
     let shell = root.join("web/frontend/src/components/shell.rs");

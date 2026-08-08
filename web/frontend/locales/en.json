@@ -55,6 +55,20 @@
       },
       "badge": "Adult"
     },
+    "desktop": {
+      "advantage": {
+        "notifications": "Chapter releases arrive as system notifications rather than in a browser tab you have to leave open.",
+        "startup": "It can start with your session, so it is already there when you sign in.",
+        "tray": "It can keep running in the tray after you close the window, so those notifications keep coming.",
+        "updates": "It updates itself from signed releases and tells you which version it moved to."
+      },
+      "download": "Download the desktop app",
+      "intro": "TankoVault also runs as a native app on Windows and Linux. It talks to this same server with the same account, so nothing is copied and nothing is kept apart.",
+      "platforms": "The download page carries a Windows installer, a Debian package, an AppImage, and portable archives for both systems.",
+      "serverAddress": "This server's address",
+      "serverAddressHint": "The app asks for it the first time it starts. This is the address to give it.",
+      "title": "The desktop app"
+    },
     "notifications": {
       "channel": {
         "inApp": "In-app notifications",
@@ -181,6 +195,7 @@
     "tab": {
       "appearance": "Appearance",
       "content": "Content",
+      "desktop": "Desktop app",
       "notifications": "Notification prefs",
       "privacy": "Privacy & data",
       "profile": "Profile",
@@ -292,10 +307,20 @@
     "subtitle": "TankoVault is self-hosted, so this copy needs to know which server is yours. You can change it later in Settings."
   },
   "settings": {
+    "about": {
+      "project": "Open the project page",
+      "title": "This installation"
+    },
     "forgetServer": "Forget this server",
     "notifications": {
       "hint": "Shown by your operating system when a chapter you follow is released. The in-app bell is unaffected.",
       "label": "Show desktop notifications",
+      "systemHint": "They are raised as TankoVault's own, so your system lists TankoVault in its notification settings and can silence it there too.",
+      "test": {
+        "action": "Send a test notification",
+        "body": "Notifications are working. This is what a chapter release will look like.",
+        "title": "TankoVault"
+      },
       "title": "Notifications"
     },
     "startup": {
@@ -303,6 +328,13 @@
       "hint": "The same option the installer offered. Turning it off here removes the entry again.",
       "label": "Start TankoVault when I sign in",
       "title": "Startup"
+    },
+    "tab": {
+      "about": "About",
+      "notifications": "Notifications",
+      "server": "Server",
+      "updates": "Updates",
+      "window": "Window"
     },
     "title": "Settings",
     "update": {
@@ -328,6 +360,10 @@
       "holdBackHint": "A release has to be this old before it is offered, so one withdrawn soon after publication never reaches you. Set it to no delay to take every release as it appears.",
       "install": "Download and install",
       "notify": {
+        "applied": "You are now on version {version}.",
+        "appliedTitle": "TankoVault was updated",
+        "applying": "Installing version {version}. TankoVault opens again by itself once the installer has finished.",
+        "applyingTitle": "TankoVault is updating",
         "available": "Version {version} is ready to download.",
         "availableTitle": "TankoVault update available",
         "staged": "Version {version} installs the next time you start TankoVault.",
@@ -340,15 +376,16 @@
         "off": "Do nothing",
         "prompt": "Ask me"
       },
-      "quit": "Close to finish",
+      "quit": "Restart to finish",
       "source": "A check asks github.com for the release list. Nothing else leaves this machine, and no account details are sent.",
       "state": {
+        "applied": "Updated to version {version}.",
         "available": "Version {version} is available.",
         "availableOnly": "Version {version} is available, but this copy cannot install it itself.",
         "checking": "Checking for a newer release…",
         "downloading": "Downloading version… {percent}%",
         "idle": "No check has run yet.",
-        "staged": "Version {version} is ready. It installs the next time TankoVault starts.",
+        "staged": "Version {version} is ready. It installs the next time TankoVault starts, and TankoVault reopens by itself once the installer has finished.",
         "upToDate": "This is the newest release you can take."
       },
       "title": "Updates",
@@ -357,6 +394,18 @@
         "portable": "This copy runs from a portable archive, so there is no install to upgrade. Replace the folder with the new archive."
       },
       "waiting": "Settings — an update is waiting"
+    },
+    "window": {
+      "closing": {
+        "hint": "The window disappears when you close it, but the app keeps running, so chapter notifications still arrive. Open it again from the tray icon — which is also where you quit for good.",
+        "label": "Keep TankoVault running in the tray",
+        "title": "Closing the window"
+      },
+      "tray": {
+        "open": "Open TankoVault",
+        "quit": "Quit TankoVault"
+      },
+      "unsupported": "This system offers neither a sign-in list nor a tray, so there is nothing to set here."
     }
   },
   "window": {
@@ -1377,6 +1426,7 @@
     "copyright": "© {year} Tim Schönle",
     "dataRequests": "Data requests",
     "deleteAccount": "Delete account",
+    "desktopApp": "Desktop app",
     "export": "Export your library",
     "imprint": "Imprint",
     "legal": "Legal",

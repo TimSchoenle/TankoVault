@@ -42,6 +42,9 @@ const SERVER_ORIGIN_KEY: &str = "tv-server-origin";
 /// Whether a push raises an OS notification. Absent means on.
 const DESKTOP_NOTIFICATIONS_KEY: &str = "tv-desktop-notifications";
 
+/// Whether closing the window leaves the app running in the tray. Absent means off.
+const CLOSE_TO_TRAY_KEY: &str = "tv-close-to-tray";
+
 // ---------------------------------------------------------------------------------------------
 // Settings file
 // ---------------------------------------------------------------------------------------------
@@ -491,26 +494,129 @@ pub(crate) fn set_notifications_enabled(enabled: bool) {
     }
 }
 
-/// Raise an OS notification.
+/// Raise an OS notification and return without waiting for it.
 ///
-/// Best-effort and silent on failure, which is the same contract the rest of this module has: a
-/// desktop with no notification daemon, a Windows install that has muted the app, or a
-/// focus-assist session are all "the reader did not want this", not something to interrupt them
-/// about. The in-app badge is updated either way and is the source of truth.
-///
-/// Runs on its own thread. `notify-rust` talks D-Bus on Linux and `WinRT` on Windows, and
-/// neither is something to block a UI frame on.
+/// Best-effort and silent on failure; the in-app badge is updated either way and is the source
+/// of truth. See [`raise`] for what that costs and [`notify_now`] for the one caller that
+/// cannot afford it.
 pub(crate) fn notify(summary: &str, body: &str) {
+    let _ = raise(summary, body);
+}
+
+/// Raise an OS notification and wait for it to have been handed over.
+///
+/// For the one caller that is about to end the process: `update::install`'s hand-off replaces
+/// this app with an installer, and a notification still queued on a detached thread when
+/// `exit` is called is never delivered — which is exactly the moment the reader most needs
+/// telling, because the window they just opened is about to vanish for a minute.
+///
+/// Safe to block here and nowhere else: it runs from `main` before the event loop exists, so
+/// there is no frame to stall and — the reason it is still a thread — no async runtime for
+/// `notify-rust`'s blocking D-Bus call to panic inside of on Linux.
+pub(crate) fn notify_now(summary: &str, body: &str) {
+    let _ = raise(summary, body).join();
+}
+
+/// The notification itself, on its own thread.
+///
+/// `notify-rust` talks D-Bus on Linux and `WinRT` on Windows, and neither is something to block
+/// a UI frame on. Best-effort and silent on failure, which is the same contract the rest of this
+/// module has: a desktop with no notification daemon, a Windows install that has muted the app,
+/// or a focus-assist session are all "the reader did not want this", not something to interrupt
+/// them about.
+fn raise(summary: &str, body: &str) -> std::thread::JoinHandle<()> {
     let (summary, body) = (summary.to_owned(), body.to_owned());
     std::thread::spawn(move || {
-        let _ = notify_rust::Notification::new()
+        let mut notification = notify_rust::Notification::new();
+        notification
             .summary(&summary)
             .body(&body)
-            // Matches the bundle identifier, which is what a desktop environment keys an app's
-            // notification settings and icon off.
-            .appname("TankoVault")
-            .show();
+            // The name a desktop environment shows and keys its own per-app settings off.
+            .appname(NOTIFICATION_APP_NAME);
+        identify(&mut notification);
+        let _ = notification.show();
+    })
+}
+
+/// The name these notifications go out under.
+const NOTIFICATION_APP_NAME: &str = "TankoVault";
+
+/// The identity the OS files them under. The bundle identifier, which is also the `.desktop`
+/// entry's basename and — on Windows — the `AppUserModelID` registered by [`identify`].
+const NOTIFICATION_APP_ID: &str = "dev.tankovault.frontend";
+
+/// Tell the OS *whose* notification this is.
+///
+/// **Not cosmetic on either platform.** An unidentified toast is not a `TankoVault` toast that
+/// looks plain: it is one Windows files under whichever application it thinks raised it, which
+/// decides the name and icon on screen, whether it lands in the notification centre, and whether
+/// the reader can turn it off in Settings → System → Notifications. The in-app switch is a
+/// courtesy; the OS's own switch is the one a reader expects to find, and it does not exist for
+/// an app the OS has never heard of.
+#[cfg(windows)]
+fn identify(notification: &mut notify_rust::Notification) {
+    register_app_id();
+    notification.app_id(NOTIFICATION_APP_ID);
+}
+
+/// Register the `AppUserModelID` these toasts claim, once per process.
+///
+/// **A toast whose `AppUserModelID` is not registered is silently dropped**, so this is a
+/// precondition of [`identify`] rather than a nicety alongside it. `notify-rust`'s default is
+/// `PowerShell`'s own id — which does appear, attributed to Windows `PowerShell`, with its icon
+/// and its entry in the notification settings.
+///
+/// `HKCU\Software\Classes\AppUserModelId\<id>` is the documented registration for an app that is
+/// not packaged and has no shell shortcut carrying the property — which this one cannot create,
+/// since a `.lnk` is a COM object and this crate forbids unsafe.
+#[cfg(windows)]
+fn register_app_id() {
+    static REGISTERED: OnceLock<()> = OnceLock::new();
+    REGISTERED.get_or_init(|| {
+        let Ok(key) = windows_registry::CURRENT_USER.create(format!(
+            r"Software\Classes\AppUserModelId\{NOTIFICATION_APP_ID}"
+        )) else {
+            return;
+        };
+        let _ = key.set_string("DisplayName", NOTIFICATION_APP_NAME);
+        if let Some(icon) = notification_icon() {
+            let _ = key.set_string("IconUri", icon.to_string_lossy().as_ref());
+        }
     });
+}
+
+/// Hand the notification daemon our `.desktop` entry, which is where it reads the application's
+/// name and icon from. The autostart entry above writes one under the same basename, and the
+/// `.deb` and `AppImage` both install one.
+#[cfg(all(unix, not(target_vendor = "apple")))]
+fn identify(notification: &mut notify_rust::Notification) {
+    notification.hint(notify_rust::Hint::DesktopEntry(
+        NOTIFICATION_APP_ID.to_owned(),
+    ));
+}
+
+/// No third desktop platform is shipped; the notification still goes out, unadorned.
+#[cfg(not(any(windows, all(unix, not(target_vendor = "apple")))))]
+fn identify(_notification: &mut notify_rust::Notification) {}
+
+/// The brand mark on disk, for the one consumer that needs a *file*: Windows' notification
+/// registration takes a path, not bytes.
+///
+/// Written beside the settings document rather than looked for next to the executable, because
+/// the four ways this app is installed put the executable in four different places and a
+/// portable copy has no stable one at all. Written once and reused; a failure simply leaves the
+/// registration without an icon, which is a plainer toast rather than no toast.
+#[cfg(windows)]
+fn notification_icon() -> Option<PathBuf> {
+    const ICON: &[u8] = include_bytes!("../../assets/icons/128x128.png");
+    const FILE_NAME: &str = "notification-icon.png";
+
+    let path = settings_path()?.parent()?.join(FILE_NAME);
+    if path.is_file() {
+        return Some(path);
+    }
+    std::fs::write(&path, ICON).ok()?;
+    Some(path)
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -670,6 +776,246 @@ mod autostart {
 
     pub(super) fn set(_enabled: bool) -> bool {
         false
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// The tray, and closing to it
+// ---------------------------------------------------------------------------------------------
+
+/// Whether this machine can carry a tray icon.
+///
+/// Not a build-time answer on Linux, which is the whole reason this is a function: see
+/// [`tray::available`]. Resolved once — the answer is a property of the installed system, and it
+/// is read on every render of the settings sheet.
+pub(crate) fn tray_supported() -> bool {
+    static SUPPORTED: OnceLock<bool> = OnceLock::new();
+    *SUPPORTED.get_or_init(tray::available)
+}
+
+/// Whether the close button leaves the app running in the tray instead of ending it.
+///
+/// Off unless the reader asked, and forced off where there is no tray to close to — a window
+/// that hides with nothing left to bring it back is an app that has to be killed.
+pub(crate) fn close_to_tray_enabled() -> bool {
+    store_get(CLOSE_TO_TRAY_KEY).is_some_and(|stored| stored == "1") && tray_supported()
+}
+
+pub(crate) fn set_close_to_tray(enabled: bool) {
+    if enabled {
+        store_set(CLOSE_TO_TRAY_KEY, "1");
+    } else {
+        store_remove(CLOSE_TO_TRAY_KEY);
+    }
+}
+
+/// What the reader asked of the tray.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TrayCommand {
+    /// Bring the window back.
+    Open,
+    /// End the app for good.
+    Quit,
+}
+
+/// A live tray icon. **Dropping it removes the icon from the tray**, which is how the settings
+/// switch takes effect without a restart.
+pub(crate) struct Tray {
+    #[expect(
+        dead_code,
+        reason = "held for its Drop: the icon is in the tray for exactly as long as this lives"
+    )]
+    icon: tray::Handle,
+    open: tray::MenuId,
+    quit: tray::MenuId,
+}
+
+impl Tray {
+    /// Put an icon in the tray, labelling its two menu entries with the reader's own wording.
+    ///
+    /// `None` when the platform refused it, which the caller treats as "no tray" rather than as
+    /// an error to report: the switch that asks for one is only offered where
+    /// [`tray_supported`] already said yes.
+    pub(crate) fn install(open: &str, quit: &str) -> Option<Self> {
+        tray::install(open, quit)
+    }
+
+    /// Everything the reader has done to the tray since the last call.
+    ///
+    /// Polled rather than delivered through `set_event_handler`: that takes a
+    /// `Fn + Send + Sync` closure called from the OS's own thread, and everything it would need
+    /// to act on — the window — is neither `Send` nor reachable outside a component's scope.
+    pub(crate) fn drain(&self) -> Vec<TrayCommand> {
+        tray::drain(&self.open, &self.quit)
+    }
+}
+
+/// Bring the window back from the tray: visible, un-minimised and focused.
+///
+/// All three, because they are three different states a window can be in when the reader asks
+/// for it — hidden by a close, minimised by the taskbar, or merely behind something else — and
+/// only one of them is the one the tray entry was clicked from.
+pub(crate) fn show_window(window: &dioxus::desktop::DesktopContext) {
+    window.set_visible(true);
+    window.set_minimized(false);
+    window.set_focus();
+}
+
+/// End the app, whatever the close-to-tray setting says.
+///
+/// The one exit that is not the reader pressing the window's close button: the tray's Quit, and
+/// the restart that applies a staged update. Both mean *end*, so the behaviour is put back
+/// before the window is closed — otherwise this would hide it and the app would live on with no
+/// way to say so.
+pub(crate) fn quit_app(window: &dioxus::desktop::DesktopContext) {
+    window.set_close_behavior(dioxus::desktop::WindowCloseBehaviour::WindowCloses);
+    window.close();
+}
+
+/// Whether the window's close button hides the window instead of ending the app.
+pub(crate) fn set_window_hides_on_close(window: &dioxus::desktop::DesktopContext, hide: bool) {
+    window.set_close_behavior(if hide {
+        dioxus::desktop::WindowCloseBehaviour::WindowHides
+    } else {
+        dioxus::desktop::WindowCloseBehaviour::WindowCloses
+    });
+}
+
+/// The tray icon itself, per platform.
+#[cfg(any(windows, all(unix, not(target_vendor = "apple"))))]
+mod tray {
+    use dioxus::desktop::trayicon::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
+    use dioxus::desktop::trayicon::{MouseButton, TrayIconBuilder, TrayIconEvent};
+    use dioxus::desktop::{icon_from_memory, trayicon::DioxusTrayIcon};
+
+    pub(super) use dioxus::desktop::trayicon::menu::MenuId;
+    pub(super) type Handle = dioxus::desktop::trayicon::TrayIcon;
+
+    /// The tray image. The 32px mark rather than the 128px one: a tray slot is 16–24px on both
+    /// platforms, and downscaling the large mark turns its strokes to grey.
+    const TRAY_ICON: &[u8] = include_bytes!("../../assets/icons/32x32.png");
+
+    /// What the pointer reads when it rests on the icon. The product, not the window's current
+    /// title — the tray entry is the *app*, and it is most useful when no window exists.
+    const TOOLTIP: &str = "TankoVault";
+
+    pub(super) fn install(open: &str, quit: &str) -> Option<super::Tray> {
+        let open = MenuItem::new(open, true, None);
+        let quit = MenuItem::new(quit, true, None);
+        let menu = Menu::new();
+        // The separator is not decoration: these two entries are "show me the app" and "end it",
+        // and they sit one pixel apart under a pointer that arrived from the system tray.
+        menu.append_items(&[&open, &PredefinedMenuItem::separator(), &quit])
+            .ok()?;
+
+        let icon = icon_from_memory::<DioxusTrayIcon>(TRAY_ICON).ok()?;
+        let handle = TrayIconBuilder::new()
+            .with_menu(Box::new(menu))
+            // Left-click belongs to the app (restore); the menu is the right-click, which is the
+            // convention on both platforms this ships on.
+            .with_menu_on_left_click(false)
+            .with_tooltip(TOOLTIP)
+            .with_icon(icon)
+            .build()
+            .ok()?;
+
+        Some(super::Tray {
+            icon: handle,
+            open: open.id().clone(),
+            quit: quit.id().clone(),
+        })
+    }
+
+    pub(super) fn drain(open: &MenuId, quit: &MenuId) -> Vec<super::TrayCommand> {
+        let mut commands = Vec::new();
+        // Both channels are global to the process, so they are drained rather than read once: a
+        // reader who clicks twice while the poll interval elapses must not have one click
+        // stranded in the queue until the next event.
+        while let Ok(event) = MenuEvent::receiver().try_recv() {
+            if event.id == *open {
+                commands.push(super::TrayCommand::Open);
+            } else if event.id == *quit {
+                commands.push(super::TrayCommand::Quit);
+            }
+        }
+        while let Ok(event) = TrayIconEvent::receiver().try_recv() {
+            // Windows only — the GTK backend reports no clicks at all, which is why the menu
+            // carries an Open entry rather than relying on this.
+            if let TrayIconEvent::DoubleClick {
+                button: MouseButton::Left,
+                ..
+            } = event
+            {
+                commands.push(super::TrayCommand::Open);
+            }
+        }
+        commands
+    }
+
+    #[cfg(windows)]
+    pub(super) fn available() -> bool {
+        true
+    }
+
+    /// Whether the appindicator library this backend needs is actually installed.
+    ///
+    /// **Asked before a tray icon is ever built, because getting it wrong ends the process.**
+    /// `libappindicator-sys` resolves the library with `dlopen` on first use and `panic!`s when
+    /// neither soname is found; this crate is `panic = "abort"`, so an unchecked tray on a
+    /// session without the library kills the app rather than degrading. Loading it here to find
+    /// out is not an option either — `dlopen` is `unsafe` and this crate forbids unsafe.
+    ///
+    /// So the loader's search path is walked by hand. A false negative costs the reader the
+    /// option; a false positive would cost them the app, which is why nothing is assumed from
+    /// the desktop environment or the distribution. The `.deb` names the package in its
+    /// `depends`, so that install path always answers yes; an `AppImage` on a session without it
+    /// simply never offers the switch.
+    #[cfg(all(unix, not(target_vendor = "apple")))]
+    pub(super) fn available() -> bool {
+        use std::path::PathBuf;
+
+        const SONAMES: [&str; 2] = ["libayatana-appindicator3.so.1", "libappindicator3.so.1"];
+
+        let arch = std::env::consts::ARCH;
+        let mut dirs: Vec<PathBuf> = std::env::var_os("LD_LIBRARY_PATH")
+            .map(|value| std::env::split_paths(&value).collect())
+            .unwrap_or_default();
+        dirs.extend(
+            [
+                format!("/usr/lib/{arch}-linux-gnu"),
+                "/usr/lib".to_owned(),
+                "/usr/lib64".to_owned(),
+                "/usr/local/lib".to_owned(),
+                "/lib".to_owned(),
+                "/lib64".to_owned(),
+            ]
+            .map(PathBuf::from),
+        );
+        // `is_file` follows symlinks, so a soname left dangling by a half-removed package reads
+        // as absent — which is the answer that keeps the app alive.
+        dirs.iter()
+            .any(|dir| SONAMES.iter().any(|name| dir.join(name).is_file()))
+    }
+}
+
+/// No third desktop platform is shipped, so the tray is simply absent there; the settings sheet
+/// reads [`tray_supported`] and leaves the switch out. Mirrors `autostart` above.
+#[cfg(not(any(windows, all(unix, not(target_vendor = "apple")))))]
+mod tray {
+    /// Never constructed off the two shipped platforms; named so [`super::Tray`] still compiles.
+    pub(super) type Handle = ();
+    pub(super) type MenuId = ();
+
+    pub(super) fn available() -> bool {
+        false
+    }
+
+    pub(super) fn install(_open: &str, _quit: &str) -> Option<super::Tray> {
+        None
+    }
+
+    pub(super) fn drain(_open: &MenuId, _quit: &MenuId) -> Vec<super::TrayCommand> {
+        Vec::new()
     }
 }
 

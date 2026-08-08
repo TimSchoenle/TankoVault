@@ -23,6 +23,10 @@ mod tabs;
 #[cfg(feature = "desktop")]
 mod titlebar;
 mod topbar;
+// An app that outlives its own window. There is no browser counterpart, and nothing here is
+// reachable from the web build.
+#[cfg(feature = "desktop")]
+mod tray;
 
 pub(crate) use bottombar::BottomTabs;
 pub(crate) use confirm::{InlineConfirm, TypeToConfirm};
@@ -46,6 +50,8 @@ pub(crate) use step_up::{use_step_up_gate, StepUpGate, StepUpPrompt};
 pub(crate) use tabs::{TabBar, TabKind};
 #[cfg(feature = "desktop")]
 pub(crate) use titlebar::TitleBar;
+#[cfg(feature = "desktop")]
+pub(crate) use tray::{CloseToTray, TrayHost};
 
 use dioxus::prelude::*;
 

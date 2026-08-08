@@ -49,7 +49,11 @@ VIProductVersion "{{version}}.0"
 VIAddVersionKey "ProductName" "{{product_name}}"
 VIAddVersionKey "FileVersion" "{{version}}"
 VIAddVersionKey "ProductVersion" "{{version}}"
-VIAddVersionKey "FileDescription" "{{short_description}}"
+; The installer's own description, so the UAC prompt and the file's Details tab name what this
+; executable is rather than what the product is. `{{short_description}}` is the *product* name —
+; see the note on it in `Dioxus.toml` — and using it here would give the setup program and the
+; app it installs the same identity in the process list.
+VIAddVersionKey "FileDescription" "{{product_name}} Setup"
 {{#if publisher}}
 VIAddVersionKey "CompanyName" "{{publisher}}"
 {{/if}}
@@ -192,7 +196,9 @@ Section "-Reconcile"
 SectionEnd
 
 !insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
-    !insertmacro MUI_DESCRIPTION_TEXT ${SecMain} "{{short_description}}"
+    ; Written out rather than taken from `{{short_description}}`, which is now the product name
+    ; and would describe the component as itself.
+    !insertmacro MUI_DESCRIPTION_TEXT ${SecMain} "The {{product_name}} desktop client. Required."
     !insertmacro MUI_DESCRIPTION_TEXT ${SecDesktop} "Put a {{product_name}} shortcut on the desktop."
     !insertmacro MUI_DESCRIPTION_TEXT ${SecAutostart} "Launch {{product_name}} automatically when you sign in to Windows. You can change this later in the app's settings."
 !insertmacro MUI_FUNCTION_DESCRIPTION_END

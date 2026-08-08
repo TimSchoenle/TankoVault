@@ -27,6 +27,14 @@ use std::path::{Path, PathBuf};
 
 /// The directory staged updates live in, beside `settings.json`.
 const STAGING_DIR: &str = "updates";
+/// The copy of this binary that sees a Windows update through. See [`launch`].
+#[cfg(windows)]
+const RELAUNCHER_FILE: &str = "apply.exe";
+/// The argument that tells a started copy it is the relauncher and not the app.
+///
+/// Two dashes and a name nobody would type: this is checked before anything else in `main`, so
+/// it must not collide with a flag the reader could plausibly pass.
+const RELAUNCH_FLAG: &str = "--apply-staged-update";
 /// The manifest and its signature, stored beside the installer so a later start can re-verify.
 const MANIFEST_FILE: &str = "desktop-manifest.json";
 const SIGNATURE_FILE: &str = "desktop-manifest.json.minisig";
@@ -80,12 +88,22 @@ pub(crate) fn flavour() -> Flavour {
     let Ok(exe) = std::env::current_exe() else {
         return Flavour::Portable;
     };
+    flavour_of(&exe)
+}
+
+/// How the copy at `exe` was installed.
+///
+/// Separate from [`flavour`] for the relauncher, which is a copy of this binary running from the
+/// staging directory: asking about *itself* there answers `Portable` — correctly, and uselessly.
+/// The install it is updating is the one it was given.
+#[cfg(windows)]
+fn flavour_of(exe: &Path) -> Flavour {
     let dir = |name: &str| std::env::var_os(name).map(PathBuf::from);
     let program_files: Vec<PathBuf> = ["ProgramFiles", "ProgramFiles(x86)"]
         .iter()
         .filter_map(|name| dir(name))
         .collect();
-    classify_windows(&exe, dir("LOCALAPPDATA").as_deref(), &program_files)
+    classify_windows(exe, dir("LOCALAPPDATA").as_deref(), &program_files)
 }
 
 /// How this copy was installed.
@@ -329,6 +347,9 @@ fn write(path: &Path, bytes: &[u8]) -> Result<(), &'static str> {
 struct Plan {
     flavour: Flavour,
     installer: PathBuf,
+    /// What the signed manifest says this installer produces. Recorded before the hand-off so
+    /// the run that follows can confirm it — see [`super::adopt_applied`].
+    version: String,
 }
 
 /// Apply a staged update, if there is a usable one.
@@ -337,26 +358,127 @@ struct Plan {
 /// replaced by, or exits in favour of, the installer. Anything unusable clears the staging
 /// directory and lets the app start normally: a staged build that cannot be applied must not be
 /// retried on every launch for ever.
+///
+/// **This is the whole of what an unattended update looks like from the outside**, which is why
+/// it says so out loud. The reader opened the app; the next minute is an installer with no
+/// window of ours behind it. A notification is raised before the hand-off and the version is
+/// recorded for the run that comes back, so the two ends of that minute are accounted for.
 pub(crate) fn apply_staged() {
     if crate::platform::store_get(super::STAGED_KEY).is_none() {
         return;
     }
-    match plan() {
-        Ok(plan) => {
-            // Only reached if the hand-off itself failed; the success path does not return.
-            let _ = launch(&plan);
-            clear();
-        }
-        Err(_) => clear(),
+    let Ok(plan) = plan(flavour()) else {
+        clear();
+        return;
+    };
+    // Written first: after the hand-off there is no process left here to write anything, and an
+    // install that fails is caught by the version check at the other end rather than by this one.
+    crate::platform::store_set(super::APPLIED_KEY, &plan.version);
+    crate::platform::notify_now(
+        &crate::i18n::translate_offline("settings.update.notify.applyingTitle", &[]),
+        &crate::i18n::translate_offline(
+            "settings.update.notify.applying",
+            &[("version", &plan.version)],
+        ),
+    );
+    // Only reached if the hand-off itself failed; the success path does not return.
+    let _ = launch(&plan);
+    crate::platform::store_remove(super::APPLIED_KEY);
+    clear();
+}
+
+/// What a command line asks this binary to be.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Invocation {
+    /// The app. Every ordinary start, including the reader's own.
+    App,
+    /// The relauncher, for the install at this path.
+    Relaunch(PathBuf),
+    /// The relauncher's flag with no path after it.
+    ///
+    /// A separate answer from [`Invocation::App`] deliberately: this process is a copy of the
+    /// app sitting in the staging directory, and falling through to launch a window would put a
+    /// *second* copy on screen — running from a temporary directory, updating nothing, and
+    /// looking to the reader exactly like the one they installed.
+    RelaunchWithoutTarget,
+}
+
+/// Read the command line. Compiled everywhere so its test runs on the CI runner, for the reason
+/// [`classify_windows`] is.
+#[cfg_attr(
+    all(not(windows), not(test)),
+    expect(dead_code, reason = "compiled everywhere so its tests run in CI")
+)]
+fn invocation<I: Iterator<Item = std::ffi::OsString>>(mut args: I) -> Invocation {
+    if args.next().is_none_or(|flag| flag != RELAUNCH_FLAG) {
+        return Invocation::App;
     }
+    args.next()
+        .map_or(Invocation::RelaunchWithoutTarget, |target| {
+            Invocation::Relaunch(PathBuf::from(target))
+        })
+}
+
+/// Whether this process was started to see an update through rather than to be the app.
+///
+/// `true` means it has already done that job and `main` must return without launching anything.
+/// See [`launch`] for why a second process exists at all.
+#[cfg(windows)]
+pub(crate) fn run_as_relauncher() -> bool {
+    match invocation(std::env::args_os().skip(1)) {
+        Invocation::App => false,
+        Invocation::Relaunch(target) => {
+            relaunch_after_install(&target);
+            true
+        }
+        Invocation::RelaunchWithoutTarget => true,
+    }
+}
+
+/// Never the relauncher: the `AppImage` path replaces its own image and `exec`s it, so the
+/// process that comes back *is* the new version and there is nothing to wait for.
+#[cfg(unix)]
+pub(crate) fn run_as_relauncher() -> bool {
+    false
+}
+
+/// Run the staged installer, wait for it, and start the app again.
+///
+/// Runs as a copy of the app in the staging directory, so nothing it does holds the installed
+/// executable open. Everything is re-verified here as well as in the process that spawned this
+/// one, because this is the process that actually executes an installer and the directory it
+/// runs from is writable by anything running as the reader.
+///
+/// `target` — the executable to start afterwards — comes from the command line, and is the one
+/// thing here that does not. It is not a widening: passing an argument to this binary means
+/// being able to start a process as the reader, which is already enough to start any other.
+#[cfg(windows)]
+fn relaunch_after_install(target: &Path) {
+    if let Ok(plan) = plan(flavour_of(target)) {
+        if let Some(mut command) = installer_command(&plan) {
+            if let Ok(mut child) = command.spawn() {
+                let _ = child.wait();
+            }
+        }
+    }
+    // Before the app is started, so its own `apply_staged` finds nothing to retry — whatever the
+    // installer made of it, this staged copy has had its one attempt. Removing the directory
+    // cannot succeed while this process runs out of it; the next `stage` clears the remains.
+    clear();
+    // Started whether or not the install worked. The app is either the new version or the old
+    // one, and both are better than the reader being left with nothing after a double-click.
+    let _ = std::process::Command::new(target).spawn();
 }
 
 /// Re-verify everything about the staged update and decide what to run.
 ///
+/// `flavour` is passed rather than read, because the relauncher's own path says nothing about
+/// the install it is updating — see [`flavour_of`].
+///
 /// # Errors
 /// A catalogue key naming the check that refused it; the caller's response to all of them is the
 /// same, so they are not told apart beyond being recorded.
-fn plan() -> Result<Plan, &'static str> {
+fn plan(flavour: Flavour) -> Result<Plan, &'static str> {
     let dir = staging_dir().ok_or("settings.update.error.staging")?;
     let manifest_bytes =
         fs::read(dir.join(MANIFEST_FILE)).map_err(|_| "settings.update.error.staging")?;
@@ -378,7 +500,6 @@ fn plan() -> Result<Plan, &'static str> {
         return Err("settings.update.error.stale");
     }
 
-    let flavour = flavour();
     let kind = flavour.kind().ok_or("settings.update.error.unmanaged")?;
     let target = manifest
         .targets
@@ -387,7 +508,11 @@ fn plan() -> Result<Plan, &'static str> {
 
     let installer = dir.join(&target.file);
     verify_file(&installer, target)?;
-    Ok(Plan { flavour, installer })
+    Ok(Plan {
+        flavour,
+        installer,
+        version: manifest.version,
+    })
 }
 
 /// Check a staged file against the length and digest the signed manifest gives for it.
@@ -421,33 +546,66 @@ fn verify_file(path: &Path, target: &Target) -> Result<(), &'static str> {
     }
 }
 
-/// Hand the staged installer to the system. Does not return on success.
-///
-/// # Errors
-/// `settings.update.error.handoff` when the installer or the replacement could not be started.
+/// How each Windows installer is run, or `None` for a flavour [`plan`] would already have
+/// refused.
 #[cfg(windows)]
-fn launch(plan: &Plan) -> Result<Infallible, &'static str> {
-    use std::process::Command;
-
-    // The old app is still running while the installer starts. Both of these reach their
-    // file-copy phase seconds later and this process exits immediately below, so the executable
-    // is free by then — waiting for the installer instead would keep the very file it replaces
-    // open.
-    let started = match plan.flavour {
+fn installer_command(plan: &Plan) -> Option<std::process::Command> {
+    match plan.flavour {
         // A major upgrade over the same product, not a second install: the `.msi`'s UpgradeCode is
         // derived from the bundle identifier and is stable across versions. `/qb` shows a bare
         // progress bar, because a silent per-machine install still raises an elevation prompt and
         // a prompt with nothing behind it looks like malware.
-        Flavour::Msi => Command::new("msiexec")
-            .arg("/i")
-            .arg(&plan.installer)
-            .arg("/qb")
-            .spawn(),
-        Flavour::Nsis => Command::new(&plan.installer).arg("/S").spawn(),
-        // `plan` already refused every other flavour.
-        _ => return Err("settings.update.error.handoff"),
-    };
-    started.map_err(|_| "settings.update.error.handoff")?;
+        Flavour::Msi => {
+            let mut command = std::process::Command::new("msiexec");
+            command.arg("/i").arg(&plan.installer).arg("/qb");
+            Some(command)
+        }
+        Flavour::Nsis => {
+            let mut command = std::process::Command::new(&plan.installer);
+            command.arg("/S");
+            Some(command)
+        }
+        Flavour::AppImage | Flavour::Package | Flavour::Portable => None,
+    }
+}
+
+/// Hand the staged installer to the system. Does not return on success.
+///
+/// **Neither installer can replace an executable that is running**, so this process has to be
+/// gone before either reaches its file-copy phase — which is exactly why it cannot also be the
+/// thing that starts the app again afterwards. A copy of this binary is placed outside the
+/// install directory and given that one job ([`relaunch_after_install`]): wait out the
+/// installer, then start what it produced.
+///
+/// Without it an unattended update ends with the app simply not there — the reader double-clicks,
+/// the window never appears, and something has silently installed itself. That is what the copy
+/// buys, and it is worth a hundred megabytes of temporary disk to buy it.
+///
+/// A copy that cannot be made or started falls back to the hand-off without one: updating and
+/// not reopening is worse than reopening, and better than never updating.
+///
+/// # Errors
+/// `settings.update.error.handoff` when neither the relauncher nor the installer could be
+/// started.
+#[cfg(windows)]
+fn launch(plan: &Plan) -> Result<Infallible, &'static str> {
+    let target = std::env::current_exe().map_err(|_| "settings.update.error.handoff")?;
+    if let Some(dir) = staging_dir() {
+        let relauncher = dir.join(RELAUNCHER_FILE);
+        let handed_over = fs::copy(&target, &relauncher).is_ok()
+            && std::process::Command::new(&relauncher)
+                .arg(RELAUNCH_FLAG)
+                .arg(&target)
+                .spawn()
+                .is_ok();
+        if handed_over {
+            std::process::exit(0);
+        }
+    }
+    installer_command(plan)
+        .ok_or("settings.update.error.handoff")?
+        .spawn()
+        .map_err(|_| "settings.update.error.handoff")?;
     std::process::exit(0);
 }
 
@@ -609,6 +767,33 @@ mod tests {
         assert_eq!(Flavour::AppImage.kind(), Some("appimage"));
         assert_eq!(Flavour::Portable.kind(), None);
         assert_eq!(Flavour::Package.kind(), None);
+    }
+
+    fn parse(args: &[&str]) -> Invocation {
+        invocation(args.iter().map(std::ffi::OsString::from))
+    }
+
+    /// The relauncher is a **copy of the app** in the staging directory, so every command line
+    /// that is not unambiguously the relauncher's has to be one that never launches a window
+    /// from there.
+    ///
+    /// The trap this pins: reading the flag and then falling through when no path follows it.
+    /// That start is not the app — it is a second copy of it, running out of a temporary
+    /// directory, updating nothing and indistinguishable on screen from the installed one.
+    #[test]
+    fn only_a_complete_relaunch_command_line_is_the_relauncher() {
+        assert_eq!(parse(&[]), Invocation::App);
+        assert_eq!(parse(&["--help"]), Invocation::App);
+        // The path is only read *after* the flag; a bare path is an ordinary start.
+        assert_eq!(
+            parse(&[r"C:\Program Files\Tankovault\tankovault.exe"]),
+            Invocation::App
+        );
+        assert_eq!(
+            parse(&[RELAUNCH_FLAG, r"C:\Program Files\Tankovault\tankovault.exe"]),
+            Invocation::Relaunch(PathBuf::from(r"C:\Program Files\Tankovault\tankovault.exe"))
+        );
+        assert_eq!(parse(&[RELAUNCH_FLAG]), Invocation::RelaunchWithoutTarget);
     }
 
     #[test]

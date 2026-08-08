@@ -1,9 +1,9 @@
 //! The app root: the route table, the contexts every screen depends on, and the bundled
 //! font faces.
 
-use crate::components::{FocusTargets, Shell, UnreadBadge};
 #[cfg(feature = "desktop")]
-use crate::components::{SettingsSheet, TitleBar};
+use crate::components::{CloseToTray, SettingsSheet, TitleBar, TrayHost};
+use crate::components::{FocusTargets, Shell, UnreadBadge};
 use crate::i18n::I18nRoot;
 use crate::state::capabilities::CapabilitySet;
 use crate::state::legal::LegalIndex;
@@ -175,7 +175,15 @@ fn AppRoot(children: Element) -> Element {
     // out first paint on its own and then checks every six hours — see `crate::update`.
     let update = use_context_provider(crate::update::UpdateState::new);
     let i18n = crate::i18n::use_i18n();
+    // Before the loop, so a client that has just replaced itself says so rather than reporting
+    // "no check has run yet" about a version it acquired thirty seconds ago.
+    use_hook(|| crate::update::adopt_applied(update, i18n));
     use_future(move || crate::update::run(update, i18n));
+
+    // Whether the close button ends the app or hides it. Provided here because two things read
+    // it — the sheet that sets it and the `TrayHost` that makes it true — and neither owns the
+    // other.
+    use_context_provider(CloseToTray::new);
 
     // Once, on the first render: size the window to the display the builder could not know about
     // — a laptop at 1366×768 would otherwise keep the 1280×860 placeholder, taller than its own
@@ -224,6 +232,8 @@ fn AppRoot(children: Element) -> Element {
                 on_settings: move |()| settings_open.set(true),
                 update_waiting: update.wants_attention(),
             }
+            // Renders nothing; it owns the tray icon's lifetime and the close button's meaning.
+            TrayHost {}
             // Empty until the window has been fitted; see the gate above. The title bar renders
             // either way, so the frame is never a bare rectangle.
             div { class: "ik-desktop-body", if fitted() { {children} } }

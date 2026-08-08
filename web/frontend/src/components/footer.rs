@@ -20,7 +20,6 @@ use dioxus::prelude::*;
 
 /// The project's licence, and where its text lives.
 const LICENCE: &str = "PolyForm Noncommercial 1.0.0";
-const SOURCE_URL: &str = "https://github.com/TimSchoenle/TankoVault";
 
 /// The full five-column footer, or the one-line variant used under the auth card.
 #[component]
@@ -140,11 +139,23 @@ fn OpenSourceColumn() -> Element {
             span { class: "ik-footer-link", style: "cursor:default;", "{LICENCE}" }
             a {
                 class: "ik-footer-link",
-                href: SOURCE_URL,
+                href: build_info::PROJECT_URL,
                 target: "_blank",
                 rel: "noopener noreferrer",
                 {i18n.t("footer.source")}
                 Ic { icon: Icon::OpenInNew, size: 12 }
+            }
+            // Web only: an installed client advertising its own download is noise, and the copy
+            // reading this one *is* the download.
+            if cfg!(feature = "web") {
+                a {
+                    class: "ik-footer-link",
+                    href: build_info::RELEASES_URL,
+                    target: "_blank",
+                    rel: "noopener noreferrer",
+                    {i18n.t("footer.desktopApp")}
+                    Ic { icon: Icon::OpenInNew, size: 12 }
+                }
             }
         }
     }

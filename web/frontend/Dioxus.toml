@@ -1,5 +1,9 @@
+# Cased for people, not for paths. `dx` reads this key in exactly one place (`build/windows.rs`,
+# dioxus-cli 0.7.10): it becomes the Windows executable's `ProductName` resource. Everything else
+# that needs a name — the output directories, the installer's product name — derives from the
+# `[[bin]]` target instead, so this is free to spell the product the way the product is spelled.
 [application]
-name = "tankovault"
+name = "TankoVault"
 
 [web.app]
 # Deliberately empty. `dx` *appends* this into the `<title>` already in `index.html` rather than
@@ -24,11 +28,21 @@ identifier = "dev.tankovault.frontend"
 publisher = "TankoVault contributors"
 copyright = "TankoVault contributors"
 category = "Utility"
-short_description = "Self-hosted manga release tracker"
+# **The product name, not a sentence, and that is deliberate.** `dx` writes this key into the
+# Windows executable's `FileDescription` resource — which is what Task Manager, the Details tab
+# and the taskbar's tooltip show as the *name of the running program*. A description there reads
+# as a stray process ("Self-hosted manga release tracker" was what the process list said), which
+# is both confusing and the shape of thing people terminate.
+#
+# The sentence it used to hold lives in `long_description` below, which is where the Debian
+# control file's extended description and the NSIS component text take their wording from. The
+# cost of the split is that the `.deb`'s one-line synopsis is now the product name too; the
+# paragraph under it still says what the product does.
+short_description = "TankoVault"
 long_description = """
-TankoVault tracks manga releases across the sources you follow and keeps your reading progress \
-in one place. This is the desktop client; it talks to a TankoVault server you host, which you \
-are asked for the first time it starts.
+Self-hosted manga release tracker. TankoVault tracks manga releases across the sources you \
+follow and keeps your reading progress in one place. This is the desktop client; it talks to a \
+TankoVault server you host, which you are asked for the first time it starts.
 """
 # Every size Windows picks between — the taskbar, alt-tab and the installer each reach for a
 # different one. Generated from the same brand mark the SPA renders (`.ik-brand-tile` +
@@ -61,4 +75,15 @@ silent = true
 [bundle.deb]
 # Runtime halves of the build dependencies. `dpkg` will refuse to install rather than let the
 # binary fail its first dynamic link, which is the better of the two failures.
-depends = ["libwebkit2gtk-4.1-0", "libgtk-3-0"]
+#
+# The appindicator library is the tray's, and it is a dependency of a *feature* rather than of
+# the binary — it is opened with `dlopen` on first use, so a machine without it starts the app
+# perfectly well. It is named here anyway because the failure mode when it is missing is not a
+# missing tray: `libappindicator-sys` panics, and this crate is `panic = "abort"`. Naming it is
+# what makes "installed from the .deb" mean "the tray switch is offered"; every other install
+# path probes for it at runtime instead (`platform::desktop`'s `tray::available`).
+depends = [
+    "libwebkit2gtk-4.1-0",
+    "libgtk-3-0",
+    "libayatana-appindicator3-1 | libappindicator3-1",
+]

@@ -12,6 +12,24 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [3.4.0](https://github.com/TimSchoenle/TankoVault/compare/v3.3.0...v3.4.0) (2026-08-08)
+
+
+### Features
+
+* **api:** reconcile the deployment's super user at startup ([#154](https://github.com/TimSchoenle/TankoVault/issues/154)) ([806ff30](https://github.com/TimSchoenle/TankoVault/commit/806ff30f4e18a42393b26f737b3e8db7ff9a3aeb))
+* **frontend:** keep the desktop client in the tray, and reopen it after an update ([#150](https://github.com/TimSchoenle/TankoVault/issues/150)) ([69e5ad9](https://github.com/TimSchoenle/TankoVault/commit/69e5ad9fc17a175f036254eedff4e6def3821ddd))
+
+
+### Bug Fixes
+
+* **frontend:** stop the browser jumping to the top when a screen re-addresses itself ([#153](https://github.com/TimSchoenle/TankoVault/issues/153)) ([282890e](https://github.com/TimSchoenle/TankoVault/commit/282890e214cf755131e105315f7b5ccd51ed9708))
+
+
+### CI
+
+* **release:** read only cache tags the release warm-up wrote ([#152](https://github.com/TimSchoenle/TankoVault/issues/152)) ([61fa968](https://github.com/TimSchoenle/TankoVault/commit/61fa968cf3d1e76c9d2a57f00f1d92756dfdc29d))
+
 ## [3.3.0](https://github.com/TimSchoenle/TankoVault/compare/v3.2.0...v3.3.0) (2026-08-08)
 
 

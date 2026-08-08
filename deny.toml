@@ -100,6 +100,10 @@ skip = [
     { crate = "hkdf" },
     { crate = "hmac" },
     { crate = "sha2" },
+    # `sha1` joins them with the TOTP work: RFC 6238 is HMAC-SHA1, so `crates/auth` takes 0.11
+    # alongside its `hmac` 0.13. The 0.10 copy is the same older cohort as the entries above,
+    # via `crypto-glue`, `headers`, `tungstenite` and `x509-cert`.
+    { crate = "sha1" },
     { crate = "cpufeatures" },
     # Long-tail utility crates where two majors coexist across the graph.
     { crate = "hashbrown" },

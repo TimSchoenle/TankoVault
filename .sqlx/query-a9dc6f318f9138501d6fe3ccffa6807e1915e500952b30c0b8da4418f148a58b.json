@@ -1,0 +1,51 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT (SELECT count(*) FROM series s WHERE s.id = ANY($1)) AS \"series!\", (SELECT count(*) FROM series_sources ss WHERE ss.series_id = ANY($1)) AS \"sources!\", (SELECT count(*) FROM chapters c JOIN series_sources ss ON ss.id = c.series_source_id WHERE ss.series_id = ANY($1)) AS \"chapters!\", (SELECT count(*) FROM watchlist_entries we WHERE we.series_id = ANY($1)) AS \"watchlist_entries!\", (SELECT count(*) FROM read_progress rp WHERE rp.series_id = ANY($1)) AS \"progress_rows!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "series!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "sources!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "chapters!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "watchlist_entries!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "progress_rows!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "a9dc6f318f9138501d6fe3ccffa6807e1915e500952b30c0b8da4418f148a58b"
+}

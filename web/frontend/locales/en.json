@@ -380,6 +380,107 @@
       "running": "Running…"
     },
     "audit": {
+      "action": {
+        "account": {
+          "delete": "Account deleted",
+          "export": "Account data exported"
+        },
+        "auth": {
+          "step_up": "Step-up authentication"
+        },
+        "catalogue": {
+          "purge": "Catalogue purged",
+          "series": {
+            "delete": "Series deleted"
+          }
+        },
+        "flag": {
+          "reset": "Feature flag reset",
+          "set": "Feature flag set"
+        },
+        "matching": {
+          "rebuild_keys": "Match keys rebuilt"
+        },
+        "me": {
+          "mfa": {
+            "enrol": "Two-factor enrolled",
+            "recovery_codes": "Recovery codes regenerated",
+            "remove": "Two-factor removed"
+          },
+          "passkey_register": "Passkey registered",
+          "passkey_revoke": "Passkey revoked"
+        },
+        "merge": {
+          "sweep": "Merge sweep run"
+        },
+        "merge_candidate": {
+          "dismiss": "Merge candidate dismissed"
+        },
+        "merge_decision": {
+          "flag": "Merge decision flagged",
+          "revert": "Merge reverted"
+        },
+        "privacy": {
+          "request": {
+            "cancel": "Privacy request cancelled",
+            "claim": "Privacy request claimed",
+            "create": "Privacy request opened",
+            "extend": "Privacy request extended",
+            "fulfil_erasure": "Erasure fulfilled",
+            "resolve": "Privacy request resolved"
+          },
+          "subject": {
+            "export": "Subject data exported"
+          }
+        },
+        "provider": {
+          "create": "Provider registered",
+          "delete": "Provider deleted",
+          "resolve": "Provider challenge re-solved",
+          "set_state": "Provider state changed",
+          "test": "Provider dry-run",
+          "update": "Provider updated"
+        },
+        "recsys": {
+          "rebuild": "Recommender rebuilt",
+          "tunable": {
+            "reset": "Tunable reset",
+            "set": "Tunable set"
+          }
+        },
+        "scan": {
+          "trigger": "Scan triggered"
+        },
+        "series": {
+          "merge": "Series merged"
+        },
+        "sync": {
+          "mapping": {
+            "clear": "Sync mapping cleared",
+            "upsert": "Sync mapping set"
+          },
+          "pull": "Sync pull forced",
+          "push": "Sync push forced",
+          "remote": {
+            "assign": "Remote series assigned"
+          },
+          "unlink": "Tracker unlinked"
+        },
+        "sync_decision": {
+          "flag": "Sync decision flagged",
+          "revert": "Sync decision reverted"
+        },
+        "user": {
+          "delete": "User erased",
+          "permissions": "Permissions changed",
+          "sessions": {
+            "revoke": "Sessions revoked"
+          },
+          "status": "Account status changed",
+          "update": "User updated",
+          "verify_email": "Email verified by operator"
+        }
+      },
       "col": {
         "action": "Action",
         "actor": "Actor",
@@ -399,6 +500,63 @@
       "system": "system",
       "title": "Audit trail",
       "unavailable": "Audit log unavailable: {message}"
+    },
+    "catalogue": {
+      "bulk": {
+        "delete": "Delete selected…",
+        "deleteCta": "Delete them"
+      },
+      "bulkActions": "Bulk actions",
+      "clearSelection": "Clear",
+      "col": {
+        "added": "Added",
+        "chapters": "Chapters",
+        "providers": "Providers",
+        "title": "Series",
+        "watchers": "Watchers"
+      },
+      "danger": "Danger zone",
+      "deleteRadius": {
+        "one": "Deletes 1 series with every chapter, source, watchlist entry and reading position attached to it. A re-scan restores the chapters; nothing restores the reading positions.",
+        "other": "Deletes {count} series with every chapter, source, watchlist entry and reading position attached to them. A re-scan restores the chapters; nothing restores the reading positions."
+      },
+      "deleted": "Deleted {series} series, {chapters} chapters and {watchers} watchlist entries.",
+      "empty": "No series match this filter.",
+      "health": {
+        "any": "All",
+        "empty": "No chapters",
+        "orphaned": "No source"
+      },
+      "hits": {
+        "one": "1 series",
+        "other": "{count} series"
+      },
+      "intro": "Everything the scanners have collected. Tick rows to delete them in bulk, or empty the catalogue outright from the danger zone below.",
+      "noProvider": "Orphaned",
+      "purgeAll": "Wipe the entire catalogue",
+      "purgeAllCta": "Wipe everything",
+      "purgeAllWhy": "Removes all {series} series, {chapters} chapters, {watchers} watchlist entries and {progress} reading positions. Providers, users and accounts survive. This runs in batches and can be resumed if it is interrupted.",
+      "purgeChapters": "Drop every chapter",
+      "purgeChaptersCta": "Drop the chapters",
+      "purgeChaptersWhy": "Removes all {chapters} chapters. Series and their provider sources survive, so the next full scan refills them.",
+      "purgeDone": "Purge finished: {count} rows removed.",
+      "purgeProgress": "{done} removed, {left} to go…",
+      "purgeStalled": "The purge stopped making progress and was halted. Check the server logs before running it again.",
+      "searchPlaceholder": "Search titles…",
+      "select": "Select {title}",
+      "selectPage": "Select every series on this page",
+      "selected": {
+        "one": "1 selected",
+        "other": "{count} selected"
+      },
+      "stat": {
+        "chapters": "Chapters",
+        "empty": "No chapters",
+        "orphaned": "Orphaned",
+        "series": "Series",
+        "sources": "Sources"
+      },
+      "title": "Catalogue"
     },
     "confirm": {
       "label": "Type {value} to confirm",
@@ -970,6 +1128,7 @@
     "tab": {
       "adapterTest": "Adapter test",
       "audit": "Audit",
+      "catalogue": "Catalogue",
       "decisions": "Decisions",
       "flags": "Features",
       "liveScans": "Live scans",
@@ -1023,6 +1182,7 @@
       "recentActions": "Recent actions by this account",
       "revokeSessions": "Sign out everywhere",
       "role": {
+        "owner": "Owner",
         "reader": "reader",
         "staff": "staff"
       },
@@ -1039,6 +1199,7 @@
         "tracked": "Tracked"
       },
       "status": "Status",
+      "superUserNotice": "This is the deployment owner. They hold every capability, including ones added by a later release, so the checklist below does not govern what they can do. The grant was created by the installer and cannot be given or taken away here.",
       "suspendReason": "Reason",
       "suspendReasonPlaceholder": "Shown to whoever looks at this account next",
       "suspendedFor": "Suspended: {reason}",

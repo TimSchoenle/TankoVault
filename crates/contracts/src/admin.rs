@@ -343,7 +343,16 @@ pub struct UserDirectoryRow {
     /// months is usually an abandoned registration.
     pub email_verified: bool,
     /// How many permissions this account holds. `0` is an ordinary reader.
+    ///
+    /// Not a measure of *how much* an account may do: the super user holds one grant and can do
+    /// everything, which is what `is_super_user` exists to say.
     pub permission_count: i64,
+    /// Whether this account holds the super-user grant.
+    ///
+    /// Published separately because that grant is deliberately absent from the permission
+    /// catalogue, so a client reconciling grants against the catalogue would otherwise render
+    /// the deployment owner as an account holding nothing.
+    pub is_super_user: bool,
     /// How many series the user tracks — the cheapest signal of a real, in-use account.
     pub tracked_count: i64,
     #[serde(with = "time::serde::rfc3339::option")]

@@ -298,6 +298,7 @@ impl IntoView for repo::user_admin::DirectoryRow {
             status: self.status,
             email_verified: self.email_verified,
             permission_count: self.permission_count,
+            is_super_user: self.is_super_user,
             tracked_count: self.tracked_count,
             last_login_at: self.last_login_at,
             created_at: self.created_at,

@@ -32,7 +32,16 @@ pub struct DirectoryRow {
     /// months is usually an abandoned registration.
     pub email_verified: bool,
     /// How many permissions this account holds. `0` is an ordinary reader.
+    ///
+    /// Never a measure of *how much* an account may do: the super user holds one grant and can
+    /// do everything, which is what [`Self::is_super_user`] exists to say.
     pub permission_count: i64,
+    /// Whether this account holds the super-user grant.
+    ///
+    /// Carried separately because the grant is not enumerable — it is absent from the permission
+    /// catalogue by design, so a client reconciling grants against that catalogue sees the
+    /// deployment owner as an account holding nothing.
+    pub is_super_user: bool,
     /// How many series the user tracks — the cheapest signal of a real, in-use account.
     pub tracked_count: i64,
     #[serde(with = "time::serde::rfc3339::option")]
@@ -78,6 +87,7 @@ pub async fn directory<'e, E: PgExecutor<'e>>(
         status: AccountStatus,
         email_verified: bool,
         permission_count: i64,
+        is_super_user: bool,
         tracked_count: i64,
         last_login_at: Option<OffsetDateTime>,
         created_at: OffsetDateTime,
@@ -107,6 +117,8 @@ pub async fn directory<'e, E: PgExecutor<'e>>(
                 (m.email_verified_at IS NOT NULL) AS \"email_verified!\", \
                 m.last_login_at, m.created_at, \
                 p.count AS \"permission_count!\", w.count AS \"tracked_count!\", \
+                EXISTS (SELECT 1 FROM user_permissions up WHERE up.user_id = m.id \
+                        AND up.permission = 'system.superuser') AS \"is_super_user!\", \
                 (SELECT count(*) FROM matched) AS \"total!\" \
          FROM matched m \
          CROSS JOIN LATERAL (SELECT count(*) FROM user_permissions up WHERE up.user_id = m.id) \
@@ -135,6 +147,7 @@ pub async fn directory<'e, E: PgExecutor<'e>>(
                 status: r.status,
                 email_verified: r.email_verified,
                 permission_count: r.permission_count,
+                is_super_user: r.is_super_user,
                 tracked_count: r.tracked_count,
                 last_login_at: r.last_login_at,
                 created_at: r.created_at,

@@ -344,6 +344,21 @@
         ],
         "type": "string"
       },
+      "BulkDeleteSeries": {
+        "properties": {
+          "series_ids": {
+            "description": "The series to remove. Ids naming nothing are skipped rather than failing the batch.",
+            "items": {
+              "$ref": "#/components/schemas/SeriesId"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "series_ids"
+        ],
+        "type": "object"
+      },
       "BulkResult": {
         "description": "Which ids a bulk operation actually acted on, and which it did not.\n\nPer-id rather than a count, because the two failure modes are different and the UI has to\ntell them apart: `skipped` means the caller asked about a series it does not track (a stale\nclient, or a title removed in another tab), which is worth reporting, while a transport\nfailure fails the whole call.",
         "properties": {
@@ -387,6 +402,196 @@
         "required": [
           "permissions",
           "features"
+        ],
+        "type": "object"
+      },
+      "CatalogueDeletion": {
+        "description": "What a deletion actually removed, per table, counted rather than estimated.",
+        "properties": {
+          "chapters": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "progress_rows": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "series": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "sources": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "watchlist_entries": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "series",
+          "sources",
+          "chapters",
+          "watchlist_entries",
+          "progress_rows"
+        ],
+        "type": "object"
+      },
+      "CataloguePage": {
+        "description": "A page of the maintenance list plus the total matching the filter, so the pager needs no\nsecond request.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogueRow"
+            },
+            "type": "array"
+          },
+          "total": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "type": "object"
+      },
+      "CataloguePurge": {
+        "description": "One purge call's progress.",
+        "properties": {
+          "done": {
+            "description": "Whether this call finished the job.",
+            "type": "boolean"
+          },
+          "remaining": {
+            "description": "Rows of the purged kind still standing. The caller repeats until this is zero.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "removed": {
+            "$ref": "#/components/schemas/CatalogueDeletion"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/PurgeScope"
+          }
+        },
+        "required": [
+          "scope",
+          "removed",
+          "remaining",
+          "done"
+        ],
+        "type": "object"
+      },
+      "CatalogueRow": {
+        "description": "One row of the maintenance list.",
+        "properties": {
+          "chapter_count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "content_type": {
+            "description": "Content-type token (`manga` | `manhwa` | …).",
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "id": {
+            "$ref": "#/components/schemas/SeriesId"
+          },
+          "providers": {
+            "description": "Slugs of every provider carrying it, so the operator can see what a deletion would have\nto be re-scanned from.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "release_year": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "source_count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status": {
+            "description": "Publication-status token (`ongoing` | `completed` | …).",
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          },
+          "watcher_count": {
+            "description": "Readers with this series on a watchlist — the part of the blast radius no re-scan\nrestores.",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "content_type",
+          "status",
+          "providers",
+          "source_count",
+          "chapter_count",
+          "watcher_count",
+          "created_at",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "CatalogueSummary": {
+        "description": "Deployment-wide catalogue totals.",
+        "properties": {
+          "chapters_total": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "empty_series": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "orphaned_series": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "progress_rows": {
+            "description": "Reading positions a full purge would take with it.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "series_total": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "sources_total": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "watchlist_entries": {
+            "description": "Watchlist entries a full purge would take with it.",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "series_total",
+          "sources_total",
+          "chapters_total",
+          "orphaned_series",
+          "empty_series",
+          "watchlist_entries",
+          "progress_rows"
         ],
         "type": "object"
       },
@@ -709,6 +914,10 @@
           "id": {
             "type": "string"
           },
+          "is_super_user": {
+            "description": "Whether this account holds the super-user grant.\n\nPublished separately because that grant is deliberately absent from the permission\ncatalogue, so a client reconciling grants against the catalogue would otherwise render\nthe deployment owner as an account holding nothing.",
+            "type": "boolean"
+          },
           "last_login_at": {
             "type": [
               "string",
@@ -716,7 +925,7 @@
             ]
           },
           "permission_count": {
-            "description": "How many permissions this account holds. `0` is an ordinary reader.",
+            "description": "How many permissions this account holds. `0` is an ordinary reader.\n\nNot a measure of *how much* an account may do: the super user holds one grant and can do\neverything, which is what `is_super_user` exists to say.",
             "format": "int64",
             "type": "integer"
           },
@@ -739,6 +948,7 @@
           "status",
           "email_verified",
           "permission_count",
+          "is_super_user",
           "tracked_count",
           "created_at"
         ],
@@ -966,6 +1176,7 @@
           "scanning.full",
           "scanning.merge_queue",
           "scanning.auto_merge",
+          "admin.catalogue",
           "admin.providers",
           "admin.adapter_test",
           "admin.sync",
@@ -1161,6 +1372,15 @@
           "granted_at"
         ],
         "type": "object"
+      },
+      "HealthFilter": {
+        "description": "Which rows the maintenance list is narrowed to.",
+        "enum": [
+          "any",
+          "orphaned",
+          "empty"
+        ],
+        "type": "string"
       },
       "HistoryRow": {
         "description": "One row of the user-facing sync history (design v2 §B.6 `GET /v1/me/sync/history`).\nSee [`ConflictView`] for why it lives here.",
@@ -2468,6 +2688,8 @@
           "merge.write",
           "merge.audit",
           "merge.revert",
+          "catalogue.read",
+          "catalogue.delete",
           "recsys.read",
           "recsys.write",
           "sync.admin.read",
@@ -2953,6 +3175,30 @@
           "series_count"
         ],
         "type": "object"
+      },
+      "PurgeRequest": {
+        "properties": {
+          "confirm": {
+            "description": "The scope's own token, echoed back. Same guard as `confirm_username` on the account\nerasure paths: it is what stops a mis-aimed script from emptying a deployment on a\nrequest body it built by accident.",
+            "type": "string"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/PurgeScope"
+          }
+        },
+        "required": [
+          "scope",
+          "confirm"
+        ],
+        "type": "object"
+      },
+      "PurgeScope": {
+        "description": "How much of the catalogue a purge takes.",
+        "enum": [
+          "chapters",
+          "everything"
+        ],
+        "type": "string"
       },
       "QuietHours": {
         "description": "A nightly window, expressed in minutes from local midnight.\n\nMinutes plus a fixed UTC offset rather than an IANA zone: the alternative is a timezone\ndatabase in a crate that deliberately has no I/O, to move a quiet window by an hour twice a\nyear. The client sends the offset its browser reports.",
@@ -5715,6 +5961,299 @@
         "summary": "List audit action keys",
         "tags": [
           "admin-overview"
+        ]
+      }
+    },
+    "/v1/admin/catalogue/purge": {
+      "post": {
+        "description": "Empties the catalogue, one batch per call. The response says how much is left, and the\ncaller repeats until `done`.\n\n# Why this is not one request\n\nA full catalogue cascades into a dozen tables and takes minutes, far longer than the request\ntimeout allows. A single statement would therefore be killed and rolled back every time, and\nthe deployment could never actually be emptied. Batching makes the operation resumable\ninstead: each call commits, and an interrupted purge leaves a smaller catalogue rather than\nno progress at all.",
+        "operationId": "purge_catalogue",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PurgeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CataloguePurge"
+                }
+              }
+            },
+            "description": "What this batch removed and what is left"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "`confirm` does not echo the scope"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller does not hold the required permission"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Purge the catalogue",
+        "tags": [
+          "admin-catalogue"
+        ]
+      }
+    },
+    "/v1/admin/catalogue/series": {
+      "get": {
+        "description": "The operator's view of the catalogue: what is in it, how much of it each series is, and how\nmany readers would notice it going. Newest first, filterable by title, provider and health.",
+        "operationId": "list_catalogue",
+        "parameters": [
+          {
+            "description": "Case-insensitive substring of the canonical title. Empty lists everything.",
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Restrict to series carried by this provider slug.",
+            "in": "query",
+            "name": "provider",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "health",
+            "required": false,
+            "schema": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/components/schemas/HealthFilter"
+                }
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CataloguePage"
+                }
+              }
+            },
+            "description": "A page of the catalogue"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller does not hold the required permission"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "List the catalogue for maintenance",
+        "tags": [
+          "admin-catalogue"
+        ]
+      }
+    },
+    "/v1/admin/catalogue/series/delete": {
+      "post": {
+        "description": "Removes every named series and everything the schema hangs off it — sources, chapters, tag\nlinks, watchlist entries and reading positions. One transaction, so the batch either applies\nor does not.",
+        "operationId": "bulk_delete_series",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkDeleteSeries"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogueDeletion"
+                }
+              }
+            },
+            "description": "What was removed"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "no ids, or more than the per-request cap"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller does not hold the required permission"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Delete series in bulk",
+        "tags": [
+          "admin-catalogue"
+        ]
+      }
+    },
+    "/v1/admin/catalogue/summary": {
+      "get": {
+        "description": "The totals the purge panel states its blast radius from, including the two counts that say\nhow much of the catalogue is junk: series no provider carries, and series no chapter was ever\nfound for.",
+        "operationId": "catalogue_summary",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogueSummary"
+                }
+              }
+            },
+            "description": "Deployment-wide catalogue totals"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "caller does not hold the required permission"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Summarise the catalogue",
+        "tags": [
+          "admin-catalogue"
         ]
       }
     },
@@ -15478,6 +16017,10 @@
     {
       "description": "Series merge-candidate review",
       "name": "admin-matching"
+    },
+    {
+      "description": "Catalogue maintenance: the series list, bulk deletion and the purge",
+      "name": "admin-catalogue"
     },
     {
       "description": "Operator visibility into external sync mappings",

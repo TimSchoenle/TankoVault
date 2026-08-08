@@ -150,6 +150,10 @@ pub enum Feature {
     #[serde(rename = "scanning.auto_merge")]
     ScanningAutoMerge,
 
+    /// The operator console's catalogue maintenance surface: the series list, bulk deletion
+    /// and the catalogue purge.
+    #[serde(rename = "admin.catalogue")]
+    AdminCatalogue,
     /// The operator console's provider lifecycle surface.
     #[serde(rename = "admin.providers")]
     AdminProviders,
@@ -217,6 +221,7 @@ impl Feature {
             Self::ScanningFull,
             Self::ScanningMergeQueue,
             Self::ScanningAutoMerge,
+            Self::AdminCatalogue,
             Self::AdminProviders,
             Self::AdminAdapterTest,
             Self::AdminSync,
@@ -268,6 +273,7 @@ impl Feature {
             Self::ScanningFull => "scanning.full",
             Self::ScanningMergeQueue => "scanning.merge_queue",
             Self::ScanningAutoMerge => "scanning.auto_merge",
+            Self::AdminCatalogue => "admin.catalogue",
             Self::AdminProviders => "admin.providers",
             Self::AdminAdapterTest => "admin.adapter_test",
             Self::AdminSync => "admin.sync",
@@ -355,7 +361,8 @@ impl Feature {
             | Self::ScanningFull
             | Self::ScanningMergeQueue
             | Self::ScanningAutoMerge => FeatureGroup::Scanning,
-            Self::AdminProviders
+            Self::AdminCatalogue
+            | Self::AdminProviders
             | Self::AdminAdapterTest
             | Self::AdminSync
             | Self::AdminAudit
@@ -405,6 +412,7 @@ impl Feature {
             Self::ScanningFull => "Full catalogue scans",
             Self::ScanningMergeQueue => "Merge queue",
             Self::ScanningAutoMerge => "Automatic duplicate merging",
+            Self::AdminCatalogue => "Catalogue maintenance",
             Self::AdminProviders => "Provider management",
             Self::AdminAdapterTest => "Adapter dry-run",
             Self::AdminSync => "Sync administration",
@@ -532,6 +540,10 @@ impl Feature {
                 "Off: the duplicate sweep stops running, so no series is ever merged without an \
                  operator pressing merge. The review queue is unaffected."
             }
+            Self::AdminCatalogue => {
+                "Off: the catalogue maintenance surface closes — no operator series list, no \
+                 bulk deletion and no purge. Nothing already in the catalogue changes."
+            }
             Self::AdminProviders => {
                 "Off: the provider lifecycle surface closes. Existing providers keep scanning."
             }
@@ -639,7 +651,7 @@ mod tests {
 
     #[test]
     fn all_lists_every_variant() {
-        assert_eq!(Feature::all().len(), 43);
+        assert_eq!(Feature::all().len(), 44);
     }
 
     #[test]

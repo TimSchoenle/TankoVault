@@ -8,6 +8,7 @@ use dioxus::prelude::*;
 use i18nrs::dioxus::{use_i18n as use_i18n_context, I18nProvider};
 use i18nrs::{I18n, StorageType};
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 /// `localStorage` key the language is persisted under. Shares the `tv-` prefix with
 /// [`crate::state::prefs`], and is read by `index.html`'s boot script before the WASM bundle
@@ -132,6 +133,17 @@ impl Translator {
         interpolate(&self.t(key), args)
     }
 
+    /// [`Translator::t`], but `None` when the catalogue has no message at `key`.
+    ///
+    /// For the few panels that word a vocabulary owned by the *server* — audit actions, merge
+    /// signals, decision reasons — where the honest fallback is the raw token. The binding
+    /// renders a miss as the sentence `Key '…' not found for language '…'`, which is worse on
+    /// screen than the token, so the miss has to be detected before the lookup rather than
+    /// recognised in its result.
+    pub(crate) fn t_opt(self, key: &str) -> Option<String> {
+        has_key(key).then(|| self.t(key))
+    }
+
     /// A count-sensitive message: `key.one` for exactly one, `key.other` for anything else,
     /// with `{count}` and `args` substituted into whichever form is picked.
     ///
@@ -212,22 +224,28 @@ fn interpolate(template: &str, args: &[(&str, &str)]) -> String {
     out
 }
 
-/// Whether the default catalogue defines `key`, addressed as a dot path.
+/// The default catalogue, parsed once, for [`has_key`].
 ///
-/// Test-only: at runtime a missing key already surfaces as `Key '…' not found`. This lets a
-/// module that maps a closed set of values to catalogue keys assert every value it can produce
-/// is actually worded — coverage `locales_define_the_same_keys` doesn't provide, since that only
-/// proves the catalogues agree with each other.
-#[cfg(test)]
-pub(crate) fn has_key(key: &str) -> bool {
-    let reference = LOCALES
-        .iter()
-        .find(|l| l.code == DEFAULT_LANGUAGE)
-        .expect("default language is shipped");
-    let catalogue: serde_json::Value =
-        serde_json::from_str(reference.messages).expect("the default catalogue parses");
+/// Only the default one: `locales_define_the_same_keys` holds every catalogue to the same key
+/// set, so presence in the reference answers the question for all of them.
+static REFERENCE_CATALOGUE: OnceLock<serde_json::Value> = OnceLock::new();
 
-    let mut node = &catalogue;
+/// Whether the catalogue defines `key`, addressed as a dot path.
+///
+/// The membership test behind [`Translator::t_opt`], and what lets a module mapping a closed
+/// set of values to catalogue keys assert in test that every value it can produce is worded —
+/// coverage `locales_define_the_same_keys` does not provide, since that only proves the
+/// catalogues agree with each other.
+pub(crate) fn has_key(key: &str) -> bool {
+    let catalogue = REFERENCE_CATALOGUE.get_or_init(|| {
+        let reference = LOCALES
+            .iter()
+            .find(|l| l.code == DEFAULT_LANGUAGE)
+            .expect("default language is shipped");
+        serde_json::from_str(reference.messages).expect("the default catalogue parses")
+    });
+
+    let mut node = catalogue;
     for segment in key.split('.') {
         match node.get(segment) {
             Some(next) => node = next,
@@ -251,6 +269,19 @@ mod tests {
              claim a whole section as its label and render `[object Object]`-shaped nonsense"
         );
         assert!(!has_key("nav.definitelyNotAKey"));
+    }
+
+    /// The miss detection behind [`Translator::t_opt`].
+    ///
+    /// The bug this pins: the panels wording a server-owned vocabulary used to detect a miss by
+    /// comparing the translation against the key, but the binding answers a miss with the
+    /// sentence `Key '…' not found for language 'en'` and never with the key. The fallback to
+    /// the raw token therefore never fired, and every audit row rendered that sentence in place
+    /// of its action.
+    #[test]
+    fn a_key_the_catalogue_lacks_is_reported_missing() {
+        assert!(has_key("console.audit.action.scan.trigger"));
+        assert!(!has_key("console.audit.action.some.future.action"));
     }
 
     #[test]

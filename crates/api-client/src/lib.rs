@@ -933,6 +933,38 @@ pub mod types {
             value.parse()
         }
     }
+    #[doc = "`BulkDeleteSeries`"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"series_ids\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"series_ids\": {"]
+    #[doc = "      \"description\": \"The series to remove. Ids naming nothing are skipped rather than failing the batch.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/SeriesId\""]
+    #[doc = "      }"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct BulkDeleteSeries {
+        #[doc = "The series to remove. Ids naming nothing are skipped rather than failing the batch."]
+        pub series_ids: ::std::vec::Vec<SeriesId>,
+    }
+    impl BulkDeleteSeries {
+        pub fn builder() -> builder::BulkDeleteSeries {
+            Default::default()
+        }
+    }
     #[doc = "Which ids a bulk operation actually acted on, and which it did not.\n\nPer-id rather than a count, because the two failure modes are different and the UI has to\ntell them apart: `skipped` means the caller asked about a series it does not track (a stale\nclient, or a title removed in another tab), which is worth reporting, while a transport\nfailure fails the whole call."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -1012,6 +1044,309 @@ pub mod types {
     }
     impl Capabilities {
         pub fn builder() -> builder::Capabilities {
+            Default::default()
+        }
+    }
+    #[doc = "What a deletion actually removed, per table, counted rather than estimated."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"What a deletion actually removed, per table, counted rather than estimated.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"chapters\","]
+    #[doc = "    \"progress_rows\","]
+    #[doc = "    \"series\","]
+    #[doc = "    \"sources\","]
+    #[doc = "    \"watchlist_entries\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"chapters\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"progress_rows\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"series\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"sources\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"watchlist_entries\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct CatalogueDeletion {
+        pub chapters: i64,
+        pub progress_rows: i64,
+        pub series: i64,
+        pub sources: i64,
+        pub watchlist_entries: i64,
+    }
+    impl CatalogueDeletion {
+        pub fn builder() -> builder::CatalogueDeletion {
+            Default::default()
+        }
+    }
+    #[doc = "A page of the maintenance list plus the total matching the filter, so the pager needs no\nsecond request."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"A page of the maintenance list plus the total matching the filter, so the pager needs no\\nsecond request.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"items\","]
+    #[doc = "    \"total\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"items\": {"]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/CatalogueRow\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"total\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct CataloguePage {
+        pub items: ::std::vec::Vec<CatalogueRow>,
+        pub total: i64,
+    }
+    impl CataloguePage {
+        pub fn builder() -> builder::CataloguePage {
+            Default::default()
+        }
+    }
+    #[doc = "One purge call's progress."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One purge call's progress.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"done\","]
+    #[doc = "    \"remaining\","]
+    #[doc = "    \"removed\","]
+    #[doc = "    \"scope\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"done\": {"]
+    #[doc = "      \"description\": \"Whether this call finished the job.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"remaining\": {"]
+    #[doc = "      \"description\": \"Rows of the purged kind still standing. The caller repeats until this is zero.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"removed\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/CatalogueDeletion\""]
+    #[doc = "    },"]
+    #[doc = "    \"scope\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/PurgeScope\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct CataloguePurge {
+        #[doc = "Whether this call finished the job."]
+        pub done: bool,
+        #[doc = "Rows of the purged kind still standing. The caller repeats until this is zero."]
+        pub remaining: i64,
+        pub removed: CatalogueDeletion,
+        pub scope: PurgeScope,
+    }
+    impl CataloguePurge {
+        pub fn builder() -> builder::CataloguePurge {
+            Default::default()
+        }
+    }
+    #[doc = "One row of the maintenance list."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One row of the maintenance list.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"chapter_count\","]
+    #[doc = "    \"content_type\","]
+    #[doc = "    \"created_at\","]
+    #[doc = "    \"id\","]
+    #[doc = "    \"providers\","]
+    #[doc = "    \"source_count\","]
+    #[doc = "    \"status\","]
+    #[doc = "    \"title\","]
+    #[doc = "    \"updated_at\","]
+    #[doc = "    \"watcher_count\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"chapter_count\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"content_type\": {"]
+    #[doc = "      \"description\": \"Content-type token (`manga` | `manhwa` | …).\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"created_at\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"id\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/SeriesId\""]
+    #[doc = "    },"]
+    #[doc = "    \"providers\": {"]
+    #[doc = "      \"description\": \"Slugs of every provider carrying it, so the operator can see what a deletion would have\\nto be re-scanned from.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"type\": \"string\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"release_year\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"integer\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"int32\""]
+    #[doc = "    },"]
+    #[doc = "    \"source_count\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"status\": {"]
+    #[doc = "      \"description\": \"Publication-status token (`ongoing` | `completed` | …).\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"title\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"updated_at\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"watcher_count\": {"]
+    #[doc = "      \"description\": \"Readers with this series on a watchlist — the part of the blast radius no re-scan\\nrestores.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct CatalogueRow {
+        pub chapter_count: i64,
+        #[doc = "Content-type token (`manga` | `manhwa` | …)."]
+        pub content_type: ::std::string::String,
+        pub created_at: ::std::string::String,
+        pub id: SeriesId,
+        #[doc = "Slugs of every provider carrying it, so the operator can see what a deletion would have\nto be re-scanned from."]
+        pub providers: ::std::vec::Vec<::std::string::String>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub release_year: ::std::option::Option<i32>,
+        pub source_count: i64,
+        #[doc = "Publication-status token (`ongoing` | `completed` | …)."]
+        pub status: ::std::string::String,
+        pub title: ::std::string::String,
+        pub updated_at: ::std::string::String,
+        #[doc = "Readers with this series on a watchlist — the part of the blast radius no re-scan\nrestores."]
+        pub watcher_count: i64,
+    }
+    impl CatalogueRow {
+        pub fn builder() -> builder::CatalogueRow {
+            Default::default()
+        }
+    }
+    #[doc = "Deployment-wide catalogue totals."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Deployment-wide catalogue totals.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"chapters_total\","]
+    #[doc = "    \"empty_series\","]
+    #[doc = "    \"orphaned_series\","]
+    #[doc = "    \"progress_rows\","]
+    #[doc = "    \"series_total\","]
+    #[doc = "    \"sources_total\","]
+    #[doc = "    \"watchlist_entries\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"chapters_total\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"empty_series\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"orphaned_series\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"progress_rows\": {"]
+    #[doc = "      \"description\": \"Reading positions a full purge would take with it.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"series_total\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"sources_total\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"watchlist_entries\": {"]
+    #[doc = "      \"description\": \"Watchlist entries a full purge would take with it.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct CatalogueSummary {
+        pub chapters_total: i64,
+        pub empty_series: i64,
+        pub orphaned_series: i64,
+        #[doc = "Reading positions a full purge would take with it."]
+        pub progress_rows: i64,
+        pub series_total: i64,
+        pub sources_total: i64,
+        #[doc = "Watchlist entries a full purge would take with it."]
+        pub watchlist_entries: i64,
+    }
+    impl CatalogueSummary {
+        pub fn builder() -> builder::CatalogueSummary {
             Default::default()
         }
     }
@@ -1776,6 +2111,7 @@ pub mod types {
     #[doc = "    \"email\","]
     #[doc = "    \"email_verified\","]
     #[doc = "    \"id\","]
+    #[doc = "    \"is_super_user\","]
     #[doc = "    \"permission_count\","]
     #[doc = "    \"status\","]
     #[doc = "    \"tracked_count\","]
@@ -1795,6 +2131,10 @@ pub mod types {
     #[doc = "    \"id\": {"]
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
+    #[doc = "    \"is_super_user\": {"]
+    #[doc = "      \"description\": \"Whether this account holds the super-user grant.\\n\\nPublished separately because that grant is deliberately absent from the permission\\ncatalogue, so a client reconciling grants against the catalogue would otherwise render\\nthe deployment owner as an account holding nothing.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
     #[doc = "    \"last_login_at\": {"]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
@@ -1802,7 +2142,7 @@ pub mod types {
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"permission_count\": {"]
-    #[doc = "      \"description\": \"How many permissions this account holds. `0` is an ordinary reader.\","]
+    #[doc = "      \"description\": \"How many permissions this account holds. `0` is an ordinary reader.\\n\\nNot a measure of *how much* an account may do: the super user holds one grant and can do\\neverything, which is what `is_super_user` exists to say.\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
@@ -1828,9 +2168,11 @@ pub mod types {
         #[doc = "Whether the address has been confirmed. An unverified account that has existed for\nmonths is usually an abandoned registration."]
         pub email_verified: bool,
         pub id: ::std::string::String,
+        #[doc = "Whether this account holds the super-user grant.\n\nPublished separately because that grant is deliberately absent from the permission\ncatalogue, so a client reconciling grants against the catalogue would otherwise render\nthe deployment owner as an account holding nothing."]
+        pub is_super_user: bool,
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub last_login_at: ::std::option::Option<::std::string::String>,
-        #[doc = "How many permissions this account holds. `0` is an ordinary reader."]
+        #[doc = "How many permissions this account holds. `0` is an ordinary reader.\n\nNot a measure of *how much* an account may do: the super user holds one grant and can do\neverything, which is what `is_super_user` exists to say."]
         pub permission_count: i64,
         pub status: AccountStatus,
         #[doc = "How many series the user tracks — the cheapest signal of a real, in-use account."]
@@ -2196,6 +2538,7 @@ pub mod types {
     #[doc = "    \"scanning.full\","]
     #[doc = "    \"scanning.merge_queue\","]
     #[doc = "    \"scanning.auto_merge\","]
+    #[doc = "    \"admin.catalogue\","]
     #[doc = "    \"admin.providers\","]
     #[doc = "    \"admin.adapter_test\","]
     #[doc = "    \"admin.sync\","]
@@ -2291,6 +2634,8 @@ pub mod types {
         ScanningMergeQueue,
         #[serde(rename = "scanning.auto_merge")]
         ScanningAutoMerge,
+        #[serde(rename = "admin.catalogue")]
+        AdminCatalogue,
         #[serde(rename = "admin.providers")]
         AdminProviders,
         #[serde(rename = "admin.adapter_test")]
@@ -2346,6 +2691,7 @@ pub mod types {
                 Self::ScanningFull => f.write_str("scanning.full"),
                 Self::ScanningMergeQueue => f.write_str("scanning.merge_queue"),
                 Self::ScanningAutoMerge => f.write_str("scanning.auto_merge"),
+                Self::AdminCatalogue => f.write_str("admin.catalogue"),
                 Self::AdminProviders => f.write_str("admin.providers"),
                 Self::AdminAdapterTest => f.write_str("admin.adapter_test"),
                 Self::AdminSync => f.write_str("admin.sync"),
@@ -2396,6 +2742,7 @@ pub mod types {
                 "scanning.full" => Ok(Self::ScanningFull),
                 "scanning.merge_queue" => Ok(Self::ScanningMergeQueue),
                 "scanning.auto_merge" => Ok(Self::ScanningAutoMerge),
+                "admin.catalogue" => Ok(Self::AdminCatalogue),
                 "admin.providers" => Ok(Self::AdminProviders),
                 "admin.adapter_test" => Ok(Self::AdminAdapterTest),
                 "admin.sync" => Ok(Self::AdminSync),
@@ -2839,6 +3186,84 @@ pub mod types {
             Default::default()
         }
     }
+    #[doc = "Which rows the maintenance list is narrowed to."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Which rows the maintenance list is narrowed to.\","]
+    #[doc = "  \"type\": \"string\","]
+    #[doc = "  \"enum\": ["]
+    #[doc = "    \"any\","]
+    #[doc = "    \"orphaned\","]
+    #[doc = "    \"empty\""]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+    )]
+    pub enum HealthFilter {
+        #[serde(rename = "any")]
+        Any,
+        #[serde(rename = "orphaned")]
+        Orphaned,
+        #[serde(rename = "empty")]
+        Empty,
+    }
+    impl ::std::fmt::Display for HealthFilter {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Any => f.write_str("any"),
+                Self::Orphaned => f.write_str("orphaned"),
+                Self::Empty => f.write_str("empty"),
+            }
+        }
+    }
+    impl ::std::str::FromStr for HealthFilter {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "any" => Ok(Self::Any),
+                "orphaned" => Ok(Self::Orphaned),
+                "empty" => Ok(Self::Empty),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+    impl ::std::convert::TryFrom<&str> for HealthFilter {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    impl ::std::convert::TryFrom<&::std::string::String> for HealthFilter {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    impl ::std::convert::TryFrom<::std::string::String> for HealthFilter {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
     #[doc = "One row of the user-facing sync history (design v2 §B.6 `GET /v1/me/sync/history`).\nSee [`ConflictView`] for why it lives here."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -3258,6 +3683,37 @@ pub mod types {
             value: ::std::string::String,
         ) -> ::std::result::Result<Self, self::error::ConversionError> {
             value.parse()
+        }
+    }
+    #[doc = "`ListCatalogueHealth`"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {},"]
+    #[doc = "    {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/HealthFilter\""]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    #[serde(untagged)]
+    pub enum ListCatalogueHealth {
+        Variant0(::serde_json::Value),
+        Variant1(HealthFilter),
+    }
+    impl ::std::convert::From<::serde_json::Value> for ListCatalogueHealth {
+        fn from(value: ::serde_json::Value) -> Self {
+            Self::Variant0(value)
+        }
+    }
+    impl ::std::convert::From<HealthFilter> for ListCatalogueHealth {
+        fn from(value: HealthFilter) -> Self {
+            Self::Variant1(value)
         }
     }
     #[doc = "`ListScansMode`"]
@@ -5395,6 +5851,8 @@ pub mod types {
     #[doc = "    \"merge.write\","]
     #[doc = "    \"merge.audit\","]
     #[doc = "    \"merge.revert\","]
+    #[doc = "    \"catalogue.read\","]
+    #[doc = "    \"catalogue.delete\","]
     #[doc = "    \"recsys.read\","]
     #[doc = "    \"recsys.write\","]
     #[doc = "    \"sync.admin.read\","]
@@ -5455,6 +5913,10 @@ pub mod types {
         MergeAudit,
         #[serde(rename = "merge.revert")]
         MergeRevert,
+        #[serde(rename = "catalogue.read")]
+        CatalogueRead,
+        #[serde(rename = "catalogue.delete")]
+        CatalogueDelete,
         #[serde(rename = "recsys.read")]
         RecsysRead,
         #[serde(rename = "recsys.write")]
@@ -5509,6 +5971,8 @@ pub mod types {
                 Self::MergeWrite => f.write_str("merge.write"),
                 Self::MergeAudit => f.write_str("merge.audit"),
                 Self::MergeRevert => f.write_str("merge.revert"),
+                Self::CatalogueRead => f.write_str("catalogue.read"),
+                Self::CatalogueDelete => f.write_str("catalogue.delete"),
                 Self::RecsysRead => f.write_str("recsys.read"),
                 Self::RecsysWrite => f.write_str("recsys.write"),
                 Self::SyncAdminRead => f.write_str("sync.admin.read"),
@@ -5547,6 +6011,8 @@ pub mod types {
                 "merge.write" => Ok(Self::MergeWrite),
                 "merge.audit" => Ok(Self::MergeAudit),
                 "merge.revert" => Ok(Self::MergeRevert),
+                "catalogue.read" => Ok(Self::CatalogueRead),
+                "catalogue.delete" => Ok(Self::CatalogueDelete),
                 "recsys.read" => Ok(Self::RecsysRead),
                 "recsys.write" => Ok(Self::RecsysWrite),
                 "sync.admin.read" => Ok(Self::SyncAdminRead),
@@ -6697,6 +7163,113 @@ pub mod types {
     impl PublicProvider {
         pub fn builder() -> builder::PublicProvider {
             Default::default()
+        }
+    }
+    #[doc = "`PurgeRequest`"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"confirm\","]
+    #[doc = "    \"scope\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"confirm\": {"]
+    #[doc = "      \"description\": \"The scope's own token, echoed back. Same guard as `confirm_username` on the account\\nerasure paths: it is what stops a mis-aimed script from emptying a deployment on a\\nrequest body it built by accident.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"scope\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/PurgeScope\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct PurgeRequest {
+        #[doc = "The scope's own token, echoed back. Same guard as `confirm_username` on the account\nerasure paths: it is what stops a mis-aimed script from emptying a deployment on a\nrequest body it built by accident."]
+        pub confirm: ::std::string::String,
+        pub scope: PurgeScope,
+    }
+    impl PurgeRequest {
+        pub fn builder() -> builder::PurgeRequest {
+            Default::default()
+        }
+    }
+    #[doc = "How much of the catalogue a purge takes."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"How much of the catalogue a purge takes.\","]
+    #[doc = "  \"type\": \"string\","]
+    #[doc = "  \"enum\": ["]
+    #[doc = "    \"chapters\","]
+    #[doc = "    \"everything\""]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+    )]
+    pub enum PurgeScope {
+        #[serde(rename = "chapters")]
+        Chapters,
+        #[serde(rename = "everything")]
+        Everything,
+    }
+    impl ::std::fmt::Display for PurgeScope {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Chapters => f.write_str("chapters"),
+                Self::Everything => f.write_str("everything"),
+            }
+        }
+    }
+    impl ::std::str::FromStr for PurgeScope {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "chapters" => Ok(Self::Chapters),
+                "everything" => Ok(Self::Everything),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+    impl ::std::convert::TryFrom<&str> for PurgeScope {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    impl ::std::convert::TryFrom<&::std::string::String> for PurgeScope {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    impl ::std::convert::TryFrom<::std::string::String> for PurgeScope {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
         }
     }
     #[doc = "A nightly window, expressed in minutes from local midnight.\n\nMinutes plus a fixed UTC offset rather than an IANA zone: the alternative is a timezone\ndatabase in a crate that deliberately has no I/O, to move a quiet window by an hour twice a\nyear. The client sends the offset its browser reports."]
@@ -13657,6 +14230,47 @@ pub mod types {
             }
         }
         #[derive(Clone, Debug)]
+        pub struct BulkDeleteSeries {
+            series_ids:
+                ::std::result::Result<::std::vec::Vec<super::SeriesId>, ::std::string::String>,
+        }
+        impl ::std::default::Default for BulkDeleteSeries {
+            fn default() -> Self {
+                Self {
+                    series_ids: Err("no value supplied for series_ids".to_string()),
+                }
+            }
+        }
+        impl BulkDeleteSeries {
+            pub fn series_ids<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::SeriesId>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.series_ids = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for series_ids: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<BulkDeleteSeries> for super::BulkDeleteSeries {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: BulkDeleteSeries,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    series_ids: value.series_ids?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::BulkDeleteSeries> for BulkDeleteSeries {
+            fn from(value: super::BulkDeleteSeries) -> Self {
+                Self {
+                    series_ids: Ok(value.series_ids),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
         pub struct BulkResult {
             applied: ::std::result::Result<::std::vec::Vec<super::SeriesId>, ::std::string::String>,
             skipped: ::std::result::Result<::std::vec::Vec<super::SeriesId>, ::std::string::String>,
@@ -13762,6 +14376,546 @@ pub mod types {
                 Self {
                     features: Ok(value.features),
                     permissions: Ok(value.permissions),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct CatalogueDeletion {
+            chapters: ::std::result::Result<i64, ::std::string::String>,
+            progress_rows: ::std::result::Result<i64, ::std::string::String>,
+            series: ::std::result::Result<i64, ::std::string::String>,
+            sources: ::std::result::Result<i64, ::std::string::String>,
+            watchlist_entries: ::std::result::Result<i64, ::std::string::String>,
+        }
+        impl ::std::default::Default for CatalogueDeletion {
+            fn default() -> Self {
+                Self {
+                    chapters: Err("no value supplied for chapters".to_string()),
+                    progress_rows: Err("no value supplied for progress_rows".to_string()),
+                    series: Err("no value supplied for series".to_string()),
+                    sources: Err("no value supplied for sources".to_string()),
+                    watchlist_entries: Err("no value supplied for watchlist_entries".to_string()),
+                }
+            }
+        }
+        impl CatalogueDeletion {
+            pub fn chapters<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.chapters = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for chapters: {e}"));
+                self
+            }
+            pub fn progress_rows<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.progress_rows = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for progress_rows: {e}"));
+                self
+            }
+            pub fn series<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.series = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for series: {e}"));
+                self
+            }
+            pub fn sources<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.sources = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for sources: {e}"));
+                self
+            }
+            pub fn watchlist_entries<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.watchlist_entries = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for watchlist_entries: {e}")
+                });
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<CatalogueDeletion> for super::CatalogueDeletion {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: CatalogueDeletion,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    chapters: value.chapters?,
+                    progress_rows: value.progress_rows?,
+                    series: value.series?,
+                    sources: value.sources?,
+                    watchlist_entries: value.watchlist_entries?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::CatalogueDeletion> for CatalogueDeletion {
+            fn from(value: super::CatalogueDeletion) -> Self {
+                Self {
+                    chapters: Ok(value.chapters),
+                    progress_rows: Ok(value.progress_rows),
+                    series: Ok(value.series),
+                    sources: Ok(value.sources),
+                    watchlist_entries: Ok(value.watchlist_entries),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct CataloguePage {
+            items:
+                ::std::result::Result<::std::vec::Vec<super::CatalogueRow>, ::std::string::String>,
+            total: ::std::result::Result<i64, ::std::string::String>,
+        }
+        impl ::std::default::Default for CataloguePage {
+            fn default() -> Self {
+                Self {
+                    items: Err("no value supplied for items".to_string()),
+                    total: Err("no value supplied for total".to_string()),
+                }
+            }
+        }
+        impl CataloguePage {
+            pub fn items<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::CatalogueRow>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.items = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for items: {e}"));
+                self
+            }
+            pub fn total<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.total = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for total: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<CataloguePage> for super::CataloguePage {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: CataloguePage,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    items: value.items?,
+                    total: value.total?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::CataloguePage> for CataloguePage {
+            fn from(value: super::CataloguePage) -> Self {
+                Self {
+                    items: Ok(value.items),
+                    total: Ok(value.total),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct CataloguePurge {
+            done: ::std::result::Result<bool, ::std::string::String>,
+            remaining: ::std::result::Result<i64, ::std::string::String>,
+            removed: ::std::result::Result<super::CatalogueDeletion, ::std::string::String>,
+            scope: ::std::result::Result<super::PurgeScope, ::std::string::String>,
+        }
+        impl ::std::default::Default for CataloguePurge {
+            fn default() -> Self {
+                Self {
+                    done: Err("no value supplied for done".to_string()),
+                    remaining: Err("no value supplied for remaining".to_string()),
+                    removed: Err("no value supplied for removed".to_string()),
+                    scope: Err("no value supplied for scope".to_string()),
+                }
+            }
+        }
+        impl CataloguePurge {
+            pub fn done<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.done = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for done: {e}"));
+                self
+            }
+            pub fn remaining<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.remaining = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for remaining: {e}"));
+                self
+            }
+            pub fn removed<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::CatalogueDeletion>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.removed = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for removed: {e}"));
+                self
+            }
+            pub fn scope<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::PurgeScope>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.scope = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for scope: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<CataloguePurge> for super::CataloguePurge {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: CataloguePurge,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    done: value.done?,
+                    remaining: value.remaining?,
+                    removed: value.removed?,
+                    scope: value.scope?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::CataloguePurge> for CataloguePurge {
+            fn from(value: super::CataloguePurge) -> Self {
+                Self {
+                    done: Ok(value.done),
+                    remaining: Ok(value.remaining),
+                    removed: Ok(value.removed),
+                    scope: Ok(value.scope),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct CatalogueRow {
+            chapter_count: ::std::result::Result<i64, ::std::string::String>,
+            content_type: ::std::result::Result<::std::string::String, ::std::string::String>,
+            created_at: ::std::result::Result<::std::string::String, ::std::string::String>,
+            id: ::std::result::Result<super::SeriesId, ::std::string::String>,
+            providers: ::std::result::Result<
+                ::std::vec::Vec<::std::string::String>,
+                ::std::string::String,
+            >,
+            release_year: ::std::result::Result<::std::option::Option<i32>, ::std::string::String>,
+            source_count: ::std::result::Result<i64, ::std::string::String>,
+            status: ::std::result::Result<::std::string::String, ::std::string::String>,
+            title: ::std::result::Result<::std::string::String, ::std::string::String>,
+            updated_at: ::std::result::Result<::std::string::String, ::std::string::String>,
+            watcher_count: ::std::result::Result<i64, ::std::string::String>,
+        }
+        impl ::std::default::Default for CatalogueRow {
+            fn default() -> Self {
+                Self {
+                    chapter_count: Err("no value supplied for chapter_count".to_string()),
+                    content_type: Err("no value supplied for content_type".to_string()),
+                    created_at: Err("no value supplied for created_at".to_string()),
+                    id: Err("no value supplied for id".to_string()),
+                    providers: Err("no value supplied for providers".to_string()),
+                    release_year: Ok(Default::default()),
+                    source_count: Err("no value supplied for source_count".to_string()),
+                    status: Err("no value supplied for status".to_string()),
+                    title: Err("no value supplied for title".to_string()),
+                    updated_at: Err("no value supplied for updated_at".to_string()),
+                    watcher_count: Err("no value supplied for watcher_count".to_string()),
+                }
+            }
+        }
+        impl CatalogueRow {
+            pub fn chapter_count<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.chapter_count = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for chapter_count: {e}"));
+                self
+            }
+            pub fn content_type<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.content_type = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for content_type: {e}"));
+                self
+            }
+            pub fn created_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.created_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for created_at: {e}"));
+                self
+            }
+            pub fn id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::SeriesId>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for id: {e}"));
+                self
+            }
+            pub fn providers<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.providers = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for providers: {e}"));
+                self
+            }
+            pub fn release_year<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<i32>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.release_year = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for release_year: {e}"));
+                self
+            }
+            pub fn source_count<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.source_count = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for source_count: {e}"));
+                self
+            }
+            pub fn status<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.status = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for status: {e}"));
+                self
+            }
+            pub fn title<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.title = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for title: {e}"));
+                self
+            }
+            pub fn updated_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.updated_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for updated_at: {e}"));
+                self
+            }
+            pub fn watcher_count<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.watcher_count = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for watcher_count: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<CatalogueRow> for super::CatalogueRow {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: CatalogueRow,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    chapter_count: value.chapter_count?,
+                    content_type: value.content_type?,
+                    created_at: value.created_at?,
+                    id: value.id?,
+                    providers: value.providers?,
+                    release_year: value.release_year?,
+                    source_count: value.source_count?,
+                    status: value.status?,
+                    title: value.title?,
+                    updated_at: value.updated_at?,
+                    watcher_count: value.watcher_count?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::CatalogueRow> for CatalogueRow {
+            fn from(value: super::CatalogueRow) -> Self {
+                Self {
+                    chapter_count: Ok(value.chapter_count),
+                    content_type: Ok(value.content_type),
+                    created_at: Ok(value.created_at),
+                    id: Ok(value.id),
+                    providers: Ok(value.providers),
+                    release_year: Ok(value.release_year),
+                    source_count: Ok(value.source_count),
+                    status: Ok(value.status),
+                    title: Ok(value.title),
+                    updated_at: Ok(value.updated_at),
+                    watcher_count: Ok(value.watcher_count),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct CatalogueSummary {
+            chapters_total: ::std::result::Result<i64, ::std::string::String>,
+            empty_series: ::std::result::Result<i64, ::std::string::String>,
+            orphaned_series: ::std::result::Result<i64, ::std::string::String>,
+            progress_rows: ::std::result::Result<i64, ::std::string::String>,
+            series_total: ::std::result::Result<i64, ::std::string::String>,
+            sources_total: ::std::result::Result<i64, ::std::string::String>,
+            watchlist_entries: ::std::result::Result<i64, ::std::string::String>,
+        }
+        impl ::std::default::Default for CatalogueSummary {
+            fn default() -> Self {
+                Self {
+                    chapters_total: Err("no value supplied for chapters_total".to_string()),
+                    empty_series: Err("no value supplied for empty_series".to_string()),
+                    orphaned_series: Err("no value supplied for orphaned_series".to_string()),
+                    progress_rows: Err("no value supplied for progress_rows".to_string()),
+                    series_total: Err("no value supplied for series_total".to_string()),
+                    sources_total: Err("no value supplied for sources_total".to_string()),
+                    watchlist_entries: Err("no value supplied for watchlist_entries".to_string()),
+                }
+            }
+        }
+        impl CatalogueSummary {
+            pub fn chapters_total<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.chapters_total = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for chapters_total: {e}")
+                });
+                self
+            }
+            pub fn empty_series<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.empty_series = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for empty_series: {e}"));
+                self
+            }
+            pub fn orphaned_series<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.orphaned_series = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for orphaned_series: {e}")
+                });
+                self
+            }
+            pub fn progress_rows<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.progress_rows = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for progress_rows: {e}"));
+                self
+            }
+            pub fn series_total<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.series_total = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for series_total: {e}"));
+                self
+            }
+            pub fn sources_total<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.sources_total = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for sources_total: {e}"));
+                self
+            }
+            pub fn watchlist_entries<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.watchlist_entries = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for watchlist_entries: {e}")
+                });
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<CatalogueSummary> for super::CatalogueSummary {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: CatalogueSummary,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    chapters_total: value.chapters_total?,
+                    empty_series: value.empty_series?,
+                    orphaned_series: value.orphaned_series?,
+                    progress_rows: value.progress_rows?,
+                    series_total: value.series_total?,
+                    sources_total: value.sources_total?,
+                    watchlist_entries: value.watchlist_entries?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::CatalogueSummary> for CatalogueSummary {
+            fn from(value: super::CatalogueSummary) -> Self {
+                Self {
+                    chapters_total: Ok(value.chapters_total),
+                    empty_series: Ok(value.empty_series),
+                    orphaned_series: Ok(value.orphaned_series),
+                    progress_rows: Ok(value.progress_rows),
+                    series_total: Ok(value.series_total),
+                    sources_total: Ok(value.sources_total),
+                    watchlist_entries: Ok(value.watchlist_entries),
                 }
             }
         }
@@ -14639,6 +15793,7 @@ pub mod types {
             email: ::std::result::Result<::std::string::String, ::std::string::String>,
             email_verified: ::std::result::Result<bool, ::std::string::String>,
             id: ::std::result::Result<::std::string::String, ::std::string::String>,
+            is_super_user: ::std::result::Result<bool, ::std::string::String>,
             last_login_at: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
@@ -14655,6 +15810,7 @@ pub mod types {
                     email: Err("no value supplied for email".to_string()),
                     email_verified: Err("no value supplied for email_verified".to_string()),
                     id: Err("no value supplied for id".to_string()),
+                    is_super_user: Err("no value supplied for is_super_user".to_string()),
                     last_login_at: Ok(Default::default()),
                     permission_count: Err("no value supplied for permission_count".to_string()),
                     status: Err("no value supplied for status".to_string()),
@@ -14702,6 +15858,16 @@ pub mod types {
                 self.id = value
                     .try_into()
                     .map_err(|e| format!("error converting supplied value for id: {e}"));
+                self
+            }
+            pub fn is_super_user<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.is_super_user = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for is_super_user: {e}"));
                 self
             }
             pub fn last_login_at<T>(mut self, value: T) -> Self
@@ -14765,6 +15931,7 @@ pub mod types {
                     email: value.email?,
                     email_verified: value.email_verified?,
                     id: value.id?,
+                    is_super_user: value.is_super_user?,
                     last_login_at: value.last_login_at?,
                     permission_count: value.permission_count?,
                     status: value.status?,
@@ -14780,6 +15947,7 @@ pub mod types {
                     email: Ok(value.email),
                     email_verified: Ok(value.email_verified),
                     id: Ok(value.id),
+                    is_super_user: Ok(value.is_super_user),
                     last_login_at: Ok(value.last_login_at),
                     permission_count: Ok(value.permission_count),
                     status: Ok(value.status),
@@ -20556,6 +21724,60 @@ pub mod types {
                     name: Ok(value.name),
                     series_count: Ok(value.series_count),
                     slug: Ok(value.slug),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct PurgeRequest {
+            confirm: ::std::result::Result<::std::string::String, ::std::string::String>,
+            scope: ::std::result::Result<super::PurgeScope, ::std::string::String>,
+        }
+        impl ::std::default::Default for PurgeRequest {
+            fn default() -> Self {
+                Self {
+                    confirm: Err("no value supplied for confirm".to_string()),
+                    scope: Err("no value supplied for scope".to_string()),
+                }
+            }
+        }
+        impl PurgeRequest {
+            pub fn confirm<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.confirm = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for confirm: {e}"));
+                self
+            }
+            pub fn scope<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::PurgeScope>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.scope = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for scope: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<PurgeRequest> for super::PurgeRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: PurgeRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    confirm: value.confirm?,
+                    scope: value.scope?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::PurgeRequest> for PurgeRequest {
+            fn from(value: super::PurgeRequest) -> Self {
+                Self {
+                    confirm: Ok(value.confirm),
+                    scope: Ok(value.scope),
                 }
             }
         }
@@ -27595,6 +28817,22 @@ impl Client {
     pub fn audit_actions(&self) -> builder::AuditActions<'_> {
         builder::AuditActions::new(self)
     }
+    #[doc = "Purge the catalogue\n\nEmpties the catalogue, one batch per call. The response says how much is left, and the\ncaller repeats until `done`.\n\n# Why this is not one request\n\nA full catalogue cascades into a dozen tables and takes minutes, far longer than the request\ntimeout allows. A single statement would therefore be killed and rolled back every time, and\nthe deployment could never actually be emptied. Batching makes the operation resumable\ninstead: each call commits, and an interrupted purge leaves a smaller catalogue rather than\nno progress at all.\n\nSends a `POST` request to `/v1/admin/catalogue/purge`\n\n```ignore\nlet response = client.purge_catalogue()\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn purge_catalogue(&self) -> builder::PurgeCatalogue<'_> {
+        builder::PurgeCatalogue::new(self)
+    }
+    #[doc = "List the catalogue for maintenance\n\nThe operator's view of the catalogue: what is in it, how much of it each series is, and how\nmany readers would notice it going. Newest first, filterable by title, provider and health.\n\nSends a `GET` request to `/v1/admin/catalogue/series`\n\nArguments:\n- `health`\n- `limit`\n- `offset`\n- `provider`: Restrict to series carried by this provider slug.\n- `search`: Case-insensitive substring of the canonical title. Empty lists everything.\n```ignore\nlet response = client.list_catalogue()\n    .health(health)\n    .limit(limit)\n    .offset(offset)\n    .provider(provider)\n    .search(search)\n    .send()\n    .await;\n```"]
+    pub fn list_catalogue(&self) -> builder::ListCatalogue<'_> {
+        builder::ListCatalogue::new(self)
+    }
+    #[doc = "Delete series in bulk\n\nRemoves every named series and everything the schema hangs off it — sources, chapters, tag\nlinks, watchlist entries and reading positions. One transaction, so the batch either applies\nor does not.\n\nSends a `POST` request to `/v1/admin/catalogue/series/delete`\n\n```ignore\nlet response = client.bulk_delete_series()\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn bulk_delete_series(&self) -> builder::BulkDeleteSeries<'_> {
+        builder::BulkDeleteSeries::new(self)
+    }
+    #[doc = "Summarise the catalogue\n\nThe totals the purge panel states its blast radius from, including the two counts that say\nhow much of the catalogue is junk: series no provider carries, and series no chapter was ever\nfound for.\n\nSends a `GET` request to `/v1/admin/catalogue/summary`\n\n```ignore\nlet response = client.catalogue_summary()\n    .send()\n    .await;\n```"]
+    pub fn catalogue_summary(&self) -> builder::CatalogueSummary<'_> {
+        builder::CatalogueSummary::new(self)
+    }
     #[doc = "List feature flags\n\nEvery feature this build defines, with its effective state, its shipped default, and who\nlast changed it. Served from the compiled registry joined to the stored overrides, so the\npage can never list a feature that does nothing or omit one that does.\n\nSends a `GET` request to `/v1/admin/feature-flags`\n\n```ignore\nlet response = client.list_flags()\n    .send()\n    .await;\n```"]
     pub fn list_flags(&self) -> builder::ListFlags<'_> {
         builder::ListFlags::new(self)
@@ -28427,6 +29665,339 @@ pub mod builder {
                     ResponseValue::from_response(response).await?,
                 )),
                 404u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::purge_catalogue`]\n\n[`Client::purge_catalogue`]: super::Client::purge_catalogue"]
+    #[derive(Debug, Clone)]
+    pub struct PurgeCatalogue<'a> {
+        client: &'a super::Client,
+        body: Result<types::builder::PurgeRequest, String>,
+    }
+    impl<'a> PurgeCatalogue<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::PurgeRequest>,
+            <V as std::convert::TryInto<types::PurgeRequest>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `PurgeRequest` for body failed: {}", s));
+            self
+        }
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(types::builder::PurgeRequest) -> types::builder::PurgeRequest,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+        #[doc = "Sends a `POST` request to `/v1/admin/catalogue/purge`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::CataloguePurge>, Error<types::ProblemDetails>> {
+            let Self { client, body } = self;
+            let body = body
+                .and_then(|v| types::PurgeRequest::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v1/admin/catalogue/purge", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "purge_catalogue",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::list_catalogue`]\n\n[`Client::list_catalogue`]: super::Client::list_catalogue"]
+    #[derive(Debug, Clone)]
+    pub struct ListCatalogue<'a> {
+        client: &'a super::Client,
+        health: Result<Option<types::ListCatalogueHealth>, String>,
+        limit: Result<Option<i64>, String>,
+        offset: Result<Option<i64>, String>,
+        provider: Result<Option<::std::string::String>, String>,
+        search: Result<Option<::std::string::String>, String>,
+    }
+    impl<'a> ListCatalogue<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                health: Ok(None),
+                limit: Ok(None),
+                offset: Ok(None),
+                provider: Ok(None),
+                search: Ok(None),
+            }
+        }
+        pub fn health<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::ListCatalogueHealth>,
+        {
+            self.health = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `ListCatalogueHealth` for health failed".to_string());
+            self
+        }
+        pub fn limit<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<i64>,
+        {
+            self.limit = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `i64` for limit failed".to_string());
+            self
+        }
+        pub fn offset<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<i64>,
+        {
+            self.offset = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `i64` for offset failed".to_string());
+            self
+        }
+        pub fn provider<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.provider = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for provider failed".to_string()
+            });
+            self
+        }
+        pub fn search<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.search = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for search failed".to_string()
+            });
+            self
+        }
+        #[doc = "Sends a `GET` request to `/v1/admin/catalogue/series`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::CataloguePage>, Error<types::ProblemDetails>> {
+            let Self {
+                client,
+                health,
+                limit,
+                offset,
+                provider,
+                search,
+            } = self;
+            let health = health.map_err(Error::InvalidRequest)?;
+            let limit = limit.map_err(Error::InvalidRequest)?;
+            let offset = offset.map_err(Error::InvalidRequest)?;
+            let provider = provider.map_err(Error::InvalidRequest)?;
+            let search = search.map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v1/admin/catalogue/series", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .query(&progenitor_client::QueryParam::new("health", &health))
+                .query(&progenitor_client::QueryParam::new("limit", &limit))
+                .query(&progenitor_client::QueryParam::new("offset", &offset))
+                .query(&progenitor_client::QueryParam::new("provider", &provider))
+                .query(&progenitor_client::QueryParam::new("search", &search))
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_catalogue",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::bulk_delete_series`]\n\n[`Client::bulk_delete_series`]: super::Client::bulk_delete_series"]
+    #[derive(Debug, Clone)]
+    pub struct BulkDeleteSeries<'a> {
+        client: &'a super::Client,
+        body: Result<types::builder::BulkDeleteSeries, String>,
+    }
+    impl<'a> BulkDeleteSeries<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::BulkDeleteSeries>,
+            <V as std::convert::TryInto<types::BulkDeleteSeries>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `BulkDeleteSeries` for body failed: {}", s));
+            self
+        }
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::BulkDeleteSeries,
+                ) -> types::builder::BulkDeleteSeries,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+        #[doc = "Sends a `POST` request to `/v1/admin/catalogue/series/delete`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::CatalogueDeletion>, Error<types::ProblemDetails>> {
+            let Self { client, body } = self;
+            let body = body
+                .and_then(|v| types::BulkDeleteSeries::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v1/admin/catalogue/series/delete", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "bulk_delete_series",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::catalogue_summary`]\n\n[`Client::catalogue_summary`]: super::Client::catalogue_summary"]
+    #[derive(Debug, Clone)]
+    pub struct CatalogueSummary<'a> {
+        client: &'a super::Client,
+    }
+    impl<'a> CatalogueSummary<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+        #[doc = "Sends a `GET` request to `/v1/admin/catalogue/summary`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::CatalogueSummary>, Error<types::ProblemDetails>> {
+            let Self { client } = self;
+            let url = format!("{}/v1/admin/catalogue/summary", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "catalogue_summary",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
                 _ => Err(Error::UnexpectedResponse(response)),

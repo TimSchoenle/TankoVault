@@ -65,6 +65,18 @@ pub enum Permission {
     #[serde(rename = "merge.revert")]
     MergeRevert,
 
+    /// Read the catalogue maintenance surface: the operator's series list and the
+    /// deployment-wide catalogue totals. Distinct from public browsing, which needs no grant.
+    #[serde(rename = "catalogue.read")]
+    CatalogueRead,
+    /// Delete series from the catalogue — one at a time, in bulk, or the whole thing.
+    ///
+    /// Deliberately *not* implied by `merge.write`, which also removes series: a merge folds one
+    /// row into another and keeps every reader's progress, while this discards both. It is the
+    /// only capability in the system that can empty the deployment.
+    #[serde(rename = "catalogue.delete")]
+    CatalogueDelete,
+
     /// Read the recommender's tuning registry and its model-health figures.
     #[serde(rename = "recsys.read")]
     RecsysRead,
@@ -167,6 +179,8 @@ impl Permission {
             Self::MergeWrite,
             Self::MergeAudit,
             Self::MergeRevert,
+            Self::CatalogueRead,
+            Self::CatalogueDelete,
             Self::RecsysRead,
             Self::RecsysWrite,
             Self::SyncAdminRead,
@@ -227,6 +241,7 @@ impl Permission {
             | Self::ScansRead
             | Self::MergeRead
             | Self::MergeAudit
+            | Self::CatalogueRead
             | Self::RecsysRead
             | Self::SyncAdminRead
             | Self::SyncAudit
@@ -242,6 +257,7 @@ impl Permission {
             | Self::ScansRun
             | Self::MergeWrite
             | Self::MergeRevert
+            | Self::CatalogueDelete
             | Self::RecsysWrite
             | Self::SyncAdminWrite
             | Self::SyncRevert
@@ -279,6 +295,8 @@ impl Permission {
             Self::MergeWrite => "merge.write",
             Self::MergeAudit => "merge.audit",
             Self::MergeRevert => "merge.revert",
+            Self::CatalogueRead => "catalogue.read",
+            Self::CatalogueDelete => "catalogue.delete",
             Self::RecsysRead => "recsys.read",
             Self::RecsysWrite => "recsys.write",
             Self::SyncAdminRead => "sync.admin.read",
@@ -316,6 +334,8 @@ impl Permission {
             | Self::MergeWrite
             | Self::MergeAudit
             | Self::MergeRevert
+            | Self::CatalogueRead
+            | Self::CatalogueDelete
             | Self::RecsysRead
             | Self::RecsysWrite => PermissionGroup::Catalogue,
             Self::SyncAdminRead | Self::SyncAdminWrite | Self::SyncAudit | Self::SyncRevert => {
@@ -357,6 +377,11 @@ impl Permission {
             Self::MergeWrite => "Merge series and dismiss merge candidates.",
             Self::MergeAudit => "Inspect why the automatic merge merged each pair.",
             Self::MergeRevert => "Undo an automatic merge and flag it as wrong.",
+            Self::CatalogueRead => "View the catalogue maintenance list and its totals.",
+            Self::CatalogueDelete => {
+                "Delete series in bulk and purge the catalogue. Takes readers' watchlist \
+                 entries and reading progress for those series with it."
+            }
             Self::RecsysRead => "View recommendation tuning and model health.",
             Self::RecsysWrite => "Change recommendation tuning and trigger model rebuilds.",
             Self::SyncAdminRead => "View any user's linked trackers and series mappings.",
@@ -503,6 +528,9 @@ impl PermissionPreset {
                 // Reading the merge journal is diagnostic and belongs with working the queue;
                 // reversing the sweep does not, and is left to an administrator.
                 Permission::MergeAudit,
+                // Reading the maintenance list is diagnostic; emptying the deployment from it
+                // is not, so `catalogue.delete` stays with the administrator.
+                Permission::CatalogueRead,
                 Permission::RecsysRead,
                 Permission::SyncAdminRead,
                 Permission::SystemStats,
@@ -664,6 +692,7 @@ mod tests {
             Permission::ScansRead,
             Permission::MergeRead,
             Permission::MergeAudit,
+            Permission::CatalogueRead,
             Permission::RecsysRead,
             Permission::SyncAdminRead,
             Permission::SyncAudit,
@@ -705,7 +734,7 @@ mod tests {
     fn all_lists_every_variant() {
         // `all()` is hand-written and can drift from the enum; bump this count when adding
         // a variant, or a forgotten one slips through unnoticed.
-        assert_eq!(Permission::all().len(), 31);
+        assert_eq!(Permission::all().len(), 33);
     }
 
     #[test]
@@ -797,6 +826,9 @@ mod tests {
             Permission::MergeRevert,
             Permission::SyncAudit,
             Permission::SyncRevert,
+            // The one capability that can empty the deployment. Day-to-day operation of the
+            // catalogue does not include discarding it.
+            Permission::CatalogueDelete,
         ] {
             assert!(!set.has(forbidden), "operator must not hold {forbidden}");
         }

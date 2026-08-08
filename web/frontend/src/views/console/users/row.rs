@@ -11,6 +11,9 @@ use dioxus::prelude::*;
 pub(super) fn UserRow(row: DirectoryRow, selected: bool, on_pick: EventHandler<String>) -> Element {
     let i18n = use_i18n();
     let id = row.id.clone();
+    // The super user holds exactly one grant, so a count-based test renders the deployment owner
+    // as an ordinary operator with a single capability. The flag is what distinguishes them.
+    let owner = row.is_super_user;
     let staff = row.permission_count > 0;
     let suspended = row.status == AccountStatus::Suspended;
 
@@ -42,7 +45,11 @@ pub(super) fn UserRow(row: DirectoryRow, selected: bool, on_pick: EventHandler<S
                     }
                 }
                 span { style: "margin-left:auto;flex:none;display:flex;gap:6px;align-items:center;",
-                    if staff && !suspended {
+                    if owner {
+                        span { class: "ik-pill star", style: "font-size:9.5px;",
+                            {i18n.t("console.users.role.owner")}
+                        }
+                    } else if staff && !suspended {
                         span { class: "ik-pill acc", style: "font-size:9.5px;",
                             {i18n.t("console.users.role.staff")}
                         }

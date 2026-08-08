@@ -256,11 +256,27 @@ pub(crate) fn window() -> Option<dioxus::desktop::DesktopContext> {
     try_consume_context::<dioxus::desktop::DesktopContext>()
 }
 
-/// Size the window to the display it opened on, and centre it.
+/// The inner size the window opens at, before [`fit_window_to_display`] replaces it.
 ///
-/// `WindowBuilder` has to pick a size before there is an event loop, so it cannot know which
-/// monitor the window will land on — the fixed size it names is a placeholder. This runs once
-/// from the first render, when the monitor is knowable, and replaces it.
+/// Declared here rather than left at `main`'s `WindowBuilder` because the fit below is defined
+/// against it: this is a placeholder, and the contract is that no screen is ever *laid out* at it.
+pub(crate) const STARTUP_INNER_SIZE: (f64, f64) = (1280.0, 860.0);
+
+/// Of the monitor's dimensions, before the ceilings below apply.
+const PREFERRED_FRACTION: f64 = 0.82;
+/// Never past this much of the monitor, so the taskbar keeps its edge.
+const MAX_FRACTION: f64 = 0.92;
+const MAX_WIDTH: f64 = 1760.0;
+const MAX_HEIGHT: f64 = 1120.0;
+
+/// Longest [`fit_window_to_display`] waits for the window to report its new size before letting
+/// the app render anyway. A backstop, not a delay — the ordinary case resolves in a frame or two.
+const FIT_TIMEOUT_MS: u32 = 600;
+/// Gap between size checks while waiting.
+const FIT_POLL_MS: u32 = 16;
+
+/// The inner size to open at on a monitor `available` logical pixels across, or `None` when the
+/// monitor reports nothing usable.
 ///
 /// Proportional rather than fixed, in both directions. A fixed default is either cramped on a
 /// large display or taller than the screen on a laptop, and this app's densest screen — the
@@ -270,15 +286,39 @@ pub(crate) fn window() -> Option<dioxus::desktop::DesktopContext> {
 /// because `tao` reports the monitor rather than its *work area*; the pixel ceiling stops a
 /// window spanning an ultrawide, where the measure-capped content would sit in a narrow strip
 /// down the middle of a very wide frame.
-pub(crate) fn fit_window_to_display() {
-    /// Of the monitor's shorter dimension budget, before the ceiling applies.
-    const PREFERRED_FRACTION: f64 = 0.82;
-    /// Never past this much of the monitor, so the taskbar keeps its edge.
-    const MAX_FRACTION: f64 = 0.92;
-    const MAX_WIDTH: f64 = 1760.0;
-    const MAX_HEIGHT: f64 = 1120.0;
+fn fitted_inner_size(available: (f64, f64)) -> Option<(f64, f64)> {
+    let (width, height) = available;
+    if width <= 0.0 || height <= 0.0 {
+        return None;
+    }
+    Some((
+        (width * PREFERRED_FRACTION)
+            .min(MAX_WIDTH)
+            .min(width * MAX_FRACTION),
+        (height * PREFERRED_FRACTION)
+            .min(MAX_HEIGHT)
+            .min(height * MAX_FRACTION),
+    ))
+}
 
-    let Some(window) = window() else {
+/// Size the window to the display it opened on, centre it, and resolve once the window reports
+/// the new size.
+///
+/// `WindowBuilder` has to pick a size before there is an event loop, so it cannot know which
+/// monitor the window will land on — [`STARTUP_INNER_SIZE`] is that placeholder, and this runs
+/// once from the first render, when the monitor is knowable.
+///
+/// **Awaiting it is load-bearing, not tidiness.** [`crate::app::AppRoot`] holds the UI back until
+/// this resolves, because a screen that mounts while the window is still the placeholder measures
+/// the placeholder's geometry — and [`crate::components::use_grid_fit`] turns exactly that
+/// measurement into a page size. Discover fetched a 1280px window's worth of covers, the resize
+/// widened the grid under them, and the correction never landed: every page was laid out short,
+/// leaving a ragged row and a band of dead space at each page boundary.
+///
+/// `window` is passed in rather than read here because this runs from a spawned task; the caller
+/// takes the context during its own render, where it is reliably reachable.
+pub(crate) async fn fit_window_to_display(window: Option<dioxus::desktop::DesktopContext>) {
+    let Some(window) = window else {
         return;
     };
     let Some(monitor) = window.current_monitor() else {
@@ -287,16 +327,9 @@ pub(crate) fn fit_window_to_display() {
 
     let scale = monitor.scale_factor();
     let available = monitor.size().to_logical::<f64>(scale);
-    if available.width <= 0.0 || available.height <= 0.0 {
+    let Some((width, height)) = fitted_inner_size((available.width, available.height)) else {
         return;
-    }
-
-    let width = (available.width * PREFERRED_FRACTION)
-        .min(MAX_WIDTH)
-        .min(available.width * MAX_FRACTION);
-    let height = (available.height * PREFERRED_FRACTION)
-        .min(MAX_HEIGHT)
-        .min(available.height * MAX_FRACTION);
+    };
 
     window.set_inner_size(dioxus::desktop::LogicalSize::new(width, height));
     // Centred as well: resizing moves the bottom-right corner only, so a window the OS placed
@@ -306,6 +339,16 @@ pub(crate) fn fit_window_to_display() {
         position.x + (available.width - width) / 2.0,
         position.y + (available.height - height) / 2.0,
     ));
+
+    for _ in 0..FIT_TIMEOUT_MS.div_ceil(FIT_POLL_MS) {
+        let now = window.inner_size().to_logical::<f64>(window.scale_factor());
+        // A pixel of slack: the OS answers in physical pixels, so a fractional scale factor
+        // rarely round-trips to the exact logical size that was asked for.
+        if (now.width - width).abs() <= 1.0 && (now.height - height).abs() <= 1.0 {
+            return;
+        }
+        sleep_ms(FIT_POLL_MS).await;
+    }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -721,4 +764,64 @@ pub(crate) async fn subscribe(url: &str, events: &[&str]) -> Option<EventStream>
         events: Box::pin(response.bytes_stream().eventsource()),
         wanted: events.iter().map(|name| (*name).to_owned()).collect(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Monitors the sweeps below stand in for: a laptop, two desktop sizes and an ultrawide.
+    const DISPLAYS: [(f64, f64); 5] = [
+        (1366.0, 768.0),
+        (1920.0, 1080.0),
+        (2560.0, 1440.0),
+        (3440.0, 1440.0),
+        (5120.0, 2160.0),
+    ];
+
+    /// The bug the fit gate exists for. The window opens at [`STARTUP_INNER_SIZE`] and is resized
+    /// to the display a moment later, so anything that measured itself in between read a geometry
+    /// the reader never sees. Discover derives its page size from exactly such a measurement
+    /// (`crate::components::use_grid_fit`): it fetched a 1280px window's worth of covers and then
+    /// laid them into the fitted window's wider grid, leaving a short row and a band of dead space
+    /// at every page boundary.
+    ///
+    /// That the two sizes differ on an ordinary display is what makes the window real. If they
+    /// ever agreed, `fit_window_to_display`'s await would be silently untested rather than
+    /// unnecessary — so this pins the difference, not the numbers.
+    #[test]
+    fn the_fitted_size_is_never_the_size_the_window_opens_at() {
+        for display in DISPLAYS {
+            let (width, _) = fitted_inner_size(display).expect("a real monitor is fitted to");
+            assert!(
+                (width - STARTUP_INNER_SIZE.0).abs() > 1.0,
+                "a {display:?} display fits to the placeholder width"
+            );
+        }
+    }
+
+    /// Both ceilings hold and the window always stays inside the monitor it opened on, so a
+    /// laptop is not handed a window taller than its screen and an ultrawide is not spanned.
+    #[test]
+    fn the_fit_stays_inside_the_monitor_and_under_the_ceilings() {
+        for display in DISPLAYS {
+            let (width, height) = fitted_inner_size(display).expect("a real monitor is fitted to");
+            assert!(
+                width <= MAX_WIDTH && height <= MAX_HEIGHT,
+                "{display:?} fits over the ceiling"
+            );
+            assert!(
+                width <= display.0 * MAX_FRACTION && height <= display.1 * MAX_FRACTION,
+                "{display:?} fits past its own edge"
+            );
+        }
+    }
+
+    /// A monitor that reports no usable size leaves the window alone rather than collapsing it —
+    /// the placeholder is a worse answer than nothing, but a zero-sized window is worse than both.
+    #[test]
+    fn a_monitor_with_no_size_is_not_fitted_to() {
+        assert!(fitted_inner_size((0.0, 1080.0)).is_none());
+        assert!(fitted_inner_size((1920.0, 0.0)).is_none());
+    }
 }

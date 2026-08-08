@@ -62,10 +62,16 @@ fn main() {
                         // Names the taskbar button and the alt-tab entry; `crate::title`
                         // takes over from first render.
                         .with_title("TankoVault")
-                        // Wide enough for the watchlist's full column set (the 1500px step
-                        // adds two more), and a floor below the rail's own breakpoint so the
-                        // responsive layout, not a resize limit, decides what is shown.
-                        .with_inner_size(LogicalSize::new(1280.0, 860.0))
+                        // A placeholder only: `platform::fit_window_to_display` replaces it
+                        // from the first render, once the monitor is knowable, and the UI is
+                        // held back until it has. Wide enough for the watchlist's full column
+                        // set (the 1500px step adds two more), and a floor below the rail's own
+                        // breakpoint so the responsive layout, not a resize limit, decides what
+                        // is shown.
+                        .with_inner_size(LogicalSize::new(
+                            crate::platform::STARTUP_INNER_SIZE.0,
+                            crate::platform::STARTUP_INNER_SIZE.1,
+                        ))
                         .with_min_inner_size(LogicalSize::new(480.0, 560.0)),
                 )),
         )

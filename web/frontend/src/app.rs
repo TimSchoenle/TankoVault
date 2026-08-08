@@ -177,11 +177,26 @@ fn AppRoot(children: Element) -> Element {
     let i18n = crate::i18n::use_i18n();
     use_future(move || crate::update::run(update, i18n));
 
-    // Once, on the first render: shrink the window to the display if the default does not fit.
-    // The builder cannot do this — it runs before there is an event loop to ask which monitor
-    // the window landed on — so a laptop at 1366×768 would otherwise open a 1280×860 window
-    // taller than its screen, with the footer and the sign-in button below the bottom edge.
-    use_hook(crate::platform::fit_window_to_display);
+    // Once, on the first render: size the window to the display the builder could not know about
+    // — a laptop at 1366×768 would otherwise keep the 1280×860 placeholder, taller than its own
+    // screen, with the footer and the sign-in button below the bottom edge.
+    //
+    // The UI is held back until it resolves, and that gate is the fix for a real defect rather
+    // than caution. The window opens at `STARTUP_INNER_SIZE` and is resized a moment later, so a
+    // screen that mounted in between measured a geometry the reader never sees — and Discover
+    // turns its measurement into a page size (`components::use_grid_fit`), so it fetched a
+    // 1280px window's worth of covers and then laid them into the fitted window's wider grid,
+    // one short row per page. The browser has no equivalent: its viewport is final before first
+    // paint, which is why this only ever went wrong in the native client.
+    let mut fitted = use_signal(|| false);
+    let desktop = crate::platform::window();
+    use_future(move || {
+        let desktop = desktop.clone();
+        async move {
+            crate::platform::fit_window_to_display(desktop).await;
+            fitted.set(true);
+        }
+    });
 
     // The OS caption is off, so the window's light/dark chrome — its shadow, its resize borders,
     // and the caption itself if decorations are ever turned back on — has to be told which theme
@@ -209,7 +224,9 @@ fn AppRoot(children: Element) -> Element {
                 on_settings: move |()| settings_open.set(true),
                 update_waiting: update.wants_attention(),
             }
-            div { class: "ik-desktop-body", {children} }
+            // Empty until the window has been fitted; see the gate above. The title bar renders
+            // either way, so the frame is never a bare rectangle.
+            div { class: "ik-desktop-body", if fitted() { {children} } }
             if settings_open() {
                 SettingsSheet { on_close: move |()| settings_open.set(false) }
             }

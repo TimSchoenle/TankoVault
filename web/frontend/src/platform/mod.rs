@@ -63,7 +63,7 @@ pub(crate) use desktop::{
     autostart_enabled, autostart_supported, credential_delete, credential_get, credential_set,
     fit_window_to_display, notifications_enabled, notify, server_origin, set_autostart,
     set_notifications_enabled, set_server_origin, set_window_heading, settings_path, window,
-    ROOT_ATTRIBUTES, WINDOW_HEADING,
+    ROOT_ATTRIBUTES, STARTUP_INNER_SIZE, WINDOW_HEADING,
 };
 
 // ---------------------------------------------------------------------------------------------

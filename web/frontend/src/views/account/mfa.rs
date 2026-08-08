@@ -14,7 +14,9 @@
 //!   a route of its own, so the list the reader is editing stays visible behind the question.
 
 use crate::api;
-use crate::components::{async_block, Field, InlineConfirm, PanelCard, StepUpPrompt};
+use crate::components::{
+    async_block, use_step_up_gate, Field, InlineConfirm, PanelCard, StepUpGate, StepUpPrompt,
+};
 use crate::hooks::{use_busy, use_reload, Reload};
 use crate::i18n::use_i18n;
 use crate::icons::Icon;
@@ -36,13 +38,14 @@ pub(crate) fn MfaCard() -> Element {
     let api = api::use_api();
     let reload = use_reload();
     let busy = use_busy();
+    // Both: the gate drives the prompt, and removing a factor has to drop the grant that factor
+    // earned — the server revokes it, so keeping it here would only mean retrying with a dead
+    // token.
     let step_up = use_step_up();
+    let gate = use_step_up_gate();
 
     let mut error = use_signal(|| Option::<String>::None);
     let mut info = use_signal(|| Option::<String>::None);
-    // Whether the confirm-it-is-you form is open. Opened by a `403 step_up_required` rather
-    // than pre-emptively, so a reader who only came to look is never asked for anything.
-    let mut prompting = use_signal(|| false);
     // The one and only sight of a freshly issued secret.
     let mut pending_secret = use_signal(|| Option::<(String, String)>::None);
     let mut confirm_code = use_signal(String::new);
@@ -82,9 +85,7 @@ pub(crate) fn MfaCard() -> Element {
     // operation has its own error type, so one callback cannot accept them all — and one
     // callback is the point.
     let handle_refusal = use_callback(move |(status, message): (Option<u16>, String)| {
-        if status == Some(403) {
-            step_up.clear();
-            prompting.set(true);
+        if gate.refused(status) {
             error.set(None);
         } else {
             error.set(Some(message));
@@ -97,7 +98,7 @@ pub(crate) fn MfaCard() -> Element {
         }
         error.set(None);
         info.set(None);
-        let client = elevated(api, step_up);
+        let client = gate.client(api);
         spawn(async move {
             match client.begin_totp().send().await {
                 Ok(res) => {
@@ -147,7 +148,7 @@ pub(crate) fn MfaCard() -> Element {
         error.set(None);
         info.set(None);
         let label = key_label.read().trim().to_owned();
-        let client = elevated(api, step_up);
+        let client = gate.client(api);
         // The finish leg needs no elevation — the ceremony it completes was already gated — so
         // it goes through the ordinary client.
         let plain = api.client();
@@ -219,7 +220,7 @@ pub(crate) fn MfaCard() -> Element {
             return;
         }
         error.set(None);
-        let client = elevated(api, step_up);
+        let client = gate.client(api);
         spawn(async move {
             match client.regenerate_recovery_codes().send().await {
                 Ok(res) => {
@@ -237,7 +238,7 @@ pub(crate) fn MfaCard() -> Element {
             return;
         }
         error.set(None);
-        let client = elevated(api, step_up);
+        let client = gate.client(api);
         spawn(async move {
             match client.delete_totp().send().await {
                 Ok(_) => {
@@ -266,11 +267,11 @@ pub(crate) fn MfaCard() -> Element {
                 div { class: "ik-note", style: "padding:10px;margin:10px 0;", "{msg}" }
             }
 
-            if *prompting.read() {
+            if gate.is_open() {
                 StepUpPrompt {
                     enrolled,
                     on_done: move |()| {
-                        prompting.set(false);
+                        gate.close();
                         info.set(Some(i18n.t("stepUp.confirmed")));
                     },
                 }
@@ -400,6 +401,7 @@ pub(crate) fn MfaCard() -> Element {
                                 created_at: key.created_at,
                                 last_used_at: key.last_used_at,
                                 reload,
+                                gate,
                             }
                         }
                     }
@@ -457,6 +459,9 @@ pub(crate) fn MfaCard() -> Element {
 }
 
 /// One registered security key, with rename and revoke.
+///
+/// `gate` belongs to the card: both actions are elevated, and a refusal has to open the one
+/// prompt above the list rather than a prompt per row.
 #[component]
 fn SecurityKeyRow(
     id: String,
@@ -464,6 +469,7 @@ fn SecurityKeyRow(
     created_at: String,
     last_used_at: Option<String>,
     reload: Reload,
+    gate: StepUpGate,
 ) -> Element {
     let i18n = use_i18n();
     let api = api::use_api();
@@ -481,7 +487,7 @@ fn SecurityKeyRow(
         }
         let id = key_id.clone();
         let label = draft.read().trim().to_owned();
-        let client = elevated(api, step_up);
+        let client = gate.client(api);
         spawn(async move {
             match client
                 .rename_security_key()
@@ -494,7 +500,11 @@ fn SecurityKeyRow(
                     renaming.set(false);
                     reload.bump();
                 }
-                Err(e) => error.set(Some(api::friendly_error(i18n, e))),
+                Err(e) => {
+                    if !gate.refused(api::error_status(&e)) {
+                        error.set(Some(api::friendly_error(i18n, e)));
+                    }
+                }
             }
             busy.release();
         });
@@ -506,7 +516,7 @@ fn SecurityKeyRow(
             return;
         }
         let id = key_id.clone();
-        let client = elevated(api, step_up);
+        let client = gate.client(api);
         spawn(async move {
             match client.delete_security_key().id(id).send().await {
                 Ok(_) => {
@@ -514,7 +524,11 @@ fn SecurityKeyRow(
                     step_up.clear();
                     reload.bump();
                 }
-                Err(e) => error.set(Some(api::friendly_error(i18n, e))),
+                Err(e) => {
+                    if !gate.refused(api::error_status(&e)) {
+                        error.set(Some(api::friendly_error(i18n, e)));
+                    }
+                }
             }
             busy.release();
         });
@@ -585,21 +599,6 @@ fn SecurityKeyRow(
             }
         }
     }
-}
-
-/// A client carrying the current elevation, or the plain one when there is none.
-///
-/// The plain client is deliberate rather than a refusal: without a grant the API answers `403
-/// step_up_required`, which is what opens the prompt. Refusing here instead would mean the
-/// client deciding it knows the server's policy, and getting it wrong the first time the policy
-/// moves.
-fn elevated(
-    api: api::Api,
-    step_up: crate::state::step_up::StepUp,
-) -> tankovault_api_client::Client {
-    step_up
-        .token()
-        .map_or_else(|| api.client(), |token| api.elevated_client(&token))
 }
 
 /// Split a failed call into the pair `handle_refusal` reads.

@@ -40,12 +40,13 @@ struct Gate {
     admitted_leg_skipped: Option<&'static str>,
     /// Whether the route demands a step-up (`crate::step_up::Elevated`).
     ///
-    /// The admitted leg presents a grant for these and not for the others, which makes the flag
-    /// load-bearing in both directions: a route that gains the extractor without gaining the
-    /// flag fails the admitted leg with a `403`, and a route that keeps the flag after losing
-    /// the extractor is simply carrying a header nobody reads — harmless, and caught by review
-    /// rather than by a red build. The first direction is the one that matters, and it is the
-    /// one the compiler cannot check.
+    /// Load-bearing in both directions, and both are asserted. The admitted leg presents a grant
+    /// for these and not for the others, so a route that gains the extractor without gaining the
+    /// flag fails there with a `403`. The unelevated leg drives every route *without* a grant and
+    /// requires `step_up_required` from exactly the flagged ones — which is what catches the
+    /// dangerous direction the compiler cannot: a refactor that drops `Elevated` from a route,
+    /// leaving the flag behind as a header nobody reads and the route reachable with a bare
+    /// token.
     elevated: bool,
 }
 
@@ -687,6 +688,26 @@ async fn problem_of(app: &TestApp, gate: &Gate, caller: &Caller) -> (StatusCode,
     (status, json)
 }
 
+/// As [`problem_of`], but the body is read **only when the call was refused**.
+///
+/// `/v1/me/stream` is an SSE stream that never ends, so an admitted leg must not drain. A
+/// refusal is always a finite problem document, which is the only case the caller inspects.
+async fn refusal_of(app: &TestApp, gate: &Gate, caller: &Caller) -> (StatusCode, Value) {
+    let (uri, bearer) = credential_for(app, gate, Some(caller)).await;
+    let response = app.request(build(gate, uri, bearer, None)).await;
+    let status = response.status();
+    if status != StatusCode::FORBIDDEN {
+        return (status, Value::Null);
+    }
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("read body");
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
+}
+
 async fn a_user(app: &TestApp, username: &str, status: AccountStatus) -> Caller {
     let user = app.seed_user(username, &[], status).await;
     Caller {
@@ -766,6 +787,47 @@ async fn every_me_endpoint_admits_an_ordinary_account() {
             "{} {} must admit an ordinary account, got {status}",
             gate.method,
             gate.template
+        );
+    }
+}
+
+/// The step-up gate covers exactly the routes the matrix declares — no more, no fewer.
+///
+/// Every gate is driven by an ordinary, admitted account that simply has not confirmed itself,
+/// which is the state a real caller is in the moment before the prompt opens. A flagged route
+/// must refuse with `step_up_required`; an unflagged one must not, or the SPA would prompt for a
+/// confirmation the route never wanted.
+///
+/// This is the leg that makes the flag mean something. The other three all pass with the
+/// extractor removed: the anonymous and suspended legs are refused by `AuthUser` long before the
+/// elevation is consulted, and the admitted leg would sail through a route that had stopped
+/// reading the header at all. So a refactor that dropped `Elevated` from `GET /v1/me/export`
+/// would leave one person's entire personal record — reading history, addresses, linked accounts
+/// — behind nothing but a bearer token, with a green build.
+///
+/// The problem *type* is asserted, not the status: `403` is also how a suspended account and a
+/// missing capability are refused, and a route that started answering one of those instead would
+/// be a different bug wearing the same status code.
+#[tokio::test]
+async fn only_the_declared_routes_demand_a_step_up() {
+    let app = TestApp::spawn_with(TestConfig::new().without_rate_limiting()).await;
+    let plain = a_user(&app, "unelevated", AccountStatus::Active).await;
+
+    for gate in me_gates() {
+        let (status, body) = refusal_of(&app, &gate, &plain).await;
+        let demanded = status == StatusCode::FORBIDDEN && body["title"] == "step_up_required";
+
+        assert_eq!(
+            demanded,
+            gate.elevated,
+            "{} {} {} a step-up from a caller who has not confirmed themselves, got {status} {body}",
+            gate.method,
+            gate.template,
+            if gate.elevated {
+                "must demand"
+            } else {
+                "must not demand"
+            },
         );
     }
 }

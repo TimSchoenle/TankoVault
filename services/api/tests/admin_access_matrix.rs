@@ -667,10 +667,35 @@ async fn status_of(
     caller: Option<&Caller>,
     body: Option<Value>,
 ) -> StatusCode {
+    response_of(app, method, path, caller, body, Elevation::Presented)
+        .await
+        .status()
+}
+
+/// Whether a leg presents the grant its caller holds.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Elevation {
+    Presented,
+    /// The caller is enrolled and authorized but has not confirmed itself — the state every
+    /// administrator is in before the console's prompt.
+    Withheld,
+}
+
+/// Drive one request. See [`status_of`] for why the body is left undrained.
+async fn response_of(
+    app: &TestApp,
+    method: &str,
+    path: &str,
+    caller: Option<&Caller>,
+    body: Option<Value>,
+    elevation: Elevation,
+) -> axum::response::Response {
     let mut builder = Request::builder().method(method).uri(path);
     if let Some(caller) = caller {
         builder = builder.header(header::AUTHORIZATION, &caller.bearer);
-        builder = builder.header(tankovault_api::STEP_UP_HEADER, &caller.step_up);
+        if elevation == Elevation::Presented {
+            builder = builder.header(tankovault_api::STEP_UP_HEADER, &caller.step_up);
+        }
     }
     let request = match body {
         Some(json) => builder
@@ -679,7 +704,7 @@ async fn status_of(
             .expect("build request"),
         None => builder.body(Body::empty()).expect("build request"),
     };
-    app.request(request).await.status()
+    app.request(request).await
 }
 
 #[tokio::test]
@@ -761,6 +786,71 @@ async fn every_admin_endpoint_admits_a_caller_holding_exactly_its_capability() {
             gate.method,
             gate.template,
             gate.required
+        );
+    }
+}
+
+/// Every administrative **write** demands a confirmed identity; every read does not.
+///
+/// The line is `Permission::is_mutating`, applied in `AuthUser::require_all`, so the whole
+/// surface inherits it from one place — which is exactly why it is worth sweeping the whole
+/// surface. A handler that resolves its capabilities some other way (as `/v1/me/stream` once
+/// did) escapes the funnel and every other leg of this matrix still passes: it holds a
+/// capability check, it just no longer holds the elevation one. The console's most destructive
+/// calls — erase a user, revert a merge, grant permissions — would then need nothing but a
+/// stolen token from an operator who was already signed in.
+///
+/// `mfa.rs` pins the rule on one write and one read; this pins that no route slipped out of it.
+/// Reads are asserted in the same pass because the exemption is the tempting thing to widen:
+/// prompting to load a dashboard keeps a standing elevation open all day, which is worse than
+/// not prompting at all.
+#[tokio::test]
+async fn every_administrative_write_demands_a_confirmed_identity() {
+    let app = TestApp::spawn_with(TestConfig::new().without_rate_limiting()).await;
+    let mut callers = Callers::new(&app);
+
+    for gate in admin_gates() {
+        let caller = callers.holding(gate.required).await;
+        let mutating = gate.required.iter().any(|p| p.is_mutating());
+        let response = response_of(
+            &app,
+            gate.method,
+            gate.path,
+            Some(&caller),
+            (gate.body)(),
+            Elevation::Withheld,
+        )
+        .await;
+
+        let status = response.status();
+        if !mutating {
+            // Undrained: `/v1/admin/scans/stream` is an SSE stream that never ends.
+            assert!(
+                status != StatusCode::UNAUTHORIZED && status != StatusCode::FORBIDDEN,
+                "{} {} is a read and must not demand an elevation, got {status}",
+                gate.method,
+                gate.template
+            );
+            continue;
+        }
+
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "{} {} is a write and must refuse a caller who has not confirmed themselves",
+            gate.method,
+            gate.template
+        );
+        // The type, not just the status: `403` is also how a missing capability is refused, and
+        // this caller holds every capability the route asked for.
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("read body");
+        let body: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+        assert_eq!(
+            body["title"], "step_up_required",
+            "{} {} must name the step-up as the reason, got {body}",
+            gate.method, gate.template
         );
     }
 }

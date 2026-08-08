@@ -6,7 +6,8 @@
 
 use crate::api;
 use crate::components::{
-    async_list, async_view, EmptyBox, ErrorLine, OutcomeLine, PanelCard, SkeletonBlock,
+    async_list, async_view, use_step_up_gate, EmptyBox, ErrorLine, OutcomeLine, PanelCard,
+    SkeletonBlock, StepUpPrompt,
 };
 use crate::hooks::{use_busy, use_outcome, use_reload, Reload};
 use crate::i18n::use_i18n;
@@ -70,6 +71,7 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
     let session = use_session();
     let i18n = use_i18n();
     let api = api::use_api();
+    let gate = use_step_up_gate();
     let reload = use_reload();
     let busy = use_busy();
     let mut outcome = use_outcome();
@@ -197,7 +199,9 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
             }
             outcome.set(None);
             let (slug, name) = (slug.clone(), name.clone());
-            let client = api.client();
+            // Elevated: unlinking a tracker is an account change, so the API demands a second
+            // factor and answers `403` until it has one.
+            let client = gate.client(api);
             spawn(async move {
                 match client.sync_disconnect().provider(slug).send().await {
                     Ok(_) => {
@@ -206,7 +210,11 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
                         )));
                         reload.bump();
                     }
-                    Err(e) => outcome.set(Some(Err(api::friendly_error(i18n, e)))),
+                    Err(e) => {
+                        if !gate.refused(api::error_status(&e)) {
+                            outcome.set(Some(Err(api::friendly_error(i18n, e))));
+                        }
+                    }
                 }
                 busy.release();
             });
@@ -393,6 +401,15 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
     rsx! {
         {body}
         OutcomeLine { outcome: outcome.read().clone() }
+        if gate.is_open() {
+            StepUpPrompt {
+                enrolled: true,
+                on_done: move |()| {
+                    gate.close();
+                    outcome.set(Some(Ok(i18n.t("stepUp.confirmedRetry"))));
+                },
+            }
+        }
         if *show_conflicts.read() {
             ConflictInbox { provider: slug.clone(), show: show_conflicts, parent_reload: reload }
         }

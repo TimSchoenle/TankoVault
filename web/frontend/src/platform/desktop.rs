@@ -262,14 +262,18 @@ pub(crate) fn window() -> Option<dioxus::desktop::DesktopContext> {
 /// against it: this is a placeholder, and the contract is that no screen is ever *laid out* at it.
 pub(crate) const STARTUP_INNER_SIZE: (f64, f64) = (1280.0, 860.0);
 
-/// Of the monitor, in both directions.
+/// Of the monitor's **work area**, in both directions.
 ///
-/// The shortfall is what leaves the taskbar or dock its edge: `tao` reports the monitor rather
-/// than its *work area*, so the window is sized to sit inside whatever the system has reserved
-/// instead of being measured against it. A second `0.92` ceiling used to stand beside this one
-/// claiming that job; it never once bound, because `0.82 * w` is smaller than `0.92 * w` at every
-/// width there is.
-const PREFERRED_FRACTION: f64 = 0.82;
+/// Breathing room and nothing else now: the taskbar, dock or panel is subtracted by
+/// [`work_area`] before this applies, so the window no longer has to be shrunk on the chance that
+/// something is parked along an edge. That is what it used to be for — `0.82` of the whole
+/// monitor was one number doing two jobs, and it did the second one by guessing. Raised to `0.9`
+/// because it is only doing the first one now; a window that still leaves a visible frame of
+/// desktop on each side reads as a window rather than a botched maximise.
+///
+/// (A third constant, `MAX_FRACTION: 0.92`, used to sit here claiming the taskbar job. It never
+/// bound at any width, because `0.82 * w` is the smaller of the two everywhere.)
+const PREFERRED_FRACTION: f64 = 0.9;
 
 /// What the window carries besides the content column, and what the ceiling below is built from.
 ///
@@ -307,8 +311,88 @@ const FIT_TIMEOUT_MS: u32 = 600;
 /// Gap between size checks while waiting.
 const FIT_POLL_MS: u32 = 16;
 
-/// The inner size to open at on a monitor `available` logical pixels across, or `None` when the
-/// monitor reports nothing usable.
+/// A monitor's usable rectangle, in logical pixels and absolute (virtual-screen) coordinates.
+///
+/// Absolute because the window is centred in it: a taskbar along the bottom moves the usable
+/// area's *edge*, and a window centred on the monitor instead would sit low in what is left of
+/// it — or under the taskbar.
+#[derive(Clone, Copy)]
+struct WorkArea {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+}
+
+impl WorkArea {
+    /// Reject a monitor that reports nothing usable — a display disconnected mid-query, a
+    /// compositor still starting up — so the caller falls back instead of sizing to nothing.
+    fn usable(self) -> Option<Self> {
+        (self.width > 0.0 && self.height > 0.0).then_some(self)
+    }
+}
+
+/// What the system leaves after its own furniture: the Windows taskbar, a GNOME panel, a dock.
+///
+/// `tao` reports the whole monitor and nothing else — `MonitorHandle` offers `size`, `position`
+/// and `scale_factor` — so this asks the platform directly. Both implementations identify the
+/// monitor by the rectangle `tao` already reports rather than by a handle borrowed across crates,
+/// and both calls are safe: this crate `forbid`s unsafe, which is why `winsafe` is a dependency
+/// and `windows` is not.
+///
+/// `None` means the platform would not say, and the caller falls back to the whole monitor. That
+/// is a worse answer rather than a wrong one — it is the behaviour the fraction above used to be
+/// shrunk to compensate for.
+#[cfg(windows)]
+fn work_area(monitor: &dioxus::desktop::tao::monitor::MonitorHandle) -> Option<WorkArea> {
+    let position = monitor.position();
+    let size = monitor.size();
+    let bounds = winsafe::RECT {
+        left: position.x,
+        top: position.y,
+        right: position.x.checked_add(i32::try_from(size.width).ok()?)?,
+        bottom: position.y.checked_add(i32::try_from(size.height).ok()?)?,
+    };
+    let info = winsafe::HMONITOR::MonitorFromRect(bounds, winsafe::co::MONITOR::DEFAULTTONEAREST)
+        .GetMonitorInfo()
+        .ok()?;
+    // `rcWork` is in physical pixels on the virtual screen; this module works in logical ones.
+    let scale = monitor.scale_factor();
+    WorkArea {
+        x: f64::from(info.rcWork.left) / scale,
+        y: f64::from(info.rcWork.top) / scale,
+        width: f64::from(info.rcWork.right - info.rcWork.left) / scale,
+        height: f64::from(info.rcWork.bottom - info.rcWork.top) / scale,
+    }
+    .usable()
+}
+
+/// See the Windows twin above. GDK already answers in application pixels — the logical ones this
+/// module works in — so unlike `rcWork` there is no scale factor to divide out.
+#[cfg(all(unix, not(target_vendor = "apple")))]
+fn work_area(monitor: &dioxus::desktop::tao::monitor::MonitorHandle) -> Option<WorkArea> {
+    use dioxus::desktop::tao::platform::unix::MonitorHandleExtUnix as _;
+    use gdk::prelude::MonitorExt as _;
+
+    let area = monitor.gdk_monitor().workarea();
+    WorkArea {
+        x: f64::from(area.x()),
+        y: f64::from(area.y()),
+        width: f64::from(area.width()),
+        height: f64::from(area.height()),
+    }
+    .usable()
+}
+
+/// macOS is not shipped — the release workflow builds Windows and Linux — so this exists to keep
+/// the module compiling on a developer's Mac rather than to serve anyone.
+#[cfg(not(any(windows, all(unix, not(target_vendor = "apple")))))]
+fn work_area(_monitor: &dioxus::desktop::tao::monitor::MonitorHandle) -> Option<WorkArea> {
+    None
+}
+
+/// The inner size to open at within `available` logical pixels of usable area, or `None` when
+/// nothing usable was reported.
 ///
 /// Proportional rather than fixed, in both directions. A fixed default is either cramped on a
 /// large display or taller than the screen on a laptop, and this app's densest screen — the
@@ -354,18 +438,27 @@ pub(crate) async fn fit_window_to_display(window: Option<dioxus::desktop::Deskto
     };
 
     let scale = monitor.scale_factor();
-    let available = monitor.size().to_logical::<f64>(scale);
-    let Some((width, height)) = fitted_inner_size((available.width, available.height)) else {
+    let area = work_area(&monitor).unwrap_or_else(|| {
+        let position = monitor.position().to_logical::<f64>(scale);
+        let size = monitor.size().to_logical::<f64>(scale);
+        WorkArea {
+            x: position.x,
+            y: position.y,
+            width: size.width,
+            height: size.height,
+        }
+    });
+    let Some((width, height)) = fitted_inner_size((area.width, area.height)) else {
         return;
     };
 
     window.set_inner_size(dioxus::desktop::LogicalSize::new(width, height));
     // Centred as well: resizing moves the bottom-right corner only, so a window the OS placed
-    // for the old size ends up off-centre — and, when it grew, possibly off-screen.
-    let position = monitor.position().to_logical::<f64>(scale);
+    // for the old size ends up off-centre — and, when it grew, possibly off-screen. Centred in
+    // the *work area*, so a taskbar along one edge shifts the window off it rather than under it.
     window.set_outer_position(dioxus::desktop::LogicalPosition::new(
-        position.x + (available.width - width) / 2.0,
-        position.y + (available.height - height) / 2.0,
+        area.x + (area.width - width) / 2.0,
+        area.y + (area.height - height) / 2.0,
     ));
 
     for _ in 0..FIT_TIMEOUT_MS.div_ceil(FIT_POLL_MS) {
@@ -798,7 +891,10 @@ pub(crate) async fn subscribe(url: &str, events: &[&str]) -> Option<EventStream>
 mod tests {
     use super::*;
 
-    /// Monitors the sweeps below stand in for: a laptop, two desktop sizes and an ultrawide.
+    /// Work areas the sweeps below stand in for: a laptop, two desktop sizes and an ultrawide.
+    ///
+    /// Whole-monitor figures, which is the *worst* case for these bounds — a real work area is
+    /// smaller, so anything that fits inside these fits inside that.
     const DISPLAYS: [(f64, f64); 5] = [
         (1366.0, 768.0),
         (1920.0, 1080.0),
@@ -828,10 +924,10 @@ mod tests {
         }
     }
 
-    /// The window always fits the display it opened on, so a laptop is never handed a window
-    /// taller than its own screen, and the width ceiling is never exceeded on an ultrawide.
+    /// The window always fits the area it is given, so a laptop is never handed a window taller
+    /// than the space left for it, and the width ceiling is never exceeded on an ultrawide.
     #[test]
-    fn the_window_fits_the_display_and_stays_under_the_ceiling() {
+    fn the_window_fits_the_work_area_and_stays_under_the_ceiling() {
         for display in DISPLAYS {
             let (width, height) = fitted_inner_size(display).expect("a real monitor is fitted to");
             assert!(
@@ -859,9 +955,9 @@ mod tests {
         );
     }
 
-    /// Height is bounded by the display and nothing else. A flat 1120px cap cost a 1440p display
-    /// 60px of covers and a 4K one 650px, for no layout reason: no band inside `.ik-main` caps its
-    /// own height, so a taller window is simply more rows.
+    /// Height is bounded by the work area and nothing else. A flat 1120px cap cost a 1440p
+    /// display 60px of covers and a 4K one 1000px, for no layout reason: no band inside
+    /// `.ik-main` caps its own height, so a taller window is simply more rows.
     #[test]
     fn a_tall_display_is_not_capped_to_a_fixed_height() {
         let (_, tall) = fitted_inner_size((3840.0, 2160.0)).expect("a real monitor is fitted to");

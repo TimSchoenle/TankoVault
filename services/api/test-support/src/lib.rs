@@ -310,6 +310,26 @@ impl TestApp {
     /// `method` decides whether the grant survives enrolment: a `Password` grant stops counting
     /// the moment a factor exists, which is itself a thing worth testing.
     pub async fn step_up(&self, user: UserId, method: StepUpMethod) -> String {
+        self.step_up_expiring_at(
+            user,
+            method,
+            time::OffsetDateTime::now_utc() + Duration::minutes(5),
+        )
+        .await
+    }
+
+    /// [`Self::step_up`] with the lapse time chosen, including one already in the past.
+    ///
+    /// The window is the only thing bounding a stolen grant, and it is enforced by a predicate
+    /// in one `SELECT` — drop it and every elevation ever issued becomes permanent, with no
+    /// functional test noticing. Reaching the expired case needs a grant minted old, since
+    /// nothing else can move the clock.
+    pub async fn step_up_expiring_at(
+        &self,
+        user: UserId,
+        method: StepUpMethod,
+        expires_at: time::OffsetDateTime,
+    ) -> String {
         use secrecy::ExposeSecret as _;
         let token = tankovault_auth::generate_handle();
         tankovault_db::repo::users::mfa::insert_step_up(
@@ -317,7 +337,7 @@ impl TestApp {
             user,
             &tankovault_auth::hash_handle(&token),
             method,
-            time::OffsetDateTime::now_utc() + Duration::minutes(5),
+            expires_at,
         )
         .await
         .expect("store the step-up grant");

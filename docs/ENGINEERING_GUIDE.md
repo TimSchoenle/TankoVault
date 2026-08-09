@@ -349,7 +349,11 @@ anything in this section. They carry the long-form reasoning; this is the summar
 ### 4.1 The Content-Security-Policy contract
 
 The SPA's access token lives **in memory only**, so the CSP is the ceiling on where an injected
-script could send it. `services/frontend/src/main.rs::content_security_policy` builds it.
+script could send it. `services/frontend/src/main.rs::content_security_policy` builds it, out of
+[`csp-shell`](https://github.com/TimSchoenle/csp-shell) — the shell scanner, the typed directive
+vocabulary and the per-response nonce, extracted out of this workspace and pinned by tag. What is
+left here is the three decisions that are this deployment's: the fail-open posture on an
+unreadable shell, the two Cloudflare flags, and serving the header.
 
 **[E] No CSP may grant `'unsafe-eval'`** — `xtask repo-lint`, plus a unit test asserting the
 served header. `'wasm-unsafe-eval'` is a different directive and *is* required; the app does not
@@ -361,8 +365,9 @@ only symptom is a browser quietly refusing to run the script. You do not need to
 you edit the shell — the hash follows the file.
 
 **A CSP hash covers the script element's *parsed text*, not the file's bytes.** The HTML parser
-normalises `\r\n` and lone `\r` to `\n` before tokenization, so a CRLF checkout and an LF build
-artefact must hash identically — `sha256_source` applies the same normalisation. Getting this
+normalises `\r\n` and lone `\r` to `\n` and discards a leading byte order mark before
+tokenization, so a CRLF checkout and an LF build artefact must hash identically — `csp-shell`
+applies the same preprocessing, and its CI runs on both platforms for that reason. Getting this
 wrong is invisible from the server: the response carries a well-formed policy with two plausible
 hashes, and only the browser console says they match nothing on the page.
 

@@ -300,6 +300,18 @@ webauthn-rs = { version = "=0.6.1-dev", default-features = false, features = [
     "conditional-ui",
     "danger-allow-state-serialisation",
 ] }
+# The frontend tier's Content-Security-Policy: the shell scan that turns the served
+# `index.html` into `'sha256-…'` sources, the typed directive vocabulary underneath it, and the
+# per-response nonce the Cloudflare concessions are built on. It is the extraction of what used
+# to be hand-rolled in `services/frontend/src/main.rs`, and replaces it wholesale.
+#
+# Pinned by **tag**, for the same reason `terrace-config` is: `Cargo.lock` records the resolved
+# revision either way, but a branch dependency lets `cargo update` move silently across
+# arbitrary commits. `deny.toml`'s `[sources] allow-git` is the other half.
+#
+# `cloudflare` is `presets` + `nonce` — the two `TANKOVAULT_FRONTEND__CLOUDFLARE__*` flags and
+# nothing else; the origins for the other services the crate knows about are compiled out.
+csp-shell = { git = "https://github.com/TimSchoenle/csp-shell", tag = "csp-shell-v0.2.0", features = ["cloudflare"] }
 
 # --- observability ---
 tracing = "0.1"

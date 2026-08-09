@@ -351,10 +351,11 @@ pub async fn get_sync_decision<'e, E: PgExecutor<'e>>(
     id: Uuid,
 ) -> DbResult<SyncDecisionRow> {
     // The `!` overrides are on `sync_decisions`' own columns, every one of them `NOT NULL`.
-    // They are not decoration: with two `LEFT JOIN`s in the statement, sqlx's inference gives up
-    // on the *base* table's nullability and calls all of it nullable, which types this row as
-    // `Option` everywhere and does not compile. Asserting what the schema already guarantees is
-    // the fix; a `?` here would push a schema fact nobody can violate out into every caller.
+    // They are not decoration: sqlx derives nullability from the *plan* Postgres returns, so with
+    // outer joins in the statement it is data-dependent — against a populated database this one
+    // comes back nullable to the last column, which types the row as `Option` everywhere and does
+    // not compile. Pinning what the schema already guarantees makes the type the same whichever
+    // plan the planner picks; a `?` would push a fact nobody can violate out into every caller.
     let row = sqlx::query_as!(
         Row,
         "SELECT d.id AS \"id!\", d.run_id AS \"run_id!\", d.decided_at AS \"decided_at!\", \

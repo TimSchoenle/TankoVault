@@ -4037,7 +4037,7 @@
         "description": "What the control plane answers when a scan is planned: the runs it created.\n\nPublished by `services/control-plane` on its internal `POST /internal/scans`, and\nrepublished verbatim by `services/api` on `POST /v1/admin/scans` and\n`POST /v1/admin/providers/{id}/resolve`. It lives here, rather than staying a private\nstruct in the control plane's `main.rs`, for the reason ARCH-10 exists: while the producer\nowned the only definition, the API could declare nothing more specific than\n`serde_json::Value`, so the console's \"N scans queued\" was reading a field no compiler had\never connected to the field the planner writes. Both ends now name this type, so removing\n`run_ids` fails to build at the producer *and* the republisher.",
         "properties": {
           "run_ids": {
-            "description": "One id per run planned — one per provider when the request names none.",
+            "description": "One id per provider scanned — one per active provider when the request names none. A\nprovider already scanning in this mode contributes the id of that run rather than a new\none, so an id here means \"this run covers your request\", not always \"this run is new\".",
             "items": {
               "$ref": "#/components/schemas/ScanRunId"
             },

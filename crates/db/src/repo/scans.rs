@@ -294,6 +294,52 @@ pub async fn list_runs_filtered<'e, E: PgExecutor<'e>>(
     Ok(RunPage { items, total })
 }
 
+/// The newest run of `mode` this provider still has in flight, if any — the planner's guard
+/// against queueing a second one behind it.
+///
+/// "In flight" is narrower than the run state alone, because two states look identical in
+/// `scan_runs` and must not be treated alike:
+///
+/// - A run whose tasks have all settled but which was never finalised — the terminal progress
+///   event is best-effort, and a lost one leaves the row `running` with nothing left to do.
+///   Such a run is **not** in flight; the `EXISTS` excludes it. `total_tasks = 0` is the
+///   converse: a run whose planner has not created its first task yet, which *is* in flight.
+/// - A run whose task was persisted but never published (the planner died between the two),
+///   so nothing will ever settle it. Only age separates that from a slow scan, which is what
+///   `stale_after` is for: past it a run stops suppressing new ones, or one lost publish would
+///   retire the provider from scanning permanently.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only. No in-flight run is `Ok(None)`, never
+/// [`crate::DbError::NotFound`] — the absence is the ordinary answer and the caller's cue to
+/// plan.
+pub async fn in_flight_run<'e, E: PgExecutor<'e>>(
+    exec: E,
+    provider_id: ProviderId,
+    mode: ScanMode,
+    stale_after: std::time::Duration,
+) -> DbResult<Option<ScanRunId>> {
+    let row = sqlx::query_scalar!(
+        "SELECT r.id FROM scan_runs r \
+         WHERE r.provider_id = $1 \
+           AND r.mode = $2::scan_mode \
+           AND r.state IN ('queued','running') \
+           AND r.created_at > now() - make_interval(secs => $3) \
+           AND (r.total_tasks = 0 OR EXISTS ( \
+                   SELECT 1 FROM scan_tasks t \
+                   WHERE t.run_id = r.id AND t.state IN ('queued','claimed','running') \
+               )) \
+         ORDER BY r.created_at DESC \
+         LIMIT 1",
+        provider_id.as_uuid(),
+        mode as ScanMode,
+        stale_after.as_secs_f64(),
+    )
+    .fetch_optional(exec)
+    .await?;
+    Ok(row.map(ScanRunId::from_uuid))
+}
+
 /// Transition a run to `running` and stamp `started_at`.
 ///
 /// # Errors

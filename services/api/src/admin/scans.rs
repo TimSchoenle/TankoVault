@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use std::time::Duration;
 use tankovault_contracts::admin::ScanTriggeredView;
-use tankovault_domain::{Feature, Permission, ProviderId, RunState, ScanMode, ScanRun, ScanRunId};
+use tankovault_domain::{Feature, Permission, ProviderId, RunState, ScanMode, ScanRunId};
 use time::OffsetDateTime;
 use tokio_stream::StreamExt as _;
 use tokio_stream::wrappers::IntervalStream;
@@ -75,7 +75,7 @@ pub async fn trigger_scan(
     params(("run_id" = ScanRunId, Path, description = "Scan run id")),
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Scan run", body = ScanRun),
+        (status = 200, description = "Scan run", body = tankovault_contracts::admin::ScanRunView),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 403, description = "no second factor is enrolled, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 404, description = "Scan run not found", body = crate::error::ProblemDetails),
@@ -85,10 +85,21 @@ pub async fn get_scan(
     State(state): State<AppState>,
     user: AuthUser,
     Path(run_id): Path<ScanRunId>,
-) -> ApiResult<Json<ScanRun>> {
+) -> ApiResult<Json<tankovault_contracts::admin::ScanRunView>> {
     user.require(Permission::ScansRead).await?;
+    let run = tankovault_db::repo::scans::get_run(&state.pool, run_id).await?;
+    // The slug comes from the run's own page rather than a second lookup: a run linked to from
+    // elsewhere may predate the console's window, so the drawer fetches by id, and it needs the
+    // same provider label the list shows.
+    let provider_slug = match run.provider_id {
+        Some(id) => tankovault_db::repo::providers::get(&state.pool, id)
+            .await
+            .ok()
+            .map(|provider| provider.slug),
+        None => None,
+    };
     Ok(Json(
-        tankovault_db::repo::scans::get_run(&state.pool, run_id).await?,
+        tankovault_db::repo::scans::RunListing { run, provider_slug }.into_view(),
     ))
 }
 
@@ -98,6 +109,35 @@ const DEFAULT_RUN_PAGE: u32 = 30;
 /// Failure-feed cap. Lower than the run page: a failure carries an error string.
 const MAX_FAILURE_PAGE: u32 = 200;
 const DEFAULT_FAILURE_PAGE: u32 = 25;
+
+/// How a page of runs is ordered, as the `sort` parameter spells it.
+///
+/// Its own wire enum rather than the repository's, so an unknown token is a 422 from the
+/// extractor instead of a silent fall back to the default ordering — a sort control that
+/// quietly ignores what it was asked for is exactly the defect this panel had.
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RunSortParam {
+    /// Newest first.
+    #[default]
+    Recent,
+    Oldest,
+    /// Most failed tasks first.
+    Failures,
+    /// Longest wall-clock first.
+    Duration,
+}
+
+impl From<RunSortParam> for tankovault_db::repo::scans::RunSort {
+    fn from(value: RunSortParam) -> Self {
+        match value {
+            RunSortParam::Recent => Self::Recent,
+            RunSortParam::Oldest => Self::Oldest,
+            RunSortParam::Failures => Self::Failures,
+            RunSortParam::Duration => Self::Duration,
+        }
+    }
+}
 
 #[derive(Debug, Deserialize, IntoParams)]
 pub struct RunQuery {
@@ -114,10 +154,29 @@ pub struct RunQuery {
     #[serde(default, with = "time::serde::rfc3339::option")]
     #[param(value_type = Option<String>)]
     pub since: Option<OffsetDateTime>,
+    /// Ordering. Defaults to newest first.
+    // Inlined rather than `$ref`d: `IntoParams` does not register the schemas its fields name,
+    // so a reference here publishes a component nothing defines and the client generator stops
+    // on the dangling pointer.
+    #[serde(default)]
+    #[param(inline)]
+    pub sort: RunSortParam,
     #[serde(default)]
     pub limit: Option<u32>,
     #[serde(default)]
     pub offset: Option<u32>,
+}
+
+/// The window a summary covers.
+#[derive(Debug, Deserialize, IntoParams)]
+pub struct SummaryQuery {
+    /// Provider slug. Absent summarises every provider.
+    #[serde(default)]
+    pub provider: Option<String>,
+    /// Inclusive lower bound, RFC 3339. Absent summarises all of recorded history.
+    #[serde(default, with = "time::serde::rfc3339::option")]
+    #[param(value_type = Option<String>)]
+    pub since: Option<OffsetDateTime>,
 }
 
 /// List recent scan runs
@@ -153,6 +212,7 @@ pub async fn list_scans(
         mode: q.mode,
         state: q.state,
         since: q.since,
+        sort: q.sort.into(),
     };
     let page = tankovault_db::repo::scans::list_runs_filtered(
         &state.pool,
@@ -173,6 +233,11 @@ pub struct FailureQuery {
     #[serde(default, with = "time::serde::rfc3339::option")]
     #[param(value_type = Option<String>)]
     pub since: Option<OffsetDateTime>,
+    /// Include failures an operator has already cleared. Off by default, which is what clearing
+    /// is for; cleared failures are acknowledged rather than deleted, so this always reopens the
+    /// full window.
+    #[serde(default)]
+    pub include_cleared: bool,
     #[serde(default)]
     pub limit: Option<u32>,
 }
@@ -210,6 +275,7 @@ pub async fn scan_failures(
             .map(str::trim)
             .filter(|s| !s.is_empty()),
         q.since,
+        q.include_cleared,
         i64::from(limit),
     )
     .await?;
@@ -249,10 +315,167 @@ pub async fn scan_failure_groups(
             .map(str::trim)
             .filter(|s| !s.is_empty()),
         q.since,
+        q.include_cleared,
         i64::from(limit),
     )
     .await?;
     Ok(Json(rows.into_view()))
+}
+
+/// How many providers the health table carries. Beyond this an operator is reading a directory,
+/// not triaging — and the panel orders worst-first, so the tail is the healthy end.
+const PROVIDER_HEALTH_LIMIT: i64 = 50;
+
+/// Summarise the scan window
+///
+/// The same provider and time filter the run list uses, answered as figures: how many runs
+/// reached each state, how many tasks succeeded and failed, how many failures are still open,
+/// and the per-provider breakdown behind those totals.
+#[utoipa::path(
+    get,
+    path = "/v1/admin/scans/summary",
+    tag = ADMIN_SCANS_TAG,
+    params(SummaryQuery),
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Window rollup with its per-provider breakdown", body = tankovault_contracts::admin::ScanSummaryView),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
+    )
+)]
+pub async fn scan_summary(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Query(q): Query<SummaryQuery>,
+) -> ApiResult<Json<tankovault_contracts::admin::ScanSummaryView>> {
+    user.require(Permission::ScansRead).await?;
+    let provider = q
+        .provider
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let summary = tankovault_db::repo::scans::scan_summary(&state.pool, provider, q.since).await?;
+    // The breakdown is narrowed by the *window* only: when an operator has already picked one
+    // provider, a one-row table tells them nothing they cannot read from the totals, and the
+    // comparison against its peers is the reason to look at all.
+    let providers = tankovault_db::repo::scans::provider_scan_health(
+        &state.pool,
+        q.since,
+        PROVIDER_HEALTH_LIMIT,
+    )
+    .await?;
+    Ok(Json((summary, providers).into_view()))
+}
+
+/// How many settled tasks the activity tail carries.
+const ACTIVITY_TAIL: i64 = 15;
+
+/// Live scan activity
+///
+/// The task-level state of the runs in flight: what each is holding, since when, and what
+/// settled most recently. The live variant is `/v1/admin/stream`'s `activity` event; this GET is
+/// the panel's first paint, because a live tail that starts empty for three seconds reads as an
+/// idle deployment.
+#[utoipa::path(
+    get,
+    path = "/v1/admin/scans/activity",
+    tag = ADMIN_SCANS_TAG,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "In-flight runs and the tail of settled tasks", body = tankovault_contracts::admin::ScanActivityView),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
+    )
+)]
+pub async fn scan_activity(
+    State(state): State<AppState>,
+    user: AuthUser,
+) -> ApiResult<Json<tankovault_contracts::admin::ScanActivityView>> {
+    user.require(Permission::ScansRead).await?;
+    let runs = tankovault_db::repo::scans::active_run_activity(&state.pool).await?;
+    let events =
+        tankovault_db::repo::scans::recent_task_activity(&state.pool, ACTIVITY_TAIL).await?;
+    Ok(Json(tankovault_contracts::admin::ScanActivityView {
+        runs: runs.into_view(),
+        events: events.into_view(),
+    }))
+}
+
+/// Clear scan failures
+///
+/// Acknowledges the selected failures so they leave the triage feed. Nothing is deleted: the
+/// task keeps its `failed` state, its error and its contribution to the run counters, so the
+/// history still reconciles and `include_cleared=true` reopens the full window.
+///
+/// Behind `scans.run` rather than `scans.read`, because it changes what every *other* operator
+/// sees: a reader entitled to watch the queue must not be able to hide an outage from the person
+/// on call.
+#[utoipa::path(
+    post,
+    path = "/v1/admin/scan-failures/clear",
+    tag = ADMIN_SCANS_TAG,
+    request_body = tankovault_contracts::admin::ClearFailuresBody,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "How many failures this call cleared", body = tankovault_contracts::admin::FailuresClearedView),
+        (status = 400, description = "`since` is not an RFC 3339 instant", body = crate::error::ProblemDetails),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
+    )
+)]
+pub async fn clear_scan_failures(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Json(body): Json<tankovault_contracts::admin::ClearFailuresBody>,
+) -> ApiResult<Json<tankovault_contracts::admin::FailuresClearedView>> {
+    user.require(Permission::ScansRun).await?;
+
+    let since = body
+        .since
+        .as_deref()
+        .map(|raw| OffsetDateTime::parse(raw, &time::format_description::well_known::Rfc3339))
+        .transpose()
+        .map_err(|_| ApiError::BadRequest("`since` must be an RFC 3339 instant".into()))?;
+    // `Some(None)` is the group that recorded no error, which an omitted `error` cannot express:
+    // absent means "any error", and the two select very different rows.
+    let error = match (body.error.as_deref(), body.match_null_error) {
+        (Some(text), _) => Some(Some(text)),
+        (None, true) => Some(None),
+        (None, false) => None,
+    };
+    let selector = tankovault_db::repo::scans::FailureSelector {
+        provider: body
+            .provider
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty()),
+        since,
+        run_id: body.run_id,
+        error,
+    };
+    let cleared = tankovault_db::repo::scans::clear_failures(&state.pool, &selector).await?;
+
+    audit(
+        &state,
+        &user,
+        "scan.failures.clear",
+        body.run_id
+            .map(|id| id.to_string())
+            .as_deref()
+            .unwrap_or("-"),
+        &serde_json::json!({
+            "provider": body.provider,
+            "since": body.since,
+            "error": body.error,
+            "match_null_error": body.match_null_error,
+            "cleared": cleared,
+        }),
+    )
+    .await;
+
+    Ok(Json(tankovault_contracts::admin::FailuresClearedView {
+        cleared: i64::try_from(cleared).unwrap_or(i64::MAX),
+    }))
 }
 
 /// Live scan-progress stream
@@ -283,7 +506,8 @@ pub async fn scan_stream(
             async move {
                 let runs = tankovault_db::repo::scans::list_recent_runs(&pool, 20)
                     .await
-                    .unwrap_or_default();
+                    .unwrap_or_default()
+                    .into_view();
                 let event = Event::default()
                     .event("runs")
                     .json_data(&runs)

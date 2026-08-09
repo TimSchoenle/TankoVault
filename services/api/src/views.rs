@@ -116,6 +116,110 @@ impl IntoView for repo::scans::FailedTaskView {
             error: self.error,
             attempts: self.attempts,
             finished_at: self.finished_at,
+            acknowledged_at: self.acknowledged_at,
+        }
+    }
+}
+
+impl IntoView for repo::scans::RunListing {
+    type View = admin::ScanRunView;
+
+    fn into_view(self) -> Self::View {
+        admin::ScanRunView {
+            id: self.run.id,
+            provider_id: self.run.provider_id,
+            provider_slug: self.provider_slug,
+            mode: self.run.mode,
+            state: self.run.state,
+            total_tasks: self.run.total_tasks,
+            done_tasks: self.run.done_tasks,
+            failed_tasks: self.run.failed_tasks,
+            started_at: self.run.started_at,
+            finished_at: self.run.finished_at,
+            created_at: self.run.created_at,
+        }
+    }
+}
+
+/// The window rollup and its per-provider breakdown are two statements against the same filter,
+/// so the pair converts together rather than leaving the handler to assemble a published shape.
+impl IntoView
+    for (
+        repo::scans::ScanSummary,
+        Vec<repo::scans::ProviderScanHealth>,
+    )
+{
+    type View = admin::ScanSummaryView;
+
+    fn into_view(self) -> Self::View {
+        let (summary, providers) = self;
+        admin::ScanSummaryView {
+            runs_total: summary.runs_total,
+            runs_queued: summary.runs_queued,
+            runs_running: summary.runs_running,
+            runs_completed: summary.runs_completed,
+            runs_failed: summary.runs_failed,
+            runs_cancelled: summary.runs_cancelled,
+            tasks_total: summary.tasks_total,
+            tasks_done: summary.tasks_done,
+            tasks_failed: summary.tasks_failed,
+            failures_open: summary.failures_open,
+            busy_seconds: summary.busy_seconds,
+            first_run_at: summary.first_run_at,
+            last_run_at: summary.last_run_at,
+            providers: providers.into_view(),
+        }
+    }
+}
+
+impl IntoView for repo::scans::ProviderScanHealth {
+    type View = admin::ProviderScanHealthView;
+
+    fn into_view(self) -> Self::View {
+        admin::ProviderScanHealthView {
+            slug: self.slug,
+            name: self.name,
+            runs: self.runs,
+            runs_active: self.runs_active,
+            runs_failed: self.runs_failed,
+            tasks_done: self.tasks_done,
+            tasks_failed: self.tasks_failed,
+            failures_open: self.failures_open,
+            last_run_at: self.last_run_at,
+            last_failure_at: self.last_failure_at,
+        }
+    }
+}
+
+impl IntoView for repo::scans::RunActivity {
+    type View = admin::RunActivityView;
+
+    fn into_view(self) -> Self::View {
+        admin::RunActivityView {
+            run_id: tankovault_domain::ScanRunId::from_uuid(self.run_id),
+            queued_tasks: self.queued_tasks,
+            running_tasks: self.running_tasks,
+            oldest_claim_at: self.oldest_claim_at,
+            kinds: self.kinds,
+            workers: self.workers,
+        }
+    }
+}
+
+impl IntoView for repo::scans::TaskEvent {
+    type View = admin::TaskEventView;
+
+    fn into_view(self) -> Self::View {
+        admin::TaskEventView {
+            id: self.id,
+            run_id: tankovault_domain::ScanRunId::from_uuid(self.run_id),
+            provider_slug: self.provider_slug,
+            kind: self.kind,
+            state: self.state,
+            target: self.target,
+            error: self.error,
+            attempts: self.attempts,
+            finished_at: self.finished_at,
         }
     }
 }
@@ -311,7 +415,7 @@ impl IntoView for repo::scans::RunPage {
 
     fn into_view(self) -> Self::View {
         admin::ScanRunPageView {
-            items: self.items,
+            items: self.items.into_view(),
             total: self.total,
         }
     }
@@ -324,7 +428,9 @@ impl IntoView for repo::scans::FailureGroup {
         admin::FailureGroupView {
             error: self.error,
             count: self.count,
+            cleared: self.cleared,
             providers: self.providers,
+            kinds: self.kinds,
             latest_at: self.latest_at,
         }
     }

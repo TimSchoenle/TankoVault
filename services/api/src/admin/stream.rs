@@ -22,16 +22,25 @@ use tokio_stream::wrappers::IntervalStream;
 /// How often a run's progress is re-read. A scan in flight changes on this timescale; anything
 /// slower and the queue an operator is watching lies to them.
 const RUNS_PERIOD: Duration = Duration::from_secs(2);
+/// How often the task-level activity is re-read. Deliberately slower than the run counters: it
+/// costs two aggregate statements against `scan_tasks`, and the tail it feeds is read rather
+/// than watched digit by digit.
+const ACTIVITY_PERIOD: Duration = Duration::from_secs(3);
 /// How often the system counters are re-read. They move slowly and the aggregate behind them is
 /// the heaviest read on the admin surface — the old whole-console four-second poll was both too
 /// fast for these and too slow for a run.
 const STATS_PERIOD: Duration = Duration::from_secs(10);
 /// How many runs the `runs` event carries. Matches what the panel renders.
 const RUNS_LIMIT: i64 = 20;
+/// How many settled tasks the `activity` tail carries. A scan settles far more than this per
+/// tick; the tail is meant to show that work is moving and what it is moving through, not to be
+/// a complete log — the run counters are that.
+const ACTIVITY_LIMIT: i64 = 15;
 
 /// Console live stream
 ///
-/// Server-Sent Events for the operator console: `stats` every 10 s and `runs` every 2 s.
+/// Server-Sent Events for the operator console: `stats` every 10 s, `runs` every 2 s and
+/// `activity` — the task-level state of the runs in flight — every 3 s.
 ///
 /// Authenticated by a single-use `ticket` query parameter from `POST /v1/me/stream-ticket`,
 /// because `EventSource` cannot set an `Authorization` header. A ticket proves a session
@@ -49,7 +58,7 @@ const RUNS_LIMIT: i64 = 20;
     // same name, registered as an `apiKey` in `query`.
     security(("stream_ticket" = [])),
     responses(
-        (status = 200, description = "SSE stream of `stats` and `runs` events", content_type = "text/event-stream"),
+        (status = 200, description = "SSE stream of `stats`, `runs` and `activity` events", content_type = "text/event-stream"),
         (status = 401, description = "missing, expired, or already-redeemed ticket", body = crate::error::ProblemDetails),
         (status = 403, description = "the caller holds none of the permissions this stream carries", body = crate::error::ProblemDetails),
         (status = 503, description = "the ticket store is temporarily unavailable", body = crate::error::ProblemDetails),
@@ -81,7 +90,36 @@ pub async fn admin_stream(
                     async move {
                         let runs =
                             tankovault_db::repo::scans::list_recent_runs(&pool, RUNS_LIMIT).await;
-                        Ok(named("runs", runs.unwrap_or_default()))
+                        Ok(named("runs", runs.unwrap_or_default().into_view()))
+                    }
+                })
+                .boxed(),
+        );
+
+        // A second source on the same cadence rather than a wider `runs` payload: the run
+        // counters are twenty rows of history, the activity is the task-level state of however
+        // few runs are in flight, and a reader that has one is not obliged to re-parse the
+        // other. A failed read skips its tick — the counters are still arriving.
+        let pool = state.pool.clone();
+        sources.push(
+            IntervalStream::new(tokio::time::interval(ACTIVITY_PERIOD))
+                .then(move |_| {
+                    let pool = pool.clone();
+                    async move {
+                        let runs = tankovault_db::repo::scans::active_run_activity(&pool).await;
+                        let events =
+                            tankovault_db::repo::scans::recent_task_activity(&pool, ACTIVITY_LIMIT)
+                                .await;
+                        match (runs, events) {
+                            (Ok(runs), Ok(events)) => Ok(named(
+                                "activity",
+                                tankovault_contracts::admin::ScanActivityView {
+                                    runs: runs.into_view(),
+                                    events: events.into_view(),
+                                },
+                            )),
+                            _ => Ok(Event::default().comment("activity unavailable")),
+                        }
                     }
                 })
                 .boxed(),

@@ -725,6 +725,21 @@ a { color: inherit; text-decoration: none; }
 .ik-progress { height: 8px; background: var(--border-soft); border-radius: 999px; overflow: hidden; }
 .ik-progress > span { display: block; height: 100%; background: linear-gradient(90deg, var(--acc), var(--acc2)); }
 
+/* A progress bar split by outcome. A single bar filling to 100% on a scan where every task
+ * failed is the most misleading thing the scan panel could draw, so the failed share is its own
+ * segment in its own colour rather than part of the fill. */
+.ik-progress.split { display: flex; }
+.ik-progress.split > span.fail { background: var(--vermilion); }
+
+/* The scan console's live tail: one line per settled task. Scrolls rather than growing, because
+ * it is pushed every few seconds and a list that lengthens under the reader moves the rest of
+ * the panel down while they are reading it. */
+.ik-tail { margin-top: 6px; max-height: 216px; overflow-y: auto; border: 1px solid var(--border); border-radius: 10px; }
+.ik-tail > .row { display: flex; align-items: center; gap: 8px; padding: 5px 10px; border-bottom: 1px solid var(--border-row); white-space: nowrap; }
+.ik-tail > .row:last-child { border-bottom: none; }
+.ik-tail .dot { width: 6px; height: 6px; border-radius: 999px; flex: none; }
+.ik-tail .tgt { color: var(--muted); overflow: hidden; text-overflow: ellipsis; max-width: 30ch; }
+
 /* ============================================================================
  * Series detail
  * ========================================================================== */

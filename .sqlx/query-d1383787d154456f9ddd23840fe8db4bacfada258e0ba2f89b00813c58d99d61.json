@@ -1,0 +1,97 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT p.slug, p.name, count(r.id) AS \"runs!\", count(r.id) FILTER (WHERE r.state IN ('queued','running')) AS \"runs_active!\", count(r.id) FILTER (WHERE r.state = 'failed') AS \"runs_failed!\", COALESCE(sum(r.done_tasks), 0) AS \"tasks_done!\", COALESCE(sum(r.failed_tasks), 0) AS \"tasks_failed!\", COALESCE(f.open_count, 0) AS \"failures_open!\", max(r.created_at) AS last_run_at, f.latest_at AS last_failure_at FROM providers p LEFT JOIN scan_runs r ON r.provider_id = p.id AND ($1::timestamptz IS NULL OR r.created_at >= $1) LEFT JOIN LATERAL ( SELECT count(*) AS open_count, max(t.finished_at) AS latest_at FROM scan_tasks t JOIN scan_runs r2 ON r2.id = t.run_id WHERE r2.provider_id = p.id AND t.state = 'failed' AND t.acknowledged_at IS NULL AND ($1::timestamptz IS NULL OR t.finished_at >= $1) ) f ON true GROUP BY p.id, p.slug, p.name, f.open_count, f.latest_at HAVING count(r.id) > 0 OR COALESCE(f.open_count, 0) > 0 ORDER BY COALESCE(f.open_count, 0) DESC, COALESCE(sum(r.failed_tasks), 0) DESC, max(r.created_at) DESC NULLS LAST, p.slug LIMIT $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "slug",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "providers",
+            "name": "slug"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "providers",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "runs!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "runs_active!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "runs_failed!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "tasks_done!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "tasks_failed!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "failures_open!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 8,
+        "name": "last_run_at",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 9,
+        "name": "last_failure_at",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "d1383787d154456f9ddd23840fe8db4bacfada258e0ba2f89b00813c58d99d61"
+}

@@ -1,0 +1,207 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH matched AS ( SELECT r.*, p.slug AS provider_slug FROM scan_runs r LEFT JOIN providers p ON p.id = r.provider_id WHERE ($1::text IS NULL OR p.slug = $1) AND ($2::scan_mode IS NULL OR r.mode = $2) AND ($3::run_state IS NULL OR r.state = $3) AND ($4::timestamptz IS NULL OR r.created_at >= $4) ) SELECT m.id, m.provider_id, m.provider_slug AS \"provider_slug?\", m.mode AS \"mode: ScanMode\", m.state AS \"state: RunState\", m.total_tasks, m.done_tasks, m.failed_tasks, m.started_at, m.finished_at, m.created_at, (SELECT count(*) FROM matched) AS \"total!\" FROM matched m ORDER BY CASE WHEN $5::text = 'failures' THEN m.failed_tasks END DESC NULLS LAST, CASE WHEN $5::text = 'duration' THEN EXTRACT(EPOCH FROM (COALESCE(m.finished_at, now()) - m.started_at)) END DESC NULLS LAST, CASE WHEN $5::text = 'oldest' THEN m.created_at END ASC, m.created_at DESC LIMIT $6 OFFSET $7",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "scan_runs",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "provider_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "scan_runs",
+            "name": "provider_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "provider_slug?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "providers",
+            "name": "slug"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "mode: ScanMode",
+        "type_info": {
+          "Custom": {
+            "name": "scan_mode",
+            "kind": {
+              "Enum": [
+                "full",
+                "fast"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "scan_runs",
+            "name": "mode"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "state: RunState",
+        "type_info": {
+          "Custom": {
+            "name": "run_state",
+            "kind": {
+              "Enum": [
+                "queued",
+                "running",
+                "completed",
+                "failed",
+                "cancelled"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "scan_runs",
+            "name": "state"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "total_tasks",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "scan_runs",
+            "name": "total_tasks"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "done_tasks",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "scan_runs",
+            "name": "done_tasks"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "failed_tasks",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "scan_runs",
+            "name": "failed_tasks"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "started_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "scan_runs",
+            "name": "started_at"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "finished_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "scan_runs",
+            "name": "finished_at"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "scan_runs",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "total!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        {
+          "Custom": {
+            "name": "scan_mode",
+            "kind": {
+              "Enum": [
+                "full",
+                "fast"
+              ]
+            }
+          }
+        },
+        {
+          "Custom": {
+            "name": "run_state",
+            "kind": {
+              "Enum": [
+                "queued",
+                "running",
+                "completed",
+                "failed",
+                "cancelled"
+              ]
+            }
+          }
+        },
+        "Timestamptz",
+        "Text",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      null
+    ]
+  },
+  "hash": "4382a963c0e8f30a160fc5b7219ad7acabe1865e326280bae0e267113638635d"
+}

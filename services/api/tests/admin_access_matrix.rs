@@ -386,6 +386,29 @@ fn admin_gates() -> Vec<Gate> {
             required: &[Permission::ScansRead],
             body: empty,
         },
+        // Clearing changes what every other operator sees, so it sits with the run trigger
+        // rather than with the reads it filters.
+        Gate {
+            method: "POST",
+            template: "/v1/admin/scan-failures/clear",
+            path: "/v1/admin/scan-failures/clear",
+            required: &[Permission::ScansRun],
+            body: || Some(json!({ "provider": "matrix-probe" })),
+        },
+        Gate {
+            method: "GET",
+            template: "/v1/admin/scans/summary",
+            path: "/v1/admin/scans/summary",
+            required: &[Permission::ScansRead],
+            body: empty,
+        },
+        Gate {
+            method: "GET",
+            template: "/v1/admin/scans/activity",
+            path: "/v1/admin/scans/activity",
+            required: &[Permission::ScansRead],
+            body: empty,
+        },
         Gate {
             method: "GET",
             template: "/v1/admin/scans/stream",

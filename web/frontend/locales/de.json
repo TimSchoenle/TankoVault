@@ -1031,26 +1031,75 @@
     },
     "scan": {
       "detail": {
-        "attempts": "Versuche",
         "elapsed": "Dauer",
-        "minutes": "{count} Min.",
         "perMinute": "{count}/Min.",
-        "pick": "Wähle einen Lauf aus, um ihn zu untersuchen.",
         "tasks": "Aufgaben",
         "throughput": "Durchsatz",
-        "title": "Laufdetails",
-        "underAMinute": "unter einer Minute"
+        "failed": "Fehlgeschlagen"
       },
       "failures": {
-        "affected": "{count} betroffen",
         "grouped": "Gleiche Fehler gruppieren",
-        "noError": "Kein Fehler erfasst"
+        "noError": "Kein Fehler erfasst",
+        "clear": "Erledigen",
+        "clearAll": "Angezeigte Fehler erledigen",
+        "clearCta": "Erledigen",
+        "cleared": "{count} Fehler erledigt.",
+        "clearedCount": "{count} erledigt",
+        "clearedBadge": "Erledigt",
+        "confirmTitle": "Fehler aus der Liste nehmen",
+        "confirmAll": "Blendet alle offenen Fehler für {provider} in {window} aus. Nichts wird gelöscht — die Läufe behalten ihre Fehler, und „Erledigte anzeigen“ holt sie zurück.",
+        "confirmGroup": "Blendet alle offenen Fehler mit dem Text „{error}“ für {provider} in {window} aus. Nichts wird gelöscht — „Erledigte anzeigen“ holt sie zurück."
       },
       "filter": {
-        "anyProvider": "Beliebiger Anbieter",
         "anyState": "Beliebiger Status",
         "provider": "Anbieter",
-        "state": "Laufstatus"
+        "state": "Laufstatus",
+        "mode": "Scan-Modus",
+        "anyMode": "Beliebiger Modus",
+        "sort": "Sortieren nach",
+        "showCleared": "Erledigte anzeigen",
+        "reset": "Filter zurücksetzen"
+      },
+      "sort": {
+        "recent": "Neueste zuerst",
+        "oldest": "Älteste zuerst",
+        "failures": "Meiste Fehler",
+        "duration": "Längste Laufzeit"
+      },
+      "health": {
+        "runs": "Läufe",
+        "runBreakdown": "{active} aktiv · {failed} fehlgeschlagen",
+        "successRate": "Erfolgsquote",
+        "taskBreakdown": "{done} erledigt · {failed} fehlgeschlagen",
+        "openFailures": "Offene Fehler",
+        "openFailuresSub": "Noch nicht erledigt",
+        "throughput": "Durchsatz",
+        "busy": "über {duration} Laufzeit",
+        "noTasks": "keine Aufgaben",
+        "byProvider": "Nach Anbieter",
+        "noProviders": "In diesem Zeitraum hat kein Anbieter gescannt.",
+        "col": {
+          "provider": "Anbieter",
+          "runs": "Läufe",
+          "tasks": "Aufgaben",
+          "failureRate": "Fehlerquote",
+          "open": "Offen",
+          "lastRun": "Letzter Lauf"
+        }
+      },
+      "live": {
+        "inFlight": "In Arbeit",
+        "queued": "Wartend",
+        "workers": "Worker",
+        "eta": "Verbleibend",
+        "kinds": "Arbeitet an",
+        "staleClaim": "Älteste Aufgabe seit {duration} übernommen — ein Worker hängt möglicherweise.",
+        "tail": "Gerade abgeschlossen"
+      },
+      "history": {
+        "count": "{shown} von {total}",
+        "countFiltered": "{shown} von {total} Treffern",
+        "noneMatch": "Kein Lauf passt zu diesem Filter."
       }
     },
     "scans": {
@@ -1061,7 +1110,8 @@
         "progress": "Fortschritt",
         "scope": "Umfang",
         "started": "Gestartet",
-        "state": "Status"
+        "state": "Status",
+        "duration": "Dauer"
       },
       "failureMeta": "{provider} · {mode} · Versuch {attempts}",
       "failures": "Letzte Fehler",
@@ -1077,7 +1127,8 @@
       "scopeAll": "alle Anbieter",
       "scopeUnknown": "unbekannt",
       "title": "Scan-Warteschlange",
-      "trigger": "Scan auslösen (alle)"
+      "trigger": "Scan auslösen (alle)",
+      "triggerMode": "Auszulösender Scan-Modus"
     },
     "solver": {
       "active": "aktiv",
@@ -1400,6 +1451,14 @@
       "paused": "Zurückgestellt",
       "planned": "Geplant",
       "reading": "Am Lesen"
+    },
+    "taskState": {
+      "queued": "In Warteschlange",
+      "claimed": "Übernommen",
+      "running": "Läuft",
+      "done": "Fertig",
+      "failed": "Fehlgeschlagen",
+      "skipped": "Übersprungen"
     }
   },
   "error": {
@@ -1707,7 +1766,10 @@
     "minutesAgo": "vor {count} Min.",
     "monthsAgo": "vor {count} Mon.",
     "unknown": "—",
-    "yearsAgo": "vor {count} J."
+    "yearsAgo": "vor {count} J.",
+    "seconds": "{count}s",
+    "minutes": "{count} Min.",
+    "hoursMinutes": "{hours} Std. {minutes} Min."
   },
   "title": {
     "app": "TankoVault — Manga-Tracker",

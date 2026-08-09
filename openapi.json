@@ -663,6 +663,48 @@
         ],
         "type": "object"
       },
+      "ClearFailuresBody": {
+        "description": "Which failures to clear out of the triage feed. Every field narrows; a body with none of them\nclears the whole feed.",
+        "properties": {
+          "error": {
+            "description": "One error group, exactly as the grouped feed reported it. Send `error` with a `null`\nvalue together with `match_null_error` to clear the group that recorded no error at all.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "match_null_error": {
+            "description": "Clear the group whose error is absent. Mutually meaningful with `error`: an omitted\n`error` means \"any error\", which is not the same request.",
+            "type": "boolean"
+          },
+          "provider": {
+            "description": "Provider slug.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "run_id": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ScanRunId",
+                "description": "One run's failures."
+              }
+            ]
+          },
+          "since": {
+            "description": "Inclusive lower bound on the failure's `finished_at`, RFC 3339.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "ConflictPolicy": {
         "description": "How to settle a local/remote disagreement when a series exists on both sides\n(design v2 §B.3).\n\n# Why this is here rather than in `services/sync`\n\nIt was a `pub(crate)` enum in the sync service and a **bare string** on the wire, which put\nthe vocabulary in three places that nothing connected: the service's enum, a prose list in\nthis file's doc comment, and a closed enumeration the frontend maintained by hand\n(FRONTEND F10). A policy added to the service would have compiled everywhere and then\nsilently failed to appear in the picker; a token misspelled in the frontend would have been\nrejected by the service at the far end of a round trip, if at all. Declaring it once here —\nwhere `utoipa` publishes it, `progenitor` generates it and the frontend consumes the\ngenerated form — makes the compiler the connection in both directions.\n\nThe JSON representation is unchanged: `snake_case`, the same four tokens the wire always\ncarried. What changed is that the *schema* now says so, so an unknown token is a `422` at\nthe edge instead of a value that reaches the merge and is quietly read as `newest_wins`.",
         "enum": [
@@ -1057,6 +1099,13 @@
       "FailedTaskView": {
         "description": "A failed scan task enriched with its run's provider + mode, for the console error feed.",
         "properties": {
+          "acknowledged_at": {
+            "description": "When an operator cleared this failure from the triage feed, if they have.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "attempts": {
             "format": "int32",
             "type": "integer"
@@ -1107,6 +1156,11 @@
       "FailureGroupView": {
         "description": "One distinct scan failure, with how often it happened and which providers it hit.\n\nThe grouped view of the failure feed: twelve rows of the same broken selector are one\nproblem, and the flat feed presents them as twelve.",
         "properties": {
+          "cleared": {
+            "description": "How many of `count` an operator has already cleared. Non-zero only when the caller asked\nfor cleared failures back.",
+            "format": "int64",
+            "type": "integer"
+          },
           "count": {
             "format": "int64",
             "type": "integer"
@@ -1117,6 +1171,13 @@
               "string",
               "null"
             ]
+          },
+          "kinds": {
+            "description": "Task kinds this error struck, sorted — the same message on a `series` task and on a\n`catalog_page` task is two problems, not one.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           },
           "latest_at": {
             "type": [
@@ -1134,7 +1195,23 @@
         },
         "required": [
           "count",
-          "providers"
+          "cleared",
+          "providers",
+          "kinds"
+        ],
+        "type": "object"
+      },
+      "FailuresClearedView": {
+        "description": "How many failures a clear actually hid.",
+        "properties": {
+          "cleared": {
+            "description": "Rows this call acknowledged. Already-cleared rows are excluded, so two operators clearing\nthe same feed do not both claim it.",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cleared"
         ],
         "type": "object"
       },
@@ -3063,6 +3140,64 @@
         ],
         "type": "object"
       },
+      "ProviderScanHealthView": {
+        "description": "One provider's scan health over the summary's window.",
+        "properties": {
+          "failures_open": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "last_failure_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_run_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "runs": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "runs_active": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "runs_failed": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "tasks_done": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "tasks_failed": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "slug",
+          "name",
+          "runs",
+          "runs_active",
+          "runs_failed",
+          "tasks_done",
+          "tasks_failed",
+          "failures_open"
+        ],
+        "type": "object"
+      },
       "ProviderStat": {
         "description": "One row of the per-provider statistics table. Enum columns are text-cast; the provider's\nidentity fields are joined in so the console renders the table from one fetch.",
         "properties": {
@@ -3628,6 +3763,50 @@
         ],
         "type": "object"
       },
+      "RunActivityView": {
+        "description": "One in-flight run's task breakdown.",
+        "properties": {
+          "kinds": {
+            "description": "Task kinds in flight, sorted.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "oldest_claim_at": {
+            "description": "When the oldest still-held task was claimed. A claim instant that stops moving is the\nfirst visible symptom of a wedged worker.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "queued_tasks": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "run_id": {
+            "$ref": "#/components/schemas/ScanRunId"
+          },
+          "running_tasks": {
+            "description": "Tasks a worker is holding right now.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "workers": {
+            "description": "Distinct workers holding a task right now.",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "run_id",
+          "queued_tasks",
+          "running_tasks",
+          "kinds",
+          "workers"
+        ],
+        "type": "object"
+      },
       "RunState": {
         "description": "Lifecycle of a scan run.",
         "enum": [
@@ -3639,6 +3818,29 @@
         ],
         "type": "string"
       },
+      "ScanActivityView": {
+        "description": "The task-level state of the runs in flight, pushed on the console stream.\n\nRun counters alone cannot distinguish \"working\" from \"wedged\" — both leave `done_tasks`\nwhere it was. These are the figures that can: what a worker is holding, since when, and what\nsettled most recently.",
+        "properties": {
+          "events": {
+            "description": "The most recently settled tasks of the runs in flight, newest first. Empty when nothing\nis running, which is the honest answer rather than a replay of the last scan.",
+            "items": {
+              "$ref": "#/components/schemas/TaskEventView"
+            },
+            "type": "array"
+          },
+          "runs": {
+            "items": {
+              "$ref": "#/components/schemas/RunActivityView"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "runs",
+          "events"
+        ],
+        "type": "object"
+      },
       "ScanMode": {
         "description": "Scan cadence.",
         "enum": [
@@ -3648,7 +3850,7 @@
         "type": "string"
       },
       "ScanRun": {
-        "description": "A scan run (progress + audit; mirrors `JetStream` dispatch).",
+        "description": "A scan run as the console reads it: the persisted row plus the slug of the provider it was\nscoped to.\n\nPublished under the `ScanRun` component name, which is what the generated client and the\nfrontend already call it. The slug is the addition: a run carrying only `provider_id` renders\nas a truncated uuid and cannot be matched against a filter an operator typed, which is why\nthe panel's provider filter had no effect on anything the live stream pushed.",
         "properties": {
           "created_at": {
             "type": "string"
@@ -3681,6 +3883,13 @@
               {
                 "$ref": "#/components/schemas/ProviderId"
               }
+            ]
+          },
+          "provider_slug": {
+            "description": "`null` for an all-provider run, and for a run whose provider has since been deleted.",
+            "type": [
+              "string",
+              "null"
             ]
           },
           "started_at": {
@@ -3731,6 +3940,91 @@
         "required": [
           "items",
           "total"
+        ],
+        "type": "object"
+      },
+      "ScanSummaryView": {
+        "description": "What the scan filter matched, as figures rather than rows.\n\nScoped by the *same* provider and window the row list uses, so a narrowed filter reports its\nown success rate. Rates are left to the reader to divide: publishing `tasks_done` and\n`tasks_total` rather than a percentage keeps the panel able to show both the ratio and the\nmagnitude behind it, which a lone percentage cannot.",
+        "properties": {
+          "busy_seconds": {
+            "description": "Summed run wall-clock in seconds; a run in flight counts up to now.",
+            "format": "double",
+            "type": "number"
+          },
+          "failures_open": {
+            "description": "Failures still in the triage feed, as opposed to `tasks_failed`, which counts every\nfailure in the window including the ones an operator has cleared.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "first_run_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_run_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "providers": {
+            "description": "Per-provider health over the same window, worst first. Providers with neither a run nor\nan open failure are omitted.",
+            "items": {
+              "$ref": "#/components/schemas/ProviderScanHealthView"
+            },
+            "type": "array"
+          },
+          "runs_cancelled": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "runs_completed": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "runs_failed": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "runs_queued": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "runs_running": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "runs_total": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "tasks_done": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "tasks_failed": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "tasks_total": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "runs_total",
+          "runs_queued",
+          "runs_running",
+          "runs_completed",
+          "runs_failed",
+          "runs_cancelled",
+          "tasks_total",
+          "tasks_done",
+          "tasks_failed",
+          "failures_open",
+          "busy_seconds",
+          "providers"
         ],
         "type": "object"
       },
@@ -4902,6 +5196,59 @@
         "description": "Identifies a tag.",
         "format": "uuid",
         "type": "string"
+      },
+      "TaskEventView": {
+        "description": "One settled task in the live tail.",
+        "properties": {
+          "attempts": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "finished_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "provider_slug": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "run_id": {
+            "$ref": "#/components/schemas/ScanRunId"
+          },
+          "state": {
+            "$ref": "#/components/schemas/TaskState"
+          },
+          "target": {
+            "$ref": "#/components/schemas/Value",
+            "description": "What the task was pointed at, as the planner wrote it."
+          }
+        },
+        "required": [
+          "id",
+          "run_id",
+          "kind",
+          "state",
+          "target",
+          "attempts"
+        ],
+        "type": "object"
       },
       "TaskState": {
         "description": "Lifecycle of an individual scan task.",
@@ -8471,6 +8818,15 @@
             }
           },
           {
+            "description": "Include failures an operator has already cleared. Off by default, which is what clearing\nis for; cleared failures are acknowledged rather than deleted, so this always reopens the\nfull window.",
+            "in": "query",
+            "name": "include_cleared",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
             "in": "query",
             "name": "limit",
             "required": false,
@@ -8530,6 +8886,73 @@
         ]
       }
     },
+    "/v1/admin/scan-failures/clear": {
+      "post": {
+        "description": "Acknowledges the selected failures so they leave the triage feed. Nothing is deleted: the\ntask keeps its `failed` state, its error and its contribution to the run counters, so the\nhistory still reconciles and `include_cleared=true` reopens the full window.\n\nBehind `scans.run` rather than `scans.read`, because it changes what every *other* operator\nsees: a reader entitled to watch the queue must not be able to hide an outage from the person\non call.",
+        "operationId": "clear_scan_failures",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClearFailuresBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FailuresClearedView"
+                }
+              }
+            },
+            "description": "How many failures this call cleared"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "`since` is not an RFC 3339 instant"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Clear scan failures",
+        "tags": [
+          "admin-scans"
+        ]
+      }
+    },
     "/v1/admin/scan-failures/grouped": {
       "get": {
         "description": "The same failures collapsed by their error text, worst first: one broken selector that hit\ntwelve series is one row with a count, not twelve rows of the same sentence.",
@@ -8557,6 +8980,15 @@
                 "string",
                 "null"
               ]
+            }
+          },
+          {
+            "description": "Include failures an operator has already cleared. Off by default, which is what clearing\nis for; cleared failures are acknowledged rather than deleted, so this always reopens the\nfull window.",
+            "in": "query",
+            "name": "include_cleared",
+            "required": false,
+            "schema": {
+              "type": "boolean"
             }
           },
           {
@@ -8676,6 +9108,22 @@
                 "string",
                 "null"
               ]
+            }
+          },
+          {
+            "description": "Ordering. Defaults to newest first.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "description": "How a page of runs is ordered, as the `sort` parameter spells it.\n\nIts own wire enum rather than the repository's, so an unknown token is a 422 from the\nextractor instead of a silent fall back to the default ordering — a sort control that\nquietly ignores what it was asked for is exactly the defect this panel had.",
+              "enum": [
+                "recent",
+                "oldest",
+                "failures",
+                "duration"
+              ],
+              "type": "string"
             }
           },
           {
@@ -8813,6 +9261,53 @@
         ]
       }
     },
+    "/v1/admin/scans/activity": {
+      "get": {
+        "description": "The task-level state of the runs in flight: what each is holding, since when, and what\nsettled most recently. The live variant is `/v1/admin/stream`'s `activity` event; this GET is\nthe panel's first paint, because a live tail that starts empty for three seconds reads as an\nidle deployment.",
+        "operationId": "scan_activity",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanActivityView"
+                }
+              }
+            },
+            "description": "In-flight runs and the tail of settled tasks"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "no second factor is enrolled, or the caller does not hold the required permission"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Live scan activity",
+        "tags": [
+          "admin-scans"
+        ]
+      }
+    },
     "/v1/admin/scans/stream": {
       "get": {
         "description": "SSE live scan progress for the operator console. Polls the durable `scan_runs` (the system\nof record for progress) every 2 s and pushes a `runs` event; a `scan.progress` NATS relay\nis a documented enhancement.",
@@ -8851,6 +9346,79 @@
           }
         ],
         "summary": "Live scan-progress stream",
+        "tags": [
+          "admin-scans"
+        ]
+      }
+    },
+    "/v1/admin/scans/summary": {
+      "get": {
+        "description": "The same provider and time filter the run list uses, answered as figures: how many runs\nreached each state, how many tasks succeeded and failed, how many failures are still open,\nand the per-provider breakdown behind those totals.",
+        "operationId": "scan_summary",
+        "parameters": [
+          {
+            "description": "Provider slug. Absent summarises every provider.",
+            "in": "query",
+            "name": "provider",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Inclusive lower bound, RFC 3339. Absent summarises all of recorded history.",
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanSummaryView"
+                }
+              }
+            },
+            "description": "Window rollup with its per-provider breakdown"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "no second factor is enrolled, or the caller does not hold the required permission"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Summarise the scan window",
         "tags": [
           "admin-scans"
         ]
@@ -9060,7 +9628,7 @@
     },
     "/v1/admin/stream": {
       "get": {
-        "description": "Server-Sent Events for the operator console: `stats` every 10 s and `runs` every 2 s.\n\nAuthenticated by a single-use `ticket` query parameter from `POST /v1/me/stream-ticket`,\nbecause `EventSource` cannot set an `Authorization` header. A ticket proves a session\nexisted thirty seconds ago and nothing more, so the permission check below happens *after*\nredemption and gates each event separately: a caller entitled to scan runs but not to system\ncounters receives `runs` and never `stats`. Emitting an event the caller could not fetch\nover its own GET would be a disclosure, and the access-matrix suites would not catch it —\nthey reconcile status codes, not event names.",
+        "description": "Server-Sent Events for the operator console: `stats` every 10 s, `runs` every 2 s and\n`activity` — the task-level state of the runs in flight — every 3 s.\n\nAuthenticated by a single-use `ticket` query parameter from `POST /v1/me/stream-ticket`,\nbecause `EventSource` cannot set an `Authorization` header. A ticket proves a session\nexisted thirty seconds ago and nothing more, so the permission check below happens *after*\nredemption and gates each event separately: a caller entitled to scan runs but not to system\ncounters receives `runs` and never `stats`. Emitting an event the caller could not fetch\nover its own GET would be a disclosure, and the access-matrix suites would not catch it —\nthey reconcile status codes, not event names.",
         "operationId": "admin_stream",
         "parameters": [
           {
@@ -9078,7 +9646,7 @@
             "content": {
               "text/event-stream": {}
             },
-            "description": "SSE stream of `stats` and `runs` events"
+            "description": "SSE stream of `stats`, `runs` and `activity` events"
           },
           "401": {
             "content": {

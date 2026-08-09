@@ -9,7 +9,7 @@
 //! a fresh ticket per attempt instead.
 
 use crate::api::Api;
-use crate::models::{ScanRun, SystemStats};
+use crate::models::{ScanActivity, ScanRun, SystemStats};
 use dioxus::prelude::*;
 
 /// First wait after a failed attempt; doubles up to [`RECONNECT_BACKOFF_MAX_MS`].
@@ -65,6 +65,10 @@ pub(super) struct ConsoleLive {
     /// The rail's counts and Overview's tiles — one payload, two readers.
     pub(super) stats: Signal<Option<SystemStats>>,
     pub(super) runs: Signal<Option<Vec<ScanRun>>>,
+    /// The task-level state of whatever is in flight. Separate from `runs` because it answers a
+    /// different question: the counters say how far a run has got, this says whether it is
+    /// actually moving.
+    pub(super) activity: Signal<Option<ScanActivity>>,
 }
 
 impl ConsoleLive {
@@ -73,6 +77,7 @@ impl ConsoleLive {
             state: Signal::new(LiveState::Connecting),
             stats: Signal::new(None),
             runs: Signal::new(None),
+            activity: Signal::new(None),
         }
     }
 }
@@ -141,9 +146,10 @@ async fn run(api: Api, live: ConsoleLive) {
 /// a duration rather than a status.
 async fn consume(api: &Api, ticket: &str, live: ConsoleLive) -> bool {
     let url = format!("{}{}", api.base_url(), crate::api::admin_stream_url(ticket));
-    // Both names off one connection: they arrive on their own cadences, and a stream per name
+    // Every name off one connection: they arrive on their own cadences, and a stream per name
     // would stall `runs` behind the ten-second `stats` tick.
-    let Some(mut stream) = crate::platform::subscribe(&url, &["stats", "runs"]).await else {
+    let Some(mut stream) = crate::platform::subscribe(&url, &["stats", "runs", "activity"]).await
+    else {
         // A malformed URL or a refused connection; neither is actionable here.
         return false;
     };
@@ -151,6 +157,7 @@ async fn consume(api: &Api, ticket: &str, live: ConsoleLive) -> bool {
     let mut connection = live.state;
     let mut stats = live.stats;
     let mut runs = live.runs;
+    let mut activity = live.activity;
 
     let started = crate::platform::now_ms();
     while let Some((name, text)) = stream.next().await {
@@ -169,6 +176,11 @@ async fn consume(api: &Api, ticket: &str, live: ConsoleLive) -> bool {
             "runs" => {
                 if let Ok(value) = serde_json::from_str::<Vec<ScanRun>>(&text) {
                     runs.set(Some(value));
+                }
+            }
+            "activity" => {
+                if let Ok(value) = serde_json::from_str::<ScanActivity>(&text) {
+                    activity.set(Some(value));
                 }
             }
             // The subscription asked for two names; anything else is a server the client does

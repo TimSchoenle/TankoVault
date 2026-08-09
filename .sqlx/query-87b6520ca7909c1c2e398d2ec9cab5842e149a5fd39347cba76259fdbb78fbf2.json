@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE scan_tasks t SET acknowledged_at = now() FROM scan_runs r LEFT JOIN providers p ON p.id = r.provider_id WHERE r.id = t.run_id AND t.state = 'failed' AND t.acknowledged_at IS NULL AND ($1::text IS NULL OR p.slug = $1) AND ($2::timestamptz IS NULL OR t.finished_at >= $2) AND ($3::uuid IS NULL OR t.run_id = $3) AND (NOT $4::bool OR t.error IS NOT DISTINCT FROM $5::text)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Timestamptz",
+        "Uuid",
+        "Bool",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "87b6520ca7909c1c2e398d2ec9cab5842e149a5fd39347cba76259fdbb78fbf2"
+}

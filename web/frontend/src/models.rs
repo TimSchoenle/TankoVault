@@ -69,7 +69,14 @@ pub(crate) use crate::wire::types::AdminAccountRow as AdminSyncAccount;
 pub(crate) use crate::wire::types::AdminMappingRow as AdminSyncMapping;
 pub(crate) use crate::wire::types::AuditView as AuditEntry;
 pub(crate) use crate::wire::types::FailedTaskView as FailedTask;
+// The scan console's own vocabulary. `ListScansSort` is progenitor's name for the run-history
+// `sort` parameter; `RunSort` is what the panel and the repository both call it.
 pub(crate) use crate::wire::types::MergeCandidateView as MergeCandidate;
+pub(crate) use crate::wire::types::{
+    ClearFailuresBody, FailureGroupView as FailureGroup, ListScansSort as RunSort,
+    ProviderScanHealthView, RunActivityView as RunActivity, ScanActivityView as ScanActivity,
+    ScanSummaryView as ScanSummary, TaskEventView as TaskEvent, TaskState,
+};
 // The two decision journals keep their generated names: `MergeDecision` is what the operator
 // console calls the row, and there is no shorter name that stays distinct from `MergeCandidate`.
 pub(crate) use crate::wire::types::RemoteEntryRow as UnmatchedRemoteEntry;
@@ -369,6 +376,119 @@ impl ScanRunExt for ScanRun {
             return 0.0;
         }
         f64::from(self.done_tasks + self.failed_tasks) / f64::from(self.total_tasks)
+    }
+}
+
+/// Presentation for the generated [`TaskState`].
+pub(crate) trait TaskStateExt {
+    /// The catalogue key of this variant's display name (see [`crate::i18n`]).
+    fn label_key(self) -> &'static str;
+    /// Whether this state means the task did *not* do its work.
+    fn is_failure(&self) -> bool;
+}
+
+impl TaskStateExt for TaskState {
+    fn label_key(self) -> &'static str {
+        match self {
+            Self::Queued => "enum.taskState.queued",
+            Self::Claimed => "enum.taskState.claimed",
+            Self::Running => "enum.taskState.running",
+            Self::Done => "enum.taskState.done",
+            Self::Failed => "enum.taskState.failed",
+            Self::Skipped => "enum.taskState.skipped",
+        }
+    }
+
+    fn is_failure(&self) -> bool {
+        *self == Self::Failed
+    }
+}
+
+/// Presentation for the generated run-history ordering.
+pub(crate) trait RunSortExt: Sized {
+    /// Every ordering, in the order the picker offers them.
+    ///
+    /// Hand-listed because the generated client carries no `ALL`, and kept honest by
+    /// `the_sort_picker_offers_every_published_ordering`, which reads the accepted set out of
+    /// the committed `openapi.json`.
+    fn all() -> &'static [Self];
+    /// The catalogue key of this ordering's display name (see [`crate::i18n`]).
+    fn label_key(self) -> &'static str;
+    /// The `?sort=` token, which is also what the API accepts.
+    fn token(self) -> &'static str;
+    /// Parse a token back. An unrecognised one is the default rather than an error: a
+    /// hand-edited URL should still open the panel.
+    fn parse(token: &str) -> Self;
+}
+
+impl RunSortExt for RunSort {
+    fn all() -> &'static [Self] {
+        &[Self::Recent, Self::Oldest, Self::Failures, Self::Duration]
+    }
+
+    fn label_key(self) -> &'static str {
+        match self {
+            Self::Recent => "console.scan.sort.recent",
+            Self::Oldest => "console.scan.sort.oldest",
+            Self::Failures => "console.scan.sort.failures",
+            Self::Duration => "console.scan.sort.duration",
+        }
+    }
+
+    fn token(self) -> &'static str {
+        match self {
+            Self::Recent => "recent",
+            Self::Oldest => "oldest",
+            Self::Failures => "failures",
+            Self::Duration => "duration",
+        }
+    }
+
+    fn parse(token: &str) -> Self {
+        <Self as RunSortExt>::all()
+            .iter()
+            .copied()
+            .find(|sort| sort.token() == token)
+            .unwrap_or(Self::Recent)
+    }
+}
+
+/// Presentation for the generated [`ScanMode`].
+pub(crate) trait ScanModeExt: Sized {
+    /// Every mode, in the order the picker offers them.
+    fn all() -> &'static [Self];
+    /// The catalogue key of this mode's display name (see [`crate::i18n`]).
+    fn label_key(self) -> &'static str;
+    /// The `?mode=` token, which is also what the API accepts.
+    fn token(self) -> &'static str;
+    /// Parse a token back, or `None` for "any mode".
+    fn parse(token: &str) -> Option<Self>;
+}
+
+impl ScanModeExt for ScanMode {
+    fn all() -> &'static [Self] {
+        &[Self::Fast, Self::Full]
+    }
+
+    fn label_key(self) -> &'static str {
+        match self {
+            Self::Fast => "console.scans.modeFast",
+            Self::Full => "console.scans.modeFull",
+        }
+    }
+
+    fn token(self) -> &'static str {
+        match self {
+            Self::Fast => "fast",
+            Self::Full => "full",
+        }
+    }
+
+    fn parse(token: &str) -> Option<Self> {
+        <Self as ScanModeExt>::all()
+            .iter()
+            .copied()
+            .find(|mode| mode.token() == token)
     }
 }
 

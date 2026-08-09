@@ -73,7 +73,7 @@ async fn counters(db: &TestDb, run: ScanRunId) -> (i32, i32, i32) {
 
 /// Pin a row's timestamp.
 ///
-/// Both `list_recent_runs` and `recent_failed_tasks` order on a `now()`-stamped column with no
+/// Both `list_recent_runs` and the failure feed order on a `now()`-stamped column with no
 /// tie-break, so rows written microseconds apart have no guaranteed order. Making the instants
 /// explicit is what turns "these came back in some order" into an assertion about the `ORDER BY`.
 async fn backdate(db: &TestDb, sql: &'static str, id: uuid::Uuid, days_ago: i64) {
@@ -318,7 +318,7 @@ async fn recent_runs_are_newest_first() {
         .await
         .expect("list runs")
         .iter()
-        .map(|r| r.id)
+        .map(|r| r.run.id)
         .collect();
     assert_eq!(ids, vec![newest, middle, oldest]);
 
@@ -326,7 +326,7 @@ async fn recent_runs_are_newest_first() {
         .await
         .expect("list runs")
         .iter()
-        .map(|r| r.id)
+        .map(|r| r.run.id)
         .collect();
     assert_eq!(ids, vec![newest, middle]);
 }
@@ -697,7 +697,7 @@ async fn the_failed_task_feed_reports_failures_with_their_run_context() {
     backdate(&db, BACKDATE_TASK, older.as_uuid(), 2).await;
     backdate(&db, BACKDATE_TASK, newer.as_uuid(), 1).await;
 
-    let feed = scans::recent_failed_tasks(&db.pool, 10)
+    let feed = scans::failed_tasks_filtered(&db.pool, None, None, false, 10)
         .await
         .expect("failed tasks");
     assert_eq!(feed.len(), 2, "the completed task is not a failure");
@@ -712,7 +712,7 @@ async fn the_failed_task_feed_reports_failures_with_their_run_context() {
     providers::delete(&db.pool, provider)
         .await
         .expect("delete provider");
-    let feed = scans::recent_failed_tasks(&db.pool, 10)
+    let feed = scans::failed_tasks_filtered(&db.pool, None, None, false, 10)
         .await
         .expect("failed tasks");
     assert_eq!(feed.len(), 2, "an inner join would have dropped both rows");

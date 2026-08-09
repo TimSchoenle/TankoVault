@@ -1031,26 +1031,75 @@
     },
     "scan": {
       "detail": {
-        "attempts": "Attempts",
         "elapsed": "Elapsed",
-        "minutes": "{count} min",
         "perMinute": "{count}/min",
-        "pick": "Select a run to inspect it.",
         "tasks": "Tasks",
         "throughput": "Throughput",
-        "title": "Run detail",
-        "underAMinute": "under a minute"
+        "failed": "Failed"
       },
       "failures": {
-        "affected": "{count} affected",
         "grouped": "Group identical errors",
-        "noError": "No error recorded"
+        "noError": "No error recorded",
+        "clear": "Clear",
+        "clearAll": "Clear shown failures",
+        "clearCta": "Clear",
+        "cleared": "Cleared {count} failures.",
+        "clearedCount": "{count} cleared",
+        "clearedBadge": "Cleared",
+        "confirmTitle": "Clear failures from the feed",
+        "confirmAll": "Hides every open failure for {provider} in {window}. Nothing is deleted — the runs keep their errors, and “Show cleared” brings them back.",
+        "confirmGroup": "Hides every open failure reading “{error}” for {provider} in {window}. Nothing is deleted — “Show cleared” brings them back."
       },
       "filter": {
-        "anyProvider": "Any provider",
         "anyState": "Any state",
         "provider": "Provider",
-        "state": "Run state"
+        "state": "Run state",
+        "mode": "Scan mode",
+        "anyMode": "Any mode",
+        "sort": "Order by",
+        "showCleared": "Show cleared",
+        "reset": "Clear filters"
+      },
+      "sort": {
+        "recent": "Newest first",
+        "oldest": "Oldest first",
+        "failures": "Most failures",
+        "duration": "Longest running"
+      },
+      "health": {
+        "runs": "Runs",
+        "runBreakdown": "{active} active · {failed} failed",
+        "successRate": "Task success",
+        "taskBreakdown": "{done} done · {failed} failed",
+        "openFailures": "Open failures",
+        "openFailuresSub": "Not yet cleared",
+        "throughput": "Throughput",
+        "busy": "over {duration} of run time",
+        "noTasks": "no tasks",
+        "byProvider": "By provider",
+        "noProviders": "No provider ran a scan in this window.",
+        "col": {
+          "provider": "Provider",
+          "runs": "Runs",
+          "tasks": "Tasks",
+          "failureRate": "Failure rate",
+          "open": "Open",
+          "lastRun": "Last run"
+        }
+      },
+      "live": {
+        "inFlight": "In flight",
+        "queued": "Queued",
+        "workers": "Workers",
+        "eta": "Remaining",
+        "kinds": "Working on",
+        "staleClaim": "Oldest task has been held for {duration} — a worker may be stuck.",
+        "tail": "Just settled"
+      },
+      "history": {
+        "count": "{shown} of {total}",
+        "countFiltered": "{shown} of {total} matching",
+        "noneMatch": "No run matches this filter."
       }
     },
     "scans": {
@@ -1061,7 +1110,8 @@
         "progress": "Progress",
         "scope": "Scope",
         "started": "Started",
-        "state": "State"
+        "state": "State",
+        "duration": "Duration"
       },
       "failureMeta": "{provider} · {mode} · attempt {attempts}",
       "failures": "Recent failures",
@@ -1077,7 +1127,8 @@
       "scopeAll": "all providers",
       "scopeUnknown": "unknown",
       "title": "Scan queue",
-      "trigger": "Trigger scan (all)"
+      "trigger": "Trigger scan (all)",
+      "triggerMode": "Scan mode to trigger"
     },
     "solver": {
       "active": "active",
@@ -1400,6 +1451,14 @@
       "paused": "On hold",
       "planned": "Plan to read",
       "reading": "Reading"
+    },
+    "taskState": {
+      "queued": "Queued",
+      "claimed": "Claimed",
+      "running": "Running",
+      "done": "Done",
+      "failed": "Failed",
+      "skipped": "Skipped"
     }
   },
   "error": {
@@ -1707,7 +1766,10 @@
     "minutesAgo": "{count}m ago",
     "monthsAgo": "{count}mo ago",
     "unknown": "—",
-    "yearsAgo": "{count}y ago"
+    "yearsAgo": "{count}y ago",
+    "seconds": "{count}s",
+    "minutes": "{count} min",
+    "hoursMinutes": "{hours}h {minutes}m"
   },
   "title": {
     "app": "TankoVault — manga tracker",

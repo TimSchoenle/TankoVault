@@ -746,8 +746,14 @@ POST   /v1/admin/providers               { slug,name,base_url,adapter,config,pol
 PATCH  /v1/admin/providers/:id            (incl. base_url change = domain migration)
 POST   /v1/admin/providers/:id/test       -> dry-run adapter against live/fixture, returns parsed sample
 POST   /v1/admin/scans                    { provider_id?, mode }  -> triggers a run
+GET    /v1/admin/scans                    ?provider&mode&state&since&sort  -> filtered run history
 GET    /v1/admin/scans/:run_id
+GET    /v1/admin/scans/summary            ?provider&since -> run/task rollup + per-provider health
+GET    /v1/admin/scans/activity           -> in-flight runs and the tail of settled tasks
 GET    /v1/admin/scans/stream             -> SSE: run/task progress events (console live view)
+GET    /v1/admin/scan-failures            ?provider&since&include_cleared
+GET    /v1/admin/scan-failures/grouped    ?provider&since&include_cleared
+POST   /v1/admin/scan-failures/clear      { provider?,since?,run_id?,error? } -> acknowledge, never delete
 GET    /v1/admin/merge-candidates
 POST   /v1/admin/series/merge             { keep, merge }
 ```

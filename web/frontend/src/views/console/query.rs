@@ -176,6 +176,14 @@ pub(crate) struct ConsoleQuery {
     pub(crate) status: Option<String>,
     /// Provider slug filter on Scans and Audit.
     pub(crate) provider: Option<String>,
+    /// Scans' scan-mode filter, as that panel's own token.
+    pub(crate) mode: Option<String>,
+    /// Scans' run-history ordering, as that panel's own token.
+    pub(crate) sort: Option<String>,
+    /// Scans' show-already-cleared-failures toggle. In the URL like every other filter: an
+    /// operator who has cleared a feed and wants to show someone what was in it needs a link
+    /// that reopens it.
+    pub(crate) cleared: bool,
     pub(crate) since: Window,
     /// Zero-based page on the paged panels.
     pub(crate) page: u32,
@@ -254,6 +262,9 @@ impl From<&str> for ConsoleQuery {
                 "q" => out.q = value,
                 "status" => out.status = non_empty(value),
                 "provider" => out.provider = non_empty(value),
+                "mode" => out.mode = non_empty(value),
+                "sort" => out.sort = non_empty(value),
+                "cleared" => out.cleared = value != "0",
                 "since" => out.since = Window::parse(&value),
                 "page" => out.page = value.parse().unwrap_or(0),
                 "staff" => out.staff = value != "0",
@@ -292,6 +303,15 @@ impl fmt::Display for ConsoleQuery {
         }
         if let Some(provider) = &self.provider {
             put("provider", provider);
+        }
+        if let Some(mode) = &self.mode {
+            put("mode", mode);
+        }
+        if let Some(sort) = &self.sort {
+            put("sort", sort);
+        }
+        if self.cleared {
+            put("cleared", "1");
         }
         if self.since != default.since {
             put("since", self.since.token());
@@ -384,6 +404,9 @@ mod tests {
                 q: "kun manga".to_owned(),
                 status: Some("suspended".to_owned()),
                 provider: Some("kunmanga".to_owned()),
+                mode: Some("full".to_owned()),
+                sort: Some("failures".to_owned()),
+                cleared: true,
                 since: Window::Week,
                 page: 4,
                 staff: true,

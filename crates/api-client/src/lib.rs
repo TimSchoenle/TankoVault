@@ -1540,6 +1540,116 @@ pub mod types {
             Default::default()
         }
     }
+    #[doc = "Which failures to clear out of the triage feed. Every field narrows; a body with none of them\nclears the whole feed."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Which failures to clear out of the triage feed. Every field narrows; a body with none of them\\nclears the whole feed.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"error\": {"]
+    #[doc = "      \"description\": \"One error group, exactly as the grouped feed reported it. Send `error` with a `null`\\nvalue together with `match_null_error` to clear the group that recorded no error at all.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"match_null_error\": {"]
+    #[doc = "      \"description\": \"Clear the group whose error is absent. Mutually meaningful with `error`: an omitted\\n`error` means \\\"any error\\\", which is not the same request.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"provider\": {"]
+    #[doc = "      \"description\": \"Provider slug.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"run_id\": {"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {},"]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/ScanRunId\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"since\": {"]
+    #[doc = "      \"description\": \"Inclusive lower bound on the failure's `finished_at`, RFC 3339.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct ClearFailuresBody {
+        #[doc = "One error group, exactly as the grouped feed reported it. Send `error` with a `null`\nvalue together with `match_null_error` to clear the group that recorded no error at all."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub error: ::std::option::Option<::std::string::String>,
+        #[doc = "Clear the group whose error is absent. Mutually meaningful with `error`: an omitted\n`error` means \"any error\", which is not the same request."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub match_null_error: ::std::option::Option<bool>,
+        #[doc = "Provider slug."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub provider: ::std::option::Option<::std::string::String>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub run_id: ::std::option::Option<ClearFailuresBodyRunId>,
+        #[doc = "Inclusive lower bound on the failure's `finished_at`, RFC 3339."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub since: ::std::option::Option<::std::string::String>,
+    }
+    impl ::std::default::Default for ClearFailuresBody {
+        fn default() -> Self {
+            Self {
+                error: Default::default(),
+                match_null_error: Default::default(),
+                provider: Default::default(),
+                run_id: Default::default(),
+                since: Default::default(),
+            }
+        }
+    }
+    impl ClearFailuresBody {
+        pub fn builder() -> builder::ClearFailuresBody {
+            Default::default()
+        }
+    }
+    #[doc = "`ClearFailuresBodyRunId`"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {},"]
+    #[doc = "    {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/ScanRunId\""]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    #[serde(untagged)]
+    pub enum ClearFailuresBodyRunId {
+        Variant0(::serde_json::Value),
+        Variant1(ScanRunId),
+    }
+    impl ::std::convert::From<::serde_json::Value> for ClearFailuresBodyRunId {
+        fn from(value: ::serde_json::Value) -> Self {
+            Self::Variant0(value)
+        }
+    }
+    impl ::std::convert::From<ScanRunId> for ClearFailuresBodyRunId {
+        fn from(value: ScanRunId) -> Self {
+            Self::Variant1(value)
+        }
+    }
     #[doc = "How to settle a local/remote disagreement when a series exists on both sides\n(design v2 §B.3).\n\n# Why this is here rather than in `services/sync`\n\nIt was a `pub(crate)` enum in the sync service and a **bare string** on the wire, which put\nthe vocabulary in three places that nothing connected: the service's enum, a prose list in\nthis file's doc comment, and a closed enumeration the frontend maintained by hand\n(FRONTEND F10). A policy added to the service would have compiled everywhere and then\nsilently failed to appear in the picker; a token misspelled in the frontend would have been\nrejected by the service at the far end of a round trip, if at all. Declaring it once here —\nwhere `utoipa` publishes it, `progenitor` generates it and the frontend consumes the\ngenerated form — makes the compiler the connection in both directions.\n\nThe JSON representation is unchanged: `snake_case`, the same four tokens the wire always\ncarried. What changed is that the *schema* now says so, so an unknown token is a `422` at\nthe edge instead of a value that reaches the merge and is quietly read as `newest_wins`."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -2376,6 +2486,13 @@ pub mod types {
     #[doc = "    \"run_id\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
+    #[doc = "    \"acknowledged_at\": {"]
+    #[doc = "      \"description\": \"When an operator cleared this failure from the triage feed, if they have.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
     #[doc = "    \"attempts\": {"]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int32\""]
@@ -2419,6 +2536,9 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct FailedTaskView {
+        #[doc = "When an operator cleared this failure from the triage feed, if they have."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub acknowledged_at: ::std::option::Option<::std::string::String>,
         pub attempts: i32,
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub error: ::std::option::Option<::std::string::String>,
@@ -2446,10 +2566,17 @@ pub mod types {
     #[doc = "  \"description\": \"One distinct scan failure, with how often it happened and which providers it hit.\\n\\nThe grouped view of the failure feed: twelve rows of the same broken selector are one\\nproblem, and the flat feed presents them as twelve.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
+    #[doc = "    \"cleared\","]
     #[doc = "    \"count\","]
+    #[doc = "    \"kinds\","]
     #[doc = "    \"providers\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
+    #[doc = "    \"cleared\": {"]
+    #[doc = "      \"description\": \"How many of `count` an operator has already cleared. Non-zero only when the caller asked\\nfor cleared failures back.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
     #[doc = "    \"count\": {"]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
@@ -2460,6 +2587,13 @@ pub mod types {
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
     #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"kinds\": {"]
+    #[doc = "      \"description\": \"Task kinds this error struck, sorted — the same message on a `series` task and on a\\n`catalog_page` task is two problems, not one.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"type\": \"string\""]
+    #[doc = "      }"]
     #[doc = "    },"]
     #[doc = "    \"latest_at\": {"]
     #[doc = "      \"type\": ["]
@@ -2480,10 +2614,14 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct FailureGroupView {
+        #[doc = "How many of `count` an operator has already cleared. Non-zero only when the caller asked\nfor cleared failures back."]
+        pub cleared: i64,
         pub count: i64,
         #[doc = "The error text these failures share. `null` groups the failures that recorded none."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub error: ::std::option::Option<::std::string::String>,
+        #[doc = "Task kinds this error struck, sorted — the same message on a `series` task and on a\n`catalog_page` task is two problems, not one."]
+        pub kinds: ::std::vec::Vec<::std::string::String>,
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub latest_at: ::std::option::Option<::std::string::String>,
         #[doc = "Provider slugs affected, sorted."]
@@ -2491,6 +2629,37 @@ pub mod types {
     }
     impl FailureGroupView {
         pub fn builder() -> builder::FailureGroupView {
+            Default::default()
+        }
+    }
+    #[doc = "How many failures a clear actually hid."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"How many failures a clear actually hid.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"cleared\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"cleared\": {"]
+    #[doc = "      \"description\": \"Rows this call acknowledged. Already-cleared rows are excluded, so two operators clearing\\nthe same feed do not both claim it.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct FailuresClearedView {
+        #[doc = "Rows this call acknowledged. Already-cleared rows are excluded, so two operators clearing\nthe same feed do not both claim it."]
+        pub cleared: i64,
+    }
+    impl FailuresClearedView {
+        pub fn builder() -> builder::FailuresClearedView {
             Default::default()
         }
     }
@@ -3745,6 +3914,89 @@ pub mod types {
     impl ::std::convert::From<ScanMode> for ListScansMode {
         fn from(value: ScanMode) -> Self {
             Self::Variant1(value)
+        }
+    }
+    #[doc = "How a page of runs is ordered, as the `sort` parameter spells it.\n\nIts own wire enum rather than the repository's, so an unknown token is a 422 from the\nextractor instead of a silent fall back to the default ordering — a sort control that\nquietly ignores what it was asked for is exactly the defect this panel had."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"How a page of runs is ordered, as the `sort` parameter spells it.\\n\\nIts own wire enum rather than the repository's, so an unknown token is a 422 from the\\nextractor instead of a silent fall back to the default ordering — a sort control that\\nquietly ignores what it was asked for is exactly the defect this panel had.\","]
+    #[doc = "  \"type\": \"string\","]
+    #[doc = "  \"enum\": ["]
+    #[doc = "    \"recent\","]
+    #[doc = "    \"oldest\","]
+    #[doc = "    \"failures\","]
+    #[doc = "    \"duration\""]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+    )]
+    pub enum ListScansSort {
+        #[serde(rename = "recent")]
+        Recent,
+        #[serde(rename = "oldest")]
+        Oldest,
+        #[serde(rename = "failures")]
+        Failures,
+        #[serde(rename = "duration")]
+        Duration,
+    }
+    impl ::std::fmt::Display for ListScansSort {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Recent => f.write_str("recent"),
+                Self::Oldest => f.write_str("oldest"),
+                Self::Failures => f.write_str("failures"),
+                Self::Duration => f.write_str("duration"),
+            }
+        }
+    }
+    impl ::std::str::FromStr for ListScansSort {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "recent" => Ok(Self::Recent),
+                "oldest" => Ok(Self::Oldest),
+                "failures" => Ok(Self::Failures),
+                "duration" => Ok(Self::Duration),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+    impl ::std::convert::TryFrom<&str> for ListScansSort {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    impl ::std::convert::TryFrom<&::std::string::String> for ListScansSort {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    impl ::std::convert::TryFrom<::std::string::String> for ListScansSort {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
         }
     }
     #[doc = "`ListScansState`"]
@@ -7026,6 +7278,91 @@ pub mod types {
             Default::default()
         }
     }
+    #[doc = "One provider's scan health over the summary's window."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One provider's scan health over the summary's window.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"failures_open\","]
+    #[doc = "    \"name\","]
+    #[doc = "    \"runs\","]
+    #[doc = "    \"runs_active\","]
+    #[doc = "    \"runs_failed\","]
+    #[doc = "    \"slug\","]
+    #[doc = "    \"tasks_done\","]
+    #[doc = "    \"tasks_failed\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"failures_open\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"last_failure_at\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"last_run_at\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"runs\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"runs_active\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"runs_failed\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"slug\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"tasks_done\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"tasks_failed\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct ProviderScanHealthView {
+        pub failures_open: i64,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub last_failure_at: ::std::option::Option<::std::string::String>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub last_run_at: ::std::option::Option<::std::string::String>,
+        pub name: ::std::string::String,
+        pub runs: i64,
+        pub runs_active: i64,
+        pub runs_failed: i64,
+        pub slug: ::std::string::String,
+        pub tasks_done: i64,
+        pub tasks_failed: i64,
+    }
+    impl ProviderScanHealthView {
+        pub fn builder() -> builder::ProviderScanHealthView {
+            Default::default()
+        }
+    }
     #[doc = "One row of the per-provider statistics table. Enum columns are text-cast; the provider's\nidentity fields are joined in so the console renders the table from one fetch."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -8355,6 +8692,76 @@ pub mod types {
             Default::default()
         }
     }
+    #[doc = "One in-flight run's task breakdown."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One in-flight run's task breakdown.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"kinds\","]
+    #[doc = "    \"queued_tasks\","]
+    #[doc = "    \"run_id\","]
+    #[doc = "    \"running_tasks\","]
+    #[doc = "    \"workers\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"kinds\": {"]
+    #[doc = "      \"description\": \"Task kinds in flight, sorted.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"type\": \"string\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"oldest_claim_at\": {"]
+    #[doc = "      \"description\": \"When the oldest still-held task was claimed. A claim instant that stops moving is the\\nfirst visible symptom of a wedged worker.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"queued_tasks\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"run_id\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/ScanRunId\""]
+    #[doc = "    },"]
+    #[doc = "    \"running_tasks\": {"]
+    #[doc = "      \"description\": \"Tasks a worker is holding right now.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"workers\": {"]
+    #[doc = "      \"description\": \"Distinct workers holding a task right now.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct RunActivityView {
+        #[doc = "Task kinds in flight, sorted."]
+        pub kinds: ::std::vec::Vec<::std::string::String>,
+        #[doc = "When the oldest still-held task was claimed. A claim instant that stops moving is the\nfirst visible symptom of a wedged worker."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub oldest_claim_at: ::std::option::Option<::std::string::String>,
+        pub queued_tasks: i64,
+        pub run_id: ScanRunId,
+        #[doc = "Tasks a worker is holding right now."]
+        pub running_tasks: i64,
+        #[doc = "Distinct workers holding a task right now."]
+        pub workers: i64,
+    }
+    impl RunActivityView {
+        pub fn builder() -> builder::RunActivityView {
+            Default::default()
+        }
+    }
     #[doc = "Lifecycle of a scan run."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -8444,6 +8851,47 @@ pub mod types {
             value.parse()
         }
     }
+    #[doc = "The task-level state of the runs in flight, pushed on the console stream.\n\nRun counters alone cannot distinguish \"working\" from \"wedged\" — both leave `done_tasks`\nwhere it was. These are the figures that can: what a worker is holding, since when, and what\nsettled most recently."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"The task-level state of the runs in flight, pushed on the console stream.\\n\\nRun counters alone cannot distinguish \\\"working\\\" from \\\"wedged\\\" — both leave `done_tasks`\\nwhere it was. These are the figures that can: what a worker is holding, since when, and what\\nsettled most recently.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"events\","]
+    #[doc = "    \"runs\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"events\": {"]
+    #[doc = "      \"description\": \"The most recently settled tasks of the runs in flight, newest first. Empty when nothing\\nis running, which is the honest answer rather than a replay of the last scan.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/TaskEventView\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"runs\": {"]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/RunActivityView\""]
+    #[doc = "      }"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct ScanActivityView {
+        #[doc = "The most recently settled tasks of the runs in flight, newest first. Empty when nothing\nis running, which is the honest answer rather than a replay of the last scan."]
+        pub events: ::std::vec::Vec<TaskEventView>,
+        pub runs: ::std::vec::Vec<RunActivityView>,
+    }
+    impl ScanActivityView {
+        pub fn builder() -> builder::ScanActivityView {
+            Default::default()
+        }
+    }
     #[doc = "Scan cadence."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -8518,13 +8966,13 @@ pub mod types {
             value.parse()
         }
     }
-    #[doc = "A scan run (progress + audit; mirrors `JetStream` dispatch)."]
+    #[doc = "A scan run as the console reads it: the persisted row plus the slug of the provider it was\nscoped to.\n\nPublished under the `ScanRun` component name, which is what the generated client and the\nfrontend already call it. The slug is the addition: a run carrying only `provider_id` renders\nas a truncated uuid and cannot be matched against a filter an operator typed, which is why\nthe panel's provider filter had no effect on anything the live stream pushed."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"A scan run (progress + audit; mirrors `JetStream` dispatch).\","]
+    #[doc = "  \"description\": \"A scan run as the console reads it: the persisted row plus the slug of the provider it was\\nscoped to.\\n\\nPublished under the `ScanRun` component name, which is what the generated client and the\\nfrontend already call it. The slug is the addition: a run carrying only `provider_id` renders\\nas a truncated uuid and cannot be matched against a filter an operator typed, which is why\\nthe panel's provider filter had no effect on anything the live stream pushed.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"created_at\","]
@@ -8567,6 +9015,13 @@ pub mod types {
     #[doc = "        }"]
     #[doc = "      ]"]
     #[doc = "    },"]
+    #[doc = "    \"provider_slug\": {"]
+    #[doc = "      \"description\": \"`null` for an all-provider run, and for a run whose provider has since been deleted.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
     #[doc = "    \"started_at\": {"]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
@@ -8595,6 +9050,9 @@ pub mod types {
         pub mode: ScanMode,
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub provider_id: ::std::option::Option<ScanRunProviderId>,
+        #[doc = "`null` for an all-provider run, and for a run whose provider has since been deleted."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub provider_slug: ::std::option::Option<::std::string::String>,
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub started_at: ::std::option::Option<::std::string::String>,
         pub state: RunState,
@@ -8730,6 +9188,125 @@ pub mod types {
     impl ::std::convert::From<ProviderId> for ScanRunProviderId {
         fn from(value: ProviderId) -> Self {
             Self::Variant1(value)
+        }
+    }
+    #[doc = "What the scan filter matched, as figures rather than rows.\n\nScoped by the *same* provider and window the row list uses, so a narrowed filter reports its\nown success rate. Rates are left to the reader to divide: publishing `tasks_done` and\n`tasks_total` rather than a percentage keeps the panel able to show both the ratio and the\nmagnitude behind it, which a lone percentage cannot."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"What the scan filter matched, as figures rather than rows.\\n\\nScoped by the *same* provider and window the row list uses, so a narrowed filter reports its\\nown success rate. Rates are left to the reader to divide: publishing `tasks_done` and\\n`tasks_total` rather than a percentage keeps the panel able to show both the ratio and the\\nmagnitude behind it, which a lone percentage cannot.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"busy_seconds\","]
+    #[doc = "    \"failures_open\","]
+    #[doc = "    \"providers\","]
+    #[doc = "    \"runs_cancelled\","]
+    #[doc = "    \"runs_completed\","]
+    #[doc = "    \"runs_failed\","]
+    #[doc = "    \"runs_queued\","]
+    #[doc = "    \"runs_running\","]
+    #[doc = "    \"runs_total\","]
+    #[doc = "    \"tasks_done\","]
+    #[doc = "    \"tasks_failed\","]
+    #[doc = "    \"tasks_total\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"busy_seconds\": {"]
+    #[doc = "      \"description\": \"Summed run wall-clock in seconds; a run in flight counts up to now.\","]
+    #[doc = "      \"type\": \"number\","]
+    #[doc = "      \"format\": \"double\""]
+    #[doc = "    },"]
+    #[doc = "    \"failures_open\": {"]
+    #[doc = "      \"description\": \"Failures still in the triage feed, as opposed to `tasks_failed`, which counts every\\nfailure in the window including the ones an operator has cleared.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"first_run_at\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"last_run_at\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"providers\": {"]
+    #[doc = "      \"description\": \"Per-provider health over the same window, worst first. Providers with neither a run nor\\nan open failure are omitted.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/ProviderScanHealthView\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"runs_cancelled\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"runs_completed\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"runs_failed\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"runs_queued\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"runs_running\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"runs_total\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"tasks_done\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"tasks_failed\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"tasks_total\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct ScanSummaryView {
+        #[doc = "Summed run wall-clock in seconds; a run in flight counts up to now."]
+        pub busy_seconds: f64,
+        #[doc = "Failures still in the triage feed, as opposed to `tasks_failed`, which counts every\nfailure in the window including the ones an operator has cleared."]
+        pub failures_open: i64,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub first_run_at: ::std::option::Option<::std::string::String>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub last_run_at: ::std::option::Option<::std::string::String>,
+        #[doc = "Per-provider health over the same window, worst first. Providers with neither a run nor\nan open failure are omitted."]
+        pub providers: ::std::vec::Vec<ProviderScanHealthView>,
+        pub runs_cancelled: i64,
+        pub runs_completed: i64,
+        pub runs_failed: i64,
+        pub runs_queued: i64,
+        pub runs_running: i64,
+        pub runs_total: i64,
+        pub tasks_done: i64,
+        pub tasks_failed: i64,
+        pub tasks_total: i64,
+    }
+    impl ScanSummaryView {
+        pub fn builder() -> builder::ScanSummaryView {
+            Default::default()
         }
     }
     #[doc = "Identifies a scan task."]
@@ -11230,6 +11807,85 @@ pub mod types {
     impl ::std::fmt::Display for TagId {
         fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
             self.0.fmt(f)
+        }
+    }
+    #[doc = "One settled task in the live tail."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One settled task in the live tail.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"attempts\","]
+    #[doc = "    \"id\","]
+    #[doc = "    \"kind\","]
+    #[doc = "    \"run_id\","]
+    #[doc = "    \"state\","]
+    #[doc = "    \"target\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"attempts\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int32\""]
+    #[doc = "    },"]
+    #[doc = "    \"error\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"finished_at\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"kind\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"provider_slug\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"run_id\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/ScanRunId\""]
+    #[doc = "    },"]
+    #[doc = "    \"state\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/TaskState\""]
+    #[doc = "    },"]
+    #[doc = "    \"target\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/Value\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct TaskEventView {
+        pub attempts: i32,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub error: ::std::option::Option<::std::string::String>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub finished_at: ::std::option::Option<::std::string::String>,
+        pub id: ::uuid::Uuid,
+        pub kind: ::std::string::String,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub provider_slug: ::std::option::Option<::std::string::String>,
+        pub run_id: ScanRunId,
+        pub state: TaskState,
+        pub target: Value,
+    }
+    impl TaskEventView {
+        pub fn builder() -> builder::TaskEventView {
+            Default::default()
         }
     }
     #[doc = "Lifecycle of an individual scan task."]
@@ -15252,6 +15908,115 @@ pub mod types {
             }
         }
         #[derive(Clone, Debug)]
+        pub struct ClearFailuresBody {
+            error: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            match_null_error:
+                ::std::result::Result<::std::option::Option<bool>, ::std::string::String>,
+            provider: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            run_id: ::std::result::Result<
+                ::std::option::Option<super::ClearFailuresBodyRunId>,
+                ::std::string::String,
+            >,
+            since: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+        impl ::std::default::Default for ClearFailuresBody {
+            fn default() -> Self {
+                Self {
+                    error: Ok(Default::default()),
+                    match_null_error: Ok(Default::default()),
+                    provider: Ok(Default::default()),
+                    run_id: Ok(Default::default()),
+                    since: Ok(Default::default()),
+                }
+            }
+        }
+        impl ClearFailuresBody {
+            pub fn error<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.error = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for error: {e}"));
+                self
+            }
+            pub fn match_null_error<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<bool>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.match_null_error = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for match_null_error: {e}")
+                });
+                self
+            }
+            pub fn provider<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.provider = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for provider: {e}"));
+                self
+            }
+            pub fn run_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<super::ClearFailuresBodyRunId>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.run_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for run_id: {e}"));
+                self
+            }
+            pub fn since<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.since = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for since: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<ClearFailuresBody> for super::ClearFailuresBody {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: ClearFailuresBody,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    error: value.error?,
+                    match_null_error: value.match_null_error?,
+                    provider: value.provider?,
+                    run_id: value.run_id?,
+                    since: value.since?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::ClearFailuresBody> for ClearFailuresBody {
+            fn from(value: super::ClearFailuresBody) -> Self {
+                Self {
+                    error: Ok(value.error),
+                    match_null_error: Ok(value.match_null_error),
+                    provider: Ok(value.provider),
+                    run_id: Ok(value.run_id),
+                    since: Ok(value.since),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
         pub struct ConflictRow {
             detected_at: ::std::result::Result<::std::string::String, ::std::string::String>,
             field: ::std::result::Result<::std::string::String, ::std::string::String>,
@@ -16361,6 +17126,10 @@ pub mod types {
         }
         #[derive(Clone, Debug)]
         pub struct FailedTaskView {
+            acknowledged_at: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
             attempts: ::std::result::Result<i32, ::std::string::String>,
             error: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
@@ -16382,6 +17151,7 @@ pub mod types {
         impl ::std::default::Default for FailedTaskView {
             fn default() -> Self {
                 Self {
+                    acknowledged_at: Ok(Default::default()),
                     attempts: Err("no value supplied for attempts".to_string()),
                     error: Ok(Default::default()),
                     finished_at: Ok(Default::default()),
@@ -16394,6 +17164,16 @@ pub mod types {
             }
         }
         impl FailedTaskView {
+            pub fn acknowledged_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.acknowledged_at = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for acknowledged_at: {e}")
+                });
+                self
+            }
             pub fn attempts<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<i32>,
@@ -16481,6 +17261,7 @@ pub mod types {
                 value: FailedTaskView,
             ) -> ::std::result::Result<Self, super::error::ConversionError> {
                 Ok(Self {
+                    acknowledged_at: value.acknowledged_at?,
                     attempts: value.attempts?,
                     error: value.error?,
                     finished_at: value.finished_at?,
@@ -16495,6 +17276,7 @@ pub mod types {
         impl ::std::convert::From<super::FailedTaskView> for FailedTaskView {
             fn from(value: super::FailedTaskView) -> Self {
                 Self {
+                    acknowledged_at: Ok(value.acknowledged_at),
                     attempts: Ok(value.attempts),
                     error: Ok(value.error),
                     finished_at: Ok(value.finished_at),
@@ -16508,9 +17290,14 @@ pub mod types {
         }
         #[derive(Clone, Debug)]
         pub struct FailureGroupView {
+            cleared: ::std::result::Result<i64, ::std::string::String>,
             count: ::std::result::Result<i64, ::std::string::String>,
             error: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            kinds: ::std::result::Result<
+                ::std::vec::Vec<::std::string::String>,
                 ::std::string::String,
             >,
             latest_at: ::std::result::Result<
@@ -16525,14 +17312,26 @@ pub mod types {
         impl ::std::default::Default for FailureGroupView {
             fn default() -> Self {
                 Self {
+                    cleared: Err("no value supplied for cleared".to_string()),
                     count: Err("no value supplied for count".to_string()),
                     error: Ok(Default::default()),
+                    kinds: Err("no value supplied for kinds".to_string()),
                     latest_at: Ok(Default::default()),
                     providers: Err("no value supplied for providers".to_string()),
                 }
             }
         }
         impl FailureGroupView {
+            pub fn cleared<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.cleared = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for cleared: {e}"));
+                self
+            }
             pub fn count<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<i64>,
@@ -16551,6 +17350,16 @@ pub mod types {
                 self.error = value
                     .try_into()
                     .map_err(|e| format!("error converting supplied value for error: {e}"));
+                self
+            }
+            pub fn kinds<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.kinds = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for kinds: {e}"));
                 self
             }
             pub fn latest_at<T>(mut self, value: T) -> Self
@@ -16580,8 +17389,10 @@ pub mod types {
                 value: FailureGroupView,
             ) -> ::std::result::Result<Self, super::error::ConversionError> {
                 Ok(Self {
+                    cleared: value.cleared?,
                     count: value.count?,
                     error: value.error?,
+                    kinds: value.kinds?,
                     latest_at: value.latest_at?,
                     providers: value.providers?,
                 })
@@ -16590,10 +17401,52 @@ pub mod types {
         impl ::std::convert::From<super::FailureGroupView> for FailureGroupView {
             fn from(value: super::FailureGroupView) -> Self {
                 Self {
+                    cleared: Ok(value.cleared),
                     count: Ok(value.count),
                     error: Ok(value.error),
+                    kinds: Ok(value.kinds),
                     latest_at: Ok(value.latest_at),
                     providers: Ok(value.providers),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct FailuresClearedView {
+            cleared: ::std::result::Result<i64, ::std::string::String>,
+        }
+        impl ::std::default::Default for FailuresClearedView {
+            fn default() -> Self {
+                Self {
+                    cleared: Err("no value supplied for cleared".to_string()),
+                }
+            }
+        }
+        impl FailuresClearedView {
+            pub fn cleared<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.cleared = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for cleared: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<FailuresClearedView> for super::FailuresClearedView {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: FailuresClearedView,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    cleared: value.cleared?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::FailuresClearedView> for FailuresClearedView {
+            fn from(value: super::FailuresClearedView) -> Self {
+                Self {
+                    cleared: Ok(value.cleared),
                 }
             }
         }
@@ -21519,6 +22372,178 @@ pub mod types {
             }
         }
         #[derive(Clone, Debug)]
+        pub struct ProviderScanHealthView {
+            failures_open: ::std::result::Result<i64, ::std::string::String>,
+            last_failure_at: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            last_run_at: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            name: ::std::result::Result<::std::string::String, ::std::string::String>,
+            runs: ::std::result::Result<i64, ::std::string::String>,
+            runs_active: ::std::result::Result<i64, ::std::string::String>,
+            runs_failed: ::std::result::Result<i64, ::std::string::String>,
+            slug: ::std::result::Result<::std::string::String, ::std::string::String>,
+            tasks_done: ::std::result::Result<i64, ::std::string::String>,
+            tasks_failed: ::std::result::Result<i64, ::std::string::String>,
+        }
+        impl ::std::default::Default for ProviderScanHealthView {
+            fn default() -> Self {
+                Self {
+                    failures_open: Err("no value supplied for failures_open".to_string()),
+                    last_failure_at: Ok(Default::default()),
+                    last_run_at: Ok(Default::default()),
+                    name: Err("no value supplied for name".to_string()),
+                    runs: Err("no value supplied for runs".to_string()),
+                    runs_active: Err("no value supplied for runs_active".to_string()),
+                    runs_failed: Err("no value supplied for runs_failed".to_string()),
+                    slug: Err("no value supplied for slug".to_string()),
+                    tasks_done: Err("no value supplied for tasks_done".to_string()),
+                    tasks_failed: Err("no value supplied for tasks_failed".to_string()),
+                }
+            }
+        }
+        impl ProviderScanHealthView {
+            pub fn failures_open<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.failures_open = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for failures_open: {e}"));
+                self
+            }
+            pub fn last_failure_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.last_failure_at = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for last_failure_at: {e}")
+                });
+                self
+            }
+            pub fn last_run_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.last_run_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for last_run_at: {e}"));
+                self
+            }
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+            pub fn runs<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.runs = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for runs: {e}"));
+                self
+            }
+            pub fn runs_active<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.runs_active = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for runs_active: {e}"));
+                self
+            }
+            pub fn runs_failed<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.runs_failed = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for runs_failed: {e}"));
+                self
+            }
+            pub fn slug<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.slug = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for slug: {e}"));
+                self
+            }
+            pub fn tasks_done<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.tasks_done = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for tasks_done: {e}"));
+                self
+            }
+            pub fn tasks_failed<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.tasks_failed = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for tasks_failed: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<ProviderScanHealthView> for super::ProviderScanHealthView {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: ProviderScanHealthView,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    failures_open: value.failures_open?,
+                    last_failure_at: value.last_failure_at?,
+                    last_run_at: value.last_run_at?,
+                    name: value.name?,
+                    runs: value.runs?,
+                    runs_active: value.runs_active?,
+                    runs_failed: value.runs_failed?,
+                    slug: value.slug?,
+                    tasks_done: value.tasks_done?,
+                    tasks_failed: value.tasks_failed?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::ProviderScanHealthView> for ProviderScanHealthView {
+            fn from(value: super::ProviderScanHealthView) -> Self {
+                Self {
+                    failures_open: Ok(value.failures_open),
+                    last_failure_at: Ok(value.last_failure_at),
+                    last_run_at: Ok(value.last_run_at),
+                    name: Ok(value.name),
+                    runs: Ok(value.runs),
+                    runs_active: Ok(value.runs_active),
+                    runs_failed: Ok(value.runs_failed),
+                    slug: Ok(value.slug),
+                    tasks_done: Ok(value.tasks_done),
+                    tasks_failed: Ok(value.tasks_failed),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
         pub struct ProviderStat {
             adapter: ::std::result::Result<::std::string::String, ::std::string::String>,
             blocked_sources: ::std::result::Result<i64, ::std::string::String>,
@@ -23008,6 +24033,180 @@ pub mod types {
             }
         }
         #[derive(Clone, Debug)]
+        pub struct RunActivityView {
+            kinds: ::std::result::Result<
+                ::std::vec::Vec<::std::string::String>,
+                ::std::string::String,
+            >,
+            oldest_claim_at: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            queued_tasks: ::std::result::Result<i64, ::std::string::String>,
+            run_id: ::std::result::Result<super::ScanRunId, ::std::string::String>,
+            running_tasks: ::std::result::Result<i64, ::std::string::String>,
+            workers: ::std::result::Result<i64, ::std::string::String>,
+        }
+        impl ::std::default::Default for RunActivityView {
+            fn default() -> Self {
+                Self {
+                    kinds: Err("no value supplied for kinds".to_string()),
+                    oldest_claim_at: Ok(Default::default()),
+                    queued_tasks: Err("no value supplied for queued_tasks".to_string()),
+                    run_id: Err("no value supplied for run_id".to_string()),
+                    running_tasks: Err("no value supplied for running_tasks".to_string()),
+                    workers: Err("no value supplied for workers".to_string()),
+                }
+            }
+        }
+        impl RunActivityView {
+            pub fn kinds<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.kinds = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for kinds: {e}"));
+                self
+            }
+            pub fn oldest_claim_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.oldest_claim_at = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for oldest_claim_at: {e}")
+                });
+                self
+            }
+            pub fn queued_tasks<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.queued_tasks = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for queued_tasks: {e}"));
+                self
+            }
+            pub fn run_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::ScanRunId>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.run_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for run_id: {e}"));
+                self
+            }
+            pub fn running_tasks<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.running_tasks = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for running_tasks: {e}"));
+                self
+            }
+            pub fn workers<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.workers = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for workers: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<RunActivityView> for super::RunActivityView {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: RunActivityView,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    kinds: value.kinds?,
+                    oldest_claim_at: value.oldest_claim_at?,
+                    queued_tasks: value.queued_tasks?,
+                    run_id: value.run_id?,
+                    running_tasks: value.running_tasks?,
+                    workers: value.workers?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::RunActivityView> for RunActivityView {
+            fn from(value: super::RunActivityView) -> Self {
+                Self {
+                    kinds: Ok(value.kinds),
+                    oldest_claim_at: Ok(value.oldest_claim_at),
+                    queued_tasks: Ok(value.queued_tasks),
+                    run_id: Ok(value.run_id),
+                    running_tasks: Ok(value.running_tasks),
+                    workers: Ok(value.workers),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct ScanActivityView {
+            events:
+                ::std::result::Result<::std::vec::Vec<super::TaskEventView>, ::std::string::String>,
+            runs: ::std::result::Result<
+                ::std::vec::Vec<super::RunActivityView>,
+                ::std::string::String,
+            >,
+        }
+        impl ::std::default::Default for ScanActivityView {
+            fn default() -> Self {
+                Self {
+                    events: Err("no value supplied for events".to_string()),
+                    runs: Err("no value supplied for runs".to_string()),
+                }
+            }
+        }
+        impl ScanActivityView {
+            pub fn events<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::TaskEventView>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.events = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for events: {e}"));
+                self
+            }
+            pub fn runs<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::RunActivityView>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.runs = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for runs: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<ScanActivityView> for super::ScanActivityView {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: ScanActivityView,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    events: value.events?,
+                    runs: value.runs?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::ScanActivityView> for ScanActivityView {
+            fn from(value: super::ScanActivityView) -> Self {
+                Self {
+                    events: Ok(value.events),
+                    runs: Ok(value.runs),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
         pub struct ScanRun {
             created_at: ::std::result::Result<::std::string::String, ::std::string::String>,
             done_tasks: ::std::result::Result<i32, ::std::string::String>,
@@ -23020,6 +24219,10 @@ pub mod types {
             mode: ::std::result::Result<super::ScanMode, ::std::string::String>,
             provider_id: ::std::result::Result<
                 ::std::option::Option<super::ScanRunProviderId>,
+                ::std::string::String,
+            >,
+            provider_slug: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
                 ::std::string::String,
             >,
             started_at: ::std::result::Result<
@@ -23039,6 +24242,7 @@ pub mod types {
                     id: Err("no value supplied for id".to_string()),
                     mode: Err("no value supplied for mode".to_string()),
                     provider_id: Ok(Default::default()),
+                    provider_slug: Ok(Default::default()),
                     started_at: Ok(Default::default()),
                     state: Err("no value supplied for state".to_string()),
                     total_tasks: Err("no value supplied for total_tasks".to_string()),
@@ -23116,6 +24320,16 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for provider_id: {e}"));
                 self
             }
+            pub fn provider_slug<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.provider_slug = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for provider_slug: {e}"));
+                self
+            }
             pub fn started_at<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
@@ -23160,6 +24374,7 @@ pub mod types {
                     id: value.id?,
                     mode: value.mode?,
                     provider_id: value.provider_id?,
+                    provider_slug: value.provider_slug?,
                     started_at: value.started_at?,
                     state: value.state?,
                     total_tasks: value.total_tasks?,
@@ -23176,6 +24391,7 @@ pub mod types {
                     id: Ok(value.id),
                     mode: Ok(value.mode),
                     provider_id: Ok(value.provider_id),
+                    provider_slug: Ok(value.provider_slug),
                     started_at: Ok(value.started_at),
                     state: Ok(value.state),
                     total_tasks: Ok(value.total_tasks),
@@ -23233,6 +24449,237 @@ pub mod types {
                 Self {
                     items: Ok(value.items),
                     total: Ok(value.total),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct ScanSummaryView {
+            busy_seconds: ::std::result::Result<f64, ::std::string::String>,
+            failures_open: ::std::result::Result<i64, ::std::string::String>,
+            first_run_at: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            last_run_at: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            providers: ::std::result::Result<
+                ::std::vec::Vec<super::ProviderScanHealthView>,
+                ::std::string::String,
+            >,
+            runs_cancelled: ::std::result::Result<i64, ::std::string::String>,
+            runs_completed: ::std::result::Result<i64, ::std::string::String>,
+            runs_failed: ::std::result::Result<i64, ::std::string::String>,
+            runs_queued: ::std::result::Result<i64, ::std::string::String>,
+            runs_running: ::std::result::Result<i64, ::std::string::String>,
+            runs_total: ::std::result::Result<i64, ::std::string::String>,
+            tasks_done: ::std::result::Result<i64, ::std::string::String>,
+            tasks_failed: ::std::result::Result<i64, ::std::string::String>,
+            tasks_total: ::std::result::Result<i64, ::std::string::String>,
+        }
+        impl ::std::default::Default for ScanSummaryView {
+            fn default() -> Self {
+                Self {
+                    busy_seconds: Err("no value supplied for busy_seconds".to_string()),
+                    failures_open: Err("no value supplied for failures_open".to_string()),
+                    first_run_at: Ok(Default::default()),
+                    last_run_at: Ok(Default::default()),
+                    providers: Err("no value supplied for providers".to_string()),
+                    runs_cancelled: Err("no value supplied for runs_cancelled".to_string()),
+                    runs_completed: Err("no value supplied for runs_completed".to_string()),
+                    runs_failed: Err("no value supplied for runs_failed".to_string()),
+                    runs_queued: Err("no value supplied for runs_queued".to_string()),
+                    runs_running: Err("no value supplied for runs_running".to_string()),
+                    runs_total: Err("no value supplied for runs_total".to_string()),
+                    tasks_done: Err("no value supplied for tasks_done".to_string()),
+                    tasks_failed: Err("no value supplied for tasks_failed".to_string()),
+                    tasks_total: Err("no value supplied for tasks_total".to_string()),
+                }
+            }
+        }
+        impl ScanSummaryView {
+            pub fn busy_seconds<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<f64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.busy_seconds = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for busy_seconds: {e}"));
+                self
+            }
+            pub fn failures_open<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.failures_open = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for failures_open: {e}"));
+                self
+            }
+            pub fn first_run_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.first_run_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for first_run_at: {e}"));
+                self
+            }
+            pub fn last_run_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.last_run_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for last_run_at: {e}"));
+                self
+            }
+            pub fn providers<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::ProviderScanHealthView>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.providers = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for providers: {e}"));
+                self
+            }
+            pub fn runs_cancelled<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.runs_cancelled = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for runs_cancelled: {e}")
+                });
+                self
+            }
+            pub fn runs_completed<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.runs_completed = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for runs_completed: {e}")
+                });
+                self
+            }
+            pub fn runs_failed<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.runs_failed = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for runs_failed: {e}"));
+                self
+            }
+            pub fn runs_queued<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.runs_queued = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for runs_queued: {e}"));
+                self
+            }
+            pub fn runs_running<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.runs_running = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for runs_running: {e}"));
+                self
+            }
+            pub fn runs_total<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.runs_total = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for runs_total: {e}"));
+                self
+            }
+            pub fn tasks_done<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.tasks_done = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for tasks_done: {e}"));
+                self
+            }
+            pub fn tasks_failed<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.tasks_failed = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for tasks_failed: {e}"));
+                self
+            }
+            pub fn tasks_total<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.tasks_total = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for tasks_total: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<ScanSummaryView> for super::ScanSummaryView {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: ScanSummaryView,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    busy_seconds: value.busy_seconds?,
+                    failures_open: value.failures_open?,
+                    first_run_at: value.first_run_at?,
+                    last_run_at: value.last_run_at?,
+                    providers: value.providers?,
+                    runs_cancelled: value.runs_cancelled?,
+                    runs_completed: value.runs_completed?,
+                    runs_failed: value.runs_failed?,
+                    runs_queued: value.runs_queued?,
+                    runs_running: value.runs_running?,
+                    runs_total: value.runs_total?,
+                    tasks_done: value.tasks_done?,
+                    tasks_failed: value.tasks_failed?,
+                    tasks_total: value.tasks_total?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::ScanSummaryView> for ScanSummaryView {
+            fn from(value: super::ScanSummaryView) -> Self {
+                Self {
+                    busy_seconds: Ok(value.busy_seconds),
+                    failures_open: Ok(value.failures_open),
+                    first_run_at: Ok(value.first_run_at),
+                    last_run_at: Ok(value.last_run_at),
+                    providers: Ok(value.providers),
+                    runs_cancelled: Ok(value.runs_cancelled),
+                    runs_completed: Ok(value.runs_completed),
+                    runs_failed: Ok(value.runs_failed),
+                    runs_queued: Ok(value.runs_queued),
+                    runs_running: Ok(value.runs_running),
+                    runs_total: Ok(value.runs_total),
+                    tasks_done: Ok(value.tasks_done),
+                    tasks_failed: Ok(value.tasks_failed),
+                    tasks_total: Ok(value.tasks_total),
                 }
             }
         }
@@ -26701,6 +28148,167 @@ pub mod types {
             }
         }
         #[derive(Clone, Debug)]
+        pub struct TaskEventView {
+            attempts: ::std::result::Result<i32, ::std::string::String>,
+            error: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            finished_at: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            kind: ::std::result::Result<::std::string::String, ::std::string::String>,
+            provider_slug: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            run_id: ::std::result::Result<super::ScanRunId, ::std::string::String>,
+            state: ::std::result::Result<super::TaskState, ::std::string::String>,
+            target: ::std::result::Result<super::Value, ::std::string::String>,
+        }
+        impl ::std::default::Default for TaskEventView {
+            fn default() -> Self {
+                Self {
+                    attempts: Err("no value supplied for attempts".to_string()),
+                    error: Ok(Default::default()),
+                    finished_at: Ok(Default::default()),
+                    id: Err("no value supplied for id".to_string()),
+                    kind: Err("no value supplied for kind".to_string()),
+                    provider_slug: Ok(Default::default()),
+                    run_id: Err("no value supplied for run_id".to_string()),
+                    state: Err("no value supplied for state".to_string()),
+                    target: Err("no value supplied for target".to_string()),
+                }
+            }
+        }
+        impl TaskEventView {
+            pub fn attempts<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.attempts = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for attempts: {e}"));
+                self
+            }
+            pub fn error<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.error = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for error: {e}"));
+                self
+            }
+            pub fn finished_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.finished_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for finished_at: {e}"));
+                self
+            }
+            pub fn id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for id: {e}"));
+                self
+            }
+            pub fn kind<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.kind = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for kind: {e}"));
+                self
+            }
+            pub fn provider_slug<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.provider_slug = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for provider_slug: {e}"));
+                self
+            }
+            pub fn run_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::ScanRunId>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.run_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for run_id: {e}"));
+                self
+            }
+            pub fn state<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::TaskState>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.state = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for state: {e}"));
+                self
+            }
+            pub fn target<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::Value>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.target = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for target: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<TaskEventView> for super::TaskEventView {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: TaskEventView,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    attempts: value.attempts?,
+                    error: value.error?,
+                    finished_at: value.finished_at?,
+                    id: value.id?,
+                    kind: value.kind?,
+                    provider_slug: value.provider_slug?,
+                    run_id: value.run_id?,
+                    state: value.state?,
+                    target: value.target?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::TaskEventView> for TaskEventView {
+            fn from(value: super::TaskEventView) -> Self {
+                Self {
+                    attempts: Ok(value.attempts),
+                    error: Ok(value.error),
+                    finished_at: Ok(value.finished_at),
+                    id: Ok(value.id),
+                    kind: Ok(value.kind),
+                    provider_slug: Ok(value.provider_slug),
+                    run_id: Ok(value.run_id),
+                    state: Ok(value.state),
+                    target: Ok(value.target),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
         pub struct TasteFeature {
             kind: ::std::result::Result<::std::string::String, ::std::string::String>,
             value: ::std::result::Result<::std::string::String, ::std::string::String>,
@@ -29091,15 +30699,19 @@ impl Client {
     pub fn reset_tunable(&self) -> builder::ResetTunable<'_> {
         builder::ResetTunable::new(self)
     }
-    #[doc = "List recent scan failures\n\nThe most recently failed scan tasks with their errors, for triaging stuck providers and\nbroken selectors (design §17.2.7). The grouped view is `/v1/admin/scan-failures/grouped`.\n\nSends a `GET` request to `/v1/admin/scan-failures`\n\nArguments:\n- `limit`\n- `provider`: Provider slug. Absent lists every provider's failures.\n- `since`: Inclusive lower bound on `finished_at`, RFC 3339.\n```ignore\nlet response = client.scan_failures()\n    .limit(limit)\n    .provider(provider)\n    .since(since)\n    .send()\n    .await;\n```"]
+    #[doc = "List recent scan failures\n\nThe most recently failed scan tasks with their errors, for triaging stuck providers and\nbroken selectors (design §17.2.7). The grouped view is `/v1/admin/scan-failures/grouped`.\n\nSends a `GET` request to `/v1/admin/scan-failures`\n\nArguments:\n- `include_cleared`: Include failures an operator has already cleared. Off by default, which is what clearing\nis for; cleared failures are acknowledged rather than deleted, so this always reopens the\nfull window.\n- `limit`\n- `provider`: Provider slug. Absent lists every provider's failures.\n- `since`: Inclusive lower bound on `finished_at`, RFC 3339.\n```ignore\nlet response = client.scan_failures()\n    .include_cleared(include_cleared)\n    .limit(limit)\n    .provider(provider)\n    .since(since)\n    .send()\n    .await;\n```"]
     pub fn scan_failures(&self) -> builder::ScanFailures<'_> {
         builder::ScanFailures::new(self)
     }
-    #[doc = "Group scan failures by error\n\nThe same failures collapsed by their error text, worst first: one broken selector that hit\ntwelve series is one row with a count, not twelve rows of the same sentence.\n\nSends a `GET` request to `/v1/admin/scan-failures/grouped`\n\nArguments:\n- `limit`\n- `provider`: Provider slug. Absent lists every provider's failures.\n- `since`: Inclusive lower bound on `finished_at`, RFC 3339.\n```ignore\nlet response = client.scan_failure_groups()\n    .limit(limit)\n    .provider(provider)\n    .since(since)\n    .send()\n    .await;\n```"]
+    #[doc = "Clear scan failures\n\nAcknowledges the selected failures so they leave the triage feed. Nothing is deleted: the\ntask keeps its `failed` state, its error and its contribution to the run counters, so the\nhistory still reconciles and `include_cleared=true` reopens the full window.\n\nBehind `scans.run` rather than `scans.read`, because it changes what every *other* operator\nsees: a reader entitled to watch the queue must not be able to hide an outage from the person\non call.\n\nSends a `POST` request to `/v1/admin/scan-failures/clear`\n\n```ignore\nlet response = client.clear_scan_failures()\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn clear_scan_failures(&self) -> builder::ClearScanFailures<'_> {
+        builder::ClearScanFailures::new(self)
+    }
+    #[doc = "Group scan failures by error\n\nThe same failures collapsed by their error text, worst first: one broken selector that hit\ntwelve series is one row with a count, not twelve rows of the same sentence.\n\nSends a `GET` request to `/v1/admin/scan-failures/grouped`\n\nArguments:\n- `include_cleared`: Include failures an operator has already cleared. Off by default, which is what clearing\nis for; cleared failures are acknowledged rather than deleted, so this always reopens the\nfull window.\n- `limit`\n- `provider`: Provider slug. Absent lists every provider's failures.\n- `since`: Inclusive lower bound on `finished_at`, RFC 3339.\n```ignore\nlet response = client.scan_failure_groups()\n    .include_cleared(include_cleared)\n    .limit(limit)\n    .provider(provider)\n    .since(since)\n    .send()\n    .await;\n```"]
     pub fn scan_failure_groups(&self) -> builder::ScanFailureGroups<'_> {
         builder::ScanFailureGroups::new(self)
     }
-    #[doc = "List recent scan runs\n\nA filtered, paged window on the run history, newest first. The live variant is\n`/v1/admin/stream`'s `runs` event; this GET is the console's first paint and its\nmanual-refresh path.\n\nSends a `GET` request to `/v1/admin/scans`\n\nArguments:\n- `limit`\n- `mode`\n- `offset`\n- `provider`: Provider slug. Absent lists every provider's runs.\n- `since`: Inclusive lower bound on `created_at`, RFC 3339.\n- `state`\n```ignore\nlet response = client.list_scans()\n    .limit(limit)\n    .mode(mode)\n    .offset(offset)\n    .provider(provider)\n    .since(since)\n    .state(state)\n    .send()\n    .await;\n```"]
+    #[doc = "List recent scan runs\n\nA filtered, paged window on the run history, newest first. The live variant is\n`/v1/admin/stream`'s `runs` event; this GET is the console's first paint and its\nmanual-refresh path.\n\nSends a `GET` request to `/v1/admin/scans`\n\nArguments:\n- `limit`\n- `mode`\n- `offset`\n- `provider`: Provider slug. Absent lists every provider's runs.\n- `since`: Inclusive lower bound on `created_at`, RFC 3339.\n- `sort`: Ordering. Defaults to newest first.\n- `state`\n```ignore\nlet response = client.list_scans()\n    .limit(limit)\n    .mode(mode)\n    .offset(offset)\n    .provider(provider)\n    .since(since)\n    .sort(sort)\n    .state(state)\n    .send()\n    .await;\n```"]
     pub fn list_scans(&self) -> builder::ListScans<'_> {
         builder::ListScans::new(self)
     }
@@ -29107,9 +30719,17 @@ impl Client {
     pub fn trigger_scan(&self) -> builder::TriggerScan<'_> {
         builder::TriggerScan::new(self)
     }
+    #[doc = "Live scan activity\n\nThe task-level state of the runs in flight: what each is holding, since when, and what\nsettled most recently. The live variant is `/v1/admin/stream`'s `activity` event; this GET is\nthe panel's first paint, because a live tail that starts empty for three seconds reads as an\nidle deployment.\n\nSends a `GET` request to `/v1/admin/scans/activity`\n\n```ignore\nlet response = client.scan_activity()\n    .send()\n    .await;\n```"]
+    pub fn scan_activity(&self) -> builder::ScanActivity<'_> {
+        builder::ScanActivity::new(self)
+    }
     #[doc = "Live scan-progress stream\n\nSSE live scan progress for the operator console. Polls the durable `scan_runs` (the system\nof record for progress) every 2 s and pushes a `runs` event; a `scan.progress` NATS relay\nis a documented enhancement.\n\nSends a `GET` request to `/v1/admin/scans/stream`\n\n```ignore\nlet response = client.scan_stream()\n    .send()\n    .await;\n```"]
     pub fn scan_stream(&self) -> builder::ScanStream<'_> {
         builder::ScanStream::new(self)
+    }
+    #[doc = "Summarise the scan window\n\nThe same provider and time filter the run list uses, answered as figures: how many runs\nreached each state, how many tasks succeeded and failed, how many failures are still open,\nand the per-provider breakdown behind those totals.\n\nSends a `GET` request to `/v1/admin/scans/summary`\n\nArguments:\n- `provider`: Provider slug. Absent summarises every provider.\n- `since`: Inclusive lower bound, RFC 3339. Absent summarises all of recorded history.\n```ignore\nlet response = client.scan_summary()\n    .provider(provider)\n    .since(since)\n    .send()\n    .await;\n```"]
+    pub fn scan_summary(&self) -> builder::ScanSummary<'_> {
+        builder::ScanSummary::new(self)
     }
     #[doc = "Get a scan run\n\nSends a `GET` request to `/v1/admin/scans/{run_id}`\n\nArguments:\n- `run_id`: Scan run id\n```ignore\nlet response = client.get_scan()\n    .run_id(run_id)\n    .send()\n    .await;\n```"]
     pub fn get_scan(&self) -> builder::GetScan<'_> {
@@ -29123,7 +30743,7 @@ impl Client {
     pub fn system_stats(&self) -> builder::SystemStats<'_> {
         builder::SystemStats::new(self)
     }
-    #[doc = "Console live stream\n\nServer-Sent Events for the operator console: `stats` every 10 s and `runs` every 2 s.\n\nAuthenticated by a single-use `ticket` query parameter from `POST /v1/me/stream-ticket`,\nbecause `EventSource` cannot set an `Authorization` header. A ticket proves a session\nexisted thirty seconds ago and nothing more, so the permission check below happens *after*\nredemption and gates each event separately: a caller entitled to scan runs but not to system\ncounters receives `runs` and never `stats`. Emitting an event the caller could not fetch\nover its own GET would be a disclosure, and the access-matrix suites would not catch it —\nthey reconcile status codes, not event names.\n\nSends a `GET` request to `/v1/admin/stream`\n\nArguments:\n- `ticket`: Single-use ticket from `POST /v1/me/stream-ticket`, passed as a query parameter because\nthe browser `EventSource` API cannot attach an `Authorization` header (design §17.4).\n\nWas the raw access token until SEC-8. A query string is recorded by `TraceLayer` as a\nspan field, preserved verbatim by the frontend proxy, written to every reverse-proxy\naccess log and kept in browser history — so the credential that rides here must be worth\nnothing by the time anyone reads it back. This one is spent by the request that carries\nit, expires in 30 seconds, and opens nothing but this stream.\n```ignore\nlet response = client.admin_stream()\n    .ticket(ticket)\n    .send()\n    .await;\n```"]
+    #[doc = "Console live stream\n\nServer-Sent Events for the operator console: `stats` every 10 s, `runs` every 2 s and\n`activity` — the task-level state of the runs in flight — every 3 s.\n\nAuthenticated by a single-use `ticket` query parameter from `POST /v1/me/stream-ticket`,\nbecause `EventSource` cannot set an `Authorization` header. A ticket proves a session\nexisted thirty seconds ago and nothing more, so the permission check below happens *after*\nredemption and gates each event separately: a caller entitled to scan runs but not to system\ncounters receives `runs` and never `stats`. Emitting an event the caller could not fetch\nover its own GET would be a disclosure, and the access-matrix suites would not catch it —\nthey reconcile status codes, not event names.\n\nSends a `GET` request to `/v1/admin/stream`\n\nArguments:\n- `ticket`: Single-use ticket from `POST /v1/me/stream-ticket`, passed as a query parameter because\nthe browser `EventSource` API cannot attach an `Authorization` header (design §17.4).\n\nWas the raw access token until SEC-8. A query string is recorded by `TraceLayer` as a\nspan field, preserved verbatim by the frontend proxy, written to every reverse-proxy\naccess log and kept in browser history — so the credential that rides here must be worth\nnothing by the time anyone reads it back. This one is spent by the request that carries\nit, expires in 30 seconds, and opens nothing but this stream.\n```ignore\nlet response = client.admin_stream()\n    .ticket(ticket)\n    .send()\n    .await;\n```"]
     pub fn admin_stream(&self) -> builder::AdminStream<'_> {
         builder::AdminStream::new(self)
     }
@@ -32474,6 +34094,7 @@ pub mod builder {
     #[derive(Debug, Clone)]
     pub struct ScanFailures<'a> {
         client: &'a super::Client,
+        include_cleared: Result<Option<bool>, String>,
         limit: Result<Option<i32>, String>,
         provider: Result<Option<::std::string::String>, String>,
         since: Result<Option<::std::string::String>, String>,
@@ -32482,10 +34103,21 @@ pub mod builder {
         pub fn new(client: &'a super::Client) -> Self {
             Self {
                 client: client,
+                include_cleared: Ok(None),
                 limit: Ok(None),
                 provider: Ok(None),
                 since: Ok(None),
             }
+        }
+        pub fn include_cleared<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<bool>,
+        {
+            self.include_cleared = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `bool` for include_cleared failed".to_string());
+            self
         }
         pub fn limit<V>(mut self, value: V) -> Self
         where
@@ -32524,10 +34156,12 @@ pub mod builder {
         > {
             let Self {
                 client,
+                include_cleared,
                 limit,
                 provider,
                 since,
             } = self;
+            let include_cleared = include_cleared.map_err(Error::InvalidRequest)?;
             let limit = limit.map_err(Error::InvalidRequest)?;
             let provider = provider.map_err(Error::InvalidRequest)?;
             let since = since.map_err(Error::InvalidRequest)?;
@@ -32545,6 +34179,10 @@ pub mod builder {
                     ::reqwest::header::ACCEPT,
                     ::reqwest::header::HeaderValue::from_static("application/json"),
                 )
+                .query(&progenitor_client::QueryParam::new(
+                    "include_cleared",
+                    &include_cleared,
+                ))
                 .query(&progenitor_client::QueryParam::new("limit", &limit))
                 .query(&progenitor_client::QueryParam::new("provider", &provider))
                 .query(&progenitor_client::QueryParam::new("since", &since))
@@ -32569,10 +34207,92 @@ pub mod builder {
             }
         }
     }
+    #[doc = "Builder for [`Client::clear_scan_failures`]\n\n[`Client::clear_scan_failures`]: super::Client::clear_scan_failures"]
+    #[derive(Debug, Clone)]
+    pub struct ClearScanFailures<'a> {
+        client: &'a super::Client,
+        body: Result<types::builder::ClearFailuresBody, String>,
+    }
+    impl<'a> ClearScanFailures<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::ClearFailuresBody>,
+            <V as std::convert::TryInto<types::ClearFailuresBody>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `ClearFailuresBody` for body failed: {}", s));
+            self
+        }
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::ClearFailuresBody,
+                ) -> types::builder::ClearFailuresBody,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+        #[doc = "Sends a `POST` request to `/v1/admin/scan-failures/clear`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::FailuresClearedView>, Error<types::ProblemDetails>>
+        {
+            let Self { client, body } = self;
+            let body = body
+                .and_then(|v| types::ClearFailuresBody::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v1/admin/scan-failures/clear", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "clear_scan_failures",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
     #[doc = "Builder for [`Client::scan_failure_groups`]\n\n[`Client::scan_failure_groups`]: super::Client::scan_failure_groups"]
     #[derive(Debug, Clone)]
     pub struct ScanFailureGroups<'a> {
         client: &'a super::Client,
+        include_cleared: Result<Option<bool>, String>,
         limit: Result<Option<i32>, String>,
         provider: Result<Option<::std::string::String>, String>,
         since: Result<Option<::std::string::String>, String>,
@@ -32581,10 +34301,21 @@ pub mod builder {
         pub fn new(client: &'a super::Client) -> Self {
             Self {
                 client: client,
+                include_cleared: Ok(None),
                 limit: Ok(None),
                 provider: Ok(None),
                 since: Ok(None),
             }
+        }
+        pub fn include_cleared<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<bool>,
+        {
+            self.include_cleared = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `bool` for include_cleared failed".to_string());
+            self
         }
         pub fn limit<V>(mut self, value: V) -> Self
         where
@@ -32623,10 +34354,12 @@ pub mod builder {
         > {
             let Self {
                 client,
+                include_cleared,
                 limit,
                 provider,
                 since,
             } = self;
+            let include_cleared = include_cleared.map_err(Error::InvalidRequest)?;
             let limit = limit.map_err(Error::InvalidRequest)?;
             let provider = provider.map_err(Error::InvalidRequest)?;
             let since = since.map_err(Error::InvalidRequest)?;
@@ -32644,6 +34377,10 @@ pub mod builder {
                     ::reqwest::header::ACCEPT,
                     ::reqwest::header::HeaderValue::from_static("application/json"),
                 )
+                .query(&progenitor_client::QueryParam::new(
+                    "include_cleared",
+                    &include_cleared,
+                ))
                 .query(&progenitor_client::QueryParam::new("limit", &limit))
                 .query(&progenitor_client::QueryParam::new("provider", &provider))
                 .query(&progenitor_client::QueryParam::new("since", &since))
@@ -32677,6 +34414,7 @@ pub mod builder {
         offset: Result<Option<i32>, String>,
         provider: Result<Option<::std::string::String>, String>,
         since: Result<Option<::std::string::String>, String>,
+        sort: Result<Option<types::ListScansSort>, String>,
         state: Result<Option<types::ListScansState>, String>,
     }
     impl<'a> ListScans<'a> {
@@ -32688,6 +34426,7 @@ pub mod builder {
                 offset: Ok(None),
                 provider: Ok(None),
                 since: Ok(None),
+                sort: Ok(None),
                 state: Ok(None),
             }
         }
@@ -32739,6 +34478,16 @@ pub mod builder {
             });
             self
         }
+        pub fn sort<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::ListScansSort>,
+        {
+            self.sort = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `ListScansSort` for sort failed".to_string());
+            self
+        }
         pub fn state<V>(mut self, value: V) -> Self
         where
             V: std::convert::TryInto<types::ListScansState>,
@@ -32760,6 +34509,7 @@ pub mod builder {
                 offset,
                 provider,
                 since,
+                sort,
                 state,
             } = self;
             let limit = limit.map_err(Error::InvalidRequest)?;
@@ -32767,6 +34517,7 @@ pub mod builder {
             let offset = offset.map_err(Error::InvalidRequest)?;
             let provider = provider.map_err(Error::InvalidRequest)?;
             let since = since.map_err(Error::InvalidRequest)?;
+            let sort = sort.map_err(Error::InvalidRequest)?;
             let state = state.map_err(Error::InvalidRequest)?;
             let url = format!("{}/v1/admin/scans", client.baseurl,);
             let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
@@ -32787,6 +34538,7 @@ pub mod builder {
                 .query(&progenitor_client::QueryParam::new("offset", &offset))
                 .query(&progenitor_client::QueryParam::new("provider", &provider))
                 .query(&progenitor_client::QueryParam::new("since", &since))
+                .query(&progenitor_client::QueryParam::new("sort", &sort))
                 .query(&progenitor_client::QueryParam::new("state", &state))
                 .headers(header_map)
                 .build()?;
@@ -32887,6 +34639,55 @@ pub mod builder {
             }
         }
     }
+    #[doc = "Builder for [`Client::scan_activity`]\n\n[`Client::scan_activity`]: super::Client::scan_activity"]
+    #[derive(Debug, Clone)]
+    pub struct ScanActivity<'a> {
+        client: &'a super::Client,
+    }
+    impl<'a> ScanActivity<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+        #[doc = "Sends a `GET` request to `/v1/admin/scans/activity`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::ScanActivityView>, Error<types::ProblemDetails>> {
+            let Self { client } = self;
+            let url = format!("{}/v1/admin/scans/activity", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "scan_activity",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
     #[doc = "Builder for [`Client::scan_stream`]\n\n[`Client::scan_stream`]: super::Client::scan_stream"]
     #[derive(Debug, Clone)]
     pub struct ScanStream<'a> {
@@ -32916,6 +34717,87 @@ pub mod builder {
             let response = result?;
             match response.status().as_u16() {
                 200u16 => Ok(ResponseValue::stream(response)),
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::scan_summary`]\n\n[`Client::scan_summary`]: super::Client::scan_summary"]
+    #[derive(Debug, Clone)]
+    pub struct ScanSummary<'a> {
+        client: &'a super::Client,
+        provider: Result<Option<::std::string::String>, String>,
+        since: Result<Option<::std::string::String>, String>,
+    }
+    impl<'a> ScanSummary<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                provider: Ok(None),
+                since: Ok(None),
+            }
+        }
+        pub fn provider<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.provider = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for provider failed".to_string()
+            });
+            self
+        }
+        pub fn since<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.since = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for since failed".to_string()
+            });
+            self
+        }
+        #[doc = "Sends a `GET` request to `/v1/admin/scans/summary`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::ScanSummaryView>, Error<types::ProblemDetails>> {
+            let Self {
+                client,
+                provider,
+                since,
+            } = self;
+            let provider = provider.map_err(Error::InvalidRequest)?;
+            let since = since.map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v1/admin/scans/summary", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .query(&progenitor_client::QueryParam::new("provider", &provider))
+                .query(&progenitor_client::QueryParam::new("since", &since))
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "scan_summary",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
                 401u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),

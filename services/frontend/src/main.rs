@@ -15,6 +15,8 @@ use axum::extract::{ConnectInfo, Request, State};
 use axum::http::{HeaderMap, HeaderName, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{any, get};
+use csp_shell::presets::cloudflare;
+use csp_shell::{Csp, Policy};
 use serde::Deserialize;
 use tankovault_config::{MetricsConfig, SecurityConfig, TelemetryConfig};
 use tankovault_service::{CancellationToken, Health, HttpStack, MetricsRegistry};
@@ -266,225 +268,110 @@ fn build_app(
         .merge(tankovault_service::ops_router(health, metrics.clone()))
 }
 
-/// The Content-Security-Policy for the SPA shell, assembled once and split where a per-response
-/// nonce is spliced in.
-///
-/// Two halves rather than one string only because of [`CloudflareConfig::script_nonce`]: the
-/// nonce has to differ per response, and everything either side of it is fixed at startup.
-struct Policy {
-    /// The policy through the last `script-src` source expression.
-    head: String,
-    /// The directives after `script-src`, opening with the `;` that closes it.
-    tail: String,
-    /// Whether each response splices a freshly minted `'nonce-…'` between the two.
-    nonce: bool,
-}
-
-impl Policy {
-    /// The header value for one response.
-    fn header_value(&self) -> HeaderValue {
-        let policy = if self.nonce {
-            format!("{} 'nonce-{}'{}", self.head, mint_nonce(), self.tail)
-        } else {
-            format!("{}{}", self.head, self.tail)
-        };
-        // Unreachable in practice (the policy is assembled from ASCII only), but a hashless CSP
-        // still beats refusing to serve.
-        HeaderValue::from_str(&policy)
-            .unwrap_or_else(|_| HeaderValue::from_static("default-src 'self'"))
-    }
-}
-
-/// A CSP nonce: 128 bits from the OS CSPRNG, base64 as the grammar requires.
-///
-/// Unpredictability is the entire security property — a nonce an attacker can guess or reuse is
-/// `'unsafe-inline'`, so this must stay a cryptographic RNG and must stay per response.
-fn mint_nonce() -> String {
-    use base64::Engine as _;
-    use rand::Rng as _;
-
-    let mut bytes = [0u8; 16];
-    rand::rng().fill_bytes(&mut bytes);
-    base64::engine::general_purpose::STANDARD_NO_PAD.encode(bytes)
-}
-
 /// Build the Content-Security-Policy for the SPA shell.
 ///
 /// The access token lives only in memory; this CSP is the ceiling on where an injected script
-/// could send it. No `'unsafe-eval'`: `'wasm-unsafe-eval'` covers WebAssembly instantiation, and
-/// nothing here calls Dioxus's `document::eval` (banned — its web impl is `new Function(…)`, see
-/// `web/frontend/src/browser.rs`). The `'sha256-…'` entries admit the shell's inline boot
-/// scripts, hashed from the served shell at startup by [`inline_script_hashes`]; if that hash
-/// ever stops matching what's served, the browser silently refuses the inline scripts with no
-/// error surfaced.
+/// could send it. [`Csp::spa_wasm`] is the policy this service's own hand-rolled one was
+/// extracted into: no `'unsafe-eval'` — `'wasm-unsafe-eval'` covers WebAssembly instantiation and
+/// nothing here calls Dioxus's `document::eval` (banned; its web impl is `new Function(…)`, see
+/// `web/frontend/src/platform/`) — `connect-src 'self'` as the exfiltration ceiling, and any
+/// `https:`/`data:` host in `img-src` for provider-sourced cover art.
 ///
-/// `connect-src 'self'` is the exfiltration ceiling (widen only for a split-origin deployment);
-/// `img-src` allows any `https:`/`data:` host for provider-sourced cover art. `connect-src` also
-/// covers Cloudflare's `/cdn-cgi/challenge-platform/` beacons, and `script-src 'self'` its
-/// scripts, since both are served from this origin — the flags in [`CloudflareConfig`] exist for
-/// the two things that are *not* reachable from `'self'`.
-fn content_security_policy(static_dir: &str, cloudflare: &CloudflareConfig) -> Policy {
+/// The `'sha256-…'` entries admit the shell's inline boot scripts, scanned from the served shell
+/// at startup rather than hardcoded: a constant drifts the moment the shell is edited, and the
+/// browser then refuses the script with nothing surfaced server-side.
+///
+/// `connect-src` already covers Cloudflare's `/cdn-cgi/challenge-platform/` beacons and
+/// `script-src 'self'` its scripts, since both are served from this origin — the flags in
+/// [`CloudflareConfig`] exist for the two things that are *not* reachable from `'self'`.
+fn content_security_policy(static_dir: &str, config: &CloudflareConfig) -> Policy {
     let shell = Path::new(static_dir).join("index.html");
-    let hashes = match std::fs::read_to_string(&shell) {
-        Ok(html) => inline_script_hashes(&html),
+    // Fail open, which is this service's decision to make and not the library's: an unreadable
+    // shell costs only its inline scripts (theme pre-paint, search shortcut), while `/v1/*`, the
+    // ops probes and every hashed asset keep working.
+    let scan = match csp_shell::scan_shell_at(&shell) {
+        Ok(scan) => Some(scan),
         Err(error) => {
-            // Not fatal: only the shell's inline scripts are refused (theme/search shortcut
-            // lost); `/v1/*`, ops probes and every hashed asset still work.
             tracing::warn!(
                 shell = %shell.display(),
                 %error,
                 "could not read the app shell; its inline scripts will be blocked by the CSP"
             );
-            Vec::new()
+            None
         }
     };
-    let mut scripts = String::new();
-    for hash in &hashes {
-        scripts.push_str(" '");
-        scripts.push_str(hash);
-        scripts.push('\'');
-    }
-    // Kept as one origin in two directives: Turnstile loads `api.js` and then frames the widget
-    // from the same host, and admitting the script without the frame renders an empty box.
-    let (turnstile_script, turnstile_frame) = if cloudflare.turnstile {
-        (
-            " https://challenges.cloudflare.com",
-            " frame-src 'self' https://challenges.cloudflare.com;",
-        )
-    } else {
-        ("", "")
-    };
 
-    Policy {
-        head: format!(
-            "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'{scripts}{turnstile_script}"
-        ),
-        tail: format!(
-            "; style-src 'self' 'unsafe-inline'; \
-             connect-src 'self'; \
-             img-src 'self' https: data:; \
-             font-src 'self' data:; \
-             object-src 'none'; \
-             base-uri 'none'; \
-             form-action 'self';{turnstile_frame} \
-             frame-ancestors 'none'"
-        ),
-        nonce: cloudflare.script_nonce,
+    let mut csp = Csp::spa_wasm();
+    if let Some(scan) = &scan {
+        // The scanner is deliberately not an HTML parser. Anything it accepted but could not
+        // read exactly yields a hash no browser computes, so the limit is logged rather than
+        // left as a blank page with nothing to attribute it to.
+        for warning in &scan.warnings {
+            tracing::warn!(
+                shell = %shell.display(),
+                %warning,
+                "the app shell hit a documented scanner limit; its hashes may not match"
+            );
+        }
+        csp = csp.with_scan(scan);
     }
+    if config.turnstile {
+        csp = cloudflare::turnstile(csp);
+    }
+    if config.script_nonce {
+        csp = cloudflare::script_nonce(csp);
+    }
+    csp.build()
 }
 
 /// Supplies the `Content-Security-Policy` value for each static response.
 ///
-/// A maker rather than a constant `HeaderValue` only because of the nonce; with the flag off it
-/// hands back the same policy every time.
+/// Two shapes because a deployment that is not behind Cloudflare has no nonce slot reserved, and
+/// its header is then a constant: rendering it once at startup keeps the per-response cost at a
+/// `HeaderValue` clone, and only the nonce case pays a render per response.
 #[derive(Clone)]
-struct CspHeader(Arc<Policy>);
+enum CspHeader {
+    Constant(HeaderValue),
+    PerResponse(Arc<Policy>),
+}
+
+impl CspHeader {
+    fn new(policy: Policy) -> Self {
+        if policy.is_per_response() {
+            Self::PerResponse(Arc::new(policy))
+        } else {
+            Self::Constant(header_value(&policy))
+        }
+    }
+}
 
 impl<T> tower_http::set_header::MakeHeaderValue<T> for CspHeader {
     fn make_header_value(&mut self, _response: &T) -> Option<HeaderValue> {
-        Some(self.0.header_value())
+        Some(match self {
+            Self::Constant(value) => value.clone(),
+            Self::PerResponse(policy) => header_value(policy),
+        })
     }
 }
 
-/// The `sha256-…` source expressions for every inline `<script>` in `html`.
-///
-/// Hashed from the served shell at startup rather than baked in as a constant, so the hash
-/// can't drift from what's actually served — see [`normalize_newlines`] for why line endings
-/// don't affect the result.
-///
-/// A deliberately partial scan, not a full HTML parse: this reads one file generated by `dx`
-/// from a shell in this repo. Elements carrying `src` are skipped — covered by `'self'`.
-fn inline_script_hashes(html: &str) -> Vec<String> {
-    const OPEN: &str = "<script";
+/// Render one response's policy.
+fn header_value(policy: &Policy) -> HeaderValue {
+    let csp_shell::Headers {
+        content_security_policy,
+        // The obligation this field carries — a per-response nonce served from cache is pinned
+        // across every reader, which is `'unsafe-inline'` with extra steps — is discharged
+        // unconditionally by the `Cache-Control: no-cache` layer in [`build_router`], which the
+        // shell needs anyway because it names the hashed bundle.
+        cache_control: _,
+        // Cloudflare reads the nonce out of the response header, so nothing is stamped into the
+        // shell and this service never needs the value itself.
+        ..
+    } = policy.headers();
 
-    let mut hashes = Vec::new();
-    let mut rest = html;
-    while let Some(offset) = rest.find(OPEN) {
-        let after_name = &rest[offset + OPEN.len()..];
-        // `<scriptfoo>` is not a script element; only a name/attribute boundary follows the tag.
-        if after_name.starts_with(|c: char| c.is_alphanumeric() || c == '-') {
-            rest = after_name;
-            continue;
-        }
-        let (Some(open_end), Some(close)) = (after_name.find('>'), after_name.find("</script>"))
-        else {
-            break;
-        };
-        // Unterminated opening tag (`</script>` before its `>`); refusing to hash avoids a panic.
-        if open_end >= close {
-            break;
-        }
-        // A `>` inside an attribute value would mis-split here; not worth a parser for a shell
-        // `dx` already validated.
-        let (attributes, body) = (&after_name[..open_end], &after_name[open_end + 1..close]);
-        if !has_src_attribute(attributes) {
-            hashes.push(sha256_source(body));
-        }
-        rest = &after_name[close..];
-    }
-    hashes
-}
-
-fn has_src_attribute(attributes: &str) -> bool {
-    const NAME: &str = "src";
-
-    let mut searched = 0;
-    while let Some(offset) = attributes[searched..].find(NAME) {
-        let at = searched + offset;
-        // Indexed into the whole span so the preceding character is checked correctly
-        // (`srcsrc=` isn't `src`).
-        let preceded_by_boundary = attributes[..at]
-            .chars()
-            .next_back()
-            .is_none_or(char::is_whitespace);
-        searched = at + NAME.len();
-        if preceded_by_boundary && attributes[searched..].trim_start().starts_with('=') {
-            return true;
-        }
-    }
-    false
-}
-
-/// One CSP `sha256-…` source expression: the base64 SHA-256 of the script text, exactly as
-/// the browser computes it over the element's contents (not the file's raw bytes — see
-/// [`normalize_newlines`]).
-fn sha256_source(script: &str) -> String {
-    use base64::Engine as _;
-    use sha2::Digest as _;
-
-    let digest = sha2::Sha256::digest(normalize_newlines(script).as_bytes());
-    format!(
-        "sha256-{}",
-        base64::engine::general_purpose::STANDARD.encode(digest)
-    )
-}
-
-/// Apply the HTML parser's input-stream preprocessing: `\r\n` and a lone `\r` both become `\n`.
-///
-/// Load-bearing: a CSP hash covers the script element's *text content* as the parser produces
-/// it, not the wire bytes ([WHATWG HTML §13.2.3.5]); hashing raw CRLF bytes computes a hash no
-/// browser ever does, so a CRLF checkout silently has its inline scripts refused with a
-/// correct-looking CSP header — the only symptom is in the browser console.
-///
-/// [WHATWG HTML §13.2.3.5]: https://html.spec.whatwg.org/multipage/parsing.html#preprocessing-the-input-stream
-fn normalize_newlines(script: &str) -> std::borrow::Cow<'_, str> {
-    if !script.contains('\r') {
-        return std::borrow::Cow::Borrowed(script);
-    }
-    let mut out = String::with_capacity(script.len());
-    let mut chars = script.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c == '\r' {
-            // CRLF collapses to one LF; a lone CR becomes one too.
-            if chars.peek() == Some(&'\n') {
-                chars.next();
-            }
-            out.push('\n');
-        } else {
-            out.push(c);
-        }
-    }
-    std::borrow::Cow::Owned(out)
+    // `csp-policy` refuses any term that could carry a separator or a control character into the
+    // rendered header, so this cannot fail; a restrictive fallback still beats refusing to serve.
+    HeaderValue::from_str(&content_security_policy)
+        .unwrap_or_else(|_| HeaderValue::from_static("default-src 'self'"))
 }
 
 /// Where the SPA links its third-party licence notices, and the only URL they are published at.
@@ -505,10 +392,7 @@ fn build_router(frontend: &FrontendConfig, state: AppState) -> Router {
 
     // Assembled once from the shell on disk, since the hashes cover a file that can't change
     // without a redeploy; only the optional nonce is per response.
-    let csp = CspHeader(Arc::new(content_security_policy(
-        static_dir,
-        &frontend.cloudflare,
-    )));
+    let csp = CspHeader::new(content_security_policy(static_dir, &frontend.cloudflare));
 
     // Baseline hardening on the app shell only: `if_not_present` never clobbers a value a
     // served file already carries, and `/v1/*` responses keep the API's own headers untouched.
@@ -762,6 +646,18 @@ mod tests {
             .to_owned()
     }
 
+    /// The `'sha256-…'` source expression the policy has to carry for an inline `script`.
+    ///
+    /// Goes through the scanner rather than restating a literal, so an assertion cannot pass
+    /// against a hash that agrees with the test and with nothing a browser computes.
+    fn inline_hash(script: &str) -> String {
+        let scan = csp_shell::scan_shell(&format!("<script>{script}</script>"));
+        scan.hashes
+            .first()
+            .unwrap_or_else(|| panic!("no inline script found in {script}"))
+            .to_string()
+    }
+
     /// The `script-src` directive of `csp`, without the `;` that closes it.
     ///
     /// Split out because `style-src` legitimately carries `'unsafe-inline'`: an assertion over
@@ -903,81 +799,23 @@ mod tests {
         let dir = write_bundle();
         let front = spawn_frontend(dir.to_str().unwrap(), upstream).await;
 
-        let response = reqwest::get(format!("http://{front}/")).await.unwrap();
-        let csp = response
-            .headers()
-            .get("content-security-policy")
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or_default()
-            .to_owned();
+        let csp = served_csp(front).await;
         assert!(
-            csp.contains(&format!("'{}'", sha256_source("window.tv=1;"))),
+            csp.contains(&inline_hash("window.tv=1;")),
             "the shell's inline boot script is not admitted: {csp}"
         );
     }
 
-    /// Pinned against a hash computed outside this codebase (`sha256sum | base64`):
-    /// `sha256-bhHHL3z2…` is the value MDN documents for `alert(1)`, since a browser silently
-    /// refusing a script it should run is otherwise invisible server-side.
+    /// Pinned against a hash computed outside this codebase: `sha256-bhHHL3z2…` is the value MDN
+    /// documents for `alert(1)`. The scan itself lives in `csp-shell` now, but a browser
+    /// silently refusing a script it should run stays invisible server-side, so the value that
+    /// reaches this service's header is pinned here rather than only upstream.
     #[test]
     fn inline_scripts_hash_the_way_a_browser_does() {
         assert_eq!(
-            sha256_source("alert(1)"),
-            "sha256-bhHHL3z2vDgxUt0W3dWQOrprscmda2Y5pLsLg4GF+pI="
+            inline_hash("alert(1)"),
+            "'sha256-bhHHL3z2vDgxUt0W3dWQOrprscmda2Y5pLsLg4GF+pI='"
         );
-        // Covers the element's text verbatim, indentation and newlines included.
-        let html = "<head>\n    <script>\n      (function () {\n        var root = \
-                    document.documentElement;\n      })();\n    </script>\n  </head>";
-        assert_eq!(
-            inline_script_hashes(html),
-            vec!["sha256-TeLaQhPwM0rq27ouKvfSy/FNGtKQLRss1WIhFG20024=".to_owned()]
-        );
-    }
-
-    /// A CRLF shell must produce the same hashes as an LF one, since the parser normalises
-    /// newlines before tokenization and the browser always hashes the LF form. Hashing raw
-    /// bytes used to ship a CSP that silently refused the shell's boot scripts on any Windows
-    /// checkout.
-    ///
-    /// The expectation is the same literal as the LF case, deliberately: the point is that the
-    /// two are indistinguishable once hashed.
-    #[test]
-    fn a_crlf_shell_hashes_the_same_as_an_lf_one() {
-        let lf = "<head>\n    <script>\n      (function () {\n        var root = \
-                  document.documentElement;\n      })();\n    </script>\n  </head>";
-        let crlf = lf.replace('\n', "\r\n");
-
-        assert_eq!(
-            inline_script_hashes(&crlf),
-            vec!["sha256-TeLaQhPwM0rq27ouKvfSy/FNGtKQLRss1WIhFG20024=".to_owned()]
-        );
-        assert_eq!(inline_script_hashes(&crlf), inline_script_hashes(lf));
-
-        // A lone CR is normalised too, so a classic-Mac-ending file isn't a third hash.
-        assert_eq!(sha256_source("a\rb"), sha256_source("a\nb"));
-        assert_eq!(sha256_source("a\r\nb"), sha256_source("a\nb"));
-    }
-
-    #[test]
-    fn a_script_with_a_src_is_left_to_self() {
-        let hashes = inline_script_hashes(
-            "<script src=\"/app.js\"></script>\
-             <script type=\"module\" async src=\"/x.js\"></script>\
-             <script>inline()</script>",
-        );
-        assert_eq!(hashes, vec![sha256_source("inline()")]);
-    }
-
-    /// A `src`-shaped attribute name is not a `src` attribute, and neither is `srcset`; both
-    /// used to be enough to make a genuinely inline script go unhashed.
-    #[test]
-    fn only_a_whole_src_attribute_counts() {
-        assert!(has_src_attribute(" src=\"/app.js\""));
-        assert!(has_src_attribute(" type=\"module\" src = \"/app.js\""));
-        assert!(!has_src_attribute(" data-src-hint=\"x\""));
-        assert!(!has_src_attribute(" srcset=\"x\""));
-        assert!(!has_src_attribute(" type=\"module\""));
-        assert!(!has_src_attribute(" srcsrc=\"x\""));
     }
 
     /// An unreadable shell must not take the whole tier down — the API proxy and every hashed
@@ -985,7 +823,7 @@ mod tests {
     #[test]
     fn a_missing_shell_degrades_to_a_hashless_policy() {
         let policy = content_security_policy("./no-such-directory", &CloudflareConfig::default());
-        let csp = policy.header_value();
+        let csp = header_value(&policy);
         let csp = csp.to_str().unwrap();
         assert!(
             csp.contains("script-src 'self' 'wasm-unsafe-eval';"),
@@ -1024,7 +862,7 @@ mod tests {
             // The nonce is an addition, not a replacement: the shell's own inline scripts are
             // still admitted by hash, so a Cloudflare-less request path is unaffected.
             assert!(
-                csp.contains(&format!("'{}'", sha256_source("window.tv=1;"))),
+                csp.contains(&inline_hash("window.tv=1;")),
                 "the nonce displaced the shell's inline-script hashes: {csp}"
             );
             // Neither concession the nonce exists to avoid may ride along with it.
@@ -1032,6 +870,31 @@ mod tests {
             assert!(!script_src(csp).contains("'unsafe-inline'"), "{csp}");
         }
         assert_ne!(first, second, "the same nonce was reused across responses");
+    }
+
+    /// `csp_shell::Headers::cache_control` is an obligation, not a suggestion: a nonce served
+    /// from cache is pinned across every reader for the lifetime of the entry, which is
+    /// `'unsafe-inline'` under another name. This tier discharges it with the shell's
+    /// unconditional `no-cache` rather than by reading the field, so the two have to be pinned
+    /// together — dropping that layer would silently invalidate the whole nonce argument.
+    #[tokio::test]
+    async fn a_nonced_shell_is_served_uncacheable() {
+        let upstream = spawn_stub_upstream().await;
+        let dir = write_bundle();
+        let front = spawn_frontend_with(
+            FrontendConfig {
+                cloudflare: CloudflareConfig {
+                    script_nonce: true,
+                    turnstile: false,
+                },
+                ..test_config(dir.to_str().unwrap())
+            },
+            upstream,
+        )
+        .await;
+
+        let response = reqwest::get(format!("http://{front}/")).await.unwrap();
+        assert_eq!(response.headers().get("cache-control").unwrap(), "no-cache");
     }
 
     /// Off by default, and off is the whole policy unchanged — a deployment that is not behind
@@ -1074,8 +937,10 @@ mod tests {
             script_src(&csp).contains("https://challenges.cloudflare.com"),
             "{csp}"
         );
+        // Seeded from the `default-src 'self'` it replaces, so admitting the widget cannot
+        // silently revoke same-origin frames.
         assert!(
-            csp.contains("frame-src 'self' https://challenges.cloudflare.com;"),
+            csp.contains("frame-src 'self' https://challenges.cloudflare.com"),
             "{csp}"
         );
         // `frame-ancestors` is what stops this app being framed; the widget being framed *by*

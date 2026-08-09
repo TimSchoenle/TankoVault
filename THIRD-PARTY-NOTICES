@@ -37,7 +37,7 @@ Ships as: the eight service binaries (api, bootstrap, worker, control-plane, not
 Licences in this section, by number of crates:
 
   Apache License 2.0 (Apache-2.0) — 373 crates, 37 distinct notices
-  MIT License (MIT) — 106 crates, 69 distinct notices
+  MIT License (MIT) — 108 crates, 69 distinct notices
   Unicode License v3 (Unicode-3.0) — 19 crates, 2 distinct notices
   Mozilla Public License 2.0 (MPL-2.0) — 11 crates, 2 distinct notices
   ISC License (ISC) — 10 crates, 8 distinct notices
@@ -2475,6 +2475,8 @@ Applies to:
   - async-stream 0.3.6
   - async-stream-impl 0.3.6
   - brotli-decompressor 5.0.3
+  - csp-policy 0.2.0
+  - csp-shell 0.2.0
   - governor 0.10.4
   - libm 0.2.16
   - tonic-prost 0.14.6

@@ -1170,6 +1170,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "csp-policy"
+version = "0.2.0"
+source = "git+https://github.com/TimSchoenle/csp-shell?tag=csp-shell-v0.2.0#8e0d90cd955c6e366932bc56d93d4aedd72e1e05"
+
+[[package]]
+name = "csp-shell"
+version = "0.2.0"
+source = "git+https://github.com/TimSchoenle/csp-shell?tag=csp-shell-v0.2.0#8e0d90cd955c6e366932bc56d93d4aedd72e1e05"
+dependencies = [
+ "csp-policy",
+ "getrandom 0.4.3",
+ "sha2 0.11.0",
+]
+
+[[package]]
 name = "cssparser"
 version = "0.37.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5470,11 +5485,9 @@ version = "3.6.0"
 dependencies = [
  "anyhow",
  "axum",
- "base64 0.23.1",
- "rand 0.10.2",
+ "csp-shell",
  "reqwest",
  "serde",
- "sha2 0.11.0",
  "tankovault-config",
  "tankovault-service",
  "tokio",

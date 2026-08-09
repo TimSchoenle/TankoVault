@@ -28,15 +28,12 @@ tower = { workspace = true }
 # `compression-full`: the WASM bundle is the largest thing this tier serves and was
 # shipped uncompressed. `set-header`/`trace` come from the workspace default set.
 tower-http = { workspace = true, features = ["fs", "compression-full"] }
-# The app shell's inline boot scripts are admitted to the CSP by hash, computed from the
-# served `index.html` at startup (see `content_security_policy`) rather than hardcoded — a
-# constant would drift the moment the shell is edited, and silently, since the only symptom
-# is a browser refusing to run it.
-sha2 = { workspace = true }
-base64 = { workspace = true }
-# Only for the optional per-response CSP nonce (`TANKOVAULT_FRONTEND__CLOUDFLARE__SCRIPT_NONCE`).
-# A guessable nonce is `'unsafe-inline'`, so this has to be the CSPRNG and not a counter.
-rand = { workspace = true }
+# The whole Content-Security-Policy: the scan that admits the shell's inline boot scripts by
+# hash (computed from the served `index.html` at startup rather than hardcoded — a constant
+# drifts the moment the shell is edited, and silently, since the only symptom is a browser
+# refusing to run it), the typed directives, and the per-response nonce behind
+# `TANKOVAULT_FRONTEND__CLOUDFLARE__SCRIPT_NONCE`.
+csp-shell = { workspace = true }
 
 [lints]
 workspace = true

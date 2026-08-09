@@ -12,6 +12,18 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [3.6.0](https://github.com/TimSchoenle/TankoVault/compare/v3.5.1...v3.6.0) (2026-08-09)
+
+
+### Features
+
+* **console:** make the scan queue's filters real and show what a run is doing ([#164](https://github.com/TimSchoenle/TankoVault/issues/164)) ([e303f1b](https://github.com/TimSchoenle/TankoVault/commit/e303f1b09a5d6bd38afcff99c180c7d77a48063e))
+
+
+### Bug Fixes
+
+* **deps:** update rust crate testcontainers to 0.28.0 ([#162](https://github.com/TimSchoenle/TankoVault/issues/162)) ([15641ee](https://github.com/TimSchoenle/TankoVault/commit/15641ee913b4dea4b4c1d18963347ac40786a8d0))
+
 ## [3.5.1](https://github.com/TimSchoenle/TankoVault/compare/v3.5.0...v3.5.1) (2026-08-08)
 
 

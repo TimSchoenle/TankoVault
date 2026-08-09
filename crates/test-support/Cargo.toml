@@ -39,7 +39,7 @@ testcontainers-modules = { version = "0.15.0", features = ["postgres"] }
 # every `--features integration` run leaked one Postgres container per test binary — see
 # ARCH-6b. Keep the version in lockstep with the `testcontainers-modules` bump, or `cargo deny`
 # will fail on `multiple-versions`.
-testcontainers = { version = "0.28.0", features = ["reusable-containers"] }
+testcontainers = { version = "0.27.0", features = ["reusable-containers"] }
 
 [lints]
 workspace = true

@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use std::time::Duration;
 use tankovault_contracts::admin::ScanTriggeredView;
+use tankovault_db::repo::scans::ErrorSelector;
 use tankovault_domain::{Feature, Permission, ProviderId, RunState, ScanMode, ScanRunId};
 use time::OffsetDateTime;
 use tokio_stream::StreamExt as _;
@@ -401,6 +402,20 @@ pub async fn scan_activity(
     }))
 }
 
+/// Which error group a clear request names, from the two fields the body carries.
+///
+/// The pairing that matters is an absent `error` with `match_null_error` unset: that is "any
+/// error", not "the group with no error". Reading it the other way would turn a plain "clear
+/// everything shown" into a request that clears almost nothing — or, inverted, turn "clear the
+/// failures with no message" into clearing the entire feed.
+const fn selected_error(error: Option<&str>, match_null: bool) -> ErrorSelector<'_> {
+    match (error, match_null) {
+        (Some(text), _) => ErrorSelector::Exactly(text),
+        (None, true) => ErrorSelector::Absent,
+        (None, false) => ErrorSelector::Any,
+    }
+}
+
 /// Clear scan failures
 ///
 /// Acknowledges the selected failures so they leave the triage feed. Nothing is deleted: the
@@ -436,13 +451,6 @@ pub async fn clear_scan_failures(
         .map(|raw| OffsetDateTime::parse(raw, &time::format_description::well_known::Rfc3339))
         .transpose()
         .map_err(|_| ApiError::BadRequest("`since` must be an RFC 3339 instant".into()))?;
-    // `Some(None)` is the group that recorded no error, which an omitted `error` cannot express:
-    // absent means "any error", and the two select very different rows.
-    let error = match (body.error.as_deref(), body.match_null_error) {
-        (Some(text), _) => Some(Some(text)),
-        (None, true) => Some(None),
-        (None, false) => None,
-    };
     let selector = tankovault_db::repo::scans::FailureSelector {
         provider: body
             .provider
@@ -451,7 +459,7 @@ pub async fn clear_scan_failures(
             .filter(|s| !s.is_empty()),
         since,
         run_id: body.run_id,
-        error,
+        error: selected_error(body.error.as_deref(), body.match_null_error),
     };
     let cleared = tankovault_db::repo::scans::clear_failures(&state.pool, &selector).await?;
 
@@ -516,4 +524,55 @@ pub async fn scan_stream(
             }
         });
     Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ErrorSelector, RunSortParam, selected_error};
+    use tankovault_db::repo::scans::RunSort;
+
+    /// The three-way selection a clear request carries, and the one collapse that would be a
+    /// data-loss bug: an absent `error` is "any error", so reading it as the null group would
+    /// make a request to clear the no-message failures clear every failure in the window.
+    #[test]
+    fn an_absent_error_selects_every_group_and_never_the_null_one() {
+        assert_eq!(selected_error(None, false), ErrorSelector::Any);
+        assert_eq!(selected_error(None, true), ErrorSelector::Absent);
+        assert_eq!(
+            selected_error(Some("http 503"), false),
+            ErrorSelector::Exactly("http 503")
+        );
+        // An explicit error wins: the flag only decides what an *absent* one means, so a client
+        // sending both must not have its named group widened to the null one.
+        assert_eq!(
+            selected_error(Some("http 503"), true),
+            ErrorSelector::Exactly("http 503")
+        );
+    }
+
+    /// The wire token and the repository's ordering must not drift: the parameter is published
+    /// in `openapi.json` and the frontend picks from it, so a mismapped arm is a sort control
+    /// that silently orders by something else — the defect class this panel already had once.
+    #[test]
+    fn every_sort_token_maps_to_its_own_ordering() {
+        let pairs = [
+            (RunSortParam::Recent, RunSort::Recent, "recent"),
+            (RunSortParam::Oldest, RunSort::Oldest, "oldest"),
+            (RunSortParam::Failures, RunSort::Failures, "failures"),
+            (RunSortParam::Duration, RunSort::Duration, "duration"),
+        ];
+        for (param, expected, token) in pairs {
+            let mapped: RunSort = param.into();
+            assert_eq!(mapped, expected, "`{token}` maps to the wrong ordering");
+            assert_eq!(mapped.token(), token);
+        }
+    }
+
+    /// An omitted `sort` must be the newest-first ordering the panel and the API document both
+    /// claim as the default.
+    #[test]
+    fn the_default_ordering_is_newest_first() {
+        let mapped: RunSort = RunSortParam::default().into();
+        assert_eq!(mapped, RunSort::Recent);
+    }
 }

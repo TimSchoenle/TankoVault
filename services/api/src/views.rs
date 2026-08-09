@@ -624,3 +624,236 @@ impl IntoView for repo::providers::PublicProvider {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::IntoView as _;
+    use tankovault_db::repo;
+    use tankovault_domain::{ProviderId, RunState, ScanMode, ScanRun, ScanRunId, TaskState};
+    use time::OffsetDateTime;
+    use uuid::Uuid;
+
+    fn an_instant() -> OffsetDateTime {
+        OffsetDateTime::from_unix_timestamp(1_754_700_000).expect("a representable instant")
+    }
+
+    /// This module's whole purpose is that a column which stops being published is a compile
+    /// error rather than a silent hole in the API — but the compiler only checks that every
+    /// *field of the view* is assigned, never that it was assigned the matching one. Two fields
+    /// of the same type transposed compiles cleanly and ships wrong numbers, which on this
+    /// surface means an operator reading one provider's failure count against another's.
+    #[test]
+    fn a_run_listing_publishes_its_own_values() {
+        let run_id = ScanRunId::new();
+        let provider_id = ProviderId::new();
+        let listing = repo::scans::RunListing {
+            run: ScanRun {
+                id: run_id,
+                provider_id: Some(provider_id),
+                mode: ScanMode::Full,
+                state: RunState::Running,
+                total_tasks: 120,
+                done_tasks: 90,
+                failed_tasks: 4,
+                started_at: Some(an_instant()),
+                finished_at: None,
+                created_at: an_instant(),
+            },
+            provider_slug: Some("kunmanga".to_owned()),
+        };
+
+        let view = listing.into_view();
+        assert_eq!(view.id, run_id);
+        assert_eq!(view.provider_id, Some(provider_id));
+        assert_eq!(view.provider_slug.as_deref(), Some("kunmanga"));
+        assert_eq!(view.mode, ScanMode::Full);
+        assert_eq!(view.state, RunState::Running);
+        // Distinct values on purpose: three same-typed counters are exactly where a transposition
+        // would hide.
+        assert_eq!(view.total_tasks, 120);
+        assert_eq!(view.done_tasks, 90);
+        assert_eq!(view.failed_tasks, 4);
+        assert_eq!(view.started_at, Some(an_instant()));
+        assert_eq!(view.finished_at, None);
+        assert_eq!(view.created_at, an_instant());
+    }
+
+    /// The summary and its per-provider breakdown are two statements converted as one pair, so
+    /// the join between them is this conversion rather than anything the database checked.
+    #[test]
+    fn a_window_summary_publishes_its_own_values() {
+        let summary = repo::scans::ScanSummary {
+            runs_total: 12,
+            runs_queued: 1,
+            runs_running: 2,
+            runs_completed: 8,
+            runs_failed: 3,
+            runs_cancelled: 4,
+            tasks_total: 4_000,
+            tasks_done: 3_800,
+            tasks_failed: 200,
+            failures_open: 37,
+            busy_seconds: 942.5,
+            first_run_at: Some(an_instant()),
+            last_run_at: None,
+        };
+        let providers = vec![repo::scans::ProviderScanHealth {
+            slug: "kunmanga".to_owned(),
+            name: "KunManga".to_owned(),
+            runs: 4,
+            runs_active: 1,
+            runs_failed: 2,
+            tasks_done: 900,
+            tasks_failed: 100,
+            failures_open: 37,
+            last_run_at: Some(an_instant()),
+            last_failure_at: None,
+        }];
+
+        let view = (summary, providers).into_view();
+        assert_eq!(view.runs_total, 12);
+        assert_eq!(view.runs_queued, 1);
+        assert_eq!(view.runs_running, 2);
+        assert_eq!(view.runs_completed, 8);
+        assert_eq!(view.runs_failed, 3);
+        assert_eq!(view.runs_cancelled, 4);
+        assert_eq!(view.tasks_total, 4_000);
+        assert_eq!(view.tasks_done, 3_800);
+        assert_eq!(view.tasks_failed, 200);
+        assert_eq!(view.failures_open, 37);
+        assert!((view.busy_seconds - 942.5).abs() < f64::EPSILON);
+        assert_eq!(view.first_run_at, Some(an_instant()));
+        assert_eq!(view.last_run_at, None);
+
+        let provider = &view.providers[0];
+        assert_eq!(provider.slug, "kunmanga");
+        assert_eq!(provider.name, "KunManga");
+        assert_eq!(provider.runs, 4);
+        assert_eq!(provider.runs_active, 1);
+        assert_eq!(provider.runs_failed, 2);
+        assert_eq!(provider.tasks_done, 900);
+        assert_eq!(provider.tasks_failed, 100);
+        assert_eq!(provider.failures_open, 37);
+        assert_eq!(provider.last_run_at, Some(an_instant()));
+        assert_eq!(provider.last_failure_at, None);
+    }
+
+    /// The live panel reads "is it moving" off these three counts, and the run id is a bare
+    /// `Uuid` on the row that becomes a typed `ScanRunId` on the wire — a conversion no other
+    /// test on this surface performs.
+    #[test]
+    fn live_activity_publishes_its_own_values() {
+        let run_id = Uuid::now_v7();
+        let activity = repo::scans::RunActivity {
+            run_id,
+            queued_tasks: 26,
+            running_tasks: 4,
+            oldest_claim_at: Some(an_instant()),
+            kinds: vec!["series".to_owned()],
+            workers: 2,
+        };
+        let view = activity.into_view();
+        assert_eq!(view.run_id.as_uuid(), run_id);
+        assert_eq!(view.queued_tasks, 26);
+        assert_eq!(view.running_tasks, 4);
+        assert_eq!(view.oldest_claim_at, Some(an_instant()));
+        assert_eq!(view.kinds, vec!["series".to_owned()]);
+        assert_eq!(view.workers, 2);
+
+        let task_id = Uuid::now_v7();
+        let event = repo::scans::TaskEvent {
+            id: task_id,
+            run_id,
+            provider_slug: Some("kunmanga".to_owned()),
+            kind: "catalog_page".to_owned(),
+            state: TaskState::Failed,
+            target: serde_json::json!({ "path": "/manga/x", "page": 3 }),
+            error: Some("http 503".to_owned()),
+            attempts: 2,
+            finished_at: Some(an_instant()),
+        };
+        let view = event.into_view();
+        assert_eq!(view.id, task_id);
+        assert_eq!(view.run_id.as_uuid(), run_id);
+        assert_eq!(view.provider_slug.as_deref(), Some("kunmanga"));
+        assert_eq!(view.kind, "catalog_page");
+        assert_eq!(view.state, TaskState::Failed);
+        assert_eq!(view.target["page"], 3);
+        assert_eq!(view.error.as_deref(), Some("http 503"));
+        assert_eq!(view.attempts, 2);
+        assert_eq!(view.finished_at, Some(an_instant()));
+    }
+
+    /// `acknowledged_at` is what a cleared failure is; publishing it as anything else would make
+    /// "show cleared" indistinguishable from the default feed.
+    #[test]
+    fn a_failure_and_its_group_publish_their_own_values() {
+        let id = Uuid::now_v7();
+        let run_id = Uuid::now_v7();
+        let failure = repo::scans::FailedTaskView {
+            id,
+            run_id,
+            provider_slug: None,
+            mode: "full".to_owned(),
+            kind: "series".to_owned(),
+            error: Some("selector missing".to_owned()),
+            attempts: 3,
+            finished_at: Some(an_instant()),
+            acknowledged_at: Some(an_instant()),
+        };
+        let view = failure.into_view();
+        assert_eq!(view.id, id);
+        assert_eq!(view.run_id, run_id);
+        assert_eq!(view.provider_slug, None);
+        assert_eq!(view.mode, "full");
+        assert_eq!(view.kind, "series");
+        assert_eq!(view.error.as_deref(), Some("selector missing"));
+        assert_eq!(view.attempts, 3);
+        assert_eq!(view.finished_at, Some(an_instant()));
+        assert_eq!(view.acknowledged_at, Some(an_instant()));
+
+        let group = repo::scans::FailureGroup {
+            error: None,
+            count: 12,
+            cleared: 5,
+            providers: vec!["kunmanga".to_owned()],
+            kinds: vec!["catalog_page".to_owned()],
+            latest_at: Some(an_instant()),
+        };
+        let view = group.into_view();
+        assert_eq!(view.error, None, "the null-error group stays null");
+        assert_eq!(view.count, 12);
+        assert_eq!(view.cleared, 5);
+        assert_eq!(view.providers, vec!["kunmanga".to_owned()]);
+        assert_eq!(view.kinds, vec!["catalog_page".to_owned()]);
+        assert_eq!(view.latest_at, Some(an_instant()));
+    }
+
+    /// A page keeps its total *and* converts its rows; returning the count of the page rather
+    /// than of the filter would make the pager claim the window is one page deep.
+    #[test]
+    fn a_run_page_keeps_its_filter_total() {
+        let page = repo::scans::RunPage {
+            items: vec![repo::scans::RunListing {
+                run: ScanRun {
+                    id: ScanRunId::new(),
+                    provider_id: None,
+                    mode: ScanMode::Fast,
+                    state: RunState::Completed,
+                    total_tasks: 1,
+                    done_tasks: 1,
+                    failed_tasks: 0,
+                    started_at: None,
+                    finished_at: None,
+                    created_at: an_instant(),
+                },
+                provider_slug: None,
+            }],
+            total: 412,
+        };
+        let view = page.into_view();
+        assert_eq!(view.total, 412);
+        assert_eq!(view.items.len(), 1);
+        assert_eq!(view.items[0].provider_slug, None);
+    }
+}

@@ -780,16 +780,47 @@ pub async fn failure_groups<'e, E: PgExecutor<'e>>(
     Ok(rows)
 }
 
-/// What a clear request selects. Every field narrows; all of them absent clears the whole feed.
+/// Which error group a clear selects.
+///
+/// Three-way on purpose. A plain `Option<&str>` cannot say "the failures that recorded no error
+/// at all" — that reads identically to "any error", and conflating the two would turn a request
+/// to clear one quiet group into a request to clear the whole feed.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ErrorSelector<'a> {
+    /// Every group.
+    #[default]
+    Any,
+    /// The group whose failures recorded no error text.
+    Absent,
+    /// One named group, matched on the exact text the grouped feed reported.
+    Exactly(&'a str),
+}
+
+impl<'a> ErrorSelector<'a> {
+    /// Whether the statement should compare on the error at all.
+    const fn is_narrowing(self) -> bool {
+        !matches!(self, Self::Any)
+    }
+
+    /// The text to compare against; `None` both for [`Self::Any`], where the comparison is
+    /// switched off, and for [`Self::Absent`], where `IS NOT DISTINCT FROM NULL` is the match.
+    const fn text(self) -> Option<&'a str> {
+        match self {
+            Self::Exactly(text) => Some(text),
+            Self::Any | Self::Absent => None,
+        }
+    }
+}
+
+/// What a clear request selects. Every field narrows; all of them at their default clears the
+/// whole feed.
 #[derive(Debug, Clone, Default)]
 pub struct FailureSelector<'a> {
     pub provider: Option<&'a str>,
     pub since: Option<OffsetDateTime>,
     /// One run's failures.
     pub run_id: Option<ScanRunId>,
-    /// One error group. `Some(None)` is the group of failures that recorded no error at all,
-    /// which a plain `Option<&str>` could not express — it reads identically to "any error".
-    pub error: Option<Option<&'a str>>,
+    pub error: ErrorSelector<'a>,
 }
 
 /// Clear the selected failures out of the triage feed.
@@ -823,8 +854,8 @@ pub async fn clear_failures<'e, E: PgExecutor<'e>>(
         selector.provider,
         selector.since,
         selector.run_id.map(ScanRunId::as_uuid),
-        selector.error.is_some(),
-        selector.error.flatten(),
+        selector.error.is_narrowing(),
+        selector.error.text(),
     )
     .execute(exec)
     .await?;
@@ -1095,4 +1126,81 @@ pub async fn recent_task_activity<'e, E: PgExecutor<'e>>(
     .fetch_all(exec)
     .await?;
     Ok(rows)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ErrorSelector, RunSort};
+
+    /// The two binds the clear statement derives from an [`ErrorSelector`], and the one pairing
+    /// that must never happen: `Any` switching the comparison *on* would compare every failure
+    /// against NULL and clear nothing, while `Absent` switching it *off* would clear the whole
+    /// feed. Both are silent — the statement runs, the count is just wrong.
+    #[test]
+    fn each_error_selector_produces_its_own_pair_of_binds() {
+        assert_eq!(
+            (ErrorSelector::Any.is_narrowing(), ErrorSelector::Any.text()),
+            (false, None)
+        );
+        assert_eq!(
+            (
+                ErrorSelector::Absent.is_narrowing(),
+                ErrorSelector::Absent.text()
+            ),
+            (true, None),
+            "the null group narrows, and matches through `IS NOT DISTINCT FROM NULL`"
+        );
+        let named = ErrorSelector::Exactly("http 503");
+        assert_eq!(
+            (named.is_narrowing(), named.text()),
+            (true, Some("http 503"))
+        );
+    }
+
+    /// A selector nobody set has to mean "every group", or a default-constructed clear would
+    /// narrow to something its caller never asked for.
+    #[test]
+    fn the_default_selector_is_every_group() {
+        assert_eq!(ErrorSelector::default(), ErrorSelector::Any);
+        assert!(!ErrorSelector::default().is_narrowing());
+    }
+
+    /// The ordering tokens are compared against **string literals inside the statement**
+    /// (`CASE WHEN $5::text = 'failures' …`), which no compiler relates to this enum. Renaming a
+    /// token here, or mistyping one there, does not fail to build: it makes every branch of the
+    /// `ORDER BY` evaluate to NULL, and the query silently falls through to the default ordering.
+    /// A sort control that quietly ignores what it was asked for is the exact defect the scan
+    /// panel already shipped once, so the tokens are pinned literally.
+    #[test]
+    fn the_ordering_tokens_are_the_ones_the_statement_compares_against() {
+        assert_eq!(RunSort::Recent.token(), "recent");
+        assert_eq!(RunSort::Oldest.token(), "oldest");
+        assert_eq!(RunSort::Failures.token(), "failures");
+        assert_eq!(RunSort::Duration.token(), "duration");
+    }
+
+    /// Two orderings sharing a token would make one of them unreachable — the statement would
+    /// take whichever branch the shared literal names, for both.
+    #[test]
+    fn no_two_orderings_share_a_token() {
+        let tokens = [
+            RunSort::Recent.token(),
+            RunSort::Oldest.token(),
+            RunSort::Failures.token(),
+            RunSort::Duration.token(),
+        ];
+        let mut seen = tokens.to_vec();
+        seen.sort_unstable();
+        seen.dedup();
+        assert_eq!(seen.len(), tokens.len(), "{tokens:?} contains a duplicate");
+    }
+
+    /// The default has to be the one ordering the statement needs *no* branch for: every `CASE`
+    /// collapses to NULL and the trailing `created_at DESC` decides. A default that named a
+    /// branch would make "no sort asked for" mean something the API does not document.
+    #[test]
+    fn the_default_ordering_is_newest_first() {
+        assert_eq!(RunSort::default(), RunSort::Recent);
+        assert_eq!(RunSort::default().token(), "recent");
+    }
 }

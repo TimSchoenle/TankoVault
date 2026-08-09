@@ -794,3 +794,225 @@ pub struct SyncRevertedView {
     /// Whether the revert also refused the title match permanently.
     pub blocked_match: bool,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        ClearFailuresBody, FailedTaskView, FailureGroupView, FailuresClearedView,
+        ProviderScanHealthView, RunActivityView, ScanActivityView, ScanRunPageView, ScanRunView,
+        ScanSummaryView, TaskEventView,
+    };
+    use serde_json::json;
+    use tankovault_domain::{ProviderId, RunState, ScanMode, ScanRunId, TaskState};
+    use time::OffsetDateTime;
+    use uuid::Uuid;
+
+    fn an_instant() -> OffsetDateTime {
+        OffsetDateTime::from_unix_timestamp(1_754_700_000).expect("a representable instant")
+    }
+
+    fn a_run() -> ScanRunView {
+        ScanRunView {
+            id: ScanRunId::new(),
+            provider_id: Some(ProviderId::new()),
+            provider_slug: Some("kunmanga".to_owned()),
+            mode: ScanMode::Fast,
+            state: RunState::Running,
+            total_tasks: 120,
+            done_tasks: 90,
+            failed_tasks: 4,
+            started_at: Some(an_instant()),
+            finished_at: None,
+            created_at: an_instant(),
+        }
+    }
+
+    /// The run page is what the history table renders, and the stamps are the part worth
+    /// pinning: they are `OffsetDateTime` behind an RFC 3339 serde attribute, which is the one
+    /// mistake the type system here cannot catch. The two workspaces are related by nothing but
+    /// `openapi.json`, so a field that does not survive its round trip is a value the operator
+    /// silently never sees.
+    #[test]
+    fn a_run_page_round_trips() {
+        let page = ScanRunPageView {
+            items: vec![a_run()],
+            total: 412,
+        };
+        let encoded = serde_json::to_string(&page).expect("serialize the run page");
+        let decoded: ScanRunPageView = serde_json::from_str(&encoded).expect("read it back");
+        assert_eq!(decoded.total, 412);
+        assert_eq!(decoded.items[0].provider_slug.as_deref(), Some("kunmanga"));
+        assert_eq!(decoded.items[0].started_at, Some(an_instant()));
+        assert_eq!(
+            decoded.items[0].finished_at, None,
+            "a run in flight has no end"
+        );
+        assert_eq!(decoded.items[0].done_tasks, 90);
+    }
+
+    /// `busy_seconds` is the panel's only float, and every rate it shows divides by it.
+    #[test]
+    fn a_window_summary_round_trips() {
+        let summary = ScanSummaryView {
+            runs_total: 12,
+            runs_queued: 1,
+            runs_running: 2,
+            runs_completed: 8,
+            runs_failed: 1,
+            runs_cancelled: 0,
+            tasks_total: 4_000,
+            tasks_done: 3_800,
+            tasks_failed: 200,
+            failures_open: 37,
+            busy_seconds: 942.5,
+            first_run_at: Some(an_instant()),
+            last_run_at: Some(an_instant()),
+            providers: vec![ProviderScanHealthView {
+                slug: "kunmanga".to_owned(),
+                name: "KunManga".to_owned(),
+                runs: 4,
+                runs_active: 1,
+                runs_failed: 1,
+                tasks_done: 900,
+                tasks_failed: 100,
+                failures_open: 37,
+                last_run_at: Some(an_instant()),
+                last_failure_at: Some(an_instant()),
+            }],
+        };
+        let encoded = serde_json::to_string(&summary).expect("serialize the summary");
+        let decoded: ScanSummaryView = serde_json::from_str(&encoded).expect("read it back");
+        assert!((decoded.busy_seconds - 942.5).abs() < f64::EPSILON);
+        assert_eq!(decoded.failures_open, 37);
+        assert_eq!(decoded.providers[0].last_failure_at, Some(an_instant()));
+    }
+
+    /// The activity payload arrives over SSE rather than through a typed client call, so serde
+    /// is the only thing checking it — and `target` is free-form JSON the tail reads two keys out
+    /// of, which a stricter round trip would not preserve.
+    #[test]
+    fn a_live_activity_payload_round_trips() {
+        let run_id = ScanRunId::new();
+        let activity = ScanActivityView {
+            runs: vec![RunActivityView {
+                run_id,
+                queued_tasks: 26,
+                running_tasks: 4,
+                oldest_claim_at: Some(an_instant()),
+                kinds: vec!["series".to_owned()],
+                workers: 2,
+            }],
+            events: vec![TaskEventView {
+                id: Uuid::now_v7(),
+                run_id,
+                provider_slug: Some("kunmanga".to_owned()),
+                kind: "series".to_owned(),
+                state: TaskState::Failed,
+                target: json!({ "path": "/manga/x", "page": 3 }),
+                error: Some("http 503".to_owned()),
+                attempts: 2,
+                finished_at: Some(an_instant()),
+            }],
+        };
+        let encoded = serde_json::to_string(&activity).expect("serialize the activity");
+        let decoded: ScanActivityView = serde_json::from_str(&encoded).expect("read it back");
+        assert_eq!(decoded.runs[0].oldest_claim_at, Some(an_instant()));
+        assert_eq!(decoded.runs[0].workers, 2);
+        assert_eq!(decoded.events[0].state, TaskState::Failed);
+        assert_eq!(decoded.events[0].target["page"], 3);
+    }
+
+    /// A failure that recorded no error is a real group the feed shows and an operator can clear,
+    /// so its `null` has to survive as `null` rather than collapsing into an empty string.
+    #[test]
+    fn a_failure_and_its_group_round_trip_including_the_null_error() {
+        let group = FailureGroupView {
+            error: None,
+            count: 12,
+            cleared: 5,
+            providers: vec!["kunmanga".to_owned()],
+            kinds: vec!["catalog_page".to_owned()],
+            latest_at: Some(an_instant()),
+        };
+        let encoded = serde_json::to_string(&group).expect("serialize the group");
+        let decoded: FailureGroupView = serde_json::from_str(&encoded).expect("read it back");
+        assert_eq!(decoded.error, None, "the null-error group stays null");
+        assert_eq!(decoded.cleared, 5);
+        assert_eq!(decoded.kinds, vec!["catalog_page".to_owned()]);
+
+        let failure = FailedTaskView {
+            id: Uuid::now_v7(),
+            run_id: Uuid::now_v7(),
+            provider_slug: None,
+            mode: "full".to_owned(),
+            kind: "series".to_owned(),
+            error: Some("selector missing".to_owned()),
+            attempts: 3,
+            finished_at: Some(an_instant()),
+            acknowledged_at: Some(an_instant()),
+        };
+        let encoded = serde_json::to_string(&failure).expect("serialize the failure");
+        let decoded: FailedTaskView = serde_json::from_str(&encoded).expect("read it back");
+        assert_eq!(decoded.acknowledged_at, Some(an_instant()));
+        assert_eq!(
+            decoded.provider_slug, None,
+            "a deleted provider leaves the failure in the feed with no slug"
+        );
+
+        let cleared = FailuresClearedView { cleared: 37 };
+        let encoded = serde_json::to_string(&cleared).expect("serialize the count");
+        let decoded: FailuresClearedView = serde_json::from_str(&encoded).expect("read it back");
+        assert_eq!(decoded.cleared, 37);
+    }
+
+    /// An empty clear body must mean "the whole feed", not "the group with no error".
+    ///
+    /// Both halves are load-bearing. `match_null_error` has to default to `false` when the field
+    /// is absent, or every unqualified clear silently narrows to one group. And `error` has to be
+    /// omitted from the wire rather than sent as `null`, because the handler reads an absent
+    /// `error` as "any error" — serialising the `None` would send a different request.
+    #[test]
+    fn an_empty_clear_body_selects_the_whole_feed() {
+        let body = ClearFailuresBody::default();
+        assert!(!body.match_null_error);
+
+        let encoded = serde_json::to_value(&body).expect("serialize an empty body");
+        assert_eq!(
+            encoded,
+            json!({ "match_null_error": false }),
+            "only the flag is on the wire; a `null` error means something else"
+        );
+
+        let decoded: ClearFailuresBody = serde_json::from_str("{}").expect("read an empty body");
+        assert_eq!(decoded.provider, None);
+        assert_eq!(decoded.since, None);
+        assert_eq!(decoded.error, None);
+        assert!(!decoded.match_null_error);
+    }
+
+    /// The null-error group is requested by the flag alone, and a named group carries its text.
+    #[test]
+    fn a_clear_body_distinguishes_the_null_group_from_a_named_one() {
+        let null_group = ClearFailuresBody {
+            match_null_error: true,
+            ..ClearFailuresBody::default()
+        };
+        let encoded = serde_json::to_value(&null_group).expect("serialize the null group");
+        assert_eq!(encoded, json!({ "match_null_error": true }));
+
+        let named = ClearFailuresBody {
+            provider: Some("kunmanga".to_owned()),
+            error: Some("http 503".to_owned()),
+            ..ClearFailuresBody::default()
+        };
+        let encoded = serde_json::to_value(&named).expect("serialize a named group");
+        assert_eq!(
+            encoded,
+            json!({
+                "provider": "kunmanga",
+                "error": "http 503",
+                "match_null_error": false,
+            })
+        );
+    }
+}

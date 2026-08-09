@@ -535,9 +535,22 @@ are same-origin (`script-src 'self'`) and so are their beacons (`connect-src 'se
 script that can already run could read the header back off a same-origin fetch and admit further
 inline script; it cannot forge a nonce ahead of time (128 CSPRNG bits, minted per response), and
 it still cannot reach `'unsafe-eval'` or an off-origin host. That argument depends on the shell
-being served `Cache-Control: no-cache`, which it is — a cached shell would pin one nonce across
-every reader for the lifetime of the entry, which is `'unsafe-inline'` with extra steps. Do not
-put an edge cache in front of the shell.
+never being served from a stored copy — one held anywhere pins a single nonce across every reader
+for the lifetime of the entry, which is `'unsafe-inline'` with extra steps. Do not put an edge
+cache in front of the shell, and do not let a Cache Rule mark it eligible for cache.
+
+The origin's half is `Cache-Control: no-store`, and it has to be `no-store` rather than
+`no-cache`. `no-cache` permits a stored copy and only requires it to be revalidated, and a
+successful revalidation re-uses the stored body under the *new* response's headers — pairing one
+response's nonce, and one build's inline-script hashes, with another build's document. That is
+not theoretical: the shell was served off disk with `no-cache` until v3.6.x, and because image
+timestamps are clamped to `SOURCE_DATE_EPOCH` (a constant `0`, see
+[deploy/README.md](../deploy/README.md)), every build answered `Last-Modified: Thu, 01 Jan 1970`
+and every conditional request returned `304` forever. Browsers ran a retired shell under the
+current policy: every inline script refused, and the bundle file that shell named — content-hashed,
+so absent from the newer image — answered with HTML and failed the module MIME check. The shell is
+now served from memory with no validator at all, which is what makes the `304` impossible rather
+than merely unlikely.
 
 **Turn Rocket Loader off for this hostname.** It is a Cloudflare *speed* feature, not a bot
 product, no flag here makes it work, and it breaks the app outright: it re-injects the SPA's

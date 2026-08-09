@@ -480,6 +480,41 @@ stampede every replica's sweep at once.
 
 ---
 
+## 6b. Stopping a scan, and finding out why one is slow
+
+**Reading a run that is not moving.** The console's live panel names, per run, the *stage* its
+oldest held task is in (`fetching chapters`, `writing to the catalogue`, …), what that stage is
+working against, and how long it has been in it. The case worth knowing is the one that has no
+stage: a run in `running` with **nothing claimed** is not working, it is waiting for a worker
+slot, and the panel says so with how long it has waited. A worker runs one task per provider, so
+a provider's second run legitimately queues behind its first — through `scan_runs.state` alone
+that is indistinguishable from a run that has hung, which is the reading it used to get.
+
+**"Why so long?"** on a run card opens its breakdown: where the time went by stage, the tasks that
+cost the most, and one sentence naming the cause. The reading that comes first is the one that is
+easy to misdiagnose — a run whose time went on *waiting for permission to send* is being crawled
+exactly as politely as that provider is configured for, and no change to the code will speed it
+up. Raise `politeness.rps` or lower `crawl_delay_ms` for that provider, or accept the duration.
+The same figures are in Prometheus; see "Why a scan is slow" in
+[`OBSERVABILITY.md`](./OBSERVABILITY.md).
+
+**Stopping runs.** `POST /v1/admin/scans/{run_id}/cancel` stops one run; `POST
+/v1/admin/scans/cancel` drains everything queued or running, optionally narrowed by `provider`
+and `mode` (the console's "Stop queue" button narrows by whatever provider filter the panel has).
+Both need `scans.run` and a confirmed identity, and both are audited.
+
+Two things to expect. Cancelling **cannot unpublish the broker's queued messages**, so it takes
+effect at the next task boundary: a task already in flight runs to its end, and a worker handed a
+message afterwards finds the claim refused and drops it. And the abandoned tasks are recorded as
+`skipped` without counting as done — a cancelled run keeps the progress it had rather than
+rendering as a completed one.
+
+Cancellation stays reachable when `scanning.manual` is off. That is deliberate: switching
+triggering off is usually a response to a queue that is already the problem, and taking the stop
+button away at that moment would be the worst possible time to lose it.
+
+---
+
 ## 7. Scan-queue priority and fairness
 
 Scan tasks are dispatched on a NATS work-queue stream, one subject per provider **and scan
@@ -499,12 +534,19 @@ another provider's scan nor a fast scan that would surface a new chapter runs at
 two rules make the same backlog cost another provider *one task* of delay, and cost a fast
 scan nothing beyond the task currently in flight.
 
-Priority is strict, and safe to be strict, because the fast tier is bounded by construction:
-a fast run enqueues exactly one `latest_feed` task per provider and processes the feed
-inline, so the fast lanes hold at most one task per provider and cannot starve the full
-tier. **If a fast scan is ever changed to fan out**, that reasoning lapses and the tiers need
-a weighted split rather than strict priority — `TIERS` in `services/worker/src/queue.rs` is
-where the policy lives.
+Priority is **near**-strict, and the qualifier is load-bearing. It used to be strict, on the
+grounds that the fast tier was bounded by construction: a fast run enqueued exactly one
+`latest_feed` task per provider and walked the feed inside it, so the fast lanes held at most one
+task per provider and could not starve the full tier.
+
+A fast run now fans out a `series` task per feed entry — which is what makes its progress
+readable in the console instead of `0/1` for the whole run — and that argument went with it. A
+provider with a large latest feed would hold a non-empty fast lane for the entire run, and under
+strict priority *every other provider's* full scan would wait behind it. So the queue carries a
+debt counter: after `FULL_TIER_EVERY` (8) consecutive fast tasks, the full tier is offered a turn
+first. One turn in nine — the fast tier still wins nearly every time, which is the point of
+having tiers, but "nearly always" is a bound and "always" was not. `tier_order` in
+`services/worker/src/queue.rs` is where the policy lives.
 
 **What to watch.** `scan_tasks_served_total{provider,scan}` counts tasks handed out per lane.
 Over a window in which several providers have work, the per-provider counters should climb

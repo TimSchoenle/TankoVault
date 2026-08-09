@@ -1,0 +1,10 @@
+DROP INDEX IF EXISTS scan_tasks_run_duration;
+ALTER TABLE scan_tasks DROP COLUMN IF EXISTS telemetry;
+ALTER TABLE scan_tasks DROP COLUMN IF EXISTS duration_ms;
+ALTER TABLE scan_tasks DROP COLUMN IF EXISTS wait_ms;
+ALTER TABLE scan_tasks DROP COLUMN IF EXISTS stage_detail;
+ALTER TABLE scan_tasks DROP COLUMN IF EXISTS stage_total;
+ALTER TABLE scan_tasks DROP COLUMN IF EXISTS stage_done;
+ALTER TABLE scan_tasks DROP COLUMN IF EXISTS stage_at;
+ALTER TABLE scan_tasks DROP COLUMN IF EXISTS stage;
+ALTER TABLE scan_tasks DROP COLUMN IF EXISTS created_at;

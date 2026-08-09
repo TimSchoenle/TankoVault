@@ -38,7 +38,9 @@ use serde_json::{Value as Json, json};
 use tankovault_db::DbError;
 use tankovault_db::repo::providers::{self};
 use tankovault_db::repo::scans;
-use tankovault_domain::{ProviderId, RunState, ScanMode, ScanRunId, ScanTaskId, TaskState};
+use tankovault_domain::{
+    ProviderId, RunState, ScanMode, ScanRunId, ScanStage, ScanTaskId, StageTimings, TaskState,
+};
 use tankovault_test_support::{TestDb, seed};
 
 // ---------------------------------------------------------------------------
@@ -131,7 +133,7 @@ async fn a_redelivered_task_is_counted_once() {
     scans::claim_task(&db.pool, first, "worker-1")
         .await
         .expect("claim");
-    scans::complete_task(&db.pool, first)
+    scans::complete_task(&db.pool, first, None)
         .await
         .expect("complete");
     assert_eq!(counters(&db, run).await, (1, 0, 2));
@@ -145,7 +147,7 @@ async fn a_redelivered_task_is_counted_once() {
         TaskState::Done,
         "a settled task must not be re-opened by a claim"
     );
-    scans::complete_task(&db.pool, first)
+    scans::complete_task(&db.pool, first, None)
         .await
         .expect("re-complete");
     assert_eq!(
@@ -163,7 +165,7 @@ async fn a_redelivered_task_is_counted_once() {
         "the run cannot be complete while one of its two tasks is unsettled"
     );
 
-    scans::complete_task(&db.pool, second)
+    scans::complete_task(&db.pool, second, None)
         .await
         .expect("complete");
     assert_eq!(counters(&db, run).await, (2, 0, 2));
@@ -184,25 +186,25 @@ async fn a_settled_task_cannot_move_to_another_terminal_state() {
     let failed = a_task(&db, run, &json!({ "path": "/failed" })).await;
     let skipped = a_task(&db, run, &json!({ "path": "/skipped" })).await;
 
-    scans::complete_task(&db.pool, completed)
+    scans::complete_task(&db.pool, completed, None)
         .await
         .expect("complete");
-    scans::fail_task(&db.pool, failed, "selector missing")
+    scans::fail_task(&db.pool, failed, "selector missing", None)
         .await
         .expect("fail");
     scans::skip_task(&db.pool, skipped).await.expect("skip");
     assert_eq!(counters(&db, run).await, (2, 1, 3), "one settle each");
 
-    scans::fail_task(&db.pool, completed, "late failure")
+    scans::fail_task(&db.pool, completed, "late failure", None)
         .await
         .expect("fail a completed task");
-    scans::complete_task(&db.pool, failed)
+    scans::complete_task(&db.pool, failed, None)
         .await
         .expect("complete a failed task");
     scans::skip_task(&db.pool, failed)
         .await
         .expect("skip a failed task");
-    scans::complete_task(&db.pool, skipped)
+    scans::complete_task(&db.pool, skipped, None)
         .await
         .expect("complete a skipped task");
 
@@ -353,7 +355,7 @@ async fn a_run_finalizes_once_and_only_when_every_task_has_settled() {
         "nothing has settled yet"
     );
 
-    scans::complete_task(&db.pool, first)
+    scans::complete_task(&db.pool, first, None)
         .await
         .expect("complete");
     assert!(
@@ -364,7 +366,7 @@ async fn a_run_finalizes_once_and_only_when_every_task_has_settled() {
         "one of two tasks is not enough"
     );
 
-    scans::complete_task(&db.pool, second)
+    scans::complete_task(&db.pool, second, None)
         .await
         .expect("complete");
     let finalized = scans::finalize_if_complete(&db.pool, run)
@@ -395,7 +397,7 @@ async fn only_a_wholly_failed_run_is_failed() {
     let all_failed = a_running_run(&db, 2).await;
     for path in ["/a", "/b"] {
         let task = a_task(&db, all_failed, &json!({ "path": path })).await;
-        scans::fail_task(&db.pool, task, "boom")
+        scans::fail_task(&db.pool, task, "boom", None)
             .await
             .expect("fail");
     }
@@ -408,8 +410,12 @@ async fn only_a_wholly_failed_run_is_failed() {
     let partial = a_running_run(&db, 2).await;
     let ok = a_task(&db, partial, &json!({ "path": "/a" })).await;
     let bad = a_task(&db, partial, &json!({ "path": "/b" })).await;
-    scans::complete_task(&db.pool, ok).await.expect("complete");
-    scans::fail_task(&db.pool, bad, "boom").await.expect("fail");
+    scans::complete_task(&db.pool, ok, None)
+        .await
+        .expect("complete");
+    scans::fail_task(&db.pool, bad, "boom", None)
+        .await
+        .expect("fail");
     let run = scans::finalize_if_complete(&db.pool, partial)
         .await
         .expect("finalize")
@@ -458,7 +464,7 @@ async fn finalize_ignores_an_unplanned_run_and_a_run_that_is_not_running() {
     scans::finish_run(&db.pool, cancelled, RunState::Cancelled)
         .await
         .expect("cancel");
-    scans::complete_task(&db.pool, task)
+    scans::complete_task(&db.pool, task, None)
         .await
         .expect("complete");
     assert!(
@@ -609,7 +615,7 @@ async fn claiming_records_the_worker_and_counts_the_attempt() {
     assert_eq!(worker.as_deref(), Some("worker-2"));
 
     // After settling, neither moves again.
-    scans::complete_task(&db.pool, task)
+    scans::complete_task(&db.pool, task, None)
         .await
         .expect("complete");
     scans::claim_task(&db.pool, task, "worker-3")
@@ -687,11 +693,13 @@ async fn the_failed_task_feed_reports_failures_with_their_run_context() {
     let ok = a_task(&db, run, &json!({ "path": "/ok" })).await;
     let older = a_task(&db, run, &json!({ "path": "/older" })).await;
     let newer = a_task(&db, run, &json!({ "path": "/newer" })).await;
-    scans::complete_task(&db.pool, ok).await.expect("complete");
-    scans::fail_task(&db.pool, older, "selector missing")
+    scans::complete_task(&db.pool, ok, None)
+        .await
+        .expect("complete");
+    scans::fail_task(&db.pool, older, "selector missing", None)
         .await
         .expect("fail");
-    scans::fail_task(&db.pool, newer, "http 503")
+    scans::fail_task(&db.pool, newer, "http 503", None)
         .await
         .expect("fail");
     backdate(&db, BACKDATE_TASK, older.as_uuid(), 2).await;
@@ -802,7 +810,7 @@ async fn a_run_with_nothing_left_to_do_does_not_suppress_the_next_one() {
         .await
         .expect("claim")
         .expect("the run's only task");
-    scans::complete_task(&db.pool, task.id)
+    scans::complete_task(&db.pool, task.id, None)
         .await
         .expect("complete");
 
@@ -876,4 +884,296 @@ async fn a_finished_run_does_not_suppress_the_next_one() {
             "a {state:?} run still reads as in flight"
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// SCAN-2 — cancellation, and the stage telemetry that explains a slow run
+// ---------------------------------------------------------------------------
+
+/// Read one column off a task row.
+async fn task_stage_at(db: &TestDb, task: ScanTaskId) -> time::OffsetDateTime {
+    sqlx::query_scalar("SELECT stage_at FROM scan_tasks WHERE id = $1")
+        .bind(task.as_uuid())
+        .fetch_one(&db.pool)
+        .await
+        .expect("read stage_at")
+}
+
+/// Cancelling a run stops it, abandons what it had outstanding, and — the part that is easy to
+/// get wrong — does **not** count the abandoned tasks as done.
+///
+/// [`scans::skip_task`] bumps `done_tasks`, because "nothing to do" settles a task as
+/// successfully as doing the work. Cancellation writes the same `skipped` state for a different
+/// reason, and reusing that increment would render a cancelled run as a completed one: a full
+/// progress bar on a scan the operator just stopped, which is the most misleading thing this
+/// surface could draw.
+#[tokio::test]
+async fn cancelling_a_run_abandons_its_tasks_without_counting_them_as_done() {
+    let db = TestDb::spawn().await;
+    let run = a_running_run(&db, 3).await;
+    let queued = a_task(&db, run, &json!({ "path": "/a" })).await;
+    let held = a_task(&db, run, &json!({ "path": "/b" })).await;
+    let finished = a_task(&db, run, &json!({ "path": "/c" })).await;
+    scans::claim_task(&db.pool, held, "worker-1")
+        .await
+        .expect("claim");
+    scans::complete_task(&db.pool, finished, None)
+        .await
+        .expect("complete");
+
+    let stopped = scans::cancel_run(&db.pool, run)
+        .await
+        .expect("cancel")
+        .expect("the run was in flight");
+    assert_eq!(stopped.runs, 1);
+    assert_eq!(
+        stopped.tasks, 2,
+        "the queued and the held task are abandoned"
+    );
+
+    assert_eq!(task_state(&db, queued).await, TaskState::Skipped);
+    assert_eq!(task_state(&db, held).await, TaskState::Skipped);
+    assert_eq!(task_state(&db, finished).await, TaskState::Done);
+    assert_eq!(
+        counters(&db, run).await,
+        (1, 0, 3),
+        "only the task that really finished counts as done"
+    );
+    assert_eq!(
+        scans::get_run(&db.pool, run).await.expect("read run").state,
+        RunState::Cancelled
+    );
+}
+
+/// A cancelled run's tasks refuse to be claimed.
+///
+/// This is the only place a cancellation can actually take effect. The queued messages belong to
+/// `JetStream` and cannot be unpublished, so a worker will still be handed them; if the claim
+/// accepted, the worker would carry on crawling a provider an operator has told it to stop, and
+/// the console would show a cancelled run whose tasks keep settling.
+#[tokio::test]
+async fn a_cancelled_runs_tasks_cannot_be_claimed() {
+    let db = TestDb::spawn().await;
+    let run = a_running_run(&db, 1).await;
+    let task = a_task(&db, run, &json!({ "path": "/a" })).await;
+
+    assert!(
+        scans::claim_task(&db.pool, task, "worker-1")
+            .await
+            .expect("claim"),
+        "an in-flight run's task claims normally"
+    );
+    scans::cancel_run(&db.pool, run).await.expect("cancel");
+    assert!(
+        !scans::claim_task(&db.pool, task, "worker-2")
+            .await
+            .expect("claim"),
+        "a cancelled run's task must refuse the claim"
+    );
+}
+
+/// A bulk cancellation narrows by provider and leaves everything else running.
+#[tokio::test]
+async fn cancelling_the_queue_narrows_to_the_provider_it_names() {
+    let db = TestDb::spawn().await;
+    let noisy = seed::provider(&db, "noisy").create().await;
+    let quiet = seed::provider(&db, "quiet").create().await;
+    let stopped_run = scans::create_run(&db.pool, Some(noisy), ScanMode::Fast)
+        .await
+        .expect("create run");
+    let spared_run = scans::create_run(&db.pool, Some(quiet), ScanMode::Fast)
+        .await
+        .expect("create run");
+
+    let cancelled = scans::cancel_active_runs(&db.pool, Some("noisy"), None)
+        .await
+        .expect("cancel");
+    assert_eq!(cancelled.runs, 1);
+    assert_eq!(
+        scans::get_run(&db.pool, stopped_run)
+            .await
+            .expect("read run")
+            .state,
+        RunState::Cancelled
+    );
+    assert_eq!(
+        scans::get_run(&db.pool, spared_run)
+            .await
+            .expect("read run")
+            .state,
+        RunState::Queued,
+        "another provider's run must survive a narrowed cancellation"
+    );
+}
+
+/// `stage_at` marks when a task entered its stage, and must not move while that stage merely
+/// reports progress.
+///
+/// The whole value of the field is "this stage has not advanced in nine minutes". A stamp that
+/// reset on every counter tick would read as freshly entered forever — busiest exactly during the
+/// fan-out that ticks most often, and silent about the stall it exists to show.
+#[tokio::test]
+async fn a_stages_start_time_survives_its_own_progress_reports() {
+    let db = TestDb::spawn().await;
+    let run = a_running_run(&db, 1).await;
+    let task = a_task(&db, run, &json!({ "path": "/a" })).await;
+    scans::claim_task(&db.pool, task, "worker-1")
+        .await
+        .expect("claim");
+
+    scans::set_task_stage(
+        &db.pool,
+        task,
+        ScanStage::CatalogFanout,
+        Some((1, 20_000)),
+        Some("page 1"),
+    )
+    .await
+    .expect("stage");
+    let entered = task_stage_at(&db, task).await;
+
+    scans::set_task_stage(
+        &db.pool,
+        task,
+        ScanStage::CatalogFanout,
+        Some((9_000, 20_000)),
+        Some("page 1"),
+    )
+    .await
+    .expect("stage");
+    assert_eq!(
+        task_stage_at(&db, task).await,
+        entered,
+        "progress inside a stage must not restamp it"
+    );
+
+    // A genuine transition does restamp, or the field would never move at all.
+    scans::set_task_stage(&db.pool, task, ScanStage::SeriesIngest, None, None)
+        .await
+        .expect("stage");
+    assert!(task_stage_at(&db, task).await >= entered);
+}
+
+/// A settled task keeps the stage it ended in and records what it cost.
+///
+/// The stage a task *died in* is the most useful single field on a failure — it says whether the
+/// provider stopped answering or our own ingest rejected what it sent — so the settle must not
+/// clear it. `wait_ms` is computed inside the statement rather than passed in, because the
+/// worker's clock and the database's are not the same clock.
+#[tokio::test]
+async fn settling_records_the_breakdown_and_keeps_the_stage() {
+    let db = TestDb::spawn().await;
+    let run = a_running_run(&db, 1).await;
+    let task = a_task(&db, run, &json!({ "path": "/a" })).await;
+    scans::claim_task(&db.pool, task, "worker-1")
+        .await
+        .expect("claim");
+    scans::set_task_stage(
+        &db.pool,
+        task,
+        ScanStage::SeriesChapters,
+        None,
+        Some("/manga/x"),
+    )
+    .await
+    .expect("stage");
+
+    let mut timings = StageTimings {
+        pace_wait_ms: 61_000,
+        requests: 4,
+        ..StageTimings::default()
+    };
+    timings.add_stage(ScanStage::SeriesChapters, 61_500);
+    scans::fail_task(
+        &db.pool,
+        task,
+        "http 503",
+        Some(&scans::TaskOutcome {
+            duration_ms: 62_000,
+            timings: &timings,
+        }),
+    )
+    .await
+    .expect("fail");
+
+    let (stage, duration_ms, wait_ms, telemetry): (
+        Option<String>,
+        Option<i32>,
+        Option<i32>,
+        Option<Json>,
+    ) = sqlx::query_as(
+        "SELECT stage, duration_ms, wait_ms, telemetry FROM scan_tasks WHERE id = $1",
+    )
+    .bind(task.as_uuid())
+    .fetch_one(&db.pool)
+    .await
+    .expect("read the settled row");
+
+    assert_eq!(stage.as_deref(), Some("series_chapters"));
+    assert_eq!(duration_ms, Some(62_000));
+    assert!(wait_ms.is_some(), "the queue wait is computed at settle");
+    let telemetry = telemetry.expect("a breakdown was recorded");
+    assert_eq!(telemetry["pace_wait_ms"], 61_000);
+    assert_eq!(telemetry["stages"]["series_chapters"], 61_500);
+
+    // And the run-level rollup reads it back out of the jsonb — the console's whole answer to
+    // "why did this take so long" is that read, not the column.
+    let (rollup, stages) = scans::run_telemetry(&db.pool, run)
+        .await
+        .expect("run telemetry");
+    assert_eq!(rollup.tasks_measured, 1);
+    assert_eq!(rollup.pace_wait_ms, 61_000);
+    assert_eq!(rollup.busy_ms, 62_000);
+    assert_eq!(stages.len(), 1);
+    assert_eq!(stages[0].stage, "series_chapters");
+    assert_eq!(stages[0].millis, 61_500);
+}
+
+/// The activity read separates a run that is *working* from one that is *waiting for a worker*.
+///
+/// A worker serves at most one task per provider, so a provider's second run legitimately sits
+/// with everything queued and nothing claimed. Through `scan_runs.state` alone that is
+/// indistinguishable from a run that has hung — which is the reading it used to get, and the
+/// reason a queued full scan looked stuck behind the fast scan holding the provider's slot.
+#[tokio::test]
+async fn activity_tells_a_working_run_from_one_waiting_for_a_worker() {
+    let db = TestDb::spawn().await;
+    let busy_run = a_running_run(&db, 1).await;
+    let idle_run = a_running_run(&db, 1).await;
+    let held = a_task(&db, busy_run, &json!({ "path": "/a" })).await;
+    a_task(&db, idle_run, &json!({ "path": "/b" })).await;
+    scans::claim_task(&db.pool, held, "worker-1")
+        .await
+        .expect("claim");
+    scans::set_task_stage(
+        &db.pool,
+        held,
+        ScanStage::SeriesChapters,
+        None,
+        Some("/manga/x"),
+    )
+    .await
+    .expect("stage");
+
+    let activity = scans::active_run_activity(&db.pool)
+        .await
+        .expect("activity");
+    let working = activity
+        .iter()
+        .find(|a| a.run_id == busy_run.as_uuid())
+        .expect("the working run is in flight");
+    assert_eq!(working.running_tasks, 1);
+    assert_eq!(working.stage.as_deref(), Some("series_chapters"));
+    assert_eq!(working.stage_detail.as_deref(), Some("/manga/x"));
+
+    let waiting = activity
+        .iter()
+        .find(|a| a.run_id == idle_run.as_uuid())
+        .expect("the waiting run is in flight");
+    assert_eq!(waiting.running_tasks, 0);
+    assert_eq!(waiting.stage, None);
+    assert!(
+        waiting.waiting_since.is_some(),
+        "a run with everything queued and nothing claimed must report how long it has waited"
+    );
 }

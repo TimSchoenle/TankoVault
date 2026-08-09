@@ -209,6 +209,145 @@ pub struct RunActivityView {
     pub kinds: Vec<String>,
     /// Distinct workers holding a task right now.
     pub workers: i64,
+    /// What the run's oldest held task is doing right now — a
+    /// [`tankovault_domain::ScanStage`] token. `null` when nothing is held, which paired with
+    /// `waiting_since` is how the console tells "working" from "waiting for a worker".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stage: Option<String>,
+    /// When that task entered that stage. A stage stamp that stops moving is the symptom the run
+    /// counters cannot show.
+    #[serde(default, with = "time::serde::rfc3339::option")]
+    #[schema(value_type = Option<String>)]
+    pub stage_at: Option<OffsetDateTime>,
+    /// Progress inside the stage, where the stage counts anything.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stage_done: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stage_total: Option<i32>,
+    /// What the stage is working against — a series path, a catalogue page.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stage_detail: Option<String>,
+    /// When the run's oldest still-queued task was created.
+    ///
+    /// With `running_tasks` at zero this is the run's real state: not working, **waiting for a
+    /// worker slot**. A worker runs one task per provider, so a provider's second run queues
+    /// behind its first — and through `state` alone that is indistinguishable from a run that
+    /// has hung, which is exactly the reading it used to get.
+    #[serde(default, with = "time::serde::rfc3339::option")]
+    #[schema(value_type = Option<String>)]
+    pub waiting_since: Option<OffsetDateTime>,
+}
+
+/// What a cancellation stopped.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct ScanCancelledView {
+    /// Runs moved to `cancelled`. Runs already terminal are not counted, so two operators
+    /// cancelling the same queue do not both claim it.
+    pub runs: i64,
+    /// Tasks abandoned across those runs. They do not count as done: a cancelled run must not
+    /// render as a completed one.
+    pub tasks: i64,
+}
+
+/// Which in-flight runs a bulk cancellation stops. Both fields narrow; a body with neither stops
+/// everything currently queued or running.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
+pub struct CancelScansBody {
+    /// Provider slug.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<ScanMode>,
+}
+
+/// One run's tasks and the breakdown of where its time went.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct ScanRunDetailView {
+    pub telemetry: RunTelemetryView,
+    /// Summed milliseconds per stage across the run, largest first — the answer to "what was this
+    /// run actually doing for twenty minutes".
+    pub stages: Vec<StageTotalView>,
+    pub tasks: Vec<ScanTaskDetailView>,
+}
+
+/// A run's time, summed over every task that recorded a breakdown.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct RunTelemetryView {
+    /// Settled tasks carrying a breakdown. Everything else here sums over exactly these, so a run
+    /// from before this instrumentation reports zero rather than a wrong total.
+    pub tasks_measured: i64,
+    /// Summed execution time in milliseconds. Exceeds the run's wall clock when tasks ran
+    /// concurrently: it is work performed, not time elapsed.
+    pub busy_ms: i64,
+    /// Summed time tasks spent created but unclaimed — queued behind a busy provider.
+    pub wait_ms: i64,
+    pub requests: i64,
+    pub fetch_ms: i64,
+    /// Milliseconds spent waiting for permission to send a request: the concurrency gate, the
+    /// token rate, the crawl delay and any adaptive 429 penalty. Read against `busy_ms`, this is
+    /// what separates "the scan is broken" from "the provider's crawl budget is small".
+    pub pace_wait_ms: i64,
+    pub solver_ms: i64,
+    pub solver_calls: i64,
+    /// Responses the provider answered 429/503, each of which widened its spacing thereafter.
+    pub throttled: i64,
+}
+
+/// Summed milliseconds for one stage across a run.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct StageTotalView {
+    /// A [`tankovault_domain::ScanStage`] token.
+    pub stage: String,
+    pub millis: i64,
+    /// Tasks that reported this stage at all.
+    pub tasks: i64,
+}
+
+/// One task of a run, with its stage and what it cost.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct ScanTaskDetailView {
+    pub id: Uuid,
+    pub kind: String,
+    pub target: Json,
+    pub state: TaskState,
+    pub attempts: i16,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worker_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    /// The stage the task is in, or the one it ended in. On a failure this is the most useful
+    /// field on the row: it says whether the provider stopped answering or our own ingest
+    /// rejected what it sent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stage: Option<String>,
+    #[serde(default, with = "time::serde::rfc3339::option")]
+    #[schema(value_type = Option<String>)]
+    pub stage_at: Option<OffsetDateTime>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stage_done: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stage_total: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stage_detail: Option<String>,
+    /// `null` for tasks created before the column existed.
+    #[serde(default, with = "time::serde::rfc3339::option")]
+    #[schema(value_type = Option<String>)]
+    pub created_at: Option<OffsetDateTime>,
+    #[serde(default, with = "time::serde::rfc3339::option")]
+    #[schema(value_type = Option<String>)]
+    pub claimed_at: Option<OffsetDateTime>,
+    #[serde(default, with = "time::serde::rfc3339::option")]
+    #[schema(value_type = Option<String>)]
+    pub finished_at: Option<OffsetDateTime>,
+    /// Milliseconds between creation and claim: time nobody was working on it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wait_ms: Option<i32>,
+    /// Milliseconds between claim and settle: time someone was.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration_ms: Option<i32>,
+    /// The task's own [`tankovault_domain::StageTimings`], as recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub telemetry: Option<Json>,
 }
 
 /// One settled task in the live tail.
@@ -903,6 +1042,12 @@ mod tests {
                 oldest_claim_at: Some(an_instant()),
                 kinds: vec!["series".to_owned()],
                 workers: 2,
+                stage: Some("series_chapters".to_owned()),
+                stage_at: Some(an_instant()),
+                stage_done: Some(12),
+                stage_total: Some(94),
+                stage_detail: Some("/manga/x".to_owned()),
+                waiting_since: Some(an_instant()),
             }],
             events: vec![TaskEventView {
                 id: Uuid::now_v7(),

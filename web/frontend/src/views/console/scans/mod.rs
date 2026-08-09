@@ -11,10 +11,12 @@
 //! and it is the one place that decides which source wins.
 
 mod activity;
+mod explain;
 mod failures;
 mod filters;
 mod health;
 mod history;
+mod stages;
 
 use crate::api;
 use crate::components::{async_block, use_step_up_gate, StepUpPrompt};
@@ -279,6 +281,40 @@ pub(in crate::views::console) fn ScanQueue(tick: RefreshTick) -> Element {
         });
     };
 
+    // Narrowed by the panel's own provider filter, so "stop the queue" means what the operator is
+    // looking at: with a provider selected it drains that provider, and with none it drains
+    // everything. A button that always stopped everything would be unusable on the one screen
+    // that exists to narrow to a single misbehaving provider.
+    let drain_provider = filter.provider.clone();
+    let drain = move |_| {
+        let provider = drain_provider.clone();
+        let client = gate.client(api);
+        spawn(async move {
+            let body = CancelScansBody {
+                provider,
+                mode: None,
+            };
+            match client.cancel_scans().body(body).send().await {
+                Ok(stopped) => {
+                    let stopped = stopped.into_inner();
+                    message.set(Some(i18n.args(
+                        "console.scans.cancelled",
+                        &[
+                            ("runs", &stopped.runs.to_string()),
+                            ("tasks", &stopped.tasks.to_string()),
+                        ],
+                    )));
+                    tick.bump();
+                }
+                Err(e) => {
+                    if !gate.refused(api::Refusal::of(&e)) {
+                        message.set(Some(api::guarded_error(i18n, e)));
+                    }
+                }
+            }
+        });
+    };
+
     let narrowed = filter.narrows_runs();
     rsx! {
         section { class: "ik-tile", style: "margin-bottom:18px;",
@@ -305,6 +341,9 @@ pub(in crate::views::console) fn ScanQueue(tick: RefreshTick) -> Element {
                     }
                     button { class: "ik-btn primary", onclick: trigger,
                         {i18n.t("console.scans.trigger")}
+                    }
+                    button { class: "ik-btn danger", onclick: drain,
+                        {i18n.t("console.scans.cancelAll")}
                     }
                 }
             }
@@ -363,7 +402,7 @@ pub(in crate::views::console) fn ScanQueue(tick: RefreshTick) -> Element {
                             .clone()
                             .or_else(|| activity_seed.read_unchecked().clone().flatten());
                         rsx! {
-                            activity::LivePanel { runs: merged.clone(), activity }
+                            activity::LivePanel { runs: merged.clone(), activity, tick }
                             history::RunHistory {
                                 runs: merged,
                                 total: fetched.total,

@@ -1100,6 +1100,42 @@
         "count": "{shown} von {total}",
         "countFiltered": "{shown} von {total} Treffern",
         "noneMatch": "Kein Lauf passt zu diesem Filter."
+      },
+      "stage": {
+        "starting": "Startet",
+        "catalogFetch": "Katalogseite wird geladen",
+        "catalogRegister": "Serien werden erfasst",
+        "catalogFanout": "Serien werden eingereiht",
+        "feedFetch": "Neuheiten-Feed wird gelesen",
+        "feedFanout": "Serien werden eingereiht",
+        "seriesMetadata": "Serienseite wird geladen",
+        "seriesChapters": "Kapitel werden geladen",
+        "seriesIngest": "Wird in den Katalog geschrieben",
+        "unknown": "Arbeitet",
+        "since": "seit {duration}",
+        "waiting": "Wartet seit {duration} auf einen Worker — der andere Lauf dieses Anbieters belegt den Platz.",
+        "planning": "Wird geplant — noch keine Aufgaben eingereiht."
+      },
+      "explain": {
+        "show": "Warum so lange?",
+        "hide": "Ausblenden",
+        "busy": "Arbeitszeit",
+        "waiting": "Wartezeit",
+        "paceWait": "Crawl-Budget",
+        "requests": "Anfragen",
+        "solves": "Challenge-Lösungen",
+        "throttledCount": "Gedrosselt",
+        "byStage": "Wohin die Zeit ging",
+        "slowest": "Teuerste Aufgaben",
+        "noStages": "Für diesen Lauf wurden noch keine Phasenzeiten erfasst.",
+        "unmeasured": "Noch keine Aufgabe hat eine Aufschlüsselung erfasst — sobald eine abgeschlossen ist, steht sie hier.",
+        "trivial": "Bisher zu wenig gemessene Arbeit für eine belastbare Aussage.",
+        "throttled": "Der Anbieter hat {count}-mal mit „zu viele Anfragen“ geantwortet, danach wurde jede weitere Anfrage weiter auseinandergezogen. Senke die Crawl-Rate dieses Anbieters.",
+        "pacing": "{percent}% der Zeit ging fürs Warten auf die Sendeerlaubnis drauf — der Scan ist genau so höflich wie konfiguriert. Für mehr Tempo die Crawl-Rate anheben.",
+        "solving": "Der Großteil der Zeit ging in {count} Challenge-Lösungen. Der Anbieter schaltet eine Bot-Prüfung vor die Seiten.",
+        "fetching": "{percent}% der Zeit steckten in {requests} Anfragen — der Anbieter antwortet langsam.",
+        "stage": "Der Großteil der Zeit ging in {stage} ({percent}%).",
+        "mixed": "Keine einzelne Phase dominiert; die Zeit verteilt sich über den Lauf."
       }
     },
     "scans": {
@@ -1128,7 +1164,10 @@
       "scopeUnknown": "unbekannt",
       "title": "Scan-Warteschlange",
       "trigger": "Scan auslösen (alle)",
-      "triggerMode": "Auszulösender Scan-Modus"
+      "triggerMode": "Auszulösender Scan-Modus",
+      "cancelRun": "Stoppen",
+      "cancelAll": "Warteschlange stoppen",
+      "cancelled": "{runs} Läufe gestoppt, {tasks} Aufgaben verworfen."
     },
     "solver": {
       "active": "aktiv",

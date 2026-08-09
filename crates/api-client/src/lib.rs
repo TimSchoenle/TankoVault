@@ -1004,6 +1004,86 @@ pub mod types {
             Default::default()
         }
     }
+    #[doc = "Which in-flight runs a bulk cancellation stops. Both fields narrow; a body with neither stops\neverything currently queued or running."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Which in-flight runs a bulk cancellation stops. Both fields narrow; a body with neither stops\\neverything currently queued or running.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"mode\": {"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {},"]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/ScanMode\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"provider\": {"]
+    #[doc = "      \"description\": \"Provider slug.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct CancelScansBody {
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub mode: ::std::option::Option<CancelScansBodyMode>,
+        #[doc = "Provider slug."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub provider: ::std::option::Option<::std::string::String>,
+    }
+    impl ::std::default::Default for CancelScansBody {
+        fn default() -> Self {
+            Self {
+                mode: Default::default(),
+                provider: Default::default(),
+            }
+        }
+    }
+    impl CancelScansBody {
+        pub fn builder() -> builder::CancelScansBody {
+            Default::default()
+        }
+    }
+    #[doc = "`CancelScansBodyMode`"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {},"]
+    #[doc = "    {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/ScanMode\""]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    #[serde(untagged)]
+    pub enum CancelScansBodyMode {
+        Variant0(::serde_json::Value),
+        Variant1(ScanMode),
+    }
+    impl ::std::convert::From<::serde_json::Value> for CancelScansBodyMode {
+        fn from(value: ::serde_json::Value) -> Self {
+            Self::Variant0(value)
+        }
+    }
+    impl ::std::convert::From<ScanMode> for CancelScansBodyMode {
+        fn from(value: ScanMode) -> Self {
+            Self::Variant1(value)
+        }
+    }
     #[doc = "The caller's capabilities and the deployment's enabled features."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -8734,6 +8814,49 @@ pub mod types {
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
+    #[doc = "    \"stage\": {"]
+    #[doc = "      \"description\": \"What the run's oldest held task is doing right now — a\\n[`tankovault_domain::ScanStage`] token. `null` when nothing is held, which paired with\\n`waiting_since` is how the console tells \\\"working\\\" from \\\"waiting for a worker\\\".\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"stage_at\": {"]
+    #[doc = "      \"description\": \"When that task entered that stage. A stage stamp that stops moving is the symptom the run\\ncounters cannot show.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"stage_detail\": {"]
+    #[doc = "      \"description\": \"What the stage is working against — a series path, a catalogue page.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"stage_done\": {"]
+    #[doc = "      \"description\": \"Progress inside the stage, where the stage counts anything.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"integer\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"int32\""]
+    #[doc = "    },"]
+    #[doc = "    \"stage_total\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"integer\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"int32\""]
+    #[doc = "    },"]
+    #[doc = "    \"waiting_since\": {"]
+    #[doc = "      \"description\": \"When the run's oldest still-queued task was created.\\n\\nWith `running_tasks` at zero this is the run's real state: not working, **waiting for a\\nworker slot**. A worker runs one task per provider, so a provider's second run queues\\nbehind its first — and through `state` alone that is indistinguishable from a run that\\nhas hung, which is exactly the reading it used to get.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
     #[doc = "    \"workers\": {"]
     #[doc = "      \"description\": \"Distinct workers holding a task right now.\","]
     #[doc = "      \"type\": \"integer\","]
@@ -8754,6 +8877,23 @@ pub mod types {
         pub run_id: ScanRunId,
         #[doc = "Tasks a worker is holding right now."]
         pub running_tasks: i64,
+        #[doc = "What the run's oldest held task is doing right now — a\n[`tankovault_domain::ScanStage`] token. `null` when nothing is held, which paired with\n`waiting_since` is how the console tells \"working\" from \"waiting for a worker\"."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub stage: ::std::option::Option<::std::string::String>,
+        #[doc = "When that task entered that stage. A stage stamp that stops moving is the symptom the run\ncounters cannot show."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub stage_at: ::std::option::Option<::std::string::String>,
+        #[doc = "What the stage is working against — a series path, a catalogue page."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub stage_detail: ::std::option::Option<::std::string::String>,
+        #[doc = "Progress inside the stage, where the stage counts anything."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub stage_done: ::std::option::Option<i32>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub stage_total: ::std::option::Option<i32>,
+        #[doc = "When the run's oldest still-queued task was created.\n\nWith `running_tasks` at zero this is the run's real state: not working, **waiting for a\nworker slot**. A worker runs one task per provider, so a provider's second run queues\nbehind its first — and through `state` alone that is indistinguishable from a run that\nhas hung, which is exactly the reading it used to get."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub waiting_since: ::std::option::Option<::std::string::String>,
         #[doc = "Distinct workers holding a task right now."]
         pub workers: i64,
     }
@@ -8851,6 +8991,93 @@ pub mod types {
             value.parse()
         }
     }
+    #[doc = "A run's time, summed over every task that recorded a breakdown."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"A run's time, summed over every task that recorded a breakdown.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"busy_ms\","]
+    #[doc = "    \"fetch_ms\","]
+    #[doc = "    \"pace_wait_ms\","]
+    #[doc = "    \"requests\","]
+    #[doc = "    \"solver_calls\","]
+    #[doc = "    \"solver_ms\","]
+    #[doc = "    \"tasks_measured\","]
+    #[doc = "    \"throttled\","]
+    #[doc = "    \"wait_ms\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"busy_ms\": {"]
+    #[doc = "      \"description\": \"Summed execution time in milliseconds. Exceeds the run's wall clock when tasks ran\\nconcurrently: it is work performed, not time elapsed.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"fetch_ms\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"pace_wait_ms\": {"]
+    #[doc = "      \"description\": \"Milliseconds spent waiting for permission to send a request: the concurrency gate, the\\ntoken rate, the crawl delay and any adaptive 429 penalty. Read against `busy_ms`, this is\\nwhat separates \\\"the scan is broken\\\" from \\\"the provider's crawl budget is small\\\".\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"requests\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"solver_calls\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"solver_ms\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"tasks_measured\": {"]
+    #[doc = "      \"description\": \"Settled tasks carrying a breakdown. Everything else here sums over exactly these, so a run\\nfrom before this instrumentation reports zero rather than a wrong total.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"throttled\": {"]
+    #[doc = "      \"description\": \"Responses the provider answered 429/503, each of which widened its spacing thereafter.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"wait_ms\": {"]
+    #[doc = "      \"description\": \"Summed time tasks spent created but unclaimed — queued behind a busy provider.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct RunTelemetryView {
+        #[doc = "Summed execution time in milliseconds. Exceeds the run's wall clock when tasks ran\nconcurrently: it is work performed, not time elapsed."]
+        pub busy_ms: i64,
+        pub fetch_ms: i64,
+        #[doc = "Milliseconds spent waiting for permission to send a request: the concurrency gate, the\ntoken rate, the crawl delay and any adaptive 429 penalty. Read against `busy_ms`, this is\nwhat separates \"the scan is broken\" from \"the provider's crawl budget is small\"."]
+        pub pace_wait_ms: i64,
+        pub requests: i64,
+        pub solver_calls: i64,
+        pub solver_ms: i64,
+        #[doc = "Settled tasks carrying a breakdown. Everything else here sums over exactly these, so a run\nfrom before this instrumentation reports zero rather than a wrong total."]
+        pub tasks_measured: i64,
+        #[doc = "Responses the provider answered 429/503, each of which widened its spacing thereafter."]
+        pub throttled: i64,
+        #[doc = "Summed time tasks spent created but unclaimed — queued behind a busy provider."]
+        pub wait_ms: i64,
+    }
+    impl RunTelemetryView {
+        pub fn builder() -> builder::RunTelemetryView {
+            Default::default()
+        }
+    }
     #[doc = "The task-level state of the runs in flight, pushed on the console stream.\n\nRun counters alone cannot distinguish \"working\" from \"wedged\" — both leave `done_tasks`\nwhere it was. These are the figures that can: what a worker is holding, since when, and what\nsettled most recently."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -8889,6 +9116,45 @@ pub mod types {
     }
     impl ScanActivityView {
         pub fn builder() -> builder::ScanActivityView {
+            Default::default()
+        }
+    }
+    #[doc = "What a cancellation stopped."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"What a cancellation stopped.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"runs\","]
+    #[doc = "    \"tasks\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"runs\": {"]
+    #[doc = "      \"description\": \"Runs moved to `cancelled`. Runs already terminal are not counted, so two operators\\ncancelling the same queue do not both claim it.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"tasks\": {"]
+    #[doc = "      \"description\": \"Tasks abandoned across those runs. They do not count as done: a cancelled run must not\\nrender as a completed one.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct ScanCancelledView {
+        #[doc = "Runs moved to `cancelled`. Runs already terminal are not counted, so two operators\ncancelling the same queue do not both claim it."]
+        pub runs: i64,
+        #[doc = "Tasks abandoned across those runs. They do not count as done: a cancelled run must not\nrender as a completed one."]
+        pub tasks: i64,
+    }
+    impl ScanCancelledView {
+        pub fn builder() -> builder::ScanCancelledView {
             Default::default()
         }
     }
@@ -9060,6 +9326,125 @@ pub mod types {
     }
     impl ScanRun {
         pub fn builder() -> builder::ScanRun {
+            Default::default()
+        }
+    }
+    #[doc = "How a run's tasks are ordered, as the `sort` parameter spells it.\n\nIts own wire enum for the same reason [`RunSortParam`] is: an unknown token must be a 422 from\nthe extractor rather than a silent fall back to an ordering the caller did not ask for."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"How a run's tasks are ordered, as the `sort` parameter spells it.\\n\\nIts own wire enum for the same reason [`RunSortParam`] is: an unknown token must be a 422 from\\nthe extractor rather than a silent fall back to an ordering the caller did not ask for.\","]
+    #[doc = "  \"type\": \"string\","]
+    #[doc = "  \"enum\": ["]
+    #[doc = "    \"slowest\","]
+    #[doc = "    \"recent\""]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+    )]
+    pub enum ScanRunDetailSort {
+        #[serde(rename = "slowest")]
+        Slowest,
+        #[serde(rename = "recent")]
+        Recent,
+    }
+    impl ::std::fmt::Display for ScanRunDetailSort {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Slowest => f.write_str("slowest"),
+                Self::Recent => f.write_str("recent"),
+            }
+        }
+    }
+    impl ::std::str::FromStr for ScanRunDetailSort {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "slowest" => Ok(Self::Slowest),
+                "recent" => Ok(Self::Recent),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+    impl ::std::convert::TryFrom<&str> for ScanRunDetailSort {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    impl ::std::convert::TryFrom<&::std::string::String> for ScanRunDetailSort {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    impl ::std::convert::TryFrom<::std::string::String> for ScanRunDetailSort {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    #[doc = "One run's tasks and the breakdown of where its time went."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One run's tasks and the breakdown of where its time went.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"stages\","]
+    #[doc = "    \"tasks\","]
+    #[doc = "    \"telemetry\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"stages\": {"]
+    #[doc = "      \"description\": \"Summed milliseconds per stage across the run, largest first — the answer to \\\"what was this\\nrun actually doing for twenty minutes\\\".\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/StageTotalView\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"tasks\": {"]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/ScanTaskDetailView\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"telemetry\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/RunTelemetryView\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct ScanRunDetailView {
+        #[doc = "Summed milliseconds per stage across the run, largest first — the answer to \"what was this\nrun actually doing for twenty minutes\"."]
+        pub stages: ::std::vec::Vec<StageTotalView>,
+        pub tasks: ::std::vec::Vec<ScanTaskDetailView>,
+        pub telemetry: RunTelemetryView,
+    }
+    impl ScanRunDetailView {
+        pub fn builder() -> builder::ScanRunDetailView {
             Default::default()
         }
     }
@@ -9307,6 +9692,205 @@ pub mod types {
     impl ScanSummaryView {
         pub fn builder() -> builder::ScanSummaryView {
             Default::default()
+        }
+    }
+    #[doc = "One task of a run, with its stage and what it cost."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One task of a run, with its stage and what it cost.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"attempts\","]
+    #[doc = "    \"id\","]
+    #[doc = "    \"kind\","]
+    #[doc = "    \"state\","]
+    #[doc = "    \"target\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"attempts\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int32\""]
+    #[doc = "    },"]
+    #[doc = "    \"claimed_at\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"created_at\": {"]
+    #[doc = "      \"description\": \"`null` for tasks created before the column existed.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"duration_ms\": {"]
+    #[doc = "      \"description\": \"Milliseconds between claim and settle: time someone was.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"integer\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"int32\""]
+    #[doc = "    },"]
+    #[doc = "    \"error\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"finished_at\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"kind\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"stage\": {"]
+    #[doc = "      \"description\": \"The stage the task is in, or the one it ended in. On a failure this is the most useful\\nfield on the row: it says whether the provider stopped answering or our own ingest\\nrejected what it sent.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"stage_at\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"stage_detail\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"stage_done\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"integer\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"int32\""]
+    #[doc = "    },"]
+    #[doc = "    \"stage_total\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"integer\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"int32\""]
+    #[doc = "    },"]
+    #[doc = "    \"state\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/TaskState\""]
+    #[doc = "    },"]
+    #[doc = "    \"target\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/Value\""]
+    #[doc = "    },"]
+    #[doc = "    \"telemetry\": {"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {},"]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/Value\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"wait_ms\": {"]
+    #[doc = "      \"description\": \"Milliseconds between creation and claim: time nobody was working on it.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"integer\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"int32\""]
+    #[doc = "    },"]
+    #[doc = "    \"worker_id\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct ScanTaskDetailView {
+        pub attempts: i32,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub claimed_at: ::std::option::Option<::std::string::String>,
+        #[doc = "`null` for tasks created before the column existed."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub created_at: ::std::option::Option<::std::string::String>,
+        #[doc = "Milliseconds between claim and settle: time someone was."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub duration_ms: ::std::option::Option<i32>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub error: ::std::option::Option<::std::string::String>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub finished_at: ::std::option::Option<::std::string::String>,
+        pub id: ::uuid::Uuid,
+        pub kind: ::std::string::String,
+        #[doc = "The stage the task is in, or the one it ended in. On a failure this is the most useful\nfield on the row: it says whether the provider stopped answering or our own ingest\nrejected what it sent."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub stage: ::std::option::Option<::std::string::String>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub stage_at: ::std::option::Option<::std::string::String>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub stage_detail: ::std::option::Option<::std::string::String>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub stage_done: ::std::option::Option<i32>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub stage_total: ::std::option::Option<i32>,
+        pub state: TaskState,
+        pub target: Value,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub telemetry: ::std::option::Option<ScanTaskDetailViewTelemetry>,
+        #[doc = "Milliseconds between creation and claim: time nobody was working on it."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub wait_ms: ::std::option::Option<i32>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub worker_id: ::std::option::Option<::std::string::String>,
+    }
+    impl ScanTaskDetailView {
+        pub fn builder() -> builder::ScanTaskDetailView {
+            Default::default()
+        }
+    }
+    #[doc = "`ScanTaskDetailViewTelemetry`"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {},"]
+    #[doc = "    {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/Value\""]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    #[serde(untagged)]
+    pub enum ScanTaskDetailViewTelemetry {
+        Variant0(::serde_json::Value),
+        Variant1(Value),
+    }
+    impl ::std::convert::From<::serde_json::Value> for ScanTaskDetailViewTelemetry {
+        fn from(value: ::serde_json::Value) -> Self {
+            Self::Variant0(value)
+        }
+    }
+    impl ::std::convert::From<Value> for ScanTaskDetailViewTelemetry {
+        fn from(value: Value) -> Self {
+            Self::Variant1(value)
         }
     }
     #[doc = "Identifies a scan task."]
@@ -10564,6 +11148,50 @@ pub mod types {
     }
     impl SourcePreferencesUpdate {
         pub fn builder() -> builder::SourcePreferencesUpdate {
+            Default::default()
+        }
+    }
+    #[doc = "Summed milliseconds for one stage across a run."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Summed milliseconds for one stage across a run.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"millis\","]
+    #[doc = "    \"stage\","]
+    #[doc = "    \"tasks\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"millis\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"stage\": {"]
+    #[doc = "      \"description\": \"A [`tankovault_domain::ScanStage`] token.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"tasks\": {"]
+    #[doc = "      \"description\": \"Tasks that reported this stage at all.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct StageTotalView {
+        pub millis: i64,
+        #[doc = "A [`tankovault_domain::ScanStage`] token."]
+        pub stage: ::std::string::String,
+        #[doc = "Tasks that reported this stage at all."]
+        pub tasks: i64,
+    }
+    impl StageTotalView {
+        pub fn builder() -> builder::StageTotalView {
             Default::default()
         }
     }
@@ -15115,6 +15743,66 @@ pub mod types {
                 Self {
                     applied: Ok(value.applied),
                     skipped: Ok(value.skipped),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct CancelScansBody {
+            mode: ::std::result::Result<
+                ::std::option::Option<super::CancelScansBodyMode>,
+                ::std::string::String,
+            >,
+            provider: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+        impl ::std::default::Default for CancelScansBody {
+            fn default() -> Self {
+                Self {
+                    mode: Ok(Default::default()),
+                    provider: Ok(Default::default()),
+                }
+            }
+        }
+        impl CancelScansBody {
+            pub fn mode<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<super::CancelScansBodyMode>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.mode = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for mode: {e}"));
+                self
+            }
+            pub fn provider<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.provider = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for provider: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<CancelScansBody> for super::CancelScansBody {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: CancelScansBody,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    mode: value.mode?,
+                    provider: value.provider?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::CancelScansBody> for CancelScansBody {
+            fn from(value: super::CancelScansBody) -> Self {
+                Self {
+                    mode: Ok(value.mode),
+                    provider: Ok(value.provider),
                 }
             }
         }
@@ -24045,6 +24733,24 @@ pub mod types {
             queued_tasks: ::std::result::Result<i64, ::std::string::String>,
             run_id: ::std::result::Result<super::ScanRunId, ::std::string::String>,
             running_tasks: ::std::result::Result<i64, ::std::string::String>,
+            stage: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            stage_at: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            stage_detail: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            stage_done: ::std::result::Result<::std::option::Option<i32>, ::std::string::String>,
+            stage_total: ::std::result::Result<::std::option::Option<i32>, ::std::string::String>,
+            waiting_since: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
             workers: ::std::result::Result<i64, ::std::string::String>,
         }
         impl ::std::default::Default for RunActivityView {
@@ -24055,6 +24761,12 @@ pub mod types {
                     queued_tasks: Err("no value supplied for queued_tasks".to_string()),
                     run_id: Err("no value supplied for run_id".to_string()),
                     running_tasks: Err("no value supplied for running_tasks".to_string()),
+                    stage: Ok(Default::default()),
+                    stage_at: Ok(Default::default()),
+                    stage_detail: Ok(Default::default()),
+                    stage_done: Ok(Default::default()),
+                    stage_total: Ok(Default::default()),
+                    waiting_since: Ok(Default::default()),
                     workers: Err("no value supplied for workers".to_string()),
                 }
             }
@@ -24110,6 +24822,66 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for running_tasks: {e}"));
                 self
             }
+            pub fn stage<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.stage = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for stage: {e}"));
+                self
+            }
+            pub fn stage_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.stage_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for stage_at: {e}"));
+                self
+            }
+            pub fn stage_detail<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.stage_detail = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for stage_detail: {e}"));
+                self
+            }
+            pub fn stage_done<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<i32>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.stage_done = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for stage_done: {e}"));
+                self
+            }
+            pub fn stage_total<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<i32>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.stage_total = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for stage_total: {e}"));
+                self
+            }
+            pub fn waiting_since<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.waiting_since = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for waiting_since: {e}"));
+                self
+            }
             pub fn workers<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<i64>,
@@ -24132,6 +24904,12 @@ pub mod types {
                     queued_tasks: value.queued_tasks?,
                     run_id: value.run_id?,
                     running_tasks: value.running_tasks?,
+                    stage: value.stage?,
+                    stage_at: value.stage_at?,
+                    stage_detail: value.stage_detail?,
+                    stage_done: value.stage_done?,
+                    stage_total: value.stage_total?,
+                    waiting_since: value.waiting_since?,
                     workers: value.workers?,
                 })
             }
@@ -24144,7 +24922,165 @@ pub mod types {
                     queued_tasks: Ok(value.queued_tasks),
                     run_id: Ok(value.run_id),
                     running_tasks: Ok(value.running_tasks),
+                    stage: Ok(value.stage),
+                    stage_at: Ok(value.stage_at),
+                    stage_detail: Ok(value.stage_detail),
+                    stage_done: Ok(value.stage_done),
+                    stage_total: Ok(value.stage_total),
+                    waiting_since: Ok(value.waiting_since),
                     workers: Ok(value.workers),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct RunTelemetryView {
+            busy_ms: ::std::result::Result<i64, ::std::string::String>,
+            fetch_ms: ::std::result::Result<i64, ::std::string::String>,
+            pace_wait_ms: ::std::result::Result<i64, ::std::string::String>,
+            requests: ::std::result::Result<i64, ::std::string::String>,
+            solver_calls: ::std::result::Result<i64, ::std::string::String>,
+            solver_ms: ::std::result::Result<i64, ::std::string::String>,
+            tasks_measured: ::std::result::Result<i64, ::std::string::String>,
+            throttled: ::std::result::Result<i64, ::std::string::String>,
+            wait_ms: ::std::result::Result<i64, ::std::string::String>,
+        }
+        impl ::std::default::Default for RunTelemetryView {
+            fn default() -> Self {
+                Self {
+                    busy_ms: Err("no value supplied for busy_ms".to_string()),
+                    fetch_ms: Err("no value supplied for fetch_ms".to_string()),
+                    pace_wait_ms: Err("no value supplied for pace_wait_ms".to_string()),
+                    requests: Err("no value supplied for requests".to_string()),
+                    solver_calls: Err("no value supplied for solver_calls".to_string()),
+                    solver_ms: Err("no value supplied for solver_ms".to_string()),
+                    tasks_measured: Err("no value supplied for tasks_measured".to_string()),
+                    throttled: Err("no value supplied for throttled".to_string()),
+                    wait_ms: Err("no value supplied for wait_ms".to_string()),
+                }
+            }
+        }
+        impl RunTelemetryView {
+            pub fn busy_ms<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.busy_ms = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for busy_ms: {e}"));
+                self
+            }
+            pub fn fetch_ms<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.fetch_ms = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for fetch_ms: {e}"));
+                self
+            }
+            pub fn pace_wait_ms<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.pace_wait_ms = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for pace_wait_ms: {e}"));
+                self
+            }
+            pub fn requests<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.requests = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for requests: {e}"));
+                self
+            }
+            pub fn solver_calls<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.solver_calls = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for solver_calls: {e}"));
+                self
+            }
+            pub fn solver_ms<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.solver_ms = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for solver_ms: {e}"));
+                self
+            }
+            pub fn tasks_measured<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.tasks_measured = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for tasks_measured: {e}")
+                });
+                self
+            }
+            pub fn throttled<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.throttled = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for throttled: {e}"));
+                self
+            }
+            pub fn wait_ms<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.wait_ms = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for wait_ms: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<RunTelemetryView> for super::RunTelemetryView {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: RunTelemetryView,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    busy_ms: value.busy_ms?,
+                    fetch_ms: value.fetch_ms?,
+                    pace_wait_ms: value.pace_wait_ms?,
+                    requests: value.requests?,
+                    solver_calls: value.solver_calls?,
+                    solver_ms: value.solver_ms?,
+                    tasks_measured: value.tasks_measured?,
+                    throttled: value.throttled?,
+                    wait_ms: value.wait_ms?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::RunTelemetryView> for RunTelemetryView {
+            fn from(value: super::RunTelemetryView) -> Self {
+                Self {
+                    busy_ms: Ok(value.busy_ms),
+                    fetch_ms: Ok(value.fetch_ms),
+                    pace_wait_ms: Ok(value.pace_wait_ms),
+                    requests: Ok(value.requests),
+                    solver_calls: Ok(value.solver_calls),
+                    solver_ms: Ok(value.solver_ms),
+                    tasks_measured: Ok(value.tasks_measured),
+                    throttled: Ok(value.throttled),
+                    wait_ms: Ok(value.wait_ms),
                 }
             }
         }
@@ -24203,6 +25139,60 @@ pub mod types {
                 Self {
                     events: Ok(value.events),
                     runs: Ok(value.runs),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct ScanCancelledView {
+            runs: ::std::result::Result<i64, ::std::string::String>,
+            tasks: ::std::result::Result<i64, ::std::string::String>,
+        }
+        impl ::std::default::Default for ScanCancelledView {
+            fn default() -> Self {
+                Self {
+                    runs: Err("no value supplied for runs".to_string()),
+                    tasks: Err("no value supplied for tasks".to_string()),
+                }
+            }
+        }
+        impl ScanCancelledView {
+            pub fn runs<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.runs = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for runs: {e}"));
+                self
+            }
+            pub fn tasks<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.tasks = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for tasks: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<ScanCancelledView> for super::ScanCancelledView {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: ScanCancelledView,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    runs: value.runs?,
+                    tasks: value.tasks?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::ScanCancelledView> for ScanCancelledView {
+            fn from(value: super::ScanCancelledView) -> Self {
+                Self {
+                    runs: Ok(value.runs),
+                    tasks: Ok(value.tasks),
                 }
             }
         }
@@ -24395,6 +25385,80 @@ pub mod types {
                     started_at: Ok(value.started_at),
                     state: Ok(value.state),
                     total_tasks: Ok(value.total_tasks),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct ScanRunDetailView {
+            stages: ::std::result::Result<
+                ::std::vec::Vec<super::StageTotalView>,
+                ::std::string::String,
+            >,
+            tasks: ::std::result::Result<
+                ::std::vec::Vec<super::ScanTaskDetailView>,
+                ::std::string::String,
+            >,
+            telemetry: ::std::result::Result<super::RunTelemetryView, ::std::string::String>,
+        }
+        impl ::std::default::Default for ScanRunDetailView {
+            fn default() -> Self {
+                Self {
+                    stages: Err("no value supplied for stages".to_string()),
+                    tasks: Err("no value supplied for tasks".to_string()),
+                    telemetry: Err("no value supplied for telemetry".to_string()),
+                }
+            }
+        }
+        impl ScanRunDetailView {
+            pub fn stages<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::StageTotalView>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.stages = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for stages: {e}"));
+                self
+            }
+            pub fn tasks<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::ScanTaskDetailView>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.tasks = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for tasks: {e}"));
+                self
+            }
+            pub fn telemetry<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::RunTelemetryView>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.telemetry = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for telemetry: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<ScanRunDetailView> for super::ScanRunDetailView {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: ScanRunDetailView,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    stages: value.stages?,
+                    tasks: value.tasks?,
+                    telemetry: value.telemetry?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::ScanRunDetailView> for ScanRunDetailView {
+            fn from(value: super::ScanRunDetailView) -> Self {
+                Self {
+                    stages: Ok(value.stages),
+                    tasks: Ok(value.tasks),
+                    telemetry: Ok(value.telemetry),
                 }
             }
         }
@@ -24680,6 +25744,313 @@ pub mod types {
                     tasks_done: Ok(value.tasks_done),
                     tasks_failed: Ok(value.tasks_failed),
                     tasks_total: Ok(value.tasks_total),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct ScanTaskDetailView {
+            attempts: ::std::result::Result<i32, ::std::string::String>,
+            claimed_at: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            created_at: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            duration_ms: ::std::result::Result<::std::option::Option<i32>, ::std::string::String>,
+            error: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            finished_at: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            kind: ::std::result::Result<::std::string::String, ::std::string::String>,
+            stage: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            stage_at: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            stage_detail: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            stage_done: ::std::result::Result<::std::option::Option<i32>, ::std::string::String>,
+            stage_total: ::std::result::Result<::std::option::Option<i32>, ::std::string::String>,
+            state: ::std::result::Result<super::TaskState, ::std::string::String>,
+            target: ::std::result::Result<super::Value, ::std::string::String>,
+            telemetry: ::std::result::Result<
+                ::std::option::Option<super::ScanTaskDetailViewTelemetry>,
+                ::std::string::String,
+            >,
+            wait_ms: ::std::result::Result<::std::option::Option<i32>, ::std::string::String>,
+            worker_id: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+        impl ::std::default::Default for ScanTaskDetailView {
+            fn default() -> Self {
+                Self {
+                    attempts: Err("no value supplied for attempts".to_string()),
+                    claimed_at: Ok(Default::default()),
+                    created_at: Ok(Default::default()),
+                    duration_ms: Ok(Default::default()),
+                    error: Ok(Default::default()),
+                    finished_at: Ok(Default::default()),
+                    id: Err("no value supplied for id".to_string()),
+                    kind: Err("no value supplied for kind".to_string()),
+                    stage: Ok(Default::default()),
+                    stage_at: Ok(Default::default()),
+                    stage_detail: Ok(Default::default()),
+                    stage_done: Ok(Default::default()),
+                    stage_total: Ok(Default::default()),
+                    state: Err("no value supplied for state".to_string()),
+                    target: Err("no value supplied for target".to_string()),
+                    telemetry: Ok(Default::default()),
+                    wait_ms: Ok(Default::default()),
+                    worker_id: Ok(Default::default()),
+                }
+            }
+        }
+        impl ScanTaskDetailView {
+            pub fn attempts<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.attempts = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for attempts: {e}"));
+                self
+            }
+            pub fn claimed_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.claimed_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for claimed_at: {e}"));
+                self
+            }
+            pub fn created_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.created_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for created_at: {e}"));
+                self
+            }
+            pub fn duration_ms<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<i32>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.duration_ms = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for duration_ms: {e}"));
+                self
+            }
+            pub fn error<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.error = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for error: {e}"));
+                self
+            }
+            pub fn finished_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.finished_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for finished_at: {e}"));
+                self
+            }
+            pub fn id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for id: {e}"));
+                self
+            }
+            pub fn kind<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.kind = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for kind: {e}"));
+                self
+            }
+            pub fn stage<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.stage = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for stage: {e}"));
+                self
+            }
+            pub fn stage_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.stage_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for stage_at: {e}"));
+                self
+            }
+            pub fn stage_detail<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.stage_detail = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for stage_detail: {e}"));
+                self
+            }
+            pub fn stage_done<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<i32>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.stage_done = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for stage_done: {e}"));
+                self
+            }
+            pub fn stage_total<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<i32>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.stage_total = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for stage_total: {e}"));
+                self
+            }
+            pub fn state<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::TaskState>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.state = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for state: {e}"));
+                self
+            }
+            pub fn target<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::Value>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.target = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for target: {e}"));
+                self
+            }
+            pub fn telemetry<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<super::ScanTaskDetailViewTelemetry>,
+                    >,
+                T::Error: ::std::fmt::Display,
+            {
+                self.telemetry = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for telemetry: {e}"));
+                self
+            }
+            pub fn wait_ms<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<i32>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.wait_ms = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for wait_ms: {e}"));
+                self
+            }
+            pub fn worker_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.worker_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for worker_id: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<ScanTaskDetailView> for super::ScanTaskDetailView {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: ScanTaskDetailView,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    attempts: value.attempts?,
+                    claimed_at: value.claimed_at?,
+                    created_at: value.created_at?,
+                    duration_ms: value.duration_ms?,
+                    error: value.error?,
+                    finished_at: value.finished_at?,
+                    id: value.id?,
+                    kind: value.kind?,
+                    stage: value.stage?,
+                    stage_at: value.stage_at?,
+                    stage_detail: value.stage_detail?,
+                    stage_done: value.stage_done?,
+                    stage_total: value.stage_total?,
+                    state: value.state?,
+                    target: value.target?,
+                    telemetry: value.telemetry?,
+                    wait_ms: value.wait_ms?,
+                    worker_id: value.worker_id?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::ScanTaskDetailView> for ScanTaskDetailView {
+            fn from(value: super::ScanTaskDetailView) -> Self {
+                Self {
+                    attempts: Ok(value.attempts),
+                    claimed_at: Ok(value.claimed_at),
+                    created_at: Ok(value.created_at),
+                    duration_ms: Ok(value.duration_ms),
+                    error: Ok(value.error),
+                    finished_at: Ok(value.finished_at),
+                    id: Ok(value.id),
+                    kind: Ok(value.kind),
+                    stage: Ok(value.stage),
+                    stage_at: Ok(value.stage_at),
+                    stage_detail: Ok(value.stage_detail),
+                    stage_done: Ok(value.stage_done),
+                    stage_total: Ok(value.stage_total),
+                    state: Ok(value.state),
+                    target: Ok(value.target),
+                    telemetry: Ok(value.telemetry),
+                    wait_ms: Ok(value.wait_ms),
+                    worker_id: Ok(value.worker_id),
                 }
             }
         }
@@ -26393,6 +27764,74 @@ pub mod types {
             fn from(value: super::SourcePreferencesUpdate) -> Self {
                 Self {
                     provider_ids: Ok(value.provider_ids),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct StageTotalView {
+            millis: ::std::result::Result<i64, ::std::string::String>,
+            stage: ::std::result::Result<::std::string::String, ::std::string::String>,
+            tasks: ::std::result::Result<i64, ::std::string::String>,
+        }
+        impl ::std::default::Default for StageTotalView {
+            fn default() -> Self {
+                Self {
+                    millis: Err("no value supplied for millis".to_string()),
+                    stage: Err("no value supplied for stage".to_string()),
+                    tasks: Err("no value supplied for tasks".to_string()),
+                }
+            }
+        }
+        impl StageTotalView {
+            pub fn millis<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.millis = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for millis: {e}"));
+                self
+            }
+            pub fn stage<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.stage = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for stage: {e}"));
+                self
+            }
+            pub fn tasks<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.tasks = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for tasks: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<StageTotalView> for super::StageTotalView {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: StageTotalView,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    millis: value.millis?,
+                    stage: value.stage?,
+                    tasks: value.tasks?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::StageTotalView> for StageTotalView {
+            fn from(value: super::StageTotalView) -> Self {
+                Self {
+                    millis: Ok(value.millis),
+                    stage: Ok(value.stage),
+                    tasks: Ok(value.tasks),
                 }
             }
         }
@@ -30723,6 +32162,10 @@ impl Client {
     pub fn scan_activity(&self) -> builder::ScanActivity<'_> {
         builder::ScanActivity::new(self)
     }
+    #[doc = "Cancel the scan queue\n\nStops every run currently queued or running, optionally narrowed to one provider and/or one\nmode. The drain an operator reaches for when a provider is misbehaving and the queue is full\nof work against it.\n\nSends a `POST` request to `/v1/admin/scans/cancel`\n\n```ignore\nlet response = client.cancel_scans()\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn cancel_scans(&self) -> builder::CancelScans<'_> {
+        builder::CancelScans::new(self)
+    }
     #[doc = "Live scan-progress stream\n\nSSE live scan progress for the operator console. Polls the durable `scan_runs` (the system\nof record for progress) every 2 s and pushes a `runs` event; a `scan.progress` NATS relay\nis a documented enhancement.\n\nSends a `GET` request to `/v1/admin/scans/stream`\n\n```ignore\nlet response = client.scan_stream()\n    .send()\n    .await;\n```"]
     pub fn scan_stream(&self) -> builder::ScanStream<'_> {
         builder::ScanStream::new(self)
@@ -30735,6 +32178,14 @@ impl Client {
     pub fn get_scan(&self) -> builder::GetScan<'_> {
         builder::GetScan::new(self)
     }
+    #[doc = "Cancel a scan run\n\nStops one run and abandons the tasks it still had outstanding. A run that has already\nfinished is a no-op, answered as `0` runs cancelled rather than a 404 — two operators pressing\nthe same button is ordinary.\n\nThe queued broker messages cannot be unpublished, so cancellation takes effect at the next\ntask boundary: a task already in flight runs to its end and settles into a run that is already\nterminal. Behind `scans.run` for the same reason clearing failures is — it changes what every\nother operator sees.\n\nSends a `POST` request to `/v1/admin/scans/{run_id}/cancel`\n\nArguments:\n- `run_id`: Scan run id\n```ignore\nlet response = client.cancel_scan()\n    .run_id(run_id)\n    .send()\n    .await;\n```"]
+    pub fn cancel_scan(&self) -> builder::CancelScan<'_> {
+        builder::CancelScan::new(self)
+    }
+    #[doc = "Explain a scan run\n\nWhere one run's time went: the summed breakdown, the per-stage split, and the tasks behind it\nordered so the expensive ones come first. This is the endpoint that answers \"why has this been\nrunning for twenty minutes\" — a run whose `pace_wait_ms` is most of its `busy_ms` is being\ncrawled exactly as politely as its provider is configured for, and nothing in the code will\nmake it faster.\n\nSends a `GET` request to `/v1/admin/scans/{run_id}/tasks`\n\nArguments:\n- `run_id`: Scan run id\n- `sort`: Ordering: `slowest` (default) or `recent`.\n```ignore\nlet response = client.scan_run_detail()\n    .run_id(run_id)\n    .sort(sort)\n    .send()\n    .await;\n```"]
+    pub fn scan_run_detail(&self) -> builder::ScanRunDetail<'_> {
+        builder::ScanRunDetail::new(self)
+    }
     #[doc = "Merge two series\n\nTransactional re-parent + title/tag/progress/sync union (design §10).\n\nSends a `POST` request to `/v1/admin/series/merge`\n\n```ignore\nlet response = client.merge_series()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn merge_series(&self) -> builder::MergeSeries<'_> {
         builder::MergeSeries::new(self)
@@ -30743,7 +32194,7 @@ impl Client {
     pub fn system_stats(&self) -> builder::SystemStats<'_> {
         builder::SystemStats::new(self)
     }
-    #[doc = "Console live stream\n\nServer-Sent Events for the operator console: `stats` every 10 s, `runs` every 2 s and\n`activity` — the task-level state of the runs in flight — every 3 s.\n\nAuthenticated by a single-use `ticket` query parameter from `POST /v1/me/stream-ticket`,\nbecause `EventSource` cannot set an `Authorization` header. A ticket proves a session\nexisted thirty seconds ago and nothing more, so the permission check below happens *after*\nredemption and gates each event separately: a caller entitled to scan runs but not to system\ncounters receives `runs` and never `stats`. Emitting an event the caller could not fetch\nover its own GET would be a disclosure, and the access-matrix suites would not catch it —\nthey reconcile status codes, not event names.\n\nSends a `GET` request to `/v1/admin/stream`\n\nArguments:\n- `ticket`: Single-use ticket from `POST /v1/me/stream-ticket`, passed as a query parameter because\nthe browser `EventSource` API cannot attach an `Authorization` header (design §17.4).\n\nWas the raw access token until SEC-8. A query string is recorded by `TraceLayer` as a\nspan field, preserved verbatim by the frontend proxy, written to every reverse-proxy\naccess log and kept in browser history — so the credential that rides here must be worth\nnothing by the time anyone reads it back. This one is spent by the request that carries\nit, expires in 30 seconds, and opens nothing but this stream.\n```ignore\nlet response = client.admin_stream()\n    .ticket(ticket)\n    .send()\n    .await;\n```"]
+    #[doc = "Console live stream\n\nServer-Sent Events for the operator console: `stats` every 10 s, and `runs` plus `activity` —\nthe task-level state and current stage of the runs in flight — every 2 s.\n\nAuthenticated by a single-use `ticket` query parameter from `POST /v1/me/stream-ticket`,\nbecause `EventSource` cannot set an `Authorization` header. A ticket proves a session\nexisted thirty seconds ago and nothing more, so the permission check below happens *after*\nredemption and gates each event separately: a caller entitled to scan runs but not to system\ncounters receives `runs` and never `stats`. Emitting an event the caller could not fetch\nover its own GET would be a disclosure, and the access-matrix suites would not catch it —\nthey reconcile status codes, not event names.\n\nSends a `GET` request to `/v1/admin/stream`\n\nArguments:\n- `ticket`: Single-use ticket from `POST /v1/me/stream-ticket`, passed as a query parameter because\nthe browser `EventSource` API cannot attach an `Authorization` header (design §17.4).\n\nWas the raw access token until SEC-8. A query string is recorded by `TraceLayer` as a\nspan field, preserved verbatim by the frontend proxy, written to every reverse-proxy\naccess log and kept in browser history — so the credential that rides here must be worth\nnothing by the time anyone reads it back. This one is spent by the request that carries\nit, expires in 30 seconds, and opens nothing but this stream.\n```ignore\nlet response = client.admin_stream()\n    .ticket(ticket)\n    .send()\n    .await;\n```"]
     pub fn admin_stream(&self) -> builder::AdminStream<'_> {
         builder::AdminStream::new(self)
     }
@@ -34688,6 +36139,81 @@ pub mod builder {
             }
         }
     }
+    #[doc = "Builder for [`Client::cancel_scans`]\n\n[`Client::cancel_scans`]: super::Client::cancel_scans"]
+    #[derive(Debug, Clone)]
+    pub struct CancelScans<'a> {
+        client: &'a super::Client,
+        body: Result<types::builder::CancelScansBody, String>,
+    }
+    impl<'a> CancelScans<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::CancelScansBody>,
+            <V as std::convert::TryInto<types::CancelScansBody>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `CancelScansBody` for body failed: {}", s));
+            self
+        }
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(types::builder::CancelScansBody) -> types::builder::CancelScansBody,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+        #[doc = "Sends a `POST` request to `/v1/admin/scans/cancel`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::ScanCancelledView>, Error<types::ProblemDetails>> {
+            let Self { client, body } = self;
+            let body = body
+                .and_then(|v| types::CancelScansBody::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v1/admin/scans/cancel", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "cancel_scans",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
     #[doc = "Builder for [`Client::scan_stream`]\n\n[`Client::scan_stream`]: super::Client::scan_stream"]
     #[derive(Debug, Clone)]
     pub struct ScanStream<'a> {
@@ -34872,6 +36398,158 @@ pub mod builder {
                     ResponseValue::from_response(response).await?,
                 )),
                 404u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::cancel_scan`]\n\n[`Client::cancel_scan`]: super::Client::cancel_scan"]
+    #[derive(Debug, Clone)]
+    pub struct CancelScan<'a> {
+        client: &'a super::Client,
+        run_id: Result<types::ScanRunId, String>,
+    }
+    impl<'a> CancelScan<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                run_id: Err("run_id was not initialized".to_string()),
+            }
+        }
+        pub fn run_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::ScanRunId>,
+        {
+            self.run_id = value
+                .try_into()
+                .map_err(|_| "conversion to `ScanRunId` for run_id failed".to_string());
+            self
+        }
+        #[doc = "Sends a `POST` request to `/v1/admin/scans/{run_id}/cancel`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::ScanCancelledView>, Error<types::ProblemDetails>> {
+            let Self { client, run_id } = self;
+            let run_id = run_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/admin/scans/{}/cancel",
+                client.baseurl,
+                encode_path(&run_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "cancel_scan",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::scan_run_detail`]\n\n[`Client::scan_run_detail`]: super::Client::scan_run_detail"]
+    #[derive(Debug, Clone)]
+    pub struct ScanRunDetail<'a> {
+        client: &'a super::Client,
+        run_id: Result<types::ScanRunId, String>,
+        sort: Result<Option<types::ScanRunDetailSort>, String>,
+    }
+    impl<'a> ScanRunDetail<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                run_id: Err("run_id was not initialized".to_string()),
+                sort: Ok(None),
+            }
+        }
+        pub fn run_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::ScanRunId>,
+        {
+            self.run_id = value
+                .try_into()
+                .map_err(|_| "conversion to `ScanRunId` for run_id failed".to_string());
+            self
+        }
+        pub fn sort<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::ScanRunDetailSort>,
+        {
+            self.sort = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `ScanRunDetailSort` for sort failed".to_string());
+            self
+        }
+        #[doc = "Sends a `GET` request to `/v1/admin/scans/{run_id}/tasks`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::ScanRunDetailView>, Error<types::ProblemDetails>> {
+            let Self {
+                client,
+                run_id,
+                sort,
+            } = self;
+            let run_id = run_id.map_err(Error::InvalidRequest)?;
+            let sort = sort.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/admin/scans/{}/tasks",
+                client.baseurl,
+                encode_path(&run_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .query(&progenitor_client::QueryParam::new("sort", &sort))
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "scan_run_detail",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
                 _ => Err(Error::UnexpectedResponse(response)),

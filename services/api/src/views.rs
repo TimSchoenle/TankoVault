@@ -202,6 +202,80 @@ impl IntoView for repo::scans::RunActivity {
             oldest_claim_at: self.oldest_claim_at,
             kinds: self.kinds,
             workers: self.workers,
+            stage: self.stage,
+            stage_at: self.stage_at,
+            stage_done: self.stage_done,
+            stage_total: self.stage_total,
+            stage_detail: self.stage_detail,
+            waiting_since: self.waiting_since,
+        }
+    }
+}
+
+impl IntoView for repo::scans::TaskBreakdown {
+    type View = admin::ScanTaskDetailView;
+
+    fn into_view(self) -> Self::View {
+        admin::ScanTaskDetailView {
+            id: self.id,
+            kind: self.kind,
+            target: self.target,
+            state: self.state,
+            attempts: self.attempts,
+            worker_id: self.worker_id,
+            error: self.error,
+            stage: self.stage,
+            stage_at: self.stage_at,
+            stage_done: self.stage_done,
+            stage_total: self.stage_total,
+            stage_detail: self.stage_detail,
+            created_at: self.created_at,
+            claimed_at: self.claimed_at,
+            finished_at: self.finished_at,
+            wait_ms: self.wait_ms,
+            duration_ms: self.duration_ms,
+            telemetry: self.telemetry,
+        }
+    }
+}
+
+impl IntoView for repo::scans::RunTelemetry {
+    type View = admin::RunTelemetryView;
+
+    fn into_view(self) -> Self::View {
+        admin::RunTelemetryView {
+            tasks_measured: self.tasks_measured,
+            busy_ms: self.busy_ms,
+            wait_ms: self.wait_ms,
+            requests: self.requests,
+            fetch_ms: self.fetch_ms,
+            pace_wait_ms: self.pace_wait_ms,
+            solver_ms: self.solver_ms,
+            solver_calls: self.solver_calls,
+            throttled: self.throttled,
+        }
+    }
+}
+
+impl IntoView for repo::scans::StageTotal {
+    type View = admin::StageTotalView;
+
+    fn into_view(self) -> Self::View {
+        admin::StageTotalView {
+            stage: self.stage,
+            millis: self.millis,
+            tasks: self.tasks,
+        }
+    }
+}
+
+impl IntoView for repo::scans::Cancelled {
+    type View = admin::ScanCancelledView;
+
+    fn into_view(self) -> Self::View {
+        admin::ScanCancelledView {
+            runs: self.runs,
+            tasks: self.tasks,
         }
     }
 }
@@ -751,6 +825,12 @@ mod tests {
             oldest_claim_at: Some(an_instant()),
             kinds: vec!["series".to_owned()],
             workers: 2,
+            stage: Some("series_chapters".to_owned()),
+            stage_at: Some(an_instant()),
+            stage_done: Some(12),
+            stage_total: Some(94),
+            stage_detail: Some("/manga/x".to_owned()),
+            waiting_since: None,
         };
         let view = activity.into_view();
         assert_eq!(view.run_id.as_uuid(), run_id);
@@ -759,6 +839,12 @@ mod tests {
         assert_eq!(view.oldest_claim_at, Some(an_instant()));
         assert_eq!(view.kinds, vec!["series".to_owned()]);
         assert_eq!(view.workers, 2);
+        // The stage is what turned this payload from "a run is claimed" into "a run is fetching
+        // chapters for /manga/x"; a conversion that dropped it would leave the panel exactly as
+        // uninformative as it was before.
+        assert_eq!(view.stage.as_deref(), Some("series_chapters"));
+        assert_eq!(view.stage_detail.as_deref(), Some("/manga/x"));
+        assert_eq!(view.stage_done, Some(12));
 
         let task_id = Uuid::now_v7();
         let event = repo::scans::TaskEvent {

@@ -1,19 +1,25 @@
 //! The `JetStream` task consumer: dispatch, catalogue fan-out and progress reporting.
 
 use tankovault_contracts::{ScanTaskMessage, TaskKind};
-use tankovault_domain::Provider;
+use tankovault_domain::{Provider, ScanStage};
 use time::OffsetDateTime;
 
-use super::{Engine, FANOUT_CHUNK, catalog_truncated};
+use super::{Engine, FANOUT_CHUNK, StageReporter, catalog_truncated};
 
 impl Engine {
     /// Dispatch a single task received from `JetStream`: `CatalogPage` registers every
     /// series on the page, enqueues a `Series` task per series, and chains the next page;
-    /// `Series` fetches and upserts one series; `LatestFeed` ingests updates inline.
+    /// `Series` fetches and upserts one series; `LatestFeed` enqueues a `Series` task per
+    /// entry the feed named.
+    ///
+    /// Every arm reports its stage as it goes. That is what makes a task that legitimately runs
+    /// for minutes legible from outside: without it, `claimed` is the only thing the console can
+    /// say about a task, and it says the same thing about a wedged one.
     pub(crate) async fn dispatch_task(
         &self,
         provider: &Provider,
         task: &ScanTaskMessage,
+        stage: &StageReporter,
     ) -> anyhow::Result<()> {
         let (adapter, ctx) = self.provider_context(provider)?;
         match task.kind {
@@ -23,7 +29,7 @@ impl Engine {
                     .get("path")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| anyhow::anyhow!("series task missing path"))?;
-                self.process_series(provider, adapter.as_ref(), &ctx, path)
+                self.process_series(provider, adapter.as_ref(), &ctx, path, stage)
                     .await?;
             }
             TaskKind::CatalogPage => {
@@ -33,91 +39,124 @@ impl Engine {
                     .and_then(serde_json::Value::as_u64)
                     .and_then(|p| u32::try_from(p).ok())
                     .unwrap_or(1);
-                let catalog = adapter.list_catalog(&ctx, page).await?;
-                // Breadth-first: register every series before fetching chapters. Batched —
-                // a per-entry round trip on a 20k-entry sitemap page would outrun the
-                // consumer's ack deadline.
-                let entries: Vec<(&str, &str)> = catalog
-                    .items
-                    .iter()
-                    .map(|i| (i.path.as_str(), i.title.as_str()))
-                    .collect();
-                match tankovault_db::repo::catalog::register_source_stubs(
-                    &self.pool,
-                    provider.id,
-                    &entries,
-                    &self.matching,
-                )
-                .await
-                {
-                    // Logged per page so a looping paginator is visible immediately as
-                    // page after page of `registered = 0`.
-                    Ok(registered) => tracing::info!(
-                        provider = %provider.slug,
-                        page,
-                        items = entries.len(),
-                        registered,
-                        "catalog page walked"
-                    ),
-                    // A registration failure must not lose the series: the enrichment tasks
-                    // below are enqueued regardless and will create the source themselves.
-                    Err(e) => tracing::warn!(
-                        provider = %provider.slug,
-                        page,
-                        items = entries.len(),
-                        error = %e,
-                        next = "series are still enqueued and will create their own source rows",
-                        "catalog page registration failed"
-                    ),
-                }
-                let targets: Vec<serde_json::Value> = catalog
-                    .items
-                    .iter()
-                    .map(|i| serde_json::json!({ "path": i.path }))
-                    .collect();
-                self.enqueue_children(task, "series", TaskKind::Series, targets)
+                self.walk_catalog_page(provider, task, adapter.as_ref(), &ctx, page, stage)
                     .await?;
-                // Chain the next page while the catalogue has more, bounded by the same
-                // safety cap the inline walk uses so an unbounded paginator cannot loop.
-                if catalog.has_next {
-                    if page < self.max_catalog_pages {
-                        self.enqueue_child(
-                            task,
-                            "catalog_page",
-                            TaskKind::CatalogPage,
-                            serde_json::json!({ "page": page + 1 }),
-                        )
-                        .await?;
-                    } else {
-                        tracing::warn!(
-                            provider = %provider.slug,
-                            page,
-                            max_catalog_pages = self.max_catalog_pages,
-                            "catalog fan-out stopped at the page safety cap while the catalogue \
-                             still had more pages; increase worker.max_catalog_pages if this is \
-                             a legitimately large site"
-                        );
-                        catalog_truncated(&provider.slug);
-                    }
-                }
             }
             TaskKind::LatestFeed => {
+                stage.enter(ScanStage::FeedFetch, None).await;
                 let updates = adapter.list_latest(&ctx).await?;
-                for update in &updates {
-                    if let Err(e) = self
-                        .process_series(provider, adapter.as_ref(), &ctx, &update.path)
-                        .await
-                    {
-                        tracing::warn!(
-                            provider = %provider.slug,
-                            target = %update.path,
-                            error = %e,
-                            next = "series skipped; the rest of the feed continues and the next \
-                                    fast scan retries it",
-                            "latest series failed"
-                        );
-                    }
-                }
+                // Fanned out, not walked inline.
+                //
+                // Walking the feed inside this one task is why a fast scan sat at `0/1` for as
+                // long as it ran: the run's single counter could not move until every series the
+                // feed named had been fetched, and at a polite crawl rate that is tens of
+                // minutes. A child per series reports the same work as `17/94`, gives each series
+                // its own retry budget and its own failure row instead of one warning in the log,
+                // and keeps every task short enough that a redelivery costs one series rather
+                // than the whole feed. It costs one extra task per feed entry, which is what the
+                // full scan has always done per catalogue entry.
+                let targets: Vec<serde_json::Value> = updates
+                    .iter()
+                    .map(|u| serde_json::json!({ "path": u.path }))
+                    .collect();
+                tracing::info!(
+                    provider = %provider.slug,
+                    series = targets.len(),
+                    "latest feed read"
+                );
+                stage.enter(ScanStage::FeedFanout, None).await;
+                self.enqueue_children(task, "series", TaskKind::Series, targets, stage)
+                    .await?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Walk one catalogue page: register everything on it, fan out a task per series, and chain
+    /// the next page.
+    ///
+    /// Three stages, because they fail and stall for different reasons — a page that will not
+    /// fetch is a provider problem, a registration that crawls is the trigram matcher, and a
+    /// fan-out that crawls is the broker.
+    async fn walk_catalog_page(
+        &self,
+        provider: &Provider,
+        task: &ScanTaskMessage,
+        adapter: &dyn tankovault_adapters::SourceAdapter,
+        ctx: &tankovault_adapters::Ctx,
+        page: u32,
+        stage: &StageReporter,
+    ) -> anyhow::Result<()> {
+        let label = format!("page {page}");
+        stage.enter(ScanStage::CatalogFetch, Some(&label)).await;
+        let catalog = adapter.list_catalog(ctx, page).await?;
+        // Breadth-first: register every series before fetching chapters. Batched — a per-entry
+        // round trip on a 20k-entry sitemap page would outrun the consumer's ack deadline.
+        let entries: Vec<(&str, &str)> = catalog
+            .items
+            .iter()
+            .map(|i| (i.path.as_str(), i.title.as_str()))
+            .collect();
+        stage.enter(ScanStage::CatalogRegister, Some(&label)).await;
+        match tankovault_db::repo::catalog::register_source_stubs(
+            &self.pool,
+            provider.id,
+            &entries,
+            &self.matching,
+        )
+        .await
+        {
+            // Logged per page so a looping paginator is visible immediately as page after page
+            // of `registered = 0`.
+            Ok(registered) => tracing::info!(
+                provider = %provider.slug,
+                page,
+                items = entries.len(),
+                registered,
+                "catalog page walked"
+            ),
+            // A registration failure must not lose the series: the enrichment tasks below are
+            // enqueued regardless and will create the source themselves.
+            Err(e) => tracing::warn!(
+                provider = %provider.slug,
+                page,
+                items = entries.len(),
+                error = %e,
+                next = "series are still enqueued and will create their own source rows",
+                "catalog page registration failed"
+            ),
+        }
+
+        let targets: Vec<serde_json::Value> = catalog
+            .items
+            .iter()
+            .map(|i| serde_json::json!({ "path": i.path }))
+            .collect();
+        stage.enter(ScanStage::CatalogFanout, Some(&label)).await;
+        self.enqueue_children(task, "series", TaskKind::Series, targets, stage)
+            .await?;
+
+        // Chain the next page while the catalogue has more, bounded by the same safety cap the
+        // inline walk uses so an unbounded paginator cannot loop.
+        if catalog.has_next {
+            if page < self.max_catalog_pages {
+                self.enqueue_child(
+                    task,
+                    "catalog_page",
+                    TaskKind::CatalogPage,
+                    serde_json::json!({ "page": page + 1 }),
+                )
+                .await?;
+            } else {
+                tracing::warn!(
+                    provider = %provider.slug,
+                    page,
+                    max_catalog_pages = self.max_catalog_pages,
+                    "catalog fan-out stopped at the page safety cap while the catalogue still \
+                     had more pages; increase worker.max_catalog_pages if this is a legitimately \
+                     large site"
+                );
+                catalog_truncated(&provider.slug);
             }
         }
         Ok(())
@@ -174,10 +213,13 @@ impl Engine {
         kind_str: &str,
         kind: TaskKind,
         targets: Vec<serde_json::Value>,
+        stage: &StageReporter,
     ) -> anyhow::Result<()> {
         let Some(bus) = &self.bus else {
             anyhow::bail!("cannot fan out scan tasks without a broker");
         };
+        let total = targets.len();
+        let mut published = 0usize;
         for chunk in targets.chunks(FANOUT_CHUNK) {
             let created = tankovault_db::repo::scans::create_tasks(
                 &self.pool,
@@ -186,6 +228,11 @@ impl Engine {
                 chunk,
             )
             .await?;
+            published += chunk.len();
+            // Reported per chunk, not per task: a 20k-entry page otherwise finishes its fan-out
+            // with the console still showing the page fetch that preceded it. The reporter
+            // throttles the writes.
+            stage.progress(published, total, None).await;
             if created.is_empty() {
                 continue;
             }

@@ -428,7 +428,21 @@ CREATE TABLE scan_tasks (
   worker_id   text,
   error       text,
   claimed_at  timestamptz,
-  finished_at timestamptz
+  finished_at timestamptz,
+  created_at  timestamptz DEFAULT now(),        -- queue wait = claimed_at - created_at
+  -- Live stage: which of the things this task does it is doing right now, since when, how far
+  -- through, and against what. `text`, not an enum: a stage is a diagnostic label and adding one
+  -- must not need a migration. Vocabulary in `tankovault_domain::ScanStage`.
+  stage        text,
+  stage_at     timestamptz,
+  stage_done   int,
+  stage_total  int,
+  stage_detail text,
+  -- Settled breakdown, written once: per-stage milliseconds plus what the fetch stack spent them
+  -- on (requests, time inside them, time waiting for permission to send one, solves, 429s).
+  wait_ms      int,
+  duration_ms  int,
+  telemetry    jsonb
 );
 CREATE INDEX scan_tasks_run_state ON scan_tasks (run_id, state);
 -- Durable claim path (fallback / audit): SELECT ... FOR UPDATE SKIP LOCKED
@@ -551,10 +565,16 @@ Plan:
 Purpose: cheap detection of *new* chapters only.
 Plan:
 1. Control plane creates `scan_run(mode='fast', provider)` and emits **one** `latest_feed` task per
-   provider.
-2. Worker calls `list_latest`, compares each item's newest chapter number against the stored
-   `series_sources.chapter_count` / max chapter. Only changed series get a follow-up `series` task.
-3. New chapters upserted → emit `chapter.discovered` domain events consumed by the notifier.
+   provider, coalescing against a run of the same mode already in flight for that provider.
+2. Worker calls `list_latest` and fans out a `series` task per entry — it does **not** walk the
+   feed inline. Walking it inline left the run at `0/1` for as long as it ran, because its single
+   counter could not move until every series had been fetched; a child per series makes the same
+   work report as `17/94` and gives each series its own retry budget and failure row.
+3. Each `series` task upserts idempotently → emits `chapter.discovered` for genuinely new chapters,
+   consumed by the notifier.
+4. Each task reports its **stage** (`scan_tasks.stage`) as it runs and records where its wall clock
+   went (`scan_tasks.telemetry`) when it settles, so a run that is slow can say why — see §"Why a
+   scan is slow" in `docs/OBSERVABILITY.md`.
 
 ### Change detection & politeness
 - `content_hash` on `series_sources` lets the worker skip an unchanged series without writing.
@@ -791,11 +811,13 @@ POST   /v1/admin/series/merge             { keep, merge }
   wildcard consumer served the stream in publish order, so a full catalogue scan (one `series` task
   per catalogue entry, hundreds of thousands for a large site) starved everything else until it
   drained. Two rules replace that:
-  1. **Fast before full.** Every fast lane is offered a turn before any full lane is looked at, so a
-     chapter release is never queued behind a catalogue walk. Strict priority is safe because the fast
-     tier is bounded by construction — a fast run enqueues one `latest_feed` task per provider and
-     processes the feed inline — so it cannot starve the full tier. If a fast scan ever fans out, this
-     needs to become a weighted split.
+  1. **Fast before full**, with a bound. Every fast lane is offered a turn before any full lane is
+     looked at, so a chapter release is never queued behind a catalogue walk. Priority was strict
+     while the fast tier was bounded by construction (one `latest_feed` task per provider, feed
+     walked inline); a fast run now fans out a `series` task per feed entry, so one provider's
+     large feed would otherwise starve every other provider's full scan. After `FULL_TIER_EVERY`
+     (8) consecutive fast tasks the full tier is offered a turn first — `tier_order` in
+     `services/worker/src/queue.rs`.
   2. **Round-robin between providers**, within a mode, one task per lane per turn. A provider's share
      is set by how many providers have work, not by how many tasks it enqueued.
   - The lane set is refreshed from the provider table on an interval (`worker.provider_refresh_secs`),

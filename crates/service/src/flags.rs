@@ -303,6 +303,19 @@ impl RouteFeatures {
         self.rule(path, feature, false, true)
     }
 
+    /// Gate only mutating requests to exactly `path`, leaving both its reads and every route
+    /// beneath it ungated by this rule.
+    ///
+    /// The combination exists for the case where a family's *own* write is a feature but the
+    /// operations beneath it must survive the feature being switched off — cancelling a scan run
+    /// while manual scanning is disabled being the example: an operator who has just switched
+    /// triggering off has usually done so because the queue is the problem, and a rule that took
+    /// the stop button away with it would be the worst possible time to lose it.
+    #[must_use]
+    pub fn gate_path_writes(self, path: impl Into<String>, feature: Feature) -> Self {
+        self.rule(path, feature, true, true)
+    }
+
     fn rule(
         mut self,
         prefix: impl Into<String>,

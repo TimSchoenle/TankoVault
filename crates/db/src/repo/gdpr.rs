@@ -231,8 +231,15 @@ pub async fn list_admin<'e, E: PgExecutor<'e>>(
     // Open requests sort by deadline; resolved ones by recency.
     let rows = sqlx::query_as!(
         Row,
-        "SELECT r.id, r.kind AS \"kind: RequestKind\", r.status AS \"status: RequestStatus\", \
-                r.detail, r.requested_at, r.due_at, r.resolved_at, r.resolution_note, \
+        // The `!` overrides name `gdpr_requests`' own `NOT NULL` columns. With three `LEFT JOIN`s
+        // in the statement sqlx's inference stops distinguishing the base table from the nullable
+        // sides and calls all of it nullable, which types the row as `Option` everywhere and does
+        // not compile. Asserting the schema's own guarantee is the fix; a `?` would push a fact
+        // nobody can violate out into every caller.
+        "SELECT r.id AS \"id!\", r.kind AS \"kind!: RequestKind\", \
+                r.status AS \"status!: RequestStatus\", \
+                r.detail, r.requested_at AS \"requested_at!\", r.due_at AS \"due_at!\", \
+                r.resolved_at, r.resolution_note, \
                 r.user_id, s.username AS \"username?: String\", s.email AS \"email?: String\", \
                 c.username AS \"claimed_by?: String\", v.username AS \"resolved_by?: String\", \
                 (r.status IN ('pending','in_progress') AND r.due_at < now()) AS \"overdue!\" \
@@ -307,8 +314,15 @@ async fn list_admin_by_id<'e, E: PgExecutor<'e>>(
     }
     let rows = sqlx::query_as!(
         Row,
-        "SELECT r.id, r.kind AS \"kind: RequestKind\", r.status AS \"status: RequestStatus\", \
-                r.detail, r.requested_at, r.due_at, r.resolved_at, r.resolution_note, \
+        // The `!` overrides name `gdpr_requests`' own `NOT NULL` columns. With three `LEFT JOIN`s
+        // in the statement sqlx's inference stops distinguishing the base table from the nullable
+        // sides and calls all of it nullable, which types the row as `Option` everywhere and does
+        // not compile. Asserting the schema's own guarantee is the fix; a `?` would push a fact
+        // nobody can violate out into every caller.
+        "SELECT r.id AS \"id!\", r.kind AS \"kind!: RequestKind\", \
+                r.status AS \"status!: RequestStatus\", \
+                r.detail, r.requested_at AS \"requested_at!\", r.due_at AS \"due_at!\", \
+                r.resolved_at, r.resolution_note, \
                 r.user_id, s.username AS \"username?: String\", s.email AS \"email?: String\", \
                 c.username AS \"claimed_by?: String\", v.username AS \"resolved_by?: String\", \
                 (r.status IN ('pending','in_progress') AND r.due_at < now()) AS \"overdue!\" \

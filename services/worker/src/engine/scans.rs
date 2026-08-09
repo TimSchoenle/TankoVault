@@ -2,7 +2,7 @@
 
 use tankovault_domain::Provider;
 
-use super::{Engine, ScanSummary, catalog_truncated};
+use super::{Engine, ScanSummary, StageReporter, catalog_truncated};
 
 impl Engine {
     /// One-shot full scan of a provider without the broker (the CLI `worker scan` path).
@@ -95,9 +95,13 @@ impl Engine {
         }
 
         // Phase 2 — enrich: fetch chapters + full metadata for every collected series.
+        //
+        // Detached: this path has no task row to report a stage to. The reporter still travels
+        // because `process_series` is shared with the broker path, where it does.
+        let stage = StageReporter::detached(self.pool.clone());
         for path in &paths {
             match self
-                .process_series(provider, adapter.as_ref(), &ctx, path)
+                .process_series(provider, adapter.as_ref(), &ctx, path, &stage)
                 .await
             {
                 Ok(new) => summary.new_chapters += new,
@@ -126,12 +130,13 @@ impl Engine {
         let mut summary = ScanSummary::default();
 
         let updates = adapter.list_latest(&ctx).await?;
+        let stage = StageReporter::detached(self.pool.clone());
         for update in &updates {
             summary.series_seen += 1;
             // Ingest is idempotent and reports only genuinely new chapters (via
             // `xmax = 0`), so re-ingesting an unchanged series emits no false-new events.
             match self
-                .process_series(provider, adapter.as_ref(), &ctx, &update.path)
+                .process_series(provider, adapter.as_ref(), &ctx, &update.path, &stage)
                 .await
             {
                 Ok(new) => summary.new_chapters += new,

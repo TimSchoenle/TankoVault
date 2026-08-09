@@ -22,10 +22,40 @@ const IDLE_POLL_MIN: Duration = Duration::from_millis(200);
 /// Ceiling for the idle backoff.
 const IDLE_POLL_MAX: Duration = Duration::from_secs(5);
 
-/// The scan modes in the order they are served — **fast first, always**.
-///
-/// This array *is* the priority policy; the scheduler has no other notion of precedence.
+/// The scan modes, fast first — the order [`tier_order`] serves them in by default.
 const TIERS: [ScanMode; 2] = [ScanMode::Fast, ScanMode::Full];
+
+/// Fast tasks served in a row before the full tier is offered a turn ahead of them.
+///
+/// ## Why this exists at all
+///
+/// Priority used to be strict, and that was safe **because the fast tier was bounded by
+/// construction**: a fast run enqueued exactly one `latest_feed` task per provider and walked the
+/// feed inside it, so the fast lanes could never hold more than one task per provider and could
+/// not outlast the full tier's patience.
+///
+/// A fast run now fans out a `series` task per feed entry — which is what makes its progress
+/// legible at all — and that argument lapses with it. Under strict priority a single provider
+/// with a large latest feed would hold a non-empty fast lane for the whole run, and since every
+/// fast lane is offered a turn before any full lane is looked at, **every other provider's full
+/// scan would wait behind it**. That is not a slow full scan; it is a full scan that does not run.
+///
+/// One turn in nine is a deliberately small concession. A fast task is the one that surfaces a new
+/// chapter, so the fast tier should still win nearly every time; the point is only that "nearly
+/// always" is a bound and "always" is not.
+const FULL_TIER_EVERY: u32 = 8;
+
+/// The order to offer the tiers in, given how many fast tasks have been served consecutively.
+///
+/// Split out from the polling so the policy can be tested without a broker: the starvation this
+/// prevents takes hours to show up in a deployment and nothing about it fails loudly.
+fn tier_order(fast_streak: u32) -> [ScanMode; 2] {
+    if fast_streak >= FULL_TIER_EVERY {
+        [ScanMode::Full, ScanMode::Fast]
+    } else {
+        TIERS
+    }
+}
 
 /// One provider's queue within one tier: its durable consumer, and the slug that names it.
 struct Lane {
@@ -59,8 +89,10 @@ struct Tier {
 pub(crate) struct FairQueue {
     bus: Bus,
     pool: PgPool,
-    /// In [`TIERS`] order; index 0 is served first.
+    /// In [`TIERS`] order; [`tier_order`] decides which is offered first on a given round.
     tiers: Vec<Tier>,
+    /// Fast tasks served since the last full one, for [`FULL_TIER_EVERY`].
+    fast_streak: u32,
     refresh_every: Duration,
     next_refresh: Instant,
 }
@@ -90,6 +122,7 @@ impl FairQueue {
                     cursor: 0,
                 })
                 .collect(),
+            fast_streak: 0,
             refresh_every,
             next_refresh: Instant::now(),
         };
@@ -130,14 +163,25 @@ impl FairQueue {
         }
     }
 
-    /// Offer every lane a turn, highest-priority tier first, and return the first task found.
+    /// Offer every lane a turn, in [`tier_order`], and return the first task found.
     ///
-    /// A tier is exhausted before the next is touched — that is the whole of the fast-over-
-    /// full guarantee, and it survives `busy`: a fast lane skipped for being in flight does
-    /// not promote a full lane past a fast one that is merely idle.
+    /// A tier is exhausted before the next is touched — that is the whole of the fast-over-full
+    /// guarantee, and it survives `busy`: a fast lane skipped for being in flight does not promote
+    /// a full lane past a fast one that is merely idle. The order itself is the one concession,
+    /// and only after [`FULL_TIER_EVERY`] consecutive fast tasks.
     async fn poll_round(&mut self, busy: &HashSet<String>) -> Option<BrokerMessage> {
-        for tier in &mut self.tiers {
+        for mode in tier_order(self.fast_streak) {
+            let Some(tier) = self.tiers.iter_mut().find(|tier| tier.mode == mode) else {
+                continue;
+            };
             if let Some(msg) = tier.poll_round(busy).await {
+                // Counted on what was *served*, not on what was offered: a round that found the
+                // full tier empty has not fed the full tier, and resetting the streak there would
+                // let a busy fast tier reset its own debt forever.
+                self.fast_streak = match mode {
+                    ScanMode::Fast => self.fast_streak.saturating_add(1),
+                    ScanMode::Full => 0,
+                };
                 return Some(msg);
             }
         }
@@ -338,13 +382,37 @@ async fn take_one(lane: &Lane) -> anyhow::Result<Option<BrokerMessage>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{TIERS, next_free_lane, take_turn};
+    use super::{FULL_TIER_EVERY, TIERS, next_free_lane, take_turn, tier_order};
     use tankovault_domain::ScanMode;
+
+    /// A fast run fans out a task per feed entry, so its lane stays non-empty for the whole run.
+    /// Under strict priority that is not "the full tier waits" — it is every other provider's full
+    /// scan not running at all for as long as any provider has a fast run in flight. The debt
+    /// counter is the bound, and nothing about its absence would fail loudly.
+    #[test]
+    fn the_full_tier_gets_a_turn_before_the_fast_tier_can_starve_it() {
+        assert_eq!(tier_order(0)[0], ScanMode::Fast, "fast wins by default");
+        assert_eq!(
+            tier_order(FULL_TIER_EVERY - 1)[0],
+            ScanMode::Fast,
+            "the concession is not made one turn early"
+        );
+        assert_eq!(
+            tier_order(FULL_TIER_EVERY)[0],
+            ScanMode::Full,
+            "an unbroken run of fast tasks must eventually yield a turn"
+        );
+        // Both tiers are always offered; the debt reorders them, it never drops one.
+        for streak in [0, FULL_TIER_EVERY] {
+            let order = tier_order(streak);
+            assert!(order.contains(&ScanMode::Fast) && order.contains(&ScanMode::Full));
+        }
+    }
 
     #[test]
     fn fast_scans_outrank_full_scans() {
-        // `poll_round` exhausts each tier in array order, so this array *is* the priority
-        // policy: a fast task is never left waiting behind a catalogue walk.
+        // `poll_round` exhausts each tier in `tier_order`, which starts from this array, so it
+        // *is* the priority policy: a fast task is not left waiting behind a catalogue walk.
         assert_eq!(TIERS[0], ScanMode::Fast);
         // Every mode needs a tier, or its tasks would be published to a lane nothing serves.
         assert_eq!(TIERS.len(), ScanMode::all().len());

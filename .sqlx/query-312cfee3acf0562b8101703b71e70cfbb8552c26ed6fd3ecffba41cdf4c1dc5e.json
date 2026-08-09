@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE scan_tasks SET stage = $2, stage_at = CASE WHEN stage IS DISTINCT FROM $2 THEN now() ELSE stage_at END, stage_done = $3, stage_total = $4, stage_detail = $5 WHERE id = $1 AND state = 'claimed'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Int4",
+        "Int4",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "312cfee3acf0562b8101703b71e70cfbb8552c26ed6fd3ecffba41cdf4c1dc5e"
+}

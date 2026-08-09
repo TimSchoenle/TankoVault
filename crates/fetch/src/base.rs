@@ -127,8 +127,13 @@ impl Fetcher for BaseHttpFetcher {
             "outcome" => outcome,
         )
         .increment(1);
+        let elapsed = started.elapsed();
         metrics::histogram!("provider_fetch_duration_seconds", "provider" => provider)
-            .record(started.elapsed().as_secs_f64());
+            .record(elapsed.as_secs_f64());
+        // Counted even when the request failed: a scan task that spent four minutes on requests
+        // that all timed out has spent four minutes, and a breakdown that omitted them would
+        // report the time as unaccounted for.
+        crate::accounting::record(crate::accounting::Metered::Request(elapsed));
 
         result
     }

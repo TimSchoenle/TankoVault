@@ -416,6 +416,29 @@ fn admin_gates() -> Vec<Gate> {
             required: &[Permission::ScansRead],
             body: empty,
         },
+        Gate {
+            method: "GET",
+            template: "/v1/admin/scans/{run_id}/tasks",
+            path: "/v1/admin/scans/00000000-0000-7000-8000-00000000000a/tasks",
+            required: &[Permission::ScansRead],
+            body: empty,
+        },
+        // Cancelling stops work every other operator can see, so it sits with the run trigger
+        // rather than with the reads beside it.
+        Gate {
+            method: "POST",
+            template: "/v1/admin/scans/{run_id}/cancel",
+            path: "/v1/admin/scans/00000000-0000-7000-8000-00000000000a/cancel",
+            required: &[Permission::ScansRun],
+            body: empty,
+        },
+        Gate {
+            method: "POST",
+            template: "/v1/admin/scans/cancel",
+            path: "/v1/admin/scans/cancel",
+            required: &[Permission::ScansRun],
+            body: || Some(json!({ "provider": "matrix-probe" })),
+        },
         // --- external sync administration ---
         Gate {
             method: "GET",

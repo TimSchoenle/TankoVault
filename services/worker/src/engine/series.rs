@@ -4,22 +4,29 @@ use std::collections::HashMap;
 use tankovault_adapters::{Ctx, SourceAdapter};
 use tankovault_contracts::ChapterDiscovered;
 use tankovault_db::repo::catalog::{ChapterUpsert, ScannedSeries, SeriesUpsert};
-use tankovault_domain::{Provider, normalize_title};
+use tankovault_domain::{Provider, ScanStage, normalize_title};
 use time::OffsetDateTime;
 
-use super::{Engine, chapter_key, content_hash, drop_implausible};
+use super::{Engine, StageReporter, chapter_key, content_hash, drop_implausible};
 
 impl Engine {
     /// Fetch, parse, and idempotently ingest one series; emit `chapter.discovered` for
     /// genuinely new chapters. Returns the count of new chapters.
+    ///
+    /// The three stages reported here are the ones a slow series divides into: two provider
+    /// fetches and our own ingest. Which of the three a series is sitting in is the difference
+    /// between a provider that has stopped answering and a database that is the bottleneck.
     pub(crate) async fn process_series(
         &self,
         provider: &Provider,
         adapter: &dyn SourceAdapter,
         ctx: &Ctx,
         path: &str,
+        stage: &StageReporter,
     ) -> anyhow::Result<usize> {
+        stage.enter(ScanStage::SeriesMetadata, Some(path)).await;
         let meta = adapter.fetch_series(ctx, path).await?;
+        stage.enter(ScanStage::SeriesChapters, Some(path)).await;
         let mut chapters = adapter.fetch_chapters(ctx, path).await?;
         // Before the hash, not after: a source that keeps serving the same junk then hashes as
         // unchanged, so re-scans stay no-ops instead of re-deciding every time.
@@ -68,6 +75,7 @@ impl Engine {
             content_hash: hash,
         };
 
+        stage.enter(ScanStage::SeriesIngest, Some(path)).await;
         let outcome = tankovault_db::repo::catalog::ingest_series(
             &self.pool,
             &scanned,

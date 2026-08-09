@@ -127,15 +127,19 @@ impl<F: Fetcher> Fetcher for SolvingFetcher<F> {
         };
 
         tracing::info!(provider = %req.provider_slug, challenge = kind.as_str(), "challenge detected; delegating to solver");
-        let outcome = self
+        let solve_started = std::time::Instant::now();
+        let solved = self
             .solver
             .solve(SolveRequest {
                 url: req.url.clone(),
                 provider: req.provider_slug.clone(),
                 kind: Some(kind),
             })
-            .await
-            .map_err(|e| FetchError::Solver(e.to_string()))?;
+            .await;
+        // Recorded before the `?`: a solve that failed still cost the seconds it took, and
+        // attributing them is the point of the breakdown.
+        crate::accounting::record(crate::accounting::Metered::Solve(solve_started.elapsed()));
+        let outcome = solved.map_err(|e| FetchError::Solver(e.to_string()))?;
 
         let session = SolvedSession {
             cookies: outcome.cookies.clone(),

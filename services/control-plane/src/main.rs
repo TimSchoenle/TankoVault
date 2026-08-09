@@ -22,7 +22,7 @@ use tankovault_bus::Bus;
 use tankovault_contracts::admin::{RecsysBuildMode, RecsysBuildView, ScanTriggeredView};
 use tankovault_contracts::{ScanTaskMessage, TaskKind};
 use tankovault_db::PgPool;
-use tankovault_domain::{Feature, Provider, ProviderId, ScanMode, ScanRunId};
+use tankovault_domain::{Feature, Provider, ProviderId, RunState, ScanMode, ScanRunId};
 use tankovault_service::health::PostgresCheck;
 use tankovault_service::problem::Problem;
 use tankovault_service::{
@@ -121,6 +121,13 @@ struct SchedulerConfig {
     /// the whole catalogue between two scheduler ticks.
     #[serde(default = "default_merge_sweep_max_auto_merges")]
     merge_sweep_max_auto_merges: i64,
+    /// How long an unfinished run keeps suppressing new runs of the same provider and mode.
+    ///
+    /// The suppression itself has no expiry condition other than this one, so the value is the
+    /// only thing standing between a run that can never settle — a task persisted but never
+    /// published — and a provider that is never scanned again.
+    #[serde(default = "default_run_stale_after")]
+    run_stale_after_secs: u64,
 }
 
 impl Default for SchedulerConfig {
@@ -133,6 +140,7 @@ impl Default for SchedulerConfig {
             merge_sweep_requeue: default_merge_sweep_requeue(),
             merge_sweep_recheck: default_merge_sweep_recheck(),
             merge_sweep_max_auto_merges: default_merge_sweep_max_auto_merges(),
+            run_stale_after_secs: default_run_stale_after(),
             recsys_incremental_interval_secs: default_recsys_incremental_interval(),
             recsys_full_interval_secs: default_recsys_full_interval(),
             recsys_batch: default_recsys_batch(),
@@ -171,6 +179,12 @@ fn default_merge_sweep_max_auto_merges() -> i64 {
     200
 }
 
+/// An hour — comfortably longer than any healthy scan of one provider, and short enough that a
+/// run which can never settle costs at most one hour of that provider's schedule.
+const fn default_run_stale_after() -> u64 {
+    3600
+}
+
 const fn default_recsys_incremental_interval() -> u64 {
     900
 }
@@ -206,6 +220,8 @@ struct AppState {
     recsys_incremental_max: i64,
     /// How much work one duplicate sweep may do — including how many series it may delete.
     merge_budget: dedupe::SweepBudget,
+    /// How long an unfinished run suppresses another for the same provider and mode.
+    run_stale_after: Duration,
 }
 
 #[tokio::main]
@@ -280,6 +296,7 @@ async fn serve_once(
         tunables,
         matching: cfg.matching.clone(),
         merge_budget: cfg.scheduler.merge_budget(),
+        run_stale_after: Duration::from_secs(cfg.scheduler.run_stale_after_secs),
         recsys_batch: cfg.scheduler.recsys_batch,
         recsys_incremental_max: cfg.scheduler.recsys_incremental_max,
     };
@@ -355,6 +372,11 @@ struct TriggerRequest {
 // Uses `tankovault_contracts::admin::ScanTriggeredView`, not a private struct —
 // `services/api` republishes this body verbatim.
 
+/// Plan a run for one provider, or for every active provider when the request names none.
+///
+/// Coalesced exactly as the scheduler's sweeps are ([`plan_run`]): a provider already scanning in
+/// this mode answers with that run's id rather than queueing a second identical run behind it, so
+/// a repeated "Scan now" points the caller at the run in progress instead of clogging the queue.
 async fn trigger_scan(
     State(state): State<AppState>,
     Json(req): Json<TriggerRequest>,
@@ -484,14 +506,85 @@ struct MergeSweepRequest {
     actor: Option<tankovault_domain::UserId>,
 }
 
-/// Expand a run into its initial task(s) and dispatch them.
+/// Expand a run into its initial task(s) and dispatch them, unless the provider already has one
+/// of this mode in flight — in which case that run's id is returned and nothing is queued.
+///
+/// ## Why planning is coalesced rather than queued
+///
+/// Nothing about a scan run bounds how long it takes: a fast scan is one `latest_feed` task that
+/// re-ingests every series the feed names, at whatever rate that provider's crawl budget allows.
+/// The sweep, by contrast, ticks on a fixed interval. A provider whose fast scan outlasts
+/// `fast_interval_secs` therefore gained a second queued run every tick, indefinitely — and those
+/// runs are *identical*, since each one re-reads the same feed.
+///
+/// The worker's per-provider lanes bound the damage but do not stop it: the backlog is served one
+/// task at a time, so the provider spends every slot it is given re-reading a feed it has already
+/// read, and its lane never empties. The fast tier is drained before the full tier is looked at
+/// at all, so one such provider also stops every full scan in the deployment from being served.
+///
+/// Coalescing removes the cause. A provider has at most one in-flight run per mode, so a scan
+/// that is slow simply keeps running, and the tick that would have duplicated it does nothing.
 async fn plan_run(
     state: &AppState,
     provider: &Provider,
     mode: ScanMode,
 ) -> anyhow::Result<ScanRunId> {
+    if let Some(run_id) = tankovault_db::repo::scans::in_flight_run(
+        &state.pool,
+        provider.id,
+        mode,
+        state.run_stale_after,
+    )
+    .await?
+    {
+        tracing::info!(
+            %run_id,
+            provider = %provider.slug,
+            ?mode,
+            "skipped planning a scan run; the provider already has one in flight"
+        );
+        planned(&provider.slug, mode, "coalesced");
+        return Ok(run_id);
+    }
+
     let run_id =
         tankovault_db::repo::scans::create_run(&state.pool, Some(provider.id), mode).await?;
+
+    match dispatch_run(state, provider, mode, run_id).await {
+        Ok(result) => {
+            tracing::info!(%run_id, provider = %provider.slug, ?mode, result, "planned scan run");
+            planned(&provider.slug, mode, result);
+            Ok(run_id)
+        }
+        Err(e) => {
+            // The run row exists and would read as in flight forever, which now means it would
+            // suppress this provider's every later run until it went stale. Failing it here is
+            // what keeps one broker hiccup from costing a provider its whole schedule.
+            if let Err(fail_err) =
+                tankovault_db::repo::scans::finish_run(&state.pool, run_id, RunState::Failed).await
+            {
+                tracing::warn!(
+                    %run_id,
+                    provider = %provider.slug,
+                    error = %fail_err,
+                    next = "the run stays in flight and suppresses this provider's scans until it \
+                            passes scheduler.run_stale_after_secs",
+                    "could not fail the run whose dispatch failed"
+                );
+            }
+            Err(e)
+        }
+    }
+}
+
+/// Persist and publish `run_id`'s initial task, naming which outcome it was for the log and the
+/// counter.
+async fn dispatch_run(
+    state: &AppState,
+    provider: &Provider,
+    mode: ScanMode,
+    run_id: ScanRunId,
+) -> anyhow::Result<&'static str> {
     tankovault_db::repo::scans::start_run(&state.pool, run_id).await?;
 
     let (kind_str, kind, target) = match mode {
@@ -508,9 +601,7 @@ async fn plan_run(
     else {
         // A task with this exact target already exists for the run (idempotent replan);
         // the run is already dispatched, so there is nothing further to publish.
-        tracing::info!(%run_id, provider = %provider.slug, ?mode, "planned scan run (initial task already existed)");
-        planned(&provider.slug, mode, "duplicate");
-        return Ok(run_id);
+        return Ok("duplicate");
     };
     tankovault_db::repo::scans::add_total_tasks(&state.pool, run_id, 1).await?;
 
@@ -527,10 +618,7 @@ async fn plan_run(
             traceparent: None,
         })
         .await?;
-
-    tracing::info!(%run_id, provider = %provider.slug, ?mode, "planned scan run");
-    planned(&provider.slug, mode, "planned");
-    Ok(run_id)
+    Ok("planned")
 }
 
 /// Count one planning decision.
@@ -539,6 +627,10 @@ async fn plan_run(
 /// is being consumed, and only this says work is being *created*. A scheduler that is alive
 /// but planning nothing — a lost leader, a flag left off — is otherwise indistinguishable
 /// from an idle deployment.
+///
+/// `result` is one of `planned`, `duplicate`, `coalesced` or `error`. A provider scanning more
+/// slowly than it is swept shows up as a steady stream of `coalesced` and no `planned`, which is
+/// the signal to look at its crawl budget or its feed size rather than at the scheduler.
 fn planned(provider_slug: &str, mode: ScanMode, result: &'static str) {
     metrics::counter!(
         "scan_runs_planned_total",

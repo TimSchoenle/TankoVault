@@ -651,7 +651,9 @@ pub struct AdminPrivacyRequestView {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[schema(as = ScanTriggered)]
 pub struct ScanTriggeredView {
-    /// One id per run planned — one per provider when the request names none.
+    /// One id per provider scanned — one per active provider when the request names none. A
+    /// provider already scanning in this mode contributes the id of that run rather than a new
+    /// one, so an id here means "this run covers your request", not always "this run is new".
     pub run_ids: Vec<ScanRunId>,
 }
 

@@ -38,7 +38,7 @@ use serde_json::{Value as Json, json};
 use tankovault_db::DbError;
 use tankovault_db::repo::providers::{self};
 use tankovault_db::repo::scans;
-use tankovault_domain::{RunState, ScanMode, ScanRunId, ScanTaskId, TaskState};
+use tankovault_domain::{ProviderId, RunState, ScanMode, ScanRunId, ScanTaskId, TaskState};
 use tankovault_test_support::{TestDb, seed};
 
 // ---------------------------------------------------------------------------
@@ -717,4 +717,163 @@ async fn the_failed_task_feed_reports_failures_with_their_run_context() {
         .expect("failed tasks");
     assert_eq!(feed.len(), 2, "an inner join would have dropped both rows");
     assert!(feed.iter().all(|t| t.provider_slug.is_none()));
+}
+
+// ---------------------------------------------------------------------------
+// Coalescing — one in-flight run per provider and mode
+// ---------------------------------------------------------------------------
+
+/// A run in flight, holding one unsettled task — what the planner must refuse to duplicate.
+async fn a_run_in_flight(db: &TestDb, provider: ProviderId, mode: ScanMode) -> ScanRunId {
+    let run = scans::create_run(&db.pool, Some(provider), mode)
+        .await
+        .expect("create run");
+    scans::start_run(&db.pool, run).await.expect("start run");
+    scans::add_total_tasks(&db.pool, run, 1)
+        .await
+        .expect("declare tasks");
+    a_task(db, run, &json!({})).await;
+    run
+}
+
+const AN_HOUR: std::time::Duration = std::time::Duration::from_secs(3600);
+
+/// **The clogged queue.** A provider whose fast scan is still running must not be given a second
+/// one.
+///
+/// The scheduler sweeps on a fixed interval; a fast scan takes as long as the provider's feed and
+/// crawl budget make it take. When the second outgrows the first, every tick used to plan another
+/// identical `latest_feed` run — so that provider's lane filled with re-reads of a feed it was
+/// already reading, and because the worker drains the whole fast tier before it looks at the full
+/// one, no full scan anywhere in the deployment was served either.
+#[tokio::test]
+async fn a_provider_already_scanning_does_not_get_a_second_run() {
+    let db = TestDb::spawn().await;
+    let provider = seed::provider(&db, "alpha").create().await;
+    let running = a_run_in_flight(&db, provider, ScanMode::Fast).await;
+
+    assert_eq!(
+        scans::in_flight_run(&db.pool, provider, ScanMode::Fast, AN_HOUR)
+            .await
+            .expect("query"),
+        Some(running)
+    );
+}
+
+/// Coalescing is per provider **and** per mode: neither a second provider nor the other mode is
+/// suppressed by a run that has nothing to do with it. Getting this wrong would be silent — one
+/// slow provider would simply stop the whole deployment scanning.
+#[tokio::test]
+async fn coalescing_is_scoped_to_the_provider_and_the_mode() {
+    let db = TestDb::spawn().await;
+    let alpha = seed::provider(&db, "alpha").create().await;
+    let beta = seed::provider(&db, "beta").create().await;
+    a_run_in_flight(&db, alpha, ScanMode::Fast).await;
+
+    assert_eq!(
+        scans::in_flight_run(&db.pool, alpha, ScanMode::Full, AN_HOUR)
+            .await
+            .expect("query"),
+        None,
+        "a fast scan must not suppress a full one"
+    );
+    assert_eq!(
+        scans::in_flight_run(&db.pool, beta, ScanMode::Fast, AN_HOUR)
+            .await
+            .expect("query"),
+        None,
+        "one provider's scan must not suppress another's"
+    );
+}
+
+/// A run whose tasks have all settled is **not** in flight, even while its row still says
+/// `running`.
+///
+/// Finalisation happens when the aggregator sees the last progress event, and that event is
+/// best-effort — a lost one leaves the row `running` with nothing left to do. Treating the state
+/// alone as "in flight" would let one dropped event stop the provider being scanned again until
+/// the staleness bound expired.
+#[tokio::test]
+async fn a_run_with_nothing_left_to_do_does_not_suppress_the_next_one() {
+    let db = TestDb::spawn().await;
+    let provider = seed::provider(&db, "alpha").create().await;
+    let run = a_run_in_flight(&db, provider, ScanMode::Fast).await;
+    let task = scans::claim_next_queued(&db.pool, run, "worker-1")
+        .await
+        .expect("claim")
+        .expect("the run's only task");
+    scans::complete_task(&db.pool, task.id)
+        .await
+        .expect("complete");
+
+    assert_eq!(
+        scans::in_flight_run(&db.pool, provider, ScanMode::Fast, AN_HOUR)
+            .await
+            .expect("query"),
+        None
+    );
+}
+
+/// A run whose task will never be delivered stops suppressing once it is old enough.
+///
+/// The planner persists a task row and then publishes it; a crash between the two leaves a run
+/// that is indistinguishable from a slow one and will never settle on its own. Age is the only
+/// thing that separates them, and without this bound that single lost publish would retire the
+/// provider from scanning for the life of the deployment.
+#[tokio::test]
+async fn a_run_that_can_never_settle_stops_suppressing_when_it_goes_stale() {
+    let db = TestDb::spawn().await;
+    let provider = seed::provider(&db, "alpha").create().await;
+    let run = a_run_in_flight(&db, provider, ScanMode::Fast).await;
+    backdate(&db, BACKDATE_RUN, run.as_uuid(), 1).await;
+
+    assert_eq!(
+        scans::in_flight_run(&db.pool, provider, ScanMode::Fast, AN_HOUR)
+            .await
+            .expect("query"),
+        None,
+        "a day-old run is past an hour's staleness bound"
+    );
+}
+
+/// A run the planner has created but not yet given a task to is already in flight.
+///
+/// It is the narrowest window in the planner — one statement wide — and the only one where the
+/// unsettled-task test says "nothing to do" about a run that has not started doing it. A
+/// concurrent sweep and "Scan now" landing inside it would otherwise produce exactly the
+/// duplicate run this whole guard exists to prevent.
+#[tokio::test]
+async fn a_run_whose_first_task_is_not_written_yet_is_already_in_flight() {
+    let db = TestDb::spawn().await;
+    let provider = seed::provider(&db, "alpha").create().await;
+    let run = scans::create_run(&db.pool, Some(provider), ScanMode::Fast)
+        .await
+        .expect("create run");
+
+    assert_eq!(
+        scans::in_flight_run(&db.pool, provider, ScanMode::Fast, AN_HOUR)
+            .await
+            .expect("query"),
+        Some(run)
+    );
+}
+
+/// A finished run never suppresses the next one, whichever terminal state it reached.
+#[tokio::test]
+async fn a_finished_run_does_not_suppress_the_next_one() {
+    let db = TestDb::spawn().await;
+    let provider = seed::provider(&db, "alpha").create().await;
+    for state in [RunState::Completed, RunState::Failed, RunState::Cancelled] {
+        let run = a_run_in_flight(&db, provider, ScanMode::Fast).await;
+        scans::finish_run(&db.pool, run, state)
+            .await
+            .expect("finish run");
+        assert_eq!(
+            scans::in_flight_run(&db.pool, provider, ScanMode::Fast, AN_HOUR)
+                .await
+                .expect("query"),
+            None,
+            "a {state:?} run still reads as in flight"
+        );
+    }
 }

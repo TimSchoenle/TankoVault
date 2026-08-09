@@ -9379,7 +9379,7 @@ pub mod types {
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"run_ids\": {"]
-    #[doc = "      \"description\": \"One id per run planned — one per provider when the request names none.\","]
+    #[doc = "      \"description\": \"One id per provider scanned — one per active provider when the request names none. A\\nprovider already scanning in this mode contributes the id of that run rather than a new\\none, so an id here means \\\"this run covers your request\\\", not always \\\"this run is new\\\".\","]
     #[doc = "      \"type\": \"array\","]
     #[doc = "      \"items\": {"]
     #[doc = "        \"$ref\": \"#/components/schemas/ScanRunId\""]
@@ -9391,7 +9391,7 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct ScanTriggered {
-        #[doc = "One id per run planned — one per provider when the request names none."]
+        #[doc = "One id per provider scanned — one per active provider when the request names none. A\nprovider already scanning in this mode contributes the id of that run rather than a new\none, so an id here means \"this run covers your request\", not always \"this run is new\"."]
         pub run_ids: ::std::vec::Vec<ScanRunId>,
     }
     impl ScanTriggered {

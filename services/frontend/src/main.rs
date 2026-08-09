@@ -4,13 +4,16 @@
 //! Two shared-stack concerns are deliberately *not* adopted here — see [`stack_security`] and
 //! the rate-limiting note in [`main`].
 
+use std::convert::Infallible;
+use std::future::{Ready, ready};
 use std::net::SocketAddr;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::task::{Context, Poll};
 use std::time::Duration;
 
 use axum::Router;
-use axum::body::Body;
+use axum::body::{Body, Bytes};
 use axum::extract::{ConnectInfo, Request, State};
 use axum::http::{HeaderMap, HeaderName, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
@@ -20,7 +23,7 @@ use csp_shell::{Csp, Policy};
 use serde::Deserialize;
 use tankovault_config::{MetricsConfig, SecurityConfig, TelemetryConfig};
 use tankovault_service::{CancellationToken, Health, HttpStack, MetricsRegistry};
-use tower::ServiceBuilder;
+use tower::{Service, ServiceBuilder};
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::set_header::SetResponseHeaderLayer;
 
@@ -94,9 +97,11 @@ struct CloudflareConfig {
     /// The concession is real but narrow: an injected script that can already run could read
     /// this header back off a same-origin fetch and admit further inline script. It cannot
     /// forge one ahead of time (128 CSPRNG bits, minted per response), and it still cannot
-    /// reach `'unsafe-eval'` or an off-origin host. Load-bearing for that: the shell is served
-    /// `Cache-Control: no-cache`. A cached shell would pin one nonce across every reader for
-    /// the lifetime of the entry, which is `'unsafe-inline'` with extra steps.
+    /// reach `'unsafe-eval'` or an off-origin host. Load-bearing for that: the shell is never
+    /// served from a stored copy, which is why it is `Cache-Control: no-store` with no validator
+    /// and not `no-cache` — see [`FixedResponse::shell`]. A stored shell would pin one nonce
+    /// across every reader for the lifetime of the entry, which is `'unsafe-inline'` with extra
+    /// steps.
     #[serde(default)]
     script_nonce: bool,
     /// Admit `https://challenges.cloudflare.com` in `script-src` and `frame-src`, for an
@@ -284,36 +289,25 @@ fn build_app(
 /// `connect-src` already covers Cloudflare's `/cdn-cgi/challenge-platform/` beacons and
 /// `script-src 'self'` its scripts, since both are served from this origin — the flags in
 /// [`CloudflareConfig`] exist for the two things that are *not* reachable from `'self'`.
-fn content_security_policy(static_dir: &str, config: &CloudflareConfig) -> Policy {
-    let shell = Path::new(static_dir).join("index.html");
-    // Fail open, which is this service's decision to make and not the library's: an unreadable
-    // shell costs only its inline scripts (theme pre-paint, search shortcut), while `/v1/*`, the
-    // ops probes and every hashed asset keep working.
-    let scan = match csp_shell::scan_shell_at(&shell) {
-        Ok(scan) => Some(scan),
-        Err(error) => {
-            tracing::warn!(
-                shell = %shell.display(),
-                %error,
-                "could not read the app shell; its inline scripts will be blocked by the CSP"
-            );
-            None
-        }
-    };
-
+fn content_security_policy(
+    shell: Option<&str>,
+    shell_path: &Path,
+    config: &CloudflareConfig,
+) -> Policy {
     let mut csp = Csp::spa_wasm();
-    if let Some(scan) = &scan {
+    if let Some(source) = shell {
+        let scan = csp_shell::scan_shell(source);
         // The scanner is deliberately not an HTML parser. Anything it accepted but could not
         // read exactly yields a hash no browser computes, so the limit is logged rather than
         // left as a blank page with nothing to attribute it to.
         for warning in &scan.warnings {
             tracing::warn!(
-                shell = %shell.display(),
+                shell = %shell_path.display(),
                 %warning,
                 "the app shell hit a documented scanner limit; its hashes may not match"
             );
         }
-        csp = csp.with_scan(scan);
+        csp = csp.with_scan(&scan);
     }
     if config.turnstile {
         csp = cloudflare::turnstile(csp);
@@ -322,6 +316,34 @@ fn content_security_policy(static_dir: &str, config: &CloudflareConfig) -> Polic
         csp = cloudflare::script_nonce(csp);
     }
     csp.build()
+}
+
+/// Where the app shell lives inside the bundle.
+fn shell_path(static_dir: &str) -> PathBuf {
+    Path::new(static_dir).join("index.html")
+}
+
+/// Read the app shell once, at startup.
+///
+/// One read, not one per request, and that is the whole point: the bytes the browser receives and
+/// the bytes [`content_security_policy`] hashed are then the same generation *by construction*.
+/// A per-build hash list and a per-response nonce both depend on that, and nothing else enforces
+/// it.
+///
+/// Fail open, which is this service's decision to make and not the library's: an unreadable shell
+/// costs the SPA, while `/v1/*`, the ops probes and every hashed asset keep working.
+fn read_shell(path: &Path) -> Option<String> {
+    match std::fs::read_to_string(path) {
+        Ok(source) => Some(source),
+        Err(error) => {
+            tracing::error!(
+                shell = %path.display(),
+                %error,
+                "could not read the app shell; the SPA cannot be served"
+            );
+            None
+        }
+    }
 }
 
 /// Supplies the `Content-Security-Policy` value for each static response.
@@ -374,6 +396,108 @@ fn header_value(policy: &Policy) -> HeaderValue {
         .unwrap_or_else(|_| HeaderValue::from_static("default-src 'self'"))
 }
 
+/// The subdirectory `dx` writes every content-hashed file into.
+///
+/// Content-hashed means a changed file is a changed URL, which is what makes a one-year
+/// `immutable` lifetime safe here and nowhere else in the bundle.
+const HASHED_ASSETS: &str = "/assets";
+
+/// A response held in memory, carrying its own `Cache-Control`.
+///
+/// The bundle's blanket `Cache-Control` layer is `if_not_present`, so stating the value here is
+/// what keeps that default off these responses.
+#[derive(Clone)]
+struct FixedResponse {
+    status: StatusCode,
+    content_type: &'static str,
+    cache_control: &'static str,
+    body: Bytes,
+}
+
+impl FixedResponse {
+    /// The app shell, from the bytes [`read_shell`] took at startup.
+    ///
+    /// **`no-store` rather than `no-cache`, and no `Last-Modified` or `ETag`.** All three are one
+    /// requirement: this document must never be reconstructed from a stored copy. It carries a
+    /// per-response CSP nonce and the inline-script hashes of exactly one build, so a body paired
+    /// with any other response's header is a document that response's policy refuses.
+    ///
+    /// `no-cache` does not prevent that — it means *revalidate*, and a successful revalidation
+    /// re-uses the stored body under the new response's headers. Served from disk it did exactly
+    /// that: image timestamps are clamped to `SOURCE_DATE_EPOCH`, which this repository pins to a
+    /// constant `0` on purpose (see `the_build_epoch_is_one_constant` in `xtask`), so every build
+    /// answered `Last-Modified: Thu, 01 Jan 1970 00:00:00 GMT` and every conditional request was
+    /// a `304` forever. Serving from memory with no validator is what makes the `304` impossible
+    /// rather than merely unlikely.
+    fn shell(body: Bytes) -> Self {
+        Self {
+            status: StatusCode::OK,
+            content_type: "text/html; charset=utf-8",
+            cache_control: "no-store",
+            body,
+        }
+    }
+
+    /// The shell could not be read at startup, so there is no SPA to serve.
+    ///
+    /// A `503` rather than the `404` a missing file used to produce: the bundle is broken, which
+    /// is an operator's problem and not a wrong URL.
+    fn unavailable() -> Self {
+        Self {
+            status: StatusCode::SERVICE_UNAVAILABLE,
+            content_type: "text/plain; charset=utf-8",
+            cache_control: "no-store",
+            body: Bytes::from_static(b"app shell unavailable\n"),
+        }
+    }
+
+    /// A bundle file that is not there.
+    ///
+    /// A `404`, never the shell. Answering a `<script type="module">` request with HTML fails in
+    /// the browser on the MIME type instead, which reads as a bundler or CSP fault rather than
+    /// the missing file it is — the same reasoning that makes the notices a route of their own.
+    ///
+    /// `no-store` because a rolling deploy legitimately serves this: a client that already has
+    /// the new shell asks a replica that has not rolled yet for a file only the new image has.
+    /// Caching that answer would outlive the rollout by a year.
+    fn missing() -> Self {
+        Self {
+            status: StatusCode::NOT_FOUND,
+            content_type: "text/plain; charset=utf-8",
+            cache_control: "no-store",
+            body: Bytes::from_static(b"not found\n"),
+        }
+    }
+}
+
+impl Service<Request> for FixedResponse {
+    type Response = Response;
+    type Error = Infallible;
+    type Future = Ready<Result<Response, Infallible>>;
+
+    fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, _request: Request) -> Self::Future {
+        ready(Ok((
+            self.status,
+            [
+                (
+                    header::CONTENT_TYPE,
+                    HeaderValue::from_static(self.content_type),
+                ),
+                (
+                    header::CACHE_CONTROL,
+                    HeaderValue::from_static(self.cache_control),
+                ),
+            ],
+            self.body.clone(),
+        )
+            .into_response()))
+    }
+}
+
 /// Where the SPA links its third-party licence notices, and the only URL they are published at.
 ///
 /// `web/frontend/src/components/nav.rs` repeats this literal — it is a separate workspace, so
@@ -385,14 +509,45 @@ const NOTICES_ROUTE: &str = "/third-party-notices";
 /// static bundle (with SPA fallback and hardening headers) catching everything else.
 fn build_router(frontend: &FrontendConfig, state: AppState) -> Router {
     let static_dir = frontend.static_dir.as_str();
-    // SPA fallback: any path with no matching file resolves to the app shell so client-side
-    // routing (`/series/…`, `/account/…`) works on a hard refresh or a deep link.
-    let index = format!("{}/index.html", static_dir.trim_end_matches('/'));
-    let bundle = ServeDir::new(static_dir).fallback(ServeFile::new(index));
+    let shell_path = shell_path(static_dir);
+    let source = read_shell(&shell_path);
 
-    // Assembled once from the shell on disk, since the hashes cover a file that can't change
+    // Assembled once from the shell read above, since the hashes cover a file that can't change
     // without a redeploy; only the optional nonce is per response.
-    let csp = CspHeader::new(content_security_policy(static_dir, &frontend.cloudflare));
+    let csp = CspHeader::new(content_security_policy(
+        source.as_deref(),
+        &shell_path,
+        &frontend.cloudflare,
+    ));
+
+    // The same bytes the policy was derived from. Serving the file instead let a stored copy of
+    // one build meet the header of another; see [`FixedResponse::shell`].
+    let shell = source.map_or_else(FixedResponse::unavailable, |source| {
+        FixedResponse::shell(Bytes::from(source.into_bytes()))
+    });
+
+    // `/assets/…` is content-hashed, so a changed file is a changed URL and a year is safe. A
+    // miss is a `404` rather than the shell — see [`FixedResponse::missing`]. `if_not_present`
+    // rather than `overriding`, so that `404` keeps its own `no-store`.
+    let assets = ServiceBuilder::new()
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("public, max-age=31536000, immutable"),
+        ))
+        .service(
+            ServeDir::new(Path::new(static_dir).join(HASHED_ASSETS.trim_start_matches('/')))
+                .fallback(FixedResponse::missing()),
+        );
+
+    // `/` and `/index.html` are routed explicitly so neither ever reaches `ServeDir` and the file
+    // on disk: the shell has exactly one representation, and it is the in-memory one. Everything
+    // else is a real file if the bundle has one, and a client-side route (`/series/…`,
+    // `/account/…`) otherwise, which is what makes a hard refresh or a deep link work.
+    let bundle = Router::new()
+        .route_service("/", shell.clone())
+        .route_service("/index.html", shell.clone())
+        .nest_service(HASHED_ASSETS, assets)
+        .fallback_service(ServeDir::new(static_dir).fallback(shell));
 
     // Baseline hardening on the app shell only: `if_not_present` never clobbers a value a
     // served file already carries, and `/v1/*` responses keep the API's own headers untouched.
@@ -413,9 +568,12 @@ fn build_router(frontend: &FrontendConfig, state: AppState) -> Router {
             header::CONTENT_SECURITY_POLICY,
             csp,
         ))
-        // The app shell must never be cached: it names the hashed bundle, so a stale copy
-        // pins the client to a retired build. Hashed assets get their own immutable caching
-        // via `ServeDir`'s ETag/Last-Modified handling.
+        // The default for anything in the bundle that states nothing of its own: revalidate.
+        // The two that do state their own are the ones that matter — the shell is `no-store`
+        // ([`FixedResponse::shell`]) and `/assets/…` is immutable — and `if_not_present` is what
+        // leaves both alone. This layer previously read `no-cache` and applied it to *everything*
+        // under a comment claiming hashed assets were cached immutably; nothing set that, and
+        // every asset paid a revalidation round-trip per load.
         .layer(SetResponseHeaderLayer::if_not_present(
             header::CACHE_CONTROL,
             HeaderValue::from_static("no-cache"),
@@ -604,14 +762,38 @@ mod tests {
             COUNTER.fetch_add(1, Ordering::Relaxed)
         );
         let dir = std::env::temp_dir().join(format!("tankovault-frontend-test-{unique}"));
-        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::create_dir_all(dir.join("assets")).unwrap();
         std::fs::write(dir.join("index.html"), SHELL).unwrap();
         std::fs::write(dir.join("app.js"), "APPJS").unwrap();
+        std::fs::write(dir.join("assets").join(HASHED_ASSET), "HASHEDJS").unwrap();
         // Beside the bundle here only because a test needs somewhere to put it; in the image it
         // sits at `/THIRD-PARTY-NOTICES`, outside the served directory.
         std::fs::write(dir.join(NOTICES_FILE), NOTICES).unwrap();
+        clamp_timestamps(&dir);
         dir
     }
+
+    /// Date every file in the fixture `Thu, 01 Jan 1970`, as the image does.
+    ///
+    /// Not decoration. Image layer timestamps are clamped from `SOURCE_DATE_EPOCH`, which this
+    /// repository pins to a constant `0`, so this is the shell's real mtime in production — and it
+    /// is the precondition for the `304` that
+    /// [`a_conditional_request_for_the_shell_is_never_answered_304`] exists to prevent. A fixture
+    /// dated *now* cannot reproduce the bug: any conditional request against it is legitimately
+    /// modified, and the test would pass against the code that shipped it.
+    fn clamp_timestamps(dir: &std::path::Path) {
+        for name in ["index.html", "app.js"] {
+            std::fs::File::options()
+                .write(true)
+                .open(dir.join(name))
+                .unwrap()
+                .set_modified(std::time::SystemTime::UNIX_EPOCH)
+                .unwrap();
+        }
+    }
+
+    /// A stand-in for what `dx` writes into `assets/`: a filename carrying its own content hash.
+    const HASHED_ASSET: &str = "app-dxh0123456789abcd.js";
 
     /// The stand-in notices document and the name [`write_bundle`] writes it under.
     const NOTICES: &str = "THIRD-PARTY NOTICES\nApache License 2.0\n";
@@ -632,6 +814,18 @@ mod tests {
             max_body_bytes: 1024 * 1024,
             ..FrontendConfig::default()
         }
+    }
+
+    /// A client for the tests that send conditional request headers, which `reqwest::get` cannot.
+    ///
+    /// Built rather than `Client::new()`: `clippy.toml` disallows that constructor for having no
+    /// timeouts and no pool bound.
+    fn conditional_client() -> reqwest::Client {
+        reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(5))
+            .timeout(Duration::from_secs(30))
+            .build()
+            .unwrap()
     }
 
     /// The `Content-Security-Policy` the shell is actually served with.
@@ -806,6 +1000,134 @@ mod tests {
         );
     }
 
+    /// **The bug this pins, which was live in production.** The shell used to be served off disk
+    /// by `ServeFile`. Image timestamps are clamped to `SOURCE_DATE_EPOCH`, which this repository
+    /// pins to a constant `0` on purpose, so every build answered `Last-Modified: Thu, 01 Jan 1970
+    /// 00:00:00 GMT` — and `Cache-Control: no-cache` means *revalidate*, not *do not store*. Every
+    /// conditional request therefore succeeded with a `304`, and the browser re-used the previous
+    /// build's shell under the current build's headers, indefinitely and across redeploys.
+    ///
+    /// Both symptoms followed from that one pairing. The stored body's inline scripts were not in
+    /// the new build's hash list and the nonce Cloudflare had stamped into it belonged to an older
+    /// response, so every inline script was refused; and the stored body named a content-hashed
+    /// bundle file the new build does not have, which the SPA fallback answered with the shell,
+    /// failing in the browser on its MIME type.
+    #[tokio::test]
+    async fn a_conditional_request_for_the_shell_is_never_answered_304() {
+        let upstream = spawn_stub_upstream().await;
+        let dir = write_bundle();
+        let front = spawn_frontend(dir.to_str().unwrap(), upstream).await;
+
+        // Both shapes a browser can arrive in. Production sees the first: Cloudflare injects into
+        // the HTML, so it strips the `ETag`, and the only validator the browser can store is the
+        // `Last-Modified` the fixture reproduces in `clamp_timestamps`.
+        let conditional = [
+            vec![("if-modified-since", "Thu, 01 Jan 1970 00:00:00 GMT")],
+            vec![("if-none-match", "*")],
+        ];
+        let client = conditional_client();
+        for headers in conditional {
+            let mut request = client.get(format!("http://{front}/"));
+            for (name, value) in &headers {
+                request = request.header(*name, *value);
+            }
+            let response = request.send().await.unwrap();
+
+            assert_eq!(
+                response.status(),
+                StatusCode::OK,
+                "the shell revalidated into a stored body: {headers:?}"
+            );
+            assert_eq!(response.text().await.unwrap(), SHELL);
+        }
+    }
+
+    /// The other half of the same requirement: a document that cannot be stored cannot be
+    /// revalidated into. `no-store` rather than `no-cache`, and no validator to revalidate with —
+    /// a `Last-Modified` or `ETag` here is what a conditional request would answer `304` against.
+    #[tokio::test]
+    async fn the_shell_is_never_stored() {
+        let upstream = spawn_stub_upstream().await;
+        let dir = write_bundle();
+        let front = spawn_frontend(dir.to_str().unwrap(), upstream).await;
+
+        for path in ["/", "/index.html", "/series/abc/deep"] {
+            let response = reqwest::get(format!("http://{front}{path}")).await.unwrap();
+            let headers = response.headers();
+            assert_eq!(headers.get("cache-control").unwrap(), "no-store", "{path}");
+            assert!(headers.get("last-modified").is_none(), "{path}");
+            assert!(headers.get("etag").is_none(), "{path}");
+        }
+    }
+
+    /// The invariant the whole policy rests on: the document the browser receives and the document
+    /// whose inline scripts the header admits are the same bytes. Two reads of the same path could
+    /// not guarantee it — the shell is now read once and served from memory — so this asserts the
+    /// property rather than the mechanism, by scanning what was actually served.
+    #[tokio::test]
+    async fn the_served_shell_is_the_document_the_policy_admits() {
+        let upstream = spawn_stub_upstream().await;
+        let dir = write_bundle();
+        let front = spawn_frontend(dir.to_str().unwrap(), upstream).await;
+
+        let csp = served_csp(front).await;
+        let body = reqwest::get(format!("http://{front}/"))
+            .await
+            .unwrap()
+            .text()
+            .await
+            .unwrap();
+
+        let scan = csp_shell::scan_shell(&body);
+        assert!(
+            !scan.hashes.is_empty(),
+            "no inline script in the served shell"
+        );
+        for hash in &scan.hashes {
+            assert!(
+                csp.contains(&hash.to_string()),
+                "the served shell carries an inline script the header does not admit: {csp}"
+            );
+        }
+    }
+
+    /// A bundle file that is not there must be a `404`. Answered with the shell it is a `200` of
+    /// HTML where the browser expected a module, which fails on the MIME type and reads as a
+    /// bundler or CSP fault rather than the missing file it is — the same reasoning that makes
+    /// the licence notices a route of their own.
+    #[tokio::test]
+    async fn a_missing_hashed_asset_is_a_404_rather_than_the_app_shell() {
+        let upstream = spawn_stub_upstream().await;
+        let dir = write_bundle();
+        let front = spawn_frontend(dir.to_str().unwrap(), upstream).await;
+
+        let response = reqwest::get(format!("http://{front}/assets/gone-dxhdeadbeef.js"))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert_ne!(response.text().await.unwrap(), SHELL);
+    }
+
+    /// `/assets/…` filenames carry their own content hash, so a changed file is a changed URL:
+    /// the one thing in the bundle that may be cached for a year. The blanket `no-cache` used to
+    /// cover these too, costing a revalidation round-trip per asset per load.
+    #[tokio::test]
+    async fn hashed_assets_are_cached_immutably() {
+        let upstream = spawn_stub_upstream().await;
+        let dir = write_bundle();
+        let front = spawn_frontend(dir.to_str().unwrap(), upstream).await;
+
+        let response = reqwest::get(format!("http://{front}/assets/{HASHED_ASSET}"))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get("cache-control").unwrap(),
+            "public, max-age=31536000, immutable"
+        );
+        assert_eq!(response.text().await.unwrap(), "HASHEDJS");
+    }
+
     /// Pinned against a hash computed outside this codebase: `sha256-bhHHL3z2…` is the value MDN
     /// documents for `alert(1)`. The scan itself lives in `csp-shell` now, but a browser
     /// silently refusing a script it should run stays invisible server-side, so the value that
@@ -822,7 +1144,9 @@ mod tests {
     /// asset still work, only the inline scripts are refused.
     #[test]
     fn a_missing_shell_degrades_to_a_hashless_policy() {
-        let policy = content_security_policy("./no-such-directory", &CloudflareConfig::default());
+        let missing = std::path::Path::new("./no-such-directory/index.html");
+        assert!(read_shell(missing).is_none());
+        let policy = content_security_policy(None, missing, &CloudflareConfig::default());
         let csp = header_value(&policy);
         let csp = csp.to_str().unwrap();
         assert!(
@@ -875,8 +1199,12 @@ mod tests {
     /// `csp_shell::Headers::cache_control` is an obligation, not a suggestion: a nonce served
     /// from cache is pinned across every reader for the lifetime of the entry, which is
     /// `'unsafe-inline'` under another name. This tier discharges it with the shell's
-    /// unconditional `no-cache` rather than by reading the field, so the two have to be pinned
-    /// together — dropping that layer would silently invalidate the whole nonce argument.
+    /// unconditional `no-store` rather than by reading the field, so the two have to be pinned
+    /// together — weakening it would silently invalidate the whole nonce argument.
+    ///
+    /// `no-store` and not `no-cache`: the latter permits a stored copy and only requires it to be
+    /// revalidated, and a `304` then pairs one response's nonce with another response's body.
+    /// That is not hypothetical — see [`a_conditional_request_for_the_shell_is_never_answered_304`].
     #[tokio::test]
     async fn a_nonced_shell_is_served_uncacheable() {
         let upstream = spawn_stub_upstream().await;
@@ -894,7 +1222,7 @@ mod tests {
         .await;
 
         let response = reqwest::get(format!("http://{front}/")).await.unwrap();
-        assert_eq!(response.headers().get("cache-control").unwrap(), "no-cache");
+        assert_eq!(response.headers().get("cache-control").unwrap(), "no-store");
     }
 
     /// Off by default, and off is the whole policy unchanged — a deployment that is not behind

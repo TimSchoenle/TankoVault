@@ -119,6 +119,13 @@ same thing on the wire — so its value is part of every stage's cache key. Deri
 timestamp it made every `cache-from` in CI a total miss, 24 to 45 minutes of recompilation a run.
 Both workflows pin it to `0` at workflow level; the Dockerfile's header comment carries the rule
 and `cargo run -p xtask -- repo-lint` enforces it.
+A consequence worth knowing, because it reached production once: every file in the image is
+therefore dated `Thu, 01 Jan 1970`, so an mtime-derived `Last-Modified` or `ETag` is **the same
+on every build** and cannot tell two builds apart. The frontend serves the app shell from memory
+with no validator and `Cache-Control: no-store` for exactly this reason — see
+[Running behind Cloudflare](../docs/CONFIGURATION.md#running-behind-cloudflare). Anything else put in front of a
+TankoVault image that revalidates by timestamp inherits the same trap.
+
 The dependency graph is compiled once by cargo-chef (reused across every service image and
 exported by CI via the GHA layer cache); BuildKit `type=cache` mounts additionally keep the
 crate registry warm across local rebuilds. Refresh a pinned digest with

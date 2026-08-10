@@ -5286,7 +5286,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-adapters"
-version = "3.9.0"
+version = "4.0.0"
 dependencies = [
  "async-trait",
  "proptest",
@@ -5305,7 +5305,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-api"
-version = "3.9.0"
+version = "4.0.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5348,7 +5348,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-api-client"
-version = "3.9.0"
+version = "4.0.0"
 dependencies = [
  "bytes",
  "futures",
@@ -5364,7 +5364,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-api-test-support"
-version = "3.9.0"
+version = "4.0.0"
 dependencies = [
  "axum",
  "reqwest",
@@ -5384,7 +5384,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-auth"
-version = "3.9.0"
+version = "4.0.0"
 dependencies = [
  "aes-gcm 0.11.0",
  "argon2",
@@ -5408,7 +5408,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-bootstrap"
-version = "3.9.0"
+version = "4.0.0"
 dependencies = [
  "anyhow",
  "secrecy",
@@ -5423,7 +5423,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-bus"
-version = "3.9.0"
+version = "4.0.0"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -5443,7 +5443,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-challenge-solver"
-version = "3.9.0"
+version = "4.0.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -5458,7 +5458,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-config"
-version = "3.9.0"
+version = "4.0.0"
 dependencies = [
  "figment",
  "secrecy",
@@ -5470,7 +5470,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-contracts"
-version = "3.9.0"
+version = "4.0.0"
 dependencies = [
  "proptest",
  "serde",
@@ -5483,7 +5483,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-control-plane"
-version = "3.9.0"
+version = "4.0.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -5511,7 +5511,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-db"
-version = "3.9.0"
+version = "4.0.0"
 dependencies = [
  "secrecy",
  "serde",
@@ -5530,7 +5530,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-domain"
-version = "3.9.0"
+version = "4.0.0"
 dependencies = [
  "proptest",
  "serde",
@@ -5546,7 +5546,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-email"
-version = "3.9.0"
+version = "4.0.0"
 dependencies = [
  "async-trait",
  "lettre",
@@ -5559,7 +5559,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-fetch"
-version = "3.9.0"
+version = "4.0.0"
 dependencies = [
  "async-trait",
  "futures",
@@ -5583,7 +5583,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-frontend"
-version = "3.9.0"
+version = "4.0.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -5600,7 +5600,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-matcher"
-version = "3.9.0"
+version = "4.0.0"
 dependencies = [
  "proptest",
  "tankovault-domain",
@@ -5608,7 +5608,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-notifier"
-version = "3.9.0"
+version = "4.0.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5635,7 +5635,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-recsys"
-version = "3.9.0"
+version = "4.0.0"
 dependencies = [
  "proptest",
  "sha2 0.11.0",
@@ -5644,7 +5644,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-render"
-version = "3.9.0"
+version = "4.0.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5665,7 +5665,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-service"
-version = "3.9.0"
+version = "4.0.0"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -5702,7 +5702,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-solver"
-version = "3.9.0"
+version = "4.0.0"
 dependencies = [
  "async-trait",
  "axum",
@@ -5722,7 +5722,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-sync"
-version = "3.9.0"
+version = "4.0.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5753,7 +5753,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-test-support"
-version = "3.9.0"
+version = "4.0.0"
 dependencies = [
  "async-trait",
  "secrecy",
@@ -5774,7 +5774,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-worker"
-version = "3.9.0"
+version = "4.0.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -7330,7 +7330,7 @@ dependencies = [
 
 [[package]]
 name = "xtask"
-version = "3.9.0"
+version = "4.0.0"
 dependencies = [
  "anyhow",
  "openapiv3",

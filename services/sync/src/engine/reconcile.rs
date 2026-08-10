@@ -10,7 +10,6 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use secrecy::SecretString;
-use serde::Serialize;
 use serde_json::json;
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -28,30 +27,7 @@ use super::resolve::{MatchOutcome, SeriesResolver};
 use super::tokens::TokenVault;
 use crate::mapping::{ConflictPolicy, MergeAction};
 use crate::provider::{ExternalProvider, RemoteEntry};
-
-/// Outcome of a pull (provider → local).
-#[derive(Debug, Default, Serialize)]
-pub(crate) struct PullReport {
-    /// Entries returned by the provider.
-    pub(crate) fetched: usize,
-    /// Entries resolved to a canonical local series.
-    pub(crate) matched: usize,
-    /// Local progress rows written.
-    pub(crate) updated: usize,
-    /// Entries with no confident local match (skipped).
-    pub(crate) unmatched: usize,
-}
-
-/// Outcome of a push (local → provider).
-#[derive(Debug, Default, Serialize)]
-pub(crate) struct PushReport {
-    /// Local watchlist entries examined.
-    pub(crate) considered: usize,
-    /// Remote entries created or updated.
-    pub(crate) pushed: usize,
-    /// Watchlist entries with no resolvable remote media (skipped).
-    pub(crate) unmapped: usize,
-}
+use tankovault_contracts::sync::{PullReport, PushReport};
 
 /// Aggregate counters accumulated over one full account reconciliation. Both the manual
 /// `PullReport`/`PushReport` and the scheduled loop's logging are derived from these.

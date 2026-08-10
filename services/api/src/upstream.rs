@@ -57,12 +57,36 @@ impl Upstream {
 
     /// The shared client every [`Upstream`] should be built from.
     ///
+    /// `material` is present under `internal.identity = "mtls"`, and then the client both
+    /// presents this service's certificate and verifies its peers against the configured
+    /// bundle — `.tls_built_in_root_certs(false)` because a peer signed by a *public* authority
+    /// is not a peer, and accepting one would make the whole point of pinning to an internal CA
+    /// moot.
+    ///
     /// # Errors
-    /// When the TLS backend cannot be initialised.
-    pub fn client() -> Result<reqwest::Client, reqwest::Error> {
-        reqwest::Client::builder()
+    /// When the TLS backend cannot be initialised, or the supplied material is not valid PEM.
+    pub fn client(
+        material: Option<&tankovault_service::ClientMaterial>,
+    ) -> Result<reqwest::Client, reqwest::Error> {
+        let builder = reqwest::Client::builder()
             .connect_timeout(CONNECT_TIMEOUT)
-            .timeout(REQUEST_TIMEOUT)
+            .timeout(REQUEST_TIMEOUT);
+
+        let Some(material) = material else {
+            return builder.build();
+        };
+
+        // reqwest wants the chain and the key in one PEM blob.
+        let mut identity = material.cert.clone();
+        identity.extend_from_slice(&material.key);
+
+        builder
+            .identity(reqwest::Identity::from_pem(&identity)?)
+            // `tls_certs_only`, not `add_root_certificate`: it also drops the built-in roots, and
+            // a peer signed by a *public* authority is not a peer. Merely adding the internal CA
+            // alongside the public set would leave every WebPKI-signed host acceptable, which is
+            // most of the value of pinning to an internal CA gone.
+            .tls_certs_only([reqwest::Certificate::from_pem(&material.ca)?])
             .build()
     }
 
@@ -206,12 +230,25 @@ impl Upstream {
         match status.as_u16() {
             404 => ApiError::NotFound,
             409 => ApiError::Conflict("Account not linked".to_owned()),
-            401 | 403 => {
+            // `401` and `403` mean different misconfigurations now that callers are named:
+            // the peer either did not recognise this service, or recognised it and refuses it
+            // this route. Neither is the client's fault, so both surface as `502`.
+            401 => {
                 tracing::error!(
                     upstream = self.name,
                     %status,
-                    "internal call was refused: is TANKOVAULT_INTERNAL__TOKEN set and identical \
-                     on both services?"
+                    "internal call was not recognised: does this deployment's \
+                     internal.caller.token match the peer's internal.peers.api.token (or, under \
+                     mtls, does its certificate SAN match internal.peers.api.san)?"
+                );
+                ApiError::BadGateway
+            }
+            403 => {
+                tracing::error!(
+                    upstream = self.name,
+                    %status,
+                    "internal call was recognised but refused this route: `api` is missing from \
+                     the peer's route table for it"
                 );
                 ApiError::BadGateway
             }
@@ -294,9 +331,16 @@ mod tests {
         assert_eq!(ok.slug, "anilist");
     }
 
-    /// The command proxies stay `serde_json::Value`, and for them the empty-body case must
-    /// still produce the canonical acknowledgement rather than `null` — a `204` from the peer
-    /// is a success with nothing to forward, not an absent body the client should see.
+    /// A `204` from the peer is a success with nothing to forward, not an absent body the
+    /// client should see, so the empty-body case must produce the canonical acknowledgement
+    /// rather than `null`.
+    ///
+    /// The second half is what makes [`tankovault_contracts::sync::Ack`] honest. Two routes
+    /// (`link`, `patch_settings`) answer `204` upstream and are published as `200 {"ok": true}`
+    /// purely because of the synthesis below; before `Ack` existed, that coupling lived in a
+    /// hand-written `json!` literal in the handler and a `serde_json::Value` return type, so
+    /// changing the synthesis would have silently changed what the SPA received. If these two
+    /// ever disagree, those routes break.
     #[test]
     fn an_empty_body_is_still_the_canonical_acknowledgement() {
         let up = upstream(None);
@@ -304,6 +348,11 @@ mod tests {
             .decode::<serde_json::Value>("")
             .expect("an empty body is not an error");
         assert_eq!(value, serde_json::json!({ "ok": true }));
+
+        let Json(ack) = up
+            .decode::<tankovault_contracts::sync::Ack>("")
+            .expect("the synthesised body is an Ack");
+        assert!(ack.ok, "Ack is what the synthesised acknowledgement means");
     }
 
     /// A misconfigured internal token must not surface to the client as *their* 401.

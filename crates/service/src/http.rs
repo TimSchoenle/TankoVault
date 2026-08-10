@@ -41,7 +41,7 @@ pub struct HttpStack {
     security: SecurityConfig,
     metrics: MetricsRegistry,
     limiter: Option<RateLimiter>,
-    internal_token: Option<crate::internal_auth::InternalToken>,
+    internal_auth: Option<crate::internal_auth::InternalAuth>,
     principal: Option<PrincipalResolver>,
 }
 
@@ -62,7 +62,7 @@ impl HttpStack {
             security: security.clone(),
             metrics,
             limiter: None,
-            internal_token: None,
+            internal_auth: None,
             principal: None,
         }
     }
@@ -86,17 +86,13 @@ impl HttpStack {
         self
     }
 
-    /// Require [`crate::internal_auth::INTERNAL_TOKEN_HEADER`] on every routed request.
+    /// Identify and authorise the caller of every routed request.
     ///
-    /// For internal-tier services only; `None` leaves the tier unauthenticated outside
-    /// production. Health/readiness stay reachable regardless: [`ops_router`] is merged
-    /// outside [`Self::apply`].
+    /// For internal-tier services only. Health/readiness stay reachable regardless:
+    /// [`ops_router`] is merged outside [`Self::apply`], so a probe never needs a credential.
     #[must_use]
-    pub fn with_internal_auth(
-        mut self,
-        token: Option<crate::internal_auth::InternalToken>,
-    ) -> Self {
-        self.internal_token = token;
+    pub fn with_internal_auth(mut self, auth: Option<crate::internal_auth::InternalAuth>) -> Self {
+        self.internal_auth = auth;
         self
     }
 
@@ -106,7 +102,7 @@ impl HttpStack {
             security,
             metrics,
             limiter,
-            internal_token,
+            internal_auth,
             principal,
         } = self;
 
@@ -120,9 +116,8 @@ impl HttpStack {
             .then(|| axum::middleware::from_fn(service_metrics::track_request));
         // Innermost of the auth-ish layers but outside the work bounds: an unauthenticated
         // caller must not spend the body limit or the request timeout.
-        let internal_auth = internal_token.map(|token| {
-            axum::middleware::from_fn_with_state(token, crate::internal_auth::enforce)
-        });
+        let internal_auth = internal_auth
+            .map(|auth| axum::middleware::from_fn_with_state(auth, crate::internal_auth::identify));
         let principal_layer = principal
             .map(|resolve| axum::middleware::from_fn_with_state(resolve, identify_principal));
         let cors = security.cors.is_enabled().then(|| build_cors(&security));
@@ -398,6 +393,95 @@ pub async fn serve(
 
     tracing::info!("http server stopped");
     Ok(())
+}
+
+/// Bind `addr` and serve `app` over mutually-authenticated TLS until `shutdown` is cancelled.
+///
+/// The counterpart of [`serve`] for `internal.identity = "mtls"`. Two things differ, and both
+/// are consequences of the connection now carrying an identity:
+///
+/// * the connect info is [`crate::tls::InternalPeer`] rather than a bare `SocketAddr`, and a
+///   layer projects it back into the `ConnectInfo<SocketAddr>` the rate limiter reads plus the
+///   [`crate::tls::PeerSans`] `internal_auth` reads. Doing the projection here rather than in
+///   the limiter keeps every other caller of [`serve`] unchanged;
+/// * a background task polls the certificate files, so rotation does not need a restart.
+///
+/// # Errors
+/// Returns [`ServiceError::Server`] if the listener cannot be bound or the server exits with an
+/// I/O error.
+pub async fn serve_tls(
+    addr: &str,
+    app: Router,
+    tls: std::sync::Arc<crate::tls::ReloadingTls>,
+    shutdown: CancellationToken,
+) -> Result<(), ServiceError> {
+    let listener = crate::tls::TlsListener::bind(addr, std::sync::Arc::clone(&tls)).await?;
+    tracing::info!(%addr, "listening (mutual TLS)");
+
+    tokio::spawn(std::sync::Arc::clone(&tls).watch(shutdown.clone()));
+
+    let app = app.layer(axum::middleware::from_fn(project_peer_identity));
+
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<crate::tls::InternalPeer>(),
+    )
+    .with_graceful_shutdown(async move {
+        shutdown.cancelled().await;
+        tracing::info!(
+            drain_secs = DRAIN_TIMEOUT.as_secs(),
+            "draining in-flight requests"
+        );
+    })
+    .await?;
+
+    tracing::info!("mutual-TLS server stopped");
+    Ok(())
+}
+
+/// Serve `app` on `addr`, over mutual TLS when the configuration asks for it.
+///
+/// The one call site a service needs: which of [`serve`] and [`serve_tls`] applies follows from
+/// `internal.identity`, so no service decides it independently and none can end up serving
+/// plaintext while its configuration says `mtls`.
+///
+/// # Errors
+/// As [`serve`] and [`serve_tls`], plus [`ServiceError::Tls`] if the certificate material named
+/// by `internal.tls` cannot be loaded.
+pub async fn serve_internal(
+    addr: &str,
+    app: Router,
+    auth: &tankovault_config::ResolvedInternalAuth,
+    shutdown: CancellationToken,
+) -> Result<(), ServiceError> {
+    match auth.tls.as_ref() {
+        Some(paths) => {
+            let tls = std::sync::Arc::new(crate::tls::ReloadingTls::load(paths)?);
+            serve_tls(addr, app, tls, shutdown).await
+        }
+        None => serve(addr, app, shutdown).await,
+    }
+}
+
+/// Split [`crate::tls::InternalPeer`] into the two extensions the rest of the stack expects.
+///
+/// The peer address and the verified names arrive together because they come from one
+/// connection, but they are read by unrelated layers — the rate limiter wants an address and
+/// knows nothing about TLS, `internal_auth` wants the names and knows nothing about sockets.
+async fn project_peer_identity(
+    mut req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response {
+    if let Some(axum::extract::ConnectInfo(peer)) = req
+        .extensions()
+        .get::<axum::extract::ConnectInfo<crate::tls::InternalPeer>>()
+        .cloned()
+    {
+        req.extensions_mut()
+            .insert(axum::extract::ConnectInfo(peer.addr));
+        req.extensions_mut().insert(peer.sans);
+    }
+    next.run(req).await
 }
 
 #[cfg(test)]

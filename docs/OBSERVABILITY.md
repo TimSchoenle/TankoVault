@@ -292,7 +292,7 @@ Eight per-service jobs on `<service>:9090`, plus Prometheus itself. Two delibera
   Postgres outage, an exhausted connection pool or an unreachable NATS is alertable at all without
   adding a gauge to the Rust runtime.
 
-`/ready` needs no `X-Internal-Token` even on the internal tier: `ops_router` is merged outside
+`/ready` needs no credential even on the internal tier: `ops_router` is merged outside
 `HttpStack`, by design, so an orchestrator never needs the secret.
 
 ### Recording rules
@@ -406,7 +406,7 @@ says so.
 |---|---|---|
 | `TankoVaultChallengeSolvingFailing` | >50% solve errors for 15m | Every challenge-protected provider stops being scannable, and its tasks fail rather than queue. On `challenge-solver`, check TRAWL — `curl -sf trawl:8191/health` reports live browser-pool capacity, and a saturated pool answers `429`, which reads as a solve failure here. On `render`, this is Chromium: OOM against the 2g limit, or a shrunken `/dev/shm` (`shm_size: 1gb`). |
 | `TankoVaultRenderTierFailing` | >50% render errors for 15m | Providers needing a real browser stop yielding chapters; others are unaffected. Same checks. `render` is deliberately not `read_only`, so a full disk is also a candidate — it writes a browser profile and cache. |
-| `TankoVaultRefusedFetchTargets` | any SSRF refusal in 15m | The control working, and worth knowing about. Both endpoints return the fetched DOM *and the cookies collected*, so a successful request to a private address would be a full internal-network read. The log line (`refused a solve target` / `refused a render target`) names the URL and the rule. A provider URL means a bad row or a redirect into a private range. Anything else means something is reaching these endpoints that should not: verify `TANKOVAULT_INTERNAL__TOKEN` on the service and its callers, and that no `ports:` entry publishes them. |
+| `TankoVaultRefusedFetchTargets` | any SSRF refusal in 15m | The control working, and worth knowing about. Both endpoints return the fetched DOM *and the cookies collected*, so a successful request to a private address would be a full internal-network read. The log line (`refused a solve target` / `refused a render target`) names the URL and the rule. A provider URL means a bad row or a redirect into a private range. Anything else means something is reaching these endpoints that should not: verify `internal.peers` on the service names only `worker`, and that no `ports:` entry publishes them. |
 
 ### Thresholds that need the operator's first week
 

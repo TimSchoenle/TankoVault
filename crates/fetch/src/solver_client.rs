@@ -34,10 +34,53 @@ impl HttpChallengeSolver {
         timeout: Duration,
         token: Option<SecretString>,
     ) -> Self {
+        Self::build(endpoint, timeout, token, None)
+    }
+
+    /// As [`Self::new`], additionally presenting a client certificate.
+    ///
+    /// The mTLS counterpart, used when `internal.identity = "mtls"`. This hop runs on `wreq`
+    /// rather than `reqwest` because the crate it lives in is the crawl stack; the two take
+    /// their PEM differently, which is why `tankovault_service::ClientMaterial` hands over bytes
+    /// rather than a built client.
+    ///
+    /// # Panics
+    /// As [`Self::new`], and additionally if `material` is not valid PEM — which is a
+    /// misconfigured mount, caught at boot before the process serves anything.
+    #[must_use]
+    pub fn with_mtls(
+        endpoint: impl Into<String>,
+        timeout: Duration,
+        material: &tankovault_service::ClientMaterial,
+    ) -> Self {
+        Self::build(endpoint, timeout, None, Some(material))
+    }
+
+    fn build(
+        endpoint: impl Into<String>,
+        timeout: Duration,
+        token: Option<SecretString>,
+        material: Option<&tankovault_service::ClientMaterial>,
+    ) -> Self {
         // Deliberately no emulation profile and no SSRF resolver: this talks to our own
         // service on the internal network, not to a provider.
-        let client = wreq::Client::builder()
-            .timeout(timeout)
+        let mut builder = wreq::Client::builder().timeout(timeout);
+
+        if let Some(material) = material {
+            builder = builder
+                .tls_identity(
+                    wreq::tls::trust::Identity::from_pkcs8_pem(&material.cert, &material.key)
+                        .expect("the mounted client certificate and key are valid PEM"),
+                )
+                // Only the internal authority, never the public roots: a solver endpoint signed
+                // by a public CA is not this deployment's solver.
+                .tls_cert_store(
+                    wreq::tls::trust::CertStore::from_pem_stack(&material.ca)
+                        .expect("the mounted CA bundle is valid PEM"),
+                );
+        }
+
+        let client = builder
             .build()
             .expect("HTTP client builds with the bundled trust store");
         Self {

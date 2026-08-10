@@ -7,6 +7,75 @@ mod error;
 mod mapping;
 mod provider;
 mod providers;
+mod views;
+
+/// The route patterns this service serves, named once so the router and the authorisation
+/// table below cannot spell the same endpoint differently.
+mod path {
+    pub(crate) const PROVIDERS: &str = "/v1/sync/providers";
+    pub(crate) const PUSH_SERIES: &str = "/v1/sync/push-series";
+    pub(crate) const ENRICH: &str = "/v1/sync/enrich";
+    pub(crate) const AUTHORIZE_URL: &str = "/v1/sync/{provider}/authorize-url";
+    pub(crate) const STATUS: &str = "/v1/sync/{provider}/status/{user_id}";
+    pub(crate) const LINK: &str = "/v1/sync/{provider}/link";
+    pub(crate) const PULL: &str = "/v1/sync/{provider}/pull";
+    pub(crate) const PUSH: &str = "/v1/sync/{provider}/push";
+    pub(crate) const SETTINGS: &str = "/v1/sync/{provider}/settings/{user_id}";
+    pub(crate) const CONFLICTS: &str = "/v1/sync/conflicts/{user_id}";
+    pub(crate) const RESOLVE_CONFLICT: &str = "/v1/sync/conflicts/{id}/resolve";
+    pub(crate) const HISTORY: &str = "/v1/sync/history/{user_id}";
+    pub(crate) const DECISIONS: &str = "/v1/sync/decisions";
+    pub(crate) const REVERT_DECISION: &str = "/v1/sync/decisions/{id}/revert";
+    pub(crate) const FLAG_DECISION: &str = "/v1/sync/decisions/{id}/flag";
+    pub(crate) const MATCH_BLOCKS: &str = "/v1/sync/match-blocks";
+}
+
+/// Who may reach each of this service's routes.
+///
+/// `api` alone, everywhere. Every route here acts on behalf of a named user — reading a
+/// reader's progress history, unlinking their tracker account, pulling their list — and `api` is
+/// the only tier that authenticates users, so it is the only one with a user to act for. Under
+/// one tier-wide token `worker`, `render` and `challenge-solver` all held a credential that
+/// opened every one of these.
+///
+/// A method appears once per verb: `link` and `settings` serve two each, and a table keyed on
+/// the path alone would authorise the write because the read was permitted.
+static INTERNAL_ROUTES: &[tankovault_service::InternalRoute] = {
+    use axum::http::Method;
+    use tankovault_service::InternalRoute;
+
+    /// Every route on this service has the same permitted caller; this keeps that visible in
+    /// one place rather than repeated eighteen times.
+    const API: &[&str] = &["api"];
+    const fn route(method: Method, path: &'static str) -> InternalRoute {
+        InternalRoute {
+            method,
+            path,
+            callers: API,
+        }
+    }
+
+    &[
+        route(Method::GET, path::PROVIDERS),
+        route(Method::POST, path::PUSH_SERIES),
+        route(Method::POST, path::ENRICH),
+        route(Method::GET, path::AUTHORIZE_URL),
+        route(Method::GET, path::STATUS),
+        route(Method::POST, path::LINK),
+        route(Method::DELETE, path::LINK),
+        route(Method::POST, path::PULL),
+        route(Method::POST, path::PUSH),
+        route(Method::GET, path::SETTINGS),
+        route(Method::PATCH, path::SETTINGS),
+        route(Method::GET, path::CONFLICTS),
+        route(Method::POST, path::RESOLVE_CONFLICT),
+        route(Method::GET, path::HISTORY),
+        route(Method::GET, path::DECISIONS),
+        route(Method::POST, path::REVERT_DECISION),
+        route(Method::POST, path::FLAG_DECISION),
+        route(Method::POST, path::MATCH_BLOCKS),
+    ]
+};
 /// Merge-engine reconciliation tests; needs Docker, hence the feature gate.
 #[cfg(all(test, feature = "integration"))]
 mod reconcile_tests;
@@ -22,7 +91,7 @@ use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use secrecy::{ExposeSecret as _, SecretString};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use tankovault_service::health::PostgresCheck;
 use tankovault_service::{
     CancellationToken, FeatureGate, FeatureLayer, Health, HttpStack, MetricsRegistry,
@@ -35,7 +104,10 @@ use provider::ExternalProvider;
 use providers::anilist::{AniListClient, DEFAULT_GRAPHQL_URL, DEFAULT_OAUTH_BASE};
 use tankovault_auth::Sealer;
 use tankovault_config::{DatabaseConfig, TelemetryConfig};
-use tankovault_contracts::sync::{AccountSettings, AccountStatus, AuthorizeUrl, ProviderInfo};
+use tankovault_contracts::sync::{
+    AccountSettings, AccountStatus, AuthorizeUrl, ConflictView, Flagged, HistoryView, ProviderInfo,
+    Removed, Resolved,
+};
 use tankovault_domain::{Feature, MetadataPriority, SeriesId, UserId};
 
 #[derive(Debug, Deserialize)]
@@ -338,8 +410,8 @@ async fn serve_once(
     shutdown: CancellationToken,
 ) -> anyhow::Result<()> {
     // Resolved before anything binds: production refuses to boot rather than silently serving
-    // privileged routes without the token that guards them.
-    let internal_token = tankovault_service::internal_auth::resolve(&cfg.internal)?;
+    // privileged routes without the identity that guards them.
+    let internal_auth = &tankovault_service::internal_auth::resolve(&cfg.internal)?;
 
     let pool = tankovault_db::connect(
         &cfg.database.url,
@@ -400,25 +472,22 @@ async fn serve_once(
     );
 
     let routes = Router::new()
-        .route("/v1/sync/providers", get(providers_list))
-        .route("/v1/sync/push-series", post(push_series))
-        .route("/v1/sync/enrich", post(enrich))
-        .route("/v1/sync/{provider}/authorize-url", get(authorize_url))
-        .route("/v1/sync/{provider}/status/{user_id}", get(status))
-        .route("/v1/sync/{provider}/link", post(link).delete(unlink))
-        .route("/v1/sync/{provider}/pull", post(pull))
-        .route("/v1/sync/{provider}/push", post(push))
-        .route(
-            "/v1/sync/{provider}/settings/{user_id}",
-            get(get_settings).patch(patch_settings),
-        )
-        .route("/v1/sync/conflicts/{user_id}", get(list_conflicts))
-        .route("/v1/sync/conflicts/{id}/resolve", post(resolve_conflict))
-        .route("/v1/sync/history/{user_id}", get(list_history))
-        .route("/v1/sync/decisions", get(list_decisions))
-        .route("/v1/sync/decisions/{id}/revert", post(revert_decision))
-        .route("/v1/sync/decisions/{id}/flag", post(flag_decision))
-        .route("/v1/sync/match-blocks", post(block_match))
+        .route(path::PROVIDERS, get(providers_list))
+        .route(path::PUSH_SERIES, post(push_series))
+        .route(path::ENRICH, post(enrich))
+        .route(path::AUTHORIZE_URL, get(authorize_url))
+        .route(path::STATUS, get(status))
+        .route(path::LINK, post(link).delete(unlink))
+        .route(path::PULL, post(pull))
+        .route(path::PUSH, post(push))
+        .route(path::SETTINGS, get(get_settings).patch(patch_settings))
+        .route(path::CONFLICTS, get(list_conflicts))
+        .route(path::RESOLVE_CONFLICT, post(resolve_conflict))
+        .route(path::HISTORY, get(list_history))
+        .route(path::DECISIONS, get(list_decisions))
+        .route(path::REVERT_DECISION, post(revert_decision))
+        .route(path::FLAG_DECISION, post(flag_decision))
+        .route(path::MATCH_BLOCKS, post(block_match))
         .with_state(state)
         // Same declarative gate the public API uses: this service is reachable from anywhere on
         // the internal network, so the switch must hold here too, not just at the edge.
@@ -442,11 +511,14 @@ async fn serve_once(
 
     let app = HttpStack::new(&cfg.security, metrics.clone())
         .with_rate_limit(limiter)
-        .with_internal_auth(internal_token)
+        .with_internal_auth(Some(tankovault_service::InternalAuth::new(
+            internal_auth,
+            tankovault_service::RouteTable(INTERNAL_ROUTES),
+        )))
         .apply(routes)
         .merge(tankovault_service::ops_router(health, metrics));
 
-    tankovault_service::serve(&cfg.bind_addr, app, shutdown).await?;
+    tankovault_service::serve_internal(&cfg.bind_addr, app, internal_auth, shutdown).await?;
     Ok(())
 }
 
@@ -516,11 +588,6 @@ async fn status(
     Path((provider, user_id)): Path<(String, UserId)>,
 ) -> Result<Json<AccountStatus>, AppError> {
     Ok(Json(state.engine.status(&provider, user_id).await?))
-}
-
-#[derive(Debug, Serialize)]
-struct Removed {
-    removed: bool,
 }
 
 async fn unlink(
@@ -602,19 +669,15 @@ async fn patch_settings(
 async fn list_conflicts(
     State(state): State<AppState>,
     Path(user_id): Path<UserId>,
-) -> Result<Json<Vec<tankovault_db::repo::sync::ConflictRow>>, AppError> {
-    Ok(Json(state.engine.list_conflicts(user_id).await?))
+) -> Result<Json<Vec<ConflictView>>, AppError> {
+    let rows = state.engine.list_conflicts(user_id).await?;
+    Ok(Json(rows.into_iter().map(views::conflict_view).collect()))
 }
 
 #[derive(Debug, Deserialize)]
 struct ResolveRequest {
     user_id: UserId,
     resolution: String,
-}
-
-#[derive(Debug, Serialize)]
-struct Resolved {
-    resolved: bool,
 }
 
 /// `POST /v1/sync/conflicts/{id}/resolve` — apply a user's chosen resolution.
@@ -645,7 +708,7 @@ async fn list_history(
     State(state): State<AppState>,
     Path(user_id): Path<UserId>,
     axum::extract::Query(q): axum::extract::Query<HistoryQuery>,
-) -> Result<Json<Vec<tankovault_db::repo::sync::HistoryRow>>, AppError> {
+) -> Result<Json<Vec<HistoryView>>, AppError> {
     let rows = state
         .engine
         .history(
@@ -655,7 +718,7 @@ async fn list_history(
             q.page.unwrap_or(0),
         )
         .await?;
-    Ok(Json(rows))
+    Ok(Json(rows.into_iter().map(views::history_view).collect()))
 }
 
 #[derive(Debug, Deserialize)]
@@ -684,7 +747,7 @@ struct DecisionQuery {
 async fn list_decisions(
     State(state): State<AppState>,
     axum::extract::Query(q): axum::extract::Query<DecisionQuery>,
-) -> Result<Json<Vec<tankovault_db::repo::sync::SyncDecisionRow>>, AppError> {
+) -> Result<Json<Vec<tankovault_contracts::admin::SyncDecisionView>>, AppError> {
     let filter = tankovault_db::repo::sync::SyncDecisionFilter {
         user_id: q.user_id,
         series_id: q.series_id,
@@ -702,7 +765,7 @@ async fn list_decisions(
             q.offset.unwrap_or(0),
         )
         .await?;
-    Ok(Json(rows))
+    Ok(Json(rows.into_iter().map(views::decision_view).collect()))
 }
 
 #[derive(Debug, Deserialize)]
@@ -734,11 +797,6 @@ struct FlagRequest {
     /// Also refuse the (external id, series) match this decision made, permanently.
     #[serde(default)]
     block_match: bool,
-}
-
-#[derive(Debug, Serialize)]
-struct Flagged {
-    flagged: bool,
 }
 
 /// `POST /v1/sync/decisions/{id}/flag` — mark one decision wrong without undoing it.

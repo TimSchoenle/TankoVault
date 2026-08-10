@@ -557,12 +557,13 @@ fn documented_router() -> OpenApiRouter<AppState> {
 /// unconfigured or unreachable, so `/v1/me/stream` degrades to `503` while the edge keeps serving.
 pub async fn connect_bus(
     nats: Option<&tankovault_config::NatsConfig>,
+    tls: Option<&tankovault_config::ResolvedTls>,
 ) -> Option<tankovault_bus::Bus> {
     let Some(nats) = nats else {
         tracing::info!("no NATS configured; /v1/me/stream disabled");
         return None;
     };
-    match tankovault_bus::Bus::connect(&nats.url).await {
+    match tankovault_bus::Bus::connect(&nats.url, tls).await {
         Ok(bus) => {
             tracing::info!("connected to NATS for live notification relay");
             Some(bus)

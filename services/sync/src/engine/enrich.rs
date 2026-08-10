@@ -4,7 +4,6 @@
 
 use std::sync::Arc;
 
-use serde::Serialize;
 use time::OffsetDateTime;
 
 use tankovault_db::PgPool;
@@ -27,16 +26,7 @@ fn saturating(count: usize) -> i32 {
     i32::try_from(count).unwrap_or(i32::MAX)
 }
 
-/// Outcome of a tokenless metadata-enrichment sweep.
-#[derive(Debug, Default, Serialize)]
-pub(crate) struct EnrichReport {
-    /// Series examined this sweep.
-    pub(crate) scanned: usize,
-    /// Series that received metadata from at least one provider.
-    pub(crate) enriched: usize,
-    /// Series no public provider could resolve.
-    pub(crate) unresolved: usize,
-}
+use tankovault_contracts::sync::EnrichReport;
 
 /// Folds public provider metadata into the local catalogue.
 pub(crate) struct Enricher {

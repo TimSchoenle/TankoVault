@@ -1281,7 +1281,8 @@ jobs:
           TANKOVAULT_AUTH__JWT_SECRET: ci-validation-only
           TANKOVAULT_SEED_ADMIN_PASSWORD: ci-validation-only
           TANKOVAULT_ANILIST__TOKEN_ENCRYPTION_KEY: ci-validation-only
-          TANKOVAULT_INTERNAL__TOKEN: ci-validation-only
+          TANKOVAULT_INTERNAL_TOKEN_API: ci-validation-only
+          TANKOVAULT_INTERNAL_TOKEN_WORKER: ci-validation-only
         run: docker compose -f deploy/docker-compose.yml config --quiet
 
   # The one compile every image below is built on. `cook` and `builder` are the entire wall clock

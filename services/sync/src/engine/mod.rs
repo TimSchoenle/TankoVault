@@ -27,10 +27,12 @@ use tankovault_domain::{MetadataPriority, SeriesId, TagBlocklist, UserId};
 use crate::mapping::ConflictPolicy;
 use crate::provider::ExternalProvider;
 
-pub(crate) use enrich::EnrichReport;
-pub(crate) use push::ProviderPushOutcome;
-pub(crate) use reconcile::{PullReport, PushReport};
-pub(crate) use revert::RevertReport;
+// The reports these routes answer with are published API types, not engine-private ones:
+// `services/api` re-publishes each verbatim, so they live in `tankovault_contracts` and are
+// re-exported here only so the collaborators below keep their unqualified names.
+pub(crate) use tankovault_contracts::sync::{
+    EnrichReport, ProviderPushOutcome, PullReport, PushReport, RevertReport,
+};
 
 use accounts::AccountService;
 use conflicts::ConflictService;

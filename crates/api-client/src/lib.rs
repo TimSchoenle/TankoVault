@@ -11559,6 +11559,34 @@ pub mod types {
             Default::default()
         }
     }
+    #[doc = "Acknowledgement for a sync route that answers `204 No Content`.\n\n`services/sync` returns a bare `204` for linking an account and for patching settings;\n`services/api` republishes those as `200 {\"ok\": true}` because its `Upstream::decode`\nsynthesises this body for an empty upstream response. That synthesis is the contract, not\nan accident: naming it here means a change to either side breaks a type rather than\nsilently altering what the SPA receives. `ok` is always `true` — a failure is a status\ncode, never a `false` here."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Acknowledgement for a sync route that answers `204 No Content`.\\n\\n`services/sync` returns a bare `204` for linking an account and for patching settings;\\n`services/api` republishes those as `200 {\\\"ok\\\": true}` because its `Upstream::decode`\\nsynthesises this body for an empty upstream response. That synthesis is the contract, not\\nan accident: naming it here means a change to either side breaks a type rather than\\nsilently altering what the SPA receives. `ok` is always `true` — a failure is a status\\ncode, never a `false` here.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"ok\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"ok\": {"]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct SyncAck {
+        pub ok: bool,
+    }
+    impl SyncAck {
+        pub fn builder() -> builder::SyncAck {
+            Default::default()
+        }
+    }
     #[doc = "One row of the automatic-sync decision journal.\n\nCovers what `sync_history` never did: the entries that matched no local series, the series\nskipped as excluded, the fields both sides already agreed on, and the scored title match\nbehind every mapping."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -11898,6 +11926,34 @@ pub mod types {
             Default::default()
         }
     }
+    #[doc = "Whether flagging a decision recorded the flag."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Whether flagging a decision recorded the flag.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"flagged\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"flagged\": {"]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct SyncFlagged {
+        pub flagged: bool,
+    }
+    impl SyncFlagged {
+        pub fn builder() -> builder::SyncFlagged {
+            Default::default()
+        }
+    }
     #[doc = "`SyncMappingTarget`"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -12029,6 +12085,61 @@ pub mod types {
             Self::Variant1(value)
         }
     }
+    #[doc = "Outcome of a pull (provider → local)."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Outcome of a pull (provider → local).\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"fetched\","]
+    #[doc = "    \"matched\","]
+    #[doc = "    \"unmatched\","]
+    #[doc = "    \"updated\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"fetched\": {"]
+    #[doc = "      \"description\": \"Entries returned by the provider.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"matched\": {"]
+    #[doc = "      \"description\": \"Entries resolved to a canonical local series.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"unmatched\": {"]
+    #[doc = "      \"description\": \"Entries with no confident local match (skipped).\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"updated\": {"]
+    #[doc = "      \"description\": \"Local progress rows written.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct SyncPullReport {
+        #[doc = "Entries returned by the provider."]
+        pub fetched: u64,
+        #[doc = "Entries resolved to a canonical local series."]
+        pub matched: u64,
+        #[doc = "Entries with no confident local match (skipped)."]
+        pub unmatched: u64,
+        #[doc = "Local progress rows written."]
+        pub updated: u64,
+    }
+    impl SyncPullReport {
+        pub fn builder() -> builder::SyncPullReport {
+            Default::default()
+        }
+    }
     #[doc = "`SyncPushBody`"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -12058,6 +12169,109 @@ pub mod types {
     impl ::std::convert::From<SyncOpts> for SyncPushBody {
         fn from(value: SyncOpts) -> Self {
             Self::Variant1(value)
+        }
+    }
+    #[doc = "Outcome of a push (local → provider)."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Outcome of a push (local → provider).\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"considered\","]
+    #[doc = "    \"pushed\","]
+    #[doc = "    \"unmapped\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"considered\": {"]
+    #[doc = "      \"description\": \"Local watchlist entries examined.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"pushed\": {"]
+    #[doc = "      \"description\": \"Remote entries created or updated.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"unmapped\": {"]
+    #[doc = "      \"description\": \"Watchlist entries with no resolvable remote media (skipped).\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct SyncPushReport {
+        #[doc = "Local watchlist entries examined."]
+        pub considered: u64,
+        #[doc = "Remote entries created or updated."]
+        pub pushed: u64,
+        #[doc = "Watchlist entries with no resolvable remote media (skipped)."]
+        pub unmapped: u64,
+    }
+    impl SyncPushReport {
+        pub fn builder() -> builder::SyncPushReport {
+            Default::default()
+        }
+    }
+    #[doc = "Whether unlinking an account or clearing a mapping actually removed anything."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Whether unlinking an account or clearing a mapping actually removed anything.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"removed\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"removed\": {"]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct SyncRemoved {
+        pub removed: bool,
+    }
+    impl SyncRemoved {
+        pub fn builder() -> builder::SyncRemoved {
+            Default::default()
+        }
+    }
+    #[doc = "Whether resolving a conflict settled one."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Whether resolving a conflict settled one.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"resolved\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"resolved\": {"]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct SyncResolved {
+        pub resolved: bool,
+    }
+    impl SyncResolved {
+        pub fn builder() -> builder::SyncResolved {
+            Default::default()
         }
     }
     #[doc = "What undoing a sync decision put back."]
@@ -28434,6 +28648,42 @@ pub mod types {
             }
         }
         #[derive(Clone, Debug)]
+        pub struct SyncAck {
+            ok: ::std::result::Result<bool, ::std::string::String>,
+        }
+        impl ::std::default::Default for SyncAck {
+            fn default() -> Self {
+                Self {
+                    ok: Err("no value supplied for ok".to_string()),
+                }
+            }
+        }
+        impl SyncAck {
+            pub fn ok<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.ok = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for ok: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<SyncAck> for super::SyncAck {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: SyncAck,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self { ok: value.ok? })
+            }
+        }
+        impl ::std::convert::From<super::SyncAck> for SyncAck {
+            fn from(value: super::SyncAck) -> Self {
+                Self { ok: Ok(value.ok) }
+            }
+        }
+        #[derive(Clone, Debug)]
         pub struct SyncDecision {
             action: ::std::result::Result<::std::string::String, ::std::string::String>,
             ancestor_local: ::std::result::Result<
@@ -29010,6 +29260,46 @@ pub mod types {
             }
         }
         #[derive(Clone, Debug)]
+        pub struct SyncFlagged {
+            flagged: ::std::result::Result<bool, ::std::string::String>,
+        }
+        impl ::std::default::Default for SyncFlagged {
+            fn default() -> Self {
+                Self {
+                    flagged: Err("no value supplied for flagged".to_string()),
+                }
+            }
+        }
+        impl SyncFlagged {
+            pub fn flagged<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.flagged = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for flagged: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<SyncFlagged> for super::SyncFlagged {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: SyncFlagged,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    flagged: value.flagged?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::SyncFlagged> for SyncFlagged {
+            fn from(value: super::SyncFlagged) -> Self {
+                Self {
+                    flagged: Ok(value.flagged),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
         pub struct SyncMappingTarget {
             provider: ::std::result::Result<::std::string::String, ::std::string::String>,
             series_id: ::std::result::Result<super::SeriesId, ::std::string::String>,
@@ -29103,6 +29393,236 @@ pub mod types {
             fn from(value: super::SyncOpts) -> Self {
                 Self {
                     policy: Ok(value.policy),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct SyncPullReport {
+            fetched: ::std::result::Result<u64, ::std::string::String>,
+            matched: ::std::result::Result<u64, ::std::string::String>,
+            unmatched: ::std::result::Result<u64, ::std::string::String>,
+            updated: ::std::result::Result<u64, ::std::string::String>,
+        }
+        impl ::std::default::Default for SyncPullReport {
+            fn default() -> Self {
+                Self {
+                    fetched: Err("no value supplied for fetched".to_string()),
+                    matched: Err("no value supplied for matched".to_string()),
+                    unmatched: Err("no value supplied for unmatched".to_string()),
+                    updated: Err("no value supplied for updated".to_string()),
+                }
+            }
+        }
+        impl SyncPullReport {
+            pub fn fetched<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.fetched = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for fetched: {e}"));
+                self
+            }
+            pub fn matched<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.matched = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for matched: {e}"));
+                self
+            }
+            pub fn unmatched<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.unmatched = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for unmatched: {e}"));
+                self
+            }
+            pub fn updated<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.updated = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for updated: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<SyncPullReport> for super::SyncPullReport {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: SyncPullReport,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    fetched: value.fetched?,
+                    matched: value.matched?,
+                    unmatched: value.unmatched?,
+                    updated: value.updated?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::SyncPullReport> for SyncPullReport {
+            fn from(value: super::SyncPullReport) -> Self {
+                Self {
+                    fetched: Ok(value.fetched),
+                    matched: Ok(value.matched),
+                    unmatched: Ok(value.unmatched),
+                    updated: Ok(value.updated),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct SyncPushReport {
+            considered: ::std::result::Result<u64, ::std::string::String>,
+            pushed: ::std::result::Result<u64, ::std::string::String>,
+            unmapped: ::std::result::Result<u64, ::std::string::String>,
+        }
+        impl ::std::default::Default for SyncPushReport {
+            fn default() -> Self {
+                Self {
+                    considered: Err("no value supplied for considered".to_string()),
+                    pushed: Err("no value supplied for pushed".to_string()),
+                    unmapped: Err("no value supplied for unmapped".to_string()),
+                }
+            }
+        }
+        impl SyncPushReport {
+            pub fn considered<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.considered = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for considered: {e}"));
+                self
+            }
+            pub fn pushed<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.pushed = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for pushed: {e}"));
+                self
+            }
+            pub fn unmapped<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.unmapped = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for unmapped: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<SyncPushReport> for super::SyncPushReport {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: SyncPushReport,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    considered: value.considered?,
+                    pushed: value.pushed?,
+                    unmapped: value.unmapped?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::SyncPushReport> for SyncPushReport {
+            fn from(value: super::SyncPushReport) -> Self {
+                Self {
+                    considered: Ok(value.considered),
+                    pushed: Ok(value.pushed),
+                    unmapped: Ok(value.unmapped),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct SyncRemoved {
+            removed: ::std::result::Result<bool, ::std::string::String>,
+        }
+        impl ::std::default::Default for SyncRemoved {
+            fn default() -> Self {
+                Self {
+                    removed: Err("no value supplied for removed".to_string()),
+                }
+            }
+        }
+        impl SyncRemoved {
+            pub fn removed<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.removed = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for removed: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<SyncRemoved> for super::SyncRemoved {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: SyncRemoved,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    removed: value.removed?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::SyncRemoved> for SyncRemoved {
+            fn from(value: super::SyncRemoved) -> Self {
+                Self {
+                    removed: Ok(value.removed),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct SyncResolved {
+            resolved: ::std::result::Result<bool, ::std::string::String>,
+        }
+        impl ::std::default::Default for SyncResolved {
+            fn default() -> Self {
+                Self {
+                    resolved: Err("no value supplied for resolved".to_string()),
+                }
+            }
+        }
+        impl SyncResolved {
+            pub fn resolved<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.resolved = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for resolved: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<SyncResolved> for super::SyncResolved {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: SyncResolved,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    resolved: value.resolved?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::SyncResolved> for SyncResolved {
+            fn from(value: super::SyncResolved) -> Self {
+                Self {
+                    resolved: Ok(value.resolved),
                 }
             }
         }
@@ -32313,11 +32833,11 @@ impl Client {
     pub fn clear_sync_mapping(&self) -> builder::ClearSyncMapping<'_> {
         builder::ClearSyncMapping::new(self)
     }
-    #[doc = "Force-pull another user's linked account\n\nOperator-forced pull for another user's linked account. Response shape is defined by the\nsync service and forwarded verbatim; not tracked here.\n\nSends a `POST` request to `/v1/admin/sync/pull`\n\n```ignore\nlet response = client.admin_sync_pull()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Force-pull another user's linked account\n\nOperator-forced pull for another user's linked account.\n\nSends a `POST` request to `/v1/admin/sync/pull`\n\n```ignore\nlet response = client.admin_sync_pull()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn admin_sync_pull(&self) -> builder::AdminSyncPull<'_> {
         builder::AdminSyncPull::new(self)
     }
-    #[doc = "Force-push another user's linked account\n\nOperator-forced push for another user's linked account. Response shape is defined by the\nsync service and forwarded verbatim; not tracked here.\n\nSends a `POST` request to `/v1/admin/sync/push`\n\n```ignore\nlet response = client.admin_sync_push()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Force-push another user's linked account\n\nOperator-forced push for another user's linked account.\n\nSends a `POST` request to `/v1/admin/sync/push`\n\n```ignore\nlet response = client.admin_sync_push()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn admin_sync_push(&self) -> builder::AdminSyncPush<'_> {
         builder::AdminSyncPush::new(self)
     }
@@ -32329,7 +32849,7 @@ impl Client {
     pub fn list_suggestions(&self) -> builder::ListSuggestions<'_> {
         builder::ListSuggestions::new(self)
     }
-    #[doc = "Force-unlink another user's account\n\nOperator-forced unlink of another user's linked account. Response shape is defined by the\nsync service and forwarded verbatim; not tracked here.\n\nSends a `POST` request to `/v1/admin/sync/unlink`\n\n```ignore\nlet response = client.admin_sync_unlink()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Force-unlink another user's account\n\nOperator-forced unlink of another user's linked account.\n\nSends a `POST` request to `/v1/admin/sync/unlink`\n\n```ignore\nlet response = client.admin_sync_unlink()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn admin_sync_unlink(&self) -> builder::AdminSyncUnlink<'_> {
         builder::AdminSyncUnlink::new(self)
     }
@@ -32621,7 +33141,7 @@ impl Client {
     pub fn sync_conflicts(&self) -> builder::SyncConflicts<'_> {
         builder::SyncConflicts::new(self)
     }
-    #[doc = "Resolve a sync conflict\n\nApply the caller's chosen resolution (§B.6). Response shape is defined by the sync service\nand forwarded verbatim; not tracked here.\n\nSends a `POST` request to `/v1/me/sync/conflicts/{id}/resolve`\n\nArguments:\n- `id`: Conflict id\n- `body`\n```ignore\nlet response = client.sync_resolve_conflict()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Resolve a sync conflict\n\nApply the caller's chosen resolution (§B.6).\n\nSends a `POST` request to `/v1/me/sync/conflicts/{id}/resolve`\n\nArguments:\n- `id`: Conflict id\n- `body`\n```ignore\nlet response = client.sync_resolve_conflict()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn sync_resolve_conflict(&self) -> builder::SyncResolveConflict<'_> {
         builder::SyncResolveConflict::new(self)
     }
@@ -32633,7 +33153,7 @@ impl Client {
     pub fn sync_providers(&self) -> builder::SyncProviders<'_> {
         builder::SyncProviders::new(self)
     }
-    #[doc = "Unlink a provider\n\nUnlink the caller's account at `provider`. Response shape is defined by the sync service\nand forwarded verbatim; not tracked here.\n\nSends a `DELETE` request to `/v1/me/sync/{provider}`\n\nArguments:\n- `provider`: Provider slug\n```ignore\nlet response = client.sync_disconnect()\n    .provider(provider)\n    .send()\n    .await;\n```"]
+    #[doc = "Unlink a provider\n\nUnlink the caller's account at `provider`.\n\nSends a `DELETE` request to `/v1/me/sync/{provider}`\n\nArguments:\n- `provider`: Provider slug\n```ignore\nlet response = client.sync_disconnect()\n    .provider(provider)\n    .send()\n    .await;\n```"]
     pub fn sync_disconnect(&self) -> builder::SyncDisconnect<'_> {
         builder::SyncDisconnect::new(self)
     }
@@ -32641,15 +33161,15 @@ impl Client {
     pub fn sync_authorize_url(&self) -> builder::SyncAuthorizeUrl<'_> {
         builder::SyncAuthorizeUrl::new(self)
     }
-    #[doc = "Complete an OAuth link\n\nExchanges the authorization `code` and links the caller's account at `provider`. Response\nshape is defined by the sync service and forwarded verbatim; not tracked here.\n\nSends a `GET` request to `/v1/me/sync/{provider}/callback`\n\nArguments:\n- `provider`: Provider slug\n- `code`\n```ignore\nlet response = client.sync_callback()\n    .provider(provider)\n    .code(code)\n    .send()\n    .await;\n```"]
+    #[doc = "Complete an OAuth link\n\nExchanges the authorization `code` and links the caller's account at `provider`. The sync\nservice answers `204`; [`Ack`] is what `Upstream::decode` synthesises from an empty body.\n\nSends a `GET` request to `/v1/me/sync/{provider}/callback`\n\nArguments:\n- `provider`: Provider slug\n- `code`\n```ignore\nlet response = client.sync_callback()\n    .provider(provider)\n    .code(code)\n    .send()\n    .await;\n```"]
     pub fn sync_callback(&self) -> builder::SyncCallback<'_> {
         builder::SyncCallback::new(self)
     }
-    #[doc = "Pull a provider's list into local state\n\nImport `provider`'s list into the local watchlist. Response shape is defined by the sync\nservice and forwarded verbatim; not tracked here.\n\nSends a `POST` request to `/v1/me/sync/{provider}/pull`\n\nArguments:\n- `provider`: Provider slug\n- `body`: Optional sync options; omitted body uses the service default\n```ignore\nlet response = client.sync_pull()\n    .provider(provider)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Pull a provider's list into local state\n\nImport `provider`'s list into the local watchlist.\n\nSends a `POST` request to `/v1/me/sync/{provider}/pull`\n\nArguments:\n- `provider`: Provider slug\n- `body`: Optional sync options; omitted body uses the service default\n```ignore\nlet response = client.sync_pull()\n    .provider(provider)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn sync_pull(&self) -> builder::SyncPull<'_> {
         builder::SyncPull::new(self)
     }
-    #[doc = "Push local state to a provider\n\nReflect local watchlist/progress to `provider` (bulk, full-reconciliation walk — see\n`spawn_targeted_push` for the fast per-series path used automatically when marking a\nchapter/series read). Response shape is defined by the sync service and forwarded\nverbatim; not tracked here.\n\nSends a `POST` request to `/v1/me/sync/{provider}/push`\n\nArguments:\n- `provider`: Provider slug\n- `body`: Optional sync options; omitted body uses the service default\n```ignore\nlet response = client.sync_push()\n    .provider(provider)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Push local state to a provider\n\nReflect local watchlist/progress to `provider` (bulk, full-reconciliation walk — see\n`spawn_targeted_push` for the fast per-series path used automatically when marking a\nchapter/series read).\n\nSends a `POST` request to `/v1/me/sync/{provider}/push`\n\nArguments:\n- `provider`: Provider slug\n- `body`: Optional sync options; omitted body uses the service default\n```ignore\nlet response = client.sync_push()\n    .provider(provider)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn sync_push(&self) -> builder::SyncPush<'_> {
         builder::SyncPush::new(self)
     }
@@ -33962,7 +34482,7 @@ pub mod builder {
         #[doc = "Sends a `POST` request to `/v1/admin/merge-decisions/{id}/flag`"]
         pub async fn send(
             self,
-        ) -> Result<ResponseValue<::serde_json::Value>, Error<types::ProblemDetails>> {
+        ) -> Result<ResponseValue<types::SyncFlagged>, Error<types::ProblemDetails>> {
             let Self { client, id, body } = self;
             let id = id.map_err(Error::InvalidRequest)?;
             let body = body
@@ -36917,7 +37437,7 @@ pub mod builder {
         #[doc = "Sends a `POST` request to `/v1/admin/sync/assign`"]
         pub async fn send(
             self,
-        ) -> Result<ResponseValue<::serde_json::Value>, Error<types::ProblemDetails>> {
+        ) -> Result<ResponseValue<types::SyncAck>, Error<types::ProblemDetails>> {
             let Self { client, body } = self;
             let body = body
                 .and_then(|v| types::AssignRemoteEntry::try_from(v).map_err(|e| e.to_string()))
@@ -37193,7 +37713,7 @@ pub mod builder {
         #[doc = "Sends a `POST` request to `/v1/admin/sync/decisions/{id}/flag`"]
         pub async fn send(
             self,
-        ) -> Result<ResponseValue<::serde_json::Value>, Error<types::ProblemDetails>> {
+        ) -> Result<ResponseValue<types::SyncFlagged>, Error<types::ProblemDetails>> {
             let Self { client, id, body } = self;
             let id = id.map_err(Error::InvalidRequest)?;
             let body = body
@@ -37483,7 +38003,7 @@ pub mod builder {
         #[doc = "Sends a `POST` request to `/v1/admin/sync/mappings`"]
         pub async fn send(
             self,
-        ) -> Result<ResponseValue<::serde_json::Value>, Error<types::ProblemDetails>> {
+        ) -> Result<ResponseValue<types::SyncAck>, Error<types::ProblemDetails>> {
             let Self { client, body } = self;
             let body = body
                 .and_then(|v| types::UpsertMapping::try_from(v).map_err(|e| e.to_string()))
@@ -37563,7 +38083,7 @@ pub mod builder {
         #[doc = "Sends a `POST` request to `/v1/admin/sync/mappings/clear`"]
         pub async fn send(
             self,
-        ) -> Result<ResponseValue<::serde_json::Value>, Error<types::ProblemDetails>> {
+        ) -> Result<ResponseValue<types::SyncRemoved>, Error<types::ProblemDetails>> {
             let Self { client, body } = self;
             let body = body
                 .and_then(|v| types::SyncMappingTarget::try_from(v).map_err(|e| e.to_string()))
@@ -37640,7 +38160,7 @@ pub mod builder {
         #[doc = "Sends a `POST` request to `/v1/admin/sync/pull`"]
         pub async fn send(
             self,
-        ) -> Result<ResponseValue<::serde_json::Value>, Error<types::ProblemDetails>> {
+        ) -> Result<ResponseValue<types::SyncPullReport>, Error<types::ProblemDetails>> {
             let Self { client, body } = self;
             let body = body
                 .and_then(|v| types::SyncAccountTarget::try_from(v).map_err(|e| e.to_string()))
@@ -37720,7 +38240,7 @@ pub mod builder {
         #[doc = "Sends a `POST` request to `/v1/admin/sync/push`"]
         pub async fn send(
             self,
-        ) -> Result<ResponseValue<::serde_json::Value>, Error<types::ProblemDetails>> {
+        ) -> Result<ResponseValue<types::SyncPushReport>, Error<types::ProblemDetails>> {
             let Self { client, body } = self;
             let body = body
                 .and_then(|v| types::SyncAccountTarget::try_from(v).map_err(|e| e.to_string()))
@@ -37975,7 +38495,7 @@ pub mod builder {
         #[doc = "Sends a `POST` request to `/v1/admin/sync/unlink`"]
         pub async fn send(
             self,
-        ) -> Result<ResponseValue<::serde_json::Value>, Error<types::ProblemDetails>> {
+        ) -> Result<ResponseValue<types::SyncRemoved>, Error<types::ProblemDetails>> {
             let Self { client, body } = self;
             let body = body
                 .and_then(|v| types::SyncAccountTarget::try_from(v).map_err(|e| e.to_string()))
@@ -43152,7 +43672,7 @@ pub mod builder {
         #[doc = "Sends a `POST` request to `/v1/me/sync/conflicts/{id}/resolve`"]
         pub async fn send(
             self,
-        ) -> Result<ResponseValue<::serde_json::Value>, Error<types::ProblemDetails>> {
+        ) -> Result<ResponseValue<types::SyncResolved>, Error<types::ProblemDetails>> {
             let Self { client, id, body } = self;
             let id = id.map_err(Error::InvalidRequest)?;
             let body = body
@@ -43365,7 +43885,7 @@ pub mod builder {
         #[doc = "Sends a `DELETE` request to `/v1/me/sync/{provider}`"]
         pub async fn send(
             self,
-        ) -> Result<ResponseValue<::serde_json::Value>, Error<types::ProblemDetails>> {
+        ) -> Result<ResponseValue<types::SyncRemoved>, Error<types::ProblemDetails>> {
             let Self { client, provider } = self;
             let provider = provider.map_err(Error::InvalidRequest)?;
             let url = format!(
@@ -43510,7 +44030,7 @@ pub mod builder {
         #[doc = "Sends a `GET` request to `/v1/me/sync/{provider}/callback`"]
         pub async fn send(
             self,
-        ) -> Result<ResponseValue<::serde_json::Value>, Error<types::ProblemDetails>> {
+        ) -> Result<ResponseValue<types::SyncAck>, Error<types::ProblemDetails>> {
             let Self {
                 client,
                 provider,
@@ -43597,7 +44117,7 @@ pub mod builder {
         #[doc = "Sends a `POST` request to `/v1/me/sync/{provider}/pull`"]
         pub async fn send(
             self,
-        ) -> Result<ResponseValue<::serde_json::Value>, Error<types::ProblemDetails>> {
+        ) -> Result<ResponseValue<types::SyncPullReport>, Error<types::ProblemDetails>> {
             let Self {
                 client,
                 provider,
@@ -43681,7 +44201,7 @@ pub mod builder {
         #[doc = "Sends a `POST` request to `/v1/me/sync/{provider}/push`"]
         pub async fn send(
             self,
-        ) -> Result<ResponseValue<::serde_json::Value>, Error<types::ProblemDetails>> {
+        ) -> Result<ResponseValue<types::SyncPushReport>, Error<types::ProblemDetails>> {
             let Self {
                 client,
                 provider,
@@ -43843,7 +44363,7 @@ pub mod builder {
         #[doc = "Sends a `PATCH` request to `/v1/me/sync/{provider}/settings`"]
         pub async fn send(
             self,
-        ) -> Result<ResponseValue<::serde_json::Value>, Error<types::ProblemDetails>> {
+        ) -> Result<ResponseValue<types::SyncAck>, Error<types::ProblemDetails>> {
             let Self {
                 client,
                 provider,

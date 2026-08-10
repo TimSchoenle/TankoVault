@@ -11,7 +11,6 @@ mod engine;
 mod queue;
 
 use engine::{Engine, EngineSettings};
-use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -183,7 +182,7 @@ struct Built {
     engine: Engine,
     pool: tankovault_db::PgPool,
     bus: Option<Bus>,
-    internal_token: Option<tankovault_service::InternalToken>,
+    internal_auth: tankovault_config::ResolvedInternalAuth,
 }
 
 /// Connect the dependencies and assemble the scan engine.
@@ -191,7 +190,12 @@ struct Built {
 /// Shared by the one-shot CLI path and the served path so the two cannot drift into scanning
 /// with differently configured engines.
 async fn build(cfg: &Config) -> anyhow::Result<Built> {
-    let internal_token = tankovault_service::internal_auth::resolve(&cfg.internal)?;
+    let internal_auth = tankovault_service::internal_auth::resolve(&cfg.internal)?;
+    tankovault_service::internal_auth::check_upstream_scheme(
+        internal_auth.mode,
+        "challenge-solver",
+        &cfg.worker.challenge_solver_endpoint,
+    )?;
 
     let pool = tankovault_db::connect(
         &cfg.database.url,
@@ -201,7 +205,7 @@ async fn build(cfg: &Config) -> anyhow::Result<Built> {
     .await?;
 
     // The broker is required for the consumer path but optional for a one-shot scan.
-    let bus = match Bus::connect(&cfg.nats.url).await {
+    let bus = match Bus::connect(&cfg.nats.url, internal_auth.tls.as_ref()).await {
         Ok(bus) => {
             bus.ensure_streams().await?;
             Some(bus)
@@ -212,13 +216,20 @@ async fn build(cfg: &Config) -> anyhow::Result<Built> {
         }
     };
 
-    let solver: Arc<dyn ChallengeSolver> = Arc::new(HttpChallengeSolver::new(
-        cfg.worker.challenge_solver_endpoint.clone(),
-        Duration::from_secs(90),
-        internal_token
-            .as_ref()
-            .map(|t| SecretString::from(t.expose_secret())),
-    ));
+    // The worker's *outbound* credential, distinct from what it accepts inbound: the solver
+    // recognises `worker` by this and nothing else in the tier presents it.
+    let solver: Arc<dyn ChallengeSolver> = Arc::new(match internal_auth.tls.as_ref() {
+        Some(paths) => HttpChallengeSolver::with_mtls(
+            cfg.worker.challenge_solver_endpoint.clone(),
+            Duration::from_secs(90),
+            &tankovault_service::client_material(paths)?,
+        ),
+        None => HttpChallengeSolver::new(
+            cfg.worker.challenge_solver_endpoint.clone(),
+            Duration::from_secs(90),
+            internal_auth.caller.as_ref().and_then(|c| c.token.clone()),
+        ),
+    });
     let session_store: Arc<dyn SessionStore> = Arc::new(InMemorySessionStore::default());
 
     let engine = Engine::new(
@@ -241,7 +252,7 @@ async fn build(cfg: &Config) -> anyhow::Result<Built> {
         engine,
         pool,
         bus,
-        internal_token,
+        internal_auth,
     })
 }
 
@@ -264,7 +275,7 @@ async fn serve_once(
         built.bus.as_ref(),
         metrics,
         Arc::clone(&engine),
-        built.internal_token,
+        built.internal_auth.clone(),
         shutdown.clone(),
     );
     run_consumer(&engine, &cfg.worker, shutdown).await
@@ -281,7 +292,7 @@ fn spawn_ops_listener(
     bus: Option<&Bus>,
     metrics: MetricsRegistry,
     engine: Arc<Engine>,
-    internal_token: Option<tankovault_service::InternalToken>,
+    internal_auth: tankovault_config::ResolvedInternalAuth,
     shutdown: tokio_util::sync::CancellationToken,
 ) {
     let ready_pool = pool.clone();
@@ -302,13 +313,18 @@ fn spawn_ops_listener(
     // The dry-run route goes *inside* `apply`, so it is behind the internal-token gate;
     // `ops_router` is merged outside it, so an orchestrator still probes without the secret.
     let app = HttpStack::new(&cfg.security, metrics.clone())
-        .with_internal_auth(internal_token)
+        .with_internal_auth(Some(tankovault_service::InternalAuth::new(
+            &internal_auth,
+            tankovault_service::RouteTable(dryrun::INTERNAL_ROUTES),
+        )))
         .apply(dryrun::router(engine))
         .merge(tankovault_service::ops_router(health, metrics));
 
     let bind = cfg.bind_addr.clone();
     tokio::spawn(async move {
-        if let Err(e) = tankovault_service::serve(&bind, app, shutdown).await {
+        if let Err(e) =
+            tankovault_service::serve_internal(&bind, app, &internal_auth, shutdown).await
+        {
             tracing::error!(error = %e, "worker ops listener stopped");
         }
     });

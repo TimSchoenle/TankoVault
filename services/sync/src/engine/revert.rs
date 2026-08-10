@@ -15,18 +15,7 @@ use uuid::Uuid;
 use super::registry::ProviderRegistry;
 use super::tokens::TokenVault;
 
-/// What a revert put back, for the operator who asked for it.
-#[derive(Debug, serde::Serialize)]
-pub(crate) struct RevertReport {
-    pub(crate) decision_id: Uuid,
-    /// What was undone: `local_progress`, `local_status`, `watchlist_entry`, `remote_entry`,
-    /// or `match`.
-    pub(crate) restored: &'static str,
-    /// The value the restored side now holds, for the console to show without re-reading.
-    pub(crate) value: Option<String>,
-    /// Set when the revert also refused a title match permanently.
-    pub(crate) blocked_match: bool,
-}
+use tankovault_contracts::sync::{RestoredSide, RevertReport};
 
 /// Reverts journalled decisions and records the refusal.
 pub(crate) struct RevertService {
@@ -113,7 +102,7 @@ impl RevertService {
                 .await?;
                 RevertReport {
                     decision_id: id,
-                    restored: "match",
+                    restored: RestoredSide::Match,
                     value: None,
                     blocked_match: true,
                 }
@@ -206,7 +195,7 @@ impl RevertService {
                 tracking::progress_set(&self.pool, user_id, series_id, value).await?;
                 Ok(RevertReport {
                     decision_id: decision.id,
-                    restored: "local_progress",
+                    restored: RestoredSide::LocalProgress,
                     value: Some(value.to_string()),
                     blocked_match: false,
                 })
@@ -216,7 +205,7 @@ impl RevertService {
                 tracking::watchlist_set_status(&self.pool, user_id, series_id, value).await?;
                 Ok(RevertReport {
                     decision_id: decision.id,
-                    restored: "local_status",
+                    restored: RestoredSide::LocalStatus,
                     value: Some(value.as_str().to_owned()),
                     blocked_match: false,
                 })
@@ -237,7 +226,7 @@ impl RevertService {
         tracking::watchlist_remove(&self.pool, user_id, series_id).await?;
         Ok(RevertReport {
             decision_id: decision.id,
-            restored: "watchlist_entry",
+            restored: RestoredSide::WatchlistEntry,
             value: None,
             blocked_match: false,
         })
@@ -295,7 +284,7 @@ impl RevertService {
 
         Ok(RevertReport {
             decision_id: decision.id,
-            restored: "remote_entry",
+            restored: RestoredSide::RemoteEntry,
             value: Some(progress.to_string()),
             blocked_match: false,
         })

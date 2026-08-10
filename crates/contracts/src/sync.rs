@@ -203,6 +203,128 @@ pub struct HistoryView {
     pub created_at: time::OffsetDateTime,
 }
 
+/// Acknowledgement for a sync route that answers `204 No Content`.
+///
+/// `services/sync` returns a bare `204` for linking an account and for patching settings;
+/// `services/api` republishes those as `200 {"ok": true}` because its `Upstream::decode`
+/// synthesises this body for an empty upstream response. That synthesis is the contract, not
+/// an accident: naming it here means a change to either side breaks a type rather than
+/// silently altering what the SPA receives. `ok` is always `true` — a failure is a status
+/// code, never a `false` here.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema)]
+#[schema(as = SyncAck)]
+pub struct Ack {
+    pub ok: bool,
+}
+
+impl Default for Ack {
+    fn default() -> Self {
+        Self { ok: true }
+    }
+}
+
+/// Whether unlinking an account or clearing a mapping actually removed anything.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema)]
+#[schema(as = SyncRemoved)]
+pub struct Removed {
+    pub removed: bool,
+}
+
+/// Whether resolving a conflict settled one.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema)]
+#[schema(as = SyncResolved)]
+pub struct Resolved {
+    pub resolved: bool,
+}
+
+/// Whether flagging a decision recorded the flag.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema)]
+#[schema(as = SyncFlagged)]
+pub struct Flagged {
+    pub flagged: bool,
+}
+
+/// Outcome of a pull (provider → local).
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, ToSchema)]
+#[schema(as = SyncPullReport)]
+pub struct PullReport {
+    /// Entries returned by the provider.
+    pub fetched: usize,
+    /// Entries resolved to a canonical local series.
+    pub matched: usize,
+    /// Local progress rows written.
+    pub updated: usize,
+    /// Entries with no confident local match (skipped).
+    pub unmatched: usize,
+}
+
+/// Outcome of a push (local → provider).
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, ToSchema)]
+#[schema(as = SyncPushReport)]
+pub struct PushReport {
+    /// Local watchlist entries examined.
+    pub considered: usize,
+    /// Remote entries created or updated.
+    pub pushed: usize,
+    /// Watchlist entries with no resolvable remote media (skipped).
+    pub unmapped: usize,
+}
+
+/// Outcome of a tokenless metadata-enrichment sweep.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, ToSchema)]
+#[schema(as = SyncEnrichReport)]
+pub struct EnrichReport {
+    /// Series examined this sweep.
+    pub scanned: usize,
+    /// Series that received metadata from at least one provider.
+    pub enriched: usize,
+    /// Series no public provider could resolve.
+    pub unresolved: usize,
+}
+
+/// One provider's outcome from a targeted single-series push.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[schema(as = SyncProviderPushOutcome)]
+pub struct ProviderPushOutcome {
+    pub provider: String,
+    pub ok: bool,
+    pub error: Option<String>,
+}
+
+/// Which side a revert put back.
+///
+/// An enum rather than the `&'static str` the sync service used, for the reason spelled out on
+/// [`ConflictPolicy`]: a bare string on the wire is a vocabulary nothing connects, and this one
+/// crosses two services and the console. It also cannot stay a `&'static str` here —
+/// `services/api` has to *deserialize* it, and a borrowed field cannot outlive the response body.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[schema(as = SyncRestoredSide)]
+pub enum RestoredSide {
+    /// A local progress value was put back.
+    LocalProgress,
+    /// A local watch status was put back.
+    LocalStatus,
+    /// A watchlist entry was reinstated.
+    WatchlistEntry,
+    /// A remote entry was written back at the provider.
+    RemoteEntry,
+    /// A series↔remote-media match was undone.
+    Match,
+}
+
+/// What a revert put back, for the operator who asked for it.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[schema(as = SyncRevertReport)]
+pub struct RevertReport {
+    pub decision_id: uuid::Uuid,
+    pub restored: RestoredSide,
+    /// The value the restored side now holds, for the console to show without re-reading.
+    pub value: Option<String>,
+    /// Set when the revert also refused a title match permanently.
+    pub blocked_match: bool,
+}
+
 /// The feature flag gating each route of the external-sync surface, keyed on the path **suffix**
 /// beneath the surface's mount point.
 ///

@@ -14,6 +14,9 @@ publish = false
 # `ssrf.rs` — the policy lives in `domain` so a service can apply it without linking wreq.
 tankovault-domain = { workspace = true, features = ["dns"] }
 tankovault-solver = { workspace = true }
+# `ClientMaterial` only: the PEM bytes the mTLS solver client presents. The crawl stack
+# otherwise stays independent of the service runtime.
+tankovault-service = { workspace = true }
 # The internal-tier token the solver client presents on every outbound call.
 secrecy = { workspace = true }
 async-trait = { workspace = true }

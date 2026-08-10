@@ -244,10 +244,24 @@ cannot be.
 
 ### 2.5 The internal tier
 
-**[R]** One shared secret in `X-Internal-Token`, resolved by
+**[R]** One credential per calling service, resolved by
 `tankovault_service::internal_auth::resolve` and mounted via `HttpStack::with_internal_auth`. A
-new internal service adds `internal: InternalAuthConfig` to its config and both lines to its
-`main`. Outbound callers go through `services/api/src/upstream.rs`, or take the token explicitly.
+new internal service adds `internal: InternalAuthConfig` to its config, both lines to its `main`,
+and — the part that is easy to forget — **a `RouteTable` naming who may reach each of its
+routes**. Outbound callers go through `services/api/src/upstream.rs`, or take the credential
+explicitly.
+
+**[R] Deny by default.** A route absent from the table is refused with a `403` and an `error`
+log naming it. That is the safe direction, but it is a *runtime* discovery: a new `.route()`
+whose entry nobody wrote is a route that silently stops working. Add the entry in the same
+change, and give the path a `const` the router and the table both use so the two cannot be
+spelled differently — `services/sync/src/main.rs::path` is the pattern, and
+`tankovault_solver::http::solve_route` is how a route shared by two services keeps one entry.
+
+**[R] Authorisation does not depend on the identity mode.** `off`, `token` and `mtls` answer
+only *who is calling*; every mode then reads the same table. A change that makes authorisation
+consult the mode breaks "works outside Kubernetes" without failing anything, which is what
+`authorisation_does_not_depend_on_how_the_caller_was_identified` exists to catch.
 
 ### 2.6 HTTP clients
 

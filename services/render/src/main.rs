@@ -16,9 +16,28 @@ use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 use tankovault_service::problem::Problem;
 use tankovault_service::{
-    CancellationToken, Health, HttpStack, MetricsRegistry, RateLimiter, RouteClassifier,
+    CancellationToken, Health, HttpStack, InternalAuth, InternalRoute, MetricsRegistry,
+    RateLimiter, RouteClassifier, RouteTable,
 };
 use tankovault_solver::ChallengeSolver;
+
+/// Render a caller-supplied URL in a headless browser and return the resulting DOM.
+const RENDER_PATH: &str = "/v1/render";
+
+/// Who may reach this service's routes.
+///
+/// `worker` alone, and this is the service where that matters most: both routes fetch a
+/// caller-supplied URL, so reaching either is an arbitrary-URL fetch primitive on the internal
+/// network (SEC audit — `POST /v1/render {"url":"file:///etc/passwd"}`). Under one shared token
+/// every service in the tier could drive it; now only the one that crawls can.
+static INTERNAL_ROUTES: &[InternalRoute] = &[
+    InternalRoute {
+        method: axum::http::Method::POST,
+        path: RENDER_PATH,
+        callers: &["worker"],
+    },
+    tankovault_solver::http::solve_route(&["worker"]),
+];
 
 use crate::browser::{BrowserManager, RenderOptions};
 use crate::config::Config;
@@ -92,7 +111,7 @@ async fn serve_once(
 ) -> anyhow::Result<()> {
     // Resolved before anything binds: starting without a token would silently serve
     // privileged routes unauthenticated, so the production profile refuses to boot instead.
-    let internal_token = tankovault_service::internal_auth::resolve(&cfg.internal)?;
+    let internal_auth = tankovault_service::internal_auth::resolve(&cfg.internal)?;
 
     let manager = Arc::new(BrowserManager::new(cfg.render.clone()));
     let solver = Arc::new(ChromiumSolver::new(
@@ -111,10 +130,13 @@ async fn serve_once(
 
     let app = HttpStack::new(&cfg.security, metrics.clone())
         .with_rate_limit(limiter)
-        .with_internal_auth(internal_token)
+        .with_internal_auth(Some(InternalAuth::new(
+            &internal_auth,
+            RouteTable(INTERNAL_ROUTES),
+        )))
         .apply(
             Router::new()
-                .route("/v1/render", post(render))
+                .route(RENDER_PATH, post(render))
                 .with_state(state.clone())
                 // The solve contract itself is defined once, in `tankovault_solver::http`.
                 .merge(tankovault_solver::http::solver_router(state.solver)),
@@ -126,7 +148,7 @@ async fn serve_once(
             metrics,
         ));
 
-    tankovault_service::serve(&cfg.bind_addr, app, shutdown).await?;
+    tankovault_service::serve_internal(&cfg.bind_addr, app, &internal_auth, shutdown).await?;
     Ok(())
 }
 

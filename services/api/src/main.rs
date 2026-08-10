@@ -311,6 +311,50 @@ async fn main() -> anyhow::Result<()> {
 /// rather than taking the pod down. Note what a successful `auth.jwt_secret` rotation means —
 /// every session signed with the old key stops verifying, so every user is signed out. That is
 /// the correct behaviour for a compromised key and a surprising one otherwise.
+/// What this service needs to *call* the internal tier.
+struct Internal {
+    auth: tankovault_config::ResolvedInternalAuth,
+    /// Presented under `identity = "token"`.
+    token: Option<tankovault_service::InternalToken>,
+    /// Presented under `identity = "mtls"`.
+    tls: Option<tankovault_service::ClientMaterial>,
+}
+
+/// Resolve and cross-check the internal-tier identity.
+///
+/// The API serves no internally-authenticated route of its own — it is a caller only — so what
+/// it takes from the `internal` section is whichever outbound credential the mode uses: a token
+/// its peers list under `api`, or a client certificate they match by SAN.
+///
+/// Called before anything connects. Every check here is pure configuration, and a deployment
+/// that is going to be refused should be refused before it opens a socket.
+fn resolve_internal(cfg: &Config) -> anyhow::Result<Internal> {
+    let auth = tankovault_service::internal_auth::resolve(&cfg.internal)?;
+
+    // Checked here, where the URLs are, rather than inside the client: an `http://` upstream
+    // under mtls is the one misconfiguration that produces no symptom at all.
+    for (name, url) in [
+        ("control-plane", &cfg.control_plane_url),
+        ("sync", &cfg.sync_url),
+        ("worker", &cfg.worker_url),
+    ] {
+        tankovault_service::internal_auth::check_upstream_scheme(auth.mode, name, url)?;
+    }
+
+    let token = auth
+        .caller
+        .as_ref()
+        .and_then(|c| c.token.clone())
+        .map(tankovault_service::InternalToken::new);
+    let tls = auth
+        .tls
+        .as_ref()
+        .map(tankovault_service::client_material)
+        .transpose()?;
+
+    Ok(Internal { auth, token, tls })
+}
+
 async fn serve_once(
     cfg: Arc<Config>,
     metrics: MetricsRegistry,
@@ -336,9 +380,15 @@ async fn serve_once(
     // afterwards.
     tankovault_api::ensure_deployment_owner(&pool).await;
 
+    let Internal {
+        auth: internal_auth,
+        token: internal_token,
+        tls: internal_tls,
+    } = resolve_internal(&cfg)?;
+
     // Connect to NATS for the live SSE relay. A broker outage must not stop the public edge
     // from booting, so a failure here degrades the feature to `503` rather than aborting.
-    let bus = tankovault_api::connect_bus(cfg.nats.as_ref()).await;
+    let bus = tankovault_api::connect_bus(cfg.nats.as_ref(), internal_auth.tls.as_ref()).await;
 
     // Likewise Redis: it sharpens rate limiting across replicas and holds the SSE stream
     // tickets, so an outage downgrades both to per-process state instead of refusing to start.
@@ -363,9 +413,8 @@ async fn serve_once(
 
     // One client for every internal hop, with connect and request timeouts — without them, a
     // hung downstream leaks a task and a socket per request.
-    let internal_http = tankovault_api::Upstream::client()?;
+    let internal_http = tankovault_api::Upstream::client(internal_tls.as_ref())?;
     let internal_http_worker = internal_http.clone();
-    let internal_token = tankovault_service::internal_auth::resolve(&cfg.internal)?;
 
     // `None` origin is a valid "no passkeys" state; a *malformed* one is fatal — it would
     // otherwise surface as browsers refusing every ceremony with an opaque `SecurityError`.

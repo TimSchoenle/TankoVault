@@ -21,7 +21,7 @@ use axum::routing::{any, get};
 use csp_shell::presets::cloudflare;
 use csp_shell::{Csp, Policy};
 use serde::Deserialize;
-use tankovault_config::{MetricsConfig, SecurityConfig, TelemetryConfig};
+use tankovault_config::{BrandingConfig, MetricsConfig, SecurityConfig, TelemetryConfig};
 use tankovault_service::{CancellationToken, Health, HttpStack, MetricsRegistry};
 use tower::{Service, ServiceBuilder};
 use tower_http::services::{ServeDir, ServeFile};
@@ -38,6 +38,11 @@ struct Config {
     /// including the isolated scrape port, so the scrape never shares the public listener.
     #[serde(default)]
     metrics: MetricsConfig,
+    /// What this deployment calls itself. Written into the served shell's `<title>` and
+    /// description so the tab is named before the WASM bundle boots — the SPA takes over from
+    /// `/v1/branding` once it has.
+    #[serde(default)]
+    branding: BrandingConfig,
 }
 
 /// Non-privileged: the `scratch` image runs as a numeric nonroot user, which can't bind
@@ -220,7 +225,7 @@ async fn serve_once(
     // bucket tight enough to matter throttles a legit cold load. The API applies the limits
     // that protect state, and sees the real client via the X-Forwarded-For this hop appends.
     let health = upstream_health(&state);
-    let app = build_app(&cfg.frontend, state, &metrics, health);
+    let app = build_app(&cfg.frontend, &cfg.branding, state, &metrics, health);
     tankovault_service::serve(&cfg.bind_addr, app, shutdown).await?;
     Ok(())
 }
@@ -268,12 +273,13 @@ fn upstream_health(state: &AppState) -> Health {
 /// replica look unhealthy to its orchestrator.
 fn build_app(
     frontend: &FrontendConfig,
+    branding: &BrandingConfig,
     state: AppState,
     metrics: &MetricsRegistry,
     health: Health,
 ) -> Router {
     HttpStack::new(&stack_security(frontend), metrics.clone())
-        .apply(build_router(frontend, state))
+        .apply(build_router(frontend, branding, state))
         .merge(tankovault_service::ops_router(health, metrics.clone()))
 }
 
@@ -320,6 +326,87 @@ fn content_security_policy(
         csp = cloudflare::script_nonce(csp);
     }
     csp.build()
+}
+
+/// Rewrite the shell's `<title>` and description to name *this* deployment.
+///
+/// Both are pre-boot placeholders — the SPA replaces the document title from `/v1/branding` as
+/// soon as it mounts — but they are what a reader sees for the several hundred milliseconds the
+/// WASM bundle takes to download, and what a crawler or a link unfurler sees for good.
+///
+/// Applied to the source **before** [`content_security_policy`] hashes it, so the bytes the
+/// browser receives and the bytes that were hashed stay the same generation. Only element text
+/// and an attribute value change, never a `<script>`, so no hash actually moves — but deriving
+/// the policy from the pre-rewrite source would make that a coincidence rather than a guarantee.
+///
+/// A shell whose markup has moved on is left alone rather than mangled: this is a string
+/// replacement, not an HTML parser, and printing a warning is better than emitting broken markup.
+fn brand_shell(source: &str, branding: &BrandingConfig) -> String {
+    let name = escape_html(&branding.name);
+    let description = branding.tagline.as_deref().map_or_else(
+        || {
+            format!(
+                "{} — source, track and sync the manga you read.",
+                branding.name
+            )
+        },
+        |tagline| format!("{} — {tagline}", branding.name),
+    );
+    let description = escape_html(&description);
+
+    let mut out = replace_between(
+        source,
+        "<title>",
+        "</title>",
+        &format!("{name} — manga tracker"),
+    )
+    .unwrap_or_else(|| {
+        tracing::warn!("the app shell has no <title>; its tab name is not this deployment's");
+        source.to_owned()
+    });
+    out = replace_between(
+        &out,
+        r#"<meta name="description" content=""#,
+        r#"" />"#,
+        &description,
+    )
+    .unwrap_or_else(|| {
+        tracing::warn!("the app shell has no description meta; it is not this deployment's");
+        out.clone()
+    });
+    out
+}
+
+/// Replace the text between `open` and the next `close` after it, or `None` when the pair is
+/// absent.
+fn replace_between(source: &str, open: &str, close: &str, value: &str) -> Option<String> {
+    let start = source.find(open)? + open.len();
+    let end = start + source[start..].find(close)?;
+    let mut out = String::with_capacity(source.len() + value.len());
+    out.push_str(&source[..start]);
+    out.push_str(value);
+    out.push_str(&source[end..]);
+    Some(out)
+}
+
+/// Escape a configured value on its way into markup.
+///
+/// The value is the operator's, not a reader's, so this is not an XSS boundary — but an
+/// unescaped `&` or `"` in a perfectly ordinary product name would still break the attribute it
+/// lands in, and a shell that fails to parse is a blank page.
+fn escape_html(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for ch in value.chars() {
+        match ch {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&#39;"),
+            _ => out.push(ch),
+        }
+    }
+    out
 }
 
 /// Where the app shell lives inside the bundle.
@@ -511,10 +598,10 @@ const NOTICES_ROUTE: &str = "/third-party-notices";
 
 /// Assemble the router: the health probe, the licence notices, the `/v1/*` proxy, and the
 /// static bundle (with SPA fallback and hardening headers) catching everything else.
-fn build_router(frontend: &FrontendConfig, state: AppState) -> Router {
+fn build_router(frontend: &FrontendConfig, branding: &BrandingConfig, state: AppState) -> Router {
     let static_dir = frontend.static_dir.as_str();
     let shell_path = shell_path(static_dir);
-    let source = read_shell(&shell_path);
+    let source = read_shell(&shell_path).map(|source| brand_shell(&source, branding));
 
     // Assembled once from the shell read above, since the hashes cover a file that can't change
     // without a redeploy; only the optional nonce is per response.
@@ -891,6 +978,7 @@ mod tests {
         let health = upstream_health(&state);
         let app = build_app(
             &frontend,
+            &BrandingConfig::default(),
             state,
             // No recorder: installing the process-wide Prometheus recorder twice fails, and
             // these tests share a process.
@@ -1142,6 +1230,56 @@ mod tests {
             inline_hash("alert(1)"),
             "'sha256-bhHHL3z2vDgxUt0W3dWQOrprscmda2Y5pLsLg4GF+pI='"
         );
+    }
+
+    /// The tab is named before the WASM bundle boots, so the pre-boot name has to be the
+    /// operator's — and the rewrite must leave the inline scripts byte-identical, or the hashes
+    /// derived from the same source would stop matching what the browser computes.
+    #[test]
+    fn the_served_shell_carries_the_operators_name_and_no_other_change() {
+        let source = std::fs::read_to_string("../../web/frontend/index.html")
+            .expect("the shell ships in the repo");
+        let branding = BrandingConfig {
+            name: "MangaBox".to_owned(),
+            tagline: Some("everything you read, in one place".to_owned()),
+            ..BrandingConfig::default()
+        };
+        let branded = brand_shell(&source, &branding);
+
+        assert!(
+            branded.contains("<title>MangaBox — manga tracker</title>"),
+            "{branded}"
+        );
+        assert!(
+            branded.contains(
+                r#"<meta name="description" content="MangaBox — everything you read, in one place" />"#
+            ),
+            "{branded}"
+        );
+        assert!(!branded.contains("TankoVault"), "{branded}");
+        assert_eq!(
+            csp_shell::scan_shell(&source).hashes,
+            csp_shell::scan_shell(&branded).hashes,
+            "branding the shell moved an inline-script hash"
+        );
+    }
+
+    /// An operator's name reaches an attribute value; an unescaped quote there is a shell that
+    /// does not parse, which is a blank page rather than a rebrand.
+    #[test]
+    fn a_name_with_markup_characters_cannot_break_the_shell() {
+        let source = std::fs::read_to_string("../../web/frontend/index.html")
+            .expect("the shell ships in the repo");
+        let branding = BrandingConfig {
+            name: r#"Ink" & <Vault>"#.to_owned(),
+            ..BrandingConfig::default()
+        };
+        let branded = brand_shell(&source, &branding);
+        assert!(
+            branded.contains("<title>Ink&quot; &amp; &lt;Vault&gt; — manga tracker</title>"),
+            "{branded}"
+        );
+        assert!(!branded.contains(r#"content="Ink" &"#), "{branded}");
     }
 
     /// An unreadable shell must not take the whole tier down — the API proxy and every hashed

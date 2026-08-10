@@ -101,7 +101,12 @@ pub async fn patch_profile(
         // Only the old address can warn the legitimate owner this happened.
         crate::mailer::send_in_background(
             &state,
-            crate::mailer::email_changed(&before.email, &updated.username, &updated.email),
+            crate::mailer::email_changed(
+                state.branding.name(),
+                &before.email,
+                &updated.username,
+                &updated.email,
+            ),
         );
         crate::auth::send_verification_email(&state, &updated).await?;
         // The credential the address protects has changed hands: same rule as a password reset, every session dies.

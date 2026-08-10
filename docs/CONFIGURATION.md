@@ -221,6 +221,56 @@ A file that disappears degrades to `404` and a warning, never a panic.
 `deploy/legal/` holds working samples that say so in their first line, mounted read-only by the
 reference compose file. They are not legal advice and not fit for a deployment; replace them.
 
+### `branding` — what this deployment calls itself
+
+Read by `api`, `frontend` and `worker`. Everything a running deployment shows a reader about
+*itself* — the name, the wordmark, the tagline, the copyright line, the licence label and the two
+project links — comes from here rather than from a literal in the binary, so rebranding a fork is
+a configuration change and not a rebuild of the WASM bundle and the desktop installers.
+
+The whole block is optional, and an absent `[branding]` section reproduces the shipped identity
+exactly. Where each field lands:
+
+- **`api`** publishes the reader-facing subset unauthenticated at `GET /v1/branding` — the SPA's
+  rail, footer and document title read it, and every catalogue message that names the product
+  carries a `{brand}` placeholder the client fills in from it. The same name is stamped into
+  transactional email (subject and both bodies), into the WebAuthn prompt when
+  `auth.webauthn_rp_name` is unset, and into the TOTP issuer when `auth.totp_issuer` is unset.
+- **`frontend`** writes the name into the served app shell's `<title>` and description, so the
+  tab is named before the WASM bundle finishes booting and a link unfurler sees the right name.
+- **`worker`** reads `bot_user_agent` only.
+
+`GET /v1/branding` stays open on a deployment with `accounts.required` on: the sign-in screen is
+the whole public face of a private deployment, and it draws the wordmark.
+
+| Key | Default | Notes |
+|---|---|---|
+| `TANKOVAULT_BRANDING__NAME` | `TankoVault` | The product name in prose. Substituted for `{brand}` in every message that names it. |
+| `TANKOVAULT_BRANDING__WORDMARK__LEAD` | *(see below)* | The lockup's body-coloured half. |
+| `TANKOVAULT_BRANDING__WORDMARK__ACCENT` | *(see below)* | The lockup's accent half. Unset draws the lockup as one word. |
+| `TANKOVAULT_BRANDING__TAGLINE` | *(unset)* | One line under the wordmark. Unset keeps the shipped, **translated** tagline; setting it replaces that with this string in every language — the right trade for a deployment the catalogue's sentence does not describe. |
+| `TANKOVAULT_BRANDING__COPYRIGHT__HOLDER` | `Tim Schönle` | Who holds it. |
+| `TANKOVAULT_BRANDING__COPYRIGHT__YEAR` | *(current year)* | A year or a range (`2024–2026`). Unset resolves per response, so a deployment nobody has touched since December is not still claiming last year. |
+| `TANKOVAULT_BRANDING__COPYRIGHT__NOTICE` | *(unset)* | The whole notice verbatim, for when `© {year} {holder}` does not fit. Wins over both fields above **and** over the catalogue's translation of the line. |
+| `TANKOVAULT_BRANDING__LICENCE__NAME` | `PolyForm Noncommercial 1.0.0` | What the footer prints. |
+| `TANKOVAULT_BRANDING__LICENCE__URL` | *(unset)* | Where the label links. Unset renders it as plain text — a self-hosted deployment usually has nowhere to point, and a link into nothing is worse than a label that does not pretend to be one. |
+| `TANKOVAULT_BRANDING__PROJECT_URL` | `https://github.com/TimSchoenle/TankoVault` | The footer's source link and the desktop About tab. |
+| `TANKOVAULT_BRANDING__RELEASES_URL` | `…/releases/latest` | Where a reader downloads the native client. Advertised by the web build only. |
+| `TANKOVAULT_BRANDING__BOT_USER_AGENT` | *(unset)* | The identifiable crawler user-agent, applied to any provider still carrying the built-in default. A provider whose politeness names its own user-agent keeps it — that is a decision about how *that* site is approached, and it outranks the deployment's generic identity. Never published to clients. |
+
+**The wordmark defaults deliberately do not follow `NAME`.** Left unset with the shipped name,
+the lockup is `Tankō`+`Vault`; left unset with *any other* name, it is that name as one word.
+There is no rule that would split an arbitrary name the way this one is split, and a lockup
+pairing an operator's name with this project's accent half is worse than a plain one — so set
+`WORDMARK__LEAD` and `WORDMARK__ACCENT` if you want a two-tone lockup of your own.
+
+**What is not here.** The operating-system identifiers the desktop build registers — the keyring
+service name, the Windows `AppUserModelID`, the autostart registry value, the installer's product
+name — stay at build time. They must agree with what the installer wrote, and a value that changed
+under a running install would strand saved credentials and silence toasts rather than rebrand
+anything. So do the repository's own metadata (`Cargo.toml`, `LICENSE`, `THIRD-PARTY-NOTICES`),
+which no runtime configuration can reach.
+
 ### `features` — runtime feature-flag plumbing
 
 | Key | Default | Services | Notes |

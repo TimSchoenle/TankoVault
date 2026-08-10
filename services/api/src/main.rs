@@ -55,6 +55,10 @@ struct Config {
     /// section publishes nothing, which is a valid deployment.
     #[serde(default)]
     legal: tankovault_config::LegalConfig,
+    /// What this deployment calls itself: name, wordmark, copyright, links. Served to the
+    /// client at `/v1/branding` and stamped into email and the authenticator prompts.
+    #[serde(default)]
+    branding: tankovault_config::BrandingConfig,
     /// Metadata intake rules. The API writes no metadata; it reads this section for the adult
     /// classifier alone, and shares it with the worker so the genres the public tag facet
     /// withholds are exactly the ones that put a series behind the gate.
@@ -298,9 +302,15 @@ async fn main() -> anyhow::Result<()> {
     // request-facing listener. Outside the reloadable runtime so a reload does not rebind it.
     tankovault_service::spawn_metrics_server(metrics.clone(), shutdown.clone());
 
-    tankovault_service::run_reloading(boot, &shutdown, |cfg, generation| {
-        serve_once(cfg, metrics.clone(), generation)
-    })
+    // Boxed, not because the future is held across an await here — it is the whole program —
+    // but because it carries the config by value, and this one is among the largest in the
+    // workspace. Left on the stack it trips `clippy::large_futures`, which is a stack-overflow
+    // guard rather than a style rule.
+    Box::pin(tankovault_service::run_reloading(
+        boot,
+        &shutdown,
+        |cfg, generation| serve_once(cfg, metrics.clone(), generation),
+    ))
     .await
 }
 
@@ -422,7 +432,7 @@ async fn serve_once(
 
     // `None` origin is a valid "no passkeys" state; a *malformed* one is fatal — it would
     // otherwise surface as browsers refusing every ceremony with an opaque `SecurityError`.
-    let webauthn = build_relying_party(&cfg.auth, &cfg.email.base_url)?;
+    let webauthn = build_relying_party(&cfg.auth, &cfg.email.base_url, &cfg.branding.name)?;
     let mfa_sealer = build_mfa_sealer(&cfg.auth)?;
 
     // Abandoned ceremonies — a user who closed the tab at the authenticator prompt — are
@@ -467,7 +477,7 @@ async fn serve_once(
             .totp_issuer
             .clone()
             .or_else(|| cfg.auth.webauthn_rp_name.clone())
-            .unwrap_or_else(|| "TankoVault".to_owned()),
+            .unwrap_or_else(|| cfg.branding.name.clone()),
         step_up_ttl: time::Duration::minutes(cfg.auth.step_up_ttl_minutes),
         step_up_max_ttl: time::Duration::minutes(cfg.auth.step_up_max_ttl_minutes),
         mfa_challenge_ttl: time::Duration::minutes(cfg.auth.mfa_challenge_ttl_minutes),
@@ -476,6 +486,7 @@ async fn serve_once(
         mailer,
         email_base_url: cfg.email.base_url.clone(),
         legal: tankovault_api::LegalDocs::new(cfg.legal.clone()),
+        branding: tankovault_api::Branding::new(cfg.branding.clone()),
         system_stats: tankovault_api::Cached::new(tankovault_api::ADMIN_STATS_TTL),
         provider_stats: tankovault_api::Cached::new(tankovault_api::ADMIN_STATS_TTL),
         adult_tags: Arc::new(cfg.metadata.tags.adult_tags()),
@@ -573,6 +584,7 @@ fn spawn_audit_retention(
 fn build_relying_party(
     auth: &AuthConfig,
     email_base_url: &str,
+    brand: &str,
 ) -> anyhow::Result<Option<tankovault_api::SharedRelyingParty>> {
     let origin = auth
         .webauthn_origin
@@ -583,7 +595,11 @@ fn build_relying_party(
     let rp = tankovault_api::RelyingParty::from_config(
         Some(origin),
         auth.webauthn_rp_id.as_deref(),
-        auth.webauthn_rp_name.as_deref(),
+        auth.webauthn_rp_name
+            .as_deref()
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .unwrap_or(brand),
     )?;
 
     let Some(rp) = rp else {

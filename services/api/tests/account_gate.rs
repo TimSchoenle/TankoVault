@@ -99,6 +99,18 @@ async fn the_surface_that_grants_an_account_stays_open() {
         StatusCode::OK,
         "the legal index is linked from the register form and must survive the wall"
     );
+
+    // The sign-in screen draws the wordmark, the tagline and the copyright line. Walled, the
+    // client falls back to the shipped identity, so a rebranded private deployment would greet
+    // every visitor under this project's name.
+    let (status, body) = app.call("GET", "/v1/branding", None, None).await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "the sign-in screen is the whole public face of a private deployment; it has to know \
+         what that deployment is called"
+    );
+    assert_eq!(body["name"], "TankoVault");
 }
 
 /// An account gets through. The inverse leg: a gate that refused unconditionally would pass

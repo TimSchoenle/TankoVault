@@ -32,6 +32,7 @@ pub(crate) fn Shell() -> Element {
     use_unread_count();
     use_live_notifications();
     crate::state::legal::use_legal_sync();
+    crate::state::branding::use_branding_sync();
     // Here rather than in each screen: the layout is the one component every route renders
     // through, so no route can be added without a title.
     crate::title::use_document_title();
@@ -329,12 +330,15 @@ fn use_live_notifications() {
     // notification through the catalogue, and `use_i18n` is a hook — it cannot be called from
     // inside a future that has already awaited.
     let i18n = crate::i18n::use_i18n();
+    // Same reasoning as `i18n`: the toast names the deployment, and the lookup that resolves it
+    // is a hook.
+    let branding = crate::state::branding::use_branding();
 
     use_resource(move || {
         let signed_in = session.is_authenticated();
         async move {
             if signed_in {
-                crate::live::run(api, badge, i18n).await;
+                crate::live::run(api, badge, i18n, branding).await;
             }
         }
     });

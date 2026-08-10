@@ -117,7 +117,11 @@ async fn deliver_reset_link(state: AppState, email: String) {
     );
     if let Err(e) = state
         .mailer
-        .send(mailer::password_reset(&user.email, &link))
+        .send(mailer::password_reset(
+            state.branding.name(),
+            &user.email,
+            &link,
+        ))
         .await
     {
         tracing::warn!(error = %e, "failed to send the password-reset email");

@@ -63,7 +63,7 @@
         "updates": "It updates itself from signed releases and tells you which version it moved to."
       },
       "download": "Download the desktop app",
-      "intro": "TankoVault also runs as a native app on Windows and Linux. It talks to this same server with the same account, so nothing is copied and nothing is kept apart.",
+      "intro": "{brand} also runs as a native app on Windows and Linux. It talks to this same server with the same account, so nothing is copied and nothing is kept apart.",
       "platforms": "The download page carries a Windows installer, a Debian package, an AppImage, and portable archives for both systems.",
       "serverAddress": "This server's address",
       "serverAddressHint": "The app asks for it the first time it starts. This is the address to give it.",
@@ -287,15 +287,15 @@
     "action": "Connect",
     "card": {
       "action": "Change server",
-      "intro": "Which TankoVault server this app talks to. Changing it signs you out, because your session belongs to the server that issued it.",
+      "intro": "Which {brand} server this app talks to. Changing it signs you out, because your session belongs to the server that issued it.",
       "title": "Server"
     },
     "connecting": "Connecting…",
     "error": {
-      "empty": "Enter the address of your TankoVault server.",
+      "empty": "Enter the address of your {brand} server.",
       "insecure": "Only https:// is accepted for a server on the network — your sign-in token is sent with every request. Plain http:// works for localhost.",
       "malformed": "That does not look like a server address.",
-      "notTankovault": "Something answered at that address, but it is not a TankoVault server this app can talk to.",
+      "notTankovault": "Something answered at that address, but it is not a {brand} server this app can talk to.",
       "unreachable": "Could not reach that address. Check the URL and that the server is running."
     },
     "field": {
@@ -304,7 +304,7 @@
     },
     "heading": "Connect to your server",
     "storedAt": "Saved to {path}",
-    "subtitle": "TankoVault is self-hosted, so this copy needs to know which server is yours. You can change it later in Settings."
+    "subtitle": "{brand} is self-hosted, so this copy needs to know which server is yours. You can change it later in Settings."
   },
   "settings": {
     "about": {
@@ -315,18 +315,18 @@
     "notifications": {
       "hint": "Shown by your operating system when a chapter you follow is released. The in-app bell is unaffected.",
       "label": "Show desktop notifications",
-      "systemHint": "They are raised as TankoVault's own, so your system lists TankoVault in its notification settings and can silence it there too.",
+      "systemHint": "They are raised as {brand}'s own, so your system lists {brand} in its notification settings and can silence it there too.",
       "test": {
         "action": "Send a test notification",
         "body": "Notifications are working. This is what a chapter release will look like.",
-        "title": "TankoVault"
+        "title": "{brand}"
       },
       "title": "Notifications"
     },
     "startup": {
       "failed": "Your system refused the change. Nothing was altered.",
       "hint": "The same option the installer offered. Turning it off here removes the entry again.",
-      "label": "Start TankoVault when I sign in",
+      "label": "Start {brand} when I sign in",
       "title": "Startup"
     },
     "tab": {
@@ -353,7 +353,7 @@
         "staging": "Could not write the download to disk.",
         "stale": "The staged update is not newer than this build.",
         "unconfigured": "This build carries no release signing key, so it cannot verify an update and does not look for one.",
-        "unmanaged": "This copy is not one TankoVault can replace.",
+        "unmanaged": "This copy is not one {brand} can replace.",
         "untrusted": "That release is not signed by a key this build trusts. Nothing was downloaded."
       },
       "holdBack": "Hold back",
@@ -361,13 +361,13 @@
       "install": "Download and install",
       "notify": {
         "applied": "You are now on version {version}.",
-        "appliedTitle": "TankoVault was updated",
-        "applying": "Installing version {version}. TankoVault opens again by itself once the installer has finished.",
-        "applyingTitle": "TankoVault is updating",
+        "appliedTitle": "{brand} was updated",
+        "applying": "Installing version {version}. {brand} opens again by itself once the installer has finished.",
+        "applyingTitle": "{brand} is updating",
         "available": "Version {version} is ready to download.",
-        "availableTitle": "TankoVault update available",
-        "staged": "Version {version} installs the next time you start TankoVault.",
-        "stagedTitle": "TankoVault update ready"
+        "availableTitle": "{brand} update available",
+        "staged": "Version {version} installs the next time you start {brand}.",
+        "stagedTitle": "{brand} update ready"
       },
       "openPage": "Open the release page",
       "policy": "When a new version is released",
@@ -385,7 +385,7 @@
         "checking": "Checking for a newer release…",
         "downloading": "Downloading version… {percent}%",
         "idle": "No check has run yet.",
-        "staged": "Version {version} is ready. It installs the next time TankoVault starts, and TankoVault reopens by itself once the installer has finished.",
+        "staged": "Version {version} is ready. It installs the next time {brand} starts, and {brand} reopens by itself once the installer has finished.",
         "upToDate": "This is the newest release you can take."
       },
       "title": "Updates",
@@ -398,12 +398,12 @@
     "window": {
       "closing": {
         "hint": "The window disappears when you close it, but the app keeps running, so chapter notifications still arrive. Open it again from the tray icon — which is also where you quit for good.",
-        "label": "Keep TankoVault running in the tray",
+        "label": "Keep {brand} running in the tray",
         "title": "Closing the window"
       },
       "tray": {
-        "open": "Open TankoVault",
-        "quit": "Quit TankoVault"
+        "open": "Open {brand}",
+        "quit": "Quit {brand}"
       },
       "unsupported": "This system offers neither a sign-in list nor a tray, so there is nothing to set here."
     }
@@ -1535,7 +1535,7 @@
   },
   "footer": {
     "apiHealthy": "api healthy",
-    "copyright": "© {year} Tim Schönle",
+    "copyright": "© {year} {holder}",
     "dataRequests": "Data requests",
     "deleteAccount": "Delete account",
     "desktopApp": "Desktop app",
@@ -1828,11 +1828,11 @@
     "hoursMinutes": "{hours}h {minutes}m"
   },
   "title": {
-    "app": "TankoVault — manga tracker",
+    "app": "{brand} — manga tracker",
     "legal": "Legal",
     "search": "Search: {query}",
     "series": "Series",
-    "template": "{page} — TankoVault"
+    "template": "{page} — {brand}"
   },
   "topbar": {
     "searchPlaceholder": "Search series, tags, authors…",

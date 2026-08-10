@@ -524,6 +524,9 @@ fn public_gates() -> Vec<(&'static str, &'static str)> {
         // `404` is not a `401`, so the assertion still distinguishes "no such document" from
         // "you must sign in to read the privacy policy".
         ("/v1/legal/{slug}", "/v1/legal/terms"),
+        // The sign-in card draws the wordmark, so the client has to be able to read the
+        // deployment's identity before it has a session.
+        ("/v1/branding", "/v1/branding"),
     ]
 }
 

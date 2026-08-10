@@ -14,6 +14,7 @@ mod account_gate;
 mod admin;
 mod audit;
 mod auth;
+mod branding;
 mod cache;
 mod content_gate;
 mod error;
@@ -32,6 +33,7 @@ mod upstream;
 mod views;
 
 use axum::Router;
+pub use branding::Branding;
 pub use cache::{ADMIN_STATS_TTL, Cached};
 pub use legal::LegalDocs;
 pub use passkey::{RelyingParty, SharedRelyingParty};
@@ -389,6 +391,9 @@ fn documented_router() -> OpenApiRouter<AppState> {
         // the Terms, so the register form has to be able to link them to a signed-out reader.
         .routes(routes!(legal::legal_index))
         .routes(routes!(legal::legal_document))
+        // What this deployment calls itself. Unauthenticated for the same reason: the sign-in
+        // card carries the wordmark, and it renders before anyone has a session.
+        .routes(routes!(branding::branding))
         // me
         .routes(routes!(me::watchlist))
         .routes(routes!(me::watchlist_summary))

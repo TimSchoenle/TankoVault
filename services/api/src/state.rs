@@ -88,6 +88,9 @@ pub struct AppState {
     /// The operator's legal documents, read through an mtime check. Empty is a working state:
     /// the footer simply publishes no Legal column.
     pub legal: crate::legal::LegalDocs,
+    /// What this deployment calls itself: the name stamped into email and the authenticator
+    /// prompt, and the identity `GET /v1/branding` publishes to the client.
+    pub branding: crate::branding::Branding,
     /// The console's system rollup, cached: it is a `count(*)` over every large table.
     pub system_stats: Arc<crate::cache::Cached<tankovault_db::repo::stats::SystemStats>>,
     /// The console's per-provider table, cached: it aggregates every chapter row by provider,

@@ -1,4 +1,24 @@
-//! What this bundle is: its version, and where it comes from.
+//! What this bundle is: its version, where it comes from, and the identity it falls back to.
+//!
+//! The constants below are **fallbacks, not the answer**. A running deployment's identity comes
+//! from `GET /v1/branding` (see [`crate::state::branding`]); these are what renders in the
+//! instant before that lands, and what the desktop build shows before it has been told which
+//! server is its. Editing one rebrands nothing on its own — the operator's `[branding]` section
+//! does that.
+
+/// The name this bundle falls back to.
+pub(crate) const PRODUCT_NAME: &str = "TankoVault";
+
+/// The lockup's body-coloured half, and its accent half.
+///
+/// Two constants rather than one name split at render time: the split is a typographic decision
+/// about *this* name, and there is no rule that would find it in an arbitrary one.
+pub(crate) const WORDMARK_LEAD: &str = "Tankō";
+/// See [`WORDMARK_LEAD`].
+pub(crate) const WORDMARK_ACCENT: &str = "Vault";
+
+/// The licence this project's own code is under.
+pub(crate) const LICENCE: &str = "PolyForm Noncommercial 1.0.0";
 
 /// The project's own page.
 ///

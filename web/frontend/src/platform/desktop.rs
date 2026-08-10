@@ -137,6 +137,9 @@ pub(crate) fn store_remove(key: &str) {
 /// The service name every entry is filed under — what the reader sees next to the secret in the
 /// Windows Credential Manager or Seahorse, and what they delete to sign the app out from outside
 /// it.
+// Deliberately a literal and **not** `build_info::PRODUCT_NAME`: this is the key credentials
+// were stored under, not a label. Renaming the product must not move it, or every reader signs
+// in again and their old entry is orphaned in the keyring with nothing to clean it up.
 const KEYRING_SERVICE: &str = "TankoVault";
 
 /// One unit of work for the credential thread. `Get` carries its own reply channel because the
@@ -539,7 +542,13 @@ fn raise(summary: &str, body: &str) -> std::thread::JoinHandle<()> {
 }
 
 /// The name these notifications go out under.
-const NOTIFICATION_APP_NAME: &str = "TankoVault";
+///
+/// The compiled default, not the operator's configured name, and deliberately: it is written
+/// into `HKCU\Software\Classes\AppUserModelId\<id>` as `DisplayName` by [`register_app_id`]
+/// and into the `.desktop` entry on Linux, both of which the OS reads long after this process
+/// is gone. A name that followed a server it may not have reached yet would rewrite the
+/// registration on every launch and disagree with whatever the reader last silenced.
+const NOTIFICATION_APP_NAME: &str = crate::build_info::PRODUCT_NAME;
 
 /// The identity the OS files them under. The bundle identifier, which is also the `.desktop`
 /// entry's basename and — on Windows — the `AppUserModelID` registered by [`identify`].
@@ -897,7 +906,11 @@ mod tray {
 
     /// What the pointer reads when it rests on the icon. The product, not the window's current
     /// title — the tray entry is the *app*, and it is most useful when no window exists.
-    const TOOLTIP: &str = "TankoVault";
+    ///
+    /// The compiled default: the tray is installed at startup, on a client that may have no
+    /// server configured yet, and a tooltip that changed under the pointer would be stranger
+    /// than one that is simply the build's own name.
+    const TOOLTIP: &str = crate::build_info::PRODUCT_NAME;
 
     pub(super) fn install(open: &str, quit: &str) -> Option<super::Tray> {
         let open = MenuItem::new(open, true, None);

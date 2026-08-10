@@ -66,6 +66,11 @@ pub(crate) async fn enforce(State(state): State<AppState>, req: Request, next: N
 ///   legs of a passkey or second-factor sign-in.
 /// - `/v1/legal` — registering *is* the act of accepting the Terms, so a visitor has to be able
 ///   to read them before they have an account.
+/// - `/v1/branding` — the sign-in screen is the whole of a private deployment's public face, and
+///   it draws the wordmark, the tagline, the licence and the copyright line. Walled, the client
+///   falls back to the *shipped* identity, so a rebranded private deployment would greet every
+///   visitor under this project's name. It publishes nothing a visitor could not read off the
+///   page it is rendered on.
 ///
 /// `/v1/me/capabilities` is deliberately **not** here. It is the probe the web app gates its UI
 /// on, and its refusal is how a signed-out client learns this deployment is private at all: a
@@ -73,7 +78,7 @@ pub(crate) async fn enforce(State(state): State<AppState>, req: Request, next: N
 /// `401 unauthorized` means only that this particular session has ended. Exempting it would
 /// answer the same for both and leave the client unable to tell them apart.
 fn is_sign_in_surface(path: &str) -> bool {
-    path.starts_with("/v1/auth") || path.starts_with("/v1/legal")
+    path.starts_with("/v1/auth") || path.starts_with("/v1/legal") || path == "/v1/branding"
 }
 
 /// Whether the request presents an access token this deployment issued.
@@ -105,12 +110,21 @@ mod tests {
             "/v1/auth/mfa/verify",
             "/v1/legal",
             "/v1/legal/{slug}",
+            "/v1/branding",
         ] {
             assert!(
                 is_sign_in_surface(path),
                 "`{path}` is how a visitor gets an account; walling it makes the flag a lockout"
             );
         }
+    }
+
+    /// The sign-in screen is a private deployment's whole public face, and it draws the
+    /// wordmark. Walled, the client falls back to the shipped identity — so a rebranded private
+    /// deployment would greet every visitor under this project's name.
+    #[test]
+    fn the_sign_in_screen_can_still_learn_what_this_deployment_is_called() {
+        assert!(is_sign_in_surface("/v1/branding"));
     }
 
     /// The inverse leg. A predicate that answered `true` too readily would pass every test

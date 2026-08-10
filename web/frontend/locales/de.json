@@ -63,7 +63,7 @@
         "updates": "Sie aktualisiert sich selbst aus signierten Veröffentlichungen und sagt dir, auf welche Version sie gewechselt ist."
       },
       "download": "Desktop-App herunterladen",
-      "intro": "TankoVault läuft auch als native App unter Windows und Linux. Sie spricht mit demselben Server und demselben Konto — es wird nichts kopiert und nichts getrennt gehalten.",
+      "intro": "{brand} läuft auch als native App unter Windows und Linux. Sie spricht mit demselben Server und demselben Konto — es wird nichts kopiert und nichts getrennt gehalten.",
       "platforms": "Die Downloadseite enthält ein Windows-Installationsprogramm, ein Debian-Paket, ein AppImage und portable Archive für beide Systeme.",
       "serverAddress": "Adresse dieses Servers",
       "serverAddressHint": "Die App fragt beim ersten Start danach. Das ist die Adresse, die du ihr gibst.",
@@ -287,15 +287,15 @@
     "action": "Verbinden",
     "card": {
       "action": "Server wechseln",
-      "intro": "Mit welchem TankoVault-Server diese App spricht. Ein Wechsel meldet dich ab, denn deine Sitzung gehört dem Server, der sie ausgestellt hat.",
+      "intro": "Mit welchem {brand}-Server diese App spricht. Ein Wechsel meldet dich ab, denn deine Sitzung gehört dem Server, der sie ausgestellt hat.",
       "title": "Server"
     },
     "connecting": "Verbinde…",
     "error": {
-      "empty": "Gib die Adresse deines TankoVault-Servers ein.",
+      "empty": "Gib die Adresse deines {brand}-Servers ein.",
       "insecure": "Für einen Server im Netzwerk wird nur https:// akzeptiert — dein Anmelde-Token wird bei jeder Anfrage mitgesendet. Einfaches http:// funktioniert für localhost.",
       "malformed": "Das sieht nicht nach einer Serveradresse aus.",
-      "notTankovault": "Unter dieser Adresse antwortet etwas, aber es ist kein TankoVault-Server, mit dem diese App sprechen kann.",
+      "notTankovault": "Unter dieser Adresse antwortet etwas, aber es ist kein {brand}-Server, mit dem diese App sprechen kann.",
       "unreachable": "Diese Adresse ist nicht erreichbar. Prüfe die URL und ob der Server läuft."
     },
     "field": {
@@ -304,7 +304,7 @@
     },
     "heading": "Mit deinem Server verbinden",
     "storedAt": "Gespeichert unter {path}",
-    "subtitle": "TankoVault wird selbst gehostet, deshalb muss diese Kopie wissen, welcher Server deiner ist. Du kannst das später in den Einstellungen ändern."
+    "subtitle": "{brand} wird selbst gehostet, deshalb muss diese Kopie wissen, welcher Server deiner ist. Du kannst das später in den Einstellungen ändern."
   },
   "settings": {
     "about": {
@@ -315,18 +315,18 @@
     "notifications": {
       "hint": "Wird von deinem Betriebssystem angezeigt, wenn ein Kapitel erscheint, dem du folgst. Die Glocke in der App bleibt davon unberührt.",
       "label": "Desktop-Benachrichtigungen anzeigen",
-      "systemHint": "Sie werden als TankoVaults eigene Mitteilungen gesendet — dein System führt TankoVault also in seinen Benachrichtigungseinstellungen und kann sie auch dort stummschalten.",
+      "systemHint": "Sie werden als {brand}s eigene Mitteilungen gesendet — dein System führt {brand} also in seinen Benachrichtigungseinstellungen und kann sie auch dort stummschalten.",
       "test": {
         "action": "Testbenachrichtigung senden",
         "body": "Benachrichtigungen funktionieren. So sieht ein neues Kapitel aus.",
-        "title": "TankoVault"
+        "title": "{brand}"
       },
       "title": "Benachrichtigungen"
     },
     "startup": {
       "failed": "Dein System hat die Änderung abgelehnt. Es wurde nichts geändert.",
       "hint": "Dieselbe Option, die das Installationsprogramm angeboten hat. Hier ausgeschaltet, wird der Eintrag wieder entfernt.",
-      "label": "TankoVault beim Anmelden starten",
+      "label": "{brand} beim Anmelden starten",
       "title": "Autostart"
     },
     "tab": {
@@ -353,7 +353,7 @@
         "staging": "Der Download konnte nicht gespeichert werden.",
         "stale": "Die vorbereitete Aktualisierung ist nicht neuer als dieser Build.",
         "unconfigured": "Dieser Build enthält keinen Signaturschlüssel, kann eine Aktualisierung also nicht prüfen und sucht keine.",
-        "unmanaged": "Diese Installation kann TankoVault nicht ersetzen.",
+        "unmanaged": "Diese Installation kann {brand} nicht ersetzen.",
         "untrusted": "Diese Version ist nicht mit einem Schlüssel signiert, dem dieser Build vertraut. Es wurde nichts heruntergeladen."
       },
       "holdBack": "Zurückhalten",
@@ -361,13 +361,13 @@
       "install": "Herunterladen und installieren",
       "notify": {
         "applied": "Du bist jetzt auf Version {version}.",
-        "appliedTitle": "TankoVault wurde aktualisiert",
-        "applying": "Version {version} wird installiert. TankoVault öffnet sich von selbst wieder, sobald das Installationsprogramm fertig ist.",
-        "applyingTitle": "TankoVault wird aktualisiert",
+        "appliedTitle": "{brand} wurde aktualisiert",
+        "applying": "Version {version} wird installiert. {brand} öffnet sich von selbst wieder, sobald das Installationsprogramm fertig ist.",
+        "applyingTitle": "{brand} wird aktualisiert",
         "available": "Version {version} kann heruntergeladen werden.",
-        "availableTitle": "TankoVault-Aktualisierung verfügbar",
-        "staged": "Version {version} wird beim nächsten Start von TankoVault installiert.",
-        "stagedTitle": "TankoVault-Aktualisierung bereit"
+        "availableTitle": "{brand}-Aktualisierung verfügbar",
+        "staged": "Version {version} wird beim nächsten Start von {brand} installiert.",
+        "stagedTitle": "{brand}-Aktualisierung bereit"
       },
       "openPage": "Veröffentlichungsseite öffnen",
       "policy": "Wenn eine neue Version erscheint",
@@ -385,7 +385,7 @@
         "checking": "Suche nach einer neueren Version…",
         "downloading": "Wird heruntergeladen… {percent}%",
         "idle": "Es wurde noch nicht geprüft.",
-        "staged": "Version {version} ist bereit. Sie wird beim nächsten Start von TankoVault installiert, und TankoVault öffnet sich danach von selbst wieder.",
+        "staged": "Version {version} ist bereit. Sie wird beim nächsten Start von {brand} installiert, und {brand} öffnet sich danach von selbst wieder.",
         "upToDate": "Das ist die neueste Version, die du übernehmen kannst."
       },
       "title": "Aktualisierungen",
@@ -398,12 +398,12 @@
     "window": {
       "closing": {
         "hint": "Das Fenster verschwindet beim Schließen, die App läuft aber weiter — Kapitelbenachrichtigungen kommen also weiterhin an. Über das Symbol im Infobereich öffnest du sie wieder, und dort beendest du sie auch endgültig.",
-        "label": "TankoVault im Infobereich weiterlaufen lassen",
+        "label": "{brand} im Infobereich weiterlaufen lassen",
         "title": "Fenster schließen"
       },
       "tray": {
-        "open": "TankoVault öffnen",
-        "quit": "TankoVault beenden"
+        "open": "{brand} öffnen",
+        "quit": "{brand} beenden"
       },
       "unsupported": "Dieses System bietet weder eine Autostart-Liste noch einen Infobereich, hier gibt es also nichts einzustellen."
     }
@@ -1535,7 +1535,7 @@
   },
   "footer": {
     "apiHealthy": "API erreichbar",
-    "copyright": "© {year} Tim Schönle",
+    "copyright": "© {year} {holder}",
     "dataRequests": "Datenauskunft",
     "deleteAccount": "Konto löschen",
     "desktopApp": "Desktop-App",
@@ -1828,11 +1828,11 @@
     "hoursMinutes": "{hours} Std. {minutes} Min."
   },
   "title": {
-    "app": "TankoVault — Manga-Tracker",
+    "app": "{brand} — Manga-Tracker",
     "legal": "Rechtliches",
     "search": "Suche: {query}",
     "series": "Serie",
-    "template": "{page} — TankoVault"
+    "template": "{page} — {brand}"
   },
   "topbar": {
     "searchPlaceholder": "Serien, Tags, Autoren suchen…",

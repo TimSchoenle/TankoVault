@@ -11,6 +11,7 @@ use crate::api::Api;
 use crate::components::UnreadBadge;
 use crate::i18n::Translator;
 use crate::models::LiveNotification;
+use crate::state::branding::Branding;
 use dioxus::prelude::*;
 
 /// First wait after a failed attempt; doubles up to [`RECONNECT_BACKOFF_MAX_MS`].
@@ -29,7 +30,12 @@ const SETTLED_MS: f64 = 5_000.0;
 ///
 /// Runs until dropped — the caller's `use_resource` does that on a token change or sign-out,
 /// closing the stream.
-pub(crate) async fn run(api: Api, badge: UnreadBadge, i18n: Translator) {
+pub(crate) async fn run(
+    api: Api,
+    badge: UnreadBadge,
+    i18n: Translator,
+    branding: Signal<Branding>,
+) {
     let mut backoff_ms = RECONNECT_BACKOFF_START_MS;
     loop {
         // A fresh ticket per attempt: redeeming one spends it.
@@ -43,7 +49,7 @@ pub(crate) async fn run(api: Api, badge: UnreadBadge, i18n: Translator) {
         let ticket = response.into_inner().ticket;
 
         // The attempt that served a real stream resets the wait; a run of failures backs off.
-        if consume(&api, &ticket, badge, i18n).await {
+        if consume(&api, &ticket, badge, i18n, branding).await {
             backoff_ms = RECONNECT_BACKOFF_START_MS;
         }
         crate::platform::sleep_ms(backoff_ms).await;
@@ -55,7 +61,13 @@ pub(crate) async fn run(api: Api, badge: UnreadBadge, i18n: Translator) {
 ///
 /// Returns whether the attempt is judged to have *worked* — see [`SETTLED_MS`] for why that is a
 /// duration rather than a status.
-async fn consume(api: &Api, ticket: &str, badge: UnreadBadge, i18n: Translator) -> bool {
+async fn consume(
+    api: &Api,
+    ticket: &str,
+    badge: UnreadBadge,
+    i18n: Translator,
+    branding: Signal<Branding>,
+) -> bool {
     let url = format!("{}{}", api.base_url(), crate::api::stream_url(ticket));
     let Some(mut stream) = crate::platform::subscribe(&url, &["notification"]).await else {
         // A malformed URL or a refused connection; neither is actionable here.
@@ -71,7 +83,7 @@ async fn consume(api: &Api, ticket: &str, badge: UnreadBadge, i18n: Translator) 
             // reader cleared the inbox in another window — must not announce anything.
             let previous = *badge.peek();
             badge.set(push.unread_count);
-            announce(api, i18n, previous, push.unread_count).await;
+            announce(api, i18n, branding, previous, push.unread_count).await;
         }
     }
 
@@ -88,7 +100,13 @@ async fn consume(api: &Api, ticket: &str, badge: UnreadBadge, i18n: Translator) 
 /// Silent on every failure. A toast nobody could be shown is not worth interrupting a reader
 /// over, and the badge behind it is already correct.
 #[cfg(feature = "desktop")]
-async fn announce(api: &Api, i18n: Translator, previous: i64, current: i64) {
+async fn announce(
+    api: &Api,
+    i18n: Translator,
+    branding: Signal<Branding>,
+    previous: i64,
+    current: i64,
+) {
     if current <= previous || !crate::platform::notifications_enabled() {
         return;
     }
@@ -98,8 +116,12 @@ async fn announce(api: &Api, i18n: Translator, previous: i64, current: i64) {
     let Some(newest) = response.into_inner().items.first().cloned() else {
         return;
     };
+    // The deployment's name, threaded down rather than looked up: this runs in a spawned
+    // stream loop, and a context lookup from outside a render is not something to rely on for
+    // the one string that tells the reader whose app is interrupting them.
+    let summary = branding.peek().name.clone();
     crate::platform::notify(
-        "TankoVault",
+        &summary,
         &crate::views::notifications::headline(&newest, i18n),
     );
 }
@@ -111,4 +133,11 @@ async fn announce(api: &Api, i18n: Translator, previous: i64, current: i64) {
     clippy::unused_async,
     reason = "mirrors the desktop signature, which fetches the subject of the toast"
 )]
-async fn announce(_api: &Api, _i18n: Translator, _previous: i64, _current: i64) {}
+async fn announce(
+    _api: &Api,
+    _i18n: Translator,
+    _branding: Signal<Branding>,
+    _previous: i64,
+    _current: i64,
+) {
+}

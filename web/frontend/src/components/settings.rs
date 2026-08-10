@@ -569,6 +569,7 @@ fn state_text(status: &Status, i18n: crate::i18n::Translator) -> String {
 #[component]
 fn AboutSection() -> Element {
     let i18n = use_i18n();
+    let branding = crate::state::branding::use_branding();
 
     rsx! {
         section { class: "ik-prefs-section",
@@ -586,7 +587,9 @@ fn AboutSection() -> Element {
             }
             div { class: "ik-prefs-actions", style: "margin-top:12px;",
                 Button {
-                    on_click: move |_| crate::platform::navigate_to(crate::build_info::PROJECT_URL),
+                    // The deployment's own project, not this one's: a fork's About tab must
+                    // not send its readers here.
+                    on_click: move |_| crate::platform::navigate_to(&branding.read().project_url),
                     {i18n.t("settings.about.project")}
                 }
             }

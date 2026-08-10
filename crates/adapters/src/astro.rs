@@ -139,12 +139,19 @@ fn chapter_number(value: &Value) -> Option<f64> {
         .filter(|n: &f64| n.is_finite())
 }
 
+/// Upper bound on per-chapter unlock lookups for one series — see
+/// [`resolve_unlock_times`](AstroIslandAdapter::resolve_unlock_times). Locked chapters are a
+/// handful per series (2 of 118 on the series this was derived from), so this is a guard
+/// against a pathological listing, not a budget anything normal reaches.
+const MAX_UNLOCK_LOOKUPS: usize = 50;
+
 /// The access state a chapter object advertises.
 ///
-/// Asura publishes both a flag and a date (`is_locked` + `unlock_time`/`early_access_until`).
-/// HiveToons publishes flags only (`isLocked`, and `isPermanentlyLocked` for chapters that
-/// never open), so its locked chapters carry no unlock time — which the read paths treat as
-/// still locked, the conservative and correct reading.
+/// Asura publishes both a flag and a date on the series page (`is_locked` +
+/// `unlock_time`/`early_access_until`). HiveToons publishes only flags there — the date lives on
+/// the chapter page, which [`resolve_unlock_times`](AstroIslandAdapter::resolve_unlock_times)
+/// fetches afterwards. Until it does, a locked row carries no date, which the read paths treat
+/// as still locked: the conservative and correct reading.
 fn access_of(value: &Value) -> ChapterAccess {
     let locked = ["is_locked", "isLocked"]
         .iter()
@@ -194,6 +201,62 @@ impl AstroIslandAdapter {
         AstroFlavour::from_slug(slug)
             .map(|flavour| Self { flavour })
             .ok_or_else(|| AdapterError::UnknownCustom(slug.to_owned()))
+    }
+
+    /// Fill in the unlock time for locked chapters whose series page did not carry one.
+    ///
+    /// HiveToons' series listing reports only *that* a chapter is time-locked; the date is on the
+    /// chapter page, in a `lockedChapter` island carrying `unlockAt`. It cannot be derived from
+    /// the listing instead: the obvious arithmetic (`updatedAt` + 7 days) happens to match the
+    /// default, but the site's own upload form offers "custom duration in hours", so any series
+    /// that sets one would get a confidently wrong date — and a wrong date is worse than none,
+    /// because a date in the past silently unlocks a chapter the reader still cannot open.
+    ///
+    /// Only rows that are locked *and* dateless are looked up, so Asura — which publishes the
+    /// date inline — makes no extra requests at all, and a series with no paywall makes none.
+    ///
+    /// A lookup that fails leaves the row dateless rather than failing the series: the chapter
+    /// is still correctly locked, and the next scan tries again.
+    async fn resolve_unlock_times(&self, ctx: &Ctx, chapters: &mut Vec<ChapterMeta>) {
+        let mut looked_up = 0usize;
+        let mut skipped = 0usize;
+        for chapter in chapters.iter_mut() {
+            if !matches!(
+                chapter.access,
+                ChapterAccess::EarlyAccess { unlocks_at: None }
+            ) {
+                continue;
+            }
+            if looked_up >= MAX_UNLOCK_LOOKUPS {
+                skipped += 1;
+                continue;
+            }
+            looked_up += 1;
+            let Ok(resp) = ctx.fetch(&chapter.path).await else {
+                continue;
+            };
+            let found = parse_blocking(resp, move |root, _| {
+                Ok(island_with(root, "lockedChapter")
+                    .and_then(|island| island.get("lockedChapter").cloned())
+                    .and_then(|locked| first_str(&locked, &["unlockAt", "unlock_at"]))
+                    .and_then(|raw| OffsetDateTime::parse(&raw, &Rfc3339).ok()))
+            })
+            .await;
+            if let Ok(Some(unlocks_at)) = found {
+                chapter.access = ChapterAccess::EarlyAccess {
+                    unlocks_at: Some(unlocks_at),
+                };
+            }
+        }
+        if skipped > 0 {
+            tracing::warn!(
+                provider = %ctx.provider_slug,
+                max_lookups = MAX_UNLOCK_LOOKUPS,
+                skipped,
+                "more locked chapters than the unlock-lookup cap; the rest keep no unlock date \
+                 and stay locked until a later scan"
+            );
+        }
     }
 
     /// Series entries out of a catalogue island.
@@ -342,7 +405,7 @@ impl SourceAdapter for AstroIslandAdapter {
         let resp = ctx.fetch(path).await?;
         let flavour = self.flavour;
         let series_path = path.trim_end_matches('/').to_owned();
-        parse_blocking(resp, move |root, resp| {
+        let mut chapters = parse_blocking(resp, move |root, resp| {
             let key = flavour.chapters_key();
             let island = island_with(root, key)
                 .ok_or_else(|| AdapterError::missing(&format!("astro island `{key}`"), resp))?;
@@ -351,7 +414,7 @@ impl SourceAdapter for AstroIslandAdapter {
                 .and_then(Value::as_array)
                 .ok_or_else(|| AdapterError::missing(&format!("astro `{key}` array"), resp))?;
 
-            let mut chapters = Vec::with_capacity(rows.len());
+            let mut chapters: Vec<ChapterMeta> = Vec::with_capacity(rows.len());
             for row in rows {
                 let Some(number) = chapter_number(row) else {
                     continue;
@@ -380,7 +443,12 @@ impl SourceAdapter for AstroIslandAdapter {
             }
             Ok(chapters)
         })
-        .await
+        .await?;
+
+        // Only touches locked rows the listing gave no date for; a no-op on Asura and on any
+        // series without a paywall.
+        self.resolve_unlock_times(ctx, &mut chapters).await;
+        Ok(chapters)
     }
 }
 
@@ -432,8 +500,15 @@ mod tests {
         );
     }
 
-    /// HiveToons publishes the flag without a date. Reading that as "unlocks now" would put a
-    /// chapter the reader cannot open into their unread count.
+    /// HiveToons' *listing* publishes the flag without a date — the date is on the chapter page,
+    /// which `resolve_unlock_times` fetches afterwards. Until it does, the row must read as
+    /// locked-with-no-date; reading it as "unlocks now" would put a chapter the reader cannot
+    /// open into their unread count.
+    ///
+    /// The tempting shortcut — `updatedAt` + 7 days — is what this test exists to keep out. It
+    /// matches the site's default and nothing else: the upload form offers a custom duration in
+    /// hours, so a series that sets one would be given a confidently wrong date, and a wrong
+    /// date in the past unlocks a chapter that is still behind the paywall.
     #[test]
     fn hivetoons_locked_chapters_have_no_date_and_stay_locked() {
         let row = json!({"isLocked": true, "isTimeLocked": true, "price": 10});

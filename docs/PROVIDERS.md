@@ -60,7 +60,7 @@ Where each provider publishes the fact:
 |---|---|---|
 | Omega Scans | `price > 0` in the chapter JSON | `free_at` |
 | Asura Scans | `is_locked` in the Astro island props | `unlock_time` / `early_access_until` |
-| Hive Toons | `isLocked` / `isTimeLocked` in the island props | not published — stays locked |
+| Hive Toons | `isLocked` / `isTimeLocked` in the series island | `unlockAt`, on the **chapter** page — fetched per locked chapter, because the listing omits it and the window is per-chapter configurable |
 | Toonily and other Madara sites | `chapters.locked` selector in the provider config | `chapters.unlock`, where rendered |
 | WEBTOON | none: Fast Pass episodes are not rendered to an anonymous visitor at all | n/a |
 

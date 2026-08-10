@@ -22,14 +22,22 @@ use time::format_description::well_known::Rfc3339;
 /// API host. The provider's `base_url` is the reader site.
 const API: &str = "https://api.comick.dev";
 
-/// Rows per catalogue page; the endpoint's own maximum.
-const CATALOG_LIMIT: u32 = 100;
+/// Rows per catalogue page.
+///
+/// Fifty, because that is the endpoint's actual ceiling — it answers
+/// `400 {"message":"Limit must be at most 50"}` above it. It does so *inconsistently*, which is
+/// how a value of 100 survived every earlier check: a live walk served pages one through five
+/// at 100 and rejected page six, ending the catalogue at 500 series. A limit that works until
+/// it does not is worse than one that never works, because nothing fails while it is being
+/// tested.
+const CATALOG_LIMIT: u32 = 50;
 
-/// Chapter pages fetched per series before giving up on a feed that never ends.
-const MAX_CHAPTER_PAGES: u32 = 60;
+/// Chapter pages fetched per series before giving up on a feed that never ends. Doubled with
+/// the page size halving, so the reachable chapter count is unchanged.
+const MAX_CHAPTER_PAGES: u32 = 120;
 
-/// Rows per chapter page.
-const CHAPTER_LIMIT: u32 = 100;
+/// Rows per chapter page. The same ceiling as the catalogue's — see [`CATALOG_LIMIT`].
+const CHAPTER_LIMIT: u32 = 50;
 
 /// A search/browse row.
 #[derive(Debug, Deserialize)]

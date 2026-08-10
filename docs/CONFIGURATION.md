@@ -463,11 +463,16 @@ So a caller sets `internal.caller.*`, a callee sets `internal.peers.*`, and `wor
 | `TANKOVAULT_INTERNAL__TLS__CERT` | *(unset)* | all under `mtls` | PEM certificate chain this service serves and presents. |
 | `TANKOVAULT_INTERNAL__TLS__KEY` | *(unset)* | all under `mtls` | PEM private key for the above. |
 | `TANKOVAULT_INTERNAL__TLS__CA` | *(unset)* | all under `mtls` | PEM bundle of the authorities a peer certificate must chain to. **Only these** — the public root store is switched off on internal clients, since a peer signed by a public CA is not a peer. |
+| `TANKOVAULT_INTERNAL__TLS__PROBE_LISTEN` | `0.0.0.0:9091` | all under `mtls` | The **plaintext** listener carrying `/health` and `/ready`, read under `mtls` only. A kubelet probe presents no client certificate, so on the mTLS port it gets a TLS alert (`malformed HTTP response "\x15\x03\x03…"`) and the replica is restarted as unhealthy — point the probes here instead. It carries `/health` and `/ready` and nothing else: the metrics scrape stays wherever `TANKOVAULT_METRICS__LISTEN` put it, so merging the scrape onto the mTLS port keeps it behind a certificate. Set to `null` (JSON) only where whatever does the probing can present one. |
 | `TANKOVAULT_INTERNAL__TOKEN` | *(retired)* | — | **Refused at boot.** One secret shared by every service meant any one of them could call all the others' privileged routes: `challenge-solver`'s credential could unlink a user's tracker account through `sync`. Replace it with the per-caller keys above. |
 
 `/health` and `/ready` are merged outside this stack on every service, so an orchestrator probe
-never needs a credential — including under `mtls`, where they stay on the plain listener because
-a kubelet probe presents no client certificate.
+never needs a credential. Under `mtls` that is not enough on its own: the credential the probe
+lacks is the client certificate, and without one the connection never becomes HTTP at all. So
+the probes get a second, plaintext home on `internal.tls.probe_listen` (`0.0.0.0:9091`) carrying
+`/health` and `/ready` and nothing else, and **every probe definition has to point at it** —
+`8081`, `8083`, `8084` and the worker's ops port answer a plain `GET /health` with a TLS alert
+once `identity=mtls` is on.
 
 Two things are refused at boot rather than discovered later, because neither produces a symptom
 on its own:

@@ -404,6 +404,7 @@ mod tests {
                 caller: None,
                 peers,
                 tls: None,
+                probe_listen: None,
             },
             RouteTable(ROUTES),
         )

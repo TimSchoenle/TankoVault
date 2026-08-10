@@ -333,12 +333,13 @@ fn spawn_ops_listener(
             tankovault_service::RouteTable(dryrun::INTERNAL_ROUTES),
         )))
         .apply(dryrun::router(engine))
-        .merge(tankovault_service::ops_router(health, metrics));
+        .merge(tankovault_service::ops_router(health.clone(), metrics));
+    let probes = tankovault_service::probe_router(health);
 
     let bind = cfg.bind_addr.clone();
     tokio::spawn(async move {
         if let Err(e) =
-            tankovault_service::serve_internal(&bind, app, &internal_auth, shutdown).await
+            tankovault_service::serve_internal(&bind, app, probes, &internal_auth, shutdown).await
         {
             tracing::error!(error = %e, "worker ops listener stopped");
         }

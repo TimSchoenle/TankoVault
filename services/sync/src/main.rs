@@ -520,9 +520,16 @@ async fn serve_once(
             tankovault_service::RouteTable(INTERNAL_ROUTES),
         )))
         .apply(routes)
-        .merge(tankovault_service::ops_router(health, metrics));
+        .merge(tankovault_service::ops_router(health.clone(), metrics));
 
-    tankovault_service::serve_internal(&cfg.bind_addr, app, internal_auth, shutdown).await?;
+    tankovault_service::serve_internal(
+        &cfg.bind_addr,
+        app,
+        tankovault_service::probe_router(health),
+        internal_auth,
+        shutdown,
+    )
+    .await?;
     Ok(())
 }
 

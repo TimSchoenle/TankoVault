@@ -28,59 +28,134 @@ use inkstone_ui::Button;
 use progenitor_client::ResponseValue;
 use query::{DiscoverFilters, YEAR_MAX, YEAR_MIN};
 pub(crate) use query::{DiscoverQuery, Sort, Tracking};
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap, VecDeque};
 /// How many *rows* of covers one fetched page holds. How many series that is depends on how
 /// many columns the window fits — see [`crate::components::use_grid_fit`].
 const PAGE_ROWS: usize = 4;
 
-/// Most covers one window will page in before it stops on its own.
+/// Most covers one window keeps mounted at a time.
 ///
 /// A sentinel with no ceiling turns a 54 000-title catalogue into an unbounded DOM: nothing is
 /// released as it scrolls past, so the cost of the screen grows for as long as the reader keeps
-/// going. At the ceiling the grid offers to continue from where it stopped, which is this same
-/// window rebuilt at that anchor — the reader keeps scrolling, the DOM does not keep growing.
-const MAX_WINDOW_ITEMS: usize = 600;
+/// going. At the ceiling the window *slides* instead — the page furthest above the viewport is
+/// released, a spacer holds its measured height open, and scrolling back into that spacer fetches
+/// it again. The DOM stays bounded and neither direction costs the reader a click.
+const WINDOW_ITEMS: usize = 600;
 
-/// One loaded window of the catalogue: the filter it belongs to, where it starts, and how far it
-/// has been paged.
+/// Which end of the window a request belongs to.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Edge {
+    /// A page released earlier, fetched back as the reader scrolls up and prepended.
+    Head,
+    /// New ground below the window, appended. The end the reader pages into.
+    Tail,
+}
+
+/// One request: which catalogue page, and enough of the window to tell whether the answer still
+/// belongs to it.
+///
+/// Separate from [`Held`] because the window slides *without* asking for anything — releasing a
+/// page is not a fetch, and a request keyed on the whole window would issue one for a page the
+/// window already holds. `generation` keeps two otherwise identical requests distinguishable, so
+/// a response can never be merged into the window that replaced it.
+#[derive(Clone, PartialEq)]
+struct Fetch {
+    generation: usize,
+    filters: DiscoverFilters,
+    size: usize,
+    /// 0-based catalogue page index.
+    page: usize,
+    edge: Edge,
+}
+
+/// The pages one window holds, and where in the catalogue they sit.
 ///
 /// The page size is part of it because a window is *expressed* in pages: a resize that changes the
 /// size makes every page boundary in the loaded list wrong, so the window is rebuilt at the
 /// reader's current anchor rather than continued at a size the pages before it were never fetched
-/// at. `generation` keeps two otherwise identical windows distinguishable, so a response can never
-/// be merged into the window that replaced it.
+/// at.
 #[derive(Clone, PartialEq)]
-struct Window {
+struct Held {
     generation: usize,
     filters: DiscoverFilters,
     size: usize,
-    /// 0-based index of the window's first page.
+    /// The first page this window ever asked for. Nothing above it was ever rendered, so there is
+    /// no measured height to hold its place — that is what `Back to start` is for.
+    origin: usize,
+    /// The first page still held.
     start: usize,
-    /// Pages asked for so far, counted from `start`.
-    want: usize,
+    /// The held pages, in catalogue order, starting at [`Held::start`].
+    pages: VecDeque<Vec<SeriesSummary>>,
 }
 
-impl Window {
-    /// The catalogue index of this window's first card.
+impl Held {
+    /// An empty window anchored at the page containing catalogue item `at`.
+    fn new(generation: usize, filters: DiscoverFilters, size: usize, at: usize) -> Self {
+        let origin = at / size.max(1);
+        Self {
+            generation,
+            filters,
+            size,
+            origin,
+            start: origin,
+            pages: VecDeque::new(),
+        }
+    }
+
+    /// The catalogue index of the first card held.
     fn first(&self) -> usize {
         self.start.saturating_mul(self.size)
     }
 
-    /// Whether an anchor falls inside the window as it has been asked for.
+    /// Cards held, across every page.
+    fn count(&self) -> usize {
+        self.pages.iter().map(Vec::len).sum()
+    }
+
+    /// Whether an anchor falls inside what the window holds.
     ///
     /// This is what separates "the reader scrolled" from "the reader jumped": an anchor the window
     /// already covers is a scroll position to record, and one outside it is a request to rebuild
-    /// the window there — which is how a deep link, the back button and the continue-from-here
-    /// control all arrive at the same code path.
+    /// the window there — which is how a deep link and the back button reach the same code path.
+    /// Scrolling up into the released span is neither, because the markers only ever name a page
+    /// that is still held.
     fn covers(&self, at: usize) -> bool {
-        let span = self.want.saturating_mul(self.size);
+        let span = self.pages.len().saturating_mul(self.size);
         at >= self.first() && at < self.first().saturating_add(span)
     }
 
-    /// Pages this window will fetch before it stops paging on its own.
-    fn max_pages(&self) -> usize {
-        (MAX_WINDOW_ITEMS / self.size.max(1)).max(1)
+    /// Pages the window keeps before it releases from the other end.
+    ///
+    /// Never under two: a window of one page would release the page the reader is looking at to
+    /// make room for the one below it.
+    fn capacity(&self) -> usize {
+        (WINDOW_ITEMS / self.size.max(1)).max(2)
     }
+
+    /// Pages released above the window — the span the spacer has to hold open.
+    fn released(&self) -> usize {
+        self.start.saturating_sub(self.origin)
+    }
+}
+
+/// The height a released run of pages has to leave behind, from what those pages measured while
+/// they were mounted.
+///
+/// A page with no measurement falls back to the mean of the ones there are: every page in a window
+/// is the same whole rows of the same cards, so the mean *is* the height — the fallback only
+/// covers a page released before its observer first reported.
+fn released_height(heights: &HashMap<usize, f64>, from: usize, to: usize) -> f64 {
+    if to <= from || heights.is_empty() {
+        return 0.0;
+    }
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "a map of page heights, one entry per page of a bounded window"
+    )]
+    let mean = heights.values().sum::<f64>() / heights.len() as f64;
+    (from..to)
+        .map(|page| heights.get(&page).copied().unwrap_or(mean))
+        .sum()
 }
 
 /// Discover screen.
@@ -93,18 +168,21 @@ pub(crate) fn Discover(query: DiscoverQuery) -> Element {
     let fit = use_grid_fit(PAGE_ROWS);
 
     let mut panel_open = use_signal(|| true);
-    let mut window = use_signal(|| Option::<Window>::None);
+    let mut held = use_signal(|| Option::<Held>::None);
+    let mut fetch = use_signal(|| Option::<Fetch>::None);
     let mut generation = use_signal(|| 0usize);
-    // Accumulated rather than refetched as one prefix (which is what the watchlist does): the
-    // catalogue endpoint caps `limit` at 100, so a prefix request cannot express a deep window.
-    let mut items = use_signal(Vec::<SeriesSummary>::new);
+    // The request that has landed. Equal to `fetch` exactly when nothing is on the wire, which is
+    // what gates a second request.
+    let mut merged = use_signal(|| Option::<Fetch>::None);
     let mut total = use_signal(|| 0i64);
     let mut exhausted = use_signal(|| false);
-    // Pages merged into `items`; `want` minus this is what is still on the wire.
-    let mut loaded = use_signal(|| 0usize);
-    let mut merged = use_signal(|| Option::<Window>::None);
     let mut settled = use_signal(|| false);
-    // Which pages of the window overlap the viewport. The lowest is the reader's position;
+    // Every page this window has rendered, by catalogue page index, as it measured. A released
+    // page has to leave exactly its own height behind or the release scrolls the covers out from
+    // under the reader.
+    let mut heights = use_signal(HashMap::<usize, f64>::new);
+    // Which pages of the catalogue overlap the viewport, by absolute index — relative ones would
+    // shift under the set every time the window slid. The lowest is the reader's position;
     // tracking the whole set rather than the last event is what keeps a fast scroll — which can
     // leave two markers intersecting between frames — from recording the wrong one.
     let mut on_screen = use_signal(BTreeSet::<usize>::new);
@@ -146,7 +224,7 @@ pub(crate) fn Discover(query: DiscoverQuery) -> Element {
         let Some(size) = fit.page_size() else {
             return;
         };
-        let stale = window
+        let stale = held
             .peek()
             .as_ref()
             .is_none_or(|w| w.filters != query.filters || w.size != size || !w.covers(query.at));
@@ -155,35 +233,36 @@ pub(crate) fn Discover(query: DiscoverQuery) -> Element {
         }
         let next = *generation.peek() + 1;
         generation.set(next);
-        window.set(Some(Window {
+        let window = Held::new(next, query.filters.clone(), size, query.at);
+        fetch.set(Some(Fetch {
             generation: next,
-            filters: query.filters.clone(),
+            filters: window.filters.clone(),
             size,
-            start: query.at / size,
-            want: 1,
+            page: window.start,
+            edge: Edge::Tail,
         }));
-        items.write().clear();
+        held.set(Some(window));
+        merged.set(None);
+        heights.write().clear();
         on_screen.write().clear();
-        loaded.set(0);
         settled.set(false);
         exhausted.set(false);
         restore.set(query.at > 0);
     }));
 
-    // One page per run. The window is the only dependency, so a bumped `want` is exactly one more
-    // request and nothing else re-fetches.
+    // One page per run. The request is the only dependency, so a page asked for at either end is
+    // exactly one more request and nothing else re-fetches.
     let page = use_resource(move || {
         reload.track();
-        let current = window.read().clone();
+        let current = fetch.read().clone();
         let client = api.client();
         async move {
             // Parked, not guessed: a request sized for the wrong grid would be answered and then
             // thrown away by the corrected one, doubling this screen's query load.
-            let Some(window) = current else {
+            let Some(request) = current else {
                 return unmeasured().await;
             };
-            let index = window.start + window.want - 1;
-            let filters = &window.filters;
+            let filters = &request.filters;
             let mut builder = client.list();
             if let Some(content_type) = filters.types.first() {
                 builder = builder.content_type(content_type.token());
@@ -214,8 +293,8 @@ pub(crate) fn Discover(query: DiscoverQuery) -> Element {
             }
             let outcome = builder
                 .sort(filters.sort.token())
-                .page(i64::try_from(index).unwrap_or(i64::MAX))
-                .limit(i64::try_from(window.size).unwrap_or(24))
+                .page(i64::try_from(request.page).unwrap_or(i64::MAX))
+                .limit(i64::try_from(request.size).unwrap_or(24))
                 .send()
                 .await
                 .map(|r| {
@@ -237,32 +316,63 @@ pub(crate) fn Discover(query: DiscoverQuery) -> Element {
                     }
                 })
                 .map_err(|e| api::friendly_error(i18n, e));
-            // The window travels with its own answer, success or failure. A response that outlived
+            // The request travels with its own answer, success or failure. A response that outlived
             // the window it was asked for is then simply not the current one, rather than a page
-            // appended to a list it does not belong to.
-            (window, outcome)
+            // merged into a list it does not belong to.
+            (request, outcome)
         }
     });
 
-    // Renders from `items`, not from the resource: the resource holds one page, and a failed
+    // Renders from the window, not from the resource: the resource holds one page, and a failed
     // second page must not blank the first.
     use_effect(move || {
-        let outcome = page.read();
-        let Some((answered, Ok(data))) = &*outcome else {
+        let answer = page.read();
+        let Some((answered, Ok(data))) = &*answer else {
             return;
         };
-        if window.peek().as_ref() != Some(answered) || merged.peek().as_ref() == Some(answered) {
+        if merged.peek().as_ref() == Some(answered) {
             return;
         }
-        merged.set(Some(answered.clone()));
-        if answered.want == 1 {
-            items.set(data.items.clone());
-        } else {
-            items.write().extend(data.items.iter().cloned());
+        let mut released_tail = false;
+        {
+            let mut window = held.write();
+            let Some(window) = window.as_mut() else {
+                return;
+            };
+            if window.generation != answered.generation {
+                return;
+            }
+            match answered.edge {
+                Edge::Tail => {
+                    window.pages.push_back(data.items.clone());
+                    // Release from the head to make room. The spacer above grows by exactly the
+                    // height the released page occupied, so the document keeps its shape.
+                    while window.pages.len() > window.capacity() {
+                        window.pages.pop_front();
+                        window.start += 1;
+                    }
+                }
+                Edge::Head => {
+                    window.pages.push_front(data.items.clone());
+                    window.start = answered.page;
+                    while window.pages.len() > window.capacity() {
+                        window.pages.pop_back();
+                        // The window no longer holds the end of the result set, so the sentinel
+                        // below it has something to ask for again. Without this the list stayed
+                        // "finished" after one scroll up and the released tail never came back.
+                        released_tail = true;
+                    }
+                }
+            }
         }
+        merged.set(Some(answered.clone()));
         total.set(data.total);
-        exhausted.set(data.next_cursor.is_none());
-        loaded.set(answered.want);
+        // Only a tail page can reach the end of the result set; a head page never does.
+        if answered.edge == Edge::Tail {
+            exhausted.set(data.next_cursor.is_none());
+        } else if released_tail {
+            exhausted.set(false);
+        }
         settled.set(true);
     });
 
@@ -271,38 +381,66 @@ pub(crate) fn Discover(query: DiscoverQuery) -> Element {
     };
     let on_filters = move |filters: DiscoverFilters| go(DiscoverQuery::with_filters(filters));
 
-    let snapshot = window.read().clone();
-    let size = snapshot.as_ref().map_or(1, |w| w.size.max(1));
-    let start = snapshot.as_ref().map_or(0, |w| w.start);
-    let first = snapshot.as_ref().map_or(0, Window::first);
-    let in_flight = snapshot.as_ref().is_some_and(|w| w.want > *loaded.read());
-    let capped = snapshot
-        .as_ref()
-        .is_some_and(|w| *loaded.read() >= w.max_pages());
-    let more = !*exhausted.read() && !capped;
+    // Borrowed, not cloned: a window is up to `WINDOW_ITEMS` summaries, and cloning it on every
+    // render would be the most expensive thing this screen does.
+    let window = held.read();
+    let size = window.as_ref().map_or(1, |w| w.size.max(1));
+    let start = window.as_ref().map_or(0, |w| w.start);
+    let origin = window.as_ref().map_or(0, |w| w.origin);
+    let first = window.as_ref().map_or(0, Held::first);
+    let count = window.as_ref().map_or(0, Held::count);
+    let released = window.as_ref().map_or(0, Held::released);
+    // Read only while something *is* released, so a window that never slid does not re-render on
+    // every page's first measurement.
+    let lift = if released > 0 {
+        released_height(&heights.read(), origin, start)
+    } else {
+        0.0
+    };
+    let request = fetch.read().clone();
     // Only this window's failure counts: the resource still holds the last answer while the next
     // one is in flight, and that answer can belong to a window three filter changes ago.
     let answer = page.read();
     let failure = answer
         .as_ref()
         .and_then(|(answered, outcome)| match outcome {
-            Err(message) if snapshot.as_ref() == Some(answered) => Some(message.clone()),
+            Err(message) if request.as_ref() == Some(answered) => Some(message.clone()),
             _ => None,
         });
+    // A failure leaves this true, which is deliberate: paging stops at a refused page rather than
+    // asking the same server the same question every time the sentinel crosses the viewport.
+    let in_flight = request.is_some() && merged.read().as_ref() != request.as_ref();
+    let more = !*exhausted.read();
 
-    // Bumping `want` is the only way a page is ever asked for, and it is refused while the
-    // previous one is still on the wire — an ungated bump is a duplicate request per frame.
-    let mut advance = move || {
+    // Asking for a page is the only way one is ever fetched, and it is refused while another is
+    // still on the wire — an ungated ask is a duplicate request per frame.
+    let mut ask = move |edge: Edge| {
         if in_flight {
             return;
         }
-        if let Some(pending) = window.write().as_mut() {
-            pending.want += 1;
-        }
+        let request = {
+            let borrowed = held.peek();
+            let Some(window) = borrowed.as_ref() else {
+                return;
+            };
+            let page = match edge {
+                Edge::Tail => window.start + window.pages.len(),
+                // Nothing above the window's origin was ever rendered, so there is no height to
+                // hold its place and no spacer to scroll into.
+                Edge::Head if window.start > window.origin => window.start - 1,
+                Edge::Head => return,
+            };
+            Fetch {
+                generation: window.generation,
+                filters: window.filters.clone(),
+                size: window.size,
+                page,
+                edge,
+            }
+        };
+        fetch.set(Some(request));
     };
 
-    let cards = items.read();
-    let count = cards.len();
     let discover_class = if *panel_open.read() {
         "ik-discover"
     } else {
@@ -371,7 +509,7 @@ pub(crate) fn Discover(query: DiscoverQuery) -> Element {
                         SkeletonGrid { count: fit.page_size_or_default() }
                     }
                 } else if count == 0 {
-                    {empty_state(i18n, &head_filters, start > 0, on_filters)}
+                    {empty_state(i18n, &head_filters, origin > 0, on_filters)}
                 } else {
                     div { class: "ik-count-line",
                         {
@@ -384,8 +522,8 @@ pub(crate) fn Discover(query: DiscoverQuery) -> Element {
                                 ],
                             )
                         }
-                        // A window that does not start at the top was opened from a link or
-                        // continued past the ceiling, so the covers above it were never fetched.
+                        // A window that does not start at the top was opened from a link, or has
+                        // slid; either way the top of the result set is a jump, not a scroll.
                         if start > 0 {
                             {
                                 let filters = head_filters.clone();
@@ -401,14 +539,44 @@ pub(crate) fn Discover(query: DiscoverQuery) -> Element {
                         }
                     }
                     div { class: "ik-scroll-pages",
-                        for (n, chunk) in cards.chunks(size).enumerate() {
+                        // The span released above the window, held open at the height it had while
+                        // it was mounted — without it, releasing a page scrolls the covers out from
+                        // under the reader. The lead-in hangs below the spacer's foot, over the
+                        // first page still held, so the released page is on the wire while the
+                        // reader is still a screenful short of the gap.
+                        if released > 0 {
+                            div { class: "ik-scroll-spacer", style: "height:{lift:.1}px;",
+                                if !in_flight {
+                                    div {
+                                        class: "ik-scroll-lead",
+                                        onvisible: move |event| {
+                                            if event.data.is_intersecting().unwrap_or(false) {
+                                                ask(Edge::Head);
+                                            }
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                        for (n , chunk) in window.iter().flat_map(|w| w.pages.iter()).enumerate() {
                             {
                                 // One clone per page rather than per card: each marker's handler
                                 // has to outlive this render to answer a scroll.
                                 let filters = head_filters.clone();
                                 let at_now = query.at;
+                                // The page's own place in the catalogue. Everything a handler
+                                // records is keyed on this rather than on `n`, which shifts under
+                                // the whole set every time the window slides.
+                                let index = start + n;
                                 rsx! {
-                                    div { key: "page-{start + n}", class: "ik-scroll-page",
+                                    div {
+                                        key: "page-{index}",
+                                        class: "ik-scroll-page",
+                                        onresize: move |event| {
+                                            if let Ok(box_size) = event.get_border_box_size() {
+                                                heights.write().insert(index, box_size.height);
+                                            }
+                                        },
                                         // One marker per page, sized to the page, rather than an
                                         // observer per card: 600 covers would be 600 observers to
                                         // answer a question one per page answers as well. It is
@@ -430,12 +598,12 @@ pub(crate) fn Discover(query: DiscoverQuery) -> Element {
                                                 let showing = event.data.is_intersecting().unwrap_or(false);
                                                 {
                                                     let mut seen = on_screen.write();
-                                                    if showing { seen.insert(n); } else { seen.remove(&n); }
+                                                    if showing { seen.insert(index); } else { seen.remove(&index); }
                                                 }
                                                 let Some(top) = on_screen.peek().iter().next().copied() else {
                                                     return;
                                                 };
-                                                let at = (start + top).saturating_mul(size);
+                                                let at = top.saturating_mul(size);
                                                 if at != at_now {
                                                     // Replace, not push: a scroll is not a
                                                     // navigation, and pushing would put one history
@@ -466,7 +634,7 @@ pub(crate) fn Discover(query: DiscoverQuery) -> Element {
                             class: "ik-scroll-sentinel",
                             onvisible: move |event| {
                                 if event.data.is_intersecting().unwrap_or(false) {
-                                    advance();
+                                    ask(Edge::Tail);
                                 }
                             },
                         }
@@ -482,28 +650,13 @@ pub(crate) fn Discover(query: DiscoverQuery) -> Element {
                             }
                         } else if in_flight {
                             span { {i18n.t("discover.loadingMore")} }
-                        } else if capped {
-                            span { {i18n.t("discover.windowFull")} }
-                            {
-                                let filters = head_filters.clone();
-                                rsx! {
-                                    button {
-                                        class: "ik-scroll-more",
-                                        r#type: "button",
-                                        onclick: move |_| {
-                                            go(DiscoverQuery { filters: filters.clone(), at: first + count });
-                                        },
-                                        {i18n.t("discover.continueHere")}
-                                    }
-                                }
-                            }
                         } else if more {
                             // Keyboard-reachable equivalent of the scroll sentinel, and the
                             // fallback when the observer never re-fires.
                             button {
                                 class: "ik-scroll-more",
                                 r#type: "button",
-                                onclick: move |_| advance(),
+                                onclick: move |_| ask(Edge::Tail),
                                 {i18n.t("discover.loadMore")}
                             }
                         } else {
@@ -559,13 +712,15 @@ fn empty_state(
 mod tests {
     use super::*;
 
-    fn window(start: usize, want: usize) -> Window {
-        Window {
+    /// A window of `pages` pages of 24, starting at page `start`, built at page `origin`.
+    fn window(origin: usize, start: usize, pages: usize) -> Held {
+        Held {
             generation: 1,
             filters: DiscoverFilters::default(),
             size: 24,
+            origin,
             start,
-            want,
+            pages: std::iter::repeat_with(Vec::new).take(pages).collect(),
         }
     }
 
@@ -575,7 +730,7 @@ mod tests {
     /// the other and a deep link renders the top of the catalogue under a URL naming item 500.
     #[test]
     fn an_anchor_inside_the_window_is_a_scroll_not_a_jump() {
-        let loaded = window(4, 3);
+        let loaded = window(4, 4, 3);
         assert!(loaded.covers(96), "the window's own first card");
         assert!(loaded.covers(120), "a page the reader scrolled to");
         assert!(loaded.covers(167), "the last card asked for");
@@ -583,29 +738,50 @@ mod tests {
         assert!(!loaded.covers(168), "the page after the last one asked for");
     }
 
-    /// Continuing at the ceiling hands the next window the index just past the loaded cards, which
-    /// must read as a jump — if it did not, the button would rewrite the URL and load nothing.
+    /// A window that has slid covers the pages it still *holds*, not the ones it once did.
+    /// Anything else and the anchor the reader scrolled past would keep the released pages
+    /// looking loaded, so scrolling back would render a gap instead of fetching them again.
     #[test]
-    fn continuing_past_the_last_loaded_card_rebuilds_the_window() {
-        let full = window(0, 5);
-        assert!(!full.covers(full.first() + 5 * full.size));
+    fn a_window_that_has_slid_covers_only_what_it_holds() {
+        let slid = window(0, 5, 3);
+        assert!(!slid.covers(0), "released, and no longer in the window");
+        assert!(slid.covers(120), "the first page still held");
+        assert_eq!(slid.released(), 5);
     }
 
     /// The ceiling is on covers, not pages: a page is as wide as the window, so a fixed page
     /// ceiling would hold 600 covers on a phone and 1200 on a desktop.
     #[test]
     fn the_page_ceiling_follows_the_page_size() {
-        assert_eq!(window(0, 1).max_pages(), MAX_WINDOW_ITEMS / 24);
-        let wide = Window {
+        assert_eq!(window(0, 0, 1).capacity(), WINDOW_ITEMS / 24);
+        let wide = Held {
             size: 60,
-            ..window(0, 1)
+            ..window(0, 0, 1)
         };
-        assert_eq!(wide.max_pages(), MAX_WINDOW_ITEMS / 60);
-        // A page wider than the whole ceiling still gets one page rather than none.
-        let huge = Window {
-            size: MAX_WINDOW_ITEMS * 2,
-            ..window(0, 1)
+        assert_eq!(wide.capacity(), WINDOW_ITEMS / 60);
+        // A page wider than the whole ceiling still gets two, never one: a window of one page
+        // would release the page the reader is looking at to make room for the next.
+        let huge = Held {
+            size: WINDOW_ITEMS * 2,
+            ..window(0, 0, 1)
         };
-        assert_eq!(huge.max_pages(), 1);
+        assert_eq!(huge.capacity(), 2);
+    }
+
+    /// A released page has to leave exactly its own height behind. Summing the *measured* heights
+    /// rather than multiplying one of them is what keeps the spacer honest when the last page of
+    /// a result set is short; a mismatch here scrolls the grid under the reader's eyes on every
+    /// release.
+    #[test]
+    fn the_spacer_holds_the_heights_the_released_pages_measured() {
+        let heights = HashMap::from([(0, 1000.0), (1, 1200.0), (2, 400.0)]);
+        assert!((released_height(&heights, 0, 3) - 2600.0).abs() < f64::EPSILON);
+        assert!((released_height(&heights, 1, 2) - 1200.0).abs() < f64::EPSILON);
+        assert!((released_height(&heights, 2, 2)).abs() < f64::EPSILON);
+        // A page released before its observer reported falls back to the mean of the rest.
+        let partial = HashMap::from([(0, 1000.0), (1, 1000.0)]);
+        assert!((released_height(&partial, 0, 3) - 3000.0).abs() < f64::EPSILON);
+        // Nothing measured at all is a spacer of nothing, never a NaN height in the style attribute.
+        assert!(released_height(&HashMap::new(), 0, 3).abs() < f64::EPSILON);
     }
 }

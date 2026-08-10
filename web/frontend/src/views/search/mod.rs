@@ -184,10 +184,12 @@ fn SearchField(
 ) -> Element {
     let i18n = use_i18n();
     let mut draft = use_signal(|| term.clone());
-    // Reset when the route's term changes under it — the back button is a term change.
-    if *draft.peek() != term && !draft.peek().is_empty() && term.is_empty() {
-        draft.set(term.clone());
-    }
+    // Adopt the route's term when the *route* changes under it — the back button is a term
+    // change. As a bare `if` in the render body this ran on every render instead, and the
+    // landing page (where `term` is empty) then cleared the field on every keystroke: the
+    // keystroke re-rendered, the condition saw a non-empty draft under an empty term, and set
+    // it back. The field looked like it refused input entirely.
+    use_effect(use_reactive!(|term| draft.set(term)));
 
     let submit = move |()| {
         let text = draft.peek().trim().to_owned();

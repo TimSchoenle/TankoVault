@@ -292,25 +292,16 @@ pub(super) fn GroupHeader(
     band: Bucket,
     title_count: i64,
     chapter_count: i64,
-    /// The loaded rows in this band. Empty bands never render a header.
-    ids: Vec<SeriesId>,
-    /// Whether every row of the band is loaded — otherwise `Mark group read` would silently
-    /// mark a fraction and report success.
-    complete: bool,
+    /// Why the band cannot be marked read in one go, or `None` when it can. The view owns this
+    /// decision because it is the only side that knows how long the band is — the header sees
+    /// what is rendered, which is never the whole of it.
+    blocked: Option<String>,
+    on_mark: EventHandler<()>,
 ) -> Element {
     let i18n = use_i18n();
-    let ctx = use_context::<RowCtx>();
-    let actionable = complete && !ids.is_empty() && ids.len() <= BULK_LIMIT;
-    let hint = if actionable {
-        i18n.t("watchlist.markGroupRead")
-    } else if ids.len() > BULK_LIMIT {
-        i18n.args(
-            "watchlist.markGroupTooBig",
-            &[("limit", &BULK_LIMIT.to_string())],
-        )
-    } else {
-        i18n.t("watchlist.markGroupIncomplete")
-    };
+    let hint = blocked
+        .clone()
+        .unwrap_or_else(|| i18n.t("watchlist.markGroupRead"));
 
     rsx! {
         div { class: "ik-wl-band", role: "row",
@@ -329,25 +320,9 @@ pub(super) fn GroupHeader(
             button {
                 class: "ik-wl-band-act",
                 r#type: "button",
-                disabled: !actionable,
+                disabled: blocked.is_some(),
                 title: "{hint}",
-                onclick: move |_| {
-                    let client = ctx.api.client();
-                    let ids = ids.clone();
-                    spawn(async move {
-                        match client
-                            .bulk_mark_read()
-                            .body(WatchlistBulkIds { series_ids: ids })
-                            .send()
-                            .await
-                        {
-                            // Changes unread counts across rows and band aggregates — genuinely
-                            // warrants a refetch, not a local edit.
-                            Ok(_) => ctx.reload.bump(),
-                            Err(e) => ctx.failed(e),
-                        }
-                    });
-                },
+                onclick: move |_| on_mark.call(()),
                 {i18n.t("watchlist.markGroupRead")}
             }
         }

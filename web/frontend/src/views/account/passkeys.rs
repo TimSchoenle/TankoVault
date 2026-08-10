@@ -8,7 +8,7 @@
 
 use crate::api;
 use crate::components::{
-    async_list, use_step_up_gate, Field, InlineConfirm, PanelCard, SkeletonBlock, StepUpPrompt,
+    async_list, use_step_up_gate, Field, InlineConfirm, PanelCard, SkeletonBlock, StepUpGuard,
 };
 use crate::hooks::{use_busy, use_reload, Reload};
 use crate::i18n::use_i18n;
@@ -86,9 +86,11 @@ pub(crate) fn PasskeysCard() -> Element {
                     // one is and has not been presented. Both are answered by the prompt, and
                     // the *type* is what tells them apart — reporting the raw problem would show
                     // "insufficient privileges" to someone perfectly entitled to be here.
-                    let detail = api::problem_detail(&e);
                     if gate.refused(api::Refusal::of(&e)) {
-                        error.set(detail);
+                        // The prompt now carries the question, so the card behind it says
+                        // nothing: the server's own sentence, printed under a modal that is
+                        // already asking for the factor, reads as a second problem.
+                        error.set(None);
                     } else {
                         error.set(Some(api::friendly_error(i18n, e)));
                     }
@@ -156,15 +158,7 @@ pub(crate) fn PasskeysCard() -> Element {
                 div { class: "ik-note", style: "padding:10px;margin:10px 0;", "{msg}" }
             }
 
-            if gate.is_open() {
-                StepUpPrompt {
-                    enrolled: true,
-                    on_done: move |()| {
-                        gate.close();
-                        error.set(None);
-                    },
-                }
-            }
+            StepUpGuard { gate }
 
             {
                 async_list(
@@ -198,13 +192,13 @@ pub(crate) fn PasskeysCard() -> Element {
                         label: i18n.t("passkey.field.label"),
                         value: label(),
                         on_input: move |v| label.set(v),
-                        on_enter: move |()| register.call(()),
+                        on_enter: move |()| gate.attempt(move || register.call(())),
                     }
                     div { class: "ik-flex", style: "gap:6px;",
                         button {
                             class: "ik-btn primary",
                             disabled: busy.is_busy(),
-                            onclick: move |_| register.call(()),
+                            onclick: move |_| gate.attempt(move || register.call(())),
                             if busy.is_busy() {
                                 {i18n.t("common.working")}
                             } else {

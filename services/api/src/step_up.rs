@@ -67,16 +67,24 @@ impl FromRequestParts<AppState> for Elevated {
     }
 }
 
-/// Resolve the `X-Step-Up` header into the `elevated` bit `AuthUser` carries.
+/// Resolve the `X-Step-Up` header into the `elevated` bit `AuthUser` carries, sliding the
+/// grant's window forward as it goes.
 ///
 /// Called once per authenticated request, from the `AuthUser` extractor. The lookup is skipped
 /// entirely when the header is absent, which is every request but the handful that follow a
 /// re-authentication prompt — so the common path costs a header probe and no query.
 ///
+/// The window is *idle* rather than absolute (`step_up_ttl`), because an operator working
+/// through a console panel was being asked to re-confirm mid-task while doing nothing but the
+/// work the elevation was earned for. `step_up_max_ttl` is the bound that survives the sliding:
+/// it is measured from when the grant was earned and no amount of use moves it, so a walked-
+/// away-from console still stops being elevated. The renewing write is one statement — the same
+/// round trip the read was — and only on requests that actually present a grant.
+///
 /// # Errors
-/// [`ApiError::Internal`] on a database failure. A missing, unknown, expired or revoked grant
-/// is `Ok(false)`, not an error: this function answers "is this request elevated", and the
-/// handler that cares decides what to do about "no".
+/// [`ApiError::Internal`] on a database failure. A missing, unknown, expired, revoked or
+/// past-its-lifetime grant is `Ok(false)`, not an error: this function answers "is this request
+/// elevated", and the handler that cares decides what to do about "no".
 pub(crate) async fn resolve(
     state: &AppState,
     user_id: tankovault_domain::UserId,
@@ -91,10 +99,13 @@ pub(crate) async fn resolve(
         return Ok(false);
     };
 
-    let Some(method) = tankovault_db::repo::users::mfa::find_step_up(
+    let now = time::OffsetDateTime::now_utc();
+    let Some(method) = tankovault_db::repo::users::mfa::renew_step_up(
         &state.pool,
         user_id,
         &tankovault_auth::hash_handle(&token),
+        now + state.step_up_ttl,
+        now - state.step_up_max_ttl,
     )
     .await?
     else {

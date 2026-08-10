@@ -1,7 +1,7 @@
 //! Registering a new provider.
 
 use crate::api;
-use crate::components::{use_step_up_gate, OutcomeLine, StepUpPrompt};
+use crate::components::{use_step_up_gate, OutcomeLine, StepUpGuard};
 use crate::hooks::{use_busy, use_outcome, Reload};
 use crate::i18n::use_i18n;
 use crate::models::*;
@@ -81,42 +81,44 @@ pub(super) fn CreateProviderForm(reload: Reload, on_done: EventHandler<()>) -> E
     let mut config = use_signal(|| "{}".to_owned());
 
     let submit = move |_| {
-        if !busy.claim() {
-            return;
-        }
-        outcome.set(None);
-        let body = match registration(
-            &slug.peek(),
-            &name.peek(),
-            &base_url.peek(),
-            &adapter.peek(),
-            &config.peek(),
-        ) {
-            Ok(body) => body,
-            Err(rejected) => {
-                outcome.set(Some(Err(rejected.wording(i18n))));
-                busy.release();
+        gate.attempt(move || {
+            if !busy.claim() {
                 return;
             }
-        };
-        let client = gate.client(api);
-        spawn(async move {
-            match client.create_provider().body(body).send().await {
-                Ok(_) => {
-                    slug.set(String::new());
-                    name.set(String::new());
-                    base_url.set(String::new());
-                    config.set("{}".to_owned());
-                    reload.bump();
-                    on_done.call(());
+            outcome.set(None);
+            let body = match registration(
+                &slug.peek(),
+                &name.peek(),
+                &base_url.peek(),
+                &adapter.peek(),
+                &config.peek(),
+            ) {
+                Ok(body) => body,
+                Err(rejected) => {
+                    outcome.set(Some(Err(rejected.wording(i18n))));
+                    busy.release();
+                    return;
                 }
-                Err(e) => {
-                    if !gate.refused(api::Refusal::of(&e)) {
-                        outcome.set(Some(Err(api::guarded_error(i18n, e))));
+            };
+            let client = gate.client(api);
+            spawn(async move {
+                match client.create_provider().body(body).send().await {
+                    Ok(_) => {
+                        slug.set(String::new());
+                        name.set(String::new());
+                        base_url.set(String::new());
+                        config.set("{}".to_owned());
+                        reload.bump();
+                        on_done.call(());
+                    }
+                    Err(e) => {
+                        if !gate.refused(api::Refusal::of(&e)) {
+                            outcome.set(Some(Err(api::guarded_error(i18n, e))));
+                        }
                     }
                 }
-            }
-            busy.release();
+                busy.release();
+            });
         });
     };
 
@@ -183,16 +185,7 @@ pub(super) fn CreateProviderForm(reload: Reload, on_done: EventHandler<()>) -> E
                         oninput: move |e| config.set(e.value()),
                     }
                 }
-                if gate.is_open() {
-                    StepUpPrompt {
-                        enrolled: true,
-                        intro: Some(i18n.t("console.stepUp.intro")),
-                        on_done: move |()| {
-                            gate.close();
-                            outcome.set(Some(Ok(i18n.t("stepUp.confirmedRetry"))));
-                        },
-                    }
-                }
+                StepUpGuard { gate, intro: Some(i18n.t("console.stepUp.intro")) }
                 OutcomeLine { outcome: outcome.read().clone() }
                 div { class: "ik-flex", style: "gap:8px;",
                     button {

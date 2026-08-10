@@ -19,7 +19,7 @@ mod history;
 mod stages;
 
 use crate::api;
-use crate::components::{async_block, use_step_up_gate, StepUpPrompt};
+use crate::components::{async_block, use_step_up_gate, StepUpGuard};
 use crate::i18n::use_i18n;
 use crate::models::*;
 use crate::views::console::live::ConsoleLive;
@@ -257,27 +257,29 @@ pub(in crate::views::console) fn ScanQueue(tick: RefreshTick) -> Element {
     }));
 
     let trigger = move |_| {
-        let chosen = *mode.read();
-        // Elevated: triggering a run is a mutating operator capability, which the API answers
-        // `403 step_up_required` to until it has a second factor.
-        let client = gate.client(api);
-        spawn(async move {
-            let body = TriggerScan {
-                mode: chosen,
-                provider_id: None,
-            };
-            match client.trigger_scan().body(body).send().await {
-                // Body carries the planner's run_ids, which this view doesn't render.
-                Ok(_) => {
-                    message.set(Some(i18n.t("console.scans.queued")));
-                    tick.bump();
-                }
-                Err(e) => {
-                    if !gate.refused(api::Refusal::of(&e)) {
-                        message.set(Some(api::guarded_error(i18n, e)));
+        gate.attempt(move || {
+            let chosen = *mode.read();
+            // Elevated: triggering a run is a mutating operator capability, which the API answers
+            // `403 step_up_required` to until it has a second factor.
+            let client = gate.client(api);
+            spawn(async move {
+                let body = TriggerScan {
+                    mode: chosen,
+                    provider_id: None,
+                };
+                match client.trigger_scan().body(body).send().await {
+                    // Body carries the planner's run_ids, which this view doesn't render.
+                    Ok(_) => {
+                        message.set(Some(i18n.t("console.scans.queued")));
+                        tick.bump();
+                    }
+                    Err(e) => {
+                        if !gate.refused(api::Refusal::of(&e)) {
+                            message.set(Some(api::guarded_error(i18n, e)));
+                        }
                     }
                 }
-            }
+            });
         });
     };
 
@@ -288,30 +290,33 @@ pub(in crate::views::console) fn ScanQueue(tick: RefreshTick) -> Element {
     let drain_provider = filter.provider.clone();
     let drain = move |_| {
         let provider = drain_provider.clone();
-        let client = gate.client(api);
-        spawn(async move {
-            let body = CancelScansBody {
-                provider,
-                mode: None,
-            };
-            match client.cancel_scans().body(body).send().await {
-                Ok(stopped) => {
-                    let stopped = stopped.into_inner();
-                    message.set(Some(i18n.args(
-                        "console.scans.cancelled",
-                        &[
-                            ("runs", &stopped.runs.to_string()),
-                            ("tasks", &stopped.tasks.to_string()),
-                        ],
-                    )));
-                    tick.bump();
-                }
-                Err(e) => {
-                    if !gate.refused(api::Refusal::of(&e)) {
-                        message.set(Some(api::guarded_error(i18n, e)));
+        gate.attempt(move || {
+            let provider = provider.clone();
+            let client = gate.client(api);
+            spawn(async move {
+                let body = CancelScansBody {
+                    provider,
+                    mode: None,
+                };
+                match client.cancel_scans().body(body).send().await {
+                    Ok(stopped) => {
+                        let stopped = stopped.into_inner();
+                        message.set(Some(i18n.args(
+                            "console.scans.cancelled",
+                            &[
+                                ("runs", &stopped.runs.to_string()),
+                                ("tasks", &stopped.tasks.to_string()),
+                            ],
+                        )));
+                        tick.bump();
+                    }
+                    Err(e) => {
+                        if !gate.refused(api::Refusal::of(&e)) {
+                            message.set(Some(api::guarded_error(i18n, e)));
+                        }
                     }
                 }
-            }
+            });
         });
     };
 
@@ -350,16 +355,7 @@ pub(in crate::views::console) fn ScanQueue(tick: RefreshTick) -> Element {
 
             filters::FilterBar { filter: filter.clone() }
 
-            if gate.is_open() {
-                StepUpPrompt {
-                    enrolled: true,
-                    intro: Some(i18n.t("console.stepUp.intro")),
-                    on_done: move |()| {
-                        gate.close();
-                        message.set(Some(i18n.t("stepUp.confirmedRetry")));
-                    },
-                }
-            }
+            StepUpGuard { gate, intro: Some(i18n.t("console.stepUp.intro")) }
             if let Some(m) = message.read().clone() {
                 p { class: "ik-muted", style: "margin:8px 0 0;", "{m}" }
             }

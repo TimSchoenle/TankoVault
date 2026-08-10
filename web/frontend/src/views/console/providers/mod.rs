@@ -17,7 +17,7 @@ pub(in crate::views::console) use test::AdapterTestPanel;
 use crate::api;
 use crate::components::{
     async_view, use_step_up_gate, HealthPill, ListFooter, ListSearch, NoSelection, OutcomeLine,
-    Section, SkeletonBlock, SliderRow, StepUpPrompt, TabBar, TabKind,
+    Section, SkeletonBlock, SliderRow, StepUpGuard, TabBar, TabKind,
 };
 use crate::hooks::{use_busy, use_outcome, use_reload, Reload};
 use crate::i18n::use_i18n;
@@ -308,66 +308,69 @@ fn ProviderInspector(
     let save = {
         let original_base = original_base.clone();
         move |_| {
-            if !busy.claim() {
-                return;
-            }
-            outcome.set(None);
-            let parsed = match serde_json::from_str::<serde_json::Value>(&config.peek()) {
-                Ok(value) => value,
-                Err(e) => {
-                    outcome.set(Some(Err(i18n.args(
-                        "console.providers.badConfig",
-                        &[("message", &e.to_string())],
-                    ))));
-                    busy.release();
+            let original_base = original_base.clone();
+            gate.attempt(move || {
+                if !busy.claim() {
                     return;
                 }
-            };
-            let politeness = match politeness_body(
-                &format!("{}", *rps.peek()),
-                &format!("{:.0}", *concurrency.peek()),
-                &format!("{:.0}", *crawl_delay.peek()),
-                &user_agent.peek(),
-                &emulation.peek(),
-            ) {
-                Ok(value) => value,
-                Err(key) => {
-                    outcome.set(Some(Err(i18n.t(key))));
-                    busy.release();
-                    return;
-                }
-            };
-            let migrating = *base_url.peek() != original_base;
-            let body = UpdateProvider {
-                name: name.peek().clone(),
-                base_url: base_url.peek().clone(),
-                config: Some(parsed),
-                politeness: Some(politeness),
-            };
-            let client = gate.client(api);
-            spawn(async move {
-                match client.update_provider().id(id).body(body).send().await {
-                    Ok(_) => {
-                        outcome.set(Some(Ok(i18n.t(if migrating {
-                            "console.providers.savedMigrating"
-                        } else {
-                            "console.providers.saved"
-                        }))));
-                        dry_run_passed.set(false);
-                        reload.bump();
-                    }
+                outcome.set(None);
+                let parsed = match serde_json::from_str::<serde_json::Value>(&config.peek()) {
+                    Ok(value) => value,
                     Err(e) => {
-                        if !gate.refused(api::Refusal::of(&e)) {
-                            outcome.set(Some(Err(api::guarded_error(i18n, e))));
+                        outcome.set(Some(Err(i18n.args(
+                            "console.providers.badConfig",
+                            &[("message", &e.to_string())],
+                        ))));
+                        busy.release();
+                        return;
+                    }
+                };
+                let politeness = match politeness_body(
+                    &format!("{}", *rps.peek()),
+                    &format!("{:.0}", *concurrency.peek()),
+                    &format!("{:.0}", *crawl_delay.peek()),
+                    &user_agent.peek(),
+                    &emulation.peek(),
+                ) {
+                    Ok(value) => value,
+                    Err(key) => {
+                        outcome.set(Some(Err(i18n.t(key))));
+                        busy.release();
+                        return;
+                    }
+                };
+                let migrating = *base_url.peek() != original_base;
+                let body = UpdateProvider {
+                    name: name.peek().clone(),
+                    base_url: base_url.peek().clone(),
+                    config: Some(parsed),
+                    politeness: Some(politeness),
+                };
+                let client = gate.client(api);
+                spawn(async move {
+                    match client.update_provider().id(id).body(body).send().await {
+                        Ok(_) => {
+                            outcome.set(Some(Ok(i18n.t(if migrating {
+                                "console.providers.savedMigrating"
+                            } else {
+                                "console.providers.saved"
+                            }))));
+                            dry_run_passed.set(false);
+                            reload.bump();
+                        }
+                        Err(e) => {
+                            if !gate.refused(api::Refusal::of(&e)) {
+                                outcome.set(Some(Err(api::guarded_error(i18n, e))));
+                            }
                         }
                     }
-                }
-                busy.release();
+                    busy.release();
+                });
             });
         }
     };
 
-    let mut set_state = move |target: ProviderState| {
+    let set_state = use_callback(move |target: ProviderState| {
         if !busy.claim() {
             return;
         }
@@ -390,24 +393,26 @@ fn ProviderInspector(
             }
             busy.release();
         });
-    };
+    });
 
     let scan = move |_| {
-        outcome.set(None);
-        let client = gate.client(api);
-        spawn(async move {
-            let body = TriggerScan {
-                mode: *scan_mode.peek(),
-                provider_id: Some(TriggerScanProviderId::Variant1(id)),
-            };
-            match client.trigger_scan().body(body).send().await {
-                Ok(_) => outcome.set(Some(Ok(i18n.t("console.providers.scanQueued")))),
-                Err(e) => {
-                    if !gate.refused(api::Refusal::of(&e)) {
-                        outcome.set(Some(Err(api::guarded_error(i18n, e))));
+        gate.attempt(move || {
+            outcome.set(None);
+            let client = gate.client(api);
+            spawn(async move {
+                let body = TriggerScan {
+                    mode: *scan_mode.peek(),
+                    provider_id: Some(TriggerScanProviderId::Variant1(id)),
+                };
+                match client.trigger_scan().body(body).send().await {
+                    Ok(_) => outcome.set(Some(Ok(i18n.t("console.providers.scanQueued")))),
+                    Err(e) => {
+                        if !gate.refused(api::Refusal::of(&e)) {
+                            outcome.set(Some(Err(api::guarded_error(i18n, e))));
+                        }
                     }
                 }
-            }
+            });
         });
     };
 
@@ -504,9 +509,11 @@ fn ProviderInspector(
                                 class: "ik-btn sm",
                                 disabled: busy.is_busy(),
                                 onclick: move |_| {
-                                    set_state(
-                                        if is_disabled { ProviderState::Active } else { ProviderState::Disabled },
-                                    );
+                                    gate.attempt(move || {
+                                        set_state.call(
+                                            if is_disabled { ProviderState::Active } else { ProviderState::Disabled },
+                                        );
+                                    });
                                 },
                                 if is_disabled {
                                     {i18n.t("console.providers.enable")}
@@ -533,16 +540,7 @@ fn ProviderInspector(
                 }
             }
             div { style: "padding:0 22px;",
-                if gate.is_open() {
-                    StepUpPrompt {
-                        enrolled: true,
-                        intro: Some(i18n.t("console.stepUp.intro")),
-                        on_done: move |()| {
-                            gate.close();
-                            outcome.set(Some(Ok(i18n.t("stepUp.confirmedRetry"))));
-                        },
-                    }
-                }
+                StepUpGuard { gate, intro: Some(i18n.t("console.stepUp.intro")) }
                 OutcomeLine { outcome: outcome.read().clone() }
             }
             match tab {

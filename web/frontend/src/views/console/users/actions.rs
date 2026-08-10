@@ -103,25 +103,28 @@ pub(super) fn VerifyEmailAction(
     let busy = use_busy();
 
     let verify = move |_| {
-        if !busy.claim() {
-            return;
-        }
         let id = user_id.clone();
-        let client = gate.client(api);
-        spawn(async move {
-            match client.verify_user_email().id(id).send().await {
-                Ok(_) => {
-                    detail_reload.bump();
-                    reload.bump();
-                }
-                // This control has no error line of its own; the refetch is what reports every
-                // other failure. An elevation demand changes nothing to refetch, so it is the
-                // one outcome that has to be raised to the editor's prompt.
-                Err(e) => {
-                    let _refused = gate.refused(api::Refusal::of(&e));
-                }
+        gate.attempt(move || {
+            if !busy.claim() {
+                return;
             }
-            busy.release();
+            let id = id.clone();
+            let client = gate.client(api);
+            spawn(async move {
+                match client.verify_user_email().id(id).send().await {
+                    Ok(_) => {
+                        detail_reload.bump();
+                        reload.bump();
+                    }
+                    // This control has no error line of its own; the refetch is what reports every
+                    // other failure. An elevation demand changes nothing to refetch, so it is the
+                    // one outcome that has to be raised to the editor's prompt.
+                    Err(e) => {
+                        let _refused = gate.refused(api::Refusal::of(&e));
+                    }
+                }
+                busy.release();
+            });
         });
     };
 

@@ -1,7 +1,7 @@
 //! Challenge & solver, plus the standalone adapter-test tab.
 
 use crate::api;
-use crate::components::{async_block_list, use_step_up_gate, HealthPill, StepUpGate, StepUpPrompt};
+use crate::components::{async_block_list, use_step_up_gate, HealthPill, StepUpGate, StepUpGuard};
 use crate::hooks::{use_reload, Reload};
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
@@ -65,13 +65,7 @@ pub(super) fn SolverPanel(tick: RefreshTick) -> Element {
                 }
             }
             h3 { {i18n.t("console.solver.providerStates")} }
-            if gate.is_open() {
-                StepUpPrompt {
-                    enrolled: true,
-                    intro: Some(i18n.t("console.stepUp.intro")),
-                    on_done: move |()| gate.close(),
-                }
-            }
+            StepUpGuard { gate, intro: Some(i18n.t("console.stepUp.intro")) }
             {body}
         }
     }
@@ -95,43 +89,47 @@ pub(super) fn SolverRow(
 
     let resolve = {
         move |_| {
-            spawn(async move {
-                let client = gate.client(api);
-                if session.token_value().is_some() {
-                    match client.resolve_provider().id(id).send().await {
-                        Ok(_) => reload.bump(),
-                        // The row has no error line, so every other failure stays silent as it
-                        // always did — but an elevation demand has to reach the panel's prompt,
-                        // or the button does nothing for the rest of the session.
-                        Err(e) => {
-                            let _refused = gate.refused(api::Refusal::of(&e));
+            gate.attempt(move || {
+                spawn(async move {
+                    let client = gate.client(api);
+                    if session.token_value().is_some() {
+                        match client.resolve_provider().id(id).send().await {
+                            Ok(_) => reload.bump(),
+                            // The row has no error line, so every other failure stays silent as it
+                            // always did — but an elevation demand has to reach the panel's prompt,
+                            // or the button does nothing for the rest of the session.
+                            Err(e) => {
+                                let _refused = gate.refused(api::Refusal::of(&e));
+                            }
                         }
                     }
-                }
+                });
             });
         }
     };
     let reenable = {
         move |_| {
-            spawn(async move {
-                let client = gate.client(api);
-                if session.token_value().is_some() {
-                    match client
-                        .set_provider_state()
-                        .id(id)
-                        .body(SetProviderStateBody {
-                            state: ProviderState::Active,
-                        })
-                        .send()
-                        .await
-                    {
-                        Ok(_) => reload.bump(),
-                        // See `resolve` above.
-                        Err(e) => {
-                            let _refused = gate.refused(api::Refusal::of(&e));
+            gate.attempt(move || {
+                spawn(async move {
+                    let client = gate.client(api);
+                    if session.token_value().is_some() {
+                        match client
+                            .set_provider_state()
+                            .id(id)
+                            .body(SetProviderStateBody {
+                                state: ProviderState::Active,
+                            })
+                            .send()
+                            .await
+                        {
+                            Ok(_) => reload.bump(),
+                            // See `resolve` above.
+                            Err(e) => {
+                                let _refused = gate.refused(api::Refusal::of(&e));
+                            }
                         }
                     }
-                }
+                });
             });
         }
     };

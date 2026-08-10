@@ -1,10 +1,19 @@
 //! The "confirm it is you" prompt a sensitive action puts up before it will run.
 //!
-//! Rendered inline by the screen that needs it rather than as a global modal, because the
-//! screens that need it are all one panel deep and an inline form keeps the action the reader
-//! was taking visible behind the question. Whichever factor they present, the grant that comes
-//! back goes into [`crate::state::step_up`] and every sensitive call in the rest of the session
-//! rides on it until it lapses.
+//! **A modal, and deliberately the one thing on screen.** It used to render inline in the panel
+//! that needed it, on the theory that keeping the reader's work visible behind the question was
+//! kinder. What it actually produced was a button that appeared to do nothing: the demand
+//! arrived as a note somewhere in a long panel, sometimes below the fold, and the action the
+//! reader had asked for simply never happened. A question that gates work has to be answered,
+//! so it takes the screen until it is.
+//!
+//! **Answering it resumes the action.** The gate remembers what was attempted
+//! ([`StepUpGate::attempt`]) and replays it once the grant lands, because "confirmed — now click
+//! it again" is a second thing to do for a question the reader did not ask to be asked.
+//!
+//! Whichever factor they present, the grant that comes back goes into [`crate::state::step_up`]
+//! and every sensitive call in the rest of the session rides on it until it lapses. The window
+//! is an idle one server-side, so working on through a panel keeps it alive.
 //!
 //! **What it offers is read off the account, not assumed.** The factors an account actually holds
 //! are whatever it enrolled — a security key, an authenticator app, or both — so the prompt asks
@@ -21,11 +30,14 @@ use crate::api::{self, Refusal};
 use crate::components::Field;
 use crate::hooks::use_busy;
 use crate::i18n::use_i18n;
+use crate::icons::{Ic, Icon};
 use crate::state::step_up::{use_step_up, StepUp};
 use crate::webauthn::{self, CeremonyError};
 use crate::wire::types::{MfaStatus, SecurityKeyAssertion, StepUpRequest};
 use dioxus::prelude::*;
 use progenitor_client::ResponseValue;
+use std::cell::RefCell;
+use std::rc::Rc;
 use webauthn_rs_proto::RequestChallengeResponse;
 
 /// Which factor the reader is being asked for.
@@ -88,17 +100,48 @@ fn offered_factors(
     offered
 }
 
-/// Ask the reader to confirm themselves, and store the grant on success.
+/// The prompt, mounted for the whole screen and rendering only once the gate has been refused.
 ///
-/// `enrolled` is the caller's best guess, used only until the account's real factor list
-/// arrives. `on_done` fires once the grant is stored, so the caller can retry whatever it was
-/// doing. `intro` replaces the default sentence, which says the action changes *your account* —
-/// true of every reader-facing use and of none of the operator ones.
+/// One line per screen: `StepUpGuard { gate }`. Confirming it replays whatever
+/// [`StepUpGate::attempt`] last recorded, so the caller has nothing to do on success — screens
+/// that also need to say something can still pass `on_done`, which runs after the replay.
+///
+/// `intro` replaces the default sentence, which says the action changes *your account* — true of
+/// every reader-facing use and of none of the operator ones. `enrolled` is the caller's best
+/// guess at whether the account holds a factor, used only until the account's real factor list
+/// arrives; every operator surface is behind a permission that implies enrolment.
 #[component]
-pub(crate) fn StepUpPrompt(
-    enrolled: bool,
-    on_done: EventHandler<()>,
+pub(crate) fn StepUpGuard(
+    gate: StepUpGate,
     #[props(default)] intro: Option<String>,
+    #[props(default = true)] enrolled: bool,
+    #[props(default)] on_done: Option<EventHandler<()>>,
+) -> Element {
+    rsx! {
+        if gate.is_open() {
+            StepUpDialog {
+                enrolled,
+                intro: intro.clone(),
+                on_done: move |()| {
+                    gate.confirmed();
+                    if let Some(handler) = on_done {
+                        handler.call(());
+                    }
+                },
+                on_cancel: move |()| gate.cancel(),
+            }
+        }
+    }
+}
+
+/// The dialog itself: mounted only while the question is open, so the factor probe below runs
+/// when it is asked rather than on every screen that *might* ask.
+#[component]
+fn StepUpDialog(
+    enrolled: bool,
+    intro: Option<String>,
+    on_done: EventHandler<()>,
+    on_cancel: EventHandler<()>,
 ) -> Element {
     let i18n = use_i18n();
     let api = api::use_api();
@@ -255,90 +298,138 @@ pub(crate) fn StepUpPrompt(
         .unwrap_or(StepUpFactor::RecoveryCode);
 
     rsx! {
-        div { class: "ik-note", style: "padding:12px;margin:12px 0;",
-            p { style: "margin:0 0 8px;font-weight:600;", {i18n.t("stepUp.title")} }
-            p { class: "ik-muted", style: "font-size:13px;margin:0 0 10px;",
-                {intro.clone().unwrap_or_else(|| i18n.t("stepUp.intro"))}
-            }
-
-            if let Some(msg) = error.read().clone() {
-                div { class: "ik-error", style: "padding:8px;margin-bottom:8px;", "{msg}" }
-            }
-
-            // Nothing is asked until the factor list has settled. A field rendered on the guess
-            // and swapped a moment later would ask half the accounts here for the wrong thing.
-            if settled {
-                if current == StepUpFactor::SecurityKey {
-                    p { class: "ik-muted", style: "font-size:13px;margin:0 0 8px;",
-                        {i18n.t("stepUp.hint.key")}
+        div { class: "ik-stepup-scrim",
+            div {
+                class: "ik-stepup",
+                role: "dialog",
+                "aria-modal": "true",
+                "aria-labelledby": "tv-step-up-title",
+                // Focusable so `Escape` reaches the dialog before anything is typed; the field
+                // below takes focus off it the moment the factor list settles.
+                tabindex: "-1",
+                onmounted: move |event| {
+                    let element = event.data();
+                    spawn(async move {
+                        let _ = element.set_focus(true).await;
+                    });
+                },
+                // No click-outside dismissal, unlike the settings sheet: this one is answered
+                // mid-typing, and a stray click on the scrim would discard a half-entered code
+                // *and* the action waiting behind it. `Escape` and the button are the ways out.
+                onkeydown: move |event| {
+                    if event.key() == Key::Escape {
+                        on_cancel.call(());
                     }
-                } else {
-                    {
-                        let (label, kind, autocomplete, hint) = match current {
-                            StepUpFactor::Totp => (
-                                i18n.t("stepUp.field.code"),
-                                "text",
-                                "one-time-code",
-                                i18n.t("stepUp.hint.code"),
-                            ),
-                            StepUpFactor::RecoveryCode => (
-                                i18n.t("stepUp.field.recovery"),
-                                "text",
-                                "off",
-                                i18n.t("stepUp.hint.recovery"),
-                            ),
-                            StepUpFactor::SecurityKey | StepUpFactor::Password => (
-                                i18n.t("stepUp.field.password"),
-                                "password",
-                                "current-password",
-                                i18n.t("stepUp.hint.password"),
-                            ),
-                        };
-                        rsx! {
-                            Field {
-                                id: "tv-step-up",
-                                label,
-                                kind,
-                                autocomplete,
-                                value: value(),
-                                hint,
-                                on_input: move |v| value.set(v),
-                                on_enter: move |()| submit.call(current),
-                            }
-                        }
+                },
+
+                div { class: "ik-stepup-head",
+                    span { class: "ik-stepup-mark", Ic { icon: Icon::ShieldLock, size: 18 } }
+                    h2 { id: "tv-step-up-title", {i18n.t("stepUp.title")} }
+                }
+                p { class: "ik-stepup-intro",
+                    {intro.clone().unwrap_or_else(|| i18n.t("stepUp.intro"))}
+                }
+
+                if let Some(msg) = error.read().clone() {
+                    div { class: "ik-error", style: "padding:9px 11px;margin-bottom:11px;text-align:left;",
+                        "{msg}"
                     }
                 }
 
-                div { class: "ik-flex", style: "gap:6px;margin-top:8px;flex-wrap:wrap;",
-                    button {
-                        class: "ik-btn primary",
-                        disabled: busy.is_busy(),
-                        onclick: move |_| {
-                            if current == StepUpFactor::SecurityKey {
-                                assert_key.call(());
-                            } else {
-                                submit.call(current);
+                // Nothing is asked until the factor list has settled. A field rendered on the guess
+                // and swapped a moment later would ask half the accounts here for the wrong thing.
+                if settled {
+                    if current == StepUpFactor::SecurityKey {
+                        p { class: "ik-muted", style: "font-size:13px;margin:0;",
+                            {i18n.t("stepUp.hint.key")}
+                        }
+                    } else {
+                        {
+                            let (label, kind, autocomplete, hint) = match current {
+                                StepUpFactor::Totp => (
+                                    i18n.t("stepUp.field.code"),
+                                    "text",
+                                    "one-time-code",
+                                    i18n.t("stepUp.hint.code"),
+                                ),
+                                StepUpFactor::RecoveryCode => (
+                                    i18n.t("stepUp.field.recovery"),
+                                    "text",
+                                    "off",
+                                    i18n.t("stepUp.hint.recovery"),
+                                ),
+                                StepUpFactor::SecurityKey | StepUpFactor::Password => (
+                                    i18n.t("stepUp.field.password"),
+                                    "password",
+                                    "current-password",
+                                    i18n.t("stepUp.hint.password"),
+                                ),
+                            };
+                            rsx! {
+                                Field {
+                                    id: "tv-step-up",
+                                    label,
+                                    kind,
+                                    autocomplete,
+                                    value: value(),
+                                    hint,
+                                    autofocus: true,
+                                    on_input: move |v| value.set(v),
+                                    on_enter: move |()| submit.call(current),
+                                }
                             }
-                        },
-                        if current == StepUpFactor::SecurityKey {
-                            {i18n.t("stepUp.confirmWithKey")}
-                        } else {
-                            {i18n.t("stepUp.confirm")}
                         }
                     }
+
+                    div { class: "ik-stepup-actions",
+                        button {
+                            class: "ik-btn",
+                            r#type: "button",
+                            onclick: move |_| on_cancel.call(()),
+                            {i18n.t("common.cancel")}
+                        }
+                        button {
+                            class: "ik-btn primary",
+                            r#type: "button",
+                            disabled: busy.is_busy(),
+                            onclick: move |_| {
+                                if current == StepUpFactor::SecurityKey {
+                                    assert_key.call(());
+                                } else {
+                                    submit.call(current);
+                                }
+                            },
+                            if current == StepUpFactor::SecurityKey {
+                                {i18n.t("stepUp.confirmWithKey")}
+                            } else {
+                                {i18n.t("stepUp.confirm")}
+                            }
+                        }
+                    }
+
                     // One link per *other* factor the account holds. Offering a switch to
                     // something it does not hold would be a dead end wearing a link's clothes.
-                    for factor in offered.iter().copied().filter(|f| *f != current) {
-                        button {
-                            key: "{factor:?}",
-                            class: "ik-btn",
-                            onclick: move |_| {
-                                chosen.set(Some(factor));
-                                value.set(String::new());
-                                error.set(None);
-                            },
-                            {i18n.t(factor.switch_key())}
+                    if offered.len() > 1 {
+                        div { class: "ik-stepup-alts",
+                            for factor in offered.iter().copied().filter(|f| *f != current) {
+                                button {
+                                    key: "{factor:?}",
+                                    class: "ik-btn bare",
+                                    r#type: "button",
+                                    onclick: move |_| {
+                                        chosen.set(Some(factor));
+                                        value.set(String::new());
+                                        error.set(None);
+                                    },
+                                    {i18n.t(factor.switch_key())}
+                                }
+                            }
                         }
+                    }
+
+                    p { class: "ik-stepup-hold",
+                        Ic { icon: Icon::Check, size: 13 }
+                        span { {i18n.t("stepUp.holds")} }
                     }
                 }
             }
@@ -346,23 +437,46 @@ pub(crate) fn StepUpPrompt(
     }
 }
 
+/// What a screen was doing when the API demanded an elevation, held until it can be redone.
+///
+/// `Rc` rather than a `Callback`: the actions this replays take arguments — a provider id, a row
+/// — and are invoked from half a dozen shapes of handler, so the invocation site closes over its
+/// own arguments and hands the gate something it can simply call.
+///
+/// `FnMut` behind a `RefCell` because writing a signal takes `&mut`, and every one of these
+/// actions writes at least one: a busy latch, an outcome line, a form it clears.
+type PendingAction = Rc<RefCell<dyn FnMut()>>;
+
 /// The "a `403` means confirm, not refuse" rule, held once per screen that needs it.
 ///
-/// Every sensitive call is the same three steps — send with whatever elevation is held, read a
-/// `403` as a prompt rather than a refusal, retry once confirmed — and each screen that spelled
-/// them out itself got one of them wrong. The privacy panel reported "you don't have permission
-/// to do that" for a download the reader was entitled to; the session list swallowed the refusal
-/// and did nothing at all.
+/// Every sensitive call is the same four steps — send with whatever elevation is held, read a
+/// `403` as a prompt rather than a refusal, confirm, run the thing that was asked for — and each
+/// screen that spelled them out itself got one of them wrong. The privacy panel reported "you
+/// don't have permission to do that" for a download the reader was entitled to; the session list
+/// swallowed the refusal and did nothing at all; and every screen that got the prompt right
+/// still made the reader click the button a second time afterwards.
 #[derive(Clone, Copy, PartialEq)]
 pub(crate) struct StepUpGate {
     step_up: StepUp,
     prompting: Signal<bool>,
+    pending: Signal<Option<PendingAction>>,
 }
 
 impl StepUpGate {
     /// A client carrying the current elevation, for the call the gate protects.
     pub(crate) fn client(self, api: api::Api) -> tankovault_api_client::Client {
         self.step_up.client(api)
+    }
+
+    /// Run a guarded action, remembering it in case the API asks who is doing it.
+    ///
+    /// Every invocation of a guarded action goes through here, including the ones that will
+    /// succeed: what the gate replays has to be the thing that was actually attempted, and the
+    /// only place that knows it — with its arguments bound — is the handler that started it.
+    pub(crate) fn attempt(mut self, action: impl FnMut() + 'static) {
+        let action: PendingAction = Rc::new(RefCell::new(action));
+        self.pending.set(Some(Rc::clone(&action)));
+        (*action.borrow_mut())();
     }
 
     /// Route a failed call. `true` means it was a step-up demand and the prompt is now open, so
@@ -392,9 +506,23 @@ impl StepUpGate {
         *self.prompting.read()
     }
 
-    /// Close the prompt, once the grant is in hand.
-    pub(crate) fn close(mut self) {
+    /// The grant is in hand: close the prompt and finish what was interrupted.
+    ///
+    /// The pending action is taken out before it runs, so a second refusal from the replay
+    /// re-records rather than stacking, and a `cancel` cannot fire it a second time.
+    pub(crate) fn confirmed(mut self) {
         self.prompting.set(false);
+        let action = self.pending.write().take();
+        if let Some(action) = action {
+            (*action.borrow_mut())();
+        }
+    }
+
+    /// The reader declined. Nothing ran, and the interrupted action is forgotten rather than
+    /// left to fire at whatever the *next* confirmation was for.
+    pub(crate) fn cancel(mut self) {
+        self.prompting.set(false);
+        self.pending.set(None);
     }
 }
 
@@ -405,6 +533,7 @@ pub(crate) fn use_step_up_gate() -> StepUpGate {
         // Opened by the server's `403`, never pre-emptively — a reader who came to look should
         // not be challenged before they have asked for anything.
         prompting: use_signal(|| false),
+        pending: use_signal(|| None),
     }
 }
 
@@ -500,6 +629,8 @@ mod tests {
             "stepUp.confirmWithKey",
             "stepUp.hint.key",
             "stepUp.error.keyRejected",
+            "stepUp.holds",
+            "common.cancel",
         ] {
             assert!(crate::i18n::has_key(key), "{key} is not in the catalogue");
         }

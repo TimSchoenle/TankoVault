@@ -71,8 +71,12 @@ pub struct AppState {
     pub mfa_sealer: Option<tankovault_auth::Sealer>,
     /// The issuer an authenticator app files this deployment's entry under.
     pub totp_issuer: String,
-    /// How long a step-up elevation lasts.
+    /// How long a step-up elevation survives *without being used*. Every elevated request slides
+    /// it forward, so a session spent working inside one console panel is asked once.
     pub step_up_ttl: time::Duration,
+    /// The ceiling on that sliding: no elevation is honoured longer than this after it was
+    /// earned, however continuously it is used.
+    pub step_up_max_ttl: time::Duration,
     /// How long a half-finished sign-in may sit before it has to be restarted.
     pub mfa_challenge_ttl: time::Duration,
     /// Transactional email back-end (welcome, password reset). A no-op mailer when email

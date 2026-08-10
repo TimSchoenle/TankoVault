@@ -28,6 +28,11 @@ pub(crate) fn Field(
     /// Rendered under the input, for the "why is this needed" note.
     #[props(default)]
     hint: Option<String>,
+    /// Take focus as soon as the field appears. For the one field a dialog exists to collect —
+    /// reaching for the mouse to answer a question that just took the screen is friction, and
+    /// the HTML attribute is ignored by browsers on an element inserted after load.
+    #[props(default = false)]
+    autofocus: bool,
 ) -> Element {
     rsx! {
         div { class: "ik-field",
@@ -39,6 +44,14 @@ pub(crate) fn Field(
                 autocomplete: autocomplete.clone().unwrap_or_default(),
                 placeholder: placeholder.clone().unwrap_or_default(),
                 value: "{value}",
+                onmounted: move |event| {
+                    if autofocus {
+                        let element = event.data();
+                        spawn(async move {
+                            let _ = element.set_focus(true).await;
+                        });
+                    }
+                },
                 oninput: move |e| on_input.call(e.value()),
                 onkeydown: move |e| {
                     if e.key() == Key::Enter {

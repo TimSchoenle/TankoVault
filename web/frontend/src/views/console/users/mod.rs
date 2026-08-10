@@ -15,7 +15,7 @@ mod sync;
 use crate::api;
 use crate::components::{
     async_view, use_step_up_gate, CompactPager, Kpi, ListSearch, NoSelection, OutcomeLine, Section,
-    SegControl, SkeletonBlock, StepUpPrompt, TabBar, TabKind, TypeToConfirm, Window,
+    SegControl, SkeletonBlock, StepUpGuard, TabBar, TabKind, TypeToConfirm, Window,
 };
 use crate::hooks::{use_busy, use_outcome, use_reload, Reload};
 use crate::i18n::use_i18n;
@@ -451,51 +451,42 @@ fn UserEditor(
     let save = {
         let user = user.clone();
         move |_| {
-            if !busy.claim() {
-                return;
-            }
-            outcome.set(None);
-            let id = user.id.clone();
-            let identity = (can_write && identity_dirty).then(|| AdminProfileUpdate {
-                username: Some(name_field.peek().trim().to_owned()).filter(|v| *v != user.username),
-                email: Some(email_field.peek().trim().to_owned()).filter(|v| *v != user.email),
-            });
-            let status = (can_write && status_dirty).then(|| SetUserStatus {
-                status: *status_field.peek(),
-                reason: {
-                    let text = suspend_reason.peek().trim().to_owned();
-                    (!text.is_empty()).then_some(text)
-                },
-                // A suspension that leaves the account working until its access token expires
-                // is not what anyone means by suspending it.
-                revoke_sessions: Some(true),
-            });
-            let grants = (can_grant && grants_dirty).then(|| SetPermissions {
-                permissions: chosen.peek().iter().copied().collect(),
-            });
-            let client = gate.client(api);
-            spawn(async move {
-                let mut failure = None;
-                // A step-up demand is not a failure to report: it stops the chain and opens the
-                // prompt, so the two later calls do not run against an elevation the first one
-                // has just proved absent.
-                let mut demanded = false;
-                if let Some(body) = identity {
-                    if let Err(e) = client.update_user().id(id.clone()).body(body).send().await {
-                        demanded = gate.refused(api::Refusal::of(&e));
-                        if !demanded {
-                            failure = Some(api::guarded_error(i18n, e));
-                        }
-                    }
+            // Cloned per click, not per closure: the gate keeps the action to replay it, so
+            // what it holds cannot be something moved out of the handler.
+            let user = user.clone();
+            gate.attempt(move || {
+                if !busy.claim() {
+                    return;
                 }
-                if failure.is_none() && !demanded {
-                    if let Some(body) = status {
-                        if let Err(e) = client
-                            .set_user_status()
-                            .id(id.clone())
-                            .body(body)
-                            .send()
-                            .await
+                outcome.set(None);
+                let id = user.id.clone();
+                let identity = (can_write && identity_dirty).then(|| AdminProfileUpdate {
+                    username: Some(name_field.peek().trim().to_owned())
+                        .filter(|v| *v != user.username),
+                    email: Some(email_field.peek().trim().to_owned()).filter(|v| *v != user.email),
+                });
+                let status = (can_write && status_dirty).then(|| SetUserStatus {
+                    status: *status_field.peek(),
+                    reason: {
+                        let text = suspend_reason.peek().trim().to_owned();
+                        (!text.is_empty()).then_some(text)
+                    },
+                    // A suspension that leaves the account working until its access token expires
+                    // is not what anyone means by suspending it.
+                    revoke_sessions: Some(true),
+                });
+                let grants = (can_grant && grants_dirty).then(|| SetPermissions {
+                    permissions: chosen.peek().iter().copied().collect(),
+                });
+                let client = gate.client(api);
+                spawn(async move {
+                    let mut failure = None;
+                    // A step-up demand is not a failure to report: it stops the chain and opens the
+                    // prompt, so the two later calls do not run against an elevation the first one
+                    // has just proved absent.
+                    let mut demanded = false;
+                    if let Some(body) = identity {
+                        if let Err(e) = client.update_user().id(id.clone()).body(body).send().await
                         {
                             demanded = gate.refused(api::Refusal::of(&e));
                             if !demanded {
@@ -503,35 +494,51 @@ fn UserEditor(
                             }
                         }
                     }
-                }
-                if failure.is_none() && !demanded {
-                    if let Some(body) = grants {
-                        if let Err(e) = client
-                            .set_user_permissions()
-                            .id(id.clone())
-                            .body(body)
-                            .send()
-                            .await
-                        {
-                            demanded = gate.refused(api::Refusal::of(&e));
-                            if !demanded {
-                                failure = Some(api::guarded_error(i18n, e));
+                    if failure.is_none() && !demanded {
+                        if let Some(body) = status {
+                            if let Err(e) = client
+                                .set_user_status()
+                                .id(id.clone())
+                                .body(body)
+                                .send()
+                                .await
+                            {
+                                demanded = gate.refused(api::Refusal::of(&e));
+                                if !demanded {
+                                    failure = Some(api::guarded_error(i18n, e));
+                                }
                             }
                         }
                     }
-                }
-                if demanded {
-                    // The prompt is on screen; the operator presses Save again once confirmed,
-                    // and the fields still hold everything they typed.
-                } else if let Some(message) = failure {
-                    outcome.set(Some(Err(message)));
-                } else {
-                    outcome.set(Some(Ok(i18n.t("console.users.saved"))));
-                    suspend_reason.set(String::new());
-                    detail_reload.bump();
-                    reload.bump();
-                }
-                busy.release();
+                    if failure.is_none() && !demanded {
+                        if let Some(body) = grants {
+                            if let Err(e) = client
+                                .set_user_permissions()
+                                .id(id.clone())
+                                .body(body)
+                                .send()
+                                .await
+                            {
+                                demanded = gate.refused(api::Refusal::of(&e));
+                                if !demanded {
+                                    failure = Some(api::guarded_error(i18n, e));
+                                }
+                            }
+                        }
+                    }
+                    if demanded {
+                        // The prompt is on screen and the gate will replay this save once it is
+                        // answered, so there is nothing to report and nothing to ask for again.
+                    } else if let Some(message) = failure {
+                        outcome.set(Some(Err(message)));
+                    } else {
+                        outcome.set(Some(Ok(i18n.t("console.users.saved"))));
+                        suspend_reason.set(String::new());
+                        detail_reload.bump();
+                        reload.bump();
+                    }
+                    busy.release();
+                });
             });
         }
     };
@@ -597,15 +604,18 @@ fn UserEditor(
                             class: "ik-btn sm",
                             disabled: busy.is_busy() || user.active_sessions == 0,
                             onclick: move |_| {
-                                revoke_all(
-                                    api,
-                                    i18n,
-                                    busy,
-                                    outcome,
-                                    detail_reload,
-                                    id_header.clone(),
-                                    gate,
-                                );
+                                let id = id_header.clone();
+                                gate.attempt(move || {
+                                    revoke_all(
+                                        api,
+                                        i18n,
+                                        busy,
+                                        outcome,
+                                        detail_reload,
+                                        id.clone(),
+                                        gate,
+                                    );
+                                });
                             },
                             {i18n.t("console.users.revokeSessions")}
                         }
@@ -632,16 +642,7 @@ fn UserEditor(
                     {i18n.t("console.users.selfNotice")}
                 }
             }
-            if gate.is_open() {
-                StepUpPrompt {
-                    enrolled: true,
-                    intro: Some(i18n.t("console.stepUp.intro")),
-                    on_done: move |()| {
-                        gate.close();
-                        outcome.set(Some(Ok(i18n.t("stepUp.confirmedRetry"))));
-                    },
-                }
-            }
+            StepUpGuard { gate, intro: Some(i18n.t("console.stepUp.intro")) }
             OutcomeLine { outcome: outcome.read().clone() }
         }
         match tab {
@@ -773,15 +774,18 @@ fn UserEditor(
                                             style: "margin-left:auto;",
                                             disabled: busy.is_busy() || user.active_sessions == 0,
                                             onclick: move |_| {
-                                                revoke_all(
-                                                    api,
-                                                    i18n,
-                                                    busy,
-                                                    outcome,
-                                                    detail_reload,
-                                                    id_sessions.clone(),
-                                                    gate,
-                                                );
+                                                let id = id_sessions.clone();
+                                                gate.attempt(move || {
+                                                    revoke_all(
+                                                        api,
+                                                        i18n,
+                                                        busy,
+                                                        outcome,
+                                                        detail_reload,
+                                                        id.clone(),
+                                                        gate,
+                                                    );
+                                                });
                                             },
                                             {i18n.t("console.users.revokeSessions")}
                                         }
@@ -854,18 +858,25 @@ fn UserEditor(
                                         cta: i18n.t("console.users.deleteConfirmCta"),
                                         busy: busy.is_busy(),
                                         on_confirm: move |()| {
-                                            erase(
-                                                api,
-                                                i18n,
-                                                busy,
-                                                outcome,
+                                            let (id, name, reason) = (
                                                 id_erase.clone(),
                                                 user.username.clone(),
                                                 erase_reason.peek().trim().to_owned(),
-                                                reload,
-                                                on_erased,
-                                                gate,
                                             );
+                                            gate.attempt(move || {
+                                                erase(
+                                                    api,
+                                                    i18n,
+                                                    busy,
+                                                    outcome,
+                                                    id.clone(),
+                                                    name.clone(),
+                                                    reason.clone(),
+                                                    reload,
+                                                    on_erased,
+                                                    gate,
+                                                );
+                                            });
                                         },
                                     }
                                 }

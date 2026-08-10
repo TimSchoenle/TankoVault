@@ -10,8 +10,8 @@ use axum::extract::{Path, Query, State};
 use serde::Deserialize;
 use std::fmt::Write as _;
 use tankovault_contracts::sync::{
-    AccountSettings, AccountStatus, AuthorizeUrl, ConflictPolicy, ConflictView, HistoryView,
-    ProviderInfo,
+    AccountSettings, AccountStatus, Ack, AuthorizeUrl, ConflictPolicy, ConflictView, HistoryView,
+    ProviderInfo, PullReport, PushReport, Removed, Resolved,
 };
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
@@ -103,8 +103,7 @@ pub async fn sync_status(
 
 /// Unlink a provider
 ///
-/// Unlink the caller's account at `provider`. Response shape is defined by the sync service
-/// and forwarded verbatim; not tracked here.
+/// Unlink the caller's account at `provider`.
 #[utoipa::path(
     delete,
     path = "/v1/me/sync/{provider}",
@@ -112,7 +111,7 @@ pub async fn sync_status(
     params(("provider" = String, Path, description = "Provider slug")),
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Unlinked, forwarded from the sync service", body = serde_json::Value),
+        (status = 200, description = "Whether a link was removed", body = Removed),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 403, description = "a step-up is required", body = crate::error::ProblemDetails),
     )
@@ -121,7 +120,7 @@ pub async fn sync_disconnect(
     State(state): State<AppState>,
     Elevated(user): Elevated,
     Path(provider): Path<ProviderSlug>,
-) -> ApiResult<Json<serde_json::Value>> {
+) -> ApiResult<Json<Removed>> {
     state
         .sync
         .delete(
@@ -139,8 +138,8 @@ pub struct AniListCallback {
 
 /// Complete an OAuth link
 ///
-/// Exchanges the authorization `code` and links the caller's account at `provider`. Response
-/// shape is defined by the sync service and forwarded verbatim; not tracked here.
+/// Exchanges the authorization `code` and links the caller's account at `provider`. The sync
+/// service answers `204`; [`Ack`] is what `Upstream::decode` synthesises from an empty body.
 #[utoipa::path(
     get,
     path = "/v1/me/sync/{provider}/callback",
@@ -148,7 +147,7 @@ pub struct AniListCallback {
     params(("provider" = String, Path, description = "Provider slug"), AniListCallback),
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Linked, forwarded from the sync service", body = serde_json::Value),
+        (status = 200, description = "Linked", body = Ack),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 404, description = "Unknown provider", body = crate::error::ProblemDetails),
         (status = 409, description = "Account not linked", body = crate::error::ProblemDetails),
@@ -159,7 +158,7 @@ pub async fn sync_callback(
     user: AuthUser,
     Path(provider): Path<ProviderSlug>,
     Query(q): Query<AniListCallback>,
-) -> ApiResult<Json<serde_json::Value>> {
+) -> ApiResult<Json<Ack>> {
     sync_proxy(
         &state,
         &format!("/v1/sync/{provider}/link"),
@@ -184,8 +183,7 @@ pub struct SyncOpts {
 ///
 /// Reflect local watchlist/progress to `provider` (bulk, full-reconciliation walk — see
 /// `spawn_targeted_push` for the fast per-series path used automatically when marking a
-/// chapter/series read). Response shape is defined by the sync service and forwarded
-/// verbatim; not tracked here.
+/// chapter/series read).
 #[utoipa::path(
     post,
     path = "/v1/me/sync/{provider}/push",
@@ -194,7 +192,7 @@ pub struct SyncOpts {
     request_body(content = Option<SyncOpts>, description = "Optional sync options; omitted body uses the service default"),
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Pushed, forwarded from the sync service", body = serde_json::Value),
+        (status = 200, description = "What the push considered and wrote", body = PushReport),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 409, description = "Account not linked", body = crate::error::ProblemDetails),
     )
@@ -204,7 +202,7 @@ pub async fn sync_push(
     user: AuthUser,
     Path(provider): Path<ProviderSlug>,
     body: Option<Json<SyncOpts>>,
-) -> ApiResult<Json<serde_json::Value>> {
+) -> ApiResult<Json<PushReport>> {
     let opts = body.map(|b| b.0).unwrap_or_default();
     sync_proxy(
         &state,
@@ -216,8 +214,7 @@ pub async fn sync_push(
 
 /// Pull a provider's list into local state
 ///
-/// Import `provider`'s list into the local watchlist. Response shape is defined by the sync
-/// service and forwarded verbatim; not tracked here.
+/// Import `provider`'s list into the local watchlist.
 #[utoipa::path(
     post,
     path = "/v1/me/sync/{provider}/pull",
@@ -226,7 +223,7 @@ pub async fn sync_push(
     request_body(content = Option<SyncOpts>, description = "Optional sync options; omitted body uses the service default"),
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Pulled, forwarded from the sync service", body = serde_json::Value),
+        (status = 200, description = "What the pull fetched, matched and wrote", body = PullReport),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 409, description = "Account not linked", body = crate::error::ProblemDetails),
     )
@@ -236,7 +233,7 @@ pub async fn sync_pull(
     user: AuthUser,
     Path(provider): Path<ProviderSlug>,
     body: Option<Json<SyncOpts>>,
-) -> ApiResult<Json<serde_json::Value>> {
+) -> ApiResult<Json<PullReport>> {
     let opts = body.map(|b| b.0).unwrap_or_default();
     sync_proxy(
         &state,
@@ -296,7 +293,7 @@ pub struct SyncSettingsPatch {
     request_body = SyncSettingsPatch,
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Acknowledged", body = serde_json::Value, example = json!({"ok": true})),
+        (status = 200, description = "Acknowledged", body = Ack),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
     )
 )]
@@ -305,22 +302,21 @@ pub async fn sync_settings_patch(
     user: AuthUser,
     Path(provider): Path<ProviderSlug>,
     Json(body): Json<SyncSettingsPatch>,
-) -> ApiResult<Json<serde_json::Value>> {
+) -> ApiResult<Json<Ack>> {
     let payload = serde_json::json!({
         "user_id": user.user_id,
         "auto_sync_enabled": body.auto_sync_enabled,
         "conflict_policy": body.conflict_policy,
     });
-    // Discarded deliberately: the response is a fixed acknowledgement, and the type is named
-    // explicitly since nothing else here pins the decode type.
-    let _: Json<serde_json::Value> = state
+    // The sync service answers `204`; forwarding what `Upstream::decode` synthesises keeps one
+    // source for this body rather than re-stating it as a literal here.
+    state
         .sync
         .patch(
             &format!("/v1/sync/{provider}/settings/{}", user.user_id.as_uuid()),
             &payload,
         )
-        .await?;
-    Ok(Json(serde_json::json!({ "ok": true })))
+        .await
 }
 
 /// List pending sync conflicts
@@ -355,8 +351,7 @@ pub struct ResolveConflict {
 
 /// Resolve a sync conflict
 ///
-/// Apply the caller's chosen resolution (§B.6). Response shape is defined by the sync service
-/// and forwarded verbatim; not tracked here.
+/// Apply the caller's chosen resolution (§B.6).
 #[utoipa::path(
     post,
     path = "/v1/me/sync/conflicts/{id}/resolve",
@@ -365,7 +360,7 @@ pub struct ResolveConflict {
     request_body = ResolveConflict,
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Resolved, forwarded from the sync service", body = serde_json::Value),
+        (status = 200, description = "Whether a conflict was settled", body = Resolved),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 404, description = "No such conflict", body = crate::error::ProblemDetails),
     )
@@ -375,7 +370,7 @@ pub async fn sync_resolve_conflict(
     user: AuthUser,
     Path(id): Path<Uuid>,
     Json(body): Json<ResolveConflict>,
-) -> ApiResult<Json<serde_json::Value>> {
+) -> ApiResult<Json<Resolved>> {
     sync_proxy(
         &state,
         &format!("/v1/sync/conflicts/{id}/resolve"),
@@ -443,10 +438,14 @@ pub(crate) async fn sync_get<T: serde::de::DeserializeOwned>(
 
 /// POST a JSON body to the sync service. `pub(crate)` so `admin/sync.rs` can reuse it for
 /// operator-triggered force pull/push.
-pub(crate) async fn sync_proxy(
+///
+/// Generic in the response so each caller names the body it publishes; that name is what makes
+/// the endpoint's `#[utoipa::path]` declaration true, since `Upstream::decode` fails the request
+/// when the peer answers with something else.
+pub(crate) async fn sync_proxy<T: serde::de::DeserializeOwned>(
     state: &AppState,
     path: &str,
     body: serde_json::Value,
-) -> ApiResult<Json<serde_json::Value>> {
+) -> ApiResult<Json<T>> {
     state.sync.post(path, &body).await
 }

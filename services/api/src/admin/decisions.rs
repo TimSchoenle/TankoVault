@@ -17,6 +17,7 @@ use serde::Deserialize;
 use tankovault_contracts::admin::{
     MergeDecisionView, MergeRevertedView, SyncDecisionView, SyncRevertedView,
 };
+use tankovault_contracts::sync::Flagged;
 use tankovault_domain::{Permission, SeriesId};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
@@ -200,7 +201,7 @@ pub async fn revert_merge_decision(
     request_body = JudgementRequest,
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Whether this call was the one that flagged it", body = serde_json::Value, example = json!({"flagged": true})),
+        (status = 200, description = "Whether this call was the one that flagged it", body = Flagged),
         (status = 400, description = "no reason given", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
@@ -212,7 +213,7 @@ pub async fn flag_merge_decision(
     user: AuthUser,
     Path(id): Path<Uuid>,
     Json(req): Json<JudgementRequest>,
-) -> ApiResult<Json<serde_json::Value>> {
+) -> ApiResult<Json<Flagged>> {
     user.require(Permission::MergeRevert).await?;
     check_reason(&req.reason)?;
     let flagged = tankovault_db::repo::matching::flag_merge_decision(
@@ -230,7 +231,7 @@ pub async fn flag_merge_decision(
         &serde_json::json!({ "flagged": flagged, "reason": req.reason.trim() }),
     )
     .await;
-    Ok(Json(serde_json::json!({ "flagged": flagged })))
+    Ok(Json(Flagged { flagged }))
 }
 
 #[derive(Debug, Default, Deserialize, IntoParams)]
@@ -378,7 +379,7 @@ pub struct SyncFlagRequest {
     request_body = SyncFlagRequest,
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Whether this call was the one that flagged it", body = serde_json::Value, example = json!({"flagged": true})),
+        (status = 200, description = "Whether this call was the one that flagged it", body = Flagged),
         (status = 400, description = "no reason given", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
@@ -390,10 +391,10 @@ pub async fn flag_sync_decision(
     user: AuthUser,
     Path(id): Path<Uuid>,
     Json(req): Json<SyncFlagRequest>,
-) -> ApiResult<Json<serde_json::Value>> {
+) -> ApiResult<Json<Flagged>> {
     user.require(Permission::SyncRevert).await?;
     check_reason(&req.reason)?;
-    let Json(body): Json<serde_json::Value> = state
+    let Json(body): Json<Flagged> = state
         .sync
         .post(
             &format!("/v1/sync/decisions/{id}/flag"),

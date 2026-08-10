@@ -6,11 +6,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::extract::{Path, State};
-use axum::http::StatusCode;
+use axum::http::{Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::{Json, Router, routing::post};
 use serde::Deserialize;
 use tankovault_domain::ProviderId;
+use tankovault_service::InternalRoute;
 use tankovault_service::problem::{IntoProblem, Problem};
 
 use crate::engine::Engine;
@@ -65,13 +66,28 @@ impl IntoResponse for DryRunError {
     }
 }
 
+/// Run one provider's adapter against the live site and report what it parsed.
+pub(crate) const TEST_ADAPTER: &str = "/internal/providers/{id}/test";
+
 /// The dry-run route, merged into the worker's internally-authenticated router — not
-/// into `ops_router`, which stays reachable without the shared secret.
+/// into `ops_router`, which stays reachable without a credential.
 pub(crate) fn router(engine: Arc<Engine>) -> Router {
     Router::new()
-        .route("/internal/providers/{id}/test", post(test_adapter))
+        .route(TEST_ADAPTER, post(test_adapter))
         .with_state(engine)
 }
+
+/// Who may reach this service's privileged routes.
+///
+/// `api` alone: the dry-run runs the crawl stack against an operator-named provider, and the
+/// console is the only thing that asks for it. The worker itself is a *caller* elsewhere in the
+/// tier (it drives `challenge-solver` and `render`), which under one shared token meant its
+/// credential also opened this route.
+pub(crate) static INTERNAL_ROUTES: &[InternalRoute] = &[InternalRoute {
+    method: Method::POST,
+    path: TEST_ADAPTER,
+    callers: &["api"],
+}];
 
 /// Run the provider's adapter against the live site and return whatever it parsed.
 ///

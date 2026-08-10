@@ -5432,6 +5432,7 @@ dependencies = [
  "secrecy",
  "serde",
  "serde_json",
+ "tankovault-config",
  "tankovault-contracts",
  "thiserror 2.0.20",
  "tokio",
@@ -5568,6 +5569,7 @@ dependencies = [
  "secrecy",
  "serde_json",
  "tankovault-domain",
+ "tankovault-service",
  "tankovault-solver",
  "thiserror 2.0.20",
  "time",
@@ -5666,6 +5668,7 @@ name = "tankovault-service"
 version = "3.8.0"
 dependencies = [
  "anyhow",
+ "arc-swap",
  "async-trait",
  "axum",
  "figment",
@@ -5675,6 +5678,7 @@ dependencies = [
  "metrics",
  "metrics-exporter-prometheus",
  "proptest",
+ "rustls",
  "secrecy",
  "serde",
  "serde_json",
@@ -5687,11 +5691,13 @@ dependencies = [
  "thiserror 2.0.20",
  "time",
  "tokio",
+ "tokio-rustls",
  "tokio-util",
  "tower",
  "tower-http 0.7.0",
  "tracing",
  "tracing-subscriber",
+ "x509-parser",
 ]
 
 [[package]]

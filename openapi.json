@@ -5091,6 +5091,18 @@
         ],
         "type": "object"
       },
+      "SyncAck": {
+        "description": "Acknowledgement for a sync route that answers `204 No Content`.\n\n`services/sync` returns a bare `204` for linking an account and for patching settings;\n`services/api` republishes those as `200 {\"ok\": true}` because its `Upstream::decode`\nsynthesises this body for an empty upstream response. That synthesis is the contract, not\nan accident: naming it here means a change to either side breaks a type rather than\nsilently altering what the SPA receives. `ok` is always `true` — a failure is a status\ncode, never a `false` here.",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "type": "object"
+      },
       "SyncDecision": {
         "description": "One row of the automatic-sync decision journal.\n\nCovers what `sync_history` never did: the entries that matched no local series, the series\nskipped as excluded, the fields both sides already agreed on, and the scored title match\nbehind every mapping.",
         "properties": {
@@ -5298,6 +5310,18 @@
         ],
         "type": "object"
       },
+      "SyncFlagged": {
+        "description": "Whether flagging a decision recorded the flag.",
+        "properties": {
+          "flagged": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "flagged"
+        ],
+        "type": "object"
+      },
       "SyncMappingTarget": {
         "properties": {
           "provider": {
@@ -5327,6 +5351,88 @@
             ]
           }
         },
+        "type": "object"
+      },
+      "SyncPullReport": {
+        "description": "Outcome of a pull (provider → local).",
+        "properties": {
+          "fetched": {
+            "description": "Entries returned by the provider.",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "matched": {
+            "description": "Entries resolved to a canonical local series.",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "unmatched": {
+            "description": "Entries with no confident local match (skipped).",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "updated": {
+            "description": "Local progress rows written.",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "fetched",
+          "matched",
+          "updated",
+          "unmatched"
+        ],
+        "type": "object"
+      },
+      "SyncPushReport": {
+        "description": "Outcome of a push (local → provider).",
+        "properties": {
+          "considered": {
+            "description": "Local watchlist entries examined.",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "pushed": {
+            "description": "Remote entries created or updated.",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "unmapped": {
+            "description": "Watchlist entries with no resolvable remote media (skipped).",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "considered",
+          "pushed",
+          "unmapped"
+        ],
+        "type": "object"
+      },
+      "SyncRemoved": {
+        "description": "Whether unlinking an account or clearing a mapping actually removed anything.",
+        "properties": {
+          "removed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "removed"
+        ],
+        "type": "object"
+      },
+      "SyncResolved": {
+        "description": "Whether resolving a conflict settled one.",
+        "properties": {
+          "resolved": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "resolved"
+        ],
         "type": "object"
       },
       "SyncReverted": {
@@ -7541,10 +7647,9 @@
           "200": {
             "content": {
               "application/json": {
-                "example": {
-                  "flagged": true
-                },
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SyncFlagged"
+                }
               }
             },
             "description": "Whether this call was the one that flagged it"
@@ -10276,10 +10381,9 @@
           "200": {
             "content": {
               "application/json": {
-                "example": {
-                  "ok": true
-                },
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SyncAck"
+                }
               }
             },
             "description": "Acknowledged"
@@ -10510,10 +10614,9 @@
           "200": {
             "content": {
               "application/json": {
-                "example": {
-                  "flagged": true
-                },
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SyncFlagged"
+                }
               }
             },
             "description": "Whether this call was the one that flagged it"
@@ -10782,10 +10885,9 @@
           "200": {
             "content": {
               "application/json": {
-                "example": {
-                  "ok": true
-                },
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SyncAck"
+                }
               }
             },
             "description": "Acknowledged"
@@ -10850,10 +10952,9 @@
           "200": {
             "content": {
               "application/json": {
-                "example": {
-                  "removed": true
-                },
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SyncRemoved"
+                }
               }
             },
             "description": "Whether a mapping was actually removed"
@@ -10892,7 +10993,7 @@
     },
     "/v1/admin/sync/pull": {
       "post": {
-        "description": "Operator-forced pull for another user's linked account. Response shape is defined by the\nsync service and forwarded verbatim; not tracked here.",
+        "description": "Operator-forced pull for another user's linked account.",
         "operationId": "admin_sync_pull",
         "requestBody": {
           "content": {
@@ -10908,10 +11009,12 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SyncPullReport"
+                }
               }
             },
-            "description": "Pulled, forwarded from the sync service"
+            "description": "What the pull fetched, matched and wrote"
           },
           "401": {
             "content": {
@@ -10957,7 +11060,7 @@
     },
     "/v1/admin/sync/push": {
       "post": {
-        "description": "Operator-forced push for another user's linked account. Response shape is defined by the\nsync service and forwarded verbatim; not tracked here.",
+        "description": "Operator-forced push for another user's linked account.",
         "operationId": "admin_sync_push",
         "requestBody": {
           "content": {
@@ -10973,10 +11076,12 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SyncPushReport"
+                }
               }
             },
-            "description": "Pushed, forwarded from the sync service"
+            "description": "What the push considered and wrote"
           },
           "401": {
             "content": {
@@ -11163,7 +11268,7 @@
     },
     "/v1/admin/sync/unlink": {
       "post": {
-        "description": "Operator-forced unlink of another user's linked account. Response shape is defined by the\nsync service and forwarded verbatim; not tracked here.",
+        "description": "Operator-forced unlink of another user's linked account.",
         "operationId": "admin_sync_unlink",
         "requestBody": {
           "content": {
@@ -11179,10 +11284,12 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SyncRemoved"
+                }
               }
             },
-            "description": "Unlinked, forwarded from the sync service"
+            "description": "Whether a link was removed"
           },
           "401": {
             "content": {
@@ -15286,7 +15393,7 @@
     },
     "/v1/me/sync/conflicts/{id}/resolve": {
       "post": {
-        "description": "Apply the caller's chosen resolution (§B.6). Response shape is defined by the sync service\nand forwarded verbatim; not tracked here.",
+        "description": "Apply the caller's chosen resolution (§B.6).",
         "operationId": "sync_resolve_conflict",
         "parameters": [
           {
@@ -15314,10 +15421,12 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SyncResolved"
+                }
               }
             },
-            "description": "Resolved, forwarded from the sync service"
+            "description": "Whether a conflict was settled"
           },
           "401": {
             "content": {
@@ -15461,7 +15570,7 @@
     },
     "/v1/me/sync/{provider}": {
       "delete": {
-        "description": "Unlink the caller's account at `provider`. Response shape is defined by the sync service\nand forwarded verbatim; not tracked here.",
+        "description": "Unlink the caller's account at `provider`.",
         "operationId": "sync_disconnect",
         "parameters": [
           {
@@ -15478,10 +15587,12 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SyncRemoved"
+                }
               }
             },
-            "description": "Unlinked, forwarded from the sync service"
+            "description": "Whether a link was removed"
           },
           "401": {
             "content": {
@@ -15575,7 +15686,7 @@
     },
     "/v1/me/sync/{provider}/callback": {
       "get": {
-        "description": "Exchanges the authorization `code` and links the caller's account at `provider`. Response\nshape is defined by the sync service and forwarded verbatim; not tracked here.",
+        "description": "Exchanges the authorization `code` and links the caller's account at `provider`. The sync\nservice answers `204`; [`Ack`] is what `Upstream::decode` synthesises from an empty body.",
         "operationId": "sync_callback",
         "parameters": [
           {
@@ -15600,10 +15711,12 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SyncAck"
+                }
               }
             },
-            "description": "Linked, forwarded from the sync service"
+            "description": "Linked"
           },
           "401": {
             "content": {
@@ -15649,7 +15762,7 @@
     },
     "/v1/me/sync/{provider}/pull": {
       "post": {
-        "description": "Import `provider`'s list into the local watchlist. Response shape is defined by the sync\nservice and forwarded verbatim; not tracked here.",
+        "description": "Import `provider`'s list into the local watchlist.",
         "operationId": "sync_pull",
         "parameters": [
           {
@@ -15683,10 +15796,12 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SyncPullReport"
+                }
               }
             },
-            "description": "Pulled, forwarded from the sync service"
+            "description": "What the pull fetched, matched and wrote"
           },
           "401": {
             "content": {
@@ -15722,7 +15837,7 @@
     },
     "/v1/me/sync/{provider}/push": {
       "post": {
-        "description": "Reflect local watchlist/progress to `provider` (bulk, full-reconciliation walk — see\n`spawn_targeted_push` for the fast per-series path used automatically when marking a\nchapter/series read). Response shape is defined by the sync service and forwarded\nverbatim; not tracked here.",
+        "description": "Reflect local watchlist/progress to `provider` (bulk, full-reconciliation walk — see\n`spawn_targeted_push` for the fast per-series path used automatically when marking a\nchapter/series read).",
         "operationId": "sync_push",
         "parameters": [
           {
@@ -15756,10 +15871,12 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SyncPushReport"
+                }
               }
             },
-            "description": "Pushed, forwarded from the sync service"
+            "description": "What the push considered and wrote"
           },
           "401": {
             "content": {
@@ -15878,10 +15995,9 @@
           "200": {
             "content": {
               "application/json": {
-                "example": {
-                  "ok": true
-                },
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SyncAck"
+                }
               }
             },
             "description": "Acknowledged"

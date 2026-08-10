@@ -38,19 +38,25 @@ pub mod ratelimit;
 pub mod reload;
 pub mod shutdown;
 pub mod telemetry;
+pub mod tls;
 pub mod tunables;
 
 pub use audit::{AuditEvent, AuditOutcome, AuditSink, NoopAuditSink};
 pub use flags::{FeatureGate, FeatureLayer, FlagSource, RouteFeatures};
 pub use health::{Health, HealthBuilder, HealthReport, HealthStatus};
 pub use healthcheck::{HEALTHCHECK_FLAG, run_and_exit as run_healthcheck_and_exit};
-pub use http::{HttpStack, metrics_router, ops_router, serve, spawn_metrics_server};
-pub use internal_auth::{INTERNAL_TOKEN_HEADER, InternalToken};
+pub use http::{
+    HttpStack, metrics_router, ops_router, serve, serve_internal, serve_tls, spawn_metrics_server,
+};
+pub use internal_auth::{
+    Caller, INTERNAL_TOKEN_HEADER, InternalAuth, InternalRoute, InternalToken, RouteTable,
+};
 pub use metrics::MetricsRegistry;
 pub use problem::{IntoProblem, Problem};
 pub use ratelimit::{RateLimiter, RouteClass, RouteClassifier};
 pub use reload::run as run_reloading;
 pub use shutdown::install_shutdown;
+pub use tls::{ClientMaterial, InternalPeer, PeerSans, ReloadingTls, TlsError, client_material};
 // Re-exported so a service can name the token `run_reloading` hands its runtime without
 // taking a direct `tokio-util` dependency for one type.
 pub use telemetry::init_tracing;
@@ -77,4 +83,7 @@ pub enum ServiceError {
     /// The listener could not be bound, or the server exited with an I/O error.
     #[error("http server error: {0}")]
     Server(#[from] std::io::Error),
+    /// The mutual-TLS material named by `internal.tls` could not be loaded.
+    #[error("internal TLS error: {0}")]
+    Tls(#[from] tls::TlsError),
 }

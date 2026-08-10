@@ -10,6 +10,7 @@ use axum::Json;
 use axum::extract::{Path, State};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
+use tankovault_contracts::sync::{Ack, PullReport, PushReport, Removed};
 use tankovault_domain::{Permission, SeriesId, UserId, WatchStatus};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
@@ -72,8 +73,7 @@ pub struct SyncAccountTarget {
 
 /// Force-pull another user's linked account
 ///
-/// Operator-forced pull for another user's linked account. Response shape is defined by the
-/// sync service and forwarded verbatim; not tracked here.
+/// Operator-forced pull for another user's linked account.
 #[utoipa::path(
     post,
     path = "/v1/admin/sync/pull",
@@ -81,7 +81,7 @@ pub struct SyncAccountTarget {
     request_body = SyncAccountTarget,
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Pulled, forwarded from the sync service", body = serde_json::Value),
+        (status = 200, description = "What the pull fetched, matched and wrote", body = PullReport),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 409, description = "Account not linked", body = crate::error::ProblemDetails),
@@ -91,7 +91,7 @@ pub async fn admin_sync_pull(
     State(state): State<AppState>,
     user: AuthUser,
     Json(req): Json<SyncAccountTarget>,
-) -> ApiResult<Json<serde_json::Value>> {
+) -> ApiResult<Json<PullReport>> {
     user.require(Permission::SyncAdminWrite).await?;
     let body = crate::me::sync_proxy(
         &state,
@@ -112,8 +112,7 @@ pub async fn admin_sync_pull(
 
 /// Force-push another user's linked account
 ///
-/// Operator-forced push for another user's linked account. Response shape is defined by the
-/// sync service and forwarded verbatim; not tracked here.
+/// Operator-forced push for another user's linked account.
 #[utoipa::path(
     post,
     path = "/v1/admin/sync/push",
@@ -121,7 +120,7 @@ pub async fn admin_sync_pull(
     request_body = SyncAccountTarget,
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Pushed, forwarded from the sync service", body = serde_json::Value),
+        (status = 200, description = "What the push considered and wrote", body = PushReport),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 409, description = "Account not linked", body = crate::error::ProblemDetails),
@@ -131,7 +130,7 @@ pub async fn admin_sync_push(
     State(state): State<AppState>,
     user: AuthUser,
     Json(req): Json<SyncAccountTarget>,
-) -> ApiResult<Json<serde_json::Value>> {
+) -> ApiResult<Json<PushReport>> {
     user.require(Permission::SyncAdminWrite).await?;
     let body = crate::me::sync_proxy(
         &state,
@@ -152,8 +151,7 @@ pub async fn admin_sync_push(
 
 /// Force-unlink another user's account
 ///
-/// Operator-forced unlink of another user's linked account. Response shape is defined by the
-/// sync service and forwarded verbatim; not tracked here.
+/// Operator-forced unlink of another user's linked account.
 #[utoipa::path(
     post,
     path = "/v1/admin/sync/unlink",
@@ -161,7 +159,7 @@ pub async fn admin_sync_push(
     request_body = SyncAccountTarget,
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Unlinked, forwarded from the sync service", body = serde_json::Value),
+        (status = 200, description = "Whether a link was removed", body = Removed),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
@@ -170,9 +168,9 @@ pub async fn admin_sync_unlink(
     State(state): State<AppState>,
     user: AuthUser,
     Json(req): Json<SyncAccountTarget>,
-) -> ApiResult<Json<serde_json::Value>> {
+) -> ApiResult<Json<Removed>> {
     user.require(Permission::SyncAdminWrite).await?;
-    let Json(value) = state
+    let Json(removed): Json<Removed> = state
         .sync
         .delete(
             &format!("/v1/sync/{}/link", req.provider),
@@ -184,10 +182,10 @@ pub async fn admin_sync_unlink(
         &user,
         "sync.unlink",
         &format!("{}:{}", req.provider, req.user_id.as_uuid()),
-        &value,
+        &serde_json::json!({ "removed": removed.removed }),
     )
     .await;
-    Ok(Json(value))
+    Ok(Json(removed))
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -207,7 +205,7 @@ pub struct SyncMappingTarget {
     request_body = SyncMappingTarget,
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Whether a mapping was actually removed", body = serde_json::Value, example = json!({"removed": true})),
+        (status = 200, description = "Whether a mapping was actually removed", body = Removed),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
     )
@@ -216,7 +214,7 @@ pub async fn clear_sync_mapping(
     State(state): State<AppState>,
     user: AuthUser,
     Json(req): Json<SyncMappingTarget>,
-) -> ApiResult<Json<serde_json::Value>> {
+) -> ApiResult<Json<Removed>> {
     user.require(Permission::SyncAdminWrite).await?;
     let removed =
         tankovault_db::repo::sync::delete_mapping(&state.pool, req.series_id, &req.provider)
@@ -229,7 +227,7 @@ pub async fn clear_sync_mapping(
         &serde_json::json!({ "removed": removed }),
     )
     .await;
-    Ok(Json(serde_json::json!({ "removed": removed })))
+    Ok(Json(Removed { removed }))
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -251,7 +249,7 @@ pub struct UpsertMapping {
     request_body = UpsertMapping,
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Acknowledged", body = serde_json::Value, example = json!({"ok": true})),
+        (status = 200, description = "Acknowledged", body = Ack),
         (status = 400, description = "provider or external_id is empty", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
@@ -261,7 +259,7 @@ pub async fn upsert_sync_mapping(
     State(state): State<AppState>,
     user: AuthUser,
     Json(req): Json<UpsertMapping>,
-) -> ApiResult<Json<serde_json::Value>> {
+) -> ApiResult<Json<Ack>> {
     user.require(Permission::SyncAdminWrite).await?;
     let provider = req.provider.trim();
     let external_id = req.external_id.trim();
@@ -280,7 +278,7 @@ pub async fn upsert_sync_mapping(
         &serde_json::json!({ "external_id": external_id }),
     )
     .await;
-    Ok(Json(serde_json::json!({ "ok": true })))
+    Ok(Json(Ack::default()))
 }
 
 /// List a series' external mappings
@@ -521,7 +519,7 @@ pub struct AssignRemoteEntry {
     request_body = AssignRemoteEntry,
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Acknowledged", body = serde_json::Value, example = json!({"ok": true})),
+        (status = 200, description = "Acknowledged", body = Ack),
         (status = 400, description = "Missing provider/external_id, no such remote entry, or the stored entry has an invalid status", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
@@ -531,7 +529,7 @@ pub async fn assign_remote_entry(
     State(state): State<AppState>,
     user: AuthUser,
     Json(req): Json<AssignRemoteEntry>,
-) -> ApiResult<Json<serde_json::Value>> {
+) -> ApiResult<Json<Ack>> {
     user.require(Permission::SyncAdminWrite).await?;
     let provider = req.provider.trim();
     let external_id = req.external_id.trim();
@@ -588,7 +586,7 @@ pub async fn assign_remote_entry(
         }),
     )
     .await;
-    Ok(Json(serde_json::json!({ "ok": true })))
+    Ok(Json(Ack::default()))
 }
 
 /// What the tokenless metadata-enrichment sweep is doing, or last did.

@@ -136,14 +136,32 @@ pub enum BusError {
 impl Bus {
     /// Connect to NATS and build a `JetStream` context.
     ///
-    /// `url` is a [`SecretString`] because `nats://user:pass@host` is a supported form; the
-    /// compose deployment happens not to use it, but the type has to describe the field, not
-    /// one deployment's value. It is exposed exactly here, into the client builder.
+    /// `url` is a [`SecretString`] because `nats://user:pass@host` is a supported form — that is
+    /// where a per-account credential goes, and giving each service its own account is what
+    /// stops `notifier` from being able to publish scan tasks. The accounts themselves are NATS
+    /// server configuration, not something this client can assert.
+    ///
+    /// `tls` is present under `internal.identity = "mtls"`, and then the connection is
+    /// mutually authenticated against the same material the HTTP tier uses and TLS is
+    /// **required** rather than merely offered — without that, a server that does not ask for
+    /// TLS silently gets a plaintext connection carrying every user notification.
     ///
     /// # Errors
-    /// [`BusError::Connect`] if the server is unreachable.
-    pub async fn connect(url: &SecretString) -> Result<Self, BusError> {
-        let client = async_nats::connect(url.expose_secret())
+    /// [`BusError::Connect`] if the server is unreachable or the TLS material is unusable.
+    pub async fn connect(
+        url: &SecretString,
+        tls: Option<&tankovault_config::ResolvedTls>,
+    ) -> Result<Self, BusError> {
+        let mut options = async_nats::ConnectOptions::new();
+        if let Some(paths) = tls {
+            options = options
+                .require_tls(true)
+                .add_client_certificate(paths.cert.clone(), paths.key.clone())
+                .add_root_certificates(paths.ca.clone());
+        }
+
+        let client = options
+            .connect(url.expose_secret())
             .await
             .map_err(|e| BusError::Connect(e.to_string()))?;
         Ok(Self {

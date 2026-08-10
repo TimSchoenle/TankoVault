@@ -43,6 +43,12 @@ struct Config {
     /// Runtime feature flags — how often this replica re-reads the operator's decisions.
     #[serde(default)]
     features: tankovault_config::FeaturesConfig,
+    /// Internal-tier identity. This service serves no internal route and calls no peer, so it
+    /// reads only one thing from here: the certificate material for its broker connection under
+    /// `identity = "mtls"`. It is still resolved in full, so a malformed internal section is
+    /// refused here exactly as it is everywhere else.
+    #[serde(default)]
+    internal: tankovault_config::InternalAuthConfig,
 }
 
 fn default_bind() -> String {
@@ -93,7 +99,8 @@ async fn serve_once(
     )
     .await?;
     tankovault_service::metrics::spawn_pool_sampler(pool.clone(), shutdown.clone());
-    let bus = Bus::connect(&cfg.nats.url).await?;
+    let internal_auth = tankovault_service::internal_auth::resolve(&cfg.internal)?;
+    let bus = Bus::connect(&cfg.nats.url, internal_auth.tls.as_ref()).await?;
     bus.ensure_streams().await?;
 
     // Readiness names both dependencies: a notifier that can't reach Postgres or NATS

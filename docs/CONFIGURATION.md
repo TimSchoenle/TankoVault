@@ -84,7 +84,10 @@ than one that surfaces during a deploy.
 | `TANKOVAULT_ANILIST__TOKEN_ENCRYPTION_KEY` | sync | Boot fails. Base64 (standard alphabet) of exactly 32 bytes — `openssl rand -base64 32`. This key seals every user's AniList access and refresh tokens at rest; the previous fallback was 32 zero bytes. |
 | `TANKOVAULT_ANILIST__CLIENT_ID` / `__CLIENT_SECRET` / `__REDIRECT_URI` | sync | Boot fails. |
 | `TANKOVAULT_SEED_ADMIN_PASSWORD` | bootstrap (`seed-admin`), `xtask seed` | The step fails. **`bootstrap` has no default**; `xtask seed` falls back to `changeme12345`, which is a known placeholder the api refuses — a local convenience that cannot survive into a deployment. |
-| `TANKOVAULT_INTERNAL__TOKEN` | api, control-plane, worker, sync, render, challenge-solver | **Under `TANKOVAULT_PROFILE=production` only**, boot fails. Elsewhere its absence leaves the internal tier unauthenticated so local development stays frictionless. When present it is length-checked (≥32) in every profile. `openssl rand -hex 32`. |
+| `TANKOVAULT_INTERNAL__IDENTITY` | api, control-plane, worker, sync, render, challenge-solver, notifier | **Under `TANKOVAULT_PROFILE=production` only**, boot fails when it is `off`. Elsewhere `off` leaves the internal tier unidentified so local development stays frictionless. See [§3 `internal`](#internal--service-to-service-identity-and-authorisation). |
+| `TANKOVAULT_INTERNAL__CALLER__TOKEN` | api, worker | Boot fails under `identity=token` when the service names a caller without one, or when it is shorter than 32 characters. `openssl rand -hex 32`. |
+| `TANKOVAULT_INTERNAL__PEERS` | control-plane, worker, sync, render, challenge-solver | Boot fails under `identity=token`/`mtls` if a listed peer lacks the credential that mode verifies. An **empty** map is allowed and means "nothing may call me". |
+| `TANKOVAULT_INTERNAL__TLS__CERT` / `__KEY` / `__CA` | all, under `identity=mtls` | Boot fails if any of the three is unset or unreadable. |
 | `TANKOVAULT_SOLVER__TRAWL_ENDPOINT` | challenge-solver | Boot fails. |
 
 ---
@@ -372,11 +375,68 @@ normal path deletes a chapter — so clearing those is a separate, opt-in sweep:
 | `TANKOVAULT_CHAPTER_OUTLIERS__MIN_BODY` | `5` | worker | Chapters that must survive. Stops a listing being judged down to nothing. |
 | `TANKOVAULT_CHAPTER_OUTLIERS__MAX_REJECTED_FRACTION` | `0.25` | worker | Ceiling on the fraction of one listing a single scan may reject. A source that trips this has had its numbering misread wholesale — an adapter to fix, not a catalogue to quietly empty. |
 
-### `internal` — service-to-service authentication
+### `internal` — service-to-service identity and authorisation
+
+Every internal call answers two questions: **who is calling**, and **may that caller reach this
+route**. Only the first depends on the mode below; the route tables are compiled in and
+identical whichever mode is running, so a deployment cannot be authorised differently by virtue
+of how it proves identity.
+
+| Mode | How a caller is identified | Where it fits |
+|---|---|---|
+| `off` | nobody is identified; every route is open | local development and tests. **Refused under `TANKOVAULT_PROFILE=production`.** |
+| `token` | a per-caller secret in `X-Internal-Token` | compose, bare metal, anything without a certificate authority |
+| `mtls` | the SAN of a verified client certificate | Kubernetes (cert-manager + trust-manager), or anywhere the three files below can be written |
+
+`mtls` reads three file **paths** and knows nothing else about the platform. Under Kubernetes
+cert-manager writes the key pair into a Secret and trust-manager the CA bundle into a ConfigMap,
+both mounted as volumes; elsewhere `openssl` or `step-ca` produce the same three files.
+
+Who calls whom, and therefore who needs what:
+
+| Service | Calls | Is called by |
+|---|---|---|
+| `api` | control-plane, sync, worker | *(nothing internal)* |
+| `worker` | challenge-solver, render | api |
+| `control-plane`, `sync` | — | api |
+| `challenge-solver`, `render` | — | worker |
+| `notifier` | — | — (broker only; reads `internal.tls` for it) |
+
+So a caller sets `internal.caller.*`, a callee sets `internal.peers.*`, and `worker` sets both.
 
 | Key | Default | Services | Notes |
 |---|---|---|---|
-| `TANKOVAULT_INTERNAL__TOKEN` | *(required in production)* | api, control-plane, worker, sync, render, challenge-solver | One shared secret in `X-Internal-Token`, **identical on every service in the tier**. Minimum 32 characters, checked in every profile when present. `/health` and `/ready` stay reachable without it, so an orchestrator never needs the secret. |
+| `TANKOVAULT_INTERNAL__IDENTITY` | `off` | all | `off`, `token` or `mtls`. `off` is refused under `TANKOVAULT_PROFILE=production`. |
+| `TANKOVAULT_INTERNAL__CALLER__NAME` | *(unset)* | api, worker | The name this service is known by; must match the key its peers list it under. |
+| `TANKOVAULT_INTERNAL__CALLER__TOKEN` | *(unset)* | api, worker | Required under `identity=token`. Minimum 32 characters, checked in every profile. `openssl rand -hex 32`. Ignored under `mtls`, where the client certificate is the credential. |
+| `TANKOVAULT_INTERNAL__PEERS` | *(empty)* | control-plane, worker, sync, render, challenge-solver | A **map keyed by caller name**, so the environment spelling is `TANKOVAULT_INTERNAL__PEERS__<NAME>__TOKEN` (or `__SAN`) — e.g. `TANKOVAULT_INTERNAL__PEERS__API__TOKEN`. Under `token` each entry needs a `token`; under `mtls` each needs a `san`. A peer carrying the wrong one for the active mode is refused at boot. Because the keys are dynamic, `xtask config-docs` can only see this root — the per-peer keys are documented by this row, not derived. |
+| `TANKOVAULT_INTERNAL__TLS__CERT` | *(unset)* | all under `mtls` | PEM certificate chain this service serves and presents. |
+| `TANKOVAULT_INTERNAL__TLS__KEY` | *(unset)* | all under `mtls` | PEM private key for the above. |
+| `TANKOVAULT_INTERNAL__TLS__CA` | *(unset)* | all under `mtls` | PEM bundle of the authorities a peer certificate must chain to. **Only these** — the public root store is switched off on internal clients, since a peer signed by a public CA is not a peer. |
+| `TANKOVAULT_INTERNAL__TOKEN` | *(retired)* | — | **Refused at boot.** One secret shared by every service meant any one of them could call all the others' privileged routes: `challenge-solver`'s credential could unlink a user's tracker account through `sync`. Replace it with the per-caller keys above. |
+
+`/health` and `/ready` are merged outside this stack on every service, so an orchestrator probe
+never needs a credential — including under `mtls`, where they stay on the plain listener because
+a kubelet probe presents no client certificate.
+
+Two things are refused at boot rather than discovered later, because neither produces a symptom
+on its own:
+
+- an upstream URL still spelled `http://` under `identity=mtls` — it connects, works, offers no
+  client certificate and encrypts nothing, while the peer's configuration still says it requires
+  both;
+- certificate material that cannot be read, checked when the configuration resolves rather than
+  at the first connection, so a bad mount is a crash-looping replica instead of a running one
+  that refuses every request.
+
+Certificates are re-read from disk every 30 seconds and swapped without dropping connections, so
+rotation needs no restart. A rotation that produces unreadable files logs and keeps serving on
+the material already in memory.
+
+**NATS.** Under `mtls` the broker connection presents the same certificate and requires TLS.
+Per-service NATS *accounts* — what stops `notifier` from publishing scan tasks — are NATS server
+configuration plus the credentials embedded in each service's `TANKOVAULT_NATS__URL`; this
+codebase presents them but cannot assert them.
 
 ### `email` — transactional mail
 

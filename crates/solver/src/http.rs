@@ -7,12 +7,17 @@
 
 use crate::types::{ChallengeSolver, SolveRequest};
 use axum::extract::State;
-use axum::http::StatusCode;
+use axum::http::{Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::{Json, Router};
 use std::sync::Arc;
+use tankovault_service::InternalRoute;
 use tankovault_service::problem::Problem;
+
+/// The one path [`solver_router`] mounts, named so the route and its authorisation entry
+/// cannot be spelled differently.
+pub const SOLVE_PATH: &str = "/v1/solve";
 
 /// The router fragment both solver-hosting services merge.
 ///
@@ -20,8 +25,22 @@ use tankovault_service::problem::Problem;
 /// its readiness policy. This contributes exactly one route.
 pub fn solver_router(solver: Arc<dyn ChallengeSolver>) -> Router {
     Router::new()
-        .route("/v1/solve", post(solve))
+        .route(SOLVE_PATH, post(solve))
         .with_state(solver)
+}
+
+/// The internal-auth entry for the route [`solver_router`] contributes.
+///
+/// Declared beside the router for the reason the router itself is shared: this endpoint fetches
+/// a caller-supplied URL, so a service that mounts it and authorises a *different* path has
+/// published an arbitrary-URL fetch primitive to anything that can reach the port.
+#[must_use]
+pub const fn solve_route(callers: &'static [&'static str]) -> InternalRoute {
+    InternalRoute {
+        method: Method::POST,
+        path: SOLVE_PATH,
+        callers,
+    }
 }
 
 /// Validate the target, solve it, and report the outcome.

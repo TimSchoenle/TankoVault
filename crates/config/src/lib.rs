@@ -35,7 +35,10 @@ pub use cors::CorsConfig;
 pub use database::DatabaseConfig;
 pub use email::{EmailConfig, EmailSecurity};
 pub use features::FeaturesConfig;
-pub use internal_auth::{InternalAuthConfig, MIN_INTERNAL_TOKEN_LEN};
+pub use internal_auth::{
+    CallerConfig, IdentityMode, InternalAuthConfig, InternalTlsConfig, MIN_INTERNAL_TOKEN_LEN,
+    PeerConfig, ResolvedCaller, ResolvedInternalAuth, ResolvedPeer, ResolvedTls,
+};
 pub use legal::{LegalConfig, LegalDocument};
 pub use loader::{
     ConfigError, Loaded, Sources, default_true, is_production, load, load_watched, terrace,

@@ -27,9 +27,40 @@ use tankovault_domain::{Feature, Provider, ProviderId, RunState, ScanMode, ScanR
 use tankovault_service::health::PostgresCheck;
 use tankovault_service::problem::Problem;
 use tankovault_service::{
-    CancellationToken, FeatureGate, Health, HttpStack, MetricsRegistry, PostgresFlagSource,
-    PostgresTunableSource, RateLimiter, RouteClassifier, TunableSet,
+    CancellationToken, FeatureGate, Health, HttpStack, InternalAuth, InternalRoute,
+    MetricsRegistry, PostgresFlagSource, PostgresTunableSource, RateLimiter, RouteClassifier,
+    RouteTable, TunableSet,
 };
+
+/// Trigger a scan run for one provider, or for every enabled provider.
+const SCANS: &str = "/internal/scans";
+/// Sweep the catalogue for duplicate series and merge what passes the threshold.
+const MERGE_SWEEP: &str = "/internal/merge-sweep";
+/// Rebuild the recommendation model.
+const RECSYS_BUILD: &str = "/internal/recsys-build";
+
+/// Who may reach each of this service's privileged routes.
+///
+/// All three are operator actions the console fronts, so `api` is the only caller: nothing else
+/// in the tier has a reason to start a scan, and before per-caller identity every service that
+/// held the shared token could start one.
+static INTERNAL_ROUTES: &[InternalRoute] = &[
+    InternalRoute {
+        method: axum::http::Method::POST,
+        path: SCANS,
+        callers: &["api"],
+    },
+    InternalRoute {
+        method: axum::http::Method::POST,
+        path: MERGE_SWEEP,
+        callers: &["api"],
+    },
+    InternalRoute {
+        method: axum::http::Method::POST,
+        path: RECSYS_BUILD,
+        callers: &["api"],
+    },
+];
 
 #[derive(Debug, Deserialize)]
 struct Config {
@@ -279,9 +310,9 @@ async fn serve_once(
     metrics: MetricsRegistry,
     shutdown: CancellationToken,
 ) -> anyhow::Result<()> {
-    // Resolved before anything binds: starting without a token would silently serve
+    // Resolved before anything binds: starting without identity configured would silently serve
     // privileged routes unauthenticated, so the production profile refuses to boot instead.
-    let internal_token = tankovault_service::internal_auth::resolve(&cfg.internal)?;
+    let internal_auth = tankovault_service::internal_auth::resolve(&cfg.internal)?;
 
     let pool = tankovault_db::connect(
         &cfg.database.url,
@@ -291,7 +322,7 @@ async fn serve_once(
     .await?;
     tankovault_service::metrics::spawn_pool_sampler(pool.clone(), shutdown.clone());
 
-    let bus = Bus::connect(&cfg.nats.url).await?;
+    let bus = Bus::connect(&cfg.nats.url, internal_auth.tls.as_ref()).await?;
     bus.ensure_streams().await?;
 
     // Loaded before the scheduler starts so the first post-restart sweep respects stored
@@ -366,17 +397,20 @@ async fn serve_once(
     let limiter = RateLimiter::from_config(&cfg.rate_limit, RouteClassifier::new(), None);
     let app = HttpStack::new(&cfg.security, metrics.clone())
         .with_rate_limit(limiter)
-        .with_internal_auth(internal_token)
+        .with_internal_auth(Some(InternalAuth::new(
+            &internal_auth,
+            RouteTable(INTERNAL_ROUTES),
+        )))
         .apply(
             Router::new()
-                .route("/internal/scans", post(trigger_scan))
-                .route("/internal/merge-sweep", post(trigger_merge_sweep))
-                .route("/internal/recsys-build", post(trigger_recsys_build))
+                .route(SCANS, post(trigger_scan))
+                .route(MERGE_SWEEP, post(trigger_merge_sweep))
+                .route(RECSYS_BUILD, post(trigger_recsys_build))
                 .with_state(state),
         )
         .merge(tankovault_service::ops_router(health, metrics));
 
-    tankovault_service::serve(&cfg.bind_addr, app, shutdown).await?;
+    tankovault_service::serve_internal(&cfg.bind_addr, app, &internal_auth, shutdown).await?;
     Ok(())
 }
 

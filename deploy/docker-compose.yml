@@ -9,8 +9,8 @@
 # `challenge-solver` expose privileged, formerly unauthenticated contracts, and Docker's port
 # publishing bypasses the host firewall via DOCKER-USER/iptables — `ports:` on any of them puts
 # those contracts on every interface the host has. To debug one, bind loopback temporarily:
-# `ports: ["127.0.0.1:8083:8083"]`. Defence in depth: every internal service also requires
-# TANKOVAULT_INTERNAL__TOKEN (x-internal below).
+# `ports: ["127.0.0.1:8083:8083"]`. Defence in depth: every internal service also identifies its
+# caller and authorises the route (x-internal-* below).
 name: tankovault
 
 x-build: &build
@@ -21,11 +21,47 @@ x-telemetry: &telemetry
   TANKOVAULT_TELEMETRY__JSON_LOGS: "true"
   TANKOVAULT_TELEMETRY__LOG_FILTER: "info,tankovault=debug"
 
+# Internal-tier identity. Each *caller* has its own credential and each *callee* lists only the
+# callers it accepts, so a service's token opens the routes that service is meant to reach and
+# nothing else — one tier-wide secret previously meant `challenge-solver`'s credential could
+# unlink a user's tracker account through `sync`.
+#
+# `token` is the portable mode. Under Kubernetes set TANKOVAULT_INTERNAL__IDENTITY=mtls and mount
+# cert-manager's key pair plus trust-manager's CA bundle instead; the peer entries then carry
+# `__SAN` rather than `__TOKEN`, and nothing else here changes.
+#
 # Required, no fallback: the previous published default was refused only when missing, not when
 # present and well-known, so an inherited default authorized every inter-tier call. `xtask
 # repo-lint` fails if a working default reappears here without a matching refusal in code.
-x-internal: &internal
-  TANKOVAULT_INTERNAL__TOKEN: "${TANKOVAULT_INTERNAL__TOKEN:?set it in deploy/local.env — see deploy/local.env.example; generate with `openssl rand -hex 32`}"
+x-token-api: &token-api
+  "${TANKOVAULT_INTERNAL_TOKEN_API:?set it in deploy/local.env — see deploy/local.env.example; generate with `openssl rand -hex 32`}"
+x-token-worker: &token-worker
+  "${TANKOVAULT_INTERNAL_TOKEN_WORKER:?set it in deploy/local.env — see deploy/local.env.example; generate with `openssl rand -hex 32`}"
+
+# `api` calls control-plane, sync and worker; it serves no internal route itself.
+x-internal-api: &internal-api
+  TANKOVAULT_INTERNAL__IDENTITY: "token"
+  TANKOVAULT_INTERNAL__CALLER__NAME: "api"
+  TANKOVAULT_INTERNAL__CALLER__TOKEN: *token-api
+
+# `worker` is both: it is called by `api` for the adapter dry-run, and it calls the two
+# solver-hosting services. The two credentials are deliberately distinct.
+x-internal-worker: &internal-worker
+  TANKOVAULT_INTERNAL__IDENTITY: "token"
+  TANKOVAULT_INTERNAL__CALLER__NAME: "worker"
+  TANKOVAULT_INTERNAL__CALLER__TOKEN: *token-worker
+  TANKOVAULT_INTERNAL__PEERS__API__TOKEN: *token-api
+
+# Called by `api` only.
+x-internal-from-api: &internal-from-api
+  TANKOVAULT_INTERNAL__IDENTITY: "token"
+  TANKOVAULT_INTERNAL__PEERS__API__TOKEN: *token-api
+
+# Called by `worker` only. Both of these fetch a caller-supplied URL, so the narrower the peer
+# list the better.
+x-internal-from-worker: &internal-from-worker
+  TANKOVAULT_INTERNAL__IDENTITY: "token"
+  TANKOVAULT_INTERNAL__PEERS__WORKER__TOKEN: *token-worker
 
 x-db-url: &db-url "postgres://tankovault:tankovault@postgres:5432/tankovault"
 
@@ -200,7 +236,7 @@ services:
       <<: *build
       args: { BIN: api }
     environment:
-      <<: [*telemetry, *internal]
+      <<: [*telemetry, *internal-api]
       TANKOVAULT_TELEMETRY__SERVICE_NAME: api
       TANKOVAULT_DATABASE__URL: *db-url
       # Required, no fallback: the previous published default made every session forgeable.
@@ -270,7 +306,7 @@ services:
       <<: *build
       args: { BIN: control-plane }
     environment:
-      <<: [*telemetry, *internal]
+      <<: [*telemetry, *internal-from-api]
       TANKOVAULT_TELEMETRY__SERVICE_NAME: control-plane
       TANKOVAULT_DATABASE__URL: *db-url
       TANKOVAULT_NATS__URL: nats://nats:4222
@@ -294,7 +330,7 @@ services:
       <<: *build
       args: { BIN: worker }
     environment:
-      <<: [*telemetry, *internal]
+      <<: [*telemetry, *internal-worker]
       TANKOVAULT_TELEMETRY__SERVICE_NAME: worker
       TANKOVAULT_DATABASE__URL: *db-url
       TANKOVAULT_NATS__URL: nats://nats:4222
@@ -344,7 +380,7 @@ services:
       <<: *build
       args: { BIN: sync }
     environment:
-      <<: [*telemetry, *internal]
+      <<: [*telemetry, *internal-from-api]
       TANKOVAULT_TELEMETRY__SERVICE_NAME: sync
       TANKOVAULT_DATABASE__URL: *db-url
       TANKOVAULT_ANILIST__CLIENT_ID: "${TANKOVAULT_ANILIST__CLIENT_ID:-}"
@@ -365,7 +401,7 @@ services:
       <<: *build
       args: { BIN: challenge-solver }
     environment:
-      <<: [*telemetry, *internal]
+      <<: [*telemetry, *internal-from-worker]
       TANKOVAULT_TELEMETRY__SERVICE_NAME: challenge-solver
       TANKOVAULT_SOLVER__TRAWL_ENDPOINT: http://trawl:8191
     depends_on:
@@ -392,7 +428,7 @@ services:
       target: runtime-browser
       args: { BIN: render }
     environment:
-      <<: [*telemetry, *internal]
+      <<: [*telemetry, *internal-from-worker]
       TANKOVAULT_TELEMETRY__SERVICE_NAME: render
 
   # ---- Frontend (Dioxus WASM SPA served by the axum `frontend` server) ---------------

@@ -5,9 +5,18 @@ use serde::Deserialize;
 use std::sync::Arc;
 use tankovault_config::TelemetryConfig;
 use tankovault_service::{
-    CancellationToken, Health, HttpStack, MetricsRegistry, RateLimiter, RouteClassifier,
+    CancellationToken, Health, HttpStack, InternalRoute, MetricsRegistry, RateLimiter,
+    RouteClassifier,
 };
 use tankovault_solver::{ChallengeSolver, TrawlSolver};
+
+/// Who may reach this service's routes.
+///
+/// `worker` alone: solving fetches a caller-supplied URL, so this is an arbitrary-URL fetch
+/// primitive for anything that can reach the port, and the crawl path is the only legitimate
+/// user. The entry itself comes from `tankovault_solver::http` so the route this service mounts
+/// and the route it authorises cannot be spelled differently.
+static INTERNAL_ROUTES: &[InternalRoute] = &[tankovault_solver::http::solve_route(&["worker"])];
 
 #[derive(Debug, Deserialize)]
 struct Config {
@@ -104,7 +113,7 @@ async fn serve_once(
 ) -> anyhow::Result<()> {
     // Resolved before anything binds: starting without a token would silently serve
     // privileged routes unauthenticated, so the production profile refuses to boot instead.
-    let internal_token = tankovault_service::internal_auth::resolve(&cfg.internal)?;
+    let internal_auth = tankovault_service::internal_auth::resolve(&cfg.internal)?;
 
     let solver: Arc<dyn ChallengeSolver> = match cfg.solver.backend.as_str() {
         "trawl" => Arc::new(TrawlSolver::new(
@@ -121,7 +130,10 @@ async fn serve_once(
 
     let app = HttpStack::new(&cfg.security, metrics.clone())
         .with_rate_limit(limiter)
-        .with_internal_auth(internal_token)
+        .with_internal_auth(Some(tankovault_service::InternalAuth::new(
+            &internal_auth,
+            tankovault_service::RouteTable(INTERNAL_ROUTES),
+        )))
         // Contract shared with `render` — see `tankovault_solver::http`.
         .apply(tankovault_solver::http::solver_router(state.solver))
         // Readiness is just "listening": TRAWL has its own `/health` gate on the browser pool
@@ -132,6 +144,6 @@ async fn serve_once(
             metrics,
         ));
 
-    tankovault_service::serve(&cfg.bind_addr, app, shutdown).await?;
+    tankovault_service::serve_internal(&cfg.bind_addr, app, &internal_auth, shutdown).await?;
     Ok(())
 }

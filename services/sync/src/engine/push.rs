@@ -5,7 +5,6 @@
 use std::sync::Arc;
 
 use anyhow::anyhow;
-use serde::Serialize;
 use time::OffsetDateTime;
 
 use tankovault_db::PgPool;
@@ -17,13 +16,7 @@ use super::resolve::SeriesResolver;
 use super::tokens::TokenVault;
 use crate::provider::ExternalProvider;
 
-/// One provider's outcome from a targeted single-series push.
-#[derive(Debug, Clone, Serialize)]
-pub(crate) struct ProviderPushOutcome {
-    pub(crate) provider: String,
-    pub(crate) ok: bool,
-    pub(crate) error: Option<String>,
-}
+use tankovault_contracts::sync::ProviderPushOutcome;
 
 /// Fans one series' local state out to every provider a user has linked.
 pub(crate) struct TargetedPush {

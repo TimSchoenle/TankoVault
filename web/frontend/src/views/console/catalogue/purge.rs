@@ -7,7 +7,7 @@
 //! not a rolled-back no-op: the purge is resumable, and pressing it again continues.
 
 use crate::api;
-use crate::components::{use_step_up_gate, OutcomeLine, Section, StepUpPrompt, TypeToConfirm};
+use crate::components::{use_step_up_gate, OutcomeLine, Section, StepUpGuard, TypeToConfirm};
 use crate::hooks::{use_busy, use_outcome, Reload};
 use crate::i18n::use_i18n;
 use crate::util::thousands;
@@ -49,7 +49,7 @@ pub(super) fn PurgePanel(totals: Option<CatalogueSummary>, reload: Reload) -> El
     let watchlist_total = count(totals.as_ref().map(|t| t.watchlist_entries));
     let progress_total = count(totals.as_ref().map(|t| t.progress_rows));
 
-    let mut run = move |scope: PurgeScope| {
+    let run = use_callback(move |scope: PurgeScope| {
         if !busy.claim() {
             return;
         }
@@ -116,7 +116,7 @@ pub(super) fn PurgePanel(totals: Option<CatalogueSummary>, reload: Reload) -> El
             busy.release();
             reload.bump();
         });
-    };
+    });
 
     let live = *progress.read();
     rsx! {
@@ -131,7 +131,7 @@ pub(super) fn PurgePanel(totals: Option<CatalogueSummary>, reload: Reload) -> El
                     expect: "chapters".to_owned(),
                     cta: i18n.t("console.catalogue.purgeChaptersCta"),
                     busy: busy.is_busy(),
-                    on_confirm: move |()| run(PurgeScope::Chapters),
+                    on_confirm: move |()| gate.attempt(move || run.call(PurgeScope::Chapters)),
                 }
                 TypeToConfirm {
                     title: i18n.t("console.catalogue.purgeAll"),
@@ -147,7 +147,7 @@ pub(super) fn PurgePanel(totals: Option<CatalogueSummary>, reload: Reload) -> El
                     expect: "everything".to_owned(),
                     cta: i18n.t("console.catalogue.purgeAllCta"),
                     busy: busy.is_busy(),
-                    on_confirm: move |()| run(PurgeScope::Everything),
+                    on_confirm: move |()| gate.attempt(move || run.call(PurgeScope::Everything)),
                 }
             }
             if live.running || live.removed > 0 {
@@ -163,16 +163,7 @@ pub(super) fn PurgePanel(totals: Option<CatalogueSummary>, reload: Reload) -> El
                     }
                 }
             }
-            if gate.is_open() {
-                StepUpPrompt {
-                    enrolled: true,
-                    intro: Some(i18n.t("console.stepUp.intro")),
-                    on_done: move |()| {
-                        gate.close();
-                        outcome.set(Some(Ok(i18n.t("stepUp.confirmedRetry"))));
-                    },
-                }
-            }
+            StepUpGuard { gate, intro: Some(i18n.t("console.stepUp.intro")) }
             OutcomeLine { outcome: outcome.read().clone() }
         }
     }

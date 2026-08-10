@@ -15,7 +15,7 @@
 
 use crate::api;
 use crate::components::{
-    async_block, use_step_up_gate, Field, InlineConfirm, PanelCard, StepUpGate, StepUpPrompt,
+    async_block, use_step_up_gate, Field, InlineConfirm, PanelCard, StepUpGate, StepUpGuard,
 };
 use crate::hooks::{use_busy, use_reload, Reload};
 use crate::i18n::use_i18n;
@@ -267,15 +267,7 @@ pub(crate) fn MfaCard() -> Element {
                 div { class: "ik-note", style: "padding:10px;margin:10px 0;", "{msg}" }
             }
 
-            if gate.is_open() {
-                StepUpPrompt {
-                    enrolled,
-                    on_done: move |()| {
-                        gate.close();
-                        info.set(Some(i18n.t("stepUp.confirmed")));
-                    },
-                }
-            }
+            StepUpGuard { gate, enrolled }
 
             // The single sight of a fresh recovery-code set. Not dismissible by a stray click:
             // it is the only copy that will ever exist, and a reader who loses it has to
@@ -327,7 +319,7 @@ pub(crate) fn MfaCard() -> Element {
                                     on_cancel: move |()| removing_totp.set(false),
                                     on_confirm: move |()| {
                                         removing_totp.set(false);
-                                        remove_totp.call(());
+                                        gate.attempt(move || remove_totp.call(()));
                                     },
                                 }
                             } else {
@@ -372,7 +364,7 @@ pub(crate) fn MfaCard() -> Element {
                         button {
                             class: "ik-btn",
                             disabled: busy.is_busy(),
-                            onclick: move |_| begin_totp.call(()),
+                            onclick: move |_| gate.attempt(move || begin_totp.call(())),
                             {i18n.t("mfa.totp.add")}
                         }
                     }
@@ -415,12 +407,12 @@ pub(crate) fn MfaCard() -> Element {
                         label: i18n.t("mfa.key.field.label"),
                         value: key_label(),
                         on_input: move |v| key_label.set(v),
-                        on_enter: move |()| register_key.call(()),
+                        on_enter: move |()| gate.attempt(move || register_key.call(())),
                     }
                     button {
                         class: "ik-btn",
                         disabled: busy.is_busy(),
-                        onclick: move |_| register_key.call(()),
+                        onclick: move |_| gate.attempt(move || register_key.call(())),
                         {i18n.t("mfa.key.add")}
                     }
                 }
@@ -448,7 +440,7 @@ pub(crate) fn MfaCard() -> Element {
                         button {
                             class: "ik-btn",
                             disabled: busy.is_busy(),
-                            onclick: move |_| regenerate.call(()),
+                            onclick: move |_| gate.attempt(move || regenerate.call(())),
                             {i18n.t("mfa.recovery.regenerate")}
                         }
                     }
@@ -546,7 +538,7 @@ fn SecurityKeyRow(
                         label: i18n.t("mfa.key.field.label"),
                         value: draft(),
                         on_input: move |v| draft.set(v),
-                        on_enter: move |()| rename.call(()),
+                        on_enter: move |()| gate.attempt(move || rename.call(())),
                     }
                 } else {
                     div {
@@ -565,7 +557,7 @@ fn SecurityKeyRow(
                         onclick: move |_| {
                             let open = *renaming.read();
                             if open {
-                                rename.call(());
+                                gate.attempt(move || rename.call(()));
                             } else {
                                 renaming.set(true);
                             }
@@ -585,7 +577,7 @@ fn SecurityKeyRow(
                             on_cancel: move |()| revoking.set(false),
                             on_confirm: move |()| {
                                 revoking.set(false);
-                                revoke.call(());
+                                gate.attempt(move || revoke.call(()));
                             },
                         }
                     } else {

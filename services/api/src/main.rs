@@ -108,9 +108,14 @@ struct AuthConfig {
     /// [`Self::webauthn_rp_name`], then to the product name — one label for both prompts.
     #[serde(default)]
     totp_issuer: Option<String>,
-    /// How long a step-up elevation lasts before a sensitive action prompts again.
+    /// How long a step-up elevation survives **unused** before a sensitive action prompts again.
+    /// Every elevated request slides it forward.
     #[serde(default = "default_step_up_minutes")]
     step_up_ttl_minutes: i64,
+    /// The ceiling on that sliding: the longest an elevation is honoured after it was earned,
+    /// however continuously it is used.
+    #[serde(default = "default_step_up_max_minutes")]
+    step_up_max_ttl_minutes: i64,
     /// How long a half-finished sign-in — password accepted, second factor still owed — may
     /// sit before the user has to start again.
     #[serde(default = "default_mfa_challenge_minutes")]
@@ -139,10 +144,17 @@ fn default_access_minutes() -> i64 {
 fn default_refresh_days() -> i64 {
     30
 }
-/// Five minutes: long enough to change a password and revoke a session without a second
-/// prompt, short enough that a walked-away-from laptop is not a standing elevation.
+/// Thirty minutes of *inactivity*. The window slides on every elevated request, so this is how
+/// long an operator may leave a console panel alone before it asks again — five minutes measured
+/// from the confirmation meant a re-prompt in the middle of the very task it was earned for.
 fn default_step_up_minutes() -> i64 {
-    5
+    30
+}
+/// Four hours, and nothing extends it: this is the bound a shift at the console cannot slide
+/// past, so a walked-away-from machine stops being elevated even if something on the page keeps
+/// touching a guarded route.
+fn default_step_up_max_minutes() -> i64 {
+    240
 }
 /// Five minutes, matching the `WebAuthn` ceremony timeout — a sign-in that offers a security
 /// key must not expire its own challenge before the authenticator prompt does.
@@ -399,6 +411,7 @@ async fn serve_once(
             .or_else(|| cfg.auth.webauthn_rp_name.clone())
             .unwrap_or_else(|| "TankoVault".to_owned()),
         step_up_ttl: time::Duration::minutes(cfg.auth.step_up_ttl_minutes),
+        step_up_max_ttl: time::Duration::minutes(cfg.auth.step_up_max_ttl_minutes),
         mfa_challenge_ttl: time::Duration::minutes(cfg.auth.mfa_challenge_ttl_minutes),
         webauthn,
         mfa_sealer,
@@ -567,7 +580,7 @@ fn build_mfa_sealer(auth: &AuthConfig) -> anyhow::Result<Option<tankovault_auth:
 /// How often abandoned credential state is swept.
 ///
 /// Generous: expiry is already enforced in every read (`take_ceremony`,
-/// `charge_challenge_attempt` and `find_step_up` all filter on `expires_at`), so an unswept row
+/// `charge_challenge_attempt` and `renew_step_up` all filter on `expires_at`), so an unswept row
 /// is unusable, not dangerous — this only stops three tables growing without bound.
 const CREDENTIAL_SWEEP_INTERVAL: Duration = Duration::from_secs(15 * 60);
 
@@ -695,6 +708,7 @@ mod tests {
             mfa_encryption_key: None,
             totp_issuer: None,
             step_up_ttl_minutes: 5,
+            step_up_max_ttl_minutes: 60,
             mfa_challenge_ttl_minutes: 5,
         }
     }

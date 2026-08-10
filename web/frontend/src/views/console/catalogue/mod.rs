@@ -11,7 +11,7 @@ mod row;
 use crate::api;
 use crate::components::{
     async_view, use_step_up_gate, CompactPager, InlineConfirm, Kpi, ListSearch, OutcomeLine,
-    SegControl, SkeletonRows, StepUpPrompt, Window,
+    SegControl, SkeletonRows, StepUpGuard, Window,
 };
 use crate::hooks::{use_busy, use_outcome, use_reload};
 use crate::i18n::use_i18n;
@@ -334,42 +334,44 @@ fn BulkBar(picked: Signal<HashSet<SeriesId>>, reload: crate::hooks::Reload) -> E
     }
 
     let delete = move |()| {
-        if !busy.claim() {
-            return;
-        }
-        outcome.set(None);
-        let series_ids: Vec<SeriesId> = picked.peek().iter().copied().collect();
-        // Elevated: the API guards every mutating operator capability with a second factor, and
-        // answers `403 step_up_required` until it has one.
-        let client = gate.client(api);
-        spawn(async move {
-            match client
-                .bulk_delete_series()
-                .body(BulkDeleteSeries { series_ids })
-                .send()
-                .await
-                .map(ResponseValue::into_inner)
-            {
-                Ok(report) => {
-                    outcome.set(Some(Ok(i18n.args(
-                        "console.catalogue.deleted",
-                        &[
-                            ("series", &thousands(report.series)),
-                            ("chapters", &thousands(report.chapters)),
-                            ("watchers", &thousands(report.watchlist_entries)),
-                        ],
-                    ))));
-                    picked.write().clear();
-                    confirming.set(false);
-                    reload.bump();
-                }
-                Err(e) => {
-                    if !gate.refused(api::Refusal::of(&e)) {
-                        outcome.set(Some(Err(api::guarded_error(i18n, e))));
+        gate.attempt(move || {
+            if !busy.claim() {
+                return;
+            }
+            outcome.set(None);
+            let series_ids: Vec<SeriesId> = picked.peek().iter().copied().collect();
+            // Elevated: the API guards every mutating operator capability with a second factor, and
+            // answers `403 step_up_required` until it has one.
+            let client = gate.client(api);
+            spawn(async move {
+                match client
+                    .bulk_delete_series()
+                    .body(BulkDeleteSeries { series_ids })
+                    .send()
+                    .await
+                    .map(ResponseValue::into_inner)
+                {
+                    Ok(report) => {
+                        outcome.set(Some(Ok(i18n.args(
+                            "console.catalogue.deleted",
+                            &[
+                                ("series", &thousands(report.series)),
+                                ("chapters", &thousands(report.chapters)),
+                                ("watchers", &thousands(report.watchlist_entries)),
+                            ],
+                        ))));
+                        picked.write().clear();
+                        confirming.set(false);
+                        reload.bump();
+                    }
+                    Err(e) => {
+                        if !gate.refused(api::Refusal::of(&e)) {
+                            outcome.set(Some(Err(api::guarded_error(i18n, e))));
+                        }
                     }
                 }
-            }
-            busy.release();
+                busy.release();
+            });
         });
     };
 
@@ -415,16 +417,7 @@ fn BulkBar(picked: Signal<HashSet<SeriesId>>, reload: crate::hooks::Reload) -> E
                 }
             }
         }
-        if gate.is_open() {
-            StepUpPrompt {
-                enrolled: true,
-                intro: Some(i18n.t("console.stepUp.intro")),
-                on_done: move |()| {
-                    gate.close();
-                    outcome.set(Some(Ok(i18n.t("stepUp.confirmedRetry"))));
-                },
-            }
-        }
+        StepUpGuard { gate, intro: Some(i18n.t("console.stepUp.intro")) }
         OutcomeLine { outcome: outcome.read().clone() }
     }
 }

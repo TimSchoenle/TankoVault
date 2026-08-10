@@ -7,7 +7,7 @@
 
 use crate::api;
 use crate::components::{
-    async_block, async_block_list, use_step_up_gate, Cover, StepUpGate, StepUpPrompt,
+    async_block, async_block_list, use_step_up_gate, Cover, StepUpGate, StepUpGuard,
 };
 use crate::hooks::{use_reload, Reload};
 use crate::i18n::use_i18n;
@@ -62,78 +62,82 @@ pub(super) fn MergeQueue() -> Element {
     // Sweep acts on rows the operator can't see, so its outcome is reported as text, not
     // inferred from the list changing length.
     let run_sweep = move |_| {
-        if *busy.peek() {
-            return;
-        }
-        busy.set(true);
-        notice.set(String::new());
-        spawn(async move {
-            let client = gate.client(api);
-            if session.token_value().is_some() {
-                match client.sweep_merge_candidates().send().await {
-                    Ok(r) => {
-                        let r = r.into_inner();
-                        notice.set(i18n.args(
-                            "console.merge.sweepDone",
-                            &[
-                                ("examined", &r.pairs_examined.to_string()),
-                                ("merged", &r.auto_merged.to_string()),
-                                // Newly queued and reopened both lengthen the queue; rescored
-                                // ones do not. Reporting them as one number told an operator
-                                // the queue had grown by the count of rows it merely re-read.
-                                ("queued", &(r.queued + r.reopened).to_string()),
-                                ("rescored", &r.requeued.to_string()),
-                                ("withdrawn", &r.withdrawn.to_string()),
-                            ],
-                        ));
-                        reload.bump();
-                    }
-                    Err(e) => {
-                        if !gate.refused(api::Refusal::of(&e)) {
+        gate.attempt(move || {
+            if *busy.peek() {
+                return;
+            }
+            busy.set(true);
+            notice.set(String::new());
+            spawn(async move {
+                let client = gate.client(api);
+                if session.token_value().is_some() {
+                    match client.sweep_merge_candidates().send().await {
+                        Ok(r) => {
+                            let r = r.into_inner();
                             notice.set(i18n.args(
-                                "console.merge.actionFailed",
-                                &[("message", &api::guarded_error(i18n, e))],
+                                "console.merge.sweepDone",
+                                &[
+                                    ("examined", &r.pairs_examined.to_string()),
+                                    ("merged", &r.auto_merged.to_string()),
+                                    // Newly queued and reopened both lengthen the queue; rescored
+                                    // ones do not. Reporting them as one number told an operator
+                                    // the queue had grown by the count of rows it merely re-read.
+                                    ("queued", &(r.queued + r.reopened).to_string()),
+                                    ("rescored", &r.requeued.to_string()),
+                                    ("withdrawn", &r.withdrawn.to_string()),
+                                ],
                             ));
+                            reload.bump();
+                        }
+                        Err(e) => {
+                            if !gate.refused(api::Refusal::of(&e)) {
+                                notice.set(i18n.args(
+                                    "console.merge.actionFailed",
+                                    &[("message", &api::guarded_error(i18n, e))],
+                                ));
+                            }
                         }
                     }
                 }
-            }
-            busy.set(false);
+                busy.set(false);
+            });
         });
     };
 
     let rebuild_keys = move |_| {
-        if *busy.peek() {
-            return;
-        }
-        busy.set(true);
-        notice.set(String::new());
-        spawn(async move {
-            let client = gate.client(api);
-            if session.token_value().is_some() {
-                match client.rebuild_matching_keys().send().await {
-                    Ok(r) => {
-                        let r = r.into_inner();
-                        notice.set(i18n.args(
-                            "console.merge.rebuildDone",
-                            &[
-                                ("series", &r.series_updated.to_string()),
-                                ("titles", &r.titles_updated.to_string()),
-                            ],
-                        ));
-                        reload.bump();
-                    }
-                    Err(e) => {
-                        if !gate.refused(api::Refusal::of(&e)) {
+        gate.attempt(move || {
+            if *busy.peek() {
+                return;
+            }
+            busy.set(true);
+            notice.set(String::new());
+            spawn(async move {
+                let client = gate.client(api);
+                if session.token_value().is_some() {
+                    match client.rebuild_matching_keys().send().await {
+                        Ok(r) => {
+                            let r = r.into_inner();
                             notice.set(i18n.args(
-                                "console.merge.actionFailed",
-                                &[("message", &api::guarded_error(i18n, e))],
+                                "console.merge.rebuildDone",
+                                &[
+                                    ("series", &r.series_updated.to_string()),
+                                    ("titles", &r.titles_updated.to_string()),
+                                ],
                             ));
+                            reload.bump();
+                        }
+                        Err(e) => {
+                            if !gate.refused(api::Refusal::of(&e)) {
+                                notice.set(i18n.args(
+                                    "console.merge.actionFailed",
+                                    &[("message", &api::guarded_error(i18n, e))],
+                                ));
+                            }
                         }
                     }
                 }
-            }
-            busy.set(false);
+                busy.set(false);
+            });
         });
     };
 
@@ -159,16 +163,7 @@ pub(super) fn MergeQueue() -> Element {
                     {i18n.t("console.merge.rebuildKeys")}
                 }
             }
-            if gate.is_open() {
-                StepUpPrompt {
-                    enrolled: true,
-                    intro: Some(i18n.t("console.stepUp.intro")),
-                    on_done: move |()| {
-                        gate.close();
-                        notice.set(i18n.t("stepUp.confirmedRetry"));
-                    },
-                }
-            }
+            StepUpGuard { gate, intro: Some(i18n.t("console.stepUp.intro")) }
             if !notice.read().is_empty() {
                 div { class: "ik-card", style: "margin-bottom:12px;padding:10px;",
                     "{notice}"
@@ -225,58 +220,62 @@ pub(super) fn MergeRow(
     let drop_id = drop_side.id;
 
     let merge = move |_| {
-        if *busy.peek() {
-            return;
-        }
-        busy.set(true);
-        spawn(async move {
-            let client = gate.client(api);
-            if session.token_value().is_some() {
-                match client
-                    .merge_series()
-                    .body(MergeRequest {
-                        keep: keep_id,
-                        merge: drop_id,
-                    })
-                    .send()
-                    .await
-                {
-                    Ok(_) => reload.bump(),
-                    // The row has no error line of its own, so anything but a step-up demand
-                    // still leaves the queue as it was — but the demand has to reach the
-                    // panel's prompt, or the button silently does nothing forever.
-                    Err(e) => {
-                        let _refused = gate.refused(api::Refusal::of(&e));
+        gate.attempt(move || {
+            if *busy.peek() {
+                return;
+            }
+            busy.set(true);
+            spawn(async move {
+                let client = gate.client(api);
+                if session.token_value().is_some() {
+                    match client
+                        .merge_series()
+                        .body(MergeRequest {
+                            keep: keep_id,
+                            merge: drop_id,
+                        })
+                        .send()
+                        .await
+                    {
+                        Ok(_) => reload.bump(),
+                        // The row has no error line of its own, so anything but a step-up demand
+                        // still leaves the queue as it was — but the demand has to reach the
+                        // panel's prompt, or the button silently does nothing forever.
+                        Err(e) => {
+                            let _refused = gate.refused(api::Refusal::of(&e));
+                        }
                     }
                 }
-            }
-            busy.set(false);
+                busy.set(false);
+            });
         });
     };
 
     let dismiss = move |_| {
-        if *busy.peek() {
-            return;
-        }
-        busy.set(true);
-        spawn(async move {
-            let client = gate.client(api);
-            if session.token_value().is_some() {
-                match client
-                    .dismiss_merge_candidate()
-                    .body(DismissRequest { id })
-                    .send()
-                    .await
-                {
-                    Ok(_) => reload.bump(),
-                    // See the merge above: the demand reaches the panel's prompt, everything
-                    // else leaves the row alone.
-                    Err(e) => {
-                        let _refused = gate.refused(api::Refusal::of(&e));
+        gate.attempt(move || {
+            if *busy.peek() {
+                return;
+            }
+            busy.set(true);
+            spawn(async move {
+                let client = gate.client(api);
+                if session.token_value().is_some() {
+                    match client
+                        .dismiss_merge_candidate()
+                        .body(DismissRequest { id })
+                        .send()
+                        .await
+                    {
+                        Ok(_) => reload.bump(),
+                        // See the merge above: the demand reaches the panel's prompt, everything
+                        // else leaves the row alone.
+                        Err(e) => {
+                            let _refused = gate.refused(api::Refusal::of(&e));
+                        }
                     }
                 }
-            }
-            busy.set(false);
+                busy.set(false);
+            });
         });
     };
 

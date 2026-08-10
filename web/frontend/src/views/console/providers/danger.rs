@@ -3,7 +3,7 @@
 
 use crate::api;
 use crate::components::{
-    use_step_up_gate, InlineConfirm, OutcomeLine, Section, StepUpPrompt, TypeToConfirm,
+    use_step_up_gate, InlineConfirm, OutcomeLine, Section, StepUpGuard, TypeToConfirm,
 };
 use crate::hooks::{use_busy, use_outcome, Reload};
 use crate::i18n::use_i18n;
@@ -33,7 +33,7 @@ pub(super) fn DangerTab(
     let id = provider.id;
     let blocked = provider.state == ProviderState::Blocked;
 
-    let mut set_blocked = move |target: ProviderState| {
+    let set_blocked = use_callback(move |target: ProviderState| {
         if !busy.claim() {
             return;
         }
@@ -59,27 +59,29 @@ pub(super) fn DangerTab(
             }
             busy.release();
         });
-    };
+    });
 
     let delete = move |()| {
-        if !busy.claim() {
-            return;
-        }
-        outcome.set(None);
-        let client = gate.client(api);
-        spawn(async move {
-            match client.delete_provider().id(id).send().await {
-                Ok(_) => {
-                    on_deleted.call(());
-                    reload.bump();
-                }
-                Err(e) => {
-                    if !gate.refused(api::Refusal::of(&e)) {
-                        outcome.set(Some(Err(api::guarded_error(i18n, e))));
+        gate.attempt(move || {
+            if !busy.claim() {
+                return;
+            }
+            outcome.set(None);
+            let client = gate.client(api);
+            spawn(async move {
+                match client.delete_provider().id(id).send().await {
+                    Ok(_) => {
+                        on_deleted.call(());
+                        reload.bump();
+                    }
+                    Err(e) => {
+                        if !gate.refused(api::Refusal::of(&e)) {
+                            outcome.set(Some(Err(api::guarded_error(i18n, e))));
+                        }
                     }
                 }
-            }
-            busy.release();
+                busy.release();
+            });
         });
     };
 
@@ -113,7 +115,7 @@ pub(super) fn DangerTab(
                             cta: i18n.t("console.providers.blocklistCta"),
                             busy: busy.is_busy(),
                             on_cancel: move |()| confirming_block.set(false),
-                            on_confirm: move |()| set_blocked(ProviderState::Blocked),
+                            on_confirm: move |()| gate.attempt(move || set_blocked.call(ProviderState::Blocked)),
                         }
                     } else {
                         div { class: "ik-flex", style: "padding:10px 12px;gap:10px;",
@@ -127,7 +129,7 @@ pub(super) fn DangerTab(
                                 disabled: busy.is_busy(),
                                 onclick: move |_| {
                                     if blocked {
-                                        set_blocked(ProviderState::Active);
+                                        gate.attempt(move || set_blocked.call(ProviderState::Active));
                                     } else {
                                         confirming_block.set(true);
                                     }
@@ -152,16 +154,7 @@ pub(super) fn DangerTab(
                     }
                 }
             }
-            if gate.is_open() {
-                StepUpPrompt {
-                    enrolled: true,
-                    intro: Some(i18n.t("console.stepUp.intro")),
-                    on_done: move |()| {
-                        gate.close();
-                        outcome.set(Some(Ok(i18n.t("stepUp.confirmedRetry"))));
-                    },
-                }
-            }
+            StepUpGuard { gate, intro: Some(i18n.t("console.stepUp.intro")) }
             OutcomeLine { outcome: outcome.read().clone() }
         }
     }

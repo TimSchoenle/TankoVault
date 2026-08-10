@@ -40,6 +40,7 @@ pub struct TestConfig {
     tunables: tankovault_service::TunableSet,
     webauthn: Option<tankovault_api::SharedRelyingParty>,
     legal: tankovault_config::LegalConfig,
+    step_up_max_ttl: Duration,
 }
 
 impl Default for TestConfig {
@@ -59,6 +60,7 @@ impl Default for TestConfig {
             // Empty by default, which is what most deployments run: `/v1/legal` answers with an
             // empty index rather than 404ing, and the footer publishes no Legal column.
             legal: tankovault_config::LegalConfig::default(),
+            step_up_max_ttl: Duration::hours(1),
         }
     }
 }
@@ -81,6 +83,17 @@ impl TestConfig {
     #[must_use]
     pub fn with_legal(mut self, legal: tankovault_config::LegalConfig) -> Self {
         self.legal = legal;
+        self
+    }
+
+    /// Cap how long an elevation may be honoured after it was earned, whatever it is used for.
+    ///
+    /// `Duration::ZERO` is the interesting setting and is not a deployment: it makes the ceiling
+    /// bite the instant a grant exists, which is the only way to observe it without moving the
+    /// clock — the sliding window otherwise keeps a used grant alive right up to it.
+    #[must_use]
+    pub fn with_step_up_lifetime(mut self, max: Duration) -> Self {
+        self.step_up_max_ttl = max;
         self
     }
 
@@ -218,6 +231,7 @@ impl TestApp {
             mfa_sealer: Some(test_sealer()),
             totp_issuer: "TankoVault Test".to_owned(),
             step_up_ttl: Duration::minutes(5),
+            step_up_max_ttl: cfg.step_up_max_ttl,
             mfa_challenge_ttl: Duration::minutes(5),
             mailer: cfg.mailer,
             email_base_url: "http://localhost".to_owned(),

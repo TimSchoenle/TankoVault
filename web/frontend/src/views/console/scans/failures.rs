@@ -9,7 +9,7 @@
 
 use super::ScanFilter;
 use crate::api;
-use crate::components::{async_block, use_step_up_gate, InlineConfirm, StepUpPrompt};
+use crate::components::{async_block, use_step_up_gate, InlineConfirm, StepUpGuard};
 use crate::i18n::use_i18n;
 use crate::models::{ClearFailuresBody, FailedTask, FailureGroup};
 use crate::util::thousands;
@@ -40,7 +40,7 @@ pub(super) fn FailuresSection(
 
     let window = filter.since;
     let provider = filter.provider.clone();
-    let mut clear = move |error: Option<Option<String>>| {
+    let clear = use_callback(move |error: Option<Option<String>>| {
         let client = gate.client(api);
         let body = ClearFailuresBody {
             provider: provider.clone(),
@@ -70,7 +70,7 @@ pub(super) fn FailuresSection(
                 }
             }
         });
-    };
+    });
 
     rsx! {
         div { class: "ik-flex", style: "justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-top:16px;",
@@ -103,19 +103,13 @@ pub(super) fn FailuresSection(
                 cta: i18n.t("console.scan.failures.clearCta"),
                 busy: *busy.read(),
                 on_cancel: move |()| pending.set(None),
-                on_confirm: move |()| clear(target.clone()),
-            }
-        }
-        if gate.is_open() {
-            StepUpPrompt {
-                enrolled: true,
-                intro: Some(i18n.t("console.stepUp.intro")),
-                on_done: move |()| {
-                    gate.close();
-                    outcome.set(Some(Ok(i18n.t("stepUp.confirmedRetry"))));
+                on_confirm: move |()| {
+                    let target = target.clone();
+                    gate.attempt(move || clear.call(target.clone()));
                 },
             }
         }
+        StepUpGuard { gate, intro: Some(i18n.t("console.stepUp.intro")) }
         crate::components::OutcomeLine { outcome: outcome.read().clone() }
 
         if *grouped.read() {

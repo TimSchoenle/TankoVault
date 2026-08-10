@@ -7,7 +7,7 @@
 
 use crate::api;
 use crate::components::{
-    async_list, use_step_up_gate, OutcomeLine, PanelCard, SkeletonRows, StepUpGate, StepUpPrompt,
+    async_list, use_step_up_gate, OutcomeLine, PanelCard, SkeletonRows, StepUpGate, StepUpGuard,
 };
 use crate::hooks::{use_busy, use_outcome, use_reload, Reload};
 use crate::i18n::use_i18n;
@@ -51,44 +51,49 @@ fn ExportCard() -> Element {
     let mut outcome = use_outcome();
 
     let download = move |_| {
-        if !busy.claim() {
-            return;
-        }
-        outcome.set(None);
-        let client = gate.client(api);
-        spawn(async move {
-            match client.export_data().send().await {
-                Ok(response) => {
-                    let body = response.into_inner();
-                    match serde_json::to_string_pretty(&body) {
-                        Ok(json) => {
-                            match crate::platform::save_text_file(
-                                "tankovault-export.json",
-                                "application/json",
-                                &json,
-                            )
-                            .await
-                            {
-                                Ok(()) => {
-                                    outcome.set(Some(Ok(i18n.t("account.privacy.export.done"))));
+        gate.attempt(move || {
+            if !busy.claim() {
+                return;
+            }
+            outcome.set(None);
+            let client = gate.client(api);
+            spawn(async move {
+                match client.export_data().send().await {
+                    Ok(response) => {
+                        let body = response.into_inner();
+                        match serde_json::to_string_pretty(&body) {
+                            Ok(json) => {
+                                match crate::platform::save_text_file(
+                                    "tankovault-export.json",
+                                    "application/json",
+                                    &json,
+                                )
+                                .await
+                                {
+                                    Ok(()) => {
+                                        outcome
+                                            .set(Some(Ok(i18n.t("account.privacy.export.done"))));
+                                    }
+                                    Err(key) => outcome.set(Some(Err(i18n.t(key)))),
                                 }
-                                Err(key) => outcome.set(Some(Err(i18n.t(key)))),
+                            }
+                            Err(_) => {
+                                outcome.set(Some(Err(i18n.t("account.privacy.export.failed"))));
                             }
                         }
-                        Err(_) => outcome.set(Some(Err(i18n.t("account.privacy.export.failed")))),
+                    }
+                    // A `403` here is "confirm it is you", not "you may not". The export is the
+                    // single highest-value thing a stolen session can ask for, so the API demands an
+                    // elevation — and reporting the raw problem told the owner they lacked
+                    // permission to download their own record.
+                    Err(e) => {
+                        if !gate.refused(api::Refusal::from_status(api::error_status(&e))) {
+                            outcome.set(Some(Err(api::friendly_error(i18n, e))));
+                        }
                     }
                 }
-                // A `403` here is "confirm it is you", not "you may not". The export is the
-                // single highest-value thing a stolen session can ask for, so the API demands an
-                // elevation — and reporting the raw problem told the owner they lacked
-                // permission to download their own record.
-                Err(e) => {
-                    if !gate.refused(api::Refusal::from_status(api::error_status(&e))) {
-                        outcome.set(Some(Err(api::friendly_error(i18n, e))));
-                    }
-                }
-            }
-            busy.release();
+                busy.release();
+            });
         });
     };
 
@@ -98,15 +103,7 @@ fn ExportCard() -> Element {
                 {i18n.t("account.privacy.export.intro")}
             }
             OutcomeLine { outcome: outcome.read().clone() }
-            if gate.is_open() {
-                StepUpPrompt {
-                    enrolled: true,
-                    on_done: move |()| {
-                        gate.close();
-                        outcome.set(Some(Ok(i18n.t("stepUp.confirmedRetry"))));
-                    },
-                }
-            }
+            StepUpGuard { gate }
             button {
                 class: "ik-btn primary",
                 style: "margin-top:12px;",
@@ -163,35 +160,37 @@ fn RequestsCard() -> Element {
     });
 
     let submit = move |_| {
-        if !busy.claim() {
-            return;
-        }
-        outcome.set(None);
-        let body = NewPrivacyRequest {
-            kind: *kind.peek(),
-            detail: {
-                let text = detail.peek().trim().to_owned();
-                (!text.is_empty()).then_some(text)
-            },
-        };
-        // Elevated: an access request ends with an operator mailing the caller's whole record,
-        // and an erasure request ends with the account gone. Both are the export and the
-        // deletion above, taking a slower route.
-        let client = gate.client(api);
-        spawn(async move {
-            match client.create_privacy_request().body(body).send().await {
-                Ok(_) => {
-                    detail.set(String::new());
-                    outcome.set(Some(Ok(i18n.t("account.privacy.requests.filed"))));
-                    reload.bump();
-                }
-                Err(e) => {
-                    if !gate.refused(api::Refusal::of(&e)) {
-                        outcome.set(Some(Err(api::friendly_error(i18n, e))));
+        gate.attempt(move || {
+            if !busy.claim() {
+                return;
+            }
+            outcome.set(None);
+            let body = NewPrivacyRequest {
+                kind: *kind.peek(),
+                detail: {
+                    let text = detail.peek().trim().to_owned();
+                    (!text.is_empty()).then_some(text)
+                },
+            };
+            // Elevated: an access request ends with an operator mailing the caller's whole record,
+            // and an erasure request ends with the account gone. Both are the export and the
+            // deletion above, taking a slower route.
+            let client = gate.client(api);
+            spawn(async move {
+                match client.create_privacy_request().body(body).send().await {
+                    Ok(_) => {
+                        detail.set(String::new());
+                        outcome.set(Some(Ok(i18n.t("account.privacy.requests.filed"))));
+                        reload.bump();
+                    }
+                    Err(e) => {
+                        if !gate.refused(api::Refusal::of(&e)) {
+                            outcome.set(Some(Err(api::friendly_error(i18n, e))));
+                        }
                     }
                 }
-            }
-            busy.release();
+                busy.release();
+            });
         });
     };
 
@@ -229,15 +228,7 @@ fn RequestsCard() -> Element {
             // One prompt for the card, shared with the withdraw button on every row below: the
             // grant a reader earns for one of these covers the others for the next few minutes,
             // so a second copy of the question would only be a second place to ask it.
-            if gate.is_open() {
-                StepUpPrompt {
-                    enrolled: true,
-                    on_done: move |()| {
-                        gate.close();
-                        outcome.set(Some(Ok(i18n.t("stepUp.confirmedRetry"))));
-                    },
-                }
-            }
+            StepUpGuard { gate }
             button {
                 class: "ik-btn primary",
                 style: "margin-top:12px;",
@@ -282,23 +273,25 @@ fn RequestRowView(request: RequestRow, reload: Reload, gate: StepUpGate) -> Elem
 
     let id = request.id;
     let cancel = move |_| {
-        if !busy.claim() {
-            return;
-        }
-        // Elevated: withdrawing is how an attacker would silence the rectification request their
-        // victim filed about the change they made.
-        let client = gate.client(api);
-        spawn(async move {
-            match client.cancel_privacy_request().id(id).send().await {
-                Ok(_) => reload.bump(),
-                // The row has no error line of its own. A `403` opens the card's prompt, which
-                // is the only outcome a reader can act on; anything else leaves the row as it
-                // was, as it did before the gate existed.
-                Err(e) => {
-                    let _refused = gate.refused(api::Refusal::of(&e));
-                }
+        gate.attempt(move || {
+            if !busy.claim() {
+                return;
             }
-            busy.release();
+            // Elevated: withdrawing is how an attacker would silence the rectification request their
+            // victim filed about the change they made.
+            let client = gate.client(api);
+            spawn(async move {
+                match client.cancel_privacy_request().id(id).send().await {
+                    Ok(_) => reload.bump(),
+                    // The row has no error line of its own. A `403` opens the card's prompt, which
+                    // is the only outcome a reader can act on; anything else leaves the row as it
+                    // was, as it did before the gate existed.
+                    Err(e) => {
+                        let _refused = gate.refused(api::Refusal::of(&e));
+                    }
+                }
+                busy.release();
+            });
         });
     };
 
@@ -356,32 +349,34 @@ fn DeleteAccountCard() -> Element {
     let matches_username = !username.is_empty() && typed.read().trim() == username;
 
     let delete = move |_| {
-        if !busy.claim() {
-            return;
-        }
-        outcome.set(None);
-        let body = DeleteAccount {
-            confirm_username: typed.peek().trim().to_owned(),
-        };
-        // Elevated in addition to the typed username: the confirmation guards against a
-        // misclick, it is not a credential, and on its own it left the single irreversible
-        // action on the account reachable by anyone holding a token.
-        let client = gate.client(api);
-        spawn(async move {
-            match client.delete_account().body(body).send().await {
-                Ok(_) => {
-                    // The account is gone; clear locally now rather than leaving a shell whose
-                    // every request 401s.
-                    session.clear();
-                    caps.clear();
-                }
-                Err(e) => {
-                    if !gate.refused(api::Refusal::from_status(api::error_status(&e))) {
-                        outcome.set(Some(Err(api::friendly_error(i18n, e))));
-                    }
-                    busy.release();
-                }
+        gate.attempt(move || {
+            if !busy.claim() {
+                return;
             }
+            outcome.set(None);
+            let body = DeleteAccount {
+                confirm_username: typed.peek().trim().to_owned(),
+            };
+            // Elevated in addition to the typed username: the confirmation guards against a
+            // misclick, it is not a credential, and on its own it left the single irreversible
+            // action on the account reachable by anyone holding a token.
+            let client = gate.client(api);
+            spawn(async move {
+                match client.delete_account().body(body).send().await {
+                    Ok(_) => {
+                        // The account is gone; clear locally now rather than leaving a shell whose
+                        // every request 401s.
+                        session.clear();
+                        caps.clear();
+                    }
+                    Err(e) => {
+                        if !gate.refused(api::Refusal::from_status(api::error_status(&e))) {
+                            outcome.set(Some(Err(api::friendly_error(i18n, e))));
+                        }
+                        busy.release();
+                    }
+                }
+            });
         });
     };
 
@@ -390,15 +385,7 @@ fn DeleteAccountCard() -> Element {
             p { class: "ik-muted", style: "font-size:13px;margin-top:0;",
                 {i18n.t("account.privacy.delete.intro")}
             }
-            if gate.is_open() {
-                StepUpPrompt {
-                    enrolled: true,
-                    on_done: move |()| {
-                        gate.close();
-                        outcome.set(Some(Ok(i18n.t("stepUp.confirmedRetry"))));
-                    },
-                }
-            }
+            StepUpGuard { gate }
             if *armed.read() {
                 div { class: "ik-field", style: "margin-top:12px;",
                     label { r#for: "tv-delete-confirm",

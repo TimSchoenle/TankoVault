@@ -5,7 +5,7 @@ mod inspector;
 mod queues;
 
 use crate::api;
-use crate::components::{async_block_list, use_step_up_gate, StepUpGate, StepUpPrompt};
+use crate::components::{async_block_list, use_step_up_gate, StepUpGate, StepUpGuard};
 use crate::hooks::{use_reload, Reload};
 use crate::i18n::use_i18n;
 use crate::models::*;
@@ -35,7 +35,6 @@ pub(super) fn SyncAdminPanel() -> Element {
     let reload = use_reload();
     let gate = use_step_up_gate();
     use_context_provider(|| gate);
-    let mut confirmed = use_signal(String::new);
 
     let accounts = {
         use_resource(move || {
@@ -67,19 +66,7 @@ pub(super) fn SyncAdminPanel() -> Element {
     });
 
     rsx! {
-        if gate.is_open() {
-            StepUpPrompt {
-                enrolled: true,
-                intro: Some(i18n.t("console.stepUp.intro")),
-                on_done: move |()| {
-                    gate.close();
-                    confirmed.set(i18n.t("stepUp.confirmedRetry"));
-                },
-            }
-        }
-        if !confirmed.read().is_empty() {
-            p { class: "ik-muted", style: "font-size:12px;", "{confirmed}" }
-        }
+        StepUpGuard { gate, intro: Some(i18n.t("console.stepUp.intro")) }
         // First, not last: this is the only surface that says whether the catalogue-wide half of
         // the AniList integration is running at all, and every account row below it is about the
         // other half.
@@ -130,26 +117,29 @@ pub(super) fn SyncAccountRow(account: Signal<AdminSyncAccount>, reload: Reload) 
     let pull = {
         let user_id = UserId(acc.user_id);
         let provider = acc.provider.clone();
-        let _client = api.client();
         move |_| {
-            if *busy.peek() {
-                return;
-            }
-            busy.set(true);
             let provider = provider.clone();
-            spawn(async move {
-                let client = gate.client(api);
-                let body = tankovault_api_client::types::SyncAccountTarget { provider, user_id };
-                match client.admin_sync_pull().body(body).send().await {
-                    Ok(_) => reload.bump(),
-                    // The row has no error line, so every other failure stays as silent as it
-                    // was; an elevation demand has to reach the panel's prompt or the button
-                    // does nothing for the rest of the session.
-                    Err(e) => {
-                        let _refused = gate.refused(api::Refusal::of(&e));
-                    }
+            gate.attempt(move || {
+                if *busy.peek() {
+                    return;
                 }
-                busy.set(false);
+                busy.set(true);
+                let provider = provider.clone();
+                spawn(async move {
+                    let client = gate.client(api);
+                    let body =
+                        tankovault_api_client::types::SyncAccountTarget { provider, user_id };
+                    match client.admin_sync_pull().body(body).send().await {
+                        Ok(_) => reload.bump(),
+                        // The row has no error line, so every other failure stays as silent as it
+                        // was; an elevation demand has to reach the panel's prompt or the button
+                        // does nothing for the rest of the session.
+                        Err(e) => {
+                            let _refused = gate.refused(api::Refusal::of(&e));
+                        }
+                    }
+                    busy.set(false);
+                });
             });
         }
     };
@@ -157,24 +147,27 @@ pub(super) fn SyncAccountRow(account: Signal<AdminSyncAccount>, reload: Reload) 
     let push = {
         let user_id = UserId(acc.user_id);
         let provider = acc.provider.clone();
-        let _client = api.client();
         move |_| {
-            if *busy.peek() {
-                return;
-            }
-            busy.set(true);
             let provider = provider.clone();
-            spawn(async move {
-                let client = gate.client(api);
-                let body = tankovault_api_client::types::SyncAccountTarget { provider, user_id };
-                match client.admin_sync_push().body(body).send().await {
-                    Ok(_) => reload.bump(),
-                    // See `pull` above.
-                    Err(e) => {
-                        let _refused = gate.refused(api::Refusal::of(&e));
-                    }
+            gate.attempt(move || {
+                if *busy.peek() {
+                    return;
                 }
-                busy.set(false);
+                busy.set(true);
+                let provider = provider.clone();
+                spawn(async move {
+                    let client = gate.client(api);
+                    let body =
+                        tankovault_api_client::types::SyncAccountTarget { provider, user_id };
+                    match client.admin_sync_push().body(body).send().await {
+                        Ok(_) => reload.bump(),
+                        // See `pull` above.
+                        Err(e) => {
+                            let _refused = gate.refused(api::Refusal::of(&e));
+                        }
+                    }
+                    busy.set(false);
+                });
             });
         }
     };
@@ -182,24 +175,27 @@ pub(super) fn SyncAccountRow(account: Signal<AdminSyncAccount>, reload: Reload) 
     let unlink = {
         let user_id = UserId(acc.user_id);
         let provider = acc.provider.clone();
-        let _client = api.client();
         move |_| {
-            if *busy.peek() {
-                return;
-            }
-            busy.set(true);
             let provider = provider.clone();
-            spawn(async move {
-                let client = gate.client(api);
-                let body = tankovault_api_client::types::SyncAccountTarget { provider, user_id };
-                match client.admin_sync_unlink().body(body).send().await {
-                    Ok(_) => reload.bump(),
-                    // See `pull` above.
-                    Err(e) => {
-                        let _refused = gate.refused(api::Refusal::of(&e));
-                    }
+            gate.attempt(move || {
+                if *busy.peek() {
+                    return;
                 }
-                busy.set(false);
+                busy.set(true);
+                let provider = provider.clone();
+                spawn(async move {
+                    let client = gate.client(api);
+                    let body =
+                        tankovault_api_client::types::SyncAccountTarget { provider, user_id };
+                    match client.admin_sync_unlink().body(body).send().await {
+                        Ok(_) => reload.bump(),
+                        // See `pull` above.
+                        Err(e) => {
+                            let _refused = gate.refused(api::Refusal::of(&e));
+                        }
+                    }
+                    busy.set(false);
+                });
             });
         }
     };

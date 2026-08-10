@@ -133,7 +133,7 @@ async fn elevated_account(app: &TestApp, username: &str) -> (UserId, String, Str
 ///
 /// The window is the only bound on a grant that is neither revoked nor spent — it is what stops
 /// one confirmation this morning from authorising a deletion this evening. It lives entirely in
-/// the `expires_at` predicate of `find_step_up`; drop the predicate and every elevation the
+/// the `expires_at` predicate of `renew_step_up`; drop the predicate and every elevation the
 /// system has ever issued becomes permanent, silently, while every other test still passes.
 #[tokio::test]
 async fn a_lapsed_elevation_buys_nothing() {
@@ -158,6 +158,84 @@ async fn a_lapsed_elevation_buys_nothing() {
     assert!(
         !elevation_counts(&app, &bearer, &lapsed).await,
         "a grant past its expiry must not count"
+    );
+}
+
+/// Using an elevation slides its window forward; leaving it alone does not.
+///
+/// The window is an *idle* one, because the absolute five minutes it replaced expired in the
+/// middle of the task it had been earned for — an operator working through a console panel was
+/// re-prompted every few clicks. What must not come with that is a grant nobody is using staying
+/// alive, so both halves are asserted against the same deadline: two grants minted to lapse at
+/// the same moment, one of them spent on a guarded route first.
+///
+/// Sleeps rather than mocks the clock because the renewal is a `now()` in SQL — the only way to
+/// be past a deadline here is to actually be past it.
+#[tokio::test]
+async fn using_an_elevation_slides_its_window_and_leaving_it_does_not() {
+    let app = TestApp::spawn_with(TestConfig::new().without_rate_limiting()).await;
+    let user = register(&app, "working").await;
+    let bearer = app.bearer(user);
+    app.seed_totp(user).await;
+
+    let lapses_at = time::OffsetDateTime::now_utc() + time::Duration::seconds(2);
+    let spent = app
+        .step_up_expiring_at(user, StepUpMethod::Totp, lapses_at)
+        .await;
+    let idle = app
+        .step_up_expiring_at(user, StepUpMethod::Totp, lapses_at)
+        .await;
+
+    assert!(
+        elevation_counts(&app, &bearer, &spent).await,
+        "the control failed: a grant inside its window must count"
+    );
+
+    tokio::time::sleep(std::time::Duration::from_millis(2500)).await;
+
+    assert!(
+        elevation_counts(&app, &bearer, &spent).await,
+        "an elevation used inside its window must be carried forward, not re-prompted mid-task"
+    );
+    assert!(
+        !elevation_counts(&app, &bearer, &idle).await,
+        "an elevation nobody used must still lapse — the window slides on use, not on time"
+    );
+}
+
+/// No amount of use carries an elevation past its absolute lifetime.
+///
+/// This is the bound the sliding window cannot touch, and the reason sliding is safe to offer at
+/// all: without it, a console left open on a shared machine would renew its own elevation for as
+/// long as anything on the page kept touching a guarded route, and "confirm it is you" would
+/// become a thing said once per sign-in.
+///
+/// A zero lifetime is not a deployment — it is how the ceiling is observed without waiting hours
+/// for one. The grant here is minted with a *live* `expires_at`, so the only thing that can
+/// refuse it is the cap.
+#[tokio::test]
+async fn no_amount_of_use_carries_an_elevation_past_its_lifetime() {
+    let app = TestApp::spawn_with(
+        TestConfig::new()
+            .without_rate_limiting()
+            .with_step_up_lifetime(time::Duration::ZERO),
+    )
+    .await;
+    let user = register(&app, "overrun").await;
+    let bearer = app.bearer(user);
+    app.seed_totp(user).await;
+
+    let grant = app
+        .step_up_expiring_at(
+            user,
+            StepUpMethod::Totp,
+            time::OffsetDateTime::now_utc() + time::Duration::minutes(5),
+        )
+        .await;
+
+    assert!(
+        !elevation_counts(&app, &bearer, &grant).await,
+        "a grant past its absolute lifetime must be refused whatever its expiry says"
     );
 }
 

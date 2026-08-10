@@ -6,7 +6,7 @@
 //! its own writes instead.
 
 use crate::api;
-use crate::components::{async_view, use_step_up_gate, StepUpGate, StepUpPrompt};
+use crate::components::{async_view, use_step_up_gate, StepUpGate, StepUpGuard};
 use crate::hooks::{use_busy, use_reload, Busy, Reload};
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
@@ -41,7 +41,6 @@ pub(super) fn FeatureFlagsPanel() -> Element {
     // One gate for the whole board: an operator flipping five switches confirms once, and the
     // prompt has a single place to appear rather than one inside every row.
     let gate = use_step_up_gate();
-    let mut notice = use_signal(String::new);
 
     let flags = use_resource(move || {
         reload.track();
@@ -67,19 +66,7 @@ pub(super) fn FeatureFlagsPanel() -> Element {
                     {i18n.t("console.flags.readOnly")}
                 }
             }
-            if gate.is_open() {
-                StepUpPrompt {
-                    enrolled: true,
-                    intro: Some(i18n.t("console.stepUp.intro")),
-                    on_done: move |()| {
-                        gate.close();
-                        notice.set(i18n.t("stepUp.confirmedRetry"));
-                    },
-                }
-            }
-            if !notice.read().is_empty() {
-                p { class: "ik-muted", style: "font-size:12px;", "{notice}" }
-            }
+            StepUpGuard { gate, intro: Some(i18n.t("console.stepUp.intro")) }
             {
                 async_view(
                     &flags,
@@ -211,30 +198,33 @@ fn ToggleButton(
 ) -> Element {
     let api = api::use_api();
     let click = move |_| {
-        if !busy.claim() {
-            return;
-        }
         let key = feature.clone();
-        let client = gate.client(api);
-        spawn(async move {
-            if let Err(e) = client
-                .set_flag()
-                .key(key)
-                .body(SetFlag {
-                    enabled: enable,
-                    note: None,
-                })
-                .send()
-                .await
-            {
-                // The refetch below is what reports every other failure — the switch simply
-                // comes back unchanged. A step-up demand has no such tell, so it is the one
-                // outcome that has to be raised.
-                let _refused = gate.refused(api::Refusal::of(&e));
+        gate.attempt(move || {
+            if !busy.claim() {
+                return;
             }
-            // Refetch either way: the list is what tells the reader whether it actually changed.
-            reload.bump();
-            busy.release();
+            let key = key.clone();
+            let client = gate.client(api);
+            spawn(async move {
+                if let Err(e) = client
+                    .set_flag()
+                    .key(key)
+                    .body(SetFlag {
+                        enabled: enable,
+                        note: None,
+                    })
+                    .send()
+                    .await
+                {
+                    // The refetch below is what reports every other failure — the switch simply
+                    // comes back unchanged. A step-up demand has no such tell, so it is the one
+                    // outcome that has to be raised.
+                    let _refused = gate.refused(api::Refusal::of(&e));
+                }
+                // Refetch either way: the list is what tells the reader whether it actually changed.
+                reload.bump();
+                busy.release();
+            });
         });
     };
     rsx! {
@@ -253,18 +243,21 @@ fn ResetButton(feature: String, busy: Busy, reload: Reload, gate: StepUpGate) ->
     let api = api::use_api();
     let i18n = use_i18n();
     let click = move |_| {
-        if !busy.claim() {
-            return;
-        }
         let key = feature.clone();
-        let client = gate.client(api);
-        spawn(async move {
-            if let Err(e) = client.reset_flag().key(key).send().await {
-                // See `ToggleButton`: the refetch reports everything but the elevation demand.
-                let _refused = gate.refused(api::Refusal::of(&e));
+        gate.attempt(move || {
+            if !busy.claim() {
+                return;
             }
-            reload.bump();
-            busy.release();
+            let key = key.clone();
+            let client = gate.client(api);
+            spawn(async move {
+                if let Err(e) = client.reset_flag().key(key).send().await {
+                    // See `ToggleButton`: the refetch reports everything but the elevation demand.
+                    let _refused = gate.refused(api::Refusal::of(&e));
+                }
+                reload.bump();
+                busy.release();
+            });
         });
     };
     rsx! {

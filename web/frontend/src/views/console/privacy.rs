@@ -8,7 +8,7 @@
 //! username typed back.
 
 use crate::api;
-use crate::components::{async_list, use_step_up_gate, StepUpGate, StepUpPrompt};
+use crate::components::{async_list, use_step_up_gate, StepUpGate, StepUpGuard};
 use crate::hooks::{use_busy, use_outcome, use_reload, Busy, Reload};
 use crate::i18n::use_i18n;
 use crate::models::{RequestKindExt as _, RequestStatusExt as _};
@@ -163,7 +163,7 @@ fn QueueRow(row: AdminRequestRow, permits: QueuePermits, reload: Reload) -> Elem
     let gate = use_step_up_gate();
     let mut confirm_erase = use_signal(|| false);
     let mut typed = use_signal(String::new);
-    let mut outcome = use_outcome();
+    let outcome = use_outcome();
 
     let id = row.request.id;
     let open = row.request.status.is_open();
@@ -213,16 +213,7 @@ fn QueueRow(row: AdminRequestRow, permits: QueuePermits, reload: Reload) -> Elem
                         {i18n.args("console.privacy.claimedBy", &[("user", &by)])}
                     }
                 }
-                if gate.is_open() {
-                    StepUpPrompt {
-                        enrolled: true,
-                        intro: Some(i18n.t("console.stepUp.intro")),
-                        on_done: move |()| {
-                            gate.close();
-                            outcome.set(Some(Ok(i18n.t("stepUp.confirmedRetry"))));
-                        },
-                    }
-                }
+                StepUpGuard { gate, intro: Some(i18n.t("console.stepUp.intro")) }
                 crate::components::OutcomeLine { outcome: outcome.read().clone() }
 
                 if *confirm_erase.read() {
@@ -332,50 +323,52 @@ fn ActionButton(
     let mut outcome = outcome;
 
     let click = move |_| {
-        if !busy.claim() {
-            return;
-        }
-        outcome.set(None);
-        let client = gate.client(api);
-        spawn(async move {
-            let result = match action {
-                QueueAction::Claim => client
-                    .claim_privacy_request()
-                    .id(id)
-                    .send()
-                    .await
-                    .map(|_| ()),
-                QueueAction::Complete => client
-                    .resolve_privacy_request()
-                    .id(id)
-                    .body(ResolveRequest {
-                        status: RequestStatus::Completed,
-                        note: None,
-                    })
-                    .send()
-                    .await
-                    .map(|_| ()),
-                // Rejections must state reasons (Art. 12(4)); the server enforces that, so this sends a standing one.
-                QueueAction::Reject => client
-                    .resolve_privacy_request()
-                    .id(id)
-                    .body(ResolveRequest {
-                        status: RequestStatus::Rejected,
-                        note: Some(i18n.t("console.privacy.defaultRejectionReason")),
-                    })
-                    .send()
-                    .await
-                    .map(|_| ()),
-            };
-            match result {
-                Ok(()) => reload.bump(),
-                Err(e) => {
-                    if !gate.refused(api::Refusal::of(&e)) {
-                        outcome.set(Some(Err(api::guarded_error(i18n, e))));
+        gate.attempt(move || {
+            if !busy.claim() {
+                return;
+            }
+            outcome.set(None);
+            let client = gate.client(api);
+            spawn(async move {
+                let result = match action {
+                    QueueAction::Claim => client
+                        .claim_privacy_request()
+                        .id(id)
+                        .send()
+                        .await
+                        .map(|_| ()),
+                    QueueAction::Complete => client
+                        .resolve_privacy_request()
+                        .id(id)
+                        .body(ResolveRequest {
+                            status: RequestStatus::Completed,
+                            note: None,
+                        })
+                        .send()
+                        .await
+                        .map(|_| ()),
+                    // Rejections must state reasons (Art. 12(4)); the server enforces that, so this sends a standing one.
+                    QueueAction::Reject => client
+                        .resolve_privacy_request()
+                        .id(id)
+                        .body(ResolveRequest {
+                            status: RequestStatus::Rejected,
+                            note: Some(i18n.t("console.privacy.defaultRejectionReason")),
+                        })
+                        .send()
+                        .await
+                        .map(|_| ()),
+                };
+                match result {
+                    Ok(()) => reload.bump(),
+                    Err(e) => {
+                        if !gate.refused(api::Refusal::of(&e)) {
+                            outcome.set(Some(Err(api::guarded_error(i18n, e))));
+                        }
                     }
                 }
-            }
-            busy.release();
+                busy.release();
+            });
         });
     };
 
@@ -397,37 +390,43 @@ fn ExportButton(
     let mut outcome = outcome;
 
     let click = move |_| {
-        if !busy.claim() {
-            return;
-        }
-        outcome.set(None);
-        let client = gate.client(api);
-        spawn(async move {
-            // Filename carries the request id, not the subject's: naming it after a person risks
-            // the export becoming personal data in someone's downloads folder.
-            let filename = format!("tankovault-export-{id}.json");
-            match client.export_subject_data().id(id).send().await {
-                Ok(response) => {
-                    let body = response.into_inner();
-                    let saved = match serde_json::to_string_pretty(&body) {
-                        Ok(json) => {
-                            crate::platform::save_text_file(&filename, "application/json", &json)
-                                .await
-                        }
-                        Err(_) => Err("console.privacy.exportFailed"),
-                    };
-                    match saved {
-                        Ok(()) => outcome.set(Some(Ok(i18n.t("console.privacy.exportDone")))),
-                        Err(key) => outcome.set(Some(Err(i18n.t(key)))),
-                    }
-                }
-                Err(e) => {
-                    if !gate.refused(api::Refusal::of(&e)) {
-                        outcome.set(Some(Err(api::guarded_error(i18n, e))));
-                    }
-                }
+        gate.attempt(move || {
+            if !busy.claim() {
+                return;
             }
-            busy.release();
+            outcome.set(None);
+            let client = gate.client(api);
+            spawn(async move {
+                // Filename carries the request id, not the subject's: naming it after a person risks
+                // the export becoming personal data in someone's downloads folder.
+                let filename = format!("tankovault-export-{id}.json");
+                match client.export_subject_data().id(id).send().await {
+                    Ok(response) => {
+                        let body = response.into_inner();
+                        let saved = match serde_json::to_string_pretty(&body) {
+                            Ok(json) => {
+                                crate::platform::save_text_file(
+                                    &filename,
+                                    "application/json",
+                                    &json,
+                                )
+                                .await
+                            }
+                            Err(_) => Err("console.privacy.exportFailed"),
+                        };
+                        match saved {
+                            Ok(()) => outcome.set(Some(Ok(i18n.t("console.privacy.exportDone")))),
+                            Err(key) => outcome.set(Some(Err(i18n.t(key)))),
+                        }
+                    }
+                    Err(e) => {
+                        if !gate.refused(api::Refusal::of(&e)) {
+                            outcome.set(Some(Err(api::guarded_error(i18n, e))));
+                        }
+                    }
+                }
+                busy.release();
+            });
         });
     };
 
@@ -454,24 +453,29 @@ fn EraseButton(
     let mut outcome = outcome;
 
     let click = move |_| {
-        if !busy.claim() {
-            return;
-        }
-        outcome.set(None);
-        let body = FulfilErasure {
-            confirm_username: confirm.clone(),
-        };
-        let client = gate.client(api);
-        spawn(async move {
-            match client.fulfil_erasure().id(id).body(body).send().await {
-                Ok(_) => reload.bump(),
-                Err(e) => {
-                    if !gate.refused(api::Refusal::of(&e)) {
-                        outcome.set(Some(Err(api::guarded_error(i18n, e))));
+        // Cloned per click: the gate holds the action to replay it, so it cannot be handed
+        // something moved out of the handler.
+        let confirm = confirm.clone();
+        gate.attempt(move || {
+            if !busy.claim() {
+                return;
+            }
+            outcome.set(None);
+            let body = FulfilErasure {
+                confirm_username: confirm.clone(),
+            };
+            let client = gate.client(api);
+            spawn(async move {
+                match client.fulfil_erasure().id(id).body(body).send().await {
+                    Ok(_) => reload.bump(),
+                    Err(e) => {
+                        if !gate.refused(api::Refusal::of(&e)) {
+                            outcome.set(Some(Err(api::guarded_error(i18n, e))));
+                        }
                     }
                 }
-            }
-            busy.release();
+                busy.release();
+            });
         });
     };
 

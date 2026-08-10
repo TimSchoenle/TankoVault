@@ -11,7 +11,7 @@
 use crate::api;
 use crate::components::{
     async_view, use_step_up_gate, ErrorLine, Kpi, OutcomeLine, SkeletonBlock, StepUpGate,
-    StepUpPrompt,
+    StepUpGuard,
 };
 use crate::hooks::{use_busy, use_outcome, use_reload, Busy, Outcome, Reload};
 use crate::i18n::use_i18n;
@@ -74,7 +74,6 @@ pub(super) fn RecommendationsPanel() -> Element {
     // One gate for the panel: the rebuild and every knob below it are the same capability, so
     // an operator confirms once and the prompt has a single place to appear.
     let gate = use_step_up_gate();
-    let mut confirmed = use_signal(String::new);
 
     let tunables = use_resource(move || {
         reload.track();
@@ -98,19 +97,7 @@ pub(super) fn RecommendationsPanel() -> Element {
             if !can_write {
                 p { class: "ik-muted", style: "font-size:12px;", {i18n.t("console.recsys.readOnly")} }
             }
-            if gate.is_open() {
-                StepUpPrompt {
-                    enrolled: true,
-                    intro: Some(i18n.t("console.stepUp.intro")),
-                    on_done: move |()| {
-                        gate.close();
-                        confirmed.set(i18n.t("stepUp.confirmedRetry"));
-                    },
-                }
-            }
-            if !confirmed.read().is_empty() {
-                p { class: "ik-muted", style: "font-size:12px;", "{confirmed}" }
-            }
+            StepUpGuard { gate, intro: Some(i18n.t("console.stepUp.intro")) }
 
             ModelHealth { can_write, reload, gate }
 
@@ -407,25 +394,27 @@ fn RebuildButton(
     let api = api::use_api();
     let busy = use_busy();
     let click = move |_| {
-        if !busy.claim() {
-            return;
-        }
-        let client = gate.client(api);
-        spawn(async move {
-            if let Err(e) = client
-                .rebuild_model()
-                .body(RebuildRequest { mode })
-                .send()
-                .await
-            {
-                // The refetch below reports every other failure — health is what says whether
-                // the run happened. A step-up demand leaves health unchanged and so has no
-                // tell of its own.
-                let _refused = gate.refused(api::Refusal::of(&e));
+        gate.attempt(move || {
+            if !busy.claim() {
+                return;
             }
-            // Refetch either way: health is what says whether the run happened and how it ended.
-            reload.bump();
-            busy.release();
+            let client = gate.client(api);
+            spawn(async move {
+                if let Err(e) = client
+                    .rebuild_model()
+                    .body(RebuildRequest { mode })
+                    .send()
+                    .await
+                {
+                    // The refetch below reports every other failure — health is what says whether
+                    // the run happened. A step-up demand leaves health unchanged and so has no
+                    // tell of its own.
+                    let _refused = gate.refused(api::Refusal::of(&e));
+                }
+                // Refetch either way: health is what says whether the run happened and how it ended.
+                reload.bump();
+                busy.release();
+            });
         });
     };
     rsx! {
@@ -617,40 +606,43 @@ fn SaveButton(
     let mut note = note;
 
     let click = move |_| {
-        if !busy.claim() {
-            return;
-        }
         let key = tunable.clone();
-        let written = note.peek().trim().to_owned();
-        let client = gate.client(api);
-        outcome.set(None);
-        spawn(async move {
-            let result = client
-                .set_tunable()
-                .key(key)
-                .body(SetTunable {
-                    value,
-                    note: (!written.is_empty()).then_some(written),
-                })
-                .send()
-                .await;
-            match result {
-                Ok(_) => {
-                    outcome.set(Some(Ok(i18n.t("console.recsys.saved"))));
-                    note.set(String::new());
-                }
-                // The server's own sentence: a refused write carries the rule it broke, and
-                // "the request was rejected" would leave the operator retrying it.
-                Err(e) => {
-                    if !gate.refused(api::Refusal::of(&e)) {
-                        let message =
-                            api::problem_detail(&e).unwrap_or_else(|| api::guarded_error(i18n, e));
-                        outcome.set(Some(Err(message)));
+        gate.attempt(move || {
+            if !busy.claim() {
+                return;
+            }
+            let key = key.clone();
+            let written = note.peek().trim().to_owned();
+            let client = gate.client(api);
+            outcome.set(None);
+            spawn(async move {
+                let result = client
+                    .set_tunable()
+                    .key(key)
+                    .body(SetTunable {
+                        value,
+                        note: (!written.is_empty()).then_some(written),
+                    })
+                    .send()
+                    .await;
+                match result {
+                    Ok(_) => {
+                        outcome.set(Some(Ok(i18n.t("console.recsys.saved"))));
+                        note.set(String::new());
+                    }
+                    // The server's own sentence: a refused write carries the rule it broke, and
+                    // "the request was rejected" would leave the operator retrying it.
+                    Err(e) => {
+                        if !gate.refused(api::Refusal::of(&e)) {
+                            let message = api::problem_detail(&e)
+                                .unwrap_or_else(|| api::guarded_error(i18n, e));
+                            outcome.set(Some(Err(message)));
+                        }
                     }
                 }
-            }
-            busy.release();
-            reload.bump();
+                busy.release();
+                reload.bump();
+            });
         });
     };
 
@@ -682,22 +674,25 @@ fn ResetButton(
     let mut outcome = outcome;
 
     let click = move |_| {
-        if !busy.claim() {
-            return;
-        }
         let key = tunable.clone();
-        let client = gate.client(api);
-        outcome.set(None);
-        spawn(async move {
-            if let Err(e) = client.reset_tunable().key(key).send().await {
-                if !gate.refused(api::Refusal::of(&e)) {
-                    let message =
-                        api::problem_detail(&e).unwrap_or_else(|| api::guarded_error(i18n, e));
-                    outcome.set(Some(Err(message)));
-                }
+        gate.attempt(move || {
+            if !busy.claim() {
+                return;
             }
-            busy.release();
-            reload.bump();
+            let key = key.clone();
+            let client = gate.client(api);
+            outcome.set(None);
+            spawn(async move {
+                if let Err(e) = client.reset_tunable().key(key).send().await {
+                    if !gate.refused(api::Refusal::of(&e)) {
+                        let message =
+                            api::problem_detail(&e).unwrap_or_else(|| api::guarded_error(i18n, e));
+                        outcome.set(Some(Err(message)));
+                    }
+                }
+                busy.release();
+                reload.bump();
+            });
         });
     };
 

@@ -134,37 +134,40 @@ pub(super) fn AssignRow(
         let series_id = SeriesId(s.series_id);
         let provider = provider.clone();
         move |_| {
-            if *busy.peek() {
-                return;
-            }
-            let ext = value.peek().trim().to_string();
-            if ext.is_empty() {
-                return;
-            }
-            busy.set(true);
             let provider = provider.clone();
-            spawn(async move {
-                let client = gate.client(api);
-                if session.token_value().is_some() {
-                    match client
-                        .upsert_sync_mapping()
-                        .body(UpsertMapping {
-                            series_id,
-                            provider: provider.clone(),
-                            external_id: ext.clone(),
-                        })
-                        .send()
-                        .await
-                    {
-                        Ok(_) => reload.bump(),
-                        // The row has no error line; only the elevation demand has to reach the
-                        // panel's prompt, or the button silently stops working.
-                        Err(e) => {
-                            let _refused = gate.refused(api::Refusal::of(&e));
+            gate.attempt(move || {
+                if *busy.peek() {
+                    return;
+                }
+                let ext = value.peek().trim().to_string();
+                if ext.is_empty() {
+                    return;
+                }
+                busy.set(true);
+                let provider = provider.clone();
+                spawn(async move {
+                    let client = gate.client(api);
+                    if session.token_value().is_some() {
+                        match client
+                            .upsert_sync_mapping()
+                            .body(UpsertMapping {
+                                series_id,
+                                provider: provider.clone(),
+                                external_id: ext.clone(),
+                            })
+                            .send()
+                            .await
+                        {
+                            Ok(_) => reload.bump(),
+                            // The row has no error line; only the elevation demand has to reach the
+                            // panel's prompt, or the button silently stops working.
+                            Err(e) => {
+                                let _refused = gate.refused(api::Refusal::of(&e));
+                            }
                         }
                     }
-                }
-                busy.set(false);
+                    busy.set(false);
+                });
             });
         }
     };
@@ -503,29 +506,32 @@ pub(super) fn CandidateMatchRow(
         let provider = provider.clone();
         let external_id = external_id.clone();
         move |_| {
-            if *busy.peek() {
-                return;
-            }
-            busy.set(true);
-            let provider = provider.clone();
-            let external_id = external_id.clone();
-            let client = gate.client(api);
-            spawn(async move {
-                let body = AssignRemoteEntry {
-                    user_id,
-                    provider: provider.clone(),
-                    series_id,
-                    external_id: external_id.clone(),
-                };
-                match client.assign_remote_entry().body(body).send().await {
-                    Ok(_) => reload.bump(),
-                    // See `AssignRow`: the demand reaches the panel's prompt, everything else
-                    // leaves the row as it was.
-                    Err(e) => {
-                        let _refused = gate.refused(api::Refusal::of(&e));
-                    }
+            let (provider, external_id) = (provider.clone(), external_id.clone());
+            gate.attempt(move || {
+                if *busy.peek() {
+                    return;
                 }
-                busy.set(false);
+                busy.set(true);
+                let provider = provider.clone();
+                let external_id = external_id.clone();
+                let client = gate.client(api);
+                spawn(async move {
+                    let body = AssignRemoteEntry {
+                        user_id,
+                        provider: provider.clone(),
+                        series_id,
+                        external_id: external_id.clone(),
+                    };
+                    match client.assign_remote_entry().body(body).send().await {
+                        Ok(_) => reload.bump(),
+                        // See `AssignRow`: the demand reaches the panel's prompt, everything else
+                        // leaves the row as it was.
+                        Err(e) => {
+                            let _refused = gate.refused(api::Refusal::of(&e));
+                        }
+                    }
+                    busy.set(false);
+                });
             });
         }
     };

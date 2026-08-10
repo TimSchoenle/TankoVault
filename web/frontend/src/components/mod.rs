@@ -46,7 +46,7 @@ pub(crate) use recommend::RecCard;
 #[cfg(feature = "desktop")]
 pub(crate) use settings::SettingsSheet;
 pub(crate) use shell::Shell;
-pub(crate) use step_up::{use_step_up_gate, StepUpGate, StepUpPrompt};
+pub(crate) use step_up::{use_step_up_gate, StepUpGate, StepUpGuard};
 pub(crate) use tabs::{TabBar, TabKind};
 #[cfg(feature = "desktop")]
 pub(crate) use titlebar::TitleBar;

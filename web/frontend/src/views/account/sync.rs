@@ -7,7 +7,7 @@
 use crate::api;
 use crate::components::{
     async_list, async_view, use_step_up_gate, EmptyBox, ErrorLine, OutcomeLine, PanelCard,
-    SkeletonBlock, StepUpPrompt,
+    SkeletonBlock, StepUpGuard,
 };
 use crate::hooks::{use_busy, use_outcome, use_reload, Reload};
 use crate::i18n::use_i18n;
@@ -194,29 +194,32 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
         let slug = slug.clone();
         let name = name.clone();
         move |_| {
-            if !busy.claim() {
-                return;
-            }
-            outcome.set(None);
             let (slug, name) = (slug.clone(), name.clone());
-            // Elevated: unlinking a tracker is an account change, so the API demands a second
-            // factor and answers `403` until it has one.
-            let client = gate.client(api);
-            spawn(async move {
-                match client.sync_disconnect().provider(slug).send().await {
-                    Ok(_) => {
-                        outcome.set(Some(Ok(
-                            i18n.args("account.sync.disconnected", &[("provider", &name)])
-                        )));
-                        reload.bump();
-                    }
-                    Err(e) => {
-                        if !gate.refused(api::Refusal::of(&e)) {
-                            outcome.set(Some(Err(api::friendly_error(i18n, e))));
+            gate.attempt(move || {
+                if !busy.claim() {
+                    return;
+                }
+                outcome.set(None);
+                let (slug, name) = (slug.clone(), name.clone());
+                // Elevated: unlinking a tracker is an account change, so the API demands a second
+                // factor and answers `403` until it has one.
+                let client = gate.client(api);
+                spawn(async move {
+                    match client.sync_disconnect().provider(slug).send().await {
+                        Ok(_) => {
+                            outcome.set(Some(Ok(
+                                i18n.args("account.sync.disconnected", &[("provider", &name)])
+                            )));
+                            reload.bump();
+                        }
+                        Err(e) => {
+                            if !gate.refused(api::Refusal::of(&e)) {
+                                outcome.set(Some(Err(api::friendly_error(i18n, e))));
+                            }
                         }
                     }
-                }
-                busy.release();
+                    busy.release();
+                });
             });
         }
     };
@@ -401,15 +404,7 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
     rsx! {
         {body}
         OutcomeLine { outcome: outcome.read().clone() }
-        if gate.is_open() {
-            StepUpPrompt {
-                enrolled: true,
-                on_done: move |()| {
-                    gate.close();
-                    outcome.set(Some(Ok(i18n.t("stepUp.confirmedRetry"))));
-                },
-            }
-        }
+        StepUpGuard { gate }
         if *show_conflicts.read() {
             ConflictInbox { provider: slug.clone(), show: show_conflicts, parent_reload: reload }
         }

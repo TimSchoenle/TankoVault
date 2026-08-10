@@ -10,7 +10,7 @@
 //! change still has no screen.
 
 use crate::api;
-use crate::components::{async_list, use_step_up_gate, PanelCard, StepUpGate, StepUpPrompt};
+use crate::components::{async_list, use_step_up_gate, PanelCard, StepUpGate, StepUpGuard};
 use crate::hooks::{use_busy, use_reload, Reload};
 use crate::i18n::use_i18n;
 use crate::icons::Icon;
@@ -69,9 +69,7 @@ pub(crate) fn SecurityPanel() -> Element {
             }
             // Revoking a session is behind a step-up, so a refusal on any row opens this one
             // prompt. Without it the button simply did nothing, which reads as a broken control.
-            if gate.is_open() {
-                StepUpPrompt { enrolled: true, on_done: move |()| gate.close() }
-            }
+            StepUpGuard { gate }
             {
                 async_list(
                     &sessions,
@@ -119,21 +117,24 @@ fn SessionRow(
     let expires = iso_date(Some(&expires_at)).to_owned();
 
     let revoke = move |_| {
-        if !busy.claim() {
-            return;
-        }
         let id = session_id.clone();
-        let client = gate.client(api);
-        spawn(async move {
-            match client.delete_session().id(id).send().await {
-                Ok(_) => reload.bump(),
-                // The row has no error line of its own; a `403` opens the card's prompt, and
-                // anything else leaves the list as it was, as it did before the gate existed.
-                Err(e) => {
-                    let _refused = gate.refused(api::Refusal::of(&e));
-                }
+        gate.attempt(move || {
+            if !busy.claim() {
+                return;
             }
-            busy.release();
+            let id = id.clone();
+            let client = gate.client(api);
+            spawn(async move {
+                match client.delete_session().id(id).send().await {
+                    Ok(_) => reload.bump(),
+                    // The row has no error line of its own; a `403` opens the card's prompt, and
+                    // anything else leaves the list as it was, as it did before the gate existed.
+                    Err(e) => {
+                        let _refused = gate.refused(api::Refusal::of(&e));
+                    }
+                }
+                busy.release();
+            });
         });
     };
 

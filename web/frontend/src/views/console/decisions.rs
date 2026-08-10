@@ -7,7 +7,7 @@
 //! and only the terms say which title matched and what each rule contributed.
 
 use crate::api;
-use crate::components::{async_view, use_step_up_gate, SkeletonRows, StepUpGate, StepUpPrompt};
+use crate::components::{async_view, use_step_up_gate, SkeletonRows, StepUpGate, StepUpGuard};
 use crate::i18n::{use_i18n, Translator};
 use crate::models::*;
 use crate::state::capabilities::use_capabilities;
@@ -98,7 +98,7 @@ fn MergeJournal(tick: RefreshTick) -> Element {
     let can_revert = caps.can(Permission::MergeRevert);
     let mut outcome = use_signal(String::new);
     let mut blocked_only = use_signal(|| false);
-    let mut notice = use_signal(String::new);
+    let notice = use_signal(String::new);
     // One gate for the journal, shared with every row: the rows report through the same
     // `notice`, so the prompt belongs beside it rather than duplicated per decision.
     let gate = use_step_up_gate();
@@ -147,16 +147,7 @@ fn MergeJournal(tick: RefreshTick) -> Element {
                 span { {i18n.t("console.decisions.filter.blockedOnly")} }
             }
         }
-        if gate.is_open() {
-            StepUpPrompt {
-                enrolled: true,
-                intro: Some(i18n.t("console.stepUp.intro")),
-                on_done: move |()| {
-                    gate.close();
-                    notice.set(i18n.t("stepUp.confirmedRetry"));
-                },
-            }
-        }
+        StepUpGuard { gate, intro: Some(i18n.t("console.stepUp.intro")) }
         if !notice.read().is_empty() {
             div { class: "ik-note", style: "margin-bottom:10px;", "{notice}" }
         }
@@ -215,7 +206,7 @@ fn MergeDecisionRow(
 
     // Two calls, one shape: the only difference an operator cares about is whether the catalogue
     // is put back, and both write the same durable "not a duplicate" judgement.
-    let mut judge = move |revert: bool| {
+    let judge = use_callback(move |revert: bool| {
         let text = reason.peek().trim().to_owned();
         if text.is_empty() {
             notice.set(i18n.t("console.decisions.reasonRequired"));
@@ -268,7 +259,7 @@ fn MergeDecisionRow(
             }
             busy.set(false);
         });
-    };
+    });
 
     rsx! {
         article { class: "ik-card", style: "padding:12px;margin-bottom:10px;",
@@ -336,7 +327,7 @@ fn MergeDecisionRow(
                         button {
                             class: "ik-btn xs vermilion",
                             disabled: *busy.read(),
-                            onclick: move |_| judge(true),
+                            onclick: move |_| gate.attempt(move || judge.call(true)),
                             {i18n.args(
                                 "console.decisions.revert",
                                 &[("rows", &d.undo_rows.to_string())],
@@ -346,7 +337,7 @@ fn MergeDecisionRow(
                     button {
                         class: "ik-btn xs",
                         disabled: *busy.read(),
-                        onclick: move |_| judge(false),
+                        onclick: move |_| gate.attempt(move || judge.call(false)),
                         {i18n.t("console.decisions.flag")}
                     }
                 }
@@ -439,7 +430,7 @@ fn SyncJournal(tick: RefreshTick) -> Element {
     // Default on: a reconciliation is mostly considerations, and an operator opening this panel
     // is almost always asking what actually changed.
     let mut applied_only = use_signal(|| true);
-    let mut notice = use_signal(String::new);
+    let notice = use_signal(String::new);
     // See `MergeJournal`: one gate, shared with the rows that report through `notice`.
     let gate = use_step_up_gate();
 
@@ -487,16 +478,7 @@ fn SyncJournal(tick: RefreshTick) -> Element {
                 span { {i18n.t("console.decisions.filter.appliedOnly")} }
             }
         }
-        if gate.is_open() {
-            StepUpPrompt {
-                enrolled: true,
-                intro: Some(i18n.t("console.stepUp.intro")),
-                on_done: move |()| {
-                    gate.close();
-                    notice.set(i18n.t("stepUp.confirmedRetry"));
-                },
-            }
-        }
+        StepUpGuard { gate, intro: Some(i18n.t("console.stepUp.intro")) }
         if !notice.read().is_empty() {
             div { class: "ik-note", style: "margin-bottom:10px;", "{notice}" }
         }
@@ -557,7 +539,7 @@ fn SyncDecisionRow(
         .clone()
         .unwrap_or_else(|| i18n.t("console.decisions.noSeries"));
 
-    let mut judge = move |revert: bool| {
+    let judge = use_callback(move |revert: bool| {
         let text = reason.peek().trim().to_owned();
         if text.is_empty() {
             notice.set(i18n.t("console.decisions.reasonRequired"));
@@ -616,7 +598,7 @@ fn SyncDecisionRow(
             }
             busy.set(false);
         });
-    };
+    });
 
     rsx! {
         article { class: "ik-card", style: "padding:12px;margin-bottom:10px;",
@@ -685,14 +667,14 @@ fn SyncDecisionRow(
                         button {
                             class: "ik-btn xs vermilion",
                             disabled: *busy.read(),
-                            onclick: move |_| judge(true),
+                            onclick: move |_| gate.attempt(move || judge.call(true)),
                             {i18n.t("console.decisions.undo")}
                         }
                     }
                     button {
                         class: "ik-btn xs",
                         disabled: *busy.read(),
-                        onclick: move |_| judge(false),
+                        onclick: move |_| gate.attempt(move || judge.call(false)),
                         {i18n.t("console.decisions.flagMatch")}
                     }
                 }

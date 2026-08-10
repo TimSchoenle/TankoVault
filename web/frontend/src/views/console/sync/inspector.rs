@@ -304,37 +304,40 @@ pub(super) fn MappingEditorRow(
     let save = {
         let provider = provider.clone();
         move |_| {
-            if *busy.peek() {
-                return;
-            }
-            let ext = value.peek().trim().to_string();
-            if ext.is_empty() {
-                return;
-            }
-            busy.set(true);
             let provider = provider.clone();
-            spawn(async move {
-                let client = gate.client(api);
-                if session.token_value().is_some() {
-                    match client
-                        .upsert_sync_mapping()
-                        .body(UpsertMapping {
-                            series_id,
-                            provider: provider.clone(),
-                            external_id: ext.clone(),
-                        })
-                        .send()
-                        .await
-                    {
-                        Ok(_) => reload.bump(),
-                        // The row has no error line; only the elevation demand has to reach the
-                        // panel's prompt, or the button silently stops working.
-                        Err(e) => {
-                            let _refused = gate.refused(api::Refusal::of(&e));
+            gate.attempt(move || {
+                if *busy.peek() {
+                    return;
+                }
+                let ext = value.peek().trim().to_string();
+                if ext.is_empty() {
+                    return;
+                }
+                busy.set(true);
+                let provider = provider.clone();
+                spawn(async move {
+                    let client = gate.client(api);
+                    if session.token_value().is_some() {
+                        match client
+                            .upsert_sync_mapping()
+                            .body(UpsertMapping {
+                                series_id,
+                                provider: provider.clone(),
+                                external_id: ext.clone(),
+                            })
+                            .send()
+                            .await
+                        {
+                            Ok(_) => reload.bump(),
+                            // The row has no error line; only the elevation demand has to reach the
+                            // panel's prompt, or the button silently stops working.
+                            Err(e) => {
+                                let _refused = gate.refused(api::Refusal::of(&e));
+                            }
                         }
                     }
-                }
-                busy.set(false);
+                    busy.set(false);
+                });
             });
         }
     };
@@ -342,27 +345,30 @@ pub(super) fn MappingEditorRow(
     let clear = {
         let provider = provider.clone();
         move |_| {
-            if *busy.peek() {
-                return;
-            }
-            busy.set(true);
             let provider = provider.clone();
-            spawn(async move {
-                let client = gate.client(api);
-                let body = tankovault_api_client::types::SyncMappingTarget {
-                    provider,
-                    series_id,
-                };
-                if session.token_value().is_some() {
-                    match client.clear_sync_mapping().body(body).send().await {
-                        Ok(_) => reload.bump(),
-                        // See `save` above.
-                        Err(e) => {
-                            let _refused = gate.refused(api::Refusal::of(&e));
+            gate.attempt(move || {
+                if *busy.peek() {
+                    return;
+                }
+                busy.set(true);
+                let provider = provider.clone();
+                spawn(async move {
+                    let client = gate.client(api);
+                    let body = tankovault_api_client::types::SyncMappingTarget {
+                        provider,
+                        series_id,
+                    };
+                    if session.token_value().is_some() {
+                        match client.clear_sync_mapping().body(body).send().await {
+                            Ok(_) => reload.bump(),
+                            // See `save` above.
+                            Err(e) => {
+                                let _refused = gate.refused(api::Refusal::of(&e));
+                            }
                         }
                     }
-                }
-                busy.set(false);
+                    busy.set(false);
+                });
             });
         }
     };

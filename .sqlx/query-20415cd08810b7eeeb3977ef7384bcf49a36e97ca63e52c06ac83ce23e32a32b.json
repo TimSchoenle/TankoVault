@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE step_up_grants SET expires_at = LEAST(GREATEST(expires_at, $3), created_at + (now() - $4)) WHERE user_id = $1 AND token_hash = $2 AND revoked_at IS NULL AND expires_at > now() AND created_at > $4 RETURNING method",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "method",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "step_up_grants",
+            "name": "method"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "20415cd08810b7eeeb3977ef7384bcf49a36e97ca63e52c06ac83ce23e32a32b"
+}

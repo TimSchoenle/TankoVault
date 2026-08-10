@@ -400,25 +400,42 @@ pub async fn insert_step_up<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// Resolve a live step-up grant belonging to `user_id`.
+/// Resolve a live step-up grant belonging to `user_id`, sliding its window forward.
 ///
 /// Scoped to the user in the statement, not checked afterwards: a grant is bound to the account
 /// that earned it, and a token presented alongside a *different* account's access token must
 /// find nothing rather than find a row someone then forgets to compare.
 ///
+/// Two deadlines, and both are load-bearing. `idle_until` is where a *used* grant's expiry moves
+/// to, so an operator working through a console panel is asked once rather than every few
+/// minutes; `alive_since` is the floor on `created_at`, which no amount of use can push, so the
+/// sliding window cannot turn one confirmation this morning into a standing elevation this
+/// evening. A grant past the floor is refused here whatever its `expires_at` says — the write is
+/// an optimisation, the `WHERE` is the rule.
+///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only. Unknown, expired or revoked is `Ok(None)`.
-pub async fn find_step_up<'e, E: PgExecutor<'e>>(
+/// [`crate::DbError::Sqlx`] only. Unknown, expired, revoked or past its absolute lifetime is
+/// `Ok(None)`.
+pub async fn renew_step_up<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
     token_hash: &str,
+    idle_until: OffsetDateTime,
+    alive_since: OffsetDateTime,
 ) -> DbResult<Option<StepUpMethod>> {
+    // `GREATEST` so a resolve never *shortens* a window someone else set; `LEAST` against the
+    // absolute deadline (`created_at` plus the same span `alive_since` is behind `now()`) so the
+    // stored expiry stays the grant's real death and the sweeper still collects it on time.
     let method = sqlx::query_scalar!(
-        "SELECT method FROM step_up_grants \
+        "UPDATE step_up_grants \
+         SET expires_at = LEAST(GREATEST(expires_at, $3), created_at + (now() - $4)) \
          WHERE user_id = $1 AND token_hash = $2 \
-           AND revoked_at IS NULL AND expires_at > now()",
+           AND revoked_at IS NULL AND expires_at > now() AND created_at > $4 \
+         RETURNING method",
         user_id.as_uuid(),
         token_hash,
+        idle_until,
+        alive_since,
     )
     .fetch_optional(exec)
     .await?;

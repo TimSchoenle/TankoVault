@@ -967,6 +967,12 @@ a { color: inherit; text-decoration: none; }
 .ik-wl-menu-group.sep { border-top: 1px solid var(--border); margin-top: 5px; padding-top: 5px; }
 
 .ik-wl-sentinel { height: 1px; }
+/* Where the rows the window released used to be. Its height is theirs, so sliding the window
+ * leaves the document the shape it had. The lead-in hangs below its foot, over the first rows
+ * still held, so the slice is on the wire while the reader is still a screenful short of the
+ * gap — and shorter than one page, or restoring one would not take it out of view again. */
+.ik-wl-spacer { position: relative; }
+.ik-wl-lead { position: absolute; left: 0; right: 0; top: 100%; height: 700px; pointer-events: none; }
 .ik-wl-foot { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 14px 0 4px; font-size: 12px; color: var(--faint); }
 .ik-wl-more-btn { background: none; border: none; font: inherit; font-size: 12px; color: var(--acc3); cursor: pointer; padding: 0; }
 .ik-wl-more-btn:hover { text-decoration: underline; }
@@ -1045,10 +1051,20 @@ a { color: inherit; text-decoration: none; }
  * inside one. `.ik-page-mark` covers its page rather than marking its top edge — it is what the
  * IntersectionObserver reports the reader's position from, and a 1px marker can pass a fast
  * scroll entirely between two frames without ever being reported as intersecting. */
-.ik-scroll-pages { display: flex; flex-direction: column; gap: var(--gap); }
-.ik-scroll-page { position: relative; }
+.ik-scroll-pages { display: flex; flex-direction: column; }
+/* The gutter between pages is the page's own padding, never a flex `gap`: a released page's
+ * spacer is built from its measured border box, and a gap lives outside that box — so every
+ * release would have shortened the document by one gutter and scrolled the grid a little. */
+.ik-scroll-page { position: relative; padding-bottom: var(--gap); }
 .ik-page-mark { position: absolute; inset: 0; pointer-events: none; }
 .ik-scroll-sentinel { height: 1px; }
+/* Where released pages were. Its height is theirs, so the document keeps the shape it had; the
+ * lead-in hangs *below* its foot, over the first page still held, so a page is on the wire while
+ * the reader is still a screenful short of the gap. It has to stay shorter than one page: at the
+ * moment a page is restored the spacer loses exactly the height that page takes back, so the lead
+ * only leaves the viewport if the page it just gained is the taller of the two. */
+.ik-scroll-spacer { position: relative; flex: 0 0 auto; }
+.ik-scroll-lead { position: absolute; left: 0; right: 0; top: 100%; height: 700px; pointer-events: none; }
 .ik-scroll-foot { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 14px 0 4px; font-size: 12px; color: var(--faint); }
 .ik-scroll-more { background: none; border: none; font: inherit; font-size: 12px; color: var(--acc3); cursor: pointer; padding: 0; }
 .ik-scroll-more:hover { text-decoration: underline; }
@@ -1223,8 +1239,9 @@ a { color: inherit; text-decoration: none; }
 .ik-chrow .act .toggle-read { flex: none; white-space: nowrap; border-color: transparent; background: none; color: var(--muted); }
 .ik-chrow .act .toggle-read:hover:not(:disabled) { color: var(--text); background: var(--surface); border-color: var(--border-ctl); }
 /* Footer row: the "older chapters" range plus its load-more affordance. */
-.ik-chfoot { display: flex; align-items: center; gap: 9px; padding: 11px 14px; width: 100%; background: none; border: none; font: inherit; color: inherit; text-align: left; cursor: pointer; }
-.ik-chfoot:hover { background: var(--surface-2); }
+/* A status line, not a control: the chapter list reveals its next slice on a scroll sentinel,
+   so this reports what is still folded away rather than offering to unfold it. */
+.ik-chfoot { display: flex; align-items: center; gap: 9px; padding: 11px 14px; width: 100%; text-align: left; }
 .ik-chfoot .more { margin-left: auto; font-family: var(--font-mono); font-size: 11.5px; color: var(--faint); }
 
 /* The open control and its menu share one positioned box, so the menu anchors to the button

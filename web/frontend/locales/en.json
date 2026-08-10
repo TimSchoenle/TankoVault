@@ -1381,7 +1381,6 @@
     "allProviders": "All providers",
     "backToStart": "Back to the start",
     "contentType": "Content type",
-    "continueHere": "Continue from here",
     "countLine": "{first}–{last} of {total} series",
     "endOfResults": "You have reached the end.",
     "filters": "Filters",
@@ -1442,8 +1441,7 @@
       "label": "Your library",
       "tracked": "Only what I track",
       "untracked": "Hide what I track"
-    },
-    "windowFull": "Paused here to keep the page quick."
+    }
   },
   "enum": {
     "accountStatus": {
@@ -1744,7 +1742,7 @@
     "hideParts": "Hide parts",
     "inWatchlist": "In watchlist",
     "lastRelease": "Newest {when}",
-    "loadMore": "load {count} more",
+    "loadMore": "{count} more",
     "markFailed": "Chapter {number} could not be updated.",
     "menuTitle": "Open ch {number} on",
     "moreSources": "{count} more carrying this chapter",
@@ -1879,7 +1877,7 @@
     "keyLegend": "J/K move · X select · ↵ continue · S menu · / filter",
     "loadMore": "Load more",
     "markAllRead": "Mark read",
-    "markGroupIncomplete": "Scroll to load the whole group before marking it read.",
+    "markGroupEmpty": "Nothing in this group to mark read.",
     "markGroupRead": "Mark group read",
     "markGroupTooBig": "Too many titles to mark at once (limit {limit}).",
     "moreSources": {
@@ -1912,7 +1910,7 @@
     "removeFromWatchlist": "Remove from watchlist",
     "resetFilters": "Show everything",
     "rowMenu": "Actions for {title}",
-    "rowsOf": "Rows 1–{shown} of {total} · scroll to load",
+    "rowsOf": "Rows {first}–{last} of {total} · scroll to load",
     "selectRow": "Select {title}",
     "sort": {
       "added": "Recently added",

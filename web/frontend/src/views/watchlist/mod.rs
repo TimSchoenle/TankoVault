@@ -10,8 +10,8 @@ mod toolbar;
 
 use crate::api;
 use crate::components::{
-    unmeasured, use_grid_fit, AuthRequired, ErrorBox, FocusTargets, GridFitProbe, OutcomeLine,
-    SkeletonRows,
+    unmeasured, use_grid_fit, AuthRequired, ErrorBox, FocusTargets, GridFit, GridFitProbe,
+    OutcomeLine, SkeletonRows,
 };
 use crate::hooks::{use_busy, use_outcome, use_reload};
 use crate::i18n::{use_i18n, Translator};
@@ -29,6 +29,7 @@ pub(crate) use query::WatchlistQuery;
 use query::{Order, Released, Sort, View};
 use row::{GroupHeader, RowCtx, WatchRow};
 use std::collections::HashSet;
+use tankovault_api_client::Client;
 use toolbar::{FilterBar, StatusTabs};
 /// Rows fetched per page in the list view. The list pages on a scroll sentinel, so this is the
 /// size of one bite, not of the list. The cover grid sizes its own bite from [`PAGE_ROWS`],
@@ -38,11 +39,12 @@ const PAGE_SIZE: i64 = 60;
 /// Rows of covers one bite of the grid view holds; the window's width decides the rest.
 const PAGE_ROWS: usize = 8;
 
-/// The longest prefix this list will hold, matching the API's own `limit` cap.
+/// The most rows this list holds at once, matching the API's own `limit` cap.
 ///
-/// Past it the request keeps growing while the answer does not, and `has_more` — which only
-/// looks at how much of `total` is loaded — stayed true, so the sentinel went on asking for a
-/// page it already had.
+/// Past it the window *slides*: the page furthest above the viewport is released and a spacer
+/// holds the height it had open, so scrolling on costs one request per page and the DOM stays
+/// bounded. It used to be where the list simply stopped — the sentinel had nothing left to ask
+/// for, so every row past the 200th of a longer watchlist was unreachable.
 const MAX_ROWS: i64 = 200;
 
 /// The largest selection a bulk call accepts, mirroring the API's own cap. Enforced here so
@@ -141,23 +143,63 @@ fn layout(items: &[WatchlistItem], grouped: bool) -> Vec<Entry> {
     out
 }
 
-/// One fetch's worth of state: the view the URL describes, plus how many pages deep the reader
-/// has scrolled.
+/// One fetch's worth of state: the view the URL describes, and which slice of it the window holds.
 ///
 /// Kept in one signal so a filter change and its page-depth reset can't land as two separate
 /// invalidations — split, the resource would fire once against the stale depth first.
 #[derive(Clone, PartialEq)]
 struct Request {
     query: WatchlistQuery,
+    /// 0-based index of the first page held.
+    start: i64,
+    /// Pages held, counted from `start`.
     pages: i64,
 }
 
 impl Request {
-    /// Rows to ask for: every page reached so far, refetched as one complete prefix rather than
-    /// appended — this avoids the accumulate-and-dedupe bugs an append-only cache has (a filter
-    /// change racing an in-flight page, a `reload` appending a duplicate).
+    /// Rows to ask for: the whole window, refetched as one slice rather than appended — this
+    /// avoids the accumulate-and-dedupe bugs an append-only cache has (a filter change racing an
+    /// in-flight page, a `reload` appending a duplicate).
     fn limit(&self, bite: i64) -> i64 {
         bite.saturating_mul(self.pages).min(MAX_ROWS)
+    }
+
+    /// Rows the window has released above it — what the request skips and what the spacer holds
+    /// open.
+    fn skipped(&self, bite: i64) -> i64 {
+        bite.saturating_mul(self.start)
+    }
+
+    /// Pages the window keeps before it releases from the other end.
+    ///
+    /// Never under two: a window of one page would release the page the reader is looking at to
+    /// make room for the one below it.
+    fn capacity(bite: i64) -> i64 {
+        (MAX_ROWS / bite.max(1)).max(2)
+    }
+
+    /// Take in one more page, sliding the window forward once it is full.
+    fn advance(&mut self, bite: i64) {
+        if self.pages < Self::capacity(bite) {
+            self.pages += 1;
+        } else {
+            self.start += 1;
+        }
+    }
+
+    /// Take back the page above the window. Nothing happens at the top of the list — `saturating_sub`
+    /// would not do here, since it saturates at `i64::MIN` and a negative offset is a 400.
+    fn retreat(&mut self) {
+        self.start = (self.start - 1).max(0);
+    }
+}
+
+/// Rows one bite of the list holds: whole rows of tiles in the cover grid, a fixed page in the
+/// list, and `None` until the grid has been measured — which is what parks the first request.
+fn bite_size(view: View, fit: GridFit) -> Option<i64> {
+    match view {
+        View::Grid => fit.page_size().and_then(|size| i64::try_from(size).ok()),
+        View::List => Some(PAGE_SIZE),
     }
 }
 
@@ -191,9 +233,16 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
 
     let mut request = use_signal(|| Request {
         query: query.clone(),
+        start: 0,
         pages: 1,
     });
     let mut board = use_signal(Board::default);
+    // The request the rendered rows answer. Equal to `request` exactly when nothing is on the
+    // wire, which is what keeps the scroll sentinels from asking twice for the same page.
+    let mut applied = use_signal(|| Option::<Request>::None);
+    // How tall the rendered window is. The spacer above it is built from this over the rows in
+    // it, because a row's height is a stylesheet decision the narrow-viewport rules re-make.
+    let mut window_px = use_signal(|| 0f64);
     let mut settled = use_signal(|| false);
     let mut selected = use_signal(HashSet::<SeriesId>::new);
     let mut focus = use_signal(|| 0usize);
@@ -206,7 +255,11 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
     // on inequality, or `Signal::set`'s unconditional invalidation double-fetches on first render.
     use_effect(use_reactive!(|query| {
         if request.peek().query != query {
-            request.set(Request { query, pages: 1 });
+            request.set(Request {
+                query,
+                start: 0,
+                pages: 1,
+            });
             selected.write().clear();
             focus.set(0);
         }
@@ -217,16 +270,12 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
         let req = request.read().clone();
         // In the grid view the bite is whole rows of tiles, and the fetch waits for the first
         // measurement rather than firing a request the corrected one would immediately replace.
-        let bite = if req.query.view == View::Grid {
-            fit.page_size().and_then(|size| i64::try_from(size).ok())
-        } else {
-            Some(PAGE_SIZE)
-        };
+        let bite = bite_size(req.query.view, fit);
         let client = api.client();
         let authed = session.is_authenticated();
         async move {
             if !authed {
-                return Ok(WatchlistView {
+                let empty = WatchlistView {
                     items: Vec::new(),
                     counts: WatchlistCounts {
                         reading: 0,
@@ -239,51 +288,39 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
                     },
                     groups: Vec::new(),
                     total: 0,
-                    // Offset paging, not keyset: this list refetches the whole prefix on every
-                    // page rather than appending, which is immune to the shifting-list defect
-                    // the cursor exists to fix and cannot use a cursor to express "the first
-                    // 180 rows". The token is there for consumers that do append.
+                    // Offset paging, not keyset: this list refetches its whole window on every
+                    // page rather than appending, which is immune to the shifting-list defect the
+                    // cursor exists to fix and cannot use a cursor to express "rows 120 to 180".
+                    // The token is there for consumers that do append.
                     next_cursor: None,
-                });
+                };
+                return (req, Ok(empty));
             }
             let Some(bite) = bite else {
                 return unmeasured().await;
             };
-            let mut builder = client
-                .watchlist()
-                .sort(req.query.sort.token())
-                .order(req.query.effective_order().token())
-                .unread_only(req.query.unread_only)
-                .source_issues(req.query.source_issues)
-                .limit(req.limit(bite))
-                .offset(0);
-            if let Some(status) = req.query.status_token() {
-                builder = builder.status(status);
-            }
-            if !req.query.q.is_empty() {
-                builder = builder.q(req.query.q.clone());
-            }
-            if req.query.released != Released::Any {
-                builder = builder.released_since(req.query.released.token());
-            }
-            builder
+            let outcome = watchlist_slice(&client, &req.query, req.limit(bite), req.skipped(bite))
                 .send()
                 .await
                 .map(ResponseValue::into_inner)
-                .map_err(|e| api::friendly_error(i18n, e))
+                .map_err(|e| api::friendly_error(i18n, e));
+            // The request travels with its own answer, so the chrome can tell a rendered window
+            // from one still on the wire without a second flag to keep in step.
+            (req, outcome)
         }
     });
 
     // Renders from `board`, not the resource directly, so an optimistic mutation has somewhere
     // to write and a refetch doesn't blank the list mid-flight.
     use_effect(move || {
-        if let Some(Ok(view)) = &*page.read() {
+        if let Some((answered, Ok(view))) = &*page.read() {
             board.set(Board {
                 items: view.items.clone(),
                 counts: Some(view.counts.clone()),
                 groups: view.groups.clone(),
                 total: view.total,
             });
+            applied.set(Some(answered.clone()));
             settled.set(true);
         }
     });
@@ -360,9 +397,49 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
     let counts = snapshot.counts.clone();
     let loaded = snapshot.items.len();
     let loaded_rows = i64::try_from(loaded).unwrap_or(i64::MAX);
-    let has_more = loaded_rows < snapshot.total && loaded_rows < MAX_ROWS;
+    let bite = bite_size(query.view, fit).unwrap_or(PAGE_SIZE);
+    let skipped = request.read().skipped(bite);
+    let has_more = skipped + loaded_rows < snapshot.total;
+    // A failure leaves this true, which is deliberate: paging stops at a refused slice rather than
+    // asking the same server the same question every time a sentinel crosses the viewport.
+    let in_flight = applied.read().as_ref() != Some(&*request.read());
+    let lift = released_height(*window_px.read(), loaded_rows, skipped);
     let grouped = query.sort.groups_by_release();
     let entries = layout(&snapshot.items, grouped);
+
+    // The only two ways the window moves, and both are refused while a slice is on the wire — an
+    // ungated sentinel asks for the same page once per frame.
+    let mut slide = move |forward: bool| {
+        if in_flight || (!forward && request.peek().start == 0) {
+            return;
+        }
+        let mut pending = request.write();
+        if forward {
+            pending.advance(bite);
+        } else {
+            pending.retreat();
+        }
+    };
+
+    // The rows released above the window, held open at the height they had. Without it, sliding
+    // would jerk the list by a page under the reader's hands. The lead-in covers the last
+    // screenful of the spacer, so the rows are back before the reader reaches the gap.
+    let released_above = rsx! {
+        if skipped > 0 {
+            div { class: "ik-wl-spacer", style: "height:{lift:.1}px;", "aria-hidden": "true",
+                if !in_flight {
+                    div {
+                        class: "ik-wl-lead",
+                        onvisible: move |event| {
+                            if event.data.is_intersecting().unwrap_or(false) {
+                                slide(false);
+                            }
+                        },
+                    }
+                }
+            }
+        }
+    };
 
     // `total` and the unread sum both come from the filtered view; `counts.all` ignores the
     // status filter, so mixing it in here would show e.g. "598 titles" over a list of 40.
@@ -415,14 +492,22 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
             GridFitProbe { fit, tiles: true }
         }
 
-        if let Some(Err(message)) = &*page.read() {
+        if let Some((_, Err(message))) = &*page.read() {
             ErrorBox { message: message.clone(), on_retry: move |()| reload.bump() }
         } else if !*settled.read() {
             SkeletonRows { count: 8 }
         } else if snapshot.items.is_empty() {
             {empty_state(i18n, &query, go)}
         } else if query.view == View::Grid {
-            CoverGrid { items: snapshot.items.clone(), selected }
+            {released_above.clone()}
+            div {
+                onresize: move |event| {
+                    if let Ok(size) = event.get_border_box_size() {
+                        window_px.set(size.height);
+                    }
+                },
+                CoverGrid { items: snapshot.items.clone(), selected }
+            }
         } else {
             // The header carries the row's cell classes so both are hidden by the same rule:
             // the responsive block used to address the header by `nth-child`, which every
@@ -437,11 +522,20 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
                 span { class: "ik-wl-sources", {i18n.t("watchlist.col.sources")} }
                 span {}
             }
+            {released_above.clone()}
             div {
                 class: "ik-wl-list",
                 role: "grid",
                 tabindex: "0",
                 "aria-label": i18n.t("nav.watchlist"),
+                // What the spacer above is derived from. Safe on this element because nothing
+                // inside it observes its own size — a resize event bubbles in the desktop build,
+                // so a nested observer would report its box as this one's (see `GridFitProbe`).
+                onresize: move |event| {
+                    if let Ok(size) = event.get_border_box_size() {
+                        window_px.set(size.height);
+                    }
+                },
                 // Names the focused row for a screen reader — without it the keyboard contract
                 // is silent to anyone not looking at the highlight.
                 "aria-activedescendant": snapshot
@@ -453,19 +547,16 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
                     match entry {
                         Entry::Band(band) => {
                             let stats = snapshot.groups.iter().find(|g| g.key == band.key());
+                            let span = band_span(&snapshot.groups, band, query.effective_order());
+                            let band_query = query.clone();
                             rsx! {
                                 GroupHeader {
                                     key: "band-{band.key()}",
                                     band,
                                     title_count: stats.map_or(0, |g| g.title_count),
                                     chapter_count: stats.map_or(0, |g| g.chapter_count),
-                                    ids: band_ids(&snapshot.items, band),
-                                    // `try_from`, not `as i64` on the length — that cast direction
-                                    // can wrap, which would silently mark an incomplete band as complete.
-                                    complete: stats.is_some_and(|g| {
-                                        usize::try_from(g.title_count)
-                                            .is_ok_and(|n| band_ids(&snapshot.items, band).len() == n)
-                                    }),
+                                    blocked: mark_group_blocked(i18n, span.count),
+                                    on_mark: move |()| mark_band_read(&band_query, span, ctx),
                                 }
                             }
                         }
@@ -490,14 +581,16 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
         }
 
         if *settled.read() && !snapshot.items.is_empty() {
-            // Sentinel div: `onvisible` (`IntersectionObserver`) fetches the next page with no
-            // scroll handler or polling.
-            if has_more {
+            // Sentinel div: `onvisible` (`IntersectionObserver`) takes in the next page with no
+            // scroll handler or polling. It unmounts while a slice is on the wire, so it fires
+            // again on remount if it is still in view — which is what keeps a viewport taller
+            // than one page loading without a click.
+            if has_more && !in_flight {
                 div {
                     class: "ik-wl-sentinel",
                     onvisible: move |event| {
                         if event.data.is_intersecting().unwrap_or(false) {
-                            request.write().pages += 1;
+                            slide(true);
                         }
                     },
                 }
@@ -508,22 +601,21 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
                         i18n.args(
                             "watchlist.rowsOf",
                             &[
-                                ("shown", &thousands(i64::try_from(loaded).unwrap_or(0))),
+                                ("first", &thousands(skipped + 1)),
+                                ("last", &thousands(skipped + loaded_rows)),
                                 ("total", &thousands(snapshot.total)),
                             ],
                         )
                     }
                 }
-                // Keyboard-reachable equivalent of the scroll sentinel, and the fallback when
-                // the observer never re-fires because the sentinel stayed in view (a viewport
-                // taller than a page).
+                // Keyboard-reachable equivalent of the scroll sentinel: the list's own contract
+                // is `J`/`K`, which moves a highlight without moving the viewport, so a reader
+                // who never scrolls would otherwise have no way to reach the next page.
                 if has_more {
                     button {
                         class: "ik-wl-more-btn",
                         r#type: "button",
-                        onclick: move |_| {
-                            request.write().pages += 1;
-                        },
+                        onclick: move |_| slide(true),
                         {i18n.t("watchlist.loadMore")}
                     }
                 }
@@ -541,13 +633,147 @@ fn unread_total(board: &Board) -> i64 {
     board.groups.iter().map(|g| g.chapter_count).sum()
 }
 
-/// The ids of the loaded rows in one band.
-fn band_ids(items: &[WatchlistItem], band: Bucket) -> Vec<SeriesId> {
-    items
-        .iter()
-        .filter(|i| bucket_of(i.latest_chapter_at.as_deref()) == band)
-        .map(|i| i.series_id)
-        .collect()
+/// Where a band sits in the filtered list: rows above it, and rows in it.
+///
+/// The bands are contiguous runs — grouping only applies under `Released`, which is the same
+/// instant they band by — so a band is addressable by offset, and the group aggregates say how
+/// long each one is. That is what lets `Mark group read` act on the whole band rather than on
+/// whichever part of it the window happens to hold.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+struct BandSpan {
+    offset: i64,
+    count: i64,
+}
+
+/// Locate `band` in the order the list actually renders it.
+///
+/// The direction matters: the `Released` column header flips the sort, and with it which band is
+/// at the top. Reading the offsets in rank order regardless would address `Earlier` at offset 0
+/// while it renders last, and mark the wrong titles read.
+fn band_span(groups: &[WatchlistGroup], band: Bucket, order: Order) -> BandSpan {
+    let mut displayed = [Bucket::Today, Bucket::ThisWeek, Bucket::Earlier];
+    if order == Order::Asc {
+        displayed.reverse();
+    }
+    let mut offset = 0;
+    for candidate in displayed {
+        let count = groups
+            .iter()
+            .find(|g| g.key == candidate.key())
+            .map_or(0, |g| g.title_count);
+        if candidate == band {
+            return BandSpan { offset, count };
+        }
+        offset += count;
+    }
+    BandSpan { offset, count: 0 }
+}
+
+/// Why a band cannot be marked read in one go, or `None` when it can.
+fn mark_group_blocked(i18n: Translator, count: i64) -> Option<String> {
+    if count > i64::try_from(BULK_LIMIT).unwrap_or(i64::MAX) {
+        return Some(i18n.args(
+            "watchlist.markGroupTooBig",
+            &[("limit", &BULK_LIMIT.to_string())],
+        ));
+    }
+    (count == 0).then(|| i18n.t("watchlist.markGroupEmpty"))
+}
+
+/// Mark every title in one band read.
+///
+/// The ids come from the server, not from the rendered rows: the action used to be refused
+/// whenever the band was not fully loaded, which — on any list longer than one page, and on every
+/// list at all now that the window slides — is nearly always. The button was disabled and said so
+/// in a `title` nobody opens, so clicking it did nothing and looked like a broken control.
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "`RowCtx` outlives this call inside a spawned future; see its doc comment"
+)]
+fn mark_band_read(query: &WatchlistQuery, span: BandSpan, ctx: RowCtx) {
+    if span.count <= 0 {
+        return;
+    }
+    let query = query.clone();
+    let client = ctx.api.client();
+    spawn(async move {
+        let listed = watchlist_slice(&client, &query, span.count, span.offset)
+            .send()
+            .await;
+        let ids: Vec<SeriesId> = match listed {
+            Ok(view) => view
+                .into_inner()
+                .items
+                .iter()
+                .map(|i| i.series_id)
+                .collect(),
+            Err(e) => return ctx.failed(e),
+        };
+        if ids.is_empty() {
+            return;
+        }
+        match client
+            .bulk_mark_read()
+            .body(WatchlistBulkIds { series_ids: ids })
+            .send()
+            .await
+        {
+            // Changes unread counts across rows and band aggregates — genuinely warrants a
+            // refetch, not a local edit.
+            Ok(_) => ctx.reload.bump(),
+            Err(e) => ctx.failed(e),
+        }
+    });
+}
+
+/// One watchlist request, built from the view state.
+///
+/// Shared by the page fetch and by [`mark_band_read`], so a filter can never apply to what the
+/// reader is looking at and not to what the band action marks.
+fn watchlist_slice<'a>(
+    client: &'a Client,
+    query: &WatchlistQuery,
+    limit: i64,
+    offset: i64,
+) -> tankovault_api_client::builder::Watchlist<'a> {
+    let mut builder = client
+        .watchlist()
+        .sort(query.sort.token())
+        .order(query.effective_order().token())
+        .unread_only(query.unread_only)
+        .source_issues(query.source_issues)
+        .limit(limit)
+        .offset(offset);
+    if let Some(status) = query.status_token() {
+        builder = builder.status(status);
+    }
+    if !query.q.is_empty() {
+        builder = builder.q(query.q.clone());
+    }
+    if query.released != Released::Any {
+        builder = builder.released_since(query.released.token());
+    }
+    builder
+}
+
+/// The height the rows released above the window have to leave behind.
+///
+/// Derived from the window's own measured height rather than from a row constant: the row height
+/// is a stylesheet decision the narrow-viewport rules re-make, and the band headings between the
+/// rows are part of what a released page occupied. It is an average over the window, so it is
+/// exact while the rows are uniform and close where they are not — the alternative is a page-tall
+/// jump on every slide.
+fn released_height(window_px: f64, loaded: i64, released: i64) -> f64 {
+    if loaded <= 0 || released <= 0 {
+        return 0.0;
+    }
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "both counts are list lengths, far inside f64's exact integer range"
+    )]
+    {
+        window_px / loaded as f64 * released as f64
+    }
 }
 
 /// The sortable `Released` column header, with the caret showing the direction in force.
@@ -772,22 +998,121 @@ mod tests {
         assert_eq!(bucket_of_age(-60_000.0), Bucket::Today);
     }
 
-    /// The prefix must stop growing at the API's own `limit` cap. Past it the server answers the
-    /// same 200 rows however many pages are asked for, so the request got steadily more
-    /// expensive while `has_more` — computed from `total` — stayed true and the sentinel kept
-    /// firing. `has_more` is capped in the same place; the two must not drift apart.
+    /// The window must stop growing at the API's own `limit` cap and start *sliding* instead.
+    /// Past the cap the server answers the same 200 rows however many pages are asked for, so the
+    /// request got steadily more expensive while nothing new arrived — and the list simply ended,
+    /// leaving every row past the 200th of a longer watchlist unreachable.
     #[test]
-    fn the_prefix_request_stops_at_the_api_cap() {
-        let deep = Request {
+    fn the_window_slides_once_it_reaches_the_api_cap() {
+        let mut window = Request {
             query: WatchlistQuery::default(),
-            pages: 40,
-        };
-        assert_eq!(deep.limit(PAGE_SIZE), MAX_ROWS);
-
-        let first = Request {
-            query: WatchlistQuery::default(),
+            start: 0,
             pages: 1,
         };
-        assert_eq!(first.limit(PAGE_SIZE), PAGE_SIZE);
+        assert_eq!(window.limit(PAGE_SIZE), PAGE_SIZE);
+        assert_eq!(window.skipped(PAGE_SIZE), 0);
+
+        for _ in 0..10 {
+            window.advance(PAGE_SIZE);
+        }
+        // Whole pages only, so the offset stays a page boundary — three of them here, not the
+        // 200 the cap would allow, because 200 is not a whole number of pages.
+        assert_eq!(
+            window.limit(PAGE_SIZE),
+            Request::capacity(PAGE_SIZE) * PAGE_SIZE
+        );
+        assert!(
+            window.limit(PAGE_SIZE) <= MAX_ROWS,
+            "never past the API's cap"
+        );
+        assert!(window.start > 0, "the window has to move once it is full");
+        assert_eq!(
+            window.skipped(PAGE_SIZE),
+            window.start * PAGE_SIZE,
+            "what the request skips is what the spacer holds open"
+        );
+
+        // And back: scrolling up returns the rows the slide released, and stops at the top.
+        while window.start > 0 {
+            window.retreat();
+        }
+        window.retreat();
+        assert_eq!(window.skipped(PAGE_SIZE), 0);
+    }
+
+    /// A window of one page would release the page the reader is looking at to make room for the
+    /// next one, which reads as the list erasing itself as it is scrolled.
+    #[test]
+    fn a_window_is_never_one_page() {
+        assert_eq!(Request::capacity(MAX_ROWS * 2), 2);
+        assert_eq!(Request::capacity(PAGE_SIZE), MAX_ROWS / PAGE_SIZE);
+    }
+
+    /// `Mark group read` addresses a band by offset, so the offsets have to follow the order the
+    /// list is *rendered* in. Read in rank order regardless of direction, `Earlier` would be
+    /// addressed at offset 0 while it renders last — and the action would mark today's releases
+    /// read instead.
+    #[test]
+    fn a_band_is_addressed_in_the_order_it_renders() {
+        let groups = vec![
+            WatchlistGroup {
+                key: "today".to_owned(),
+                title_count: 3,
+                chapter_count: 9,
+            },
+            WatchlistGroup {
+                key: "week".to_owned(),
+                title_count: 5,
+                chapter_count: 12,
+            },
+            WatchlistGroup {
+                key: "earlier".to_owned(),
+                title_count: 40,
+                chapter_count: 88,
+            },
+        ];
+
+        // Newest first: today, then this week, then earlier.
+        assert_eq!(
+            band_span(&groups, Bucket::Earlier, Order::Desc),
+            BandSpan {
+                offset: 8,
+                count: 40
+            }
+        );
+        assert_eq!(
+            band_span(&groups, Bucket::Today, Order::Desc),
+            BandSpan {
+                offset: 0,
+                count: 3
+            }
+        );
+        // Oldest first flips it, and `Today` is now the run at the bottom.
+        assert_eq!(
+            band_span(&groups, Bucket::Today, Order::Asc),
+            BandSpan {
+                offset: 45,
+                count: 3
+            }
+        );
+        // A band the server did not report is empty, not offset zero of the whole list.
+        assert_eq!(
+            band_span(&[], Bucket::ThisWeek, Order::Desc),
+            BandSpan {
+                offset: 0,
+                count: 0
+            }
+        );
+    }
+
+    /// The spacer has to hold exactly what was released, or every slide moves the rows under the
+    /// reader's hands. Nothing measured yet is a spacer of nothing — never a NaN in a style
+    /// attribute, which the browser drops and the list then jumps by a whole window.
+    #[test]
+    fn the_spacer_holds_the_height_the_released_rows_had() {
+        assert!((released_height(6800.0, 100, 200) - 13600.0).abs() < f64::EPSILON);
+        assert!(released_height(0.0, 100, 200).abs() < f64::EPSILON);
+        assert!(released_height(6800.0, 0, 200).abs() < f64::EPSILON);
+        assert!(released_height(6800.0, 100, 0).abs() < f64::EPSILON);
     }
 }

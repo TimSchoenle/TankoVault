@@ -37,10 +37,25 @@ use progenitor_client::ResponseValue;
 /// Every source's chapter list, in the order the API returned the sources.
 type SourceChapters = Vec<(SourceDto, Vec<ChapterDto>)>;
 
+/// The Series route.
+///
+/// **Keyed, not called directly.** Following a link from one series to another — which is what
+/// the `More like this` rail is — keeps the router on the same route variant, so Dioxus reuses
+/// this scope and only swaps the prop. Every `use_resource` below captured the id it was first
+/// built with and reacts to signals, not to props, so the URL moved while the screen went on
+/// showing the series it was mounted with. A changed key remounts the subtree instead, which is
+/// also what resets the chapter list's paging and the source menus.
+#[component]
+pub(crate) fn Series(id: String) -> Element {
+    rsx! {
+        SeriesPage { key: "{id}", id }
+    }
+}
+
 /// The route gives us a plain `String` (see `crate::Route::Series`); parse it once here so
 /// the rest of the view works with the real, compiler-checked `SeriesId`.
 #[component]
-pub(crate) fn Series(id: String) -> Element {
+fn SeriesPage(id: String) -> Element {
     let i18n = use_i18n();
     let Ok(id) = id.parse::<SeriesId>() else {
         return rsx! {

@@ -93,7 +93,7 @@ pub(super) fn ChapterSection(
         let last = rest.last()?.lead()?.number;
         Some((chapter_number(first), chapter_number(last)))
     });
-    let load_count = PAGE.min(hidden).to_string();
+    let hidden_count = hidden.to_string();
 
     rsx! {
         div { class: "ik-ch-head",
@@ -173,17 +173,27 @@ pub(super) fn ChapterSection(
                 }
             }
             if let Some((from, to)) = remaining_range {
-                button {
+                // Reveals the next slice as it scrolls into view rather than asking for a click:
+                // the rest of the list is already in memory, so this is a slice, not a fetch.
+                //
+                // Keyed on what is shown so the node is *replaced* on every reveal. An
+                // `IntersectionObserver` reports crossings, not states, so a footer that stayed
+                // in view — a slice shorter than the viewport, which is what the last one always
+                // is — would never fire a second time and the list would stop halfway.
+                div {
+                    key: "chfoot-{visible}",
                     class: "ik-chfoot",
-                    onclick: move |_| {
-                        let next = *shown.read() + PAGE;
-                        shown.set(next);
+                    onvisible: move |event| {
+                        if event.data.is_intersecting().unwrap_or(false) {
+                            let next = *shown.peek() + PAGE;
+                            shown.set(next);
+                        }
                     },
                     span { style: "font-weight:500;font-size:12.5px;color:var(--muted);",
                         {i18n.args("series.olderChapters", &[("from", &from), ("to", &to)])}
                     }
                     span { class: "more",
-                        {i18n.args("series.loadMore", &[("count", &load_count)])}
+                        {i18n.args("series.loadMore", &[("count", &hidden_count)])}
                     }
                 }
             }

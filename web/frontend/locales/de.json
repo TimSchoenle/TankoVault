@@ -1381,7 +1381,6 @@
     "allProviders": "Alle Anbieter",
     "backToStart": "Zurück zum Anfang",
     "contentType": "Inhaltstyp",
-    "continueHere": "Ab hier fortsetzen",
     "countLine": "{first}–{last} von {total} Serien",
     "endOfResults": "Das war alles.",
     "filters": "Filter",
@@ -1442,8 +1441,7 @@
       "label": "Deine Bibliothek",
       "tracked": "Nur Verfolgtes",
       "untracked": "Verfolgtes ausblenden"
-    },
-    "windowFull": "Hier angehalten, damit die Seite flüssig bleibt."
+    }
   },
   "enum": {
     "accountStatus": {
@@ -1744,7 +1742,7 @@
     "hideParts": "Teile ausblenden",
     "inWatchlist": "Auf der Merkliste",
     "lastRelease": "Neuestes {when}",
-    "loadMore": "{count} weitere laden",
+    "loadMore": "{count} weitere",
     "markFailed": "Kapitel {number} konnte nicht aktualisiert werden.",
     "menuTitle": "Kap. {number} öffnen bei",
     "moreSources": "{count} weitere führen dieses Kapitel",
@@ -1879,7 +1877,7 @@
     "keyLegend": "J/K bewegen · X auswählen · ↵ weiterlesen · S Menü · / filtern",
     "loadMore": "Mehr laden",
     "markAllRead": "Als gelesen markieren",
-    "markGroupIncomplete": "Lade erst die ganze Gruppe, bevor du sie als gelesen markierst.",
+    "markGroupEmpty": "In dieser Gruppe gibt es nichts zu markieren.",
     "markGroupRead": "Gruppe als gelesen markieren",
     "markGroupTooBig": "Zu viele Titel auf einmal (Grenze {limit}).",
     "moreSources": {
@@ -1912,7 +1910,7 @@
     "removeFromWatchlist": "Von der Merkliste entfernen",
     "resetFilters": "Alles anzeigen",
     "rowMenu": "Aktionen für {title}",
-    "rowsOf": "Zeilen 1–{shown} von {total} · scrollen zum Nachladen",
+    "rowsOf": "Zeilen {first}–{last} von {total} · scrollen zum Nachladen",
     "selectRow": "{title} auswählen",
     "sort": {
       "added": "Zuletzt hinzugefügt",

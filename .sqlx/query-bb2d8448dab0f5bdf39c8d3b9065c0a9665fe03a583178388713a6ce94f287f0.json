@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO user_provider_early_access (user_id, provider_id) SELECT $1, p FROM unnest($2::uuid[]) AS p",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bb2d8448dab0f5bdf39c8d3b9065c0a9665fe03a583178388713a6ce94f287f0"
+}

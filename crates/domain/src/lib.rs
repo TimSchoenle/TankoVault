@@ -29,8 +29,8 @@ pub use entities::{
     SeriesTitle, Tag, User, WatchlistEntry,
 };
 pub use enums::{
-    AccountStatus, AdapterKind, ContentType, ParseEnumError, ProviderState, RunState, ScanMode,
-    SeriesStatus, TaskState, WatchStatus,
+    AccountStatus, AdapterKind, ChapterAccess, ContentType, ParseEnumError, ProviderState,
+    RunState, ScanMode, SeriesStatus, TaskState, WatchStatus,
 };
 pub use features::{Feature, FeatureGroup, ParseFeatureError};
 pub use ids::{

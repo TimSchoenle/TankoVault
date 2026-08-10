@@ -15,7 +15,8 @@ pub struct AdapterConfig {
 /// Catalogue enumeration (full scan).
 #[derive(Debug, Clone, Deserialize)]
 pub struct CatalogCfg {
-    /// Path template; `{page}` is substituted with the 1-based page number.
+    /// Path template; `{page}` is the 1-based page number and `{offset}` the row offset that
+    /// page starts at (`(page - 1) * page_size`, so `{offset}` needs `page_size` set).
     pub path: String,
     /// Selector for each catalogue item container.
     pub item: String,
@@ -26,6 +27,25 @@ pub struct CatalogCfg {
     /// Optional selector whose presence indicates a next page.
     #[serde(default)]
     pub next: Option<String>,
+    /// Rows per page, for sites that paginate by offset rather than page number. Only read to
+    /// expand `{offset}`.
+    #[serde(default)]
+    pub page_size: Option<u32>,
+    /// Hard page cap. `Some(1)` is how a single-page catalogue is expressed: without it the
+    /// "a page with items implies another page" fallback re-fetches that one page forever,
+    /// since a site with no paginator answers every page number with the same body.
+    #[serde(default)]
+    pub pages: Option<u32>,
+    /// `"sitemap"` reads `<loc>` URLs from an XML sitemap shard instead of selecting items from
+    /// a listing page; anything else (or absent) is the ordinary HTML listing.
+    ///
+    /// Sites whose own listing cannot enumerate the catalogue — clamped paginators, or search
+    /// as the only browse surface — advertise a sitemap in `robots.txt` that can. `item` then
+    /// names the substring a `<loc>` must contain to be a series, and `title`/`link` are unused
+    /// because a sitemap carries neither: the title is derived from the slug, and the
+    /// per-series enrichment task replaces it with the real one.
+    #[serde(default)]
+    pub mode: Option<String>,
 }
 
 /// "Latest updates" feed (fast scan).
@@ -65,14 +85,24 @@ pub struct LabelledRowCfg {
     /// Selector for each candidate row.
     pub row: String,
     /// Selector (relative to the row) for the label cell.
-    pub label: String,
+    ///
+    /// Omitted where the theme renders no separate label element and the label is simply the
+    /// row's leading text (`<div class="imptdt"> Author <i>Name</i> </div>`). In that case the
+    /// row's own text is matched as a **prefix**, because it also contains the value.
+    #[serde(default)]
+    pub label: Option<String>,
     /// The label text to match. Compared case-insensitively, ignoring surrounding whitespace
     /// and a trailing `:` — themes are inconsistent about both.
     #[serde(rename = "match")]
     pub match_label: String,
     /// Selector (relative to the row) for the value cell; text is split on `,`/`;` into values
     /// (a literal comma in a value also splits, matching `DemonicScansAdapter`).
-    pub value: String,
+    ///
+    /// Omitted where label and value share one text node (`<li>Author(s) : Park Hae-nae</li>`).
+    /// The row's own text is then used with the matched label, and any `:` after it, stripped —
+    /// without that the label would be stored as part of the first value.
+    #[serde(default)]
+    pub value: Option<String>,
 }
 
 /// Series metadata page.
@@ -85,17 +115,19 @@ pub struct SeriesCfg {
     pub cover: Option<String>,
     #[serde(default)]
     pub tags: Option<String>,
+    /// Publication status. Only the first value is read.
     #[serde(default)]
-    pub status: Option<String>,
-    /// Alternative titles. See [`TextSource`] for why this one is not just a selector.
+    pub status: Option<TextSource>,
+    /// Alternative titles. See [`TextSource`] for why these are not just selectors.
     #[serde(default)]
     pub alt: Option<TextSource>,
     #[serde(default)]
-    pub author: Option<String>,
+    pub author: Option<TextSource>,
     #[serde(default)]
-    pub artist: Option<String>,
+    pub artist: Option<TextSource>,
+    /// Release year. Only the first value is read.
     #[serde(default)]
-    pub release: Option<String>,
+    pub release: Option<TextSource>,
 }
 
 /// Chapter list.
@@ -111,6 +143,25 @@ pub struct ChaptersCfg {
     /// Optional selector (relative to row) for the published date.
     #[serde(default)]
     pub date: Option<String>,
+    /// Optional selector (relative to row) for the chapter's own title, where the site lists
+    /// one separately from the "Chapter N" label.
+    #[serde(default)]
+    pub title: Option<String>,
+    /// Optional path template for a chapter list served from a URL of its own rather than the
+    /// series page. `{path}` expands to the series path and `{slug}` to its last non-empty
+    /// segment. Absent means "the chapter rows are on the series page".
+    #[serde(default)]
+    pub path: Option<String>,
+    /// Optional selector (relative to row) whose **presence** marks the chapter as early
+    /// access. Absence of a match means free — so this must select something that appears only
+    /// on locked rows, never a container that is always rendered and merely empty.
+    #[serde(default)]
+    pub locked: Option<String>,
+    /// Optional selector (relative to row) for when a locked chapter unlocks. Read only when
+    /// `locked` matched; an unparseable or missing value leaves the unlock time unknown, which
+    /// keeps the chapter locked rather than silently freeing it.
+    #[serde(default)]
+    pub unlock: Option<String>,
 }
 
 impl AdapterConfig {

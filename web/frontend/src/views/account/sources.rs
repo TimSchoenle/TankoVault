@@ -29,13 +29,21 @@ pub(crate) fn SourcesPanel() -> Element {
     // `None` until the first load settles, so the panel skeletons instead of rendering an
     // empty order that a reader could mistake for "nothing is ranked".
     let mut ranked = use_signal(|| Option::<Vec<PreferredProvider>>::None);
+    // Which providers the reader has opted into paid early access for. Separate from the
+    // order because it answers a different question: the order is where a series opens, this
+    // is whether chapters they have paid for count as unread.
+    let mut early = use_signal(Vec::<PreferredProvider>::new);
     let mut available = use_signal(Vec::<PublicProvider>::new);
 
     use_effect(move || {
         let client = api.client();
         spawn(async move {
             match client.source_preferences().send().await {
-                Ok(response) => ranked.set(Some(response.into_inner().providers)),
+                Ok(response) => {
+                    let prefs = response.into_inner();
+                    early.set(prefs.early_access_providers.clone());
+                    ranked.set(Some(prefs.providers));
+                }
                 Err(e) => outcome.set(Some(Err(api::friendly_error(i18n, e)))),
             }
         });
@@ -56,12 +64,43 @@ pub(crate) fn SourcesPanel() -> Element {
         outcome.set(None);
         let client = api.client();
         spawn(async move {
-            let body = SourcePreferencesUpdate { provider_ids: next };
+            // `early_access_provider_ids: None` leaves the opt-ins untouched — the order and
+            // the opt-ins are edited by different controls and must not overwrite each other.
+            let body = SourcePreferencesUpdate {
+                provider_ids: next,
+                early_access_provider_ids: None,
+            };
             match client.put_source_preferences().body(body).send().await {
                 Ok(response) => {
-                    let saved = response.into_inner().providers;
+                    let prefs = response.into_inner();
+                    let saved = prefs.providers;
                     order_cache.set(saved.iter().map(|p| p.slug.clone()).collect());
+                    early.set(prefs.early_access_providers);
                     ranked.set(Some(saved));
+                    outcome.set(Some(Ok(i18n.t("account.sources.saved"))));
+                }
+                Err(e) => outcome.set(Some(Err(api::friendly_error(i18n, e)))),
+            }
+        });
+    };
+
+    let mut save_early = move |next: Vec<ProviderId>| {
+        outcome.set(None);
+        let client = api.client();
+        spawn(async move {
+            // The order half is sent unchanged rather than omitted: the endpoint replaces it
+            // wholesale, so leaving it out would clear the reader's ranking as a side effect of
+            // toggling a paywall switch.
+            let current = ranked.read().clone().unwrap_or_default();
+            let body = SourcePreferencesUpdate {
+                provider_ids: current.iter().map(|p| p.id).collect(),
+                early_access_provider_ids: Some(next),
+            };
+            match client.put_source_preferences().body(body).send().await {
+                Ok(response) => {
+                    let prefs = response.into_inner();
+                    early.set(prefs.early_access_providers);
+                    ranked.set(Some(prefs.providers));
                     outcome.set(Some(Ok(i18n.t("account.sources.saved"))));
                 }
                 Err(e) => outcome.set(Some(Err(api::friendly_error(i18n, e)))),
@@ -170,6 +209,49 @@ pub(crate) fn SourcesPanel() -> Element {
                                 },
                                 Ic { icon: Icon::Add, size: 14 }
                                 {i18n.t("account.sources.rank")}
+                            }
+                        }
+                    }
+                }
+            }
+            Section { label: i18n.t("account.sources.section.earlyAccess"),
+                p { class: "ik-muted", style: "font-size:12.5px;margin:0 0 10px;",
+                    {i18n.t("account.sources.earlyAccessIntro")}
+                }
+                for provider in available.read().iter().cloned() {
+                    {
+                        let enabled = early.read().iter().any(|e| e.id.0 == provider.id);
+                        let early_now = early.read().clone();
+                        rsx! {
+                            div { class: "ik-row", key: "ea-{provider.id}",
+                                div { class: "grow",
+                                    div { "{provider.name}" }
+                                    div { class: "ik-muted", style: "font-size:12px;",
+                                        if enabled {
+                                            {i18n.t("account.sources.earlyAccessOn")}
+                                        } else {
+                                            {i18n.t("account.sources.earlyAccessOff")}
+                                        }
+                                    }
+                                }
+                                Button {
+                                    aria_label: i18n.args(
+                                        "account.sources.earlyAccessToggleOf",
+                                        &[("source", &provider.name)],
+                                    ),
+                                    on_click: move |_| {
+                                        let mut next: Vec<ProviderId> =
+                                            early_now.iter().map(|e| e.id).collect();
+                                        let id = ProviderId::from(provider.id);
+                                        if enabled {
+                                            next.retain(|e| *e != id);
+                                        } else {
+                                            next.push(id);
+                                        }
+                                        save_early(next);
+                                    },
+                                    Ic { icon: if enabled { Icon::Check } else { Icon::Add }, size: 14 }
+                                }
                             }
                         }
                     }

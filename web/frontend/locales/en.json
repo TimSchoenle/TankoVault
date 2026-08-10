@@ -158,12 +158,17 @@
       "saved": "Source order saved.",
       "section": {
         "ranked": "Your order",
-        "unranked": "Not ranked"
+        "unranked": "Not ranked",
+        "earlyAccess": "Paid early access"
       },
       "seriesCount": "{count} series",
       "title": "Source preferences",
       "unrank": "Remove from the order",
-      "unrankOf": "Remove {source} from the order"
+      "unrankOf": "Remove {source} from the order",
+      "earlyAccessIntro": "Some sources sell chapters early. They are hidden from your unread counts until they unlock — turn a source on here if you pay for its early access and want those chapters counted now.",
+      "earlyAccessOn": "Counting early access",
+      "earlyAccessOff": "Not counted",
+      "earlyAccessToggleOf": "Toggle paid early access for {source}"
     },
     "sync": {
       "anonymousUser": "{provider} reader",
@@ -417,7 +422,9 @@
     "adapterKind": {
       "custom": "Custom (built-in)",
       "genericConfig": "Generic (config-driven)",
-      "madara": "Madara / WordPress"
+      "madara": "Madara / WordPress",
+      "mangathemesia": "MangaThemesia theme",
+      "manganato": "Manganato family"
     },
     "adapterTest": {
       "choose": "— choose a provider —",

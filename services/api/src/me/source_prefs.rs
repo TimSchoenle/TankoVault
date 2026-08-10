@@ -25,20 +25,33 @@ pub struct PreferredProvider {
     pub name: String,
 }
 
-/// The reader's provider order, most preferred first.
+/// The reader's provider order, most preferred first, plus their early-access opt-ins.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct SourcePreferences {
     /// Ranked providers only. An absent provider is "no opinion", not "last": series carried by
     /// nobody on this list resolve by the objective richest-source order instead.
     pub providers: Vec<PreferredProvider>,
+    /// Providers whose paid early-access chapters this reader wants counted.
+    ///
+    /// Off by default and per provider, because paying one scanlator for early access says
+    /// nothing about any other: applying it globally would put chapters the reader cannot open
+    /// back into their unread count, which is the failure the early-access model exists to fix.
+    pub early_access_providers: Vec<PreferredProvider>,
 }
 
-/// A replacement provider order.
+/// A replacement provider order, and optionally a replacement early-access set.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct SourcePreferencesUpdate {
     /// Provider ids, most preferred first. Must be distinct and must all exist; an empty list
     /// clears the preference.
     pub provider_ids: Vec<ProviderId>,
+    /// Provider ids whose early-access chapters should count for this reader.
+    ///
+    /// **Omitted leaves the current set untouched**; `[]` clears it. The distinction matters
+    /// because this field was added after the endpoint shipped — treating an absent field as an
+    /// empty list would silently revoke the opt-in of every client that has not been updated.
+    #[serde(default)]
+    pub early_access_provider_ids: Option<Vec<ProviderId>>,
 }
 
 /// Get source preferences
@@ -62,6 +75,23 @@ pub async fn source_preferences(
 ) -> ApiResult<Json<SourcePreferences>> {
     let ranked =
         tankovault_db::repo::users::get_provider_priority(&state.pool, user.user_id).await?;
+    let early =
+        tankovault_db::repo::users::get_early_access_providers(&state.pool, user.user_id).await?;
+
+    // Resolved against the public list so a provider that has since been disabled drops out of
+    // both answers, exactly as the ranked half already documents.
+    let public = tankovault_db::repo::providers::list_public(&state.pool).await?;
+    let early_set: HashSet<uuid::Uuid> = early.into_iter().collect();
+    let early_access_providers = public
+        .into_iter()
+        .filter(|p| early_set.contains(&p.id))
+        .map(|p| PreferredProvider {
+            id: ProviderId::from_uuid(p.id),
+            slug: p.slug,
+            name: p.name,
+        })
+        .collect();
+
     Ok(Json(SourcePreferences {
         providers: ranked
             .into_iter()
@@ -71,6 +101,7 @@ pub async fn source_preferences(
                 name: p.name,
             })
             .collect(),
+        early_access_providers,
     }))
 }
 
@@ -111,11 +142,30 @@ pub async fn put_source_preferences(
         }
     }
 
+    // The early-access set is validated against the same public list: an opt-in for a provider
+    // the reader cannot see would be a preference that can never apply, and it feeds a
+    // predicate rather than only a link, so a stale id there changes unread counts.
+    if let Some(early) = &body.early_access_provider_ids {
+        let mut seen = HashSet::with_capacity(early.len());
+        for id in early {
+            if !known.contains(&id.as_uuid()) {
+                return Err(ApiError::BadRequest(format!("unknown provider {id}")));
+            }
+            if !seen.insert(id.as_uuid()) {
+                return Err(ApiError::BadRequest(format!("duplicate provider {id}")));
+            }
+        }
+    }
+
     tankovault_db::repo::users::set_provider_priority(
         &state.pool,
         user.user_id,
         &body.provider_ids,
     )
     .await?;
+    if let Some(early) = &body.early_access_provider_ids {
+        tankovault_db::repo::users::set_early_access_providers(&state.pool, user.user_id, early)
+            .await?;
+    }
     source_preferences(State(state), user).await
 }

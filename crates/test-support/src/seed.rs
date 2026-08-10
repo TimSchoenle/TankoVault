@@ -327,6 +327,8 @@ impl<'a> SeriesBuilder<'a> {
                         title: None,
                         path: format!("/c/{n}"),
                         published_at: None,
+                        access: tankovault_domain::ChapterAccess::Free,
+                        unlocks_at: None,
                     })
                     .collect(),
                 content_hash: self.content_hash,

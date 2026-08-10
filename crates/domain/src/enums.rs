@@ -103,13 +103,35 @@ str_enum! {
 
 str_enum! {
     /// Which adapter implementation drives a provider.
+    ///
+    /// `Madara`, `MangaThemesia` and `Manganato` are *families*: each names a shared site theme
+    /// whose default selector set ships in this workspace, so a site running one onboards as a
+    /// single config row carrying only its deviations. `Custom` is the escape hatch, dispatched
+    /// by slug.
     pub enum AdapterKind {
         Madara => "madara",
+        MangaThemesia => "mangathemesia",
+        Manganato => "manganato",
         GenericConfig => "generic_config",
         Custom => "custom",
     }
     default = GenericConfig,
     sql_type = "adapter_kind"
+}
+
+str_enum! {
+    /// Whether a provider gates a chapter behind payment or a timed early-access window.
+    ///
+    /// Only ever set from what the provider itself advertises. The distinction earns its own
+    /// column because an early-access chapter is real and *will* become readable: counting it as
+    /// unread by default tells a reader they are behind on something they cannot open, and
+    /// dropping it at ingest loses the row that has to exist when the timer expires.
+    pub enum ChapterAccess {
+        Free => "free",
+        EarlyAccess => "early_access",
+    }
+    default = Free,
+    sql_type = "chapter_access"
 }
 
 str_enum! {

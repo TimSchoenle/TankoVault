@@ -64,12 +64,20 @@ impl Engine {
             authors: meta.authors,
             chapters: chapters
                 .into_iter()
-                .map(|c| ChapterUpsert {
-                    number: c.number,
-                    volume: None,
-                    title: c.title,
-                    path: c.path,
-                    published_at: c.published_at,
+                .map(|c| {
+                    // The adapter's verdict is split into the two columns `chapters` stores it
+                    // in; `to_columns` is the single place that mapping lives, so a new access
+                    // state cannot be added without every writer being updated with it.
+                    let (access, unlocks_at) = c.access.to_columns();
+                    ChapterUpsert {
+                        number: c.number,
+                        volume: None,
+                        title: c.title,
+                        path: c.path,
+                        published_at: c.published_at,
+                        access,
+                        unlocks_at,
+                    }
                 })
                 .collect(),
             content_hash: hash,

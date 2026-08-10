@@ -361,6 +361,8 @@ enum CountTone {
 pub(super) const ADAPTER_KINDS: &[AdapterKind] = &[
     AdapterKind::GenericConfig,
     AdapterKind::Madara,
+    AdapterKind::MangaThemesia,
+    AdapterKind::Manganato,
     AdapterKind::Custom,
 ];
 
@@ -369,6 +371,8 @@ pub(super) fn adapter_label_key(a: AdapterKind) -> &'static str {
     match a {
         AdapterKind::GenericConfig => "console.adapterKind.genericConfig",
         AdapterKind::Madara => "console.adapterKind.madara",
+        AdapterKind::MangaThemesia => "console.adapterKind.mangathemesia",
+        AdapterKind::Manganato => "console.adapterKind.manganato",
         AdapterKind::Custom => "console.adapterKind.custom",
     }
 }

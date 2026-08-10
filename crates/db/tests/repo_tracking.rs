@@ -1398,3 +1398,108 @@ async fn retiring_the_pinned_source_clears_the_pin_and_keeps_the_entry() {
         "the pin is cleared, not dangling"
     );
 }
+
+/// The continue-reading badge for one series, which is the surface the unread predicate is most
+/// directly visible on.
+async fn unread_now(db: &TestDb, user: UserId, series: SeriesId) -> i64 {
+    continue_reading(&db.pool, user)
+        .await
+        .expect("continue")
+        .iter()
+        .find(|c| c.series_id == series)
+        .map_or(0, |c| c.unread)
+}
+
+/// A paid early-access chapter must not be counted as unread until the reader can actually open
+/// it — and must start counting the moment they can, by either route.
+///
+/// The bug this pins is the one the whole early-access model exists to prevent: before it, a
+/// chapter a provider had published behind a paywall was ingested as an ordinary chapter, so it
+/// inflated every unread badge, produced a "continue reading" card pointing at a page that
+/// answers with a paywall, and fired a new-chapter notification for something unreadable. The
+/// opposite mistake is just as bad and is covered here too — dropping the row at ingest loses
+/// the chapter that has to exist when the timer expires, and re-discovering it later re-dates it.
+///
+/// All three surfaces are asserted because the predicate is spelled out eight times; a copy that
+/// misses the access clause is exactly the drift this file was written to catch.
+#[tokio::test]
+async fn an_early_access_chapter_counts_only_once_the_reader_can_read_it() {
+    let db = TestDb::spawn().await;
+    let user = seed::user(&db, "reader").create().await;
+    let provider = seed::provider(&db, "paid").create().await;
+    let series = a_series(&db, provider, "Paywalled", &[1.0, 2.0, 3.0]).await;
+    watchlist_upsert(&db.pool, user, series, WatchStatus::Reading, true)
+        .await
+        .expect("watchlist");
+
+    assert_eq!(
+        unread_now(&db, user, series).await,
+        3,
+        "premise: three free chapters"
+    );
+
+    // Chapter 3 goes behind the paywall, unlocking in a week.
+    sqlx::query(
+        "UPDATE chapters SET access = 'early_access', unlocks_at = now() + interval '7 days' \
+         WHERE number = 3",
+    )
+    .execute(&db.pool)
+    .await
+    .expect("lock chapter 3");
+    assert_eq!(
+        unread_now(&db, user, series).await,
+        2,
+        "a locked chapter must not be counted as unread"
+    );
+    assert!(
+        !feed(&db.pool, user, 100)
+            .await
+            .expect("feed")
+            .iter()
+            .any(|item| (item.chapter_number - 3.0).abs() < f64::EPSILON),
+        "the release feed must not offer a chapter that answers with a paywall"
+    );
+
+    // Route one: the reader pays, and opts this provider in.
+    tankovault_db::repo::users::set_early_access_providers(&db.pool, user, &[provider])
+        .await
+        .expect("opt in");
+    assert_eq!(
+        unread_now(&db, user, series).await,
+        3,
+        "an opted-in reader counts the chapters they have paid for"
+    );
+
+    // The opt-in is per provider, so another provider's paywall stays shut for the same reader.
+    tankovault_db::repo::users::set_early_access_providers(&db.pool, user, &[])
+        .await
+        .expect("opt out");
+    assert_eq!(
+        unread_now(&db, user, series).await,
+        2,
+        "opting out closes it again"
+    );
+
+    // Route two: the timer expires. No rescan is needed — the stored unlock time is what the
+    // predicate compares against, so the chapter opens on its own.
+    sqlx::query("UPDATE chapters SET unlocks_at = now() - interval '1 minute' WHERE number = 3")
+        .execute(&db.pool)
+        .await
+        .expect("expire the timer");
+    assert_eq!(
+        unread_now(&db, user, series).await,
+        3,
+        "a chapter whose unlock time has passed counts without a rescan"
+    );
+
+    // A locked chapter with no announced date must stay locked rather than defaulting to open.
+    sqlx::query("UPDATE chapters SET unlocks_at = NULL WHERE number = 3")
+        .execute(&db.pool)
+        .await
+        .expect("clear the date");
+    assert_eq!(
+        unread_now(&db, user, series).await,
+        2,
+        "no announced unlock time must read as still locked, never as already unlocked"
+    );
+}

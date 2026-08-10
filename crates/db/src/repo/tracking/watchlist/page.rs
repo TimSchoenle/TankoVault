@@ -260,6 +260,10 @@ async fn fetch_page(
                  AND NOT (c.number <> floor(c.number) \
                           AND rp.last_read_part_number IS NOT NULL \
                           AND c.number <= rp.last_read_part_number) \
+                 AND (c.access = 'free' OR c.unlocks_at <= now() \
+                      OR EXISTS (SELECT 1 FROM user_provider_early_access e \
+                                  WHERE e.user_id = w.user_id \
+                                    AND e.provider_id = ss.provider_id)) \
              ) unr \
              CROSS JOIN LATERAL ( \
                SELECT max((SELECT max(c.discovered_at) FROM chapters c \
@@ -350,6 +354,10 @@ async fn fetch_page(
              AND NOT (c.number <> floor(c.number) \
                       AND p.last_read_part_number IS NOT NULL \
                       AND c.number <= p.last_read_part_number) \
+             AND (c.access = 'free' OR c.unlocks_at <= now() \
+                  OR EXISTS (SELECT 1 FROM user_provider_early_access e \
+                              WHERE e.user_id = $1 \
+                                AND e.provider_id = ss.provider_id)) \
            ORDER BY c.number, c.discovered_at, c.id \
            LIMIT 1 \
          ) nu ON true \

@@ -57,6 +57,11 @@ const EXPORTED: &[(&str, &str)] = &[
     // row to its provider slug so it says which *sites* rather than which uuids. The per-series
     // half of the same preference is a column on `watchlist_entries`, exported with those rows.
     ("user_provider_priority", "source_preferences"),
+    // Which providers the subject said they pay for early access to. Exported rather than
+    // excluded because it is a statement about their spending that they entered themselves, and
+    // because it is the only thing that makes paywalled chapters count towards their unread
+    // totals — a subject asking what we hold about them is entitled to both facts.
+    ("user_provider_early_access", "early_access_sources"),
 ];
 
 /// Tables referencing a subject that are deliberately not exported, with the reason.

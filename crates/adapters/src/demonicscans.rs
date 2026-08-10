@@ -8,7 +8,8 @@ use crate::html::{
     relativize, split_list, split_titles, text_of,
 };
 use crate::types::{
-    CatalogItem, CatalogPage, ChapterMeta, Ctx, LatestUpdate, SeriesMeta, SourceAdapter,
+    CatalogItem, CatalogPage, ChapterAccess, ChapterMeta, Ctx, LatestUpdate, SeriesMeta,
+    SourceAdapter,
 };
 use async_trait::async_trait;
 use scraper::ElementRef;
@@ -225,6 +226,8 @@ impl SourceAdapter for DemonicScansAdapter {
                     title: None,
                     path: relativize(&resp.url, href),
                     published_at,
+                    // This site sells no early access; every listed chapter is readable.
+                    access: ChapterAccess::Free,
                 });
             }
             Ok(chapters)

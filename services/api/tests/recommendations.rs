@@ -102,6 +102,8 @@ async fn ingest(app: &TestApp, provider: ProviderId, fixture: &Fixture) -> Serie
                     title: None,
                     path: format!("/c/{n}"),
                     published_at: None,
+                    access: tankovault_domain::ChapterAccess::Free,
+                    unlocks_at: None,
                 })
                 .collect(),
             content_hash: vec![1],

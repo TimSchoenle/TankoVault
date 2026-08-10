@@ -84,8 +84,24 @@ pub fn split_attr(spec: &str) -> (&str, Option<&str>) {
     }
 }
 
+/// Pseudo-attribute selecting an element's **own** text, excluding text inside child elements.
+///
+/// Themes decorate a heading with sibling elements rather than a separate field — Madara puts
+/// its `HOT`/`NEW`/`END` badge inside the `<h1>`, so the default "all descendant text" reading
+/// stores `Solo Leveling END` as the canonical title. That title is normalised into the
+/// matching key, so the badge does not stay cosmetic: it changes which sources a series
+/// collects and what catalogue search will find.
+pub const OWN_TEXT_ATTR: &str = "text";
+
 fn value_of(el: ElementRef<'_>, attr: Option<&str>) -> String {
     match attr {
+        Some(a) if a == OWN_TEXT_ATTR => el
+            .children()
+            .filter_map(|node| node.value().as_text().map(|t| t.to_string()))
+            .collect::<String>()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" "),
         Some(a) => el.value().attr(a).unwrap_or_default().trim().to_owned(),
         None => text_of(el),
     }
@@ -348,6 +364,123 @@ pub fn parse_ymd_date(text: &str) -> Option<OffsetDateTime> {
     time::Date::parse(text.trim(), &fmt)
         .ok()
         .map(|d| d.midnight().assume_utc())
+}
+
+/// Month names as providers spell them, long and abbreviated, indexed from January.
+const MONTHS: [&str; 12] = [
+    "january",
+    "february",
+    "march",
+    "april",
+    "may",
+    "june",
+    "july",
+    "august",
+    "september",
+    "october",
+    "november",
+    "december",
+];
+
+/// Parse a chapter release label in any of the shapes providers actually publish, relative to
+/// `now`.
+///
+/// The four shapes, tried in order: RFC 3339 (`2026-08-09T15:05:06.175797Z`, what the JSON APIs
+/// and Astro islands carry), ISO `YYYY-MM-DD`, a month-name date (`August 9, 2026`, the Madara
+/// themes), and a relative label (`3 days ago`). Anything else yields `None`, leaving the date
+/// unset rather than guessed — a wrong `published_at` reorders the release feed.
+///
+/// Relative labels resolve to whole units before `now`, which is as precise as the label is.
+///
+/// ```
+/// use tankovault_adapters::html::parse_date_label;
+/// use time::macros::datetime;
+///
+/// let now = datetime!(2026-08-10 12:00 UTC);
+/// assert_eq!(parse_date_label("2026-08-09T15:05:06.175797Z", now).map(|d| d.day()), Some(9));
+/// assert_eq!(parse_date_label("2026-08-09", now).map(|d| d.day()), Some(9));
+/// assert_eq!(parse_date_label("August 9, 2026", now).map(|d| d.day()), Some(9));
+/// assert_eq!(parse_date_label("3 days ago", now).map(|d| d.day()), Some(7));
+/// assert_eq!(parse_date_label("Prologue", now), None);
+/// ```
+#[must_use]
+pub fn parse_date_label(text: &str, now: OffsetDateTime) -> Option<OffsetDateTime> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if let Ok(dt) = OffsetDateTime::parse(trimmed, &time::format_description::well_known::Rfc3339) {
+        return Some(dt);
+    }
+    if let Some(d) = parse_ymd_date(trimmed) {
+        return Some(d);
+    }
+    if let Some(d) = parse_month_name_date(trimmed) {
+        return Some(d);
+    }
+    parse_relative_label(trimmed, now)
+}
+
+/// `August 9, 2026` / `Aug 9 2026` / `9 August 2026`.
+fn parse_month_name_date(text: &str) -> Option<OffsetDateTime> {
+    let lower = text.to_lowercase();
+    // Matched on the three-letter prefix so both `August` and `Aug` resolve. A false positive
+    // still produces nothing: a day in 1..=31 and a year >= 1900 both have to be present too.
+    let month = MONTHS.iter().position(|m| lower.contains(&m[..3]))?;
+    // Two bare numbers remain once the month word is out: the day (1-31) and the year. The
+    // year is always last in every shape providers use (`August 9, 2026`, `9 August 2026`,
+    // and Toonily's two-digit `May 31, 23`), which is what disambiguates them — `23` is not
+    // distinguishable from a day by range alone.
+    let numbers: Vec<u32> = lower
+        .split(|c: char| !c.is_ascii_digit())
+        .filter(|s| !s.is_empty())
+        .filter_map(|s| s.parse().ok())
+        .collect();
+    let (&year_raw, rest) = numbers.split_last()?;
+    let year = if year_raw < 100 {
+        2000 + year_raw
+    } else {
+        year_raw
+    };
+    if !(1900..=2200).contains(&year) {
+        return None;
+    }
+    let day = rest.iter().copied().find(|n| (1..=31).contains(n))?;
+    let month = time::Month::try_from(u8::try_from(month + 1).ok()?).ok()?;
+    time::Date::from_calendar_date(i32::try_from(year).ok()?, month, u8::try_from(day).ok()?)
+        .ok()
+        .map(|d| d.midnight().assume_utc())
+}
+
+/// `3 days ago`, `an hour ago`, `just now`.
+fn parse_relative_label(text: &str, now: OffsetDateTime) -> Option<OffsetDateTime> {
+    let lower = text.to_lowercase();
+    if !lower.contains("ago") && !lower.contains("now") {
+        return None;
+    }
+    if lower.contains("now") {
+        return Some(now);
+    }
+    // "an hour"/"a day" carry no digits and mean one. Read as an integer directly rather than
+    // through `parse_number`, so no float ever has to be cast back down to a count.
+    let count: i32 = lower
+        .split(|c: char| !c.is_ascii_digit())
+        .find(|s| !s.is_empty())
+        .map_or(Ok(1), str::parse)
+        .ok()?;
+    let unit = [
+        ("year", time::Duration::days(365)),
+        ("month", time::Duration::days(30)),
+        ("week", time::Duration::weeks(1)),
+        ("day", time::Duration::days(1)),
+        ("hour", time::Duration::hours(1)),
+        ("min", time::Duration::minutes(1)),
+        ("sec", time::Duration::seconds(1)),
+    ]
+    .into_iter()
+    .find(|(name, _)| lower.contains(name))?
+    .1;
+    unit.checked_mul(count).and_then(|d| now.checked_sub(d))
 }
 
 /// Unescape the five predefined XML/HTML entities (`&amp;` resolved last so a

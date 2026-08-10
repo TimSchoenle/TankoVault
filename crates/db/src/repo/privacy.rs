@@ -62,6 +62,18 @@ pub async fn export_user_data<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -
                                     FROM user_provider_priority upp \
                                     JOIN providers pr ON pr.id = upp.provider_id \
                                    WHERE upp.user_id = $1), \
+           /* Which providers the subject told us they pay for early access to. A statement \
+              about their spending, entered by them, and the only thing that makes paywalled \
+              chapters count towards their unread totals — so it is disclosed with the slug, \
+              like the order above, and with the timestamp the opt-in was made. */ \
+           'early_access_sources', (SELECT coalesce(json_agg(json_build_object( \
+                                                      'provider_id', ea.provider_id, \
+                                                      'provider_slug', pr.slug, \
+                                                      'enabled_at', ea.enabled_at) \
+                                                    ORDER BY pr.slug), '[]'::json) \
+                                      FROM user_provider_early_access ea \
+                                      JOIN providers pr ON pr.id = ea.provider_id \
+                                     WHERE ea.user_id = $1), \
            'notifications', (SELECT coalesce(json_agg(to_jsonb(n) ORDER BY n.created_at), '[]'::json) \
                                FROM notifications n WHERE n.user_id = $1), \
            /* The recommendation profile. Derived from the watchlist, but disclosed separately \

@@ -3,7 +3,7 @@
 //! Recommendations used to live here as a tag-overlap query that scored the whole catalogue on
 //! every request. They are now a model — see `repo::recsys` and `docs/RECOMMENDATIONS.md`.
 //!
-//! The unread predicate is spelled out 4× (3 here, 1 in [`watchlist`](super::watchlist)) as the
+//! The unread predicate is spelled out 8× (3 here, 5 in [`watchlist`](super::watchlist)) as the
 //! negation of [`ReadProgress::covers`](super::ReadProgress::covers), because `sqlx` macros need
 //! a string literal and cannot share it via `concat!`; `crates/db/tests/repo_tracking.rs` is what
 //! catches a copy drifting:
@@ -13,7 +13,23 @@
 //!   AND NOT (c.number <> floor(c.number)
 //!            AND rp.last_read_part_number IS NOT NULL
 //!            AND c.number <= rp.last_read_part_number)
+//!   AND (c.access = 'free' OR c.unlocks_at <= now()
+//!        OR EXISTS (SELECT 1 FROM user_provider_early_access e
+//!                    WHERE e.user_id = w.user_id AND e.provider_id = ss.provider_id))
 //! ```
+//!
+//! The third clause is the early-access gate. A chapter a provider has published behind a
+//! paywall is stored like any other — it has to be, or the row would be re-discovered and
+//! re-dated when the timer expires — but counting it as unread tells a reader they are behind
+//! on something they cannot open. It becomes readable in one of two ways: its stated unlock
+//! time passes, or the reader has told this provider's row in `user_provider_early_access` that
+//! they pay for it.
+//!
+//! The gate is an `EXISTS` rather than a bound array so that adding it needed no signature
+//! change on any of the eight queries or their callers — mis-numbering one bind across eight
+//! literals is exactly the kind of error this predicate's history is made of. The table is
+//! keyed `(user_id, provider_id)` and is empty for almost every reader, so the semi-join costs
+//! an index probe that the planner hoists out of the per-chapter loop.
 
 use crate::error::DbResult;
 use sqlx::{FromRow, PgExecutor};
@@ -73,6 +89,10 @@ pub async fn feed<'e, E: PgExecutor<'e>>(
            AND NOT (c.number <> floor(c.number) \
                     AND rp.last_read_part_number IS NOT NULL \
                     AND c.number <= rp.last_read_part_number) \
+           AND (c.access = 'free' OR c.unlocks_at <= now() \
+                OR EXISTS (SELECT 1 FROM user_provider_early_access e \
+                            WHERE e.user_id = w.user_id \
+                              AND e.provider_id = ss.provider_id)) \
          ORDER BY c.discovered_at DESC \
          LIMIT $2",
         user_id.as_uuid(),
@@ -157,6 +177,10 @@ pub async fn continue_reading<'e, E: PgExecutor<'e>>(
              AND NOT (c.number <> floor(c.number) \
                       AND rp.last_read_part_number IS NOT NULL \
                       AND c.number <= rp.last_read_part_number) \
+             AND (c.access = 'free' OR c.unlocks_at <= now() \
+                  OR EXISTS (SELECT 1 FROM user_provider_early_access e \
+                              WHERE e.user_id = w.user_id \
+                                AND e.provider_id = ss.provider_id)) \
          ) agg \
          CROSS JOIN LATERAL ( \
            SELECT max((SELECT max(c2.discovered_at) FROM chapters c2 \
@@ -237,6 +261,10 @@ pub async fn me_stats<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResu
                   AND NOT (c.number <> floor(c.number) \
                            AND rp.last_read_part_number IS NOT NULL \
                            AND c.number <= rp.last_read_part_number) \
+                  AND (c.access = 'free' OR c.unlocks_at <= now() \
+                       OR EXISTS (SELECT 1 FROM user_provider_early_access e \
+                                   WHERE e.user_id = w.user_id \
+                                     AND e.provider_id = ss.provider_id)) \
               ) agg \
               WHERE w.user_id = $1) AS \"unread!\"",
         user_id.as_uuid(),

@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO chapters (id, series_source_id, number, volume, title, path, published_at, access, unlocks_at) VALUES ($1,$2,$3::float8::numeric(10,4),$4,$5,$6,$7,$8,$9) ON CONFLICT (series_source_id, number) DO UPDATE SET title = EXCLUDED.title, path = EXCLUDED.path, published_at = COALESCE(EXCLUDED.published_at, chapters.published_at), access = EXCLUDED.access, unlocks_at = EXCLUDED.unlocks_at RETURNING (xmax = 0) AS \"inserted!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "inserted!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Float8",
+        "Int4",
+        "Text",
+        "Text",
+        "Timestamptz",
+        {
+          "Custom": {
+            "name": "chapter_access",
+            "kind": {
+              "Enum": [
+                "free",
+                "early_access"
+              ]
+            }
+          }
+        },
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "9e0b3f2a9b651490db9e22dfb8ab1cf64648b6b009fac9e1fb33c28a7ab526be"
+}

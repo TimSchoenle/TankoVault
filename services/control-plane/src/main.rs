@@ -5,6 +5,7 @@
 mod aggregator;
 mod dedupe;
 mod leader;
+mod reconcile;
 
 use tankovault_control_plane::recsys;
 use tankovault_service::metrics::names::{
@@ -128,6 +129,14 @@ struct SchedulerConfig {
     /// published — and a provider that is never scanned again.
     #[serde(default = "default_run_stale_after")]
     run_stale_after_secs: u64,
+    /// Seconds between passes that reconcile `JetStream` against `scan_tasks`. 0 disables.
+    ///
+    /// This is a repair, not a schedule: it exists because dispatch and the task table can come
+    /// apart with no failure on either side, and nothing else notices when they do. Disabling it
+    /// leaves a lost message costing a run — and, until `run_stale_after_secs`, the provider's
+    /// next run of that mode as well.
+    #[serde(default = "default_reconcile_interval")]
+    reconcile_interval_secs: u64,
 }
 
 impl Default for SchedulerConfig {
@@ -141,6 +150,7 @@ impl Default for SchedulerConfig {
             merge_sweep_recheck: default_merge_sweep_recheck(),
             merge_sweep_max_auto_merges: default_merge_sweep_max_auto_merges(),
             run_stale_after_secs: default_run_stale_after(),
+            reconcile_interval_secs: default_reconcile_interval(),
             recsys_incremental_interval_secs: default_recsys_incremental_interval(),
             recsys_full_interval_secs: default_recsys_full_interval(),
             recsys_batch: default_recsys_batch(),
@@ -183,6 +193,14 @@ fn default_merge_sweep_max_auto_merges() -> i64 {
 /// run which can never settle costs at most one hour of that provider's schedule.
 const fn default_run_stale_after() -> u64 {
     3600
+}
+
+/// Five minutes: frequent enough that a lost message costs one scan cycle rather than the hour
+/// `run_stale_after_secs` would otherwise take to release the provider, and rare enough that the
+/// pass — one broker call per lane with open work, and nothing at all when there is none — is
+/// invisible next to a sweep.
+const fn default_reconcile_interval() -> u64 {
+    300
 }
 
 const fn default_recsys_incremental_interval() -> u64 {
@@ -656,6 +674,7 @@ async fn run_scheduler(
         && cfg.merge_sweep_interval_secs == 0
         && cfg.recsys_incremental_interval_secs == 0
         && cfg.recsys_full_interval_secs == 0
+        && cfg.reconcile_interval_secs == 0
     {
         tracing::info!("scheduler disabled");
         return;
@@ -663,6 +682,7 @@ async fn run_scheduler(
     let mut fast = interval_or_never(cfg.fast_interval_secs);
     let mut full = interval_or_never(cfg.full_interval_secs);
     let mut merge = interval_or_never(cfg.merge_sweep_interval_secs);
+    let mut repair = interval_or_never(cfg.reconcile_interval_secs);
     let mut recsys_incremental = interval_or_never(cfg.recsys_incremental_interval_secs);
     let mut recsys_full = interval_or_never(cfg.recsys_full_interval_secs);
 
@@ -679,6 +699,7 @@ async fn run_scheduler(
             () = tick(&mut fast) => maybe_sweep(&state, &leadership, ScanMode::Fast).await,
             () = tick(&mut full) => maybe_sweep(&state, &leadership, ScanMode::Full).await,
             () = tick(&mut merge) => maybe_merge_sweep(&state, &leadership).await,
+            () = tick(&mut repair) => maybe_reconcile(&state, &leadership).await,
             () = tick(&mut recsys_incremental) => {
                 maybe_recsys_build(&state, &cfg, &leadership, false).await;
             }
@@ -752,6 +773,24 @@ async fn maybe_recsys_build(
     }
     metrics::histogram!(RECSYS_BUILD_DURATION, "stage" => kind)
         .record(started.elapsed().as_secs_f64());
+}
+
+/// Repairs dispatch that has drifted from the task table, on the leader only.
+///
+/// Deliberately **not** behind [`Feature::ScanningScheduler`]. That flag stops new scans being
+/// planned; it is the switch an operator reaches for during an incident, which is exactly when
+/// the runs already in flight most need to be able to finish. A repair creates no new work — it
+/// republishes messages for rows that already exist and closes runs that are already over.
+async fn maybe_reconcile(state: &AppState, leadership: &leader::Leadership) {
+    if !leadership.is_leader() {
+        tracing::debug!("skipping reconciliation; not scheduler leader");
+        return;
+    }
+    let started = std::time::Instant::now();
+    if let Err(e) = reconcile::pass(state).await {
+        tracing::warn!(error = %e, "scan dispatch reconciliation failed");
+    }
+    metrics::histogram!("scan_reconcile_duration_seconds").record(started.elapsed().as_secs_f64());
 }
 
 /// Runs a duplicate sweep only when this replica holds leadership *and* automatic

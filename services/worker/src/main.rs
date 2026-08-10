@@ -384,10 +384,11 @@ async fn run_consumer(
     let mut slugs: HashMap<tokio::task::Id, String> = HashMap::new();
     let mut busy: HashSet<String> = HashSet::new();
 
-    loop {
+    while !shutdown.is_cancelled() {
         while let Some(finished) = inflight.try_join_next_with_id() {
             release(finished, &mut slugs, &mut busy);
         }
+        report_inflight(inflight.len());
         if inflight.len() >= limit {
             // Wait for a slot rather than spinning the poll loop against a full set.
             if let Some(finished) = inflight.join_next_with_id().await {
@@ -396,25 +397,32 @@ async fn run_consumer(
             continue;
         }
 
-        let Some(msg) = queue.next_task(&shutdown, &busy).await else {
-            break;
-        };
-        let task = match serde_json::from_slice::<ScanTaskMessage>(&msg.payload) {
-            Ok(task) => task,
-            Err(e) => {
-                tracing::warn!(error = %e, "undecodable task message; dropping");
-                if let Err(e) = msg.ack().await {
-                    tracing::warn!(error = %e, "failed to ack message");
+        if let Some(msg) = queue.try_next(&busy).await {
+            let task = match serde_json::from_slice::<ScanTaskMessage>(&msg.payload) {
+                Ok(task) => task,
+                Err(e) => {
+                    tracing::warn!(error = %e, "undecodable task message; dropping");
+                    if let Err(e) = msg.ack().await {
+                        tracing::warn!(error = %e, "failed to ack message");
+                    }
+                    continue;
                 }
-                continue;
-            }
-        };
+            };
+            let slug = task.provider_slug.clone();
+            busy.insert(slug.clone());
+            let id = inflight.spawn(run_task(Arc::clone(engine), msg, task)).id();
+            slugs.insert(id, slug);
+            continue;
+        }
 
-        let slug = task.provider_slug.clone();
-        busy.insert(slug.clone());
-        let id = inflight.spawn(run_task(Arc::clone(engine), msg, task)).id();
-        slugs.insert(id, slug);
-        report_inflight(inflight.len());
+        // Nothing servable this round. The wait has to watch `inflight` as well as the clock:
+        // every lane may be blocked by a provider whose task has *already finished*, and
+        // joining it is the only thing that can free one. Waiting on the clock alone is how
+        // this loop used to wedge permanently.
+        let delay = queue.idle_delay();
+        if let Some(finished) = wait_while_idle(&mut inflight, &shutdown, delay).await {
+            release(finished, &mut slugs, &mut busy);
+        }
     }
 
     if !inflight.is_empty() {
@@ -429,6 +437,33 @@ async fn run_consumer(
     report_inflight(0);
     tracing::info!(worker_id = %engine.worker_id, "worker stopping");
     Ok(())
+}
+
+/// Wait out a round that served nothing: until a task finishes, the backoff lapses, or
+/// shutdown is requested. `Some` is a task to release.
+///
+/// Joining here is not an optimisation. A worker runs one task per provider, so a lane whose
+/// provider is in flight is passed over — and the set of providers in flight is only ever
+/// shrunk by this join. Sleeping on the clock alone left a finished task's provider marked
+/// busy for as long as the wait, and when *every* lane with work was blocked that way, the
+/// wait never ended: no lane could be served, so the loop never reached the join, so no lane
+/// was ever unblocked.
+///
+/// Every future here is cancel-safe, which is the constraint that shapes it: `try_next` is
+/// deliberately not among them, because cancelling a pull mid-fetch hands a message back and
+/// burns one of its three deliveries (see [`queue`]).
+async fn wait_while_idle(
+    inflight: &mut JoinSet<()>,
+    shutdown: &tokio_util::sync::CancellationToken,
+    delay: Duration,
+) -> Option<Result<(tokio::task::Id, ()), tokio::task::JoinError>> {
+    tokio::select! {
+        () = shutdown.cancelled() => None,
+        // Guarded: `join_next_with_id` on an empty set resolves immediately with `None`,
+        // which would turn this wait into a spin.
+        finished = inflight.join_next_with_id(), if !inflight.is_empty() => finished,
+        () = tokio::time::sleep(delay) => None,
+    }
 }
 
 /// Report how many scan tasks are in flight.
@@ -863,6 +898,79 @@ mod tests {
 
         assert!(!busy.contains("demonicscans"));
         assert!(slugs.is_empty());
+    }
+
+    /// The idle wait must observe a task **finishing**, not only the clock.
+    ///
+    /// The bug this pins wedged the whole pool. `busy` is pruned only where the loop joins a
+    /// finished task, and the poll it waited in blocked until some lane could be served — but a
+    /// lane whose provider is in `busy` is passed over, so once every provider holding queued
+    /// work was in `busy`, no lane could be served, the poll never returned, the loop never
+    /// reached the join, and the providers whose tasks had *already finished* stayed blocked
+    /// forever. It presents as a worker with nothing in flight sitting against a full queue,
+    /// with no error anywhere: the pool simply stops consuming until it is restarted, and a
+    /// three-provider deployment reaches it within one task each.
+    #[tokio::test]
+    async fn the_idle_wait_observes_a_task_finishing() {
+        let shutdown = tokio_util::sync::CancellationToken::new();
+        let mut inflight: JoinSet<()> = JoinSet::new();
+        let mut slugs: HashMap<tokio::task::Id, String> = HashMap::new();
+        let mut busy: HashSet<String> = HashSet::new();
+
+        let id = inflight.spawn(async {}).id();
+        slugs.insert(id, "kunmanga".to_owned());
+        busy.insert("kunmanga".to_owned());
+
+        // A backoff no test would sit through: reaching it means only the clock could have
+        // ended the wait, which is the regression.
+        let finished = tokio::time::timeout(
+            Duration::from_secs(5),
+            wait_while_idle(&mut inflight, &shutdown, Duration::from_secs(3600)),
+        )
+        .await
+        .expect("the wait must end when a task finishes, not sleep out its backoff")
+        .expect("a finished task must be handed back, or its provider is never released");
+
+        release(finished, &mut slugs, &mut busy);
+        assert!(
+            busy.is_empty(),
+            "the finished task's provider is still blocked; every lane it owns is unservable"
+        );
+    }
+
+    /// With nothing in flight the wait is the backoff, and must not spin.
+    ///
+    /// `join_next_with_id` on an empty `JoinSet` resolves immediately, so an unguarded branch
+    /// would return at once on every idle round — turning a five-second poll into a hot loop
+    /// against the broker.
+    #[tokio::test]
+    async fn an_empty_pool_waits_out_the_backoff_instead_of_spinning() {
+        let shutdown = tokio_util::sync::CancellationToken::new();
+        let mut inflight: JoinSet<()> = JoinSet::new();
+
+        let started = tokio::time::Instant::now();
+        let finished = wait_while_idle(&mut inflight, &shutdown, Duration::from_millis(50)).await;
+
+        assert!(finished.is_none(), "there was no task to hand back");
+        assert!(
+            started.elapsed() >= Duration::from_millis(50),
+            "the wait returned early; with an empty pool it would poll the broker flat out"
+        );
+    }
+
+    /// Shutdown ends the wait rather than being noticed a backoff later.
+    #[tokio::test]
+    async fn shutdown_ends_the_idle_wait() {
+        let shutdown = tokio_util::sync::CancellationToken::new();
+        shutdown.cancel();
+        let mut inflight: JoinSet<()> = JoinSet::new();
+
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            wait_while_idle(&mut inflight, &shutdown, Duration::from_secs(3600)),
+        )
+        .await
+        .expect("a cancelled token must end the wait immediately");
     }
 
     fn task(kind: TaskKind, target: serde_json::Value) -> ScanTaskMessage {

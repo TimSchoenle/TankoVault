@@ -98,6 +98,10 @@ pub mod names {
 
     /// Scan runs the scheduler planned, by provider, tier and result.
     pub const SCAN_RUNS_PLANNED: &str = "scan_runs_planned_total";
+    /// Dispatch repairs the reconciler made, by provider, tier and action.
+    pub const SCAN_DISPATCH_REPAIRS: &str = "scan_dispatch_repairs_total";
+    /// How long one reconciliation pass took.
+    pub const SCAN_RECONCILE_DURATION: &str = "scan_reconcile_duration_seconds";
     /// How long one scheduler sweep took, by tier.
     pub const SCHEDULER_SWEEP_DURATION: &str = "scheduler_sweep_duration_seconds";
     /// `1` on the replica currently holding scheduler leadership.
@@ -361,6 +365,20 @@ pub const CATALOGUE: &[Metric] = &[
         unit: Unit::Count,
         emitted_by: "control-plane",
         help: "Scan runs the scheduler planned, by provider, tier and result (planned, duplicate, error). The upstream half of the scan pipeline.",
+    },
+    Metric {
+        name: names::SCAN_DISPATCH_REPAIRS,
+        kind: Kind::Counter,
+        unit: Unit::Count,
+        emitted_by: "control-plane",
+        help: "Scan tasks the reconciler had to republish because the broker no longer held their message, by provider and tier. A healthy deployment never repairs anything, so any sustained rate here is dispatch losing work.",
+    },
+    Metric {
+        name: names::SCAN_RECONCILE_DURATION,
+        kind: Kind::Histogram(WORK_BUCKETS),
+        unit: Unit::Seconds,
+        emitted_by: "control-plane",
+        help: "Time for one pass reconciling JetStream against the scan_tasks table. One broker call per provider lane with open work.",
     },
     Metric {
         name: names::SCHEDULER_SWEEP_DURATION,

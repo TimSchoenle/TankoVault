@@ -8,10 +8,8 @@ use tankovault_bus::{BrokerConsumer, BrokerMessage, Bus};
 use tankovault_db::PgPool;
 use tankovault_domain::ScanMode;
 use tokio::time::Instant;
-use tokio_util::sync::CancellationToken;
 
-/// How long the queue waits after a round in which every lane was empty, before polling
-/// them all again.
+/// How long to wait after a round that served nothing, before polling every lane again.
 ///
 /// A pull with `no_wait` costs one round trip per lane, so an idle pool polling flat out
 /// would be pure chatter. The backoff doubles from here to [`IDLE_POLL_MAX`], which trades
@@ -21,6 +19,11 @@ const IDLE_POLL_MIN: Duration = Duration::from_millis(200);
 
 /// Ceiling for the idle backoff.
 const IDLE_POLL_MAX: Duration = Duration::from_secs(5);
+
+/// The backoff's next step, capped at [`IDLE_POLL_MAX`].
+fn next_idle(current: Duration) -> Duration {
+    (current * 2).min(IDLE_POLL_MAX)
+}
 
 /// The scan modes, fast first — the order [`tier_order`] serves them in by default.
 const TIERS: [ScanMode; 2] = [ScanMode::Fast, ScanMode::Full];
@@ -93,6 +96,8 @@ pub(crate) struct FairQueue {
     tiers: Vec<Tier>,
     /// Fast tasks served since the last full one, for [`FULL_TIER_EVERY`].
     fast_streak: u32,
+    /// How long the caller should wait before asking again, after a round served nothing.
+    idle: Duration,
     refresh_every: Duration,
     next_refresh: Instant,
 }
@@ -123,6 +128,7 @@ impl FairQueue {
                 })
                 .collect(),
             fast_streak: 0,
+            idle: IDLE_POLL_MIN,
             refresh_every,
             next_refresh: Instant::now(),
         };
@@ -130,37 +136,34 @@ impl FairQueue {
         Ok(queue)
     }
 
-    /// The next task to run, or `None` once `shutdown` is triggered.
+    /// The next task to run, if one can be served **right now**.
     ///
-    /// Blocks — by polling with a backoff — until some lane has work. Shutdown is observed
-    /// between rounds rather than mid-task, which is what lets a rolling restart drain
-    /// cleanly instead of leaving claimed tasks to time out.
-    ///
-    /// `busy` names the providers that already have a task in flight; their lanes are passed
-    /// over. The caller owns that set because it owns the tasks — see [`Tier::poll_round`]
-    /// for why the filter has to happen before the pull rather than after it.
-    pub(crate) async fn next_task(
-        &mut self,
-        shutdown: &CancellationToken,
-        busy: &HashSet<String>,
-    ) -> Option<BrokerMessage> {
-        let mut idle = IDLE_POLL_MIN;
-        loop {
-            if shutdown.is_cancelled() {
-                return None;
-            }
-            if Instant::now() >= self.next_refresh {
-                self.refresh_lanes().await;
-            }
-            if let Some(msg) = self.poll_round(busy).await {
-                return Some(msg);
-            }
-            tokio::select! {
-                () = shutdown.cancelled() => return None,
-                () = tokio::time::sleep(idle) => {}
-            }
-            idle = (idle * 2).min(IDLE_POLL_MAX);
+    /// Returns immediately either way — an empty round is `None`, not a wait. The waiting is
+    /// the caller's job, and that division is the whole point: `busy` is a snapshot the caller
+    /// owns, and the only event that can change it is one of the caller's tasks finishing. A
+    /// queue that slept on its own therefore slept on a snapshot that could no longer change,
+    /// and once every lane's provider was in `busy` — one task per provider, so a pool with
+    /// fewer providers than its concurrency limit reaches that routinely — it never returned
+    /// and the caller never got back to the top of its loop to release the finished task that
+    /// would have freed a lane. That is a permanent deadlock, and it presents as a worker with
+    /// nothing in flight sitting against a full queue: see [`crate::run_consumer`].
+    pub(crate) async fn try_next(&mut self, busy: &HashSet<String>) -> Option<BrokerMessage> {
+        if Instant::now() >= self.next_refresh {
+            self.refresh_lanes().await;
         }
+        let msg = self.poll_round(busy).await;
+        if msg.is_some() {
+            self.idle = IDLE_POLL_MIN;
+        }
+        msg
+    }
+
+    /// How long to wait before the next round, and the backoff's step towards
+    /// [`IDLE_POLL_MAX`]. Reset by [`try_next`](Self::try_next) whenever a round serves a task.
+    pub(crate) fn idle_delay(&mut self) -> Duration {
+        let delay = self.idle;
+        self.idle = next_idle(self.idle);
+        delay
     }
 
     /// Offer every lane a turn, in [`tier_order`], and return the first task found.
@@ -279,9 +282,10 @@ impl Tier {
     /// property for tens of milliseconds of pickup latency is a bad trade, and the latency is
     /// already irrelevant next to the seconds-to-minutes a scan task itself takes.
     ///
-    /// The chatter itself is already bounded by the caller: [`FairQueue::next_task`] doubles
-    /// its wait from [`IDLE_POLL_MIN`] to [`IDLE_POLL_MAX`] while every tier comes back
-    /// empty, so an idle pool settles at one round per lane per five seconds, not a spin.
+    /// The chatter itself is already bounded by the caller: it waits
+    /// [`FairQueue::idle_delay`] between rounds, doubling from [`IDLE_POLL_MIN`] to
+    /// [`IDLE_POLL_MAX`] while every tier comes back empty, so an idle pool settles at one
+    /// round per lane per five seconds, not a spin.
     /// Deliberately left as is.
     ///
     /// ## Why `busy` is filtered before the pull, never after
@@ -382,8 +386,29 @@ async fn take_one(lane: &Lane) -> anyhow::Result<Option<BrokerMessage>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{FULL_TIER_EVERY, TIERS, next_free_lane, take_turn, tier_order};
+    use super::{
+        FULL_TIER_EVERY, IDLE_POLL_MAX, IDLE_POLL_MIN, TIERS, next_free_lane, next_idle, take_turn,
+        tier_order,
+    };
     use tankovault_domain::ScanMode;
+
+    #[test]
+    fn the_idle_backoff_grows_and_is_capped() {
+        assert!(
+            IDLE_POLL_MIN < IDLE_POLL_MAX,
+            "the backoff must have room to grow"
+        );
+        let mut delay = IDLE_POLL_MIN;
+        for _ in 0..16 {
+            let next = next_idle(delay);
+            assert!(next >= delay, "the backoff went backwards");
+            delay = next;
+        }
+        assert_eq!(
+            delay, IDLE_POLL_MAX,
+            "the backoff must settle at its ceiling"
+        );
+    }
 
     /// A fast run fans out a task per feed entry, so its lane stays non-empty for the whole run.
     /// Under strict priority that is not "the full tier waits" — it is every other provider's full

@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT p.id AS \"provider_id!\", p.slug AS \"provider_slug!\", r.mode AS \"mode!: ScanMode\", sum(c.open_tasks)::int8 AS \"open_tasks!\", sum(c.aged_tasks)::int8 AS \"aged_tasks!\" FROM scan_runs r JOIN providers p ON p.id = r.provider_id CROSS JOIN LATERAL ( SELECT count(*) AS open_tasks, count(*) FILTER ( WHERE t.created_at IS NULL OR t.created_at < now() - make_interval(secs => $1) ) AS aged_tasks FROM scan_tasks t WHERE t.run_id = r.id AND t.state IN ('queued','claimed','running') ) c WHERE r.state IN ('queued','running') GROUP BY p.id, p.slug, r.mode HAVING sum(c.open_tasks) > 0",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "provider_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "providers",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "provider_slug!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "providers",
+            "name": "slug"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "mode!: ScanMode",
+        "type_info": {
+          "Custom": {
+            "name": "scan_mode",
+            "kind": {
+              "Enum": [
+                "full",
+                "fast"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "scan_runs",
+            "name": "mode"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "open_tasks!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "aged_tasks!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Float8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "bd991f6ce81371f7286842c4788248e7ed369bb162e5442d18540ddd5b4a2d16"
+}

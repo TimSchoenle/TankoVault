@@ -591,6 +591,52 @@ consumer and stops consuming; it recovers when it is replaced.
 
 ---
 
+## 7b. When the queue and the database disagree
+
+JetStream is the truth for **dispatch**; `scan_tasks` is the truth for **progress**. Nothing
+transactional spans the two — a task row is committed and then its message is published — so
+they can come apart with no failure visible on either side:
+
+- a publish that never landed, or landed on a stream that was later purged or recreated;
+- a worker that acked a message and then died before settling the row;
+- any period in which the pool stopped consuming, leaving messages to exhaust their deliveries.
+
+The symptom is always the same and always looks like a hung scan: the run reads `RUNNING` with
+an unmoving counter and nothing claimed, the console says *"waiting for a worker"*, and — until
+`scheduler.run_stale_after_secs` (default an hour) — the planner refuses to start another run for
+that provider and mode. Nothing retries it, because from the database's side there is no failure
+to see.
+
+**The reconciler repairs this automatically**, on the scheduler leader, every
+`scheduler.reconcile_interval_secs` (default 300; `0` disables). One pass does three things:
+
+1. For each provider lane with open tasks, it asks the broker how many messages that lane's
+   consumer actually holds (pending plus claimed-and-unacked) and republishes the difference,
+   oldest first. Republishing a task whose message did still exist is harmless — the second
+   delivery finds the task claimed or settled and is declined without touching the run counters.
+2. It finalises runs whose tasks have all settled but whose terminal progress event was lost,
+   and emits that event so the console and the aggregator see the same ending.
+3. It fails runs that were opened but never planned a task at all, so they stop suppressing the
+   provider.
+
+Two properties are deliberate and worth knowing before changing the interval. The comparison is
+**evidence-based, not timed** — only the deficit against a real broker count is republished,
+because age alone would re-dispatch the tens of thousands of tasks a catalogue scan legitimately
+leaves queued behind one provider's slot. And a lane with **no consumer at all** is skipped
+rather than treated as empty, so a deployment whose workers have never started is not read as a
+deployment that has lost every message.
+
+**What to watch.** `scan_dispatch_repairs_total{provider,scan}` counts republished tasks. A
+healthy deployment repairs nothing, so any sustained rate is dispatch losing work — the cause,
+not the symptom the console shows. The pass logs at `WARN` whenever it changes anything, naming
+the lane, its open-task count and the broker's backlog.
+
+The reconciler is **not** gated on the `scanning.scheduler` feature flag. That flag stops new
+scans being planned; it is what an operator reaches for during an incident, which is exactly when
+the runs already in flight most need to be able to finish. A repair creates no new work.
+
+---
+
 ## 8. Legal documents
 
 Terms of Service, Data Policy, Imprint and anything else this deployment is obliged to publish

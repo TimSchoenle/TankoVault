@@ -16,6 +16,41 @@ pub(crate) fn error_status<E>(err: &ApiOpError<E>) -> Option<u16> {
     }
 }
 
+/// How long the server told the caller to wait, in milliseconds, when it answered `429`.
+///
+/// Only for the console's few *looping* operations — the catalogue purge repeats one endpoint
+/// until it reports the job done — where the right response to a rate limit is to wait and carry
+/// on, not to abandon a half-finished destructive operation and report a failure. Everything else
+/// surfaces the refusal and lets the operator decide.
+///
+/// A `429` without a usable header still yields a duration: the limiter is a token bucket, so
+/// there is always a time at which the next call succeeds, and guessing one badly is far better
+/// than treating a temporary refusal as the end of the run.
+pub(crate) fn retry_after_ms<E>(err: &ApiOpError<E>) -> Option<u32> {
+    /// What to wait when the server refused without saying for how long.
+    const FALLBACK_MS: u32 = 5_000;
+    /// The ceiling on an honoured `Retry-After`. A header naming an hour would strand a purge
+    /// behind a progress line that never moves; stopping and reporting is the better answer.
+    const MAX_MS: u32 = 60_000;
+
+    let ApiOpError::ErrorResponse(response) = err else {
+        return None;
+    };
+    if response.status().as_u16() != 429 {
+        return None;
+    }
+    let seconds = response
+        .headers()
+        .get("retry-after")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.trim().parse::<u32>().ok());
+    Some(
+        seconds
+            .map_or(FALLBACK_MS, |s| s.saturating_mul(1_000))
+            .clamp(1_000, MAX_MS),
+    )
+}
+
 /// The server's own explanation of a refusal, when it sent one.
 ///
 /// Only for operator surfaces whose 400s carry a rule rather than a validation slip: the

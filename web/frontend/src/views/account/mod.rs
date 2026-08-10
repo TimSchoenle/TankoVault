@@ -160,10 +160,16 @@ pub(crate) fn Account() -> Element {
                 {i18n.t("account.signOut")}
             }
         }
-        TabBar {
-            selected: current,
-            on_select: move |next| panel.set(next),
-            visible: visible.clone(),
+        // A sub-page nav, not a chip cloud. Ten panels wrapped into two or three ragged rows at
+        // every width below a wide desktop, and the second row's left edge under the first read
+        // as a list that had spilled rather than as the screen's own navigation. One scrolling
+        // row keeps it on the page's own column, between the head above it and the panel below.
+        nav { class: "ik-subnav", "aria-label": i18n.t("nav.account"),
+            TabBar {
+                selected: current,
+                on_select: move |next| panel.set(next),
+                visible: visible.clone(),
+            }
         }
         match current {
             Panel::Profile => rsx! { profile::ProfilePanel { name: name.clone(), tier: tier.clone() } },

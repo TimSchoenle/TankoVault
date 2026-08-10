@@ -46,8 +46,8 @@ pub(crate) fn RecCard(item: Recommendation, reload: Reload, detailed: bool) -> E
                         content_type: item.content_type,
                         status: item.status,
                         chapter_count: item.chapter_count,
-                        latest_chapter: item.latest_chapter,
                         release_year: item.release_year,
+                        blurb: item.blurb.clone(),
                         tags: item.tags.clone(),
                     }
                 }

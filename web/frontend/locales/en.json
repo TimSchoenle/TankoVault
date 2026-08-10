@@ -591,6 +591,7 @@
       "purgeDone": "Purge finished: {count} rows removed.",
       "purgeProgress": "{done} removed, {left} to go…",
       "purgeStalled": "The purge stopped making progress and was halted. Check the server logs before running it again.",
+      "purgeWaiting": "rate limited — waiting…",
       "searchPlaceholder": "Search titles…",
       "select": "Select {title}",
       "selectPage": "Select every series on this page",
@@ -719,6 +720,12 @@
       "revert": "Undo merge ({rows} rows)",
       "reverted": "Merge undone: {rows} rows restored, and the pair will not be merged again.",
       "revertedBecause": "Reverted: {reason}",
+      "search": {
+        "hits": "{count} of {loaded} loaded",
+        "merges": "Search titles, outcomes, reasons…",
+        "sync": "Search series, readers, providers…"
+      },
+      "searchEmpty": "No decision among the loaded rows matches that search.",
       "showEvidence": "Show evidence",
       "syncEmpty": "No sync decisions recorded yet.",
       "syncReverted": "Undone: {what} restored.",
@@ -765,7 +772,6 @@
       "pipeline": "Pipeline",
       "system": "System"
     },
-    "jump": "Search series, tags, authors…",
     "kpi": {
       "activeScans": "Active scans",
       "activeScansSub": "{count} running now",
@@ -1431,6 +1437,12 @@
     "tagSearch": "Filter {count} tags",
     "tags": "Genres / tags",
     "toggleFilters": "Toggle filters",
+    "tracking": {
+      "any": "Everything",
+      "label": "Your library",
+      "tracked": "Only what I track",
+      "untracked": "Hide what I track"
+    },
     "windowFull": "Paused here to keep the page quick."
   },
   "enum": {
@@ -1555,6 +1567,7 @@
     },
     "feed": {
       "empty": "You're all caught up. New chapters from your watchlist will land here.",
+      "range": "#{first}–{last}",
       "title": "New in your watchlist"
     },
     "guest": {
@@ -1698,8 +1711,14 @@
     "whyLabel": "Why"
   },
   "search": {
+    "anyStatus": "Any status",
+    "anyType": "Any type",
     "countLine": "{count} results · trigram fuzzy match",
     "empty": "No series matched that. Try fewer words.",
+    "landing": {
+      "hint": "Titles and alternative titles across every source this deployment carries. Partial and misspelt words are fine — the match is fuzzy."
+    },
+    "placeholder": "Search the catalogue…",
     "title": "Results for “{query}”"
   },
   "series": {

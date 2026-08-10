@@ -122,19 +122,29 @@ pub(crate) fn legal_links(i18n: Translator) -> Element {
 /// Licences and where the code is. The notices document is a plain `<a>`, not a `Link`: the
 /// target is server-rendered, and handing it to the client-side router resolves it to the app
 /// shell — which answers `200` with a page that looks like it worked.
+///
+/// Absolute, not the bare path. The desktop build runs off a local webview origin, so a relative
+/// href resolved against *that* — `file:///C:/third-party-notices`, a link into the reader's own
+/// drive. Every other absolute link in this column already worked for exactly this reason.
 #[component]
 fn OpenSourceColumn() -> Element {
     let i18n = use_i18n();
+    let origin = crate::platform::origin();
+    let notices = format!("{}{NOTICES_ROUTE}", origin.trim_end_matches('/'));
     rsx! {
         nav { class: "ik-footer-col", "aria-label": i18n.t("footer.openSource"),
             div { class: "ik-footer-head", {i18n.t("footer.openSource")} }
-            a {
-                class: "ik-footer-link",
-                href: NOTICES_ROUTE,
-                target: "_blank",
-                rel: "noopener noreferrer",
-                {i18n.t("nav.notices")}
-                Ic { icon: Icon::OpenInNew, size: 12 }
+            // Withheld rather than broken while the desktop build has no server yet: before the
+            // first-run connect screen there is nothing to resolve the document against.
+            if !origin.is_empty() {
+                a {
+                    class: "ik-footer-link",
+                    href: "{notices}",
+                    target: "_blank",
+                    rel: "noopener noreferrer",
+                    {i18n.t("nav.notices")}
+                    Ic { icon: Icon::OpenInNew, size: 12 }
+                }
             }
             span { class: "ik-footer-link", style: "cursor:default;", "{LICENCE}" }
             a {

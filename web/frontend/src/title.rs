@@ -92,8 +92,8 @@ pub(crate) fn page_name(route: &Route, i18n: Translator) -> String {
         Route::Watchlist { .. } => i18n.t("nav.watchlist"),
         Route::Notifications {} => i18n.t("nav.notifications"),
         Route::Account {} | Route::AnilistCallback { .. } => i18n.t("nav.account"),
-        Route::Search { q } if !q.trim().is_empty() => {
-            i18n.args("title.search", &[("query", q.trim())])
+        Route::Search { query } if !query.q.trim().is_empty() => {
+            i18n.args("title.search", &[("query", query.q.trim())])
         }
         Route::Search { .. } => i18n.t("nav.search"),
         Route::Login {} => i18n.t("common.signIn"),

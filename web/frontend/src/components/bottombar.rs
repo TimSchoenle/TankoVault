@@ -96,6 +96,8 @@ fn MoreSheet(on_close: EventHandler<()>) -> Element {
     let session = use_session();
     let mut languages = use_signal(|| false);
     let current = i18n.language();
+    let notices_origin = crate::platform::origin();
+    let notices = format!("{}{NOTICES_ROUTE}", notices_origin.trim_end_matches('/'));
 
     rsx! {
         button {
@@ -107,7 +109,7 @@ fn MoreSheet(on_close: EventHandler<()>) -> Element {
             div { class: "ik-sheet-grip" }
 
             if caps.has_feature(Feature::CatalogueSearch) {
-                {sheet_link(Route::Search { q: String::new() }, Icon::Search, &i18n.t("nav.search"))}
+                {sheet_link(Route::Search { query: crate::views::SearchQuery::default() }, Icon::Search, &i18n.t("nav.search"))}
             }
             if caps.is_staff() {
                 {sheet_link(Route::Console {}, Icon::Console, &i18n.t("nav.console"))}
@@ -142,14 +144,18 @@ fn MoreSheet(on_close: EventHandler<()>) -> Element {
             {legal_block(i18n)}
 
             div { class: "ik-sheet-head", {i18n.t("footer.openSource")} }
-            a {
-                class: "ik-sheet-row",
-                href: NOTICES_ROUTE,
-                target: "_blank",
-                rel: "noopener noreferrer",
-                Ic { icon: Icon::Code, size: 19 }
-                {i18n.t("nav.notices")}
-                span { class: "val", Ic { icon: Icon::OpenInNew, size: 14 } }
+            // Absolute, and withheld without an origin — see `footer::OpenSourceColumn` for why
+            // the bare path is a link into the reader's own drive on the desktop build.
+            if !notices_origin.is_empty() {
+                a {
+                    class: "ik-sheet-row",
+                    href: "{notices}",
+                    target: "_blank",
+                    rel: "noopener noreferrer",
+                    Ic { icon: Icon::Code, size: 19 }
+                    {i18n.t("nav.notices")}
+                    span { class: "val", Ic { icon: Icon::OpenInNew, size: 14 } }
+                }
             }
         }
     }

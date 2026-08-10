@@ -1,10 +1,16 @@
 //! The catalogue danger zone: drop every chapter, or empty the catalogue outright.
 //!
-//! Both run as a **loop** of batched calls rather than one request. The server can only take a
-//! slice per call — a full catalogue cascades into a dozen tables and would outlast any request
-//! timeout — so this panel drives the endpoint until it reports nothing left, showing the
+//! Both run as a **loop** of calls rather than one request. A full catalogue cascades into a
+//! dozen tables and would outlast any request timeout, so the endpoint deletes for as long as it
+//! safely can and reports what is left; this panel drives it until nothing is, showing the
 //! running total as it goes. An operator who closes the tab half way leaves a smaller catalogue,
 //! not a rolled-back no-op: the purge is resumable, and pressing it again continues.
+//!
+//! The loop is also the one console interaction that can rate-limit *itself*, so it waits out a
+//! `429` and carries on instead of reporting it. It used to make one call per 500 series against
+//! a budget of thirty a minute, which meant it could not finish on any catalogue big enough to
+//! need it; the endpoint's own deadline fixed the arithmetic, and this is the belt to that
+//! braces — a console busy elsewhere can still spend the budget out from under it.
 
 use crate::api;
 use crate::components::{use_step_up_gate, OutcomeLine, Section, StepUpGuard, TypeToConfirm};
@@ -23,12 +29,29 @@ use progenitor_client::ResponseValue;
 /// and stopping with the count on screen is the honest outcome.
 const MAX_BATCHES: u32 = 5_000;
 
+/// How long to wait when the server refuses with `429` but names no interval.
+const WAIT_FALLBACK_MS: u32 = 5_000;
+
+/// How many rate-limit waits one purge may sit through before giving up.
+///
+/// A budget the purge cannot get back — because something else is spending it, or because the
+/// limiter is misconfigured — would otherwise keep this loop alive indefinitely behind a progress
+/// line that never moves. Twenty waits is minutes of patience, which is the right amount for an
+/// operation that legitimately takes minutes.
+const MAX_WAITS: u32 = 20;
+
 /// Progress through a running purge.
 #[derive(Clone, Copy, Default, PartialEq)]
 struct Progress {
     removed: i64,
     remaining: i64,
     running: bool,
+    /// Whether the loop is currently sitting out a rate limit rather than deleting.
+    ///
+    /// On screen because the two look identical otherwise: a counter that stops moving for five
+    /// seconds reads as a wedged purge, and the operator's next move is to reload the page and
+    /// start it again.
+    waiting: bool,
 }
 
 /// The two purges, each stating its blast radius from the live totals.
@@ -68,6 +91,7 @@ pub(super) fn PurgePanel(totals: Option<CatalogueSummary>, reload: Reload) -> El
             };
             let mut removed = 0_i64;
             let mut batches = 0_u32;
+            let mut waits = 0_u32;
             loop {
                 let call = client
                     .purge_catalogue()
@@ -80,6 +104,19 @@ pub(super) fn PurgePanel(totals: Option<CatalogueSummary>, reload: Reload) -> El
                     .map(ResponseValue::into_inner);
                 let batch = match call {
                     Ok(batch) => batch,
+                    // A rate limit is not a failure of the purge, it is the server asking for a
+                    // pause: the route draws on the tight write budget and a console doing
+                    // anything else at the same time can spend it. Waiting the stated interval
+                    // and carrying on is the only answer that finishes the job — reporting it
+                    // strands the operator mid-purge with no way to tell how far it got.
+                    Err(e) if api::retry_after_ms(&e).is_some() && waits < MAX_WAITS => {
+                        let wait = api::retry_after_ms(&e).unwrap_or(WAIT_FALLBACK_MS);
+                        waits += 1;
+                        progress.with_mut(|p| p.waiting = true);
+                        crate::platform::sleep_ms(wait).await;
+                        progress.with_mut(|p| p.waiting = false);
+                        continue;
+                    }
                     Err(e) => {
                         // Mid-loop as much as on the first call: a grant that lapses between
                         // batches leaves a half-emptied catalogue, and the operator needs the
@@ -98,6 +135,7 @@ pub(super) fn PurgePanel(totals: Option<CatalogueSummary>, reload: Reload) -> El
                     removed,
                     remaining: batch.remaining,
                     running: !batch.done,
+                    waiting: false,
                 });
                 batches += 1;
                 if batch.done {
@@ -112,7 +150,10 @@ pub(super) fn PurgePanel(totals: Option<CatalogueSummary>, reload: Reload) -> El
                     break;
                 }
             }
-            progress.with_mut(|p| p.running = false);
+            progress.with_mut(|p| {
+                p.running = false;
+                p.waiting = false;
+            });
             busy.release();
             reload.bump();
         });
@@ -160,6 +201,11 @@ pub(super) fn PurgePanel(totals: Option<CatalogueSummary>, reload: Reload) -> El
                                 ("left", &thousands(live.remaining)),
                             ],
                         )
+                    }
+                    if live.waiting {
+                        span { style: "margin-left:8px;color:var(--star-ink);",
+                            {i18n.t("console.catalogue.purgeWaiting")}
+                        }
                     }
                 }
             }

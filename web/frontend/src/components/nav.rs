@@ -49,7 +49,7 @@ pub(crate) fn Rail() -> Element {
                 NavLink { to: Route::Discover { query: DiscoverQuery::default() }, label: i18n.t("nav.discover"), icon: Icon::Explore, current: route.clone() }
             }
             if show_search {
-                NavLink { to: Route::Search { q: String::new() }, label: i18n.t("nav.search"), icon: Icon::Search, current: route.clone() }
+                NavLink { to: Route::Search { query: crate::views::SearchQuery::default() }, label: i18n.t("nav.search"), icon: Icon::Search, current: route.clone() }
             }
             if show_recommendations {
                 NavLink { to: Route::Recommendations {}, label: i18n.t("nav.recommendations"), icon: Icon::AutoAwesome, current: route.clone() }

@@ -2,6 +2,9 @@
 //!
 //! Every control writes straight to the URL and reads straight back out of it — no signal
 //! shadows a parameter, because a shadowed filter is one that reverts on the back button.
+//!
+//! Each one also returns to page one. A narrowed list has nothing at page four, so carrying the
+//! index over answers a filter change with an empty table.
 
 use super::{ScanFilter, STATE_FILTERS};
 use crate::i18n::use_i18n;
@@ -28,6 +31,7 @@ pub(super) fn FilterBar(filter: ScanFilter) -> Element {
                     let chosen = event.value();
                     nav.filter(ConsoleQuery {
                         status: (!chosen.is_empty()).then_some(chosen),
+                        page: 0,
                         ..nav.query()
                     });
                 },
@@ -49,6 +53,7 @@ pub(super) fn FilterBar(filter: ScanFilter) -> Element {
                     let chosen = event.value();
                     nav.filter(ConsoleQuery {
                         mode: (!chosen.is_empty()).then_some(chosen),
+                        page: 0,
                         ..nav.query()
                     });
                 },
@@ -69,6 +74,7 @@ pub(super) fn FilterBar(filter: ScanFilter) -> Element {
                 onchange: move |event: FormEvent| {
                     nav.filter(ConsoleQuery {
                         since: TimeWindow::parse_token(&event.value()),
+                        page: 0,
                         ..nav.query()
                     });
                 },
@@ -91,6 +97,7 @@ pub(super) fn FilterBar(filter: ScanFilter) -> Element {
                         // The default ordering is the *absence* of the parameter, so a shared
                         // link names only what its sender actually changed.
                         sort: (chosen != RunSort::Recent).then(|| chosen.token().to_owned()),
+                        page: 0,
                         ..nav.query()
                     });
                 },
@@ -114,6 +121,7 @@ pub(super) fn FilterBar(filter: ScanFilter) -> Element {
                     let slug = event.value();
                     nav.filter(ConsoleQuery {
                         provider: (!slug.trim().is_empty()).then_some(slug),
+                        page: 0,
                         ..nav.query()
                     });
                 },
@@ -125,6 +133,7 @@ pub(super) fn FilterBar(filter: ScanFilter) -> Element {
                     onchange: move |event: FormEvent| {
                         nav.filter(ConsoleQuery {
                             cleared: event.checked(),
+                            page: 0,
                             ..nav.query()
                         });
                     },

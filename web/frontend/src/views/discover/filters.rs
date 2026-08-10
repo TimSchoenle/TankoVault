@@ -4,10 +4,11 @@
 //! inside another screen's module. The panel owns no filter state — every control hands the whole
 //! next [`DiscoverFilters`] to its caller, which puts it in the URL (see `super::query`).
 
-use super::query::{DiscoverFilters, MIN_CHAPTERS_MAX, YEAR_MAX, YEAR_MIN};
+use super::query::{DiscoverFilters, Tracking, MIN_CHAPTERS_MAX, YEAR_MAX, YEAR_MIN};
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
 use crate::models::*;
+use crate::state::use_session;
 use crate::util::thousands;
 use dioxus::prelude::*;
 
@@ -29,6 +30,7 @@ pub(super) fn FilterPanel(
     on_reset: EventHandler<()>,
 ) -> Element {
     let i18n = use_i18n();
+    let session = use_session();
     // Panel-local, not part of the URL: the API has no "match all tags" parameter yet, so putting
     // it in the query string would publish a filter that changes nothing and reset the grid every
     // time it was flipped.
@@ -78,6 +80,16 @@ pub(super) fn FilterPanel(
         move |slug: String| {
             let mut next = filters.clone();
             next.provider = Some(slug).filter(|s| !s.is_empty());
+            on_change.call(next);
+        }
+    });
+    // Exclusive, unlike the type and status chips: "only what I track" and "only what I don't"
+    // are the two halves of one question, and holding both would ask for an empty catalogue.
+    let set_tracking = EventHandler::new({
+        let filters = filters.clone();
+        move |value: Tracking| {
+            let mut next = filters.clone();
+            next.tracking = value;
             on_change.call(next);
         }
     });
@@ -177,6 +189,24 @@ pub(super) fn FilterPanel(
                         inc: filters.inc.clone(),
                         exc: filters.exc.clone(),
                         on_cycle: cycle_tag,
+                    }
+                }
+            }
+
+            // YOUR LIBRARY — resolved server-side against the caller's own token, so it is only
+            // offered to a reader who has a watchlist for it to mean anything about.
+            if session.is_authenticated() {
+                div { class: "ik-filter-group",
+                    div { class: "lbl", {i18n.t("discover.tracking.label")} }
+                    div { class: "ik-chips", style: "margin-bottom:0;",
+                        for option in Tracking::ALL {
+                            TrackingChip {
+                                key: "{option.label_key()}",
+                                option,
+                                active: filters.tracking == option,
+                                on_pick: set_tracking,
+                            }
+                        }
                     }
                 }
             }
@@ -287,6 +317,27 @@ pub(super) fn TypeChip(
             "aria-pressed": "{active}",
             onclick: move |_| on_toggle.call(t),
             {i18n.t(t.label_key())}
+        }
+    }
+}
+
+/// One of the three watchlist options. A radio in chip clothing: picking one replaces the
+/// selection rather than adding to it.
+#[component]
+pub(super) fn TrackingChip(
+    option: Tracking,
+    active: bool,
+    on_pick: EventHandler<Tracking>,
+) -> Element {
+    let i18n = use_i18n();
+    let class = if active { "ik-chip active" } else { "ik-chip" };
+    rsx! {
+        button {
+            class: "{class}",
+            r#type: "button",
+            "aria-pressed": "{active}",
+            onclick: move |_| on_pick.call(option),
+            {i18n.t(option.label_key())}
         }
     }
 }

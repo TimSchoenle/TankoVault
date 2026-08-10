@@ -54,6 +54,11 @@ pub struct ListParams {
     pub year_max: Option<i32>,
     #[serde(default)]
     pub min_chapters: Option<i32>,
+    /// `tracked` narrows the list to series the caller already has on their watchlist,
+    /// `untracked` to the rest. Requires an authenticated caller — whose watchlist it is comes
+    /// from the token, never from a parameter.
+    #[serde(default)]
+    pub tracking: Option<String>,
     /// `relevance | updated | title | chapters | sources | year | rating`. Defaults to
     /// `relevance` when `query` is supplied and `updated` when it is not; `relevance` without a
     /// `query` has nothing to rank and falls back to `updated`.
@@ -70,6 +75,32 @@ pub struct ListParams {
 
 fn default_limit() -> i64 {
     40
+}
+
+/// The `tracking` parameter: which side of the caller's own watchlist the list is narrowed to.
+///
+/// An enum with a strict [`FromStr`](std::str::FromStr) rather than a bare string, so a typo is a
+/// `400` naming the parameter instead of a silently unfiltered page — the same reasoning as
+/// `sort`, and the more important one here: "hide what I already read" reads as working when it
+/// quietly does nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TrackingFilter {
+    /// Only series on the caller's watchlist.
+    Tracked,
+    /// Only series that are not.
+    Untracked,
+}
+
+impl std::str::FromStr for TrackingFilter {
+    type Err = ();
+
+    fn from_str(token: &str) -> Result<Self, Self::Err> {
+        match token {
+            "tracked" => Ok(Self::Tracked),
+            "untracked" => Ok(Self::Untracked),
+            _ => Err(()),
+        }
+    }
 }
 
 /// Parse an optional query-string token, refusing an unrecognised one.
@@ -109,6 +140,9 @@ pub struct SeriesSummary {
     /// The highest chapter number any source carries, when there is one.
     pub latest_chapter: Option<f64>,
     pub release_year: Option<i32>,
+    /// The opening of the description, trimmed to a card's worth. `None` when the series has
+    /// none, which a card renders as nothing rather than as empty space.
+    pub blurb: Option<String>,
     /// Tag names, alphabetically. Capped server-side: a card has room for two or three, and
     /// shipping forty for a client to slice is payload nobody renders.
     pub tags: Vec<String>,
@@ -122,6 +156,38 @@ pub struct SeriesSummary {
 /// Tags a card carries at most. Alphabetical, so the choice is stable between requests rather
 /// than varying with row order.
 const CARD_TAGS: usize = 3;
+
+/// Characters a card's blurb may carry before it is cut at the preceding word boundary.
+///
+/// Sized for the three lines a cover card has room for. Trimming here rather than in the client
+/// keeps a full description — which routinely runs to several kilobytes — out of a grid response
+/// that carries sixty of them.
+const BLURB_CHARS: usize = 220;
+
+/// A series description as a card shows it: whitespace collapsed, cut at a word boundary, with an
+/// ellipsis when anything was dropped.
+///
+/// `None` for an absent or blank description, so a card branches on presence rather than
+/// rendering an empty line.
+#[must_use]
+pub fn blurb(description: Option<&str>) -> Option<String> {
+    let collapsed = description?
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    if collapsed.is_empty() {
+        return None;
+    }
+    if collapsed.chars().count() <= BLURB_CHARS {
+        return Some(collapsed);
+    }
+    // Cut on the last space inside the budget so the trailing word is whole; a description with
+    // no space in that span (CJK, which is most of this catalogue) falls back to the hard cut.
+    let head: String = collapsed.chars().take(BLURB_CHARS).collect();
+    let cut = head.rfind(' ').unwrap_or(head.len());
+    let kept = head[..cut].trim_end_matches([',', '.', ';', ':', ' ']);
+    Some(format!("{kept}…"))
+}
 
 impl SeriesSummary {
     /// Build the summaries for one page, in the order given, with the two batched reads the
@@ -161,6 +227,7 @@ impl SeriesSummary {
                     chapter_count: counts.map_or(0, |c| c.chapter_count),
                     latest_chapter: counts.and_then(|c| c.latest_number),
                     release_year: it.series.release_year,
+                    blurb: blurb(it.series.description.as_deref()),
                     tags: tags
                         .get(&id)
                         .map(|names| names.iter().take(CARD_TAGS).cloned().collect())
@@ -192,11 +259,13 @@ impl SeriesSummary {
                 ("X-Next-Cursor" = i64, description = "Next page index; absent on the last page"),
             ),
         ),
+        (status = 401, description = "`tracking` was supplied without an authenticated caller", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn list(
     State(state): State<AppState>,
     adult: AdultVisibility,
+    headers: HeaderMap,
     MultiQuery(params): MultiQuery<ListParams>,
 ) -> ApiResult<(HeaderMap, Json<Vec<SeriesSummary>>)> {
     // Search is a *parameter* of the browse route, not a route of its own, so the feature
@@ -243,6 +312,17 @@ pub async fn list(
     let content_type = parse_param(params.content_type.as_deref(), "content_type")?;
     let status = parse_param(params.status.as_deref(), "status")?;
 
+    // Whose watchlist comes from the token, never from the query string: a browse parameter that
+    // could name an account would read one reader's shelf back to another.
+    //
+    // Refused rather than ignored for an anonymous caller. "Hide what I already read" that
+    // silently returns everything is the failure mode this whole parameter exists to avoid.
+    let tracking: Option<TrackingFilter> = parse_param(params.tracking.as_deref(), "tracking")?;
+    let reader = match tracking {
+        None => None,
+        Some(_) => Some(optional_user(&state, &headers).ok_or(ApiError::Unauthorized)?),
+    };
+
     let filter = SeriesFilter {
         query: params.query,
         content_type,
@@ -258,6 +338,8 @@ pub async fn list(
         year_max: params.year_max,
         min_chapters: params.min_chapters,
         include_adult: adult.include_adult(),
+        tracked_by: reader.map(UserId::as_uuid),
+        tracked: tracking.map(|mode| mode == TrackingFilter::Tracked),
         sort,
         limit,
         offset: page.saturating_mul(limit),
@@ -593,16 +675,27 @@ pub struct TagFacet {
 /// letter the cap lands on, hiding the genres most of the catalogue actually uses. The body is a
 /// superset of the previous `Tag[]`, so an older client reading only `id`/`slug`/`name` is
 /// unaffected — it just sees them in a different order.
+///
+/// Adult-classifying genres are withheld from a caller the gate closes on. They are the terms
+/// that put a series behind [`crate::content_gate`] in the first place, so offering them as
+/// filter chips advertises a slice of the catalogue the same request cannot return a single row
+/// of — and names it in the reader's own filter panel, which is the part the gate exists to
+/// avoid.
 #[utoipa::path(
     get,
     path = "/v1/tags",
     tag = SERIES_TAG,
     responses((status = 200, description = "All known tags, commonest first", body = Vec<TagFacet>))
 )]
-pub async fn tags(State(state): State<AppState>) -> ApiResult<Json<Vec<TagFacet>>> {
+pub async fn tags(
+    State(state): State<AppState>,
+    adult: AdultVisibility,
+) -> ApiResult<Json<Vec<TagFacet>>> {
     let rows = tankovault_db::repo::catalog::list_tag_facets(&state.pool).await?;
+    let gated = !adult.include_adult();
     Ok(Json(
         rows.into_iter()
+            .filter(|row| !(gated && state.adult_tags.classifies(&row.tag.slug)))
             .map(|row| TagFacet {
                 id: row.tag.id,
                 slug: row.tag.slug,

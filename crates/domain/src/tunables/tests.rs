@@ -22,7 +22,7 @@ fn every_key_round_trips_and_is_unique() {
 fn all_lists_every_variant() {
     // Hand-written and able to drift from the enum; bump it when adding a knob, or a
     // forgotten one is invisible to the console and to every reader.
-    assert_eq!(Tunable::all().len(), 41);
+    assert_eq!(Tunable::all().len(), 42);
 }
 
 #[test]

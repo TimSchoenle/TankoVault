@@ -82,6 +82,57 @@ impl Sort {
     }
 }
 
+/// Where the reader's own watchlist sits in the results.
+///
+/// A filter rather than a sort: "what haven't I started yet" and "what am I already on" are two
+/// different browses, and both were unreachable from a grid that mixed them. Resolved server-side
+/// against the caller's own token — nothing here names an account.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum Tracking {
+    #[default]
+    Any,
+    /// Only series on the reader's watchlist.
+    Tracked,
+    /// Only series that are not.
+    Untracked,
+}
+
+impl Tracking {
+    pub(crate) const ALL: [Tracking; 3] = [Self::Any, Self::Tracked, Self::Untracked];
+
+    /// The `tracking` parameter this sends, or `None` for "any" — which is the *absence* of the
+    /// parameter, not a value: the endpoint answers `401` to it without a session.
+    pub(crate) fn param(self) -> Option<&'static str> {
+        match self {
+            Self::Any => None,
+            Self::Tracked => Some("tracked"),
+            Self::Untracked => Some("untracked"),
+        }
+    }
+
+    pub(crate) fn token(self) -> &'static str {
+        self.param().unwrap_or_default()
+    }
+
+    /// The catalogue key of this option's display name (see [`crate::i18n`]).
+    pub(crate) fn label_key(self) -> &'static str {
+        match self {
+            Self::Any => "discover.tracking.any",
+            Self::Tracked => "discover.tracking.tracked",
+            Self::Untracked => "discover.tracking.untracked",
+        }
+    }
+
+    /// Parse a `?tracking=` token. An unrecognised one widens to "everything" rather than
+    /// refusing the link.
+    pub(crate) fn parse_token(token: &str) -> Self {
+        Self::ALL
+            .into_iter()
+            .find(|value| value.token() == token)
+            .unwrap_or_default()
+    }
+}
+
 /// Everything that decides *which* series the grid shows, and in what order.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DiscoverFilters {
@@ -97,6 +148,7 @@ pub(crate) struct DiscoverFilters {
     pub(crate) year_max: i32,
     pub(crate) min_chapters: i32,
     pub(crate) provider: Option<String>,
+    pub(crate) tracking: Tracking,
     pub(crate) sort: Sort,
 }
 
@@ -111,6 +163,7 @@ impl Default for DiscoverFilters {
             year_max: YEAR_MAX,
             min_chapters: 0,
             provider: None,
+            tracking: Tracking::default(),
             sort: Sort::default(),
         }
     }
@@ -126,6 +179,7 @@ impl DiscoverFilters {
             + self.inc.len()
             + self.exc.len()
             + usize::from(self.provider.is_some())
+            + usize::from(self.tracking != Tracking::Any)
     }
 
     /// Toggle one value in a list filter, which is what every chip in the panel does.
@@ -218,6 +272,7 @@ impl From<&str> for DiscoverQuery {
                 "provider" => {
                     out.filters.provider = Some(decode_component(raw)).filter(|v| !v.is_empty());
                 }
+                "tracking" => out.filters.tracking = Tracking::parse_token(&decode_component(raw)),
                 "sort" => out.filters.sort = Sort::parse(raw),
                 "at" => out.at = raw.parse().unwrap_or(0),
                 _ => {}
@@ -268,6 +323,9 @@ impl fmt::Display for DiscoverQuery {
         }
         if let Some(provider) = &filters.provider {
             parts.push(format!("provider={}", encode_component(provider)));
+        }
+        if filters.tracking != default.tracking {
+            parts.push(format!("tracking={}", filters.tracking.token()));
         }
         if filters.sort != default.sort {
             parts.push(format!("sort={}", filters.sort.token()));
@@ -350,6 +408,7 @@ mod tests {
                     year_max: 2020,
                     min_chapters: 120,
                     provider: Some("kunmanga".to_owned()),
+                    tracking: Tracking::Untracked,
                     sort: Sort::Rating,
                 },
                 at: 384,

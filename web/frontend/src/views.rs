@@ -31,7 +31,7 @@ pub(crate) use legal::Legal;
 pub(crate) use notifications::Notifications;
 pub(crate) use password::{ForgotPassword, ResetPassword};
 pub(crate) use recommendations::Recommendations;
-pub(crate) use search::Search;
+pub(crate) use search::{Search, SearchQuery};
 pub(crate) use series::Series;
 pub(crate) use watchlist::{Watchlist, WatchlistQuery};
 

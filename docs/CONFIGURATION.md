@@ -323,7 +323,7 @@ cleaning up after the last one.
 |---|---|---|---|
 | `TANKOVAULT_METADATA__TAGS__USE_DEFAULTS` | `true` | worker, sync | Whether the shipped list applies. An escape hatch for a deployment whose catalogue genuinely uses one of those words as a genre. |
 | `TANKOVAULT_METADATA__TAGS__BLOCKLIST` | `[]` | worker, sync | Additional refused terms, added to the shipped list unless `USE_DEFAULTS` is off. Matched on the slug. |
-| `TANKOVAULT_METADATA__TAGS__ADULT_TAGS` | `[]` | worker | Additional genre chips that classify a series as adult. Matched on the slug. **Additions only** — there is no `USE_DEFAULTS` counterpart, because an emptied classifier stops classifying silently, where both supported ways to make adult content visible leave a record of somebody deciding. |
+| `TANKOVAULT_METADATA__TAGS__ADULT_TAGS` | `[]` | worker, api | Additional genre chips that classify a series as adult. Matched on the slug. **Additions only** — there is no `USE_DEFAULTS` counterpart, because an emptied classifier stops classifying silently, where both supported ways to make adult content visible leave a record of somebody deciding. The API reads the same list to decide which genres `GET /v1/tags` withholds from a caller the gate closes on, so a term added for the worker also disappears from the reader's filter panel. |
 
 #### The adult classifier
 

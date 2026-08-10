@@ -55,6 +55,11 @@ struct Config {
     /// section publishes nothing, which is a valid deployment.
     #[serde(default)]
     legal: tankovault_config::LegalConfig,
+    /// Metadata intake rules. The API writes no metadata; it reads this section for the adult
+    /// classifier alone, and shares it with the worker so the genres the public tag facet
+    /// withholds are exactly the ones that put a series behind the gate.
+    #[serde(default)]
+    metadata: tankovault_config::MetadataPriorityConfig,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -420,6 +425,7 @@ async fn serve_once(
         legal: tankovault_api::LegalDocs::new(cfg.legal.clone()),
         system_stats: tankovault_api::Cached::new(tankovault_api::ADMIN_STATS_TTL),
         provider_stats: tankovault_api::Cached::new(tankovault_api::ADMIN_STATS_TTL),
+        adult_tags: Arc::new(cfg.metadata.tags.adult_tags()),
     };
 
     // Readiness reflects what the edge actually needs to serve: Postgres is required, and

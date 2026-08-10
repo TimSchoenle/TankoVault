@@ -95,6 +95,8 @@ pub enum Tunable {
     DiversityMaxPerAuthor,
     #[serde(rename = "recsys.diversity.max_per_tag")]
     DiversityMaxPerTag,
+    #[serde(rename = "recsys.diversity.max_per_seed")]
+    DiversityMaxPerSeed,
 
     // --- prior (§6.6) ---
     #[serde(rename = "recsys.prior.weight.watchers")]
@@ -208,6 +210,7 @@ impl Tunable {
             Self::DiversityLambda,
             Self::DiversityMaxPerAuthor,
             Self::DiversityMaxPerTag,
+            Self::DiversityMaxPerSeed,
             Self::PriorWeightWatchers,
             Self::PriorWeightExternalScore,
             Self::PriorWeightSourceCount,
@@ -414,7 +417,11 @@ impl Tunable {
                 description: "Series used as \"more like this\" anchors. One nearest-neighbour \
                               search each, so this and ef_search are the two knobs that move \
                               p99 latency.",
-                default: 8.0,
+                // Eight was too few to be about a *reader*: they are the top of the affinity
+                // ordering, so a settled shelf explained every pick by the same handful of
+                // favourites however many hundred series the reader had actually read. The
+                // searches are bounded and cheap; the explanations are what this buys.
+                default: 24.0,
                 min: 1.0,
                 max: 64.0,
                 kind: Count,
@@ -622,6 +629,19 @@ impl Tunable {
                 kind: Count,
                 applies: Immediately,
             },
+            Self::DiversityMaxPerSeed => TunableSpec {
+                key: "recsys.diversity.max_per_seed",
+                group: G::Diversity,
+                title: "Max per seed",
+                description: "Hard cap on how many picks one \"because you read\" anchor may \
+                              explain. Without it the strongest seed's neighbourhood fills the \
+                              shelf, and a reader of hundreds of series is shown one of them.",
+                default: 3.0,
+                min: 1.0,
+                max: 12.0,
+                kind: Count,
+                applies: Immediately,
+            },
 
             // ----- prior -----
             Self::PriorWeightWatchers => TunableSpec {
@@ -775,11 +795,12 @@ impl Tunable {
                 description: "Recommendations returned when the caller asks for no particular \
                               number, and the ceiling on what it may ask for.",
                 // A grid page, not a rail. This used to be twelve, sized for a shelf tucked
-                // under the home feed; recommendations are now a screen of their own, and a
-                // dozen covers on a full-width grid reads as a shelf that ran out.
-                default: 24.0,
+                // under the home feed, then twenty-four; recommendations are now a screen of
+                // their own, and twenty-four covers is two rows on a wide display — a shelf that
+                // reads as having run out on the screen built to browse it.
+                default: 60.0,
                 min: 1.0,
-                max: 60.0,
+                max: 120.0,
                 kind: Count,
                 applies: Immediately,
             },

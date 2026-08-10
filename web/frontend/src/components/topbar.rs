@@ -47,7 +47,12 @@ pub(crate) fn TopBar() -> Element {
                             if e.key() == Key::Enter {
                                 let q = query.read().trim().to_owned();
                                 if !q.is_empty() {
-                                    nav.push(Route::Search { q });
+                                    nav.push(Route::Search {
+                                        query: crate::views::SearchQuery {
+                                            q,
+                                            ..crate::views::SearchQuery::default()
+                                        },
+                                    });
                                 }
                             }
                         },
@@ -58,7 +63,7 @@ pub(crate) fn TopBar() -> Element {
                     // The ⌘K field does not fit beside a page title, so on small viewports the
                     // field collapses to this and the full search screen does the rest.
                     Link {
-                        to: Route::Search { q: String::new() },
+                        to: Route::Search { query: crate::views::SearchQuery::default() },
                         class: "ik-bell compact",
                         title: i18n.t("nav.search"),
                         "aria-label": i18n.t("nav.search"),

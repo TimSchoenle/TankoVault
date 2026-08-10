@@ -602,15 +602,15 @@ pub(crate) fn ConsoleSection(entity: ConsoleEntity, query: ConsoleQuery) -> Elem
 
     rsx! {
         div { class: "ik-cons",
+            // A page head, not a second app bar. This used to carry the product's own tile and
+            // wordmark under the rail that already shows both, and a search box that only moved
+            // focus to the one in the top bar — so the console read as an application embedded in
+            // the application, with two brands and two search fields on screen at once.
             div { class: "ik-cons-bar",
-                div { class: "ik-cons-brand",
-                    span { class: "ik-cons-tile",
-                        Ic { icon: Icon::MenuBook, size: 15 }
-                    }
-                    span { class: "nm", {i18n.t("console.title")} }
-                    span { class: "ik-cons-crumb", "/ {current.slug()}" }
+                div { class: "ik-cons-heading",
+                    h1 { class: "ik-page-title", {i18n.t("console.title")} }
+                    span { class: "ik-cons-crumb", {i18n.t(current.label_key())} }
                 }
-                JumpField {}
                 div { class: "ik-flex", style: "margin-left:auto;gap:9px;flex-wrap:wrap;",
                     if current.auto_refreshes() {
                         controls::LiveControls { tick, auto, state: live.state }
@@ -688,26 +688,9 @@ fn RailCount(entity: ConsoleEntity, counts: Option<SystemStats>) -> Element {
     }
 }
 
-/// The jump field. `⌘K` is already bound to the top bar's search box (`index.html`), so this
-/// focuses that rather than advertising a command palette the app does not have.
-#[component]
-fn JumpField() -> Element {
-    let i18n = use_i18n();
-    let focus_targets = crate::components::use_focus_targets();
-    rsx! {
-        button {
-            class: "ik-cons-jump",
-            onclick: move |_| {
-                crate::components::focus_and_select(focus_targets.search);
-            },
-            span { style: "display:flex;flex:none;",
-                Ic { icon: Icon::Search, size: 15 }
-            }
-            span { {i18n.t("console.jump")} }
-            span { class: "kbd", "⌘K" }
-        }
-    }
-}
+// The console's jump field is gone. It was a search-shaped button that searched nothing: it
+// moved focus to the top bar's catalogue search, which looks up *series*, on a screen whose rows
+// are providers, runs and accounts. `⌘K` still reaches that box from here, as it does everywhere.
 
 /// The pill class encoding a run state. The wording comes from
 /// [`RunStateExt::label_key`](crate::models::RunStateExt::label_key), so the colour and the

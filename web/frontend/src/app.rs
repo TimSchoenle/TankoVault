@@ -5,6 +5,7 @@
 use crate::components::{CloseToTray, SettingsSheet, TitleBar, TrayHost};
 use crate::components::{FocusTargets, Shell, UnreadBadge};
 use crate::i18n::I18nRoot;
+use crate::state::account_wall::AccountWall;
 use crate::state::capabilities::CapabilitySet;
 use crate::state::legal::LegalIndex;
 use crate::state::source_order::SourceOrder;
@@ -90,6 +91,10 @@ pub(crate) fn App() -> Element {
     // Starts empty and is filled once `Shell` syncs capabilities; provided outside the router
     // so views don't need it threaded down.
     use_context_provider(CapabilitySet::new);
+    // Whether this deployment serves signed-out visitors at all. Observed by the same probe as
+    // the capabilities above, and read by `Shell` to decide whether a signed-out reader belongs
+    // anywhere but the sign-in screen.
+    use_context_provider(AccountWall::new);
     use_context_provider(|| UnreadBadge(Signal::new(0)));
     // The reader's global source order; filled by `Shell` and re-set by the Account panel that
     // edits it, so a save lands on the Series screen without a reload.

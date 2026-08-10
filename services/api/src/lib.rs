@@ -10,6 +10,7 @@
 
 pub mod openapi;
 
+mod account_gate;
 mod admin;
 mod audit;
 mod auth;
@@ -238,10 +239,17 @@ pub fn build_router(
         .with_principal(Some(principal))
         .apply(
             router
-                .with_state(state)
+                .with_state(state.clone())
                 .layer(axum::middleware::from_fn_with_state(
                     features,
                     tankovault_service::flags::enforce,
+                ))
+                // Outside the feature gate, so it runs first: a deployment that admits no
+                // anonymous callers must not answer one with an inventory of the features it
+                // has switched off. See `crate::account_gate`.
+                .layer(axum::middleware::from_fn_with_state(
+                    state,
+                    account_gate::enforce,
                 )),
         );
 
@@ -736,6 +744,10 @@ mod tests {
             // surface has to stay reachable precisely when the flag is on, or turning it on
             // confines every account to a page it cannot reach. See `crate::state`.
             Feature::AccountsMfaRequired,
+            // The same shape, one layer out: a requirement on the caller rather than a route,
+            // enforced for every route at once by `crate::account_gate`. A rule here would have
+            // to name every public path, and the one nobody named would be the hole.
+            Feature::AccountsRequired,
         ];
         for feature in Feature::all() {
             assert!(

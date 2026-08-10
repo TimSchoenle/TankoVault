@@ -2756,6 +2756,7 @@ pub mod types {
     #[doc = "    \"catalogue.search\","]
     #[doc = "    \"catalogue.recommendations\","]
     #[doc = "    \"catalogue.adult_content\","]
+    #[doc = "    \"accounts.required\","]
     #[doc = "    \"accounts.registration\","]
     #[doc = "    \"accounts.password_reset\","]
     #[doc = "    \"accounts.email_verification\","]
@@ -2821,6 +2822,8 @@ pub mod types {
         CatalogueRecommendations,
         #[serde(rename = "catalogue.adult_content")]
         CatalogueAdultContent,
+        #[serde(rename = "accounts.required")]
+        AccountsRequired,
         #[serde(rename = "accounts.registration")]
         AccountsRegistration,
         #[serde(rename = "accounts.password_reset")]
@@ -2909,6 +2912,7 @@ pub mod types {
                 Self::CatalogueSearch => f.write_str("catalogue.search"),
                 Self::CatalogueRecommendations => f.write_str("catalogue.recommendations"),
                 Self::CatalogueAdultContent => f.write_str("catalogue.adult_content"),
+                Self::AccountsRequired => f.write_str("accounts.required"),
                 Self::AccountsRegistration => f.write_str("accounts.registration"),
                 Self::AccountsPasswordReset => f.write_str("accounts.password_reset"),
                 Self::AccountsEmailVerification => f.write_str("accounts.email_verification"),
@@ -2960,6 +2964,7 @@ pub mod types {
                 "catalogue.search" => Ok(Self::CatalogueSearch),
                 "catalogue.recommendations" => Ok(Self::CatalogueRecommendations),
                 "catalogue.adult_content" => Ok(Self::CatalogueAdultContent),
+                "accounts.required" => Ok(Self::AccountsRequired),
                 "accounts.registration" => Ok(Self::AccountsRegistration),
                 "accounts.password_reset" => Ok(Self::AccountsPasswordReset),
                 "accounts.email_verification" => Ok(Self::AccountsEmailVerification),
@@ -6898,6 +6903,7 @@ pub mod types {
     #[doc = "    \"not_found\","]
     #[doc = "    \"conflict\","]
     #[doc = "    \"unauthorized\","]
+    #[doc = "    \"account_required\","]
     #[doc = "    \"forbidden\","]
     #[doc = "    \"email_not_verified\","]
     #[doc = "    \"account_suspended\","]
@@ -6933,6 +6939,8 @@ pub mod types {
         Conflict,
         #[serde(rename = "unauthorized")]
         Unauthorized,
+        #[serde(rename = "account_required")]
+        AccountRequired,
         #[serde(rename = "forbidden")]
         Forbidden,
         #[serde(rename = "email_not_verified")]
@@ -6964,6 +6972,7 @@ pub mod types {
                 Self::NotFound => f.write_str("not_found"),
                 Self::Conflict => f.write_str("conflict"),
                 Self::Unauthorized => f.write_str("unauthorized"),
+                Self::AccountRequired => f.write_str("account_required"),
                 Self::Forbidden => f.write_str("forbidden"),
                 Self::EmailNotVerified => f.write_str("email_not_verified"),
                 Self::AccountSuspended => f.write_str("account_suspended"),
@@ -6986,6 +6995,7 @@ pub mod types {
                 "not_found" => Ok(Self::NotFound),
                 "conflict" => Ok(Self::Conflict),
                 "unauthorized" => Ok(Self::Unauthorized),
+                "account_required" => Ok(Self::AccountRequired),
                 "forbidden" => Ok(Self::Forbidden),
                 "email_not_verified" => Ok(Self::EmailNotVerified),
                 "account_suspended" => Ok(Self::AccountSuspended),

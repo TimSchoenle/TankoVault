@@ -4,6 +4,7 @@
 //! faults into one enum; this maps it to a short sentence and, occasionally, the raw status code.
 
 use crate::i18n::Translator;
+use crate::state::account_wall::Admission;
 use crate::wire::types::{ProblemDetails, ProblemKind};
 use progenitor_client::Error as ApiOpError;
 
@@ -68,6 +69,25 @@ pub(crate) fn problem_detail(err: &ApiOpError<ProblemDetails>) -> Option<String>
     }
 }
 
+/// What a failed call implies about anonymous access to this deployment.
+///
+/// `account_required` is the one refusal that is not about the request that drew it: it says the
+/// server serves a signed-out caller nothing at all, which is what raises
+/// [`crate::state::account_wall::AccountWall`]. `None` where the server did not answer — a
+/// transport fault proves nothing about admission policy, and must not be read as either verdict.
+pub(crate) fn admission(err: &ApiOpError<ProblemDetails>) -> Option<Admission> {
+    match err {
+        ApiOpError::ErrorResponse(response) => Some(match response.title {
+            ProblemKind::AccountRequired => Admission::AccountRequired,
+            _ => Admission::Public,
+        }),
+        // The server answered, just not with a problem body it could parse; it is answering
+        // signed-out callers, which is the whole question here.
+        ApiOpError::UnexpectedResponse(_) => Some(Admission::Public),
+        _ => None,
+    }
+}
+
 /// Which of the three refusals a guarded route answered with.
 ///
 /// `403` is not one answer on the guarded surfaces but three — "confirm it is you", "enrol a
@@ -101,6 +121,7 @@ impl Refusal {
             ProblemKind::NotFound
             | ProblemKind::Conflict
             | ProblemKind::Unauthorized
+            | ProblemKind::AccountRequired
             | ProblemKind::Forbidden
             | ProblemKind::EmailNotVerified
             | ProblemKind::AccountSuspended
@@ -212,20 +233,48 @@ mod tests {
         assert_eq!(status_key(418), None);
     }
 
-    fn refusal_of(title: ProblemKind) -> Refusal {
+    fn problem(title: ProblemKind, status: reqwest::StatusCode) -> ApiOpError<ProblemDetails> {
         let body = ProblemDetails {
             detail: String::new(),
-            status: 403,
+            status: i32::from(status.as_u16()),
             title,
             type_: serde_json::Value::String(format!("about:blank#{title}")),
         };
-        Refusal::of(&ApiOpError::ErrorResponse(
-            progenitor_client::ResponseValue::new(
-                body,
-                reqwest::StatusCode::FORBIDDEN,
-                reqwest::header::HeaderMap::new(),
-            ),
+        ApiOpError::ErrorResponse(progenitor_client::ResponseValue::new(
+            body,
+            status,
+            reqwest::header::HeaderMap::new(),
         ))
+    }
+
+    fn refusal_of(title: ProblemKind) -> Refusal {
+        Refusal::of(&problem(title, reqwest::StatusCode::FORBIDDEN))
+    }
+
+    /// The two `401`s mean opposite things to a signed-out client — "your session ended" and
+    /// "this deployment serves you nothing" — and only the token tells them apart. Branching on
+    /// the status instead would put the sign-in wall up on any expired session.
+    #[test]
+    fn only_the_account_required_token_reports_a_private_deployment() {
+        let unauthorized = reqwest::StatusCode::UNAUTHORIZED;
+        assert_eq!(
+            admission(&problem(ProblemKind::AccountRequired, unauthorized)),
+            Some(Admission::AccountRequired)
+        );
+        assert_eq!(
+            admission(&problem(ProblemKind::Unauthorized, unauthorized)),
+            Some(Admission::Public)
+        );
+    }
+
+    /// A server that could not be reached has said nothing about who it admits, and reading
+    /// that as either answer is how an offline client either walls itself or refuses to.
+    #[test]
+    fn a_transport_fault_is_not_an_admission_verdict() {
+        assert_eq!(
+            admission(&ApiOpError::InvalidRequest("no body".to_owned())),
+            None
+        );
     }
 
     /// Every problem kind the API publishes must be one this workspace classifies, under the

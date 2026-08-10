@@ -31,6 +31,19 @@ pub enum Feature {
     #[serde(rename = "catalogue.adult_content")]
     CatalogueAdultContent,
 
+    /// Whether an account is required to reach the application at all.
+    ///
+    /// Ships **off**, so a fresh deployment is public. On, it is the whole-product gate: every
+    /// page and every route outside the sign-in surface refuses a caller with no account, and
+    /// the web app sends a signed-out visitor to the sign-in screen instead of the catalogue.
+    ///
+    /// Unlike every other flag here, this one is enforced by *requiring* something rather than
+    /// by withdrawing a route, so a refusal is `401`, not the usual `404`. What stays reachable
+    /// while it is on — sign-in, registration, password reset, email confirmation and the legal
+    /// documents — is the surface a visitor needs in order to *get* an account; see
+    /// `services/api`'s `account_gate`.
+    #[serde(rename = "accounts.required")]
+    AccountsRequired,
     /// Self-service registration. Off makes the deployment invite-only: existing accounts
     /// keep working, new ones can only be created by an administrator.
     #[serde(rename = "accounts.registration")]
@@ -190,6 +203,7 @@ impl Feature {
             Self::CatalogueSearch,
             Self::CatalogueRecommendations,
             Self::CatalogueAdultContent,
+            Self::AccountsRequired,
             Self::AccountsRegistration,
             Self::AccountsPasswordReset,
             Self::AccountsEmailVerification,
@@ -242,6 +256,7 @@ impl Feature {
             Self::CatalogueSearch => "catalogue.search",
             Self::CatalogueRecommendations => "catalogue.recommendations",
             Self::CatalogueAdultContent => "catalogue.adult_content",
+            Self::AccountsRequired => "accounts.required",
             Self::AccountsRegistration => "accounts.registration",
             Self::AccountsPasswordReset => "accounts.password_reset",
             Self::AccountsEmailVerification => "accounts.email_verification",
@@ -308,6 +323,11 @@ impl Feature {
                 // deployments and a catastrophic *first* impression for all of them: a fresh
                 // install would lock its own installer out of everything but enrolment.
                 | Self::AccountsMfaRequired
+                // Ships off for the same class of reason: on, the deployment is private, and a
+                // fresh install would answer its first visitor — the installer, before they have
+                // registered — with a sign-in wall over an empty user table. Whether an instance
+                // is public is the operator's decision to make, not a default to inherit.
+                | Self::AccountsRequired
         )
     }
 
@@ -330,7 +350,8 @@ impl Feature {
             | Self::CatalogueSearch
             | Self::CatalogueRecommendations
             | Self::CatalogueAdultContent => FeatureGroup::Catalogue,
-            Self::AccountsRegistration
+            Self::AccountsRequired
+            | Self::AccountsRegistration
             | Self::AccountsPasswordReset
             | Self::AccountsEmailVerification
             | Self::AccountsProfile
@@ -381,6 +402,7 @@ impl Feature {
             Self::CatalogueSearch => "Catalogue search",
             Self::CatalogueRecommendations => "Recommendations",
             Self::CatalogueAdultContent => "Adult content",
+            Self::AccountsRequired => "Require an account",
             Self::AccountsRegistration => "Self-service registration",
             Self::AccountsPasswordReset => "Password reset",
             Self::AccountsEmailVerification => "Email verification",
@@ -449,6 +471,13 @@ impl Feature {
                  each reader decides for themselves, and the default for a reader who has \
                  decided nothing is still hidden. Nobody is ever shown adult content by an \
                  operator turning this on alone."
+            }
+            Self::AccountsRequired => {
+                "Off (the default): anyone can browse the catalogue signed out. On: the whole \
+                 deployment is private — every page and every endpoint refuses a caller with no \
+                 account, and a signed-out visitor lands on the sign-in screen. Signing in, \
+                 registering, resetting a password, confirming an address and reading the legal \
+                 documents stay open, or nobody could ever get an account."
             }
             Self::AccountsRegistration => {
                 "Off: the deployment becomes invite-only. Existing accounts keep working; \
@@ -651,7 +680,7 @@ mod tests {
 
     #[test]
     fn all_lists_every_variant() {
-        assert_eq!(Feature::all().len(), 44);
+        assert_eq!(Feature::all().len(), 45);
     }
 
     #[test]
@@ -673,10 +702,10 @@ mod tests {
     /// The exact set that ships off, so adding a feature cannot quietly join it.
     ///
     /// A fresh install is supposed to arrive working; every entry here is a deliberate
-    /// exception with a reason in [`Feature::default_enabled`], and a fifth one appearing
+    /// exception with a reason in [`Feature::default_enabled`], and a sixth one appearing
     /// without that reason being written down is the failure this pins.
     #[test]
-    fn only_third_party_egress_the_adult_gate_and_mandatory_mfa_ship_off() {
+    fn only_third_party_egress_the_adult_gate_and_the_two_requirements_ship_off() {
         for &f in Feature::all() {
             let expected_off = matches!(
                 f,
@@ -684,6 +713,7 @@ mod tests {
                     | Feature::NotificationsDiscord
                     | Feature::CatalogueAdultContent
                     | Feature::AccountsMfaRequired
+                    | Feature::AccountsRequired
             );
             assert_eq!(!f.default_enabled(), expected_off, "{f} default");
         }

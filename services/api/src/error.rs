@@ -23,6 +23,10 @@ pub enum ProblemKind {
     NotFound,
     Conflict,
     Unauthorized,
+    /// Distinct from [`Self::Unauthorized`]: the deployment admits no anonymous callers at all,
+    /// so the client shows its sign-in surface rather than reporting a failed request.
+    /// Emitted only by `crate::account_gate`.
+    AccountRequired,
     Forbidden,
     EmailNotVerified,
     AccountSuspended,
@@ -43,10 +47,11 @@ impl ProblemKind {
     /// Every published token, for the tests reconciling this list against what is emitted. An
     /// omission here fails those tests; the enum itself is what `openapi.json` is built from.
     #[cfg(test)]
-    pub const ALL: [Self; 15] = [
+    pub const ALL: [Self; 16] = [
         Self::NotFound,
         Self::Conflict,
         Self::Unauthorized,
+        Self::AccountRequired,
         Self::Forbidden,
         Self::EmailNotVerified,
         Self::AccountSuspended,
@@ -68,6 +73,7 @@ impl ProblemKind {
             Self::NotFound => "not_found",
             Self::Conflict => "conflict",
             Self::Unauthorized => "unauthorized",
+            Self::AccountRequired => "account_required",
             Self::Forbidden => "forbidden",
             Self::EmailNotVerified => "email_not_verified",
             Self::AccountSuspended => "account_suspended",
@@ -111,6 +117,13 @@ pub enum ApiError {
     Conflict(String),
     #[error("unauthorized")]
     Unauthorized,
+    /// This deployment requires an account and the request carried none.
+    ///
+    /// `401` like [`Self::Unauthorized`], but its own type: the client has to tell "your session
+    /// ended" apart from "there is nothing here for a signed-out visitor" to decide whether to
+    /// report a failure or to put its sign-in screen up. See [`crate::account_gate`].
+    #[error("account required")]
+    AccountRequired,
     #[error("forbidden")]
     Forbidden,
     /// Login attempted before the account's email address was confirmed; distinct from
@@ -172,6 +185,11 @@ impl ApiError {
                 StatusCode::UNAUTHORIZED,
                 ProblemKind::Unauthorized,
                 "authentication required".into(),
+            ),
+            Self::AccountRequired => (
+                StatusCode::UNAUTHORIZED,
+                ProblemKind::AccountRequired,
+                "this deployment requires an account; sign in to continue".into(),
             ),
             Self::Forbidden => (
                 StatusCode::FORBIDDEN,
@@ -293,6 +311,7 @@ mod tests {
             ApiError::NotFound,
             ApiError::Conflict("dup".to_owned()),
             ApiError::Unauthorized,
+            ApiError::AccountRequired,
             ApiError::Forbidden,
             ApiError::EmailNotVerified,
             ApiError::Suspended,
@@ -310,6 +329,7 @@ mod tests {
                 ApiError::NotFound
                 | ApiError::Conflict(_)
                 | ApiError::Unauthorized
+                | ApiError::AccountRequired
                 | ApiError::Forbidden
                 | ApiError::EmailNotVerified
                 | ApiError::Suspended

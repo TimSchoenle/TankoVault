@@ -12,6 +12,7 @@
 //! baked into a 15-minute token can represent. See [`jwt`] for what is still read out of the
 //! token (a display name) and why doing so unverified is safe.
 
+pub(crate) mod account_wall;
 pub(crate) mod capabilities;
 mod jwt;
 pub(crate) mod legal;

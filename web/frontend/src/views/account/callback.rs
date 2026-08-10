@@ -10,7 +10,7 @@ use crate::i18n::use_i18n;
 use crate::state::use_session;
 use crate::Route;
 use dioxus::prelude::*;
-
+use inkstone_ui::{button_class, Size, Tone};
 /// Provider this callback route is registered for; only `AniList` today.
 const PROVIDER: &str = "anilist";
 
@@ -60,7 +60,7 @@ pub(crate) fn AnilistCallback(code: String) -> Element {
         Some(message) => rsx! {
             div { class: "ik-empty",
                 p { {i18n.args("account.callback.failed", &[("message", &message)])} }
-                Link { to: Route::Account {}, class: "ik-btn primary",
+                Link { to: Route::Account {}, class: button_class(Tone::Primary, Size::Md, false),
                     {i18n.t("account.callback.back")}
                 }
             }

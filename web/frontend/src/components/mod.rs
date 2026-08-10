@@ -58,3 +58,56 @@ use dioxus::prelude::*;
 /// Global unread-notification count, provided at the app root and updated by the SSE stream.
 #[derive(Clone, Copy)]
 pub(crate) struct UnreadBadge(pub Signal<i64>);
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::path::Path;
+
+    /// No screen may spell a button's classes itself.
+    ///
+    /// This is the rule the `inkstone_ui::Button` extraction exists to make enforceable, and it
+    /// is a test rather than a convention because the failure it prevents is invisible: `class:
+    /// "ik-btn danger"` compiles, renders, and silently drew an ordinary neutral button, because
+    /// no `.ik-btn.danger` rule was ever written. Four modifiers (`danger`, `ghost`,
+    /// `vermilion`, `active`) were dead this way across five call sites, one of them a queue
+    /// drain. `Tone` and `Size` can only name classes the stylesheet defines; a raw string
+    /// cannot, so raw strings are banned. Use `Button`, `ToggleButton`, `IconButton`, or
+    /// `inkstone_ui::button_class` where the element has to be an `<a>`.
+    #[test]
+    fn no_screen_writes_button_classes_by_hand() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut offenders = Vec::new();
+        walk(&root, &mut |path, text| {
+            for (number, line) in text.lines().enumerate() {
+                if line.contains("class: \"ik-btn") {
+                    offenders.push(format!(
+                        "{}:{}",
+                        path.strip_prefix(&root).unwrap_or(path).display(),
+                        number + 1
+                    ));
+                }
+            }
+        });
+        assert!(
+            offenders.is_empty(),
+            "button classes written by hand at {offenders:?} — use `Button`/`button_class`"
+        );
+    }
+
+    fn walk(dir: &Path, visit: &mut impl FnMut(&Path, &str)) {
+        let Ok(entries) = fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                walk(&path, visit);
+            } else if path.extension().is_some_and(|ext| ext == "rs") {
+                if let Ok(text) = fs::read_to_string(&path) {
+                    visit(&path, &text);
+                }
+            }
+        }
+    }
+}

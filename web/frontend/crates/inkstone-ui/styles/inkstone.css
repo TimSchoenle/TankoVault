@@ -1,0 +1,404 @@
+/*
+ * Inkstone — the stylesheet for the `inkstone-ui` crate's components.
+ *
+ * This file and `../src/` are one artefact: every class a component in that directory emits is
+ * defined here, and nothing here is emitted by anything else. Copy both into another Dioxus
+ * project and the kit works.
+ *
+ * It is plain CSS with no build step of its own. The host app pulls it in — for the app this
+ * was extracted from, that is an `@import` plus an `@source` for the scanner near the top of
+ * `web/frontend/input.css`, before any app rule, so an app rule of equal specificity wins.
+ *
+ * ## The custom-property contract
+ *
+ * Nothing below names a colour. The host defines these, and swapping them is what re-themes the
+ * kit — the app that owns this one flips them per `[data-theme]` and `[data-accent]` at runtime:
+ *
+ *   --acc, --acc3        accent (the one brand colour) and its readable-on-surface ink
+ *   --jade, --jade-bright  positive
+ *   --star, --star-ink   caution
+ *   --bg, --surface, --surface-2   page and raised surfaces
+ *   --border, --border-ctl, --border-row  hairlines: region, control, table row
+ *   --text, --text-2, --text-3, --muted, --faint, --faint-2   the text ramp
+ *   --radius             the region corner radius
+ *   --font-mono          the face for data, keys and identifiers
+ *
+ * A host that defines those has a working kit; one that does not gets unstyled controls rather
+ * than wrong ones.
+ */
+/* ============================================================================
+ * The style surface.
+ *
+ * Colour is not here: it comes from the host's custom properties (see the contract above), and
+ * swapping those is a re-*theme*. This block is the other axis — shape, density, type and how
+ * filled a tinted control is — and swapping it is a re-*style*. Both are custom properties, so
+ * a new style is a block of overrides on a selector of the host's choosing
+ * (`[data-style="solid"] { --ik-radius-btn: 4px; --ik-tint-btn: 100%; … }`), composing with
+ * whatever theme and accent are already set. No rule below hard-codes any of it, and no Rust
+ * knows any of it exists.
+ * ========================================================================== */
+:root {
+  /* --- Shape --- */
+  --ik-radius-btn: 10px;
+  --ik-radius-btn-sm: 9px;
+  --ik-radius-btn-xs: 8px;
+  --ik-radius-input: 10px;
+  --ik-radius-select: 10px;
+  --ik-radius-pill: 20px;
+  --ik-radius-chip: 999px;
+  --ik-radius-tab: 8px 8px 0 0;
+  --ik-radius-seg: 9px;
+  --ik-radius-seg-item: 7px;
+  --ik-radius-row: 10px;
+  --ik-radius-listbox: 11px;
+  --ik-radius-skeleton: 8px;
+
+  /* --- Density --- */
+  --ik-pad-btn: 9px 16px;
+  --ik-pad-btn-sm: 9px 12px;
+  --ik-pad-btn-xs: 7px 10px;
+  --ik-pad-input: 10px 14px;
+  --ik-pad-select: 8px 12px;
+  --ik-pad-pill: 3px 9px;
+  --ik-pad-chip: 5px 12px;
+  --ik-pad-tab: 8px 14px;
+  --ik-pad-panel: 16px;
+  --ik-pad-tile: 14px;
+  --ik-pad-row: 12px 14px;
+  --ik-pad-cell: 10px 12px;
+  --ik-pad-cell-compact: 8px 10px;
+  --ik-pad-empty: 40px;
+  --ik-pad-modal: 20px;
+
+  /* --- Spacing scale (Row / Stack) --- */
+  --ik-gap-0: 0;
+  --ik-gap-xs: 4px;
+  --ik-gap-sm: 8px;
+  --ik-gap-md: 10px;
+  --ik-gap-lg: 16px;
+
+  /* --- Type --- */
+  --ik-font-btn: 14px;
+  --ik-font-btn-sm: 12px;
+  --ik-font-btn-xs: 11.5px;
+  --ik-font-input: 14px;
+  --ik-font-select: 13px;
+  --ik-font-pill: 11px;
+  --ik-font-chip: 13px;
+  --ik-font-label: 13px;
+  --ik-font-cell: 14px;
+  --ik-font-cell-compact: 13px;
+  --ik-weight-btn: 600;
+  --ik-weight-btn-xs: 500;
+  --ik-weight-btn-bare: 400;
+
+  /* --- Line and focus --- */
+  --ik-border: 1px;
+  --ik-focus-ring: 2px;
+  --ik-focus-offset: 2px;
+  --ik-focus-glow: 25%;
+
+  /* --- Tint scale ---
+   * How filled a tone-tinted control is, and how strong its edge. Raising these as a group is
+   * the cheapest change that reads as a different design: it turns this soft, outlined style
+   * into a solid one without touching a single rule. */
+  --ik-tint-btn: 10%;
+  --ik-tint-btn-hover: 20%;
+  --ik-tint-btn-danger: 12%;
+  --ik-tint-pill: 13%;
+  --ik-tint-pill-caution: 12%;
+  --ik-tint-chip: 16%;
+  --ik-tint-chip-warn: 14%;
+  --ik-tint-tab: 12%;
+  --ik-tint-row: 8%;
+  --ik-edge: 45%;
+  --ik-edge-strong: 55%;
+  --ik-edge-caution: 50%;
+  --ik-edge-hover: 60%;
+}
+
+@keyframes ik-shimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }
+
+.ik-status-dot { width: 6px; height: 6px; border-radius: 999px; background: var(--jade-bright); }
+
+.ik-input {
+  width: 100%; background: var(--surface); border: var(--ik-border) solid var(--border-ctl); color: var(--text);
+  border-radius: var(--ik-radius-input); padding: var(--ik-pad-input); font: inherit; font-size: var(--ik-font-input); outline: none;
+}
+.ik-input::placeholder { color: var(--faint); }
+.ik-input:focus { border-color: var(--acc); box-shadow: 0 0 0 3px color-mix(in srgb, var(--acc) var(--ik-focus-glow), transparent); }
+
+.ik-chips { display: flex; flex-wrap: wrap; gap: var(--ik-gap-sm); margin-bottom: var(--ik-gap-lg); }
+.ik-chip { border: var(--ik-border) solid var(--border-ctl); background: var(--surface); color: var(--muted); padding: var(--ik-pad-chip); border-radius: var(--ik-radius-chip); font-size: var(--ik-font-chip); cursor: pointer; user-select: none; }
+.ik-chip.active { color: var(--acc3); border-color: var(--acc); background: color-mix(in srgb, var(--acc) var(--ik-tint-chip), transparent); }
+
+.ik-pill { font-family: var(--font-mono); font-size: var(--ik-font-pill); padding: var(--ik-pad-pill); border-radius: var(--ik-radius-pill); border: var(--ik-border) solid var(--border-ctl); text-transform: uppercase; letter-spacing: .05em; }
+.ik-pill.jade { color: var(--jade-bright); border-color: color-mix(in srgb, var(--jade) var(--ik-edge-strong), transparent); background: color-mix(in srgb, var(--jade) var(--ik-tint-pill), transparent); }
+.ik-pill.vermilion, .ik-pill.acc { color: var(--acc3); border-color: color-mix(in srgb, var(--acc) var(--ik-edge-strong), transparent); background: color-mix(in srgb, var(--acc) var(--ik-tint-pill), transparent); }
+.ik-pill.run { color: var(--jade-bright); border-color: color-mix(in srgb, var(--jade) var(--ik-edge-strong), transparent); }
+/* Amber: needs attention but is not a failure — a suspended account, a degraded provider. */
+.ik-pill.star { color: var(--star); border-color: color-mix(in srgb, var(--star) var(--ik-edge-caution), transparent); background: color-mix(in srgb, var(--star) var(--ik-tint-pill-caution), transparent); }
+/* `amber` is the caution tone `.star` carries; three call sites already asked for it by that
+ * name and got an unstyled pill, so the audit trail drew a permission change the same neutral
+ * grey as a scan trigger — the exact distinction that tone exists to make. */
+.ik-pill.amber { color: var(--star-ink); border-color: color-mix(in srgb, var(--star) var(--ik-edge-caution), transparent); background: color-mix(in srgb, var(--star) var(--ik-tint-pill-caution), transparent); }
+
+.ik-btn { font: inherit; font-weight: var(--ik-weight-btn); font-size: var(--ik-font-btn); border-radius: var(--ik-radius-btn); padding: var(--ik-pad-btn); border: var(--ik-border) solid var(--border-ctl); background: var(--surface); color: var(--text-3); cursor: pointer; display: inline-flex; align-items: center; gap: 7px; }
+.ik-btn:hover { border-color: var(--acc); color: var(--text); }
+.ik-btn.primary { background: var(--acc); border-color: var(--acc); color: #fff; }
+.ik-btn.primary:hover { filter: brightness(1.06); }
+.ik-btn:disabled { opacity: .5; cursor: not-allowed; }
+.ik-btn.block { width: 100%; justify-content: center; }
+
+
+.ik-btn:focus-visible, .ik-chip:focus-visible, .ik-tab:focus-visible { outline: var(--ik-focus-ring) solid var(--acc); outline-offset: var(--ik-focus-offset); }
+
+/* Tabs (notifications / console / settings). */
+.ik-tabs { display: flex; gap: 6px; flex-wrap: wrap; border-bottom: var(--ik-border) solid var(--border); margin-bottom: 18px; }
+.ik-tab { font: inherit; font-size: var(--ik-font-chip); color: var(--muted); background: transparent; border: var(--ik-border) solid transparent; border-radius: var(--ik-radius-tab); padding: var(--ik-pad-tab); cursor: pointer; }
+.ik-tab:hover { color: var(--text); }
+.ik-tab.active { color: var(--acc3); border-color: var(--acc); background: color-mix(in srgb, var(--acc) var(--ik-tint-tab), transparent); }
+
+.ik-panel { background: var(--surface-2); border: var(--ik-border) solid var(--border); border-radius: var(--radius); padding: var(--ik-pad-panel); margin-bottom: var(--ik-gap-lg); }
+
+.ik-row { display: flex; align-items: center; gap: 12px; padding: var(--ik-pad-row); background: var(--surface); border: var(--ik-border) solid var(--border); border-radius: var(--ik-radius-row); margin-bottom: var(--ik-gap-sm); }
+.ik-row.unread { border-left: 3px solid var(--acc); background: var(--surface-unread); }
+.ik-row .grow { flex: 1; min-width: 0; }
+
+.ik-chip.warn { color: var(--star); border-color: color-mix(in srgb, var(--star) var(--ik-edge), transparent); }
+.ik-chip.warn.active { background: color-mix(in srgb, var(--star) var(--ik-tint-chip-warn), transparent); }
+
+.ik-range { width: 100%; accent-color: var(--acc); }
+.ik-range-row { display: flex; align-items: center; gap: 10px; font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+
+.ik-select { background: var(--surface); border: var(--ik-border) solid var(--border-ctl); color: var(--text); border-radius: var(--ik-radius-select); padding: var(--ik-pad-select); font: inherit; font-size: var(--ik-font-select); cursor: pointer; }
+
+.ik-panel h4 { font-family: var(--font-display); font-size: 15px; margin: 0 0 12px; }
+
+.ik-skeleton { background: linear-gradient(90deg, var(--surface) 25%, rgba(255,255,255,.06) 37%, var(--surface) 63%); background-size: 400% 100%; animation: ik-shimmer 1.3s ease-in-out infinite; border-radius: var(--ik-radius-skeleton); }
+.ik-skel-cover { aspect-ratio: 2/3; width: 100%; }
+
+.ik-empty, .ik-error { border: var(--ik-border) dashed var(--border); border-radius: var(--radius); padding: var(--ik-pad-empty); text-align: center; color: var(--muted); }
+.ik-error { border-color: color-mix(in srgb, var(--acc) var(--ik-edge), var(--border)); }
+
+.ik-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.ik-field label { font-size: var(--ik-font-label); color: var(--muted); }
+
+.ik-tile { background: var(--surface); border: var(--ik-border) solid var(--border); border-radius: var(--radius); padding: var(--ik-pad-tile); }
+
+table.ik-table { width: 100%; border-collapse: collapse; }
+.ik-table th, .ik-table td { text-align: left; padding: var(--ik-pad-cell); border-bottom: var(--ik-border) solid var(--border-row); font-size: var(--ik-font-cell); }
+.ik-table th { color: var(--muted); font-weight: 600; }
+.ik-tablewrap { width: 100%; overflow-x: auto; }
+.ik-table-compact th, .ik-table-compact td { padding: var(--ik-pad-cell-compact); font-size: var(--ik-font-cell-compact); vertical-align: middle; }
+.ik-table-compact th { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; white-space: nowrap; }
+
+/* A selectable table row. `.ik-cons-row` is the list-pane affordance and sets `display: block`,
+ * which on a `<tr>` takes the row out of the table and detaches every cell from its column
+ * heading — so the two cannot share one class. Backgrounds go on the cells because a collapsed
+ * border model paints the row behind them. */
+.ik-table tr.ik-row-pick { cursor: pointer; }
+.ik-table tr.ik-row-pick:hover > td { background: var(--surface-2); }
+.ik-table tr.ik-row-pick.selected > td { background: color-mix(in srgb, var(--acc) var(--ik-tint-row), transparent); }
+.ik-table tr.ik-row-pick.selected > td:first-child { box-shadow: inset 3px 0 0 var(--acc); }
+.ik-table tr.ik-row-pick:focus-visible { outline: var(--ik-focus-ring) solid var(--acc); outline-offset: -2px; }
+
+.ik-muted { color: var(--muted); }
+.ik-mono { font-family: var(--font-mono); }
+.ik-flex { display: flex; gap: var(--ik-gap-md); align-items: center; }
+.ik-brush { height: 8px; margin: 8px 0 20px; background: linear-gradient(90deg, var(--acc), transparent 72%); opacity: .8; border-radius: 4px; }
+
+/* Button size modifiers used by the console's dense inspector rows. */
+.ik-btn.sm { font-size: var(--ik-font-btn-sm); font-weight: var(--ik-weight-btn); padding: var(--ik-pad-btn-sm); border-radius: var(--ik-radius-btn-sm); }
+.ik-btn.xs { font-size: var(--ik-font-btn-xs); font-weight: var(--ik-weight-btn-xs); padding: var(--ik-pad-btn-xs); border-radius: var(--ik-radius-btn-xs); }
+.ik-btn.acc { color: var(--acc3); background: color-mix(in srgb, var(--acc) var(--ik-tint-btn), transparent); border-color: color-mix(in srgb, var(--acc) var(--ik-edge), transparent); }
+.ik-btn.acc:hover { background: color-mix(in srgb, var(--acc) var(--ik-tint-btn-hover), transparent); color: var(--acc3); }
+/* A text-only action (no chrome until hover) — the third, least-committal choice in a row. */
+.ik-btn.bare { background: none; border-color: transparent; color: var(--muted); font-weight: var(--ik-weight-btn-bare); padding-left: 4px; padding-right: 4px; }
+.ik-btn.bare:hover { background: none; border-color: transparent; color: var(--acc3); }
+
+.ik-sec-lbl { font-family: var(--font-mono); font-weight: 500; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); }
+
+/* A bordered stack of rows with hairline rules between them, no rule on the last. */
+.ik-listbox { border: var(--ik-border) solid var(--border); border-radius: var(--ik-radius-listbox); overflow: hidden; }
+.ik-listbox > * { border-bottom: var(--ik-border) solid var(--border-row); }
+.ik-listbox > *:last-child { border-bottom: none; }
+.ik-listrow { display: flex; align-items: center; gap: var(--ik-gap-md); padding: var(--ik-pad-cell); }
+
+.ik-tabs.flush { margin-bottom: -1px; border-bottom: none; gap: 4px; }
+
+/* Label/field rows in the inspector. */
+.ik-kv { display: grid; grid-template-columns: 96px 1fr; align-items: center; gap: 10px; }
+.ik-kv.narrow { grid-template-columns: 92px 1fr; }
+.ik-kv > .k { font-size: 12.5px; color: var(--muted); }
+.ik-kv .warn { font-size: 11.5px; line-height: 1.4; color: var(--star); }
+
+/* Segmented control — a small closed set, one choice lit. */
+.ik-seg { display: flex; gap: 5px; width: fit-content; background: var(--surface); border: var(--ik-border) solid var(--border-ctl); border-radius: var(--ik-radius-seg); padding: 3px; }
+.ik-seg button { font: inherit; font-size: var(--ik-font-btn-sm); color: var(--muted); background: none; border: none; border-radius: var(--ik-radius-seg-item); padding: 6px 10px; cursor: pointer; }
+.ik-seg button:hover { color: var(--text); }
+.ik-seg button.on { color: var(--text); font-weight: 500; background: var(--border-ctl); }
+.ik-seg button:focus-visible { outline: var(--ik-focus-ring) solid var(--acc); outline-offset: 1px; }
+
+/* Politeness sliders: native range (keyboard-operable) tinted to the accent. */
+.ik-slider-row { display: flex; align-items: center; gap: 10px; }
+.ik-slider-row > .k { width: 92px; flex: none; font-size: 12px; color: var(--muted); }
+.ik-slider-row > .v { width: 56px; flex: none; text-align: right; font-family: var(--font-mono); font-weight: 500; font-size: 12px; color: var(--text); }
+.ik-range.grow { flex: 1; width: auto; }
+
+/* ============================================================================
+ * Tones the components can name but the design had never drawn.
+ *
+ * `ik-btn danger`, `ik-btn ghost`, `ik-btn vermilion` and `ik-pill ghost` were all written at
+ * call sites and none of them existed: five buttons, one of them a queue drain, rendered as
+ * ordinary neutral controls. `Tone` can only name what is below, and a unit test in
+ * `src/tone.rs` reads this file to keep that true.
+ * ========================================================================== */
+.ik-btn.danger {
+  color: var(--acc3);
+  border-color: color-mix(in srgb, var(--acc) var(--ik-edge-strong), transparent);
+  background: color-mix(in srgb, var(--acc) var(--ik-tint-btn-danger), transparent);
+}
+.ik-btn.danger:hover { background: var(--acc); border-color: var(--acc); color: #fff; }
+/* Chrome-free but still a hit target, unlike `.bare` which also gives up its padding. */
+.ik-btn.ghost { background: none; border-color: transparent; color: var(--muted); }
+.ik-btn.ghost:hover { border-color: var(--border-ctl); color: var(--text); }
+.ik-pill.ghost { color: var(--faint); border-color: var(--border-row); }
+/* `Tone::Positive` and `Tone::Caution` had no button until this line, so they resolved to the
+ * unmodified base and a confirm read exactly like a cancel. `--star-ink` rather than `--star`
+ * for the caution ink: the raw token is a mid-yellow that fails contrast on the light theme's
+ * surface. */
+.ik-btn.jade {
+  color: var(--jade-bright);
+  background: color-mix(in srgb, var(--jade) var(--ik-tint-btn), transparent);
+  border-color: color-mix(in srgb, var(--jade) var(--ik-edge), transparent);
+}
+.ik-btn.jade:hover {
+  background: color-mix(in srgb, var(--jade) var(--ik-tint-btn-hover), transparent);
+  border-color: color-mix(in srgb, var(--jade) var(--ik-edge-hover), transparent);
+  color: var(--jade-bright);
+}
+.ik-btn.amber {
+  color: var(--star-ink);
+  background: color-mix(in srgb, var(--star) var(--ik-tint-btn), transparent);
+  border-color: color-mix(in srgb, var(--star) var(--ik-edge), transparent);
+}
+.ik-btn.amber:hover {
+  background: color-mix(in srgb, var(--star) var(--ik-tint-btn-hover), transparent);
+  border-color: color-mix(in srgb, var(--star) var(--ik-edge-hover), transparent);
+  color: var(--star-ink);
+}
+
+/* A button whose whole content is one glyph: square at its size, no label gap. Square rather
+ * than padded, so a row of them keeps one rhythm whatever glyph is inside. */
+.ik-iconbtn { width: 44px; height: 44px; padding: 0; gap: 0; justify-content: center; }
+.ik-iconbtn.sm { width: 34px; height: 34px; }
+.ik-iconbtn.xs { width: 28px; height: 28px; }
+.ik-iconbtn[aria-pressed="true"] { color: var(--acc3); }
+
+/* ============================================================================
+ * Layout primitives (Row / Stack)
+ *
+ * These exist so a screen stops reaching for `style: "display:flex;gap:8px;"`. The scale is
+ * closed: four gaps, five alignments, four distributions.
+ * ========================================================================== */
+.ik-stack { display: flex; flex-direction: column; gap: var(--ik-gap-sm); }
+.ik-g-0 { gap: var(--ik-gap-0); }
+.ik-g-xs { gap: var(--ik-gap-xs); }
+.ik-g-sm { gap: var(--ik-gap-sm); }
+.ik-g-lg { gap: var(--ik-gap-lg); }
+.ik-a-start { align-items: flex-start; }
+.ik-a-base { align-items: baseline; }
+.ik-a-end { align-items: flex-end; }
+.ik-a-stretch { align-items: stretch; }
+.ik-j-center { justify-content: center; }
+.ik-j-end { justify-content: flex-end; }
+.ik-j-between { justify-content: space-between; }
+.ik-wrap { flex-wrap: wrap; }
+/* Deliberately not `.grow`: that bare name is already used inside several app-scoped rules,
+ * and a global definition would reach all of them. */
+.ik-grow { flex: 1; min-width: 0; }
+
+/* Section label + its content. */
+.ik-sec-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 9px; }
+.ik-sec-head-end { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+
+/* Panel header (icon, title, trailing slot). */
+.ik-card-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.ik-card-head-end { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+
+/* ============================================================================
+ * Form chrome
+ * ========================================================================== */
+.ik-field-hint { font-size: 12px; color: var(--muted); }
+/* Not `.ik-error`, which is a 40px dashed block: this is the line under a control. */
+.ik-field-error { font-size: 12px; color: var(--acc3); }
+.ik-check { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 14px; }
+.ik-check input { margin-top: 3px; accent-color: var(--acc); flex: none; }
+.ik-check label { font-size: 13.5px; color: var(--text-2); }
+
+/* The list-pane search field: a bordered row that owns the focus ring, holding a borderless
+ * input so the glyph and the hit count sit inside it. */
+.ik-searchfield {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--surface); border: 1px solid var(--border-ctl);
+  border-radius: 9px; padding: 7px 10px;
+}
+.ik-searchfield:focus-within { border-color: var(--acc); }
+.ik-searchfield-icon { display: flex; color: var(--faint); flex: none; }
+.ik-searchfield-input {
+  flex: 1; min-width: 0; background: none; border: none; outline: none;
+  color: var(--text); font: inherit; font-size: 12.5px;
+}
+.ik-searchfield-hits { font-size: 11px; color: var(--faint); flex: none; }
+
+/* ============================================================================
+ * States
+ * ========================================================================== */
+.ik-empty p { margin: 0; }
+.ik-error p { margin: 0 0 12px; }
+.ik-error-line { font-size: 13px; color: var(--acc); margin: 0; }
+.ik-outcome { font-size: 13px; margin: 8px 0 0; }
+.ik-outcome.ok { color: var(--jade-bright); }
+.ik-outcome.err { color: var(--acc); }
+
+/* ============================================================================
+ * Tables and definition lists
+ * ========================================================================== */
+.ik-num { text-align: right; font-variant-numeric: tabular-nums; }
+/* `Kv` renders a real <dl> so the pairing survives a screen reader; the UA's own dd indent has
+ * to go, or every value sits 40px off its column. */
+.ik-kv > dt, .ik-kv > dd { margin: 0; }
+
+/* Available to assistive technology, invisible to everything else. `display: none` and
+ * `visibility: hidden` both remove it from the accessibility tree, which defeats the point. */
+.ik-visually-hidden {
+  position: absolute; width: 1px; height: 1px;
+  margin: -1px; padding: 0; overflow: hidden;
+  clip-path: inset(50%); white-space: nowrap; border: 0;
+}
+
+/* ============================================================================
+ * Modal
+ * ========================================================================== */
+.ik-modal-scrim {
+  position: fixed; inset: 0; z-index: 60;
+  display: grid; place-items: center; padding: 20px;
+  background: rgba(0, 0, 0, .55);
+}
+.ik-modal {
+  width: 100%; max-width: 380px; max-height: calc(100vh - 40px); overflow-y: auto;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 20px;
+  outline: none;
+}
+.ik-modal.wide { max-width: 560px; }
+.ik-modal-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.ik-modal-head h2 { font-family: var(--font-display); font-size: 17px; margin: 0; }
+.ik-modal-intro { font-size: 13px; color: var(--muted); margin: 0 0 14px; }
+.ik-modal-foot { display: flex; gap: 8px; margin-top: 16px; }
+.ik-modal-foot .ik-btn { flex: 1; justify-content: center; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ik-skeleton { animation: none; }
+}

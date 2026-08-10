@@ -24,11 +24,11 @@ use crate::Route;
 use active::ActiveFilters;
 use dioxus::prelude::*;
 use filters::FilterPanel;
+use inkstone_ui::Button;
 use progenitor_client::ResponseValue;
 pub(crate) use query::DiscoverQuery;
 use query::{DiscoverFilters, Sort, YEAR_MAX, YEAR_MIN};
 use std::collections::BTreeSet;
-
 /// How many *rows* of covers one fetched page holds. How many series that is depends on how
 /// many columns the window fits — see [`crate::components::use_grid_fit`].
 const PAGE_ROWS: usize = 4;
@@ -530,10 +530,9 @@ fn empty_state(
                 Ic { icon: Icon::Explore, size: 28 }
                 p { style: "margin:10px 0 4px;font-weight:600;", {i18n.t("discover.pastEnd.title")} }
                 p { class: "ik-muted", style: "font-size:13px;", {i18n.t("discover.pastEnd.hint")} }
-                button {
-                    class: "ik-btn",
+                Button {
                     style: "margin-top:10px;",
-                    onclick: move |_| on_filters(filters.clone()),
+                    on_click: move |_| on_filters(filters.clone()),
                     {i18n.t("discover.backToStart")}
                 }
             }
@@ -544,10 +543,9 @@ fn empty_state(
             Ic { icon: Icon::Search, size: 28 }
             p { style: "margin:10px 0 4px;font-weight:600;", {i18n.t("discover.noMatch.title")} }
             p { class: "ik-muted", style: "font-size:13px;", {i18n.t("discover.noMatch.hint")} }
-            button {
-                class: "ik-btn",
+            Button {
                 style: "margin-top:10px;",
-                onclick: move |_| on_filters(DiscoverFilters::default()),
+                on_click: move |_| on_filters(DiscoverFilters::default()),
                 {i18n.t("discover.resetFilters")}
             }
         }

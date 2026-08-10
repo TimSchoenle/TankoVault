@@ -8,7 +8,7 @@ use crate::i18n::use_i18n;
 use crate::views::console::live::LiveState;
 use crate::views::console::RefreshTick;
 use dioxus::prelude::*;
-
+use inkstone_ui::Button;
 /// Live-stream status pill plus detach/attach and manual-refresh controls.
 #[component]
 pub(super) fn LiveControls(
@@ -34,9 +34,8 @@ pub(super) fn LiveControls(
                 span { class: "ik-live-dot" }
                 {i18n.t(connection.label_key())}
             }
-            button {
-                class: "ik-btn",
-                onclick: move |_| {
+            Button {
+                on_click: move |_| {
                     let mut a = auto;
                     let next = !*a.peek();
                     a.set(next);
@@ -45,14 +44,13 @@ pub(super) fn LiveControls(
                     crate::state::prefs::set_console_live(next);
                 },
                 if is_auto {
-                    {i18n.t("console.live.pause")}
+                {i18n.t("console.live.pause")}
                 } else {
-                    {i18n.t("console.live.resume")}
+                {i18n.t("console.live.resume")}
                 }
             }
-            button {
-                class: "ik-btn",
-                onclick: move |_| tick.bump(),
+            Button {
+                on_click: move |_| tick.bump(),
                 {i18n.t("console.live.refresh")}
             }
         }

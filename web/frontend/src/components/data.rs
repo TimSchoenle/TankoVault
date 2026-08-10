@@ -3,7 +3,7 @@
 use crate::i18n::use_i18n;
 use crate::models::ProviderState;
 use dioxus::prelude::*;
-
+use inkstone_ui::{Pill, Tone};
 /// A single KPI tile: label, big value, and an optional supporting sub-line.
 #[component]
 pub(crate) fn Kpi(
@@ -29,15 +29,13 @@ pub(crate) fn Kpi(
     }
 }
 
-/// A provider's health as a coloured pill. `None` renders as "unknown" — the wire returned a
-/// state this build has no word for.
 #[component]
 pub(crate) fn HealthPill(state: Option<ProviderState>) -> Element {
     let i18n = use_i18n();
-    let class = match state {
-        Some(ProviderState::Active) => "ik-pill jade",
-        Some(ProviderState::Blocked | ProviderState::Disabled) => "ik-pill vermilion",
-        _ => "ik-pill",
+    let tone = match state {
+        Some(ProviderState::Active) => Tone::Positive,
+        Some(ProviderState::Blocked | ProviderState::Disabled) => Tone::Danger,
+        _ => Tone::Neutral,
     };
     // The wire token doubles as the catalogue key, so the colour and the word cannot drift into
     // two separate enumerations.
@@ -46,7 +44,7 @@ pub(crate) fn HealthPill(state: Option<ProviderState>) -> Element {
         |state| i18n.t(&format!("console.providerState.{state}")),
     );
     rsx! {
-        span { class: "{class}", style: "font-size:9.5px;", "{label}" }
+        Pill { tone, class: "ik-pill-tiny", "{label}" }
     }
 }
 

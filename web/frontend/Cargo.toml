@@ -43,6 +43,11 @@ path = "src/main.rs"
 # defaults carry no renderer, so naming one at this line would make the desktop build link the
 # WASM one as well.
 dioxus = { version = "0.7", features = ["router"] }
+# The design system's components, extracted so they can be lifted into another Dioxus app: it
+# knows nothing about this one — no i18n, no icons, no API client — and ships the `ik-*`
+# stylesheet `input.css` imports. A path dependency under this workspace root, so it is a member
+# and every gate run here covers it.
+inkstone-ui = { path = "crates/inkstone-ui" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 gloo-net = { version = "0.7", features = ["http", "json", "eventsource"], optional = true }
@@ -303,16 +308,23 @@ desktop = [
     "reqwest/cookies",
 ]
 
-# This crate sits outside the workspace, so it cannot inherit `[workspace.lints]`. The set
-# below mirrors it, minus the lints that fight idiomatic Dioxus: component functions are
-# PascalCase by convention, and `rsx!` expands to code that trips several pedantic lints it
+# This crate sits outside the *host* workspace, so it cannot inherit its `[workspace.lints]`.
+# The set below mirrors it, minus the lints that fight idiomatic Dioxus: component functions
+# are PascalCase by convention, and `rsx!` expands to code that trips several pedantic lints it
 # has no way to satisfy.
-[lints.rust]
+#
+# It is declared on the workspace rather than the package so `crates/inkstone-ui` — a member by
+# virtue of being a path dependency under this root — is held to the same policy from one
+# definition. Both packages opt in with `[lints] workspace = true`.
+[lints]
+workspace = true
+
+[workspace.lints.rust]
 unsafe_code = "forbid"
 unreachable_pub = "warn"
 rust_2018_idioms = { level = "warn", priority = -1 }
 
-[lints.clippy]
+[workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }
 # A suppression must be `#[expect(..., reason = "...")]`, never a bare `#[allow(...)]`, so that
 # one which stops being necessary warns instead of living on silently. Matches the host

@@ -36,7 +36,7 @@ pub(crate) use series::Series;
 pub(crate) use watchlist::{Watchlist, WatchlistQuery};
 
 use dioxus::prelude::*;
-
+use inkstone_ui::{button_class, Size, Tone};
 /// Catch-all 404 (design §17.3: error states name what failed).
 #[component]
 pub(crate) fn NotFound(segments: Vec<String>) -> Element {
@@ -46,7 +46,7 @@ pub(crate) fn NotFound(segments: Vec<String>) -> Element {
         h1 { class: "ik-page-title", {i18n.t("notFound.title")} }
         div { class: "ik-empty",
             p { {i18n.args("notFound.body", &[("path", &format!("/{path}"))])} }
-            Link { to: crate::Route::Home {}, class: "ik-btn primary", {i18n.t("notFound.back")} }
+            Link { to: crate::Route::Home {}, class: button_class(Tone::Primary, Size::Md, false), {i18n.t("notFound.back")} }
         }
     }
 }

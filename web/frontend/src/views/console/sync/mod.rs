@@ -12,11 +12,11 @@ use crate::models::*;
 use crate::util::rel_time;
 use dioxus::prelude::*;
 use enrichment::EnrichmentPanel;
+use inkstone_ui::{Button, Pill};
 use inspector::SeriesSyncInspector;
 use progenitor_client::ResponseValue;
 use queues::AssignQueue;
 use queues::UnmatchedRemoteQueue;
-
 /// The sync panel's step-up gate, for any component below it.
 ///
 /// Context rather than a prop, unlike the other console panels: the actions that need the
@@ -205,7 +205,9 @@ pub(super) fn SyncAccountRow(account: Signal<AdminSyncAccount>, reload: Reload) 
             div { class: "grow",
                 div { class: "ik-flex", style: "justify-content:space-between;",
                     span { style: "font-weight:600;", "{acc.username}" }
-                    span { class: "ik-pill", "{acc.provider}" }
+                    Pill {
+                        "{acc.provider}"
+                    }
                 }
                 div { class: "ik-muted", style: "font-size:13px;",
                     if let Some(u) = &acc.external_username {
@@ -236,13 +238,19 @@ pub(super) fn SyncAccountRow(account: Signal<AdminSyncAccount>, reload: Reload) 
                     div { style: "font-size:12px;color:var(--acc);", "{err}" }
                 }
             }
-            button { class: "ik-btn", disabled: *busy.read(), onclick: pull,
+            Button {
+                disabled: *busy.read(),
+                on_click: pull,
                 {i18n.t("console.sync.forcePull")}
             }
-            button { class: "ik-btn", disabled: *busy.read(), onclick: push,
+            Button {
+                disabled: *busy.read(),
+                on_click: push,
                 {i18n.t("console.sync.forcePush")}
             }
-            button { class: "ik-btn", disabled: *busy.read(), onclick: unlink,
+            Button {
+                disabled: *busy.read(),
+                on_click: unlink,
                 {i18n.t("console.sync.unlink")}
             }
         }

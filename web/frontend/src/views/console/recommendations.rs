@@ -23,8 +23,8 @@ use crate::wire::types::{
     TunableGroup, TunableKind, TunableView,
 };
 use dioxus::prelude::*;
+use inkstone_ui::{Button, Pill, Tone};
 use progenitor_client::ResponseValue;
-
 /// How often the health panel re-reads itself while a build holds the claim.
 ///
 /// Fast enough that a progress bar visibly moves, slow enough that it is nothing beside the work
@@ -418,12 +418,11 @@ fn RebuildButton(
         });
     };
     rsx! {
-        button {
-            class: "ik-btn",
+        Button {
             style: "font-size:12.5px;padding:7px 11px;",
             disabled: busy.is_busy() || building,
             title: "{hint}",
-            onclick: click,
+            on_click: click,
             Ic { icon: Icon::Refresh, size: 14 }
             "{label}"
         }
@@ -484,10 +483,15 @@ fn TunableRow(row: TunableView, can_write: bool, reload: Reload, gate: StepUpGat
                     strong { style: "font-size:13px;", "{row.title}" }
                     AppliesPill { applies: row.applies }
                     if changed {
-                        span { class: "ik-pill acc", {i18n.t("console.recsys.changed")} }
+                        Pill {
+                            tone: Tone::Accent,
+                            {i18n.t("console.recsys.changed")}
+                        }
                     }
                     if row.privacy_floor {
-                        span { class: "ik-pill star", title: i18n.t("console.recsys.privacyFloorHint"),
+                        Pill {
+                            class: "star",
+                            title: i18n.t("console.recsys.privacyFloorHint"),
                             {i18n.t("console.recsys.privacyFloor")}
                         }
                     }
@@ -647,11 +651,11 @@ fn SaveButton(
     };
 
     rsx! {
-        button {
-            class: "ik-btn primary",
+        Button {
+            tone: Tone::Primary,
             style: "flex:none;",
             disabled: busy.is_busy() || !enabled,
-            onclick: click,
+            on_click: click,
             {i18n.t("common.save")}
         }
     }
@@ -697,12 +701,11 @@ fn ResetButton(
     };
 
     rsx! {
-        button {
-            class: "ik-btn",
+        Button {
             style: "flex:none;",
             disabled: busy.is_busy(),
             title: i18n.t("console.recsys.resetHint"),
-            onclick: click,
+            on_click: click,
             Ic { icon: Icon::Refresh, size: 14 }
         }
     }

@@ -18,7 +18,7 @@ use crate::models::{
 use crate::util::rel_time;
 use crate::views::console::{run_state_pill, RefreshTick};
 use dioxus::prelude::*;
-
+use inkstone_ui::{Button, Tone};
 /// How long a single claim may sit before the card says so. Deliberately generous: a full
 /// catalogue page against a slow provider legitimately takes minutes, and crying wolf at one
 /// would train an operator to ignore the one that matters.
@@ -215,28 +215,28 @@ fn RunCard(run: ScanRun, activity: Option<RunActivity>, tick: RefreshTick) -> El
                             )
                         }
                     }
-                    button {
-                        class: "ik-btn ghost",
+                    Button {
+                        tone: Tone::Ghost,
                         style: "font-size:11.5px;padding:2px 8px;",
-                        onclick: move |_| {
+                        on_click: move |_| {
                             let open = *explaining.read();
                             explaining.set(!open);
                         },
                         {
-                            i18n.t(
-                                if *explaining.read() {
-                                    "console.scan.explain.hide"
-                                } else {
-                                    "console.scan.explain.show"
-                                },
-                            )
+                        i18n.t(
+                        if *explaining.read() {
+                        "console.scan.explain.hide"
+                        } else {
+                        "console.scan.explain.show"
+                        },
+                        )
                         }
                     }
-                    button {
-                        class: "ik-btn danger",
+                    Button {
+                        tone: Tone::Danger,
                         style: "font-size:11.5px;padding:2px 8px;",
                         disabled: *cancelling.read(),
-                        onclick: cancel,
+                        on_click: cancel,
                         {i18n.t("console.scans.cancelRun")}
                     }
                 }

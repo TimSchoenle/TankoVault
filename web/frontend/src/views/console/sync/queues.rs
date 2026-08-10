@@ -12,8 +12,8 @@ use crate::views::console::query::QueueFilter;
 use crate::views::console::sync::use_sync_gate;
 use crate::views::console::{use_console_nav, ConsoleQuery};
 use dioxus::prelude::*;
+use inkstone_ui::{button_class, Button, Size, Tone};
 use progenitor_client::ResponseValue;
-
 /// The provider `<select>`'s options.
 ///
 /// Not routed through `async_block_list`: both queues fall back to a hardcoded `anilist`
@@ -192,12 +192,14 @@ pub(super) fn AssignRow(
                 value: "{value}",
                 oninput: move |e| value.set(e.value()),
             }
-            button { class: "ik-btn primary", disabled: *busy.read(), onclick: assign,
+            Button {
+                tone: Tone::Primary,
+                disabled: *busy.read(),
+                on_click: assign,
                 {i18n.t("console.sync.assign")}
             }
-            button {
-                class: "ik-btn",
-                onclick: move |_| nav.select(nav.query().with_selection(Some(sid.to_string()))),
+            Button {
+                on_click: move |_| nav.select(nav.query().with_selection(Some(sid.to_string()))),
                 {i18n.t("console.sync.inspect")}
             }
         }
@@ -415,7 +417,7 @@ pub(super) fn UnmatchedRemoteRow(entry: Signal<UnmatchedRemoteEntry>, reload: Re
                 }
                 if let Some(url) = entry_url {
                     a {
-                        class: "ik-btn",
+                        class: button_class(Tone::Neutral, Size::Md, false),
                         style: "flex:0 0 auto;",
                         href: "{url}",
                         target: "_blank",
@@ -566,19 +568,18 @@ pub(super) fn CandidateMatchRow(
                     if let Some((cls, pct)) = score_badge {
                         span { class: "{cls}", style: "font-size:11px;", "{pct}%" }
                     }
-                    button {
-                        class: "ik-btn",
-                        onclick: move |_| show.set(!show_now),
+                    Button {
+                        on_click: move |_| show.set(!show_now),
                         if show_now {
-                            {i18n.t("console.merge.hide")}
+                        {i18n.t("console.merge.hide")}
                         } else {
-                            {i18n.t("console.sync.inspect")}
+                        {i18n.t("console.sync.inspect")}
                         }
                     }
-                    button {
-                        class: "ik-btn primary",
+                    Button {
+                        tone: Tone::Primary,
                         disabled: *busy.read(),
-                        onclick: match_it,
+                        on_click: match_it,
                         {i18n.t("console.sync.match")}
                     }
                 }

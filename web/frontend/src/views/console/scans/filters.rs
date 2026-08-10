@@ -9,7 +9,7 @@ use crate::models::{RunSort, RunSortExt, RunStateExt as _, ScanMode, ScanModeExt
 use crate::views::console::query::Window as TimeWindow;
 use crate::views::console::{use_console_nav, ConsoleQuery};
 use dioxus::prelude::*;
-
+use inkstone_ui::{Button, Size};
 /// State, mode, window, ordering, provider and the show-cleared toggle, plus a reset.
 #[component]
 pub(super) fn FilterBar(filter: ScanFilter) -> Element {
@@ -132,9 +132,9 @@ pub(super) fn FilterBar(filter: ScanFilter) -> Element {
                 {i18n.t("console.scan.filter.showCleared")}
             }
             if active {
-                button {
-                    class: "ik-btn xs",
-                    onclick: move |_| {
+                Button {
+                    size: Size::Xs,
+                    on_click: move |_| {
                         // Selection survives a filter reset: the operator is widening what they
                         // can see, not closing the row they were reading.
                         nav.filter(ConsoleQuery {

@@ -5,7 +5,7 @@
 
 use crate::i18n::use_i18n;
 use dioxus::prelude::*;
-
+use inkstone_ui::{Button, Size};
 /// One page of an offset-paginated list, as the three counts the arithmetic needs.
 ///
 /// `page_len` is what the **server** returned for this window. It is deliberately not "the
@@ -185,18 +185,16 @@ pub(crate) fn CompactPager(
                 }
             }
             span { class: "hint", style: "display:flex;gap:6px;",
-                button {
-                    class: "ik-btn xs",
-                    r#type: "button",
+                Button {
+                    size: Size::Xs,
                     disabled: !window.has_prev(),
-                    onclick: move |_| on_page.call(page - 1),
+                    on_click: move |_| on_page.call(page - 1),
                     {i18n.t("common.previous")}
                 }
-                button {
-                    class: "ik-btn xs",
-                    r#type: "button",
+                Button {
+                    size: Size::Xs,
                     disabled: !window.has_next(),
-                    onclick: move |_| on_page.call(page + 1),
+                    on_click: move |_| on_page.call(page + 1),
                     {i18n.t("common.next")}
                 }
             }

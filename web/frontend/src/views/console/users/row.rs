@@ -5,6 +5,7 @@ use crate::models::AccountStatusExt as _;
 use crate::util::{initial, thousands};
 use crate::wire::types::{AccountStatus, DirectoryRow};
 use dioxus::prelude::*;
+use inkstone_ui::{Pill, Tone};
 
 /// One directory row: who they are, what they hold, and the state their account is in.
 #[component]
@@ -46,11 +47,11 @@ pub(super) fn UserRow(row: DirectoryRow, selected: bool, on_pick: EventHandler<S
                 }
                 span { style: "margin-left:auto;flex:none;display:flex;gap:6px;align-items:center;",
                     if owner {
-                        span { class: "ik-pill star", style: "font-size:9.5px;",
+                        Pill { class: "star ik-pill-tiny",
                             {i18n.t("console.users.role.owner")}
                         }
                     } else if staff && !suspended {
-                        span { class: "ik-pill acc", style: "font-size:9.5px;",
+                        Pill { tone: Tone::Accent, class: "ik-pill-tiny",
                             {i18n.t("console.users.role.staff")}
                         }
                     }

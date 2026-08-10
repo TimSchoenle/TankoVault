@@ -10,7 +10,7 @@ use crate::hooks::{use_busy, Reload};
 use crate::i18n::use_i18n;
 use crate::wire::types::DeleteUser;
 use dioxus::prelude::*;
-
+use inkstone_ui::{Button, Size};
 /// Erase an account.
 #[expect(
     clippy::too_many_arguments,
@@ -137,7 +137,10 @@ pub(super) fn VerifyEmailAction(
                 {i18n.t("console.users.unverified")}
             }
             if enabled {
-                button { class: "ik-btn xs", disabled: busy.is_busy(), onclick: verify,
+                Button {
+                    size: Size::Xs,
+                    disabled: busy.is_busy(),
+                    on_click: verify,
                     {i18n.t("console.users.verifyEmail")}
                 }
             }

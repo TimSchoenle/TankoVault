@@ -16,7 +16,7 @@ use crate::i18n::use_i18n;
 use crate::icons::Icon;
 use crate::wire::types::{ContentPrefsDto, ContentPrefsUpdate};
 use dioxus::prelude::*;
-
+use inkstone_ui::{Button, ToggleButton, Tone};
 #[component]
 pub(crate) fn ContentPanel() -> Element {
     let i18n = use_i18n();
@@ -90,16 +90,15 @@ pub(crate) fn ContentPanel() -> Element {
                     div { class: "ik-note",
                         div { {i18n.t("account.content.confirm.body")} }
                         div { class: "ik-row", style: "margin-top:8px; gap:8px;",
-                            button {
-                                class: "ik-btn primary",
+                            Button {
+                                tone: Tone::Primary,
                                 disabled: busy,
-                                onclick: move |_| save(true, true),
+                                on_click: move |_| save(true, true),
                                 {i18n.t("account.content.confirm.cta")}
                             }
-                            button {
-                                class: "ik-btn",
+                            Button {
                                 disabled: busy,
-                                onclick: move |_| confirming.set(false),
+                                on_click: move |_| confirming.set(false),
                                 {i18n.t("common.cancel")}
                             }
                         }
@@ -112,11 +111,10 @@ pub(crate) fn ContentPanel() -> Element {
                                 {i18n.t("account.content.adult.hint")}
                             }
                         }
-                        button {
-                            class: if opted_in { "ik-btn primary" } else { "ik-btn" },
-                            "aria-pressed": opted_in,
+                        ToggleButton {
+                            on: opted_in,
                             disabled: busy || !allowed,
-                            onclick: move |_| {
+                            on_toggle: move |_| {
                                 if opted_in {
                                     // Opting out never asks anything. Making the reader confirm
                                     // their way *out* of adult content would be a dark pattern.

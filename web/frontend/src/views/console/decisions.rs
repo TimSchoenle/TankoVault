@@ -15,8 +15,8 @@ use crate::util::rel_time;
 use crate::views::console::{signal_label, RefreshTick};
 use crate::wire::types::Permission;
 use dioxus::prelude::*;
+use inkstone_ui::{Button, Pill, Size, ToggleButton, Tone};
 use progenitor_client::ResponseValue;
-
 /// Rows per page. The server clamps regardless; this is the number that fits a screen without
 /// paging becoming the primary interaction.
 const PAGE_SIZE: u32 = 50;
@@ -60,18 +60,18 @@ pub(super) fn DecisionsPanel(tick: RefreshTick) -> Element {
             }
             div { class: "ik-flex", style: "gap:8px;flex-wrap:wrap;margin-bottom:12px;",
                 if can_merge {
-                    button {
-                        class: if current == Journal::Merges { "ik-btn sm active" } else { "ik-btn sm" },
-                        "aria-pressed": if current == Journal::Merges { "true" } else { "false" },
-                        onclick: move |_| journal.set(Journal::Merges),
+                    ToggleButton {
+                        on: current == Journal::Merges,
+                        size: Size::Sm,
+                        on_toggle: move |_| journal.set(Journal::Merges),
                         {i18n.t("console.decisions.tab.merges")}
                     }
                 }
                 if can_sync {
-                    button {
-                        class: if current == Journal::Sync { "ik-btn sm active" } else { "ik-btn sm" },
-                        "aria-pressed": if current == Journal::Sync { "true" } else { "false" },
-                        onclick: move |_| journal.set(Journal::Sync),
+                    ToggleButton {
+                        on: current == Journal::Sync,
+                        size: Size::Sm,
+                        on_toggle: move |_| journal.set(Journal::Sync),
                         {i18n.t("console.decisions.tab.sync")}
                     }
                 }
@@ -275,32 +275,44 @@ fn MergeDecisionRow(
                 }
             }
             div { class: "ik-flex", style: "gap:6px;flex-wrap:wrap;margin-top:6px;",
-                span { class: "ik-pill",
+                Pill {
                     {i18n.args("console.merge.score", &[("percent", &percent(d.score))])}
                 }
-                span { class: "ik-pill", {reason_label(i18n, &d.reason)} }
+                Pill {
+                    {reason_label(i18n, &d.reason)}
+                }
                 for signal in d.signals.clone() {
-                    span { key: "{signal}", class: "ik-pill ghost",
+                    Pill {
+                        tone: Tone::Ghost,
+                        key: "{signal}",
                         {signal_label(i18n, &signal)}
                     }
                 }
                 for guard in d.blocked_by.clone() {
-                    span { key: "blocked-{guard}", class: "ik-pill amber",
+                    Pill {
+                        tone: Tone::Caution,
+                        key: "blocked-{guard}",
                         {i18n.args("console.decisions.blockedBy", &[("guard", &signal_label(i18n, &guard))])}
                     }
                 }
                 if d.reverted_at.is_some() {
-                    span { class: "ik-pill vermilion", {i18n.t("console.decisions.wasReverted")} }
+                    Pill {
+                        tone: Tone::Accent,
+                        {i18n.t("console.decisions.wasReverted")}
+                    }
                 }
                 if d.flagged_at.is_some() {
-                    span { class: "ik-pill vermilion", {i18n.t("console.decisions.wasFlagged")} }
+                    Pill {
+                        tone: Tone::Accent,
+                        {i18n.t("console.decisions.wasFlagged")}
+                    }
                 }
             }
             div { class: "ik-flex", style: "gap:8px;margin-top:8px;flex-wrap:wrap;",
-                button {
-                    class: "ik-btn xs",
-                    "aria-expanded": if expanded { "true" } else { "false" },
-                    onclick: move |_| {
+                Button {
+                    size: Size::Xs,
+                    expanded,
+                    on_click: move |_| {
                         let next = !*open.peek();
                         open.set(next);
                     },
@@ -324,20 +336,21 @@ fn MergeDecisionRow(
                     // pair rather than merging one has nothing to put back, and a button that
                     // always errors is worse than no button.
                     if d.revertible {
-                        button {
-                            class: "ik-btn xs vermilion",
+                        Button {
+                            size: Size::Xs,
+                            tone: Tone::Accent,
                             disabled: *busy.read(),
-                            onclick: move |_| gate.attempt(move || judge.call(true)),
+                            on_click: move |_| gate.attempt(move || judge.call(true)),
                             {i18n.args(
-                                "console.decisions.revert",
-                                &[("rows", &d.undo_rows.to_string())],
+                            "console.decisions.revert",
+                            &[("rows", &d.undo_rows.to_string())],
                             )}
                         }
                     }
-                    button {
-                        class: "ik-btn xs",
+                    Button {
+                        size: Size::Xs,
                         disabled: *busy.read(),
-                        onclick: move |_| gate.attempt(move || judge.call(false)),
+                        on_click: move |_| gate.attempt(move || judge.call(false)),
                         {i18n.t("console.decisions.flag")}
                     }
                 }
@@ -607,7 +620,10 @@ fn SyncDecisionRow(
                     {i18n.t(&format!("console.decisions.action.{}", d.action))}
                 }
                 strong { "{title}" }
-                span { class: "ik-pill ghost", "{d.provider}" }
+                Pill {
+                    tone: Tone::Ghost,
+                    "{d.provider}"
+                }
                 if let Some(name) = d.username.clone() {
                     span { class: "ik-muted", "{name}" }
                 }
@@ -616,34 +632,44 @@ fn SyncDecisionRow(
                 }
             }
             div { class: "ik-flex", style: "gap:6px;flex-wrap:wrap;margin-top:6px;",
-                span { class: "ik-pill", {reason_label(i18n, &d.reason)} }
+                Pill {
+                    {reason_label(i18n, &d.reason)}
+                }
                 if let Some(score) = d.match_score {
-                    span { class: "ik-pill",
+                    Pill {
                         {i18n.args("console.merge.score", &[("percent", &percent(score))])}
                     }
                 }
                 if let (Some(before), Some(after)) = (d.local_before.clone(), d.local_after.clone()) {
-                    span { class: "ik-pill ghost",
+                    Pill {
+                        tone: Tone::Ghost,
                         {i18n.args("console.decisions.localMoved", &[("from", &before), ("to", &after)])}
                     }
                 }
                 if let (Some(before), Some(after)) = (d.remote_before.clone(), d.remote_after.clone()) {
-                    span { class: "ik-pill ghost",
+                    Pill {
+                        tone: Tone::Ghost,
                         {i18n.args("console.decisions.remoteMoved", &[("from", &before), ("to", &after)])}
                     }
                 }
                 if d.reverted_at.is_some() {
-                    span { class: "ik-pill vermilion", {i18n.t("console.decisions.wasReverted")} }
+                    Pill {
+                        tone: Tone::Accent,
+                        {i18n.t("console.decisions.wasReverted")}
+                    }
                 }
                 if d.flagged_at.is_some() {
-                    span { class: "ik-pill vermilion", {i18n.t("console.decisions.wasFlagged")} }
+                    Pill {
+                        tone: Tone::Accent,
+                        {i18n.t("console.decisions.wasFlagged")}
+                    }
                 }
             }
             div { class: "ik-flex", style: "gap:8px;margin-top:8px;flex-wrap:wrap;",
-                button {
-                    class: "ik-btn xs",
-                    "aria-expanded": if expanded { "true" } else { "false" },
-                    onclick: move |_| {
+                Button {
+                    size: Size::Xs,
+                    expanded,
+                    on_click: move |_| {
                         let next = !*open.peek();
                         open.set(next);
                     },
@@ -664,17 +690,18 @@ fn SyncDecisionRow(
                         oninput: move |event: FormEvent| reason.set(event.value()),
                     }
                     if d.applied {
-                        button {
-                            class: "ik-btn xs vermilion",
+                        Button {
+                            size: Size::Xs,
+                            tone: Tone::Accent,
                             disabled: *busy.read(),
-                            onclick: move |_| gate.attempt(move || judge.call(true)),
+                            on_click: move |_| gate.attempt(move || judge.call(true)),
                             {i18n.t("console.decisions.undo")}
                         }
                     }
-                    button {
-                        class: "ik-btn xs",
+                    Button {
+                        size: Size::Xs,
                         disabled: *busy.read(),
-                        onclick: move |_| gate.attempt(move || judge.call(false)),
+                        on_click: move |_| gate.attempt(move || judge.call(false)),
                         {i18n.t("console.decisions.flagMatch")}
                     }
                 }
@@ -690,7 +717,11 @@ fn SyncDecisionRow(
                     if !d.match_signals.is_empty() {
                         div { class: "ik-flex", style: "gap:6px;flex-wrap:wrap;margin:8px 0;",
                             for signal in d.match_signals.clone() {
-                                span { key: "{signal}", class: "ik-pill ghost", {signal_label(i18n, &signal)} }
+                                Pill {
+                                    tone: Tone::Ghost,
+                                    key: "{signal}",
+                                    {signal_label(i18n, &signal)}
+                                }
                             }
                         }
                     }

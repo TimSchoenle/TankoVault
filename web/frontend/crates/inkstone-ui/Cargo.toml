@@ -1,0 +1,24 @@
+[package]
+# Deliberately not named after the product: this crate knows nothing about TankoVault and is
+# meant to be liftable into another Dioxus app by copying the directory and its stylesheet.
+# "Inkstone" is the design system's name, which is what it actually implements.
+name = "inkstone-ui"
+version = "0.1.0"
+edition = "2021"
+authors = ["TankoVault contributors"]
+publish = false
+description = "Inkstone — an unopinionated Dioxus component kit: typed variants over a documented CSS class and custom-property contract."
+
+# Picked up automatically as a member of the `web/frontend` workspace (cargo adopts path
+# dependencies that live under the workspace root), so `cargo check`/`clippy`/`fmt` there cover
+# it. Nothing to declare.
+
+[dependencies]
+# Renderer-free on purpose. `dioxus`'s default features carry no renderer, so this crate
+# compiles identically for the wasm SPA and the wry desktop build and cannot drag one into the
+# other. It is also the entire dependency list: a kit that pulls in an icon set, an i18n
+# runtime or an HTTP client is not liftable.
+dioxus = "0.7"
+
+[lints]
+workspace = true

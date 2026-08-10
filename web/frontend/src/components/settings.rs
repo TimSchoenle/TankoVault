@@ -23,7 +23,7 @@ use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
 use crate::update::{self, Policy, Status, UpdateState};
 use dioxus::prelude::*;
-
+use inkstone_ui::{Button, Tone};
 /// One group of settings. See the module note on why this is a division rather than a fold.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Category {
@@ -180,24 +180,21 @@ fn ServerSection() -> Element {
                 on_enter: change,
             }
             div { class: "ik-prefs-actions",
-                button {
-                    class: "ik-btn primary",
-                    r#type: "button",
+                Button {
+                    tone: Tone::Primary,
                     disabled: probing() || *entered.read() == current,
-                    onclick: move |_| change(()),
+                    on_click: move |_| change(()),
                     if probing() {
-                        {i18n.t("connect.connecting")}
+                    {i18n.t("connect.connecting")}
                     } else {
-                        {i18n.t("connect.card.action")}
+                    {i18n.t("connect.card.action")}
                     }
                 }
                 // The way out when the stored address answers nothing at all, so no probe can
                 // ever succeed and the button above can never be pressed.
-                button {
-                    class: "ik-btn",
-                    r#type: "button",
+                Button {
                     disabled: probing(),
-                    onclick: move |_| {
+                    on_click: move |_| {
                         crate::platform::set_server_origin(None);
                         session.clear();
                     },
@@ -351,11 +348,9 @@ fn NotificationSection() -> Element {
                 {i18n.t("settings.notifications.systemHint")}
             }
             div { class: "ik-prefs-actions", style: "margin-top:10px;",
-                button {
-                    class: "ik-btn",
-                    r#type: "button",
+                Button {
                     disabled: !enabled(),
-                    onclick: move |_| {
+                    on_click: move |_| {
                         crate::platform::notify(
                             &i18n.t("settings.notifications.test.title"),
                             &i18n.t("settings.notifications.test.body"),
@@ -479,36 +474,29 @@ fn UpdateActions(
 
     rsx! {
         div { class: "ik-prefs-actions",
-            button {
-                class: "ik-btn",
-                r#type: "button",
+            Button {
                 disabled: busy,
-                onclick: move |_| on_check.call(()),
+                on_click: move |_| on_check.call(()),
                 {i18n.t("settings.update.check")}
             }
             match status {
                 Status::Available { installable: true, .. } => rsx! {
-                    button {
-                        class: "ik-btn primary",
-                        r#type: "button",
+                    Button {
+                        tone: Tone::Primary,
                         disabled: busy,
-                        onclick: move |_| {
+                        on_click: move |_| {
                             spawn(async move { update::install_now(state, i18n).await });
                         },
                         {i18n.t("settings.update.install")}
                     }
-                    button {
-                        class: "ik-btn",
-                        r#type: "button",
-                        onclick: move |_| update::dismiss(state),
+                    Button {
+                        on_click: move |_| update::dismiss(state),
                         {i18n.t("settings.update.dismiss")}
                     }
                 },
                 Status::Available { page, installable: false, .. } => rsx! {
-                    button {
-                        class: "ik-btn",
-                        r#type: "button",
-                        onclick: move |_| crate::platform::navigate_to(&page),
+                    Button {
+                        on_click: move |_| crate::platform::navigate_to(&page),
                         {i18n.t("settings.update.openPage")}
                     }
                 },
@@ -519,10 +507,9 @@ fn UpdateActions(
                 // window, the process lives on and the update the reader just asked for is
                 // applied at some unrelated start days later.
                 Status::Staged { .. } => rsx! {
-                    button {
-                        class: "ik-btn primary",
-                        r#type: "button",
-                        onclick: move |_| {
+                    Button {
+                        tone: Tone::Primary,
+                        on_click: move |_| {
                             if let Some(window) = crate::platform::window() {
                                 crate::platform::quit_app(&window);
                             }
@@ -598,10 +585,8 @@ fn AboutSection() -> Element {
                 }
             }
             div { class: "ik-prefs-actions", style: "margin-top:12px;",
-                button {
-                    class: "ik-btn",
-                    r#type: "button",
-                    onclick: move |_| crate::platform::navigate_to(crate::build_info::PROJECT_URL),
+                Button {
+                    on_click: move |_| crate::platform::navigate_to(crate::build_info::PROJECT_URL),
                     {i18n.t("settings.about.project")}
                 }
             }

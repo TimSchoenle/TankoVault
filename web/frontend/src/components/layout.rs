@@ -5,25 +5,7 @@ use crate::components::EmptyBox;
 use crate::icons::{Ic, Icon};
 use dioxus::prelude::*;
 
-/// A mono uppercase section label, optionally with something right-aligned beside it.
-#[component]
-pub(crate) fn Section(
-    label: String,
-    /// Optional right-aligned status beside the label (a validity note, a result pill).
-    #[props(default)]
-    trailing: Option<Element>,
-    children: Element,
-) -> Element {
-    rsx! {
-        div {
-            div { class: "ik-flex", style: "align-items:baseline;gap:8px;margin-bottom:9px;",
-                span { class: "ik-sec-lbl", "{label}" }
-                span { style: "margin-left:auto;display:flex;align-items:center;gap:8px;", {trailing} }
-            }
-            {children}
-        }
-    }
-}
+pub(crate) use inkstone_ui::Section;
 
 /// The list pane's pinned footer: how many rows there are, and the keys that move between them.
 #[component]
@@ -49,15 +31,16 @@ pub(crate) fn NoSelection(message: String) -> Element {
     }
 }
 
-/// The sidebar-card chrome an account or series panel sits in: an icon + title header, a body.
+/// The panel chrome an account or series card sits in: an icon + title header, a body.
 #[component]
 pub(crate) fn PanelCard(icon: Icon, title: String, children: Element) -> Element {
     rsx! {
-        div { class: "ik-sidebar-card", style: "max-width:560px;",
-            div { class: "ik-flex", style: "margin-bottom:12px;",
+        inkstone_ui::Card {
+            title,
+            class: "ik-panel-form",
+            icon: rsx! {
                 Ic { icon, size: 18 }
-                strong { "{title}" }
-            }
+            },
             {children}
         }
     }

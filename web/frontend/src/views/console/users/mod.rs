@@ -33,11 +33,11 @@ use actions::{erase, revoke_all, VerifyEmailAction};
 use activity::RecentActions;
 use dioxus::prelude::*;
 use grants::PermissionGrants;
+use inkstone_ui::{Button, Pill, Size, Tone};
 use progenitor_client::ResponseValue;
 use row::UserRow;
 use std::collections::BTreeSet;
 use sync::ExternalSync;
-
 /// Directory page size. Matches the server's own default; the server clamps regardless.
 const PAGE_SIZE: i64 = 25;
 
@@ -285,10 +285,10 @@ pub(super) fn UsersEntity() -> Element {
                         },
                         {i18n.t(status.label_key())}
                     }
-                    button {
-                        class: "ik-btn xs",
+                    Button {
+                        size: Size::Xs,
                         style: "margin-left:auto;",
-                        onclick: move |_| reload.bump(),
+                        on_click: move |_| reload.bump(),
                         Ic { icon: Icon::Refresh, size: 12 }
                         {i18n.t("console.live.refresh")}
                     }
@@ -564,7 +564,9 @@ fn UserEditor(
                     div { class: "ik-flex", style: "gap:10px;flex-wrap:wrap;",
                         h2 { class: "ik-insp-title", "{user.username}" }
                         if owner {
-                            span { class: "ik-pill star", style: "font-size:10px;",
+                            Pill {
+                                class: "star",
+                                style: "font-size:10px;",
                                 {i18n.t("console.users.role.owner")}
                             }
                         } else {
@@ -600,10 +602,10 @@ fn UserEditor(
                 }
                 div { class: "ik-flex", style: "gap:7px;flex:none;flex-wrap:wrap;justify-content:flex-end;",
                     if can_sessions {
-                        button {
-                            class: "ik-btn sm",
+                        Button {
+                            size: Size::Sm,
                             disabled: busy.is_busy() || user.active_sessions == 0,
-                            onclick: move |_| {
+                            on_click: move |_| {
                                 let id = id_header.clone();
                                 gate.attempt(move || {
                                     revoke_all(
@@ -621,10 +623,11 @@ fn UserEditor(
                         }
                     }
                     if (can_write || can_grant) && !is_self {
-                        button {
-                            class: "ik-btn sm primary",
+                        Button {
+                            size: Size::Sm,
+                            tone: Tone::Primary,
                             disabled: busy.is_busy() || !dirty,
-                            onclick: save,
+                            on_click: save,
                             {i18n.t("console.users.save")}
                         }
                     }
@@ -769,11 +772,11 @@ fn UserEditor(
                                         }
                                     }
                                     if can_sessions {
-                                        button {
-                                            class: "ik-btn xs",
+                                        Button {
+                                            size: Size::Xs,
                                             style: "margin-left:auto;",
                                             disabled: busy.is_busy() || user.active_sessions == 0,
-                                            onclick: move |_| {
+                                            on_click: move |_| {
                                                 let id = id_sessions.clone();
                                                 gate.attempt(move || {
                                                     revoke_all(

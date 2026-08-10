@@ -12,8 +12,8 @@ use crate::views::console::merge::SeriesMiniCard;
 use crate::views::console::sync::use_sync_gate;
 use crate::views::console::use_console_nav;
 use dioxus::prelude::*;
+use inkstone_ui::{Button, Pill, Tone};
 use progenitor_client::ResponseValue;
-
 /// Either the editable per-series "manga info" view (when a series is selected) or a title
 /// search + recently-mapped list to open one.
 #[component]
@@ -137,7 +137,8 @@ pub(super) fn SeriesPickRow(series: SeriesSummary) -> Element {
                     {i18n.plural("series.sources", series.source_count, &[])}
                 }
             }
-            button { class: "ik-btn", onclick: move |_| nav.select(nav.query().with_selection(Some(sid.to_string()))),
+            Button {
+                on_click: move |_| nav.select(nav.query().with_selection(Some(sid.to_string()))),
                 {i18n.t("common.open")}
             }
         }
@@ -157,7 +158,9 @@ pub(super) fn MappingPickRow(mapping: Signal<AdminSyncMapping>) -> Element {
             div { class: "grow",
                 div { class: "ik-flex", style: "justify-content:space-between;",
                     span { style: "font-weight:600;", "{m.series_title}" }
-                    span { class: "ik-pill", "{m.provider}" }
+                    Pill {
+                        "{m.provider}"
+                    }
                 }
                 div { class: "ik-mono ik-muted", style: "font-size:12px;",
                     {
@@ -168,7 +171,8 @@ pub(super) fn MappingPickRow(mapping: Signal<AdminSyncMapping>) -> Element {
                     }
                 }
             }
-            button { class: "ik-btn", onclick: move |_| nav.select(nav.query().with_selection(Some(sid.to_string()))),
+            Button {
+                on_click: move |_| nav.select(nav.query().with_selection(Some(sid.to_string()))),
                 {i18n.t("common.open")}
             }
         }
@@ -231,10 +235,12 @@ pub(super) fn SeriesSyncEditor(series_id: String, reload: Reload) -> Element {
 
     rsx! {
         div { class: "ik-flex", style: "justify-content:space-between;align-items:center;margin-bottom:10px;",
-            button { class: "ik-btn", onclick: move |_| nav.select(nav.query().with_selection(None)),
+            Button {
+                on_click: move |_| nav.select(nav.query().with_selection(None)),
                 {i18n.t("console.sync.backToSearch")}
             }
-            button { class: "ik-btn", onclick: move |_| reload.bump(),
+            Button {
+                on_click: move |_| reload.bump(),
                 {i18n.t("console.live.refresh")}
             }
         }
@@ -386,11 +392,16 @@ pub(super) fn MappingEditorRow(
                 value: "{value}",
                 oninput: move |e| value.set(e.value()),
             }
-            button { class: "ik-btn primary", disabled: *busy.read(), onclick: save,
+            Button {
+                tone: Tone::Primary,
+                disabled: *busy.read(),
+                on_click: save,
                 {i18n.t("common.save")}
             }
             if has_current {
-                button { class: "ik-btn", disabled: *busy.read(), onclick: clear,
+                Button {
+                    disabled: *busy.read(),
+                    on_click: clear,
                     {i18n.t("console.sync.clear")}
                 }
             }

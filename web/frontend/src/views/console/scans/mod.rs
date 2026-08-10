@@ -27,8 +27,8 @@ use crate::views::console::query::Window as TimeWindow;
 use crate::views::console::{use_console_nav, ConsoleQuery, RefreshTick};
 use crate::wire::types::RunState as WireRunState;
 use dioxus::prelude::*;
+use inkstone_ui::{Button, Tone};
 use progenitor_client::ResponseValue;
-
 /// The run states the filter offers, paired with the `?status=` token each sends.
 ///
 /// Hand-listed rather than derived: the wire vocabulary is generated, but which states are
@@ -344,10 +344,14 @@ pub(in crate::views::console) fn ScanQueue(tick: RefreshTick) -> Element {
                             }
                         }
                     }
-                    button { class: "ik-btn primary", onclick: trigger,
+                    Button {
+                        tone: Tone::Primary,
+                        on_click: trigger,
                         {i18n.t("console.scans.trigger")}
                     }
-                    button { class: "ik-btn danger", onclick: drain,
+                    Button {
+                        tone: Tone::Danger,
+                        on_click: drain,
                         {i18n.t("console.scans.cancelAll")}
                     }
                 }

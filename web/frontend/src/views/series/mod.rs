@@ -28,12 +28,12 @@ use crate::util::{chapter_number, rel_time};
 use crate::Route;
 use chapters::{ChapterSection, OpenControl};
 use dioxus::prelude::*;
+use inkstone_ui::{Button, IconButton, Pill, Size, Tone};
 use model::{
     merge_chapters, next_unread, rank_sources, source_ceiling, ChapterKey, MergedChapter,
     RankedSource,
 };
 use progenitor_client::ResponseValue;
-
 /// Every source's chapter list, in the order the API returned the sources.
 type SourceChapters = Vec<(SourceDto, Vec<ChapterDto>)>;
 
@@ -349,10 +349,9 @@ fn Hero(
                     div { class: "ik-hero-bg", style: "background-image:url('{backdrop}');" }
                 }
             }
-            button {
-                class: "ik-btn",
+            Button {
                 style: "margin-bottom:16px;font-size:12.5px;padding:8px 12px;",
-                onclick: move |_| {
+                on_click: move |_| {
                     nav.go_back();
                 },
                 Ic { icon: Icon::Back, size: 14 }
@@ -362,8 +361,7 @@ fn Hero(
                 div { Cover { url: detail.cover_url.clone(), title: detail.title.clone() } }
                 div { style: "min-width:0;",
                     div { class: "ik-flex", style: "margin-bottom:8px;flex-wrap:wrap;",
-                        span {
-                            class: "ik-pill",
+                        Pill {
                             style: "color:{detail.content_type.color()};border-color:color-mix(in srgb,{detail.content_type.color()} 50%,transparent);background:color-mix(in srgb,{detail.content_type.color()} 12%,transparent);",
                             {i18n.t(detail.content_type.label_key())}
                         }
@@ -527,27 +525,28 @@ fn WatchControls(
     };
 
     rsx! {
-        button {
-            class: "ik-btn",
+        Button {
             style: "padding:12px 14px;font-size:13.5px;",
             disabled: busy.is_busy(),
-            onclick: toggle_membership,
+            on_click: toggle_membership,
             Ic { icon: Icon::Bookmark, size: 15 }
             if in_list {
-                {i18n.t("series.inWatchlist")}
+            {i18n.t("series.inWatchlist")}
             } else {
-                {i18n.t("series.addToWatchlist")}
+            {i18n.t("series.addToWatchlist")}
             }
         }
         if in_list {
-            button {
-                class: "ik-btn",
-                style: if notify { "width:44px;height:44px;padding:0;justify-content:center;color:var(--acc);" } else { "width:44px;height:44px;padding:0;justify-content:center;" },
+            IconButton {
+                tone: Tone::Neutral,
+                size: Size::Md,
                 disabled: busy.is_busy(),
-                "aria-pressed": if notify { "true" } else { "false" },
-                title: if notify { i18n.t("watchlist.notifyOn") } else { i18n.t("watchlist.notifyOff") },
-                onclick: toggle_notify,
-                Ic { icon: Icon::Notify, size: 17 }
+                pressed: notify,
+                label: if notify { i18n.t("watchlist.notifyOn") } else { i18n.t("watchlist.notifyOff") },
+                on_click: toggle_notify,
+                icon: rsx! {
+                    Ic { icon: Icon::Notify, size: 17 }
+                },
             }
         }
     }

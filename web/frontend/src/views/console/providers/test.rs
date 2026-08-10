@@ -7,8 +7,8 @@ use crate::hooks::use_busy;
 use crate::i18n::use_i18n;
 use crate::models::{ProviderId, TestAdapterBody, TestAdapterRequest};
 use dioxus::prelude::*;
+use inkstone_ui::{Button, Tone};
 use progenitor_client::ResponseValue;
-
 /// Live adapter dry-run against the provider's site, as the standalone Adapter test surface
 /// uses it. Runs on demand only; shows the raw parsed sample so operators can validate
 /// selectors without a deploy.
@@ -53,11 +53,14 @@ pub(in crate::views::console) fn AdapterTestPanel(provider_id: ProviderId) -> El
                     value: "{path}",
                     oninput: move |e| path.set(e.value()),
                 }
-                button { class: "ik-btn primary", disabled: busy.is_busy(), onclick: run,
+                Button {
+                    tone: Tone::Primary,
+                    disabled: busy.is_busy(),
+                    on_click: run,
                     if busy.is_busy() {
-                        {i18n.t("console.adapterTest.running")}
+                    {i18n.t("console.adapterTest.running")}
                     } else {
-                        {i18n.t("console.adapterTest.run")}
+                    {i18n.t("console.adapterTest.run")}
                     }
                 }
             }

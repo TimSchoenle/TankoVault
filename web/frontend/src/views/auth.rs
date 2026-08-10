@@ -15,8 +15,8 @@ use crate::webauthn::{self, CeremonyError};
 use crate::wire::types::{Feature, MfaVerifyRequest};
 use crate::Route;
 use dioxus::prelude::*;
+use inkstone_ui::{button_class, Button, Size, Tone};
 use webauthn_rs_proto::RequestChallengeResponse;
-
 /// How a failed sign-in should be worded, and whether to offer "resend confirmation".
 ///
 /// Returns the catalogue key plus the resend flag, or `None` when [`api::friendly_error`]'s
@@ -326,11 +326,9 @@ pub(crate) fn Login() -> Element {
             }
 
             if *needs_verification.read() {
-                button {
-                    class: "ik-btn",
+                Button {
                     style: "width:100%;margin:0 0 14px;",
-                    r#type: "button",
-                    onclick: move |_| resend.call(()),
+                    on_click: move |_| resend.call(()),
                     {i18n.t("auth.resendConfirmation")}
                 }
             }
@@ -352,39 +350,34 @@ pub(crate) fn Login() -> Element {
                     on_input: move |v| second_factor.set(v),
                     on_enter: move |()| finish_mfa.call(()),
                 }
-                button {
-                    class: "ik-btn primary",
+                Button {
+                    tone: Tone::Primary,
                     style: "width:100%;margin-top:10px;",
                     disabled: busy.is_busy(),
-                    r#type: "button",
-                    onclick: move |_| finish_mfa.call(()),
+                    on_click: move |_| finish_mfa.call(()),
                     if busy.is_busy() {
-                        {i18n.t("common.working")}
+                    {i18n.t("common.working")}
                     } else {
-                        {i18n.t("auth.mfa.verify")}
+                    {i18n.t("auth.mfa.verify")}
                     }
                 }
-                button {
-                    class: "ik-btn",
+                Button {
                     style: "width:100%;margin-top:8px;",
-                    r#type: "button",
-                    onclick: move |_| {
+                    on_click: move |_| {
                         let next = !*using_recovery.read();
                         using_recovery.set(next);
                         second_factor.set(String::new());
                         error.set(None);
                     },
                     if *using_recovery.read() {
-                        {i18n.t("auth.mfa.useCode")}
+                    {i18n.t("auth.mfa.useCode")}
                     } else {
-                        {i18n.t("auth.mfa.useRecovery")}
+                    {i18n.t("auth.mfa.useRecovery")}
                     }
                 }
-                button {
-                    class: "ik-btn",
+                Button {
                     style: "width:100%;margin-top:8px;",
-                    r#type: "button",
-                    onclick: move |_| {
+                    on_click: move |_| {
                         // Abandoning the challenge leaves it to expire on its own; there is no
                         // session to tear down, because none was issued.
                         pending_mfa.set(None);
@@ -451,33 +444,29 @@ pub(crate) fn Login() -> Element {
                 div { class: "ik-or", style: "margin:4px 0 12px;text-align:center;",
                     span { class: "ik-muted", style: "font-size:12px;", {i18n.t("common.or")} }
                 }
-                button {
-                    class: "ik-btn",
+                Button {
                     style: "width:100%;margin-bottom:14px;",
-                    r#type: "button",
                     disabled: busy.is_busy(),
-                    onclick: move |_| passkey_sign_in.call(()),
+                    on_click: move |_| passkey_sign_in.call(()),
                     {i18n.t("passkey.signIn")}
                 }
             }
 
-            button {
-                class: "ik-btn primary",
+            Button {
+                tone: Tone::Primary,
                 style: "width:100%;",
                 disabled: busy.is_busy(),
-                onclick: move |_| submit.call(()),
+                on_click: move |_| submit.call(()),
                 if busy.is_busy() {
-                    {i18n.t("common.working")}
+                {i18n.t("common.working")}
                 } else {
-                    "{cta}"
+                "{cta}"
                 }
             }
 
-            button {
-                class: "ik-btn",
+            Button {
                 style: "width:100%;margin-top:10px;",
-                r#type: "button",
-                onclick: move |_| {
+                on_click: move |_| {
                     error.set(None);
                     let now = *register_mode.read();
                     register_mode.set(!now);
@@ -639,7 +628,7 @@ pub(crate) fn VerifyEmail(token: String) -> Element {
                     p { class: "ik-muted", {i18n.t("verifyEmail.failed")} }
                     Link {
                         to: Route::Login {},
-                        class: "ik-btn primary",
+                        class: button_class(Tone::Primary, Size::Md, false),
                         style: "width:100%;",
                         {i18n.t("common.backToSignIn")}
                     }

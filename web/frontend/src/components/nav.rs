@@ -10,7 +10,7 @@ use crate::views::{DiscoverQuery, WatchlistQuery};
 use crate::wire::types::Feature;
 use crate::Route;
 use dioxus::prelude::*;
-
+use inkstone_ui::{button_class, Size, Tone};
 #[component]
 pub(crate) fn Rail() -> Element {
     let i18n = use_i18n();
@@ -249,7 +249,7 @@ fn UserFooter() -> Element {
         }
         return rsx! {
             div { style: "padding:8px;",
-                Link { to: Route::Login {}, class: "ik-btn primary block", {i18n.t("common.signIn")} }
+                Link { to: Route::Login {}, class: button_class(Tone::Primary, Size::Md, true), {i18n.t("common.signIn")} }
             }
         };
     }

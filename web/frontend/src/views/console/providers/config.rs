@@ -3,6 +3,7 @@
 use crate::components::{ErrorLine, Section};
 use crate::i18n::use_i18n;
 use dioxus::prelude::*;
+use inkstone_ui::{Pill, Tone};
 
 /// The dry-run panel: what the adapter parsed, and the raw sample behind the claim.
 #[component]
@@ -31,16 +32,18 @@ pub(super) fn DryRunResult(result: Option<Result<serde_json::Value, String>>) ->
                 Section {
                     label: i18n.t("console.providers.dryRunHead"),
                     trailing: rsx! {
-                        span { class: "ik-pill jade", style: "font-size:9.5px;",
+                        Pill {
+                            tone: Tone::Positive,
+                            style: "font-size:9.5px;",
                             match parsed {
-                                Some(count) => {
-                                    i18n.plural(
-                                        "console.providers.parsed",
-                                        i64::try_from(count).unwrap_or(0),
-                                        &[],
-                                    )
-                                }
-                                None => i18n.t("console.providers.parsedOk"),
+                            Some(count) => {
+                            i18n.plural(
+                            "console.providers.parsed",
+                            i64::try_from(count).unwrap_or(0),
+                            &[],
+                            )
+                            }
+                            None => i18n.t("console.providers.parsedOk"),
                             }
                         }
                     },

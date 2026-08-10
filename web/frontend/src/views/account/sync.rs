@@ -16,8 +16,8 @@ use crate::models::*;
 use crate::state::use_session;
 use crate::util::rel_time;
 use dioxus::prelude::*;
+use inkstone_ui::{Button, ToggleButton, Tone};
 use progenitor_client::ResponseValue;
-
 #[component]
 pub(crate) fn SyncPanel() -> Element {
     let session = use_session();
@@ -304,7 +304,9 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
                             div { style: "font-weight:700;font-size:16px;", "{card_name}" }
                             div { class: "ik-muted", style: "font-size:13px;", {i18n.t("series.notConnected")} }
                         }
-                        button { class: "ik-btn primary", onclick: connect,
+                        Button {
+                            tone: Tone::Primary,
+                            on_click: connect,
                             {i18n.args("account.sync.connect", &[("provider", &card_name)])}
                         }
                     }
@@ -333,7 +335,9 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
                             }
                         }
                     }
-                    button { class: "ik-btn", disabled: busy.is_busy(), onclick: disconnect,
+                    Button {
+                        disabled: busy.is_busy(),
+                        on_click: disconnect,
                         {i18n.t("account.sync.disconnect")}
                     }
                 }
@@ -344,10 +348,9 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
                             {i18n.t("account.sync.autoHint")}
                         }
                     }
-                    button {
-                        class: if auto_sync { "ik-btn primary" } else { "ik-btn" },
-                        "aria-pressed": auto_sync,
-                        onclick: toggle_auto,
+                    ToggleButton {
+                        on: auto_sync,
+                        on_toggle: toggle_auto,
                         if auto_sync {
                             {i18n.t("common.on")}
                         } else {
@@ -360,7 +363,8 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
                         span { class: "grow", style: "font-size:13px;color:var(--acc);",
                             {i18n.plural("account.sync.pending", pending, &[])}
                         }
-                        button { class: "ik-btn", onclick: move |_| show_conflicts.set(true),
+                        Button {
+                            on_click: move |_| show_conflicts.set(true),
                             {i18n.t("account.sync.reviewConflicts")}
                         }
                     }
@@ -388,11 +392,15 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
                     }
                 }
                 div { class: "ik-flex", style: "gap:10px;flex-wrap:wrap;margin-top:12px;",
-                    button { class: "ik-btn", disabled: busy.is_busy(), onclick: pull,
+                    Button {
+                        disabled: busy.is_busy(),
+                        on_click: pull,
                         Ic { icon: Icon::CloudSync, size: 16 }
                         {i18n.args("account.sync.pull", &[("provider", &card_name)])}
                     }
-                    button { class: "ik-btn", disabled: busy.is_busy(), onclick: push,
+                    Button {
+                        disabled: busy.is_busy(),
+                        on_click: push,
                         Ic { icon: Icon::CloudSync, size: 16 }
                         {i18n.args("account.sync.push", &[("provider", &card_name)])}
                     }
@@ -442,7 +450,7 @@ fn SyncHistory(provider: String, refresh: Reload) -> Element {
     });
 
     rsx! {
-        div { class: "ik-sidebar-card", style: "max-width:560px;margin-top:14px;",
+        div { class: "ik-panel", style: "max-width:560px;margin-top:14px;",
             div { class: "ik-flex", style: "margin-bottom:12px;",
                 Ic { icon: Icon::CloudSync, size: 16 }
                 strong { {i18n.t("account.sync.history")} }
@@ -503,10 +511,13 @@ fn ConflictInbox(provider: String, show: Signal<bool>, parent_reload: Reload) ->
 
     let provider_filter = provider.clone();
     rsx! {
-        div { class: "ik-sidebar-card", style: "max-width:560px;margin-top:14px;",
+        div { class: "ik-panel", style: "max-width:560px;margin-top:14px;",
             div { class: "ik-flex", style: "margin-bottom:12px;",
                 strong { class: "grow", {i18n.t("account.sync.conflictsHeading")} }
-                button { class: "ik-btn", onclick: move |_| show.set(false), {i18n.t("common.close")} }
+                Button {
+                    on_click: move |_| show.set(false),
+                    {i18n.t("common.close")}
+                }
             }
             {
                 async_view(
@@ -598,16 +609,14 @@ fn ConflictRowView(conflict: ConflictRow, reload: Reload, parent_reload: Reload)
                     ErrorLine { message }
                 }
             }
-            button {
-                class: "ik-btn",
+            Button {
                 disabled: busy.is_busy(),
-                onclick: move |_| resolve("local"),
+                on_click: move |_| resolve("local"),
                 {i18n.t("account.sync.keepMine")}
             }
-            button {
-                class: "ik-btn",
+            Button {
                 disabled: busy.is_busy(),
-                onclick: move |_| resolve("remote"),
+                on_click: move |_| resolve("remote"),
                 {i18n.t("account.sync.takeTheirs")}
             }
         }

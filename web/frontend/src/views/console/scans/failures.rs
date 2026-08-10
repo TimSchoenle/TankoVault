@@ -15,7 +15,7 @@ use crate::models::{ClearFailuresBody, FailedTask, FailureGroup};
 use crate::util::thousands;
 use crate::views::console::RefreshTick;
 use dioxus::prelude::*;
-
+use inkstone_ui::{Button, Pill, Size, Tone};
 /// The failure feed with its view toggle and clear controls.
 #[component]
 pub(super) fn FailuresSection(
@@ -84,10 +84,10 @@ pub(super) fn FailuresSection(
                     }
                     {i18n.t("console.scan.failures.grouped")}
                 }
-                button {
-                    class: "ik-btn xs",
+                Button {
+                    size: Size::Xs,
                     disabled: *busy.read(),
-                    onclick: move |_| pending.set(Some(None)),
+                    on_click: move |_| pending.set(Some(None)),
                     {i18n.t("console.scan.failures.clearAll")}
                 }
             }
@@ -193,20 +193,30 @@ fn GroupedFailures(groups: Vec<FailureGroup>, on_clear: EventHandler<Option<Stri
                 div { key: "{group.error:?}", class: "ik-fail",
                     div { class: "ik-flex", style: "justify-content:space-between;gap:10px;flex-wrap:wrap;",
                         div { class: "ik-flex", style: "gap:8px;flex-wrap:wrap;",
-                            span { class: "ik-pill vermilion", "{group.count}×" }
+                            Pill {
+                                tone: Tone::Accent,
+                                "{group.count}×"
+                            }
                             for slug in group.providers.clone() {
-                                span { key: "{slug}", class: "ik-pill", "{slug}" }
+                                Pill {
+                                    key: "{slug}",
+                                    "{slug}"
+                                }
                             }
                             for kind in group.kinds.clone() {
-                                span { key: "{kind}", class: "ik-pill", "{kind}" }
+                                Pill {
+                                    key: "{kind}",
+                                    "{kind}"
+                                }
                             }
                             if group.cleared > 0 {
-                                span { class: "ik-pill", style: "opacity:.7;",
+                                Pill {
+                                    style: "opacity:.7;",
                                     {
-                                        i18n.args(
-                                            "console.scan.failures.clearedCount",
-                                            &[("count", &thousands(group.cleared))],
-                                        )
+                                    i18n.args(
+                                    "console.scan.failures.clearedCount",
+                                    &[("count", &thousands(group.cleared))],
+                                    )
                                     }
                                 }
                             }
@@ -215,9 +225,9 @@ fn GroupedFailures(groups: Vec<FailureGroup>, on_clear: EventHandler<Option<Stri
                             span { class: "ik-muted ik-mono", style: "font-size:12px;",
                                 "{crate::util::rel_time(i18n, group.latest_at.as_deref())}"
                             }
-                            button {
-                                class: "ik-btn xs",
-                                onclick: {
+                            Button {
+                                size: Size::Xs,
+                                on_click: {
                                     let error = group.error.clone();
                                     move |_| on_clear.call(error.clone())
                                 },
@@ -263,7 +273,10 @@ fn FailuresPanel(failures: Vec<FailedTask>) -> Element {
                     style: if failure.acknowledged_at.is_some() { "opacity:.6;" } else { "" },
                     div { class: "ik-flex", style: "justify-content:space-between;gap:10px;flex-wrap:wrap;",
                         div { class: "ik-flex", style: "gap:8px;flex-wrap:wrap;",
-                            span { class: "ik-pill vermilion", "{failure.kind}" }
+                            Pill {
+                                tone: Tone::Accent,
+                                "{failure.kind}"
+                            }
                             span { class: "ik-mono ik-muted", style: "font-size:12px;",
                                 {
                                     let slug = failure
@@ -281,7 +294,9 @@ fn FailuresPanel(failures: Vec<FailedTask>) -> Element {
                                 }
                             }
                             if failure.acknowledged_at.is_some() {
-                                span { class: "ik-pill", {i18n.t("console.scan.failures.clearedBadge")} }
+                                Pill {
+                                    {i18n.t("console.scan.failures.clearedBadge")}
+                                }
                             }
                         }
                         span { class: "ik-muted ik-mono", style: "font-size:12px;",

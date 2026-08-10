@@ -18,9 +18,9 @@ use crate::util::iso_date;
 use crate::webauthn::{self, CeremonyError};
 use crate::wire::types::{PasskeyRegisterFinish, PasskeyRegisterStart, PasskeyRename};
 use dioxus::prelude::*;
+use inkstone_ui::{Button, Size, Tone};
 use progenitor_client::ResponseValue;
 use webauthn_rs_proto::CreationChallengeResponse;
-
 #[component]
 pub(crate) fn PasskeysCard() -> Element {
     let session = use_session();
@@ -195,20 +195,18 @@ pub(crate) fn PasskeysCard() -> Element {
                         on_enter: move |()| gate.attempt(move || register.call(())),
                     }
                     div { class: "ik-flex", style: "gap:6px;",
-                        button {
-                            class: "ik-btn primary",
+                        Button {
+                            tone: Tone::Primary,
                             disabled: busy.is_busy(),
-                            onclick: move |_| gate.attempt(move || register.call(())),
+                            on_click: move |_| gate.attempt(move || register.call(())),
                             if busy.is_busy() {
-                                {i18n.t("common.working")}
+                            {i18n.t("common.working")}
                             } else {
-                                {i18n.t("passkey.add")}
+                            {i18n.t("passkey.add")}
                             }
                         }
-                        button {
-                            class: "ik-btn",
-                            r#type: "button",
-                            onclick: move |_| {
+                        Button {
+                            on_click: move |_| {
                                 adding.set(false);
                                 error.set(None);
                             },
@@ -217,11 +215,9 @@ pub(crate) fn PasskeysCard() -> Element {
                     }
                 }
             } else {
-                button {
-                    class: "ik-btn",
+                Button {
                     style: "margin-top:14px;",
-                    r#type: "button",
-                    onclick: move |_| {
+                    on_click: move |_| {
                         error.set(None);
                         info.set(None);
                         adding.set(true);
@@ -349,26 +345,27 @@ fn PasskeyRow(
             }
             div { class: "ik-flex", style: "gap:6px;flex:none;",
                 if *renaming.read() {
-                    button {
-                        class: "ik-btn xs primary",
+                    Button {
+                        size: Size::Xs,
+                        tone: Tone::Primary,
                         disabled: busy.is_busy(),
-                        onclick: move |_| save.call(()),
+                        on_click: move |_| save.call(()),
                         {i18n.t("common.save")}
                     }
-                    button {
-                        class: "ik-btn xs",
-                        onclick: move |_| renaming.set(false),
+                    Button {
+                        size: Size::Xs,
+                        on_click: move |_| renaming.set(false),
                         {i18n.t("common.cancel")}
                     }
                 } else {
-                    button {
-                        class: "ik-btn xs",
-                        onclick: move |_| renaming.set(true),
+                    Button {
+                        size: Size::Xs,
+                        on_click: move |_| renaming.set(true),
                         {i18n.t("passkey.rename")}
                     }
-                    button {
-                        class: "ik-btn xs",
-                        onclick: move |_| confirming.set(true),
+                    Button {
+                        size: Size::Xs,
+                        on_click: move |_| confirming.set(true),
                         {i18n.t("passkey.revoke.cta")}
                     }
                 }

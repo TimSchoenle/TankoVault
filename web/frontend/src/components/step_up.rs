@@ -35,11 +35,11 @@ use crate::state::step_up::{use_step_up, StepUp};
 use crate::webauthn::{self, CeremonyError};
 use crate::wire::types::{MfaStatus, SecurityKeyAssertion, StepUpRequest};
 use dioxus::prelude::*;
+use inkstone_ui::{Button, Tone};
 use progenitor_client::ResponseValue;
 use std::cell::RefCell;
 use std::rc::Rc;
 use webauthn_rs_proto::RequestChallengeResponse;
-
 /// Which factor the reader is being asked for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum StepUpFactor {
@@ -382,17 +382,14 @@ fn StepUpDialog(
                     }
 
                     div { class: "ik-stepup-actions",
-                        button {
-                            class: "ik-btn",
-                            r#type: "button",
-                            onclick: move |_| on_cancel.call(()),
+                        Button {
+                            on_click: move |_| on_cancel.call(()),
                             {i18n.t("common.cancel")}
                         }
-                        button {
-                            class: "ik-btn primary",
-                            r#type: "button",
+                        Button {
+                            tone: Tone::Primary,
                             disabled: busy.is_busy(),
-                            onclick: move |_| {
+                            on_click: move |_| {
                                 if current == StepUpFactor::SecurityKey {
                                     assert_key.call(());
                                 } else {
@@ -400,9 +397,9 @@ fn StepUpDialog(
                                 }
                             },
                             if current == StepUpFactor::SecurityKey {
-                                {i18n.t("stepUp.confirmWithKey")}
+                            {i18n.t("stepUp.confirmWithKey")}
                             } else {
-                                {i18n.t("stepUp.confirm")}
+                            {i18n.t("stepUp.confirm")}
                             }
                         }
                     }
@@ -412,11 +409,10 @@ fn StepUpDialog(
                     if offered.len() > 1 {
                         div { class: "ik-stepup-alts",
                             for factor in offered.iter().copied().filter(|f| *f != current) {
-                                button {
+                                Button {
+                                    tone: Tone::Bare,
                                     key: "{factor:?}",
-                                    class: "ik-btn bare",
-                                    r#type: "button",
-                                    onclick: move |_| {
+                                    on_click: move |_| {
                                         chosen.set(Some(factor));
                                         value.set(String::new());
                                         error.set(None);

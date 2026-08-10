@@ -19,8 +19,8 @@ use crate::state::use_session;
 use crate::util::iso_date;
 use crate::wire::types::Feature;
 use dioxus::prelude::*;
+use inkstone_ui::Button;
 use progenitor_client::ResponseValue;
-
 #[component]
 pub(crate) fn SecurityPanel() -> Element {
     let session = use_session();
@@ -148,11 +148,13 @@ fn SessionRow(
                     {i18n.args("account.security.expires", &[("date", &expires)])}
                 }
             }
-            button { class: "ik-btn", disabled: busy.is_busy(), onclick: revoke,
+            Button {
+                disabled: busy.is_busy(),
+                on_click: revoke,
                 if busy.is_busy() {
-                    {i18n.t("account.security.revoking")}
+                {i18n.t("account.security.revoking")}
                 } else {
-                    {i18n.t("account.security.revoke")}
+                {i18n.t("account.security.revoke")}
                 }
             }
         }

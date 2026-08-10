@@ -8,7 +8,7 @@ use crate::models::ProfileUpdate;
 use crate::state::use_session;
 use crate::util::initial;
 use dioxus::prelude::*;
-
+use inkstone_ui::{Button, Tone};
 #[component]
 pub(crate) fn ProfilePanel(name: String, tier: String) -> Element {
     let session = use_session();
@@ -74,7 +74,7 @@ pub(crate) fn ProfilePanel(name: String, tier: String) -> Element {
 
     let current_name = username.read().clone();
     rsx! {
-        div { class: "ik-sidebar-card", style: "max-width:560px;",
+        div { class: "ik-panel", style: "max-width:560px;",
             div { class: "ik-flex", style: "margin-bottom:16px;",
                 div { class: "ik-avatar", style: "width:56px;height:56px;font-size:22px;",
                     "{initial(&current_name)}"
@@ -112,15 +112,15 @@ pub(crate) fn ProfilePanel(name: String, tier: String) -> Element {
             // factor instead, and only once the server has said it needs one.
             StepUpGuard { gate }
             OutcomeLine { outcome: outcome.read().clone() }
-            button {
-                class: "ik-btn primary",
+            Button {
+                tone: Tone::Primary,
                 style: "margin-top:12px;",
                 disabled: busy.is_busy(),
-                onclick: save,
+                on_click: save,
                 if busy.is_busy() {
-                    {i18n.t("common.saving")}
+                {i18n.t("common.saving")}
                 } else {
-                    {i18n.t("account.profile.save")}
+                {i18n.t("account.profile.save")}
                 }
             }
         }

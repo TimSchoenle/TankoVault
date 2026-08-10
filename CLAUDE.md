@@ -82,7 +82,11 @@ cargo test -p tankovault-db -p tankovault-api -p tankovault-sync --features inte
    there to stop that bug returning.
 6. **Never hand-edit generated files** — `openapi.json`, `crates/api-client/src/lib.rs`,
    `THIRD-PARTY-NOTICES`. Run `cargo run -p xtask -- openapi` / `-- notices`.
-7. **`web/frontend` is a separate workspace and inherits nothing** — not lints, not `clippy.toml`.
+7. **`web/frontend` is a separate workspace and inherits nothing from the host** — not lints, not
+   `clippy.toml`. It is a workspace *root* with one member of its own,
+   `crates/inkstone-ui` (the design system's components, extracted so they can be lifted into
+   another Dioxus app); both take their lints from its `[workspace.lints]`, and a `cargo` command
+   run in `web/frontend` covers both.
    A frontend URL and the API struct behind it have no compile-time relationship; `openapi.json`
    is the only connector. It also builds **two ways**: `web` (the wasm SPA, the default) and
    `desktop` (a wry webview, shipped as installers). They are mutually exclusive, everything

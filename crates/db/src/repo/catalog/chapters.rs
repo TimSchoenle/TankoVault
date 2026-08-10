@@ -3,7 +3,9 @@
 
 use crate::error::DbResult;
 use sqlx::{FromRow, PgExecutor};
-use tankovault_domain::{Chapter, ChapterId, ProviderId, SeriesId, SeriesSourceId};
+use tankovault_domain::{
+    Chapter, ChapterAccess, ChapterId, ProviderId, SeriesId, SeriesSourceId,
+};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -15,6 +17,11 @@ pub struct ChapterUpsert {
     /// RELATIVE link to the chapter page.
     pub path: String,
     pub published_at: Option<OffsetDateTime>,
+    /// What the provider says about reading it: free, or behind a paywall.
+    pub access: ChapterAccess,
+    /// When an early-access chapter opens, where the provider states a date. `None` on a
+    /// locked chapter means "no date published", which the read paths keep treating as locked.
+    pub unlocks_at: Option<OffsetDateTime>,
 }
 
 /// Outcome of a single chapter upsert.
@@ -62,11 +69,16 @@ pub async fn upsert_chapter<'e, E: PgExecutor<'e>>(
     ch: &ChapterUpsert,
 ) -> DbResult<ChapterUpsertResult> {
     let inserted = sqlx::query_scalar!(
-        "INSERT INTO chapters (id, series_source_id, number, volume, title, path, published_at) \
-         VALUES ($1,$2,$3::float8::numeric(10,4),$4,$5,$6,$7) \
+        // `access`/`unlocks_at` are overwritten, not coalesced: they are the provider's current
+        // verdict, and the whole point is that a chapter which has since unlocked stops being
+        // reported as locked. Coalescing would freeze the first answer forever.
+        "INSERT INTO chapters (id, series_source_id, number, volume, title, path, published_at, \
+                               access, unlocks_at) \
+         VALUES ($1,$2,$3::float8::numeric(10,4),$4,$5,$6,$7,$8,$9) \
          ON CONFLICT (series_source_id, number) DO UPDATE \
             SET title = EXCLUDED.title, path = EXCLUDED.path, \
-                published_at = COALESCE(EXCLUDED.published_at, chapters.published_at) \
+                published_at = COALESCE(EXCLUDED.published_at, chapters.published_at), \
+                access = EXCLUDED.access, unlocks_at = EXCLUDED.unlocks_at \
          RETURNING (xmax = 0) AS \"inserted!\"",
         ChapterId::new().as_uuid(),
         source_id.as_uuid(),
@@ -75,6 +87,8 @@ pub async fn upsert_chapter<'e, E: PgExecutor<'e>>(
         ch.title.as_deref(),
         &ch.path,
         ch.published_at,
+        ch.access as ChapterAccess,
+        ch.unlocks_at,
     )
     .fetch_one(exec)
     .await?;
@@ -121,18 +135,25 @@ pub async fn upsert_chapters<'e, E: PgExecutor<'e>>(
     let titles: Vec<Option<&str>> = chapters.iter().map(|c| c.title.as_deref()).collect();
     let paths: Vec<&str> = chapters.iter().map(|c| c.path.as_str()).collect();
     let published: Vec<Option<OffsetDateTime>> = chapters.iter().map(|c| c.published_at).collect();
+    let accesses: Vec<ChapterAccess> = chapters.iter().map(|c| c.access).collect();
+    let unlocks: Vec<Option<OffsetDateTime>> = chapters.iter().map(|c| c.unlocks_at).collect();
 
     let rows = sqlx::query!(
-        "INSERT INTO chapters (id, series_source_id, number, volume, title, path, published_at) \
+        // See `upsert_chapter` on why the access columns are overwritten rather than coalesced.
+        "INSERT INTO chapters (id, series_source_id, number, volume, title, path, published_at, \
+                               access, unlocks_at) \
          SELECT DISTINCT ON (u.number::float8::numeric(10,4)) \
-                u.id, $2, u.number::float8::numeric(10,4), u.volume, u.title, u.path, u.published_at \
+                u.id, $2, u.number::float8::numeric(10,4), u.volume, u.title, u.path, \
+                u.published_at, u.access, u.unlocks_at \
            FROM UNNEST($1::uuid[], $3::float8[], $4::int[], $5::text[], $6::text[], \
-                       $7::timestamptz[]) \
-                WITH ORDINALITY AS u(id, number, volume, title, path, published_at, ord) \
+                       $7::timestamptz[], $8::chapter_access[], $9::timestamptz[]) \
+                WITH ORDINALITY AS u(id, number, volume, title, path, published_at, access, \
+                                     unlocks_at, ord) \
           ORDER BY u.number::float8::numeric(10,4), u.ord DESC \
          ON CONFLICT (series_source_id, number) DO UPDATE \
             SET title = EXCLUDED.title, path = EXCLUDED.path, \
-                published_at = COALESCE(EXCLUDED.published_at, chapters.published_at) \
+                published_at = COALESCE(EXCLUDED.published_at, chapters.published_at), \
+                access = EXCLUDED.access, unlocks_at = EXCLUDED.unlocks_at \
          RETURNING number::float8 AS \"number!\", (xmax = 0) AS \"inserted!\"",
         &ids,
         source_id.as_uuid(),
@@ -141,6 +162,8 @@ pub async fn upsert_chapters<'e, E: PgExecutor<'e>>(
         &titles as _,
         &paths as _,
         &published as &[Option<OffsetDateTime>],
+        &accesses as &[ChapterAccess],
+        &unlocks as &[Option<OffsetDateTime>],
     )
     .fetch_all(exec)
     .await?;

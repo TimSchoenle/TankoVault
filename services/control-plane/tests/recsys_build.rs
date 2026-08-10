@@ -133,6 +133,8 @@ async fn ingest(db: &TestDb, provider: ProviderId, fixture: &Fixture) -> SeriesI
                     title: None,
                     path: format!("/c/{n}"),
                     published_at: None,
+                    access: tankovault_domain::ChapterAccess::Free,
+                    unlocks_at: None,
                 })
                 .collect(),
             content_hash: vec![1],

@@ -158,12 +158,17 @@
       "saved": "Quellenreihenfolge gespeichert.",
       "section": {
         "ranked": "Deine Reihenfolge",
-        "unranked": "Nicht bewertet"
+        "unranked": "Nicht bewertet",
+        "earlyAccess": "Bezahlter Vorabzugang"
       },
       "seriesCount": "{count} Serien",
       "title": "Quellen-Einstellungen",
       "unrank": "Aus der Reihenfolge entfernen",
-      "unrankOf": "{source} aus der Reihenfolge entfernen"
+      "unrankOf": "{source} aus der Reihenfolge entfernen",
+      "earlyAccessIntro": "Manche Quellen verkaufen Kapitel vorab. Sie bleiben aus deinen Ungelesen-Zählern ausgeblendet, bis sie freigeschaltet werden — aktiviere eine Quelle hier, wenn du für ihren Vorabzugang bezahlst und diese Kapitel jetzt mitzählen sollen.",
+      "earlyAccessOn": "Vorabzugang wird gezählt",
+      "earlyAccessOff": "Nicht gezählt",
+      "earlyAccessToggleOf": "Bezahlten Vorabzugang für {source} umschalten"
     },
     "sync": {
       "anonymousUser": "{provider}-Leser",
@@ -417,7 +422,9 @@
     "adapterKind": {
       "custom": "Individuell (eingebaut)",
       "genericConfig": "Generisch (konfigurationsbasiert)",
-      "madara": "Madara / WordPress"
+      "madara": "Madara / WordPress",
+      "mangathemesia": "MangaThemesia-Theme",
+      "manganato": "Manganato-Familie"
     },
     "adapterTest": {
       "choose": "— Anbieter wählen —",

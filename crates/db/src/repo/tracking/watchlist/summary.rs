@@ -62,6 +62,10 @@ pub async fn watchlist_summary<'e, E: PgExecutor<'e>>(
              AND NOT (c.number <> floor(c.number) \
                       AND rp.last_read_part_number IS NOT NULL \
                       AND c.number <= rp.last_read_part_number) \
+             AND (c.access = 'free' OR c.unlocks_at <= now() \
+                  OR EXISTS (SELECT 1 FROM user_provider_early_access e \
+                              WHERE e.user_id = w.user_id \
+                                AND e.provider_id = ss.provider_id)) \
          ) ch \
          CROSS JOIN LATERAL ( \
            SELECT COALESCE((array_agg(ss.state <> 'active' OR p.state <> 'active' \
@@ -119,6 +123,10 @@ pub(super) async fn fetch_counts(
              AND NOT (c.number <> floor(c.number) \
                       AND rp.last_read_part_number IS NOT NULL \
                       AND c.number <= rp.last_read_part_number) \
+             AND (c.access = 'free' OR c.unlocks_at <= now() \
+                  OR EXISTS (SELECT 1 FROM user_provider_early_access e \
+                              WHERE e.user_id = w.user_id \
+                                AND e.provider_id = ss.provider_id)) \
          ) ch \
          CROSS JOIN LATERAL ( \
            SELECT max((SELECT max(c.discovered_at) FROM chapters c \
@@ -204,6 +212,10 @@ pub(super) async fn fetch_groups(
              AND NOT (c.number <> floor(c.number) \
                       AND rp.last_read_part_number IS NOT NULL \
                       AND c.number <= rp.last_read_part_number) \
+             AND (c.access = 'free' OR c.unlocks_at <= now() \
+                  OR EXISTS (SELECT 1 FROM user_provider_early_access e \
+                              WHERE e.user_id = w.user_id \
+                                AND e.provider_id = ss.provider_id)) \
          ) ch \
          CROSS JOIN LATERAL ( \
            SELECT max((SELECT max(c.discovered_at) FROM chapters c \

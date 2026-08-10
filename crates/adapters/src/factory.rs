@@ -5,7 +5,15 @@ use crate::demonicscans::DemonicScansAdapter;
 use crate::error::AdapterError;
 use crate::generic::GenericConfigAdapter;
 use crate::kunmanga::KunMangaAdapter;
+use crate::astro::AstroIslandAdapter;
+use crate::comick::ComickAdapter;
+use crate::flamecomics::FlameComicsAdapter;
+use crate::heancms::HeanCmsAdapter;
 use crate::madara::madara_default_config;
+use crate::mangadex::MangaDexAdapter;
+use crate::webtoons::WebtoonsAdapter;
+use crate::manganato::{ManganatoAdapter, manganato_default_config};
+use crate::mangathemesia::mangathemesia_default_config;
 use crate::types::SourceAdapter;
 use serde_json::Value;
 use tankovault_domain::AdapterKind;
@@ -34,7 +42,19 @@ pub fn build_adapter(
     config: &Value,
 ) -> Result<Box<dyn SourceAdapter>, AdapterError> {
     match adapter {
-        AdapterKind::Madara => Ok(Box::new(GenericConfigAdapter::new(madara_config(config)?))),
+        AdapterKind::Madara => Ok(Box::new(GenericConfigAdapter::new(family_config(
+            madara_default_config(),
+            config,
+        )?))),
+        AdapterKind::MangaThemesia => Ok(Box::new(GenericConfigAdapter::new(family_config(
+            mangathemesia_default_config(),
+            config,
+        )?))),
+        // The family's chapter list is a JSON endpoint, not markup — see `ManganatoAdapter`.
+        AdapterKind::Manganato => Ok(Box::new(ManganatoAdapter::new(family_config(
+            manganato_default_config(),
+            config,
+        )?))),
         AdapterKind::GenericConfig => {
             let cfg = AdapterConfig::from_value(config)?;
             Ok(Box::new(GenericConfigAdapter::new(cfg)))
@@ -42,17 +62,29 @@ pub fn build_adapter(
         AdapterKind::Custom => match slug {
             "demonicscans" => Ok(Box::new(DemonicScansAdapter::new())),
             // Hybrid: Madara-shaped HTML for catalogue/series, JSON API for chapters.
-            "kunmanga" => Ok(Box::new(KunMangaAdapter::new(madara_config(config)?))),
+            "kunmanga" => Ok(Box::new(KunMangaAdapter::new(family_config(
+                madara_default_config(),
+                config,
+            )?))),
+            // First-party JSON APIs. Both split the reader host from the API host, which is why
+            // neither is a config row: the requests go somewhere the `base_url` does not.
+            "mangadex" => Ok(Box::new(MangaDexAdapter::new())),
+            "comick" => Ok(Box::new(ComickAdapter::new())),
+            // HeanCMS, whose chapter rows carry the paywall as `price`/`free_at`.
+            "omegascans" => Ok(Box::new(HeanCmsAdapter::new(config)?)),
+            // Astro islands: the chapter list, with its lock flags, is the island's props.
+            "asura" | "hivetoons" => Ok(Box::new(AstroIslandAdapter::new(slug)?)),
+            "flamecomics" => Ok(Box::new(FlameComicsAdapter::new())),
+            "webtoons" => Ok(Box::new(WebtoonsAdapter::new())),
             other => Err(AdapterError::UnknownCustom(other.to_owned())),
         },
     }
 }
 
-/// Merge a provider `config` onto the Madara selector defaults and parse the result.
-fn madara_config(config: &Value) -> Result<AdapterConfig, AdapterError> {
-    let mut effective = madara_default_config();
-    merge(&mut effective, config);
-    AdapterConfig::from_value(&effective)
+/// Merge a provider `config` onto a family's selector defaults and parse the result.
+fn family_config(mut defaults: Value, config: &Value) -> Result<AdapterConfig, AdapterError> {
+    merge(&mut defaults, config);
+    AdapterConfig::from_value(&defaults)
 }
 
 #[cfg(test)]

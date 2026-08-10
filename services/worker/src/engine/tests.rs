@@ -90,6 +90,7 @@ fn chapter(number: f64, title: Option<&str>, path: &str) -> ChapterMeta {
         title: title.map(str::to_owned),
         path: path.to_owned(),
         published_at: None,
+        access: tankovault_adapters::ChapterAccess::Free,
     }
 }
 

@@ -18,6 +18,8 @@ fn chapter(number: f64, title: Option<&str>, path: &str) -> ChapterUpsert {
         title: title.map(str::to_owned),
         path: path.to_owned(),
         published_at: None,
+        access: tankovault_domain::ChapterAccess::Free,
+        unlocks_at: None,
     }
 }
 

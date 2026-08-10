@@ -9,7 +9,8 @@ use crate::generic::GenericConfigAdapter;
 use crate::html::{parse_chapter_number, relativize, unescape_entities};
 use crate::json::parse_json_body;
 use crate::types::{
-    CatalogItem, CatalogPage, ChapterMeta, Ctx, LatestUpdate, SeriesMeta, SourceAdapter,
+    CatalogItem, CatalogPage, ChapterAccess, ChapterMeta, Ctx, LatestUpdate, SeriesMeta,
+    SourceAdapter,
 };
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -45,6 +46,14 @@ const API_HEADERS: [(&str, &str); 2] = [
 pub struct KunMangaAdapter {
     /// Drives catalogue/latest/series parsing with the standard Madara selectors.
     inner: GenericConfigAdapter,
+    /// The series shard URLs from the sitemap index, resolved once per adapter instance.
+    ///
+    /// The index used to be re-fetched for **every** catalogue page. That is not merely
+    /// wasteful — the origin is behind bot management, so each of those fetches can be
+    /// challenged, and a challenge that cannot be solved aborts the page. The catalogue walk
+    /// stops at the first failing page, so one unlucky re-fetch of a document that had already
+    /// been read silently truncated the catalogue to whatever shards came before it.
+    shards: tokio::sync::OnceCell<Vec<String>>,
 }
 
 impl KunMangaAdapter {
@@ -53,7 +62,40 @@ impl KunMangaAdapter {
     pub fn new(config: AdapterConfig) -> Self {
         Self {
             inner: GenericConfigAdapter::new(config),
+            shards: tokio::sync::OnceCell::new(),
         }
+    }
+
+    /// The series shard URLs, fetched on first use and reused for the rest of the walk.
+    ///
+    /// # Errors
+    /// Whatever the index fetch fails with, or [`AdapterError::Missing`] if the index lists no
+    /// series shards — which means the site changed its sitemap layout, not that it has no
+    /// catalogue, and must not read as "zero series".
+    async fn shards(&self, ctx: &Ctx) -> Result<&Vec<String>, AdapterError> {
+        self.shards
+            .get_or_try_init(|| async {
+                let index = ctx.fetch(SITEMAP_INDEX_PATH).await?;
+                let shards: Vec<String> = sitemap_locs(&index.body)
+                    .into_iter()
+                    .filter(|loc| loc.contains(COMIC_SHARD_MARKER))
+                    .collect();
+                if shards.is_empty() {
+                    return Err(AdapterError::missing(
+                        &format!(
+                            "kunmanga series shards ({COMIC_SHARD_MARKER}*) in {SITEMAP_INDEX_PATH}"
+                        ),
+                        &index,
+                    ));
+                }
+                tracing::info!(
+                    provider = %ctx.provider_slug,
+                    shards = shards.len(),
+                    "sitemap index read; catalogue will walk one shard per page"
+                );
+                Ok(shards)
+            })
+            .await
     }
 }
 
@@ -246,17 +288,7 @@ impl SourceAdapter for KunMangaAdapter {
     /// catalogue. `has_next` here comes from the sitemap index's shard count, so the walk
     /// terminates on exact data instead of a heuristic.
     async fn list_catalog(&self, ctx: &Ctx, page: u32) -> Result<CatalogPage, AdapterError> {
-        let index = ctx.fetch(SITEMAP_INDEX_PATH).await?;
-        let shards: Vec<String> = sitemap_locs(&index.body)
-            .into_iter()
-            .filter(|loc| loc.contains(COMIC_SHARD_MARKER))
-            .collect();
-        if shards.is_empty() {
-            return Err(AdapterError::missing(
-                &format!("kunmanga series shards ({COMIC_SHARD_MARKER}*) in {SITEMAP_INDEX_PATH}"),
-                &index,
-            ));
-        }
+        let shards = self.shards(ctx).await?;
 
         // Pages are 1-based; past the last shard the catalogue is exhausted.
         let Some(shard) = usize::try_from(page)
@@ -270,15 +302,29 @@ impl SourceAdapter for KunMangaAdapter {
             });
         };
 
-        let resp = ctx.fetch(&relativize(&index.url, shard)).await?;
-        let items = sitemap_locs(&resp.body)
+        // The shard URLs are absolute and `resolve_link` passes those through, so this needs no
+        // base to resolve against — which is what let the index fetch move out of this method.
+        let resp = ctx.fetch(shard).await?;
+        let mut seen = std::collections::HashSet::new();
+        let items: Vec<CatalogItem> = sitemap_locs(&resp.body)
             .iter()
             .filter_map(|loc| catalog_item(&resp.url, loc))
+            // A solver-rendered shard embeds the document twice, so every URL arrives twice.
+            // Deduplicated here rather than upstream so a shard's reported size is its real one.
+            .filter(|item| seen.insert(item.path.clone()))
             .collect();
-        Ok(CatalogPage {
-            items,
-            has_next: (page as usize) < shards.len(),
-        })
+
+        let has_next = usize::try_from(page).unwrap_or(usize::MAX) < shards.len();
+        tracing::info!(
+            provider = %ctx.provider_slug,
+            shard = %shard,
+            page,
+            shards = shards.len(),
+            series = items.len(),
+            has_next,
+            "sitemap shard read"
+        );
+        Ok(CatalogPage { items, has_next })
     }
 
     async fn list_latest(&self, ctx: &Ctx) -> Result<Vec<LatestUpdate>, AdapterError> {
@@ -361,6 +407,8 @@ impl SourceAdapter for KunMangaAdapter {
                         .updated_at
                         .as_deref()
                         .and_then(|s| OffsetDateTime::parse(s.trim(), &Rfc3339).ok()),
+                    // KunManga sells no early access; every listed chapter is readable.
+                    access: ChapterAccess::Free,
                 });
             }
 

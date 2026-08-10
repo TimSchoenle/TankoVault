@@ -17,6 +17,11 @@ The shipped presets live in [`presets.rs`](../crates/adapters/src/presets.rs)
 derived from **live markup fetched through the solver pipeline** and is pinned by fixture
 tests, so a provider layout change fails a test rather than corrupting production data.
 
+A third onboarding route was added with the 2026-08 source expansion: a **family**. Madara was
+always this in spirit — one theme, many sites, one shared selector set — and it is now spelled
+that way in `AdapterKind`, alongside two more (`mangathemesia`, `manganato`). A site on a family
+theme is a config row carrying only its deviations, exactly like a Madara one.
+
 ## Summary
 
 | Provider | Domain | Layout | Onboarding | Adapter |
@@ -24,6 +29,50 @@ tests, so a provider layout change fails a test rather than corrupting productio
 | Demonic Scans | `demonicscans.org` | Bespoke PHP | **Custom code** | `DemonicScansAdapter` |
 | Manhuaus | `manhuaus.com` | Madara | **Config only** | Madara + overrides |
 | KunManga | `www.kunmanga.co.uk` | Madara-ish hybrid | **Custom code** | `KunMangaAdapter` |
+| Toonily | `toonily.com` | Madara | **Config only** | Madara + overrides |
+| MangaRead | `www.mangaread.org` | Madara | **Config only** | Madara + overrides |
+| Manhua Plus | `manhuaplus.com` | Madara | **Config only** | Madara + overrides |
+| Rizz Fables | `rizzfables.com` | MangaThemesia | **Config only** | family defaults |
+| NatoManga | `www.natomanga.com` | Manganato | **Config + code** | `ManganatoAdapter` |
+| Mangakakalot | `www.mangakakalot.gg` | Manganato | **Config + code** | `ManganatoAdapter` |
+| NeloManga | `www.nelomanga.net` | Manganato | **Config + code** | `ManganatoAdapter` |
+| TCB Scans | `tcbonepiecechapters.com` | Bespoke | **Config only** | generic selectors |
+| Weeb Central | `weebcentral.com` | Bespoke (htmx) | **Config only** | generic selectors |
+| MangaPill | `mangapill.com` | Bespoke | **Config only** | generic, sitemap mode |
+| MangaDex | `mangadex.org` | JSON API | **Custom code** | `MangaDexAdapter` |
+| ComicK | `comick.dev` | JSON API | **Custom code** | `ComickAdapter` |
+| Omega Scans | `omegascans.org` | HeanCMS JSON | **Custom code** | `HeanCmsAdapter` |
+| Asura Scans | `asurascans.com` | Astro islands | **Custom code** | `AstroIslandAdapter` |
+| Hive Toons | `hivetoons.org` | Astro islands | **Custom code** | `AstroIslandAdapter` |
+| Flame Comics | `flamecomics.xyz` | Next.js | **Custom code** | `FlameComicsAdapter` |
+| WEBTOON | `www.webtoons.com` | Licensed, bespoke | **Custom code** | `WebtoonsAdapter` |
+
+## Early-access (paid) chapters
+
+Several of these sites sell chapters before releasing them free. Such a chapter is stored like
+any other — it has to be, or the row is re-discovered and re-dated when the timer expires, and
+`discovered_at` is what the release feed orders by — but it is stored **as what it is**:
+`chapters.access` is `early_access` and `chapters.unlocks_at` carries the stated unlock time.
+
+Where each provider publishes the fact:
+
+| Provider | Signal | Unlock time |
+|---|---|---|
+| Omega Scans | `price > 0` in the chapter JSON | `free_at` |
+| Asura Scans | `is_locked` in the Astro island props | `unlock_time` / `early_access_until` |
+| Hive Toons | `isLocked` / `isTimeLocked` in the island props | not published — stays locked |
+| Toonily and other Madara sites | `chapters.locked` selector in the provider config | `chapters.unlock`, where rendered |
+| WEBTOON | none: Fast Pass episodes are not rendered to an anonymous visitor at all | n/a |
+
+A locked chapter does **not** count as unread. It starts counting when either its stated unlock
+time passes — no rescan needed, the predicate compares the stored timestamp against `now()` — or
+the reader opts that provider in at `PUT /v1/me/source-preferences`
+(`early_access_provider_ids`). The opt-in is per provider because paying one scanlator says
+nothing about any other. A locked chapter with **no** announced unlock time stays locked: a
+missing date is not a date in the past.
+
+`crates/db/tests/repo_tracking.rs` pins all of that, including the two ways it opens and the
+per-provider scoping of the opt-in.
 
 **manhuaus** is **just a config of the existing Madara parser**. **kunmanga** renders
 Madara-shaped series HTML but serves chapters from a JSON API and cannot be enumerated

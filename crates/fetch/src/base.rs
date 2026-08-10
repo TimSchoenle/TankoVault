@@ -22,7 +22,20 @@ use wreq_util::{Emulation, Platform, Profile};
 /// Maximum redirects followed before erroring.
 const MAX_REDIRECTS: usize = 5;
 /// Hard cap on response body size (guards memory and the no-binary-content invariant).
-const MAX_BODY_BYTES: usize = 8 * 1024 * 1024;
+///
+/// Raised from 8 MiB, which was inconsistent rather than merely tight: a sitemap shard that the
+/// **solver** path hands back at 26 MB — it returns the browser's rendered body with no cap at
+/// all — was refused outright when the same document arrived on the plain path at 2.9 MB raw
+/// and growing. One transport accepting a document the other rejects makes a provider's
+/// catalogue depend on whether its session happened to be cached, which is not a property
+/// anything upstream can reason about.
+///
+/// The bound that matters is concurrency × this value: `Politeness::MAX_CONCURRENCY` is 16
+/// in-flight requests per provider, so a provider at the ceiling can hold 256 MiB of bodies at
+/// once. That is inside the worker's compose memory limit, and no provider comes close in
+/// practice — only sitemap shards are anywhere near this size, and they are fetched one at a
+/// time by a catalogue walk.
+const MAX_BODY_BYTES: usize = 16 * 1024 * 1024;
 
 /// Resolve a domain-level browser family to a concrete emulation profile.
 ///

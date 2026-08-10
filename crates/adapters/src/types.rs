@@ -3,7 +3,9 @@
 use crate::error::AdapterError;
 use async_trait::async_trait;
 use std::sync::Arc;
-use tankovault_domain::{ContentType, SeriesStatus, resolve_link};
+use tankovault_domain::{
+    ChapterAccess as DomainChapterAccess, ContentType, SeriesStatus, resolve_link,
+};
 use tankovault_fetch::{FetchRequest, FetchResponse, Fetcher};
 use time::OffsetDateTime;
 
@@ -96,6 +98,43 @@ pub struct ChapterMeta {
     pub title: Option<String>,
     pub path: String,
     pub published_at: Option<OffsetDateTime>,
+    /// What the provider says about reading it right now.
+    pub access: ChapterAccess,
+}
+
+/// A provider's access verdict for one chapter, as advertised on the page or in its API.
+///
+/// [`EarlyAccess`](Self::EarlyAccess) carries the unlock time when the provider states one.
+/// `None` there is not "unlocks now" — it is "the provider showed a lock and no date", which
+/// the read paths must keep treating as locked until a later scan says otherwise.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ChapterAccess {
+    /// Readable by anyone.
+    #[default]
+    Free,
+    /// Behind a paywall or a timed early-access window.
+    EarlyAccess { unlocks_at: Option<OffsetDateTime> },
+}
+
+impl ChapterAccess {
+    /// The provider's verdict split into the two columns `chapters` stores it in.
+    #[must_use]
+    pub fn to_columns(self) -> (DomainChapterAccess, Option<OffsetDateTime>) {
+        match self {
+            Self::Free => (DomainChapterAccess::Free, None),
+            Self::EarlyAccess { unlocks_at } => (DomainChapterAccess::EarlyAccess, unlocks_at),
+        }
+    }
+
+    /// Locked from `now`'s point of view: early access whose stated unlock time has not passed
+    /// (or which carries no unlock time at all).
+    #[must_use]
+    pub fn is_locked_at(self, now: OffsetDateTime) -> bool {
+        match self {
+            Self::Free => false,
+            Self::EarlyAccess { unlocks_at } => unlocks_at.is_none_or(|at| at > now),
+        }
+    }
 }
 
 /// The behavioural contract every provider satisfies (config-driven or custom).

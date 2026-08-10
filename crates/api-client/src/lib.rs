@@ -156,16 +156,18 @@ pub mod types {
             value.parse()
         }
     }
-    #[doc = "Which adapter implementation drives a provider."]
+    #[doc = "Which adapter implementation drives a provider.\n\n`Madara`, `MangaThemesia` and `Manganato` are *families*: each names a shared site theme\nwhose default selector set ships in this workspace, so a site running one onboards as a\nsingle config row carrying only its deviations. `Custom` is the escape hatch, dispatched\nby slug."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Which adapter implementation drives a provider.\","]
+    #[doc = "  \"description\": \"Which adapter implementation drives a provider.\\n\\n`Madara`, `MangaThemesia` and `Manganato` are *families*: each names a shared site theme\\nwhose default selector set ships in this workspace, so a site running one onboards as a\\nsingle config row carrying only its deviations. `Custom` is the escape hatch, dispatched\\nby slug.\","]
     #[doc = "  \"type\": \"string\","]
     #[doc = "  \"enum\": ["]
     #[doc = "    \"madara\","]
+    #[doc = "    \"manga_themesia\","]
+    #[doc = "    \"manganato\","]
     #[doc = "    \"generic_config\","]
     #[doc = "    \"custom\""]
     #[doc = "  ]"]
@@ -187,6 +189,10 @@ pub mod types {
     pub enum AdapterKind {
         #[serde(rename = "madara")]
         Madara,
+        #[serde(rename = "manga_themesia")]
+        MangaThemesia,
+        #[serde(rename = "manganato")]
+        Manganato,
         #[serde(rename = "generic_config")]
         GenericConfig,
         #[serde(rename = "custom")]
@@ -196,6 +202,8 @@ pub mod types {
         fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
             match *self {
                 Self::Madara => f.write_str("madara"),
+                Self::MangaThemesia => f.write_str("manga_themesia"),
+                Self::Manganato => f.write_str("manganato"),
                 Self::GenericConfig => f.write_str("generic_config"),
                 Self::Custom => f.write_str("custom"),
             }
@@ -206,6 +214,8 @@ pub mod types {
         fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
             match value {
                 "madara" => Ok(Self::Madara),
+                "manga_themesia" => Ok(Self::MangaThemesia),
+                "manganato" => Ok(Self::Manganato),
                 "generic_config" => Ok(Self::GenericConfig),
                 "custom" => Ok(Self::Custom),
                 _ => Err("invalid value".into()),
@@ -11108,18 +11118,26 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "The reader's provider order, most preferred first."]
+    #[doc = "The reader's provider order, most preferred first, plus their early-access opt-ins."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"The reader's provider order, most preferred first.\","]
+    #[doc = "  \"description\": \"The reader's provider order, most preferred first, plus their early-access opt-ins.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
+    #[doc = "    \"early_access_providers\","]
     #[doc = "    \"providers\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
+    #[doc = "    \"early_access_providers\": {"]
+    #[doc = "      \"description\": \"Providers whose paid early-access chapters this reader wants counted.\\n\\nOff by default and per provider, because paying one scanlator for early access says\\nnothing about any other: applying it globally would put chapters the reader cannot open\\nback into their unread count, which is the failure the early-access model exists to fix.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/PreferredProvider\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
     #[doc = "    \"providers\": {"]
     #[doc = "      \"description\": \"Ranked providers only. An absent provider is \\\"no opinion\\\", not \\\"last\\\": series carried by\\nnobody on this list resolve by the objective richest-source order instead.\","]
     #[doc = "      \"type\": \"array\","]
@@ -11133,6 +11151,8 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct SourcePreferences {
+        #[doc = "Providers whose paid early-access chapters this reader wants counted.\n\nOff by default and per provider, because paying one scanlator for early access says\nnothing about any other: applying it globally would put chapters the reader cannot open\nback into their unread count, which is the failure the early-access model exists to fix."]
+        pub early_access_providers: ::std::vec::Vec<PreferredProvider>,
         #[doc = "Ranked providers only. An absent provider is \"no opinion\", not \"last\": series carried by\nnobody on this list resolve by the objective richest-source order instead."]
         pub providers: ::std::vec::Vec<PreferredProvider>,
     }
@@ -11141,18 +11161,28 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "A replacement provider order."]
+    #[doc = "A replacement provider order, and optionally a replacement early-access set."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"A replacement provider order.\","]
+    #[doc = "  \"description\": \"A replacement provider order, and optionally a replacement early-access set.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"provider_ids\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
+    #[doc = "    \"early_access_provider_ids\": {"]
+    #[doc = "      \"description\": \"Provider ids whose early-access chapters should count for this reader.\\n\\n**Omitted leaves the current set untouched**; `[]` clears it. The distinction matters\\nbecause this field was added after the endpoint shipped — treating an absent field as an\\nempty list would silently revoke the opt-in of every client that has not been updated.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"array\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/ProviderId\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
     #[doc = "    \"provider_ids\": {"]
     #[doc = "      \"description\": \"Provider ids, most preferred first. Must be distinct and must all exist; an empty list\\nclears the preference.\","]
     #[doc = "      \"type\": \"array\","]
@@ -11166,6 +11196,9 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct SourcePreferencesUpdate {
+        #[doc = "Provider ids whose early-access chapters should count for this reader.\n\n**Omitted leaves the current set untouched**; `[]` clears it. The distinction matters\nbecause this field was added after the endpoint shipped — treating an absent field as an\nempty list would silently revoke the opt-in of every client that has not been updated."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub early_access_provider_ids: ::std::option::Option<::std::vec::Vec<ProviderId>>,
         #[doc = "Provider ids, most preferred first. Must be distinct and must all exist; an empty list\nclears the preference."]
         pub provider_ids: ::std::vec::Vec<ProviderId>,
     }
@@ -27978,6 +28011,10 @@ pub mod types {
         }
         #[derive(Clone, Debug)]
         pub struct SourcePreferences {
+            early_access_providers: ::std::result::Result<
+                ::std::vec::Vec<super::PreferredProvider>,
+                ::std::string::String,
+            >,
             providers: ::std::result::Result<
                 ::std::vec::Vec<super::PreferredProvider>,
                 ::std::string::String,
@@ -27986,11 +28023,24 @@ pub mod types {
         impl ::std::default::Default for SourcePreferences {
             fn default() -> Self {
                 Self {
+                    early_access_providers: Err(
+                        "no value supplied for early_access_providers".to_string()
+                    ),
                     providers: Err("no value supplied for providers".to_string()),
                 }
             }
         }
         impl SourcePreferences {
+            pub fn early_access_providers<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::PreferredProvider>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.early_access_providers = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for early_access_providers: {e}")
+                });
+                self
+            }
             pub fn providers<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::std::vec::Vec<super::PreferredProvider>>,
@@ -28008,6 +28058,7 @@ pub mod types {
                 value: SourcePreferences,
             ) -> ::std::result::Result<Self, super::error::ConversionError> {
                 Ok(Self {
+                    early_access_providers: value.early_access_providers?,
                     providers: value.providers?,
                 })
             }
@@ -28015,23 +28066,41 @@ pub mod types {
         impl ::std::convert::From<super::SourcePreferences> for SourcePreferences {
             fn from(value: super::SourcePreferences) -> Self {
                 Self {
+                    early_access_providers: Ok(value.early_access_providers),
                     providers: Ok(value.providers),
                 }
             }
         }
         #[derive(Clone, Debug)]
         pub struct SourcePreferencesUpdate {
+            early_access_provider_ids: ::std::result::Result<
+                ::std::option::Option<::std::vec::Vec<super::ProviderId>>,
+                ::std::string::String,
+            >,
             provider_ids:
                 ::std::result::Result<::std::vec::Vec<super::ProviderId>, ::std::string::String>,
         }
         impl ::std::default::Default for SourcePreferencesUpdate {
             fn default() -> Self {
                 Self {
+                    early_access_provider_ids: Ok(Default::default()),
                     provider_ids: Err("no value supplied for provider_ids".to_string()),
                 }
             }
         }
         impl SourcePreferencesUpdate {
+            pub fn early_access_provider_ids<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<::std::vec::Vec<super::ProviderId>>,
+                    >,
+                T::Error: ::std::fmt::Display,
+            {
+                self.early_access_provider_ids = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for early_access_provider_ids: {e}")
+                });
+                self
+            }
             pub fn provider_ids<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::std::vec::Vec<super::ProviderId>>,
@@ -28049,6 +28118,7 @@ pub mod types {
                 value: SourcePreferencesUpdate,
             ) -> ::std::result::Result<Self, super::error::ConversionError> {
                 Ok(Self {
+                    early_access_provider_ids: value.early_access_provider_ids?,
                     provider_ids: value.provider_ids?,
                 })
             }
@@ -28056,6 +28126,7 @@ pub mod types {
         impl ::std::convert::From<super::SourcePreferencesUpdate> for SourcePreferencesUpdate {
             fn from(value: super::SourcePreferencesUpdate) -> Self {
                 Self {
+                    early_access_provider_ids: Ok(value.early_access_provider_ids),
                     provider_ids: Ok(value.provider_ids),
                 }
             }

@@ -1,29 +1,46 @@
 //! Provider adapter framework: [`SourceAdapter`] is the trait every provider implements, and
 //! [`GenericConfigAdapter`] drives config-driven providers from `providers.config` selectors.
 
+mod astro;
+mod comick;
 mod config;
 mod demonicscans;
 mod diagnostics;
 mod error;
 mod factory;
+mod flamecomics;
 mod generic;
+mod heancms;
 pub mod html;
 mod json;
 mod kunmanga;
 mod madara;
+mod mangadex;
+mod manganato;
+mod mangathemesia;
 pub mod presets;
 mod types;
+mod webtoons;
 
+pub use astro::{AstroFlavour, AstroIslandAdapter};
+pub use comick::ComickAdapter;
 pub use config::AdapterConfig;
 pub use demonicscans::DemonicScansAdapter;
 pub use error::AdapterError;
 pub use factory::build_adapter;
+pub use flamecomics::FlameComicsAdapter;
+pub use heancms::HeanCmsAdapter;
 pub use generic::GenericConfigAdapter;
 pub use kunmanga::KunMangaAdapter;
 pub use madara::madara_default_config;
+pub use mangadex::MangaDexAdapter;
+pub use manganato::{ManganatoAdapter, manganato_default_config};
+pub use mangathemesia::mangathemesia_default_config;
 pub use presets::{ProviderPreset, builtin as builtin_presets};
+pub use webtoons::WebtoonsAdapter;
 pub use types::{
-    CatalogItem, CatalogPage, ChapterMeta, Ctx, LatestUpdate, SeriesMeta, SourceAdapter,
+    CatalogItem, CatalogPage, ChapterAccess, ChapterMeta, Ctx, LatestUpdate, SeriesMeta,
+    SourceAdapter,
 };
 
 /// Seams for the out-of-workspace fuzz crate, which can only reach `pub` items.

@@ -57,6 +57,10 @@ fn default_bind() -> String {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // First, before anything can build a rustls configuration: rustls cannot choose a provider
+    // for itself in this graph and panics instead of erroring. See `tankovault_service::crypto`.
+    tankovault_service::install_crypto_provider();
+
     // Runs before config/telemetry: `scratch` images have no shell or wget, so the binary
     // must probe itself for Docker's HEALTHCHECK.
     if tankovault_service::healthcheck::requested() {

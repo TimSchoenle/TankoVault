@@ -27,6 +27,7 @@
 //! ```
 
 pub mod audit;
+pub mod crypto;
 pub mod flags;
 pub mod health;
 pub mod healthcheck;
@@ -42,6 +43,7 @@ pub mod tls;
 pub mod tunables;
 
 pub use audit::{AuditEvent, AuditOutcome, AuditSink, NoopAuditSink};
+pub use crypto::install_default_provider as install_crypto_provider;
 pub use flags::{FeatureGate, FeatureLayer, FlagSource, RouteFeatures};
 pub use health::{Health, HealthBuilder, HealthReport, HealthStatus};
 pub use healthcheck::{HEALTHCHECK_FLAG, run_and_exit as run_healthcheck_and_exit};

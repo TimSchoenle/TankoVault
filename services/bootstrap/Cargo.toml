@@ -19,6 +19,11 @@ path = "src/lib.rs"
 
 [dependencies]
 tankovault-config = { workspace = true }
+# For `install_crypto_provider` alone — this CLI serves nothing. It still opens a `sqlx` pool,
+# and a Postgres that requires TLS makes sqlx build a rustls client config, which is the call
+# that panics without a process-wide provider. Naming the shared runtime keeps one spelling of
+# that invariant across all nine binaries rather than a second copy here.
+tankovault-service = { workspace = true }
 tankovault-db = { workspace = true }
 tankovault-domain = { workspace = true }
 # The admin step hashes a password; `connect` and the seed both take wrapped secrets.

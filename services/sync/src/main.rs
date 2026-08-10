@@ -374,6 +374,10 @@ fn is_placeholder_key(encoded: &SecretString) -> bool {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // First, before anything can build a rustls configuration: rustls cannot choose a provider
+    // for itself in this graph and panics instead of erroring. See `tankovault_service::crypto`.
+    tankovault_service::install_crypto_provider();
+
     // Before anything else: `scratch` images have no shell/wget, so a Docker HEALTHCHECK
     // invokes this binary itself as the only available probe.
     if tankovault_service::healthcheck::requested() {

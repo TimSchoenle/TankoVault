@@ -135,6 +135,10 @@ fn default_max_pages() -> u32 {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // First, before anything can build a rustls configuration: rustls cannot choose a provider
+    // for itself in this graph and panics instead of erroring. See `tankovault_service::crypto`.
+    tankovault_service::install_crypto_provider();
+
     // Before config, telemetry or anything else: this process may have been invoked by
     // Docker's HEALTHCHECK rather than as the service. `scratch` images have no shell and no
     // wget, so the binary probing itself is the only probe available. See

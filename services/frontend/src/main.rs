@@ -156,6 +156,10 @@ struct AppState {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // First, before anything can build a rustls configuration: rustls cannot choose a provider
+    // for itself in this graph and panics instead of erroring. See `tankovault_service::crypto`.
+    tankovault_service::install_crypto_provider();
+
     // Before anything else: this may be Docker's HEALTHCHECK invoking the binary rather than
     // the server. `scratch` has no shell/wget, so the binary probing itself is the only probe.
     if tankovault_service::healthcheck::requested() {

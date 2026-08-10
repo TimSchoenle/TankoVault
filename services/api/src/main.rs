@@ -276,6 +276,10 @@ fn validate_auth_secrets(auth: &AuthConfig, production: bool) -> anyhow::Result<
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // First, before anything can build a rustls configuration: rustls cannot choose a provider
+    // for itself in this graph and panics instead of erroring. See `tankovault_service::crypto`.
+    tankovault_service::install_crypto_provider();
+
     // Before anything else: this may be Docker's HEALTHCHECK invocation, not the service.
     // `scratch` images have no shell, so the binary probing itself is the only probe available.
     if tankovault_service::healthcheck::requested() {

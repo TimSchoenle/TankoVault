@@ -15,6 +15,7 @@ mod metrics;
 mod notices;
 mod secrets;
 mod text;
+mod tls;
 mod workflows;
 
 pub(crate) use deploy::{deploy_exclusions, service_bins};
@@ -64,9 +65,10 @@ pub(crate) fn run(root: &Path) -> anyhow::Result<()> {
     findings.extend(workflows::release_please_tags_before_it_proposes(root)?);
     findings.extend(floors::coverage_floors_parse(root)?);
     findings.extend(gitattributes::generated_artefacts_check_out_as_lf(root)?);
+    findings.extend(tls::every_service_installs_a_crypto_provider(root)?);
 
     if findings.is_empty() {
-        println!("repo-lint: 22 rules, no violations");
+        println!("repo-lint: 23 rules, no violations");
         return Ok(());
     }
 

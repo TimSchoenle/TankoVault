@@ -193,6 +193,11 @@ impl ReloadingTls {
 
 /// Read the three files and assemble a client-verifying server configuration.
 fn build(paths: &ResolvedTls) -> Result<Arc<ServerConfig>, TlsError> {
+    // Before the first rustls call in the function, not left to the caller: every `main`
+    // installs the provider too, but this is the one rustls object the workspace builds itself,
+    // and reaching `ServerConfig::builder()` without one is a panic rather than an error.
+    crate::crypto::install_default_provider();
+
     let certs: Vec<CertificateDer<'static>> = CertificateDer::pem_file_iter(&paths.cert)
         .map_err(|e| TlsError::Read {
             path: paths.cert.display().to_string(),
@@ -235,8 +240,8 @@ fn build(paths: &ResolvedTls) -> Result<Arc<ServerConfig>, TlsError> {
         });
     }
 
-    // `builder`, not `builder_with_provider`: whichever provider is installed process-wide is
-    // the one the rest of the stack (reqwest, sqlx) already negotiated with.
+    // `builder`, not `builder_with_provider`: the provider installed process-wide above is the
+    // one the rest of the stack (reqwest, sqlx) already negotiated with.
     let verifier = WebPkiClientVerifier::builder(Arc::new(roots))
         .build()
         .map_err(|e| TlsError::Config(e.to_string()))?;

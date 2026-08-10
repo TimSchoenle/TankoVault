@@ -262,10 +262,13 @@ subtle = "2"
 # `Cargo.lock` as transitive dependencies of reqwest/sqlx, so naming them here promotes existing
 # crates rather than widening the supply chain.
 #
-# No provider feature is selected: whichever `rustls` provider the process installs — reqwest
-# and sqlx negotiate with it too — is the one the internal listener uses, so the binary cannot
-# end up with two.
-rustls = { version = "0.23", default-features = false, features = ["std", "logging", "tls12"] }
+# `ring` is named here rather than left to feature unification. rustls only picks a provider by
+# itself when exactly one of `ring` and `aws-lc-rs` is enabled anywhere in the graph, and this
+# one enables both without asking (lettre pulls `ring`, quinn-proto pulls `aws-lc-rs` through
+# `wreq`'s HTTP/3) — so it cannot, and its fallback is a panic at handshake-setup time, not an
+# error. `crates/service/src/crypto.rs` installs the choice process-wide before anything builds
+# a configuration; this feature is what makes that provider nameable.
+rustls = { version = "0.23", default-features = false, features = ["std", "logging", "tls12", "ring"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["logging", "tls12"] }
 # Reads the subject alternative names out of a verified peer certificate; `rustls` verifies a
 # chain but deliberately does not expose the parsed extensions.

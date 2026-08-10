@@ -48,6 +48,10 @@ fn default_admin_username() -> String {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // First, before anything can build a rustls configuration: rustls cannot choose a provider
+    // for itself in this graph and panics instead of erroring. See `tankovault_service::crypto`.
+    tankovault_service::install_crypto_provider();
+
     let cmd = std::env::args().nth(1).unwrap_or_default();
     if !matches!(cmd.as_str(), "migrate" | "seed-admin" | "seed-providers") {
         eprintln!("usage: bootstrap <migrate|seed-admin|seed-providers>");

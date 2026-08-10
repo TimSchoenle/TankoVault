@@ -5418,6 +5418,7 @@ dependencies = [
  "tankovault-config",
  "tankovault-db",
  "tankovault-domain",
+ "tankovault-service",
  "tokio",
 ]
 

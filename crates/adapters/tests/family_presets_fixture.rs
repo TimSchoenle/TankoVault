@@ -24,6 +24,16 @@ struct SiteFetcher {
 #[async_trait]
 impl Fetcher for SiteFetcher {
     async fn get(&self, req: FetchRequest) -> Result<FetchResponse, FetchError> {
+        // A sitemap shard past the last one 404s; that is the site saying the catalogue ended.
+        if req.url.contains("sitemap") && !req.url.contains("sitemap1") {
+            return Ok(FetchResponse {
+                status: 404,
+                url: req.url.clone(),
+                headers: Vec::new(),
+                body: "404 page not found".to_owned(),
+                from_cache: false,
+            });
+        }
         let body = if req.url.contains("/api/manga/") {
             self.chapters_api
         } else if req.url.contains("page=")
@@ -422,4 +432,49 @@ async fn toonily_series_reads_the_lazy_loaded_cover() {
         chapters.iter().any(|c| c.published_at.is_some()),
         "month-name release dates must parse"
     );
+}
+
+/// Regression: a catalogue that does not paginate must say so, or the walk never terminates.
+///
+/// Rizz Fables lists all 88 of its series on one page and answers every `?page=N` with that
+/// same document. The MangaThemesia family default clears `catalog.next`, so `has_next` falls
+/// back to "this page yielded items" — which is true forever on a site like this. A full scan
+/// re-fetched and re-ingested page 1 until the planner's page cap: twenty thousand requests for
+/// eighty-eight series, with no error anywhere, because every page genuinely succeeded.
+///
+/// Found by a live full scan, not by a fast scan — the fast path never calls `list_catalog`.
+#[tokio::test]
+async fn a_single_page_catalogue_reports_no_next_page() {
+    let (adapter, ctx) = preset_adapter(
+        "rizzfables",
+        SiteFetcher {
+            catalog: THEMESIA_CATALOG,
+            ..SiteFetcher::default()
+        },
+    );
+
+    let first = adapter.list_catalog(&ctx, 1).await.expect("page 1 parses");
+    assert!(!first.items.is_empty(), "page 1 still yields the catalogue");
+    assert!(
+        !first.has_next,
+        "a declared one-page catalogue must never report another page, however many items it has"
+    );
+}
+
+/// Regression: in sitemap mode a 404 on shard `n+1` is how the catalogue ends, not a failure.
+///
+/// MangaPill publishes one shard. Reported as an error, the walk ended *and* the run was marked
+/// degraded — a scan failure logged on every full scan, forever, for a provider behaving
+/// perfectly. Restricted to 404 on purpose: a 403 or a 5xx means part of the catalogue was not
+/// seen, and must keep surfacing.
+#[tokio::test]
+async fn a_missing_sitemap_shard_ends_the_walk_without_failing_it() {
+    let (adapter, ctx) = preset_adapter("mangapill", SiteFetcher::default());
+
+    let past_end = adapter
+        .list_catalog(&ctx, 2)
+        .await
+        .expect("a missing shard must not be an error");
+    assert!(past_end.items.is_empty());
+    assert!(!past_end.has_next, "there is nothing after a missing shard");
 }

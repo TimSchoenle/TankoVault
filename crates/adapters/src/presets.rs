@@ -118,7 +118,17 @@ pub fn builtin() -> Vec<ProviderPreset> {
             name: "Rizz Fables",
             base_url: "https://rizzfables.com",
             adapter: AdapterKind::MangaThemesia,
-            config: json!({}),
+            config: json!({
+                "catalog": {
+                    // This site lists its whole catalogue — 88 series — on one page and ignores
+                    // `?page=`, answering every page number with the same document. The theme's
+                    // paginator markup is commented out for the same reason. Without `pages: 1`
+                    // the yielded-items fallback never goes false, so the walk re-fetched and
+                    // re-ingested page 1 until the planner's cap: 20 000 requests for 88 series,
+                    // and no error anywhere, because every page "succeeded".
+                    "pages": 1
+                }
+            }),
             politeness: Politeness::default(),
         },
         // --- Manganato family ----------------------------------------------------------

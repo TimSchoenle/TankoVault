@@ -43,7 +43,23 @@ impl GenericConfigAdapter {
         path: &str,
         page: u32,
     ) -> Result<CatalogPage, AdapterError> {
-        let resp = ctx.fetch(path).await?;
+        let resp = match ctx.fetch(path).await {
+            Ok(resp) => resp,
+            // Shard `n+1` not existing is how a sitemap says "that was the last one" — the
+            // index is not fetched in this mode, so there is nothing else that could. Reported
+            // as an error it ends the walk *and* marks the run degraded, which is a scan
+            // failure logged for every provider on this mode, every time, for working normally.
+            //
+            // Restricted to 404 on purpose: a 403 or a 5xx on a shard is a real failure and
+            // must keep surfacing, because it means part of the catalogue was not seen.
+            Err(AdapterError::Http { status: 404, .. }) => {
+                return Ok(CatalogPage {
+                    items: Vec::new(),
+                    has_next: false,
+                });
+            }
+            Err(e) => return Err(e),
+        };
         let marker = self.config.catalog.item.clone();
         let max_pages = self.config.catalog.pages;
         parse_blocking(resp, move |_, resp| {

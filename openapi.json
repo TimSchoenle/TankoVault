@@ -39,9 +39,11 @@
         "type": "string"
       },
       "AdapterKind": {
-        "description": "Which adapter implementation drives a provider.",
+        "description": "Which adapter implementation drives a provider.\n\n`Madara`, `MangaThemesia` and `Manganato` are *families*: each names a shared site theme\nwhose default selector set ships in this workspace, so a site running one onboards as a\nsingle config row carrying only its deviations. `Custom` is the escape hatch, dispatched\nby slug.",
         "enum": [
           "madara",
+          "manga_themesia",
+          "manganato",
           "generic_config",
           "custom"
         ],
@@ -4955,8 +4957,15 @@
         "type": "object"
       },
       "SourcePreferences": {
-        "description": "The reader's provider order, most preferred first.",
+        "description": "The reader's provider order, most preferred first, plus their early-access opt-ins.",
         "properties": {
+          "early_access_providers": {
+            "description": "Providers whose paid early-access chapters this reader wants counted.\n\nOff by default and per provider, because paying one scanlator for early access says\nnothing about any other: applying it globally would put chapters the reader cannot open\nback into their unread count, which is the failure the early-access model exists to fix.",
+            "items": {
+              "$ref": "#/components/schemas/PreferredProvider"
+            },
+            "type": "array"
+          },
           "providers": {
             "description": "Ranked providers only. An absent provider is \"no opinion\", not \"last\": series carried by\nnobody on this list resolve by the objective richest-source order instead.",
             "items": {
@@ -4966,13 +4975,24 @@
           }
         },
         "required": [
-          "providers"
+          "providers",
+          "early_access_providers"
         ],
         "type": "object"
       },
       "SourcePreferencesUpdate": {
-        "description": "A replacement provider order.",
+        "description": "A replacement provider order, and optionally a replacement early-access set.",
         "properties": {
+          "early_access_provider_ids": {
+            "description": "Provider ids whose early-access chapters should count for this reader.\n\n**Omitted leaves the current set untouched**; `[]` clears it. The distinction matters\nbecause this field was added after the endpoint shipped — treating an absent field as an\nempty list would silently revoke the opt-in of every client that has not been updated.",
+            "items": {
+              "$ref": "#/components/schemas/ProviderId"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "provider_ids": {
             "description": "Provider ids, most preferred first. Must be distinct and must all exist; an empty list\nclears the preference.",
             "items": {

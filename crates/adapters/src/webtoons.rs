@@ -162,8 +162,8 @@ impl SourceAdapter for WebtoonsAdapter {
                 .or_else(|| extract_first(root, "h1.subj").ok().flatten())
                 .ok_or_else(|| AdapterError::missing("webtoons series title (p.subj)", resp))?;
 
-            let cover_url = extract_first(root, "span.thmb img@src")?
-                .map(|href| absolutize(&resp.url, &href));
+            let cover_url =
+                extract_first(root, "span.thmb img@src")?.map(|href| absolutize(&resp.url, &href));
 
             let authors = extract_first(root, "div.author_area")?
                 .map(|raw| {
@@ -220,10 +220,7 @@ impl SourceAdapter for WebtoonsAdapter {
                     else {
                         continue;
                     };
-                    let Some(href) = el
-                        .select(&link)
-                        .next()
-                        .and_then(|a| a.value().attr("href"))
+                    let Some(href) = el.select(&link).next().and_then(|a| a.value().attr("href"))
                     else {
                         continue;
                     };
@@ -292,7 +289,10 @@ mod tests {
             WebtoonsAdapter::base_series_path("/en/fantasy/tower-of-god/list?page=2"),
             "/en/fantasy/tower-of-god/list"
         );
-        assert_eq!(WebtoonsAdapter::base_series_path("/en/x/y/list"), "/en/x/y/list");
+        assert_eq!(
+            WebtoonsAdapter::base_series_path("/en/x/y/list"),
+            "/en/x/y/list"
+        );
     }
 
     #[test]

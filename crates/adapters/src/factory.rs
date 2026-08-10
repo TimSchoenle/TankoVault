@@ -1,20 +1,20 @@
 //! Adapter construction: map a provider's `adapter` kind + `config` to a live adapter.
 
+use crate::astro::AstroIslandAdapter;
+use crate::comick::ComickAdapter;
 use crate::config::AdapterConfig;
 use crate::demonicscans::DemonicScansAdapter;
 use crate::error::AdapterError;
-use crate::generic::GenericConfigAdapter;
-use crate::kunmanga::KunMangaAdapter;
-use crate::astro::AstroIslandAdapter;
-use crate::comick::ComickAdapter;
 use crate::flamecomics::FlameComicsAdapter;
+use crate::generic::GenericConfigAdapter;
 use crate::heancms::HeanCmsAdapter;
+use crate::kunmanga::KunMangaAdapter;
 use crate::madara::madara_default_config;
 use crate::mangadex::MangaDexAdapter;
-use crate::webtoons::WebtoonsAdapter;
 use crate::manganato::{ManganatoAdapter, manganato_default_config};
 use crate::mangathemesia::mangathemesia_default_config;
 use crate::types::SourceAdapter;
+use crate::webtoons::WebtoonsAdapter;
 use serde_json::Value;
 use tankovault_domain::AdapterKind;
 

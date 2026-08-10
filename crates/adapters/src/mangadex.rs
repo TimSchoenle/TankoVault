@@ -1,4 +1,4 @@
-//! MangaDex, driven by its documented public API (<https://api.mangadex.org/docs/>).
+//! `MangaDex`, driven by its documented public API (<https://api.mangadex.org/docs/>).
 //!
 //! The only source here with a first-party API and a published rate policy, and the only one
 //! whose records carry AniList/MAL ids — `attributes.links` feeds the enrichment matcher
@@ -141,7 +141,7 @@ fn localised(map: &Localised) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
-/// Map MangaDex's `originalLanguage` to this workspace's medium classification.
+/// Map `MangaDex`'s `originalLanguage` to this workspace's medium classification.
 fn content_type_of(language: Option<&str>) -> ContentType {
     match language {
         Some("ja") => ContentType::Manga,
@@ -151,7 +151,7 @@ fn content_type_of(language: Option<&str>) -> ContentType {
     }
 }
 
-/// The MangaDex adapter.
+/// The `MangaDex` adapter.
 pub struct MangaDexAdapter;
 
 impl MangaDexAdapter {
@@ -240,7 +240,8 @@ impl SourceAdapter for MangaDexAdapter {
 
     async fn fetch_series(&self, ctx: &Ctx, path: &str) -> Result<SeriesMeta, AdapterError> {
         let id = Self::id_of(path);
-        let url = format!("{API}/manga/{id}?includes[]=cover_art&includes[]=author&includes[]=artist");
+        let url =
+            format!("{API}/manga/{id}?includes[]=cover_art&includes[]=author&includes[]=artist");
         let resp = ctx.fetch(&url).await?;
         let manga: Single<MangaAttrs> = parse_json_body("mangadex /manga/{id}", &resp)?;
         let attrs = &manga.data.attributes;

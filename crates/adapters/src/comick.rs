@@ -1,4 +1,4 @@
-//! ComicK, driven by its public JSON API.
+//! `ComicK`, driven by its public JSON API.
 //!
 //! Like [`mangadex`](crate::mangadex) the reader site and the API are different hosts, and the
 //! provider's `base_url` is the reader one so stored paths stay openable.
@@ -127,7 +127,7 @@ fn content_type_of(country: Option<&str>) -> ContentType {
     }
 }
 
-/// The ComicK adapter.
+/// The `ComicK` adapter.
 pub struct ComickAdapter;
 
 impl ComickAdapter {
@@ -242,7 +242,8 @@ impl SourceAdapter for ComickAdapter {
         let mut chapters = Vec::new();
         let mut exhausted = false;
         for page in 1..=MAX_CHAPTER_PAGES {
-            let url = format!("{API}/comic/{hid}/chapters?lang=en&page={page}&limit={CHAPTER_LIMIT}");
+            let url =
+                format!("{API}/comic/{hid}/chapters?lang=en&page={page}&limit={CHAPTER_LIMIT}");
             let resp = ctx.fetch(&url).await?;
             let body: ChapterPage = parse_json_body("comick chapters", &resp)?;
             let returned = body.chapters.len();

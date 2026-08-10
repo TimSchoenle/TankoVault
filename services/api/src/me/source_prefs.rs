@@ -75,8 +75,8 @@ pub async fn source_preferences(
 ) -> ApiResult<Json<SourcePreferences>> {
     let ranked =
         tankovault_db::repo::users::get_provider_priority(&state.pool, user.user_id).await?;
-    let early = tankovault_db::repo::users::get_early_access_providers(&state.pool, user.user_id)
-        .await?;
+    let early =
+        tankovault_db::repo::users::get_early_access_providers(&state.pool, user.user_id).await?;
 
     // Resolved against the public list so a provider that has since been disabled drops out of
     // both answers, exactly as the ranked half already documents.
@@ -164,12 +164,8 @@ pub async fn put_source_preferences(
     )
     .await?;
     if let Some(early) = &body.early_access_provider_ids {
-        tankovault_db::repo::users::set_early_access_providers(
-            &state.pool,
-            user.user_id,
-            early,
-        )
-        .await?;
+        tankovault_db::repo::users::set_early_access_providers(&state.pool, user.user_id, early)
+            .await?;
     }
     source_preferences(State(state), user).await
 }

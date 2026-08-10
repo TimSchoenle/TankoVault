@@ -1,5 +1,5 @@
 //! Fixture tests for the provider families added alongside the 2026-08 source expansion —
-//! MangaThemesia, Manganato and the two config-only sites that are not on a shared theme.
+//! `MangaThemesia`, Manganato and the two config-only sites that are not on a shared theme.
 //!
 //! Every fixture is markup trimmed from a live response (solver-fetched where the origin is
 //! behind bot management), and every assertion runs the *shipped* preset config through
@@ -76,7 +76,10 @@ async fn mangathemesia_catalogue_reads_the_full_title_from_the_anchor() {
             ..SiteFetcher::default()
         },
     );
-    let page = adapter.list_catalog(&ctx, 1).await.expect("catalogue parses");
+    let page = adapter
+        .list_catalog(&ctx, 1)
+        .await
+        .expect("catalogue parses");
 
     assert_eq!(page.items.len(), 3, "one item per div.bsx");
     // The visible caption is CSS-clipped; the anchor's `title` is the only place the untruncated
@@ -114,7 +117,9 @@ async fn mangathemesia_series_reads_the_labelled_info_rows() {
     // matching that text stores the label itself as the value — the bug `madara`'s `alt` row
     // documents, reproduced here because this theme has the same shape.
     assert!(
-        meta.authors.iter().all(|a| !a.eq_ignore_ascii_case("author")),
+        meta.authors
+            .iter()
+            .all(|a| !a.eq_ignore_ascii_case("author")),
         "the row label must not survive as an author: {:?}",
         meta.authors
     );
@@ -137,7 +142,9 @@ async fn mangathemesia_chapters_carry_number_title_and_date() {
 
     assert_eq!(chapters.len(), 3);
     assert!(
-        chapters.iter().all(|c| c.number > 0.0 && c.number.is_finite()),
+        chapters
+            .iter()
+            .all(|c| c.number > 0.0 && c.number.is_finite()),
         "every row needs a finite number: {:?}",
         chapters.iter().map(|c| c.number).collect::<Vec<_>>()
     );
@@ -173,7 +180,10 @@ async fn manganato_catalogue_lists_series_links() {
             ..SiteFetcher::default()
         },
     );
-    let page = adapter.list_catalog(&ctx, 2).await.expect("catalogue parses");
+    let page = adapter
+        .list_catalog(&ctx, 2)
+        .await
+        .expect("catalogue parses");
 
     assert_eq!(page.items.len(), 3);
     assert!(
@@ -250,7 +260,9 @@ async fn manganato_chapters_come_from_the_json_endpoint_not_the_page() {
         chapters.len()
     );
     assert!(
-        chapters.iter().all(|c| c.number.is_finite() && c.number > 0.0),
+        chapters
+            .iter()
+            .all(|c| c.number.is_finite() && c.number > 0.0),
         "every chapter needs a finite number"
     );
     assert!(
@@ -258,9 +270,9 @@ async fn manganato_chapters_come_from_the_json_endpoint_not_the_page() {
         "the endpoint publishes `updated_at`, so dates must survive"
     );
     assert!(
-        chapters
-            .iter()
-            .all(|c| c.path.starts_with("/manga/your-regrets-mean-nothing-to-me/")),
+        chapters.iter().all(|c| c
+            .path
+            .starts_with("/manga/your-regrets-mean-nothing-to-me/")),
         "chapter paths hang off the series path"
     );
     // Sub-chapter numbering is the reason `number` is `numeric(10,4)` and not an integer.
@@ -289,7 +301,10 @@ async fn tcb_catalogue_is_one_page_and_says_so() {
             ..SiteFetcher::default()
         },
     );
-    let page = adapter.list_catalog(&ctx, 1).await.expect("catalogue parses");
+    let page = adapter
+        .list_catalog(&ctx, 1)
+        .await
+        .expect("catalogue parses");
 
     assert_eq!(page.items.len(), 4);
     assert!(
@@ -321,7 +336,8 @@ async fn tcb_series_and_chapters_parse() {
         .expect("series parses");
     assert_eq!(meta.title, "One Piece");
     assert!(
-        meta.description.is_some_and(|d| d.contains("Monkey D. Luffy")),
+        meta.description
+            .is_some_and(|d| d.contains("Monkey D. Luffy")),
         "the synopsis is the only prose block on the page"
     );
 
@@ -349,7 +365,10 @@ async fn toonily_catalogue_walks_the_search_listing() {
             ..SiteFetcher::default()
         },
     );
-    let page = adapter.list_catalog(&ctx, 2).await.expect("catalogue parses");
+    let page = adapter
+        .list_catalog(&ctx, 2)
+        .await
+        .expect("catalogue parses");
 
     assert_eq!(page.items.len(), 3);
     // `/manga/` is not a listing on this site — `/search/` is. A preset pointed at the Madara

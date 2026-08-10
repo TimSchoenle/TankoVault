@@ -89,7 +89,7 @@ struct ApiData {
 /// **The series page carries only the newest ~25 chapters.** The rest are fetched client-side
 /// from `/api/manga/{slug}/chapters`, so a selector-only adapter silently truncates every long
 /// series to its most recent page — the failure mode is not an error but a chapter count that
-/// looks plausible and is wrong, which is exactly the shape of bug the KunManga JSON chapter API
+/// looks plausible and is wrong, which is exactly the shape of bug the `KunManga` JSON chapter API
 /// produced before it was found.
 pub struct ManganatoAdapter {
     inner: GenericConfigAdapter,
@@ -154,11 +154,11 @@ impl SourceAdapter for ManganatoAdapter {
         for raw in envelope.data.chapters {
             // `chapter_num` is the API's own parse of the label and is authoritative; the label
             // is only a fallback for the rows where it arrives null.
-            let Some(number) = raw
-                .chapter_num
-                .filter(|n| n.is_finite())
-                .or_else(|| raw.chapter_name.as_deref().and_then(crate::html::parse_chapter_number))
-            else {
+            let Some(number) = raw.chapter_num.filter(|n| n.is_finite()).or_else(|| {
+                raw.chapter_name
+                    .as_deref()
+                    .and_then(crate::html::parse_chapter_number)
+            }) else {
                 unnumbered += 1;
                 continue;
             };

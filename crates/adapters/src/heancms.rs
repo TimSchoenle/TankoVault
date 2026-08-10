@@ -1,4 +1,4 @@
-//! HeanCMS, the platform several scanlator sites run (here: Omega Scans).
+//! `HeanCMS`, the platform several scanlator sites run (here: Omega Scans).
 //!
 //! This is the first source in the workspace that publishes its paywall as **data** rather than
 //! as a rendered lock icon: a chapter carries `price` and `free_at`, so the early-access model
@@ -101,7 +101,7 @@ fn content_type_of(series_type: Option<&str>) -> ContentType {
     }
 }
 
-/// Read the access state a HeanCMS chapter row advertises.
+/// Read the access state a `HeanCMS` chapter row advertises.
 ///
 /// `price > 0` is the paywall. `free_at` is when it lifts — parsed when present, and left
 /// unknown when absent or unparseable, which keeps the chapter locked rather than freeing it
@@ -184,7 +184,10 @@ impl SourceAdapter for HeanCmsAdapter {
     }
 
     async fn list_latest(&self, ctx: &Ctx) -> Result<Vec<LatestUpdate>, AdapterError> {
-        let url = format!("{}/query?page=1&perPage={PAGE_SIZE}&orderBy=latest", self.api);
+        let url = format!(
+            "{}/query?page=1&perPage={PAGE_SIZE}&orderBy=latest",
+            self.api
+        );
         let resp = ctx.fetch(&url).await?;
         let body: Paged<SeriesRow> = parse_json_body("heancms latest", &resp)?;
         Ok(body
@@ -204,7 +207,11 @@ impl SourceAdapter for HeanCmsAdapter {
         let mut authors = Vec::new();
         for name in [detail.author, detail.studio].into_iter().flatten() {
             let name = name.trim().to_owned();
-            if !name.is_empty() && !authors.iter().any(|a: &String| a.eq_ignore_ascii_case(&name)) {
+            if !name.is_empty()
+                && !authors
+                    .iter()
+                    .any(|a: &String| a.eq_ignore_ascii_case(&name))
+            {
                 authors.push(name);
             }
         }
@@ -229,7 +236,7 @@ impl SourceAdapter for HeanCmsAdapter {
             release_year: detail.release_year.as_ref().and_then(|v| {
                 v.as_i64()
                     .and_then(|n| i32::try_from(n).ok())
-                    .or_else(|| v.as_str().and_then(|s| crate::html::parse_year(s)))
+                    .or_else(|| v.as_str().and_then(crate::html::parse_year))
             }),
         })
     }

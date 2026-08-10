@@ -128,7 +128,7 @@ fn expand_page_tokens(template: &str, page: u32, page_size: Option<u32>) -> Stri
 /// most sites key a chapter endpoint), and `{seg:N}` the 0-based Nth segment.
 ///
 /// `{seg:N}` exists because `{slug}` is wrong for any site whose series URL ends in a
-/// human-readable name rather than its key — WeebCentral's `/series/{id}/{Name}` is keyed by the
+/// human-readable name rather than its key — `WeebCentral`'s `/series/{id}/{Name}` is keyed by the
 /// id, so `{slug}` builds `/series/One-Piece/full-chapter-list`, which answers 200 with an empty
 /// document. That is the worst possible failure shape: no error, and every series silently
 /// ingests zero chapters.
@@ -167,9 +167,9 @@ fn extract_access(
         // With an `@attr` suffix the marker is an attribute's presence *and* truthiness, so a
         // `data-locked="false"` reads as unlocked instead of as a match.
         Some(name) => row.select(&sel).any(|el| {
-            el.value()
-                .attr(name)
-                .is_some_and(|v| !matches!(v.trim().to_ascii_lowercase().as_str(), "" | "false" | "0"))
+            el.value().attr(name).is_some_and(|v| {
+                !matches!(v.trim().to_ascii_lowercase().as_str(), "" | "false" | "0")
+            })
         }),
         None => row.select(&sel).next().is_some(),
     };
@@ -215,7 +215,10 @@ fn extract_href(
     let (sel_str, attr) = split_attr(spec);
     let attr = attr.unwrap_or("href");
     if sel_str == SELF_SPEC {
-        return Ok(root.value().attr(attr).map(|href| relativize(page_url, href)));
+        return Ok(root
+            .value()
+            .attr(attr)
+            .map(|href| relativize(page_url, href)));
     }
     let sel = parse_selector(sel_str)?;
     Ok(root
@@ -283,7 +286,11 @@ fn extract_text_source(
 #[async_trait]
 impl SourceAdapter for GenericConfigAdapter {
     async fn list_catalog(&self, ctx: &Ctx, page: u32) -> Result<CatalogPage, AdapterError> {
-        let path = expand_page_tokens(&self.config.catalog.path, page, self.config.catalog.page_size);
+        let path = expand_page_tokens(
+            &self.config.catalog.path,
+            page,
+            self.config.catalog.page_size,
+        );
         if self.config.catalog.mode.as_deref() == Some(SITEMAP_MODE) {
             return self.sitemap_page(ctx, &path, page).await;
         }
@@ -397,8 +404,8 @@ impl SourceAdapter for GenericConfigAdapter {
                 }
             };
 
-            let status = first_of(cfg.status.as_ref())?
-                .map_or(SeriesStatus::Unknown, |t| map_status(&t));
+            let status =
+                first_of(cfg.status.as_ref())?.map_or(SeriesStatus::Unknown, |t| map_status(&t));
 
             let alt_titles = cfg
                 .alt
@@ -542,14 +549,20 @@ mod token_tests {
     #[test]
     fn offset_paging_needs_a_page_size() {
         let t = "/search?offset={offset}&limit=32";
-        assert_eq!(expand_page_tokens(t, 1, Some(32)), "/search?offset=0&limit=32");
-        assert_eq!(expand_page_tokens(t, 3, Some(32)), "/search?offset=64&limit=32");
+        assert_eq!(
+            expand_page_tokens(t, 1, Some(32)),
+            "/search?offset=0&limit=32"
+        );
+        assert_eq!(
+            expand_page_tokens(t, 3, Some(32)),
+            "/search?offset=64&limit=32"
+        );
         // Without a page size the token still resolves — a literal `{offset}` reaching the
         // provider is a silent 404, not a config error anyone would see.
         assert_eq!(expand_page_tokens(t, 3, None), "/search?offset=0&limit=32");
     }
 
-    /// Regression: WeebCentral's chapter endpoint is keyed by the id in `/series/{id}/{Name}`,
+    /// Regression: `WeebCentral`'s chapter endpoint is keyed by the id in `/series/{id}/{Name}`,
     /// so `{slug}` — the last segment — built a URL that answers 200 with no chapters. Nothing
     /// errored; every series simply ingested zero.
     #[test]
@@ -568,7 +581,13 @@ mod token_tests {
 
     #[test]
     fn slug_is_the_last_segment_with_or_without_a_trailing_slash() {
-        assert_eq!(expand_series_tokens("{slug}", "/manga/one-piece/"), "one-piece");
-        assert_eq!(expand_series_tokens("{slug}", "/manga/one-piece"), "one-piece");
+        assert_eq!(
+            expand_series_tokens("{slug}", "/manga/one-piece/"),
+            "one-piece"
+        );
+        assert_eq!(
+            expand_series_tokens("{slug}", "/manga/one-piece"),
+            "one-piece"
+        );
     }
 }

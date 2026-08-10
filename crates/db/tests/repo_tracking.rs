@@ -1474,7 +1474,11 @@ async fn an_early_access_chapter_counts_only_once_the_reader_can_read_it() {
     tankovault_db::repo::users::set_early_access_providers(&db.pool, user, &[])
         .await
         .expect("opt out");
-    assert_eq!(unread_now(&db, user, series).await, 2, "opting out closes it again");
+    assert_eq!(
+        unread_now(&db, user, series).await,
+        2,
+        "opting out closes it again"
+    );
 
     // Route two: the timer expires. No rescan is needed — the stored unlock time is what the
     // predicate compares against, so the chapter opens on its own.

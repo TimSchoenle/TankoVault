@@ -3,9 +3,7 @@
 
 use crate::error::DbResult;
 use sqlx::{FromRow, PgExecutor};
-use tankovault_domain::{
-    Chapter, ChapterAccess, ChapterId, ProviderId, SeriesId, SeriesSourceId,
-};
+use tankovault_domain::{Chapter, ChapterAccess, ChapterId, ProviderId, SeriesId, SeriesSourceId};
 use time::OffsetDateTime;
 use uuid::Uuid;
 

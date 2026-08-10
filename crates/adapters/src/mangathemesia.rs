@@ -1,4 +1,4 @@
-//! MangaThemesia (`WP Manga Stream`) theme defaults.
+//! `MangaThemesia` (`WP Manga Stream`) theme defaults.
 //!
 //! The second-most common layout among the sites this project scrapes, and the one most of the
 //! ex-Asura scanlator sites run. Like [`madara`](crate::madara), onboarding a site on this theme

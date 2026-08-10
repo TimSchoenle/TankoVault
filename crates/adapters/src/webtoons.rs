@@ -66,9 +66,8 @@ impl WebtoonsAdapter {
 
     /// Strip any existing `page=` parameter, so appending one cannot produce a duplicate.
     fn base_series_path(path: &str) -> String {
-        let (head, query) = match path.split_once('?') {
-            Some((h, q)) => (h, q),
-            None => return path.to_owned(),
+        let Some((head, query)) = path.split_once('?') else {
+            return path.to_owned();
         };
         let kept: Vec<&str> = query
             .split('&')

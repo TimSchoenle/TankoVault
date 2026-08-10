@@ -26,18 +26,23 @@ pub struct ProviderPreset {
 /// The provider presets bundled with this build: `demonicscans` and `kunmanga` are custom Rust
 /// adapters (bespoke layout / hybrid JSON+HTML), `manhuaus` is the shared Madara adapter with a
 /// few selector overrides.
+/// Every provider preset bundled with this build.
+///
+/// Grouped by how each is onboarded — the grouping is the point: a site on a shared theme is a
+/// config row, and only a genuinely bespoke one costs a Rust module.
 #[must_use]
 pub fn builtin() -> Vec<ProviderPreset> {
+    let mut all = madara_family();
+    all.extend(mangathemesia_family());
+    all.extend(manganato_family());
+    all.extend(selector_only());
+    all.extend(custom_code());
+    all
+}
+
+/// Providers on the Madara `WordPress` theme: config only, overriding just what differs.
+fn madara_family() -> Vec<ProviderPreset> {
     vec![
-        // Bespoke PHP layout, driven by `DemonicScansAdapter`, dispatched on this slug.
-        ProviderPreset {
-            slug: "demonicscans",
-            name: "Demonic Scans",
-            base_url: "https://demonicscans.org",
-            adapter: AdapterKind::Custom,
-            config: json!({}),
-            politeness: Politeness::default(),
-        },
         // Standard Madara. Only three deviations from the defaults.
         ProviderPreset {
             slug: "manhuaus",
@@ -63,7 +68,6 @@ pub fn builtin() -> Vec<ProviderPreset> {
             }),
             politeness: Politeness::default(),
         },
-        // --- Madara family -------------------------------------------------------------
         // Large manhwa catalogue. Cloudflare-gated, so every fetch goes through the solver.
         ProviderPreset {
             slug: "toonily",
@@ -112,26 +116,35 @@ pub fn builtin() -> Vec<ProviderPreset> {
             }),
             politeness: Politeness::default(),
         },
-        // --- MangaThemesia family ------------------------------------------------------
-        ProviderPreset {
-            slug: "rizzfables",
-            name: "Rizz Fables",
-            base_url: "https://rizzfables.com",
-            adapter: AdapterKind::MangaThemesia,
-            config: json!({
-                "catalog": {
-                    // This site lists its whole catalogue — 88 series — on one page and ignores
-                    // `?page=`, answering every page number with the same document. The theme's
-                    // paginator markup is commented out for the same reason. Without `pages: 1`
-                    // the yielded-items fallback never goes false, so the walk re-fetched and
-                    // re-ingested page 1 until the planner's cap: 20 000 requests for 88 series,
-                    // and no error anywhere, because every page "succeeded".
-                    "pages": 1
-                }
-            }),
-            politeness: Politeness::default(),
-        },
-        // --- Manganato family ----------------------------------------------------------
+    ]
+}
+
+/// Providers on the `MangaThemesia` theme.
+fn mangathemesia_family() -> Vec<ProviderPreset> {
+    vec![ProviderPreset {
+        slug: "rizzfables",
+        name: "Rizz Fables",
+        base_url: "https://rizzfables.com",
+        adapter: AdapterKind::MangaThemesia,
+        config: json!({
+            "catalog": {
+                // This site lists its whole catalogue — 88 series — on one page and ignores
+                // `?page=`, answering every page number with the same document. The theme's
+                // paginator markup is commented out for the same reason. Without `pages: 1`
+                // the yielded-items fallback never goes false, so the walk re-fetched and
+                // re-ingested page 1 until the planner's cap: 20 000 requests for 88 series,
+                // and no error anywhere, because every page "succeeded".
+                "pages": 1
+            }
+        }),
+        politeness: Politeness::default(),
+    }]
+}
+
+/// The Manganato clone family — three domains serving the same application, each its own
+/// provider because each has its own rate limit, health state and reader-facing links.
+fn manganato_family() -> Vec<ProviderPreset> {
+    vec![
         // Three domains serving the same application; each is its own provider because each
         // has its own rate limit, health state and reader-facing links.
         ProviderPreset {
@@ -173,208 +186,164 @@ pub fn builtin() -> Vec<ProviderPreset> {
                 ..Politeness::default()
             },
         },
-        // --- Bespoke layouts driven purely by config -----------------------------------
-        // Nineteen series, all of them weekly and high-demand. Everything is server-rendered
-        // and there is no theme underneath, so this is a `GenericConfig` selector set rather
-        // than a family.
-        ProviderPreset {
-            slug: "tcbscans",
-            name: "TCB Scans",
-            base_url: "https://tcbonepiecechapters.com",
-            adapter: AdapterKind::GenericConfig,
-            config: json!({
-                "catalog": {
-                    // One page, and the site serves it for any page number. `pages: 1` is what
-                    // stops the walk — the yielded-items fallback would re-fetch it forever.
-                    "path": "/projects",
-                    "pages": 1,
-                    "item": "a[href^=\"/mangas/\"]",
-                    "link": "self",
-                    "title": "img@alt",
-                    "next": null
-                },
-                "latest": {
-                    // `/projects`, not `/`: the home page lists the newest *chapters*, so a feed
-                    // read from it registered chapter URLs as series paths — and a chapter page
-                    // has no chapter list, so every one of those series ingested zero chapters.
-                    // Re-reading all 19 series on a fast scan is free at this catalogue size.
-                    "path": "/projects",
-                    "item": "a[href^=\"/mangas/\"]",
-                    "link": "self",
-                    "title": "img@alt",
-                    "chapter": null
-                },
-                "series": {
-                    "title": "h1.font-bold",
-                    "desc": "p.leading-6",
-                    "cover": "img@src"
-                },
-                "chapters": {
-                    "container": "a[href^=\"/chapters/\"]",
-                    "link": "self",
-                    "number_from": "text",
-                    "title": "div.text-gray-500"
-                }
-            }),
-            politeness: Politeness::default(),
-        },
-        // WeebCentral: server-rendered, offset-paginated, and the only site here that serves
-        // its chapter list from a URL of its own — all three expressible as config.
-        ProviderPreset {
-            slug: "weebcentral",
-            name: "Weeb Central",
-            base_url: "https://weebcentral.com",
-            adapter: AdapterKind::GenericConfig,
-            config: json!({
-                "catalog": {
-                    // Offset paging, not page numbers; `page_size` is what `{offset}` needs.
-                    "path": "/search/data?offset={offset}&limit=32&sort=Alphabet&order=Ascending&display_mode=Full%20Display",
-                    "page_size": 32,
-                    "item": "article",
-                    "link": "a[href*=\"/series/\"]",
-                    "title": "a[href*=\"/series/\"]",
-                    "next": null
-                },
-                "latest": {
-                    "path": "/search/data?offset=0&limit=32&sort=Latest%20Updates&order=Descending&display_mode=Full%20Display",
-                    "item": "article",
-                    "link": "a[href*=\"/series/\"]",
-                    "title": "a[href*=\"/series/\"]",
-                    "chapter": null
-                },
-                "series": {
-                    "title": "h1",
-                    "desc": "li.list-disc, p.whitespace-pre-wrap",
-                    "cover": "section img@src",
-                    "status": { "row": "li", "label": "strong", "match": "Status", "value": "span" },
-                    "author": { "row": "li", "label": "strong", "match": "Author(s)", "value": "span" },
-                    "tags": "a[href*=\"included_tag=\"]",
-                    "release": { "row": "li", "label": "strong", "match": "Released", "value": "span" }
-                },
-                "chapters": {
-                    // The series page renders no chapter rows at all — they are swapped in from
-                    // this endpoint. Reading the series page instead yields zero chapters, which
-                    // no error path reports because an empty list is a valid answer.
-                    // `{seg:1}` and not `{slug}`: the series path is `/series/{id}/{Name}`, so
-                    // the *last* segment is the display name and the endpoint is keyed by the
-                    // id. Keyed by the name it answers 200 with an empty list, and every series
-                    // ingests zero chapters without anything failing.
-                    "path": "/series/{seg:1}/full-chapter-list",
-                    "container": "div.flex.items-center",
-                    "link": "a[href*=\"/chapters/\"]",
-                    "number_from": "text",
-                    "date": "time@datetime"
-                }
-            }),
-            politeness: Politeness::default(),
-        },
-        // MangaPill: no browsable catalogue (search is the only listing and it caps at 100
-        // rows), so enumeration is the sitemap `robots.txt` advertises.
-        ProviderPreset {
-            slug: "mangapill",
-            name: "MangaPill",
-            base_url: "https://mangapill.com",
-            adapter: AdapterKind::GenericConfig,
-            config: json!({
-                "catalog": {
-                    "mode": "sitemap",
-                    "path": "/static/sitemaps/sitemap{page}.xml",
-                    // In sitemap mode `item` is the substring that marks a `<loc>` as a series.
-                    "item": "/manga/",
-                    "link": "",
-                    "title": "",
-                    "next": null
-                },
-                "latest": {
-                    "path": "/chapters",
-                    "item": "div.grid > div",
-                    "link": "a[href*=\"/manga/\"]",
-                    "title": "a[href*=\"/manga/\"]",
-                    "chapter": "a[href*=\"/chapters/\"]"
-                },
-                "series": {
-                    "title": "h1",
-                    "desc": "p.text-sm",
-                    "cover": "img@data-src",
-                    "tags": "a[href*=\"genre=\"]"
-                },
-                "chapters": {
-                    "container": "div#chapters a",
-                    "link": "self",
-                    "number_from": "text"
-                }
-            }),
-            politeness: Politeness::default(),
-        },
-        // --- JSON-API providers ---------------------------------------------------------
-        // The reader host and the API host differ for both of these; `base_url` is the reader
-        // one so stored paths stay openable, and the adapters name the API absolutely.
-        ProviderPreset {
-            slug: "mangadex",
-            name: "MangaDex",
-            base_url: "https://mangadex.org",
-            adapter: AdapterKind::Custom,
-            config: json!({}),
-            // The API documents ~5 requests/second per IP, enforced at the load balancer. At the
-            // shipped two worker replicas this is 4 rps aggregate, comfortably inside it.
-            politeness: Politeness {
-                rps: 2.0,
-                concurrency: 4,
-                ..Politeness::default()
+    ]
+}
+
+/// Bespoke layouts that still reduce to selectors, so they need no Rust of their own.
+fn selector_only() -> Vec<ProviderPreset> {
+    let mut all = vec![tcbscans()];
+    all.push(weebcentral());
+    all.push(mangapill());
+    all
+}
+
+/// Nineteen series, all weekly and high-demand, with no theme underneath.
+fn tcbscans() -> ProviderPreset {
+    ProviderPreset {
+        slug: "tcbscans",
+        name: "TCB Scans",
+        base_url: "https://tcbonepiecechapters.com",
+        adapter: AdapterKind::GenericConfig,
+        config: json!({
+            "catalog": {
+                // One page, and the site serves it for any page number. `pages: 1` is what
+                // stops the walk — the yielded-items fallback would re-fetch it forever.
+                "path": "/projects",
+                "pages": 1,
+                "item": "a[href^=\"/mangas/\"]",
+                "link": "self",
+                "title": "img@alt",
+                "next": null
             },
-        },
-        ProviderPreset {
-            slug: "comick",
-            name: "ComicK",
-            base_url: "https://comick.dev",
-            adapter: AdapterKind::Custom,
-            config: json!({}),
-            politeness: Politeness {
-                rps: 2.0,
-                concurrency: 4,
-                ..Politeness::default()
+            "latest": {
+                // `/projects`, not `/`: the home page lists the newest *chapters*, so a feed
+                // read from it registered chapter URLs as series paths — and a chapter page
+                // has no chapter list, so every one of those series ingested zero chapters.
+                // Re-reading all 19 series on a fast scan is free at this catalogue size.
+                "path": "/projects",
+                "item": "a[href^=\"/mangas/\"]",
+                "link": "self",
+                "title": "img@alt",
+                "chapter": null
             },
-        },
-        // HeanCMS. `api` is required by the adapter and cannot be derived from `base_url`.
+            "series": {
+                "title": "h1.font-bold",
+                "desc": "p.leading-6",
+                "cover": "img@src"
+            },
+            "chapters": {
+                "container": "a[href^=\"/chapters/\"]",
+                "link": "self",
+                "number_from": "text",
+                "title": "div.text-gray-500"
+            }
+        }),
+        politeness: Politeness::default(),
+    }
+}
+
+/// Server-rendered, offset-paginated, and the only site here serving its chapter list from a
+/// URL of its own — all three expressible as config.
+fn weebcentral() -> ProviderPreset {
+    ProviderPreset {
+        slug: "weebcentral",
+        name: "Weeb Central",
+        base_url: "https://weebcentral.com",
+        adapter: AdapterKind::GenericConfig,
+        config: json!({
+            "catalog": {
+                // Offset paging, not page numbers; `page_size` is what `{offset}` needs.
+                "path": "/search/data?offset={offset}&limit=32&sort=Alphabet&order=Ascending&display_mode=Full%20Display",
+                "page_size": 32,
+                "item": "article",
+                "link": "a[href*=\"/series/\"]",
+                "title": "a[href*=\"/series/\"]",
+                "next": null
+            },
+            "latest": {
+                "path": "/search/data?offset=0&limit=32&sort=Latest%20Updates&order=Descending&display_mode=Full%20Display",
+                "item": "article",
+                "link": "a[href*=\"/series/\"]",
+                "title": "a[href*=\"/series/\"]",
+                "chapter": null
+            },
+            "series": {
+                "title": "h1",
+                "desc": "li.list-disc, p.whitespace-pre-wrap",
+                "cover": "section img@src",
+                "status": { "row": "li", "label": "strong", "match": "Status", "value": "span" },
+                "author": { "row": "li", "label": "strong", "match": "Author(s)", "value": "span" },
+                "tags": "a[href*=\"included_tag=\"]",
+                "release": { "row": "li", "label": "strong", "match": "Released", "value": "span" }
+            },
+            "chapters": {
+                // The series page renders no chapter rows at all — they are swapped in from
+                // this endpoint. Reading the series page instead yields zero chapters, which
+                // no error path reports because an empty list is a valid answer.
+                // `{seg:1}` and not `{slug}`: the series path is `/series/{id}/{Name}`, so
+                // the *last* segment is the display name and the endpoint is keyed by the
+                // id. Keyed by the name it answers 200 with an empty list, and every series
+                // ingests zero chapters without anything failing.
+                "path": "/series/{seg:1}/full-chapter-list",
+                "container": "div.flex.items-center",
+                "link": "a[href*=\"/chapters/\"]",
+                "number_from": "text",
+                "date": "time@datetime"
+            }
+        }),
+        politeness: Politeness::default(),
+    }
+}
+
+/// No browsable catalogue: search is the only listing and it caps at 100 rows, so enumeration
+/// is the sitemap `robots.txt` advertises.
+fn mangapill() -> ProviderPreset {
+    ProviderPreset {
+        slug: "mangapill",
+        name: "MangaPill",
+        base_url: "https://mangapill.com",
+        adapter: AdapterKind::GenericConfig,
+        config: json!({
+            "catalog": {
+                "mode": "sitemap",
+                "path": "/static/sitemaps/sitemap{page}.xml",
+                // In sitemap mode `item` is the substring that marks a `<loc>` as a series.
+                "item": "/manga/",
+                "link": "",
+                "title": "",
+                "next": null
+            },
+            "latest": {
+                "path": "/chapters",
+                "item": "div.grid > div",
+                "link": "a[href*=\"/manga/\"]",
+                "title": "a[href*=\"/manga/\"]",
+                "chapter": "a[href*=\"/chapters/\"]"
+            },
+            "series": {
+                "title": "h1",
+                "desc": "p.text-sm",
+                "cover": "img@data-src",
+                "tags": "a[href*=\"genre=\"]"
+            },
+            "chapters": {
+                "container": "div#chapters a",
+                "link": "self",
+                "number_from": "text"
+            }
+        }),
+        politeness: Politeness::default(),
+    }
+}
+
+/// Providers driven by a bespoke adapter, each for a reason selectors cannot express.
+fn custom_code() -> Vec<ProviderPreset> {
+    vec![
+        // Bespoke PHP layout, driven by `DemonicScansAdapter`, dispatched on this slug.
         ProviderPreset {
-            slug: "omegascans",
-            name: "Omega Scans",
-            base_url: "https://omegascans.org",
-            adapter: AdapterKind::Custom,
-            config: json!({ "api": "https://api.omegascans.org" }),
-            politeness: Politeness::default(),
-        },
-        // --- Astro-island providers -----------------------------------------------------
-        ProviderPreset {
-            slug: "asura",
-            name: "Asura Scans",
-            base_url: "https://asurascans.com",
-            adapter: AdapterKind::Custom,
-            config: json!({}),
-            politeness: Politeness::default(),
-        },
-        ProviderPreset {
-            slug: "hivetoons",
-            name: "Hive Toons",
-            base_url: "https://hivetoons.org",
-            adapter: AdapterKind::Custom,
-            config: json!({}),
-            politeness: Politeness::default(),
-        },
-        ProviderPreset {
-            slug: "flamecomics",
-            name: "Flame Comics",
-            base_url: "https://flamecomics.xyz",
-            adapter: AdapterKind::Custom,
-            config: json!({}),
-            politeness: Politeness::default(),
-        },
-        // The only licensed source here. Its `robots.txt` disallows `/*/search`, which is why
-        // the adapter enumerates by genre.
-        ProviderPreset {
-            slug: "webtoons",
-            name: "WEBTOON",
-            base_url: "https://www.webtoons.com",
+            slug: "demonicscans",
+            name: "Demonic Scans",
+            base_url: "https://demonicscans.org",
             adapter: AdapterKind::Custom,
             config: json!({}),
             politeness: Politeness::default(),
@@ -419,6 +388,77 @@ pub fn builtin() -> Vec<ProviderPreset> {
                 concurrency: 8,
                 ..Politeness::default()
             },
+        },
+        // The reader host and the API host differ for both of these; `base_url` is the reader
+        // one so stored paths stay openable, and the adapters name the API absolutely.
+        ProviderPreset {
+            slug: "mangadex",
+            name: "MangaDex",
+            base_url: "https://mangadex.org",
+            adapter: AdapterKind::Custom,
+            config: json!({}),
+            // The API documents ~5 requests/second per IP, enforced at the load balancer. At the
+            // shipped two worker replicas this is 4 rps aggregate, comfortably inside it.
+            politeness: Politeness {
+                rps: 2.0,
+                concurrency: 4,
+                ..Politeness::default()
+            },
+        },
+        ProviderPreset {
+            slug: "comick",
+            name: "ComicK",
+            base_url: "https://comick.dev",
+            adapter: AdapterKind::Custom,
+            config: json!({}),
+            politeness: Politeness {
+                rps: 2.0,
+                concurrency: 4,
+                ..Politeness::default()
+            },
+        },
+        // HeanCMS. `api` is required by the adapter and cannot be derived from `base_url`.
+        ProviderPreset {
+            slug: "omegascans",
+            name: "Omega Scans",
+            base_url: "https://omegascans.org",
+            adapter: AdapterKind::Custom,
+            config: json!({ "api": "https://api.omegascans.org" }),
+            politeness: Politeness::default(),
+        },
+        ProviderPreset {
+            slug: "asura",
+            name: "Asura Scans",
+            base_url: "https://asurascans.com",
+            adapter: AdapterKind::Custom,
+            config: json!({}),
+            politeness: Politeness::default(),
+        },
+        ProviderPreset {
+            slug: "hivetoons",
+            name: "Hive Toons",
+            base_url: "https://hivetoons.org",
+            adapter: AdapterKind::Custom,
+            config: json!({}),
+            politeness: Politeness::default(),
+        },
+        ProviderPreset {
+            slug: "flamecomics",
+            name: "Flame Comics",
+            base_url: "https://flamecomics.xyz",
+            adapter: AdapterKind::Custom,
+            config: json!({}),
+            politeness: Politeness::default(),
+        },
+        // The only licensed source here. Its `robots.txt` disallows `/*/search`, which is why
+        // the adapter enumerates by genre.
+        ProviderPreset {
+            slug: "webtoons",
+            name: "WEBTOON",
+            base_url: "https://www.webtoons.com",
+            adapter: AdapterKind::Custom,
+            config: json!({}),
+            politeness: Politeness::default(),
         },
     ]
 }

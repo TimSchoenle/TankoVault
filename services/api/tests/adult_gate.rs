@@ -55,8 +55,6 @@ async fn ingest(app: &TestApp, provider: ProviderId, title: &str, tags: &[&str])
                 published_at: None,
                 access: tankovault_domain::ChapterAccess::Free,
                 unlocks_at: None,
-                access: tankovault_domain::ChapterAccess::Free,
-                unlocks_at: None,
             }],
             content_hash: vec![1],
         },

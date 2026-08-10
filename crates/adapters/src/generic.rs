@@ -276,21 +276,20 @@ fn extract_text_source(
                 if !matches {
                     continue;
                 }
-                let raw = match &cfg.value {
-                    Some(value_sel) => extract_first(row, value_sel)?,
-                    // Label and value share one text node: drop the label, or it is stored as
-                    // part of the first value. Split on the separator where there is one — the
-                    // rendered label is rarely the configured one verbatim (`Author(s) :` is
-                    // matched by `Author`), so slicing at the label's length is the fallback,
-                    // not the rule.
-                    None => {
-                        let text = text_of(row);
-                        let value = text.split_once(':').map_or_else(
-                            || text.get(wanted.len()..).unwrap_or_default(),
-                            |(_, after)| after,
-                        );
-                        Some(value.trim().to_owned()).filter(|s| !s.is_empty())
-                    }
+                // With no `value` selector, label and value share one text node: the label has
+                // to be dropped or it is stored as part of the first value. Split on the
+                // separator where there is one — the rendered label is rarely the configured one
+                // verbatim (`Author(s) :` is matched by `Author`), so slicing at the label's
+                // length is the fallback, not the rule.
+                let raw = if let Some(value_sel) = &cfg.value {
+                    extract_first(row, value_sel)?
+                } else {
+                    let text = text_of(row);
+                    let value = text.split_once(':').map_or_else(
+                        || text.get(wanted.len()..).unwrap_or_default(),
+                        |(_, after)| after,
+                    );
+                    Some(value.trim().to_owned()).filter(|s| !s.is_empty())
                 };
                 return Ok(raw.map(|v| split_titles(&v)).unwrap_or_default());
             }

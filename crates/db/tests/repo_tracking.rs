@@ -1399,6 +1399,17 @@ async fn retiring_the_pinned_source_clears_the_pin_and_keeps_the_entry() {
     );
 }
 
+/// The continue-reading badge for one series, which is the surface the unread predicate is most
+/// directly visible on.
+async fn unread_now(db: &TestDb, user: UserId, series: SeriesId) -> i64 {
+    continue_reading(&db.pool, user)
+        .await
+        .expect("continue")
+        .iter()
+        .find(|c| c.series_id == series)
+        .map_or(0, |c| c.unread)
+}
+
 /// A paid early-access chapter must not be counted as unread until the reader can actually open
 /// it — and must start counting the moment they can, by either route.
 ///
@@ -1420,17 +1431,6 @@ async fn an_early_access_chapter_counts_only_once_the_reader_can_read_it() {
     watchlist_upsert(&db.pool, user, series, WatchStatus::Reading, true)
         .await
         .expect("watchlist");
-
-    /// The continue-reading badge for this series, which is the surface the unread predicate
-    /// is most directly visible on.
-    async fn unread_now(db: &TestDb, user: UserId, series: SeriesId) -> i64 {
-        continue_reading(&db.pool, user)
-            .await
-            .expect("continue")
-            .iter()
-            .find(|c| c.series_id == series)
-            .map_or(0, |c| c.unread)
-    }
 
     assert_eq!(
         unread_now(&db, user, series).await,

@@ -350,14 +350,24 @@ pub async fn get_sync_decision<'e, E: PgExecutor<'e>>(
     exec: E,
     id: Uuid,
 ) -> DbResult<SyncDecisionRow> {
+    // The `!` overrides are on `sync_decisions`' own columns, every one of them `NOT NULL`.
+    // They are not decoration: sqlx derives nullability from the *plan* Postgres returns, so with
+    // outer joins in the statement it is data-dependent — against a populated database this one
+    // comes back nullable to the last column, which types the row as `Option` everywhere and does
+    // not compile. Pinning what the schema already guarantees makes the type the same whichever
+    // plan the planner picks; a `?` would push a fact nobody can violate out into every caller.
     let row = sqlx::query_as!(
         Row,
-        "SELECT d.id, d.run_id, d.decided_at, d.user_id, u.username, \
+        "SELECT d.id AS \"id!\", d.run_id AS \"run_id!\", d.decided_at AS \"decided_at!\", \
+                d.user_id AS \"user_id!\", u.username, \
                 d.series_id, s.canonical_title AS series_title, \
-                d.provider, d.external_id, d.scope, d.action, d.reason, d.policy, d.applied, \
+                d.provider AS \"provider!\", d.external_id, d.scope AS \"scope!\", \
+                d.action AS \"action!\", d.reason AS \"reason!\", d.policy, \
+                d.applied AS \"applied!\", \
                 d.local_before, d.local_after, d.remote_before, d.remote_after, \
-                d.ancestor_local, d.ancestor_remote, d.match_score, d.match_signals, \
-                d.evidence, d.reverted_at, d.reverted_by, d.revert_reason, \
+                d.ancestor_local, d.ancestor_remote, d.match_score, \
+                d.match_signals AS \"match_signals!\", \
+                d.evidence AS \"evidence!\", d.reverted_at, d.reverted_by, d.revert_reason, \
                 d.flagged_at, d.flagged_by, d.flag_reason \
            FROM sync_decisions d \
            LEFT JOIN series s ON s.id = d.series_id \

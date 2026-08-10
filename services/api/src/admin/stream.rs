@@ -22,10 +22,14 @@ use tokio_stream::wrappers::IntervalStream;
 /// How often a run's progress is re-read. A scan in flight changes on this timescale; anything
 /// slower and the queue an operator is watching lies to them.
 const RUNS_PERIOD: Duration = Duration::from_secs(2);
-/// How often the task-level activity is re-read. Deliberately slower than the run counters: it
-/// costs two aggregate statements against `scan_tasks`, and the tail it feeds is read rather
-/// than watched digit by digit.
-const ACTIVITY_PERIOD: Duration = Duration::from_secs(3);
+/// How often the task-level activity is re-read.
+///
+/// Was deliberately slower than the run counters, on the reasoning that its tail is read rather
+/// than watched. That stopped being true when this payload started carrying the live *stage*:
+/// a run's counters can sit still for the whole of a slow task, and the stage is then the only
+/// thing on the screen that moves. Matching the run cadence is what makes the panel read as live
+/// rather than as frozen. It is two aggregate statements against `scan_tasks`, both index-served.
+const ACTIVITY_PERIOD: Duration = Duration::from_secs(2);
 /// How often the system counters are re-read. They move slowly and the aggregate behind them is
 /// the heaviest read on the admin surface — the old whole-console four-second poll was both too
 /// fast for these and too slow for a run.
@@ -39,8 +43,8 @@ const ACTIVITY_LIMIT: i64 = 15;
 
 /// Console live stream
 ///
-/// Server-Sent Events for the operator console: `stats` every 10 s, `runs` every 2 s and
-/// `activity` — the task-level state of the runs in flight — every 3 s.
+/// Server-Sent Events for the operator console: `stats` every 10 s, and `runs` plus `activity` —
+/// the task-level state and current stage of the runs in flight — every 2 s.
 ///
 /// Authenticated by a single-use `ticket` query parameter from `POST /v1/me/stream-ticket`,
 /// because `EventSource` cannot set an `Authorization` header. A ticket proves a session

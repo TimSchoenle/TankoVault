@@ -1,0 +1,369 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT d.id AS \"id!\", d.run_id AS \"run_id!\", d.decided_at AS \"decided_at!\", d.user_id AS \"user_id!\", u.username, d.series_id, s.canonical_title AS series_title, d.provider AS \"provider!\", d.external_id, d.scope AS \"scope!\", d.action AS \"action!\", d.reason AS \"reason!\", d.policy, d.applied AS \"applied!\", d.local_before, d.local_after, d.remote_before, d.remote_after, d.ancestor_local, d.ancestor_remote, d.match_score, d.match_signals AS \"match_signals!\", d.evidence AS \"evidence!\", d.reverted_at, d.reverted_by, d.revert_reason, d.flagged_at, d.flagged_by, d.flag_reason FROM sync_decisions d LEFT JOIN series s ON s.id = d.series_id LEFT JOIN users  u ON u.id = d.user_id WHERE d.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "sync_decisions",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "run_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "sync_decisions",
+            "name": "run_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "decided_at!",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "sync_decisions",
+            "name": "decided_at"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "user_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "sync_decisions",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "username",
+        "type_info": {
+          "Custom": {
+            "name": "citext",
+            "kind": "Simple"
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "username"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "series_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "sync_decisions",
+            "name": "series_id"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "series_title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "canonical_title"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "provider!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sync_decisions",
+            "name": "provider"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "external_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sync_decisions",
+            "name": "external_id"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "scope!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sync_decisions",
+            "name": "scope"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "action!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sync_decisions",
+            "name": "action"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "reason!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sync_decisions",
+            "name": "reason"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "policy",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sync_decisions",
+            "name": "policy"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "applied!",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "sync_decisions",
+            "name": "applied"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "local_before",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sync_decisions",
+            "name": "local_before"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "local_after",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sync_decisions",
+            "name": "local_after"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "remote_before",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sync_decisions",
+            "name": "remote_before"
+          }
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "remote_after",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sync_decisions",
+            "name": "remote_after"
+          }
+        }
+      },
+      {
+        "ordinal": 18,
+        "name": "ancestor_local",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sync_decisions",
+            "name": "ancestor_local"
+          }
+        }
+      },
+      {
+        "ordinal": 19,
+        "name": "ancestor_remote",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sync_decisions",
+            "name": "ancestor_remote"
+          }
+        }
+      },
+      {
+        "ordinal": 20,
+        "name": "match_score",
+        "type_info": "Float4",
+        "origin": {
+          "Table": {
+            "table": "sync_decisions",
+            "name": "match_score"
+          }
+        }
+      },
+      {
+        "ordinal": 21,
+        "name": "match_signals!",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "sync_decisions",
+            "name": "match_signals"
+          }
+        }
+      },
+      {
+        "ordinal": 22,
+        "name": "evidence!",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "sync_decisions",
+            "name": "evidence"
+          }
+        }
+      },
+      {
+        "ordinal": 23,
+        "name": "reverted_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "sync_decisions",
+            "name": "reverted_at"
+          }
+        }
+      },
+      {
+        "ordinal": 24,
+        "name": "reverted_by",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "sync_decisions",
+            "name": "reverted_by"
+          }
+        }
+      },
+      {
+        "ordinal": 25,
+        "name": "revert_reason",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sync_decisions",
+            "name": "revert_reason"
+          }
+        }
+      },
+      {
+        "ordinal": 26,
+        "name": "flagged_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "sync_decisions",
+            "name": "flagged_at"
+          }
+        }
+      },
+      {
+        "ordinal": 27,
+        "name": "flagged_by",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "sync_decisions",
+            "name": "flagged_by"
+          }
+        }
+      },
+      {
+        "ordinal": 28,
+        "name": "flag_reason",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sync_decisions",
+            "name": "flag_reason"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      true,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "efcc50f797dced27038750ae952f3b6427560c9bb79e72dbf5bf9243e86653d5"
+}

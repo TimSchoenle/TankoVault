@@ -8,7 +8,8 @@ use crate::error::{DbError, DbResult};
 use serde_json::Value as Json;
 use sqlx::{FromRow, PgExecutor};
 use tankovault_domain::{
-    ProviderId, RunState, ScanMode, ScanRun, ScanRunId, ScanTask, ScanTaskId, TaskState,
+    ProviderId, RunState, ScanMode, ScanRun, ScanRunId, ScanStage, ScanTask, ScanTaskId,
+    StageTimings, TaskState,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -571,8 +572,7 @@ pub async fn create_tasks<'e, E: PgExecutor<'e>>(
         .collect())
 }
 
-/// Mark a task claimed by a worker (the normal path: the worker already has the message
-/// from `JetStream` and records the claim for audit/progress).
+/// Mark a task claimed by a worker, returning whether the work should actually be done.
 ///
 /// A task that has already **settled** is not re-claimed. That guard is what makes the run
 /// counters honest under at-least-once delivery: without it a redelivery of a task the worker
@@ -582,29 +582,44 @@ pub async fn create_tasks<'e, E: PgExecutor<'e>>(
 /// counts for one task finalise the run — and emit its single terminal event — while other
 /// tasks are still running.
 ///
+/// A task whose **run has been cancelled** is not claimed either, and this is the one thing the
+/// caller must act on. `JetStream` holds the message independently of the database, so cancelling
+/// a run cannot unpublish its tasks; the only place the cancellation can be honoured is here,
+/// immediately before the work would start. `false` therefore means "settle this message and do
+/// nothing" — a worker that ignored it would keep crawling a provider an operator has told it to
+/// stop crawling.
+///
+/// Claiming also opens the task's stage at [`tankovault_domain::ScanStage::Starting`] and clears
+/// any stage a previous delivery left behind, so a redelivered task never shows the progress of
+/// its abandoned attempt.
+///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. Everything the guard above
-/// describes is silent: an unknown task, and a task that has already settled, are both `Ok(())`
-/// with no row touched, and this function returns no count that would distinguish them from a
-/// successful claim. That is a deliberate consequence of the settle-once rule — the worker is
-/// holding the `JetStream` message either way and will do the work and settle it, where the same
-/// guard applies again — but it means a caller cannot use this to decide whether to *skip* the
-/// work. `crates/db/tests/repo_scans.rs` pins the counter behaviour that depends on it.
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. `Ok(false)` collapses three
+/// situations the caller responds to identically by not doing the work: an unknown task, a task
+/// that has already settled, and a task whose run was cancelled. It is never
+/// [`crate::DbError::NotFound`]. `crates/db/tests/repo_scans.rs` pins the counter behaviour that
+/// depends on the settle-once half.
 pub async fn claim_task<'e, E: PgExecutor<'e>>(
     exec: E,
     task_id: ScanTaskId,
     worker_id: &str,
-) -> DbResult<()> {
-    sqlx::query!(
-        "UPDATE scan_tasks SET state = 'claimed', worker_id = $2, claimed_at = now(), \
-         attempts = attempts + 1 \
-         WHERE id = $1 AND state NOT IN ('done','failed','skipped')",
+) -> DbResult<bool> {
+    let claimed = sqlx::query_scalar!(
+        "UPDATE scan_tasks t SET state = 'claimed', worker_id = $2, claimed_at = now(), \
+             attempts = t.attempts + 1, \
+             stage = 'starting', stage_at = now(), \
+             stage_done = NULL, stage_total = NULL, stage_detail = NULL \
+         FROM scan_runs r \
+         WHERE t.id = $1 AND r.id = t.run_id \
+           AND t.state NOT IN ('done','failed','skipped') \
+           AND r.state <> 'cancelled' \
+         RETURNING t.id",
         task_id.as_uuid(),
         worker_id,
     )
-    .execute(exec)
+    .fetch_optional(exec)
     .await?;
-    Ok(())
+    Ok(claimed.is_some())
 }
 
 /// Durable fallback claim: atomically grab the oldest queued task for a run using
@@ -640,12 +655,74 @@ pub async fn claim_next_queued<'e, E: PgExecutor<'e>>(
     Ok(row.map(ScanTask::from))
 }
 
-/// Mark a task done and increment the run's done counter, atomically per statement.
+/// Record which stage a claimed task is in, how far through it is, and against what.
+///
+/// `stage_at` only moves when the stage itself changes, so "in this stage since" stays stable
+/// while a stage reports progress — a timer that reset on every counter tick would never show the
+/// one thing it exists for, a stage that has stopped advancing.
+///
+/// Guarded on `state = 'claimed'`: a stage write that lost a race with the task settling would
+/// otherwise reopen a live stage on a finished row, and the console would show a completed run
+/// still fetching.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only. An unknown or already-settled task is `Ok(())` with nothing
+/// written — this is diagnostic, and a caller must never fail a scan because a progress update
+/// did not land.
+pub async fn set_task_stage<'e, E: PgExecutor<'e>>(
+    exec: E,
+    task_id: ScanTaskId,
+    stage: ScanStage,
+    progress: Option<(i32, i32)>,
+    detail: Option<&str>,
+) -> DbResult<()> {
+    sqlx::query!(
+        "UPDATE scan_tasks SET \
+             stage = $2, \
+             stage_at = CASE WHEN stage IS DISTINCT FROM $2 THEN now() ELSE stage_at END, \
+             stage_done = $3, stage_total = $4, stage_detail = $5 \
+         WHERE id = $1 AND state = 'claimed'",
+        task_id.as_uuid(),
+        stage.as_str(),
+        progress.map(|(done, _)| done),
+        progress.map(|(_, total)| total),
+        detail,
+    )
+    .execute(exec)
+    .await?;
+    Ok(())
+}
+
+/// What a settled task reports about how it spent its time.
+///
+/// Optional at every settle site: the durable claim path and the tests settle tasks they never
+/// instrumented, and a scan must not depend on its own telemetry being present.
+#[derive(Debug, Clone, Copy)]
+pub struct TaskOutcome<'a> {
+    /// Wall clock from claim to settle. Saturating at `i32::MAX` ms (~24 days) is the caller's
+    /// job; the column is `int`.
+    pub duration_ms: i32,
+    pub timings: &'a StageTimings,
+}
+
+impl TaskOutcome<'_> {
+    /// The telemetry blob as the column stores it, or `None` when it cannot be encoded — which
+    /// this type's shape makes unreachable, and which must never fail a settle if it happens.
+    fn payload(this: Option<&Self>) -> Option<Json> {
+        this.and_then(|outcome| serde_json::to_value(outcome.timings).ok())
+    }
+}
+
+/// Mark a task done and increment the run's done counter, atomically per statement, recording
+/// what the work cost.
 ///
 /// The guard excludes **every** terminal state, not just `done`: a task is counted once, on the
 /// first settle that reaches it. Guarding only `state <> 'done'` let a redelivery that failed
 /// after an earlier success add a `failed_tasks` count on top of the `done_tasks` one, taking
 /// `done_tasks + failed_tasks` above `total_tasks` — see [`claim_task`].
+///
+/// `wait_ms` keeps the **first** value it was given, so a retried task reports how long it
+/// originally waited for a worker rather than the near-zero wait of its redelivery.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only — no other variant is reachable. An unknown task, and a task
@@ -657,49 +734,70 @@ pub async fn claim_next_queued<'e, E: PgExecutor<'e>>(
 /// in one statement, so a failure leaves the task unsettled and the run one count short of
 /// finalising. `JetStream` redelivery is what recovers it, which only happens if the worker
 /// declines to ack — so swallowing this error strands the run.
-pub async fn complete_task<'e, E: PgExecutor<'e>>(exec: E, task_id: ScanTaskId) -> DbResult<()> {
+pub async fn complete_task<'e, E: PgExecutor<'e>>(
+    exec: E,
+    task_id: ScanTaskId,
+    outcome: Option<&TaskOutcome<'_>>,
+) -> DbResult<()> {
     // Two statements would race on the counter under concurrency; a CTE keeps them in
     // one round trip and lets each worker's increment commit independently.
     sqlx::query!(
         "WITH done AS ( \
-            UPDATE scan_tasks SET state = 'done', finished_at = now() \
+            UPDATE scan_tasks SET state = 'done', finished_at = now(), \
+                duration_ms = COALESCE($2, duration_ms), \
+                telemetry = COALESCE($3, telemetry), \
+                wait_ms = COALESCE(wait_ms, LEAST( \
+                    EXTRACT(EPOCH FROM (COALESCE(claimed_at, now()) - created_at)) * 1000, \
+                    2147483647)::int) \
             WHERE id = $1 AND state NOT IN ('done','failed','skipped') RETURNING run_id \
          ) \
          UPDATE scan_runs SET done_tasks = done_tasks + 1 \
          WHERE id = (SELECT run_id FROM done)",
         task_id.as_uuid(),
+        outcome.map(|o| o.duration_ms),
+        TaskOutcome::payload(outcome),
     )
     .execute(exec)
     .await?;
     Ok(())
 }
 
-/// Mark a task failed with an error, incrementing the run's failed counter.
+/// Mark a task failed with an error, incrementing the run's failed counter and recording what the
+/// attempt cost before it failed.
 ///
 /// Same settle-once guard as [`complete_task`]: an already-settled task keeps the state and the
 /// count it first reached, so a redelivery cannot turn a completed task into a failed one and
-/// have the run count it twice.
+/// have the run count it twice. The stage the row is carrying is deliberately left alone — the
+/// stage a task died in is the most useful single field on a failure.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable, and the same silent-no-op and
-/// stranded-run notes as [`complete_task`] apply unchanged. One difference is worth stating:
-/// this runs on a path that is *already* handling a failure, so a caller that logs rather than
-/// propagates loses the record of why the task failed **and** the count that ends the run. Both
-/// halves are in this one statement precisely so neither can be lost without the other.
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable, with the same silent-no-op and
+/// stranded-run notes as [`complete_task`]. One difference is worth stating: this runs on a path
+/// that is *already* handling a failure, so a caller that logs rather than propagates loses the
+/// record of why the task failed **and** the count that ends the run. Both halves are in this one
+/// statement precisely so neither can be lost without the other.
 pub async fn fail_task<'e, E: PgExecutor<'e>>(
     exec: E,
     task_id: ScanTaskId,
     error: &str,
+    outcome: Option<&TaskOutcome<'_>>,
 ) -> DbResult<()> {
     sqlx::query!(
         "WITH failed AS ( \
-            UPDATE scan_tasks SET state = 'failed', error = $2, finished_at = now() \
+            UPDATE scan_tasks SET state = 'failed', error = $2, finished_at = now(), \
+                duration_ms = COALESCE($3, duration_ms), \
+                telemetry = COALESCE($4, telemetry), \
+                wait_ms = COALESCE(wait_ms, LEAST( \
+                    EXTRACT(EPOCH FROM (COALESCE(claimed_at, now()) - created_at)) * 1000, \
+                    2147483647)::int) \
             WHERE id = $1 AND state NOT IN ('done','failed','skipped') RETURNING run_id \
          ) \
          UPDATE scan_runs SET failed_tasks = failed_tasks + 1 \
          WHERE id = (SELECT run_id FROM failed)",
         task_id.as_uuid(),
         error,
+        outcome.map(|o| o.duration_ms),
+        TaskOutcome::payload(outcome),
     )
     .execute(exec)
     .await?;
@@ -934,6 +1032,108 @@ pub async fn skip_task<'e, E: PgExecutor<'e>>(exec: E, task_id: ScanTaskId) -> D
 }
 
 // ---------------------------------------------------------------------------
+// Cancellation
+// ---------------------------------------------------------------------------
+
+/// What a cancellation actually stopped.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Cancelled {
+    /// Runs moved to `cancelled` by this call. Runs already terminal are not counted, so two
+    /// operators cancelling the same queue do not both claim it.
+    pub runs: i64,
+    /// Tasks abandoned, across those runs.
+    pub tasks: i64,
+}
+
+/// Cancel one in-flight run and abandon every task it still had outstanding.
+///
+/// Returns `None` when the run was already terminal or does not exist — cancelling a finished run
+/// is a no-op, not an error, because two operators pressing the same button is ordinary.
+///
+/// ## What cancellation can and cannot reach
+///
+/// The run row and its task rows are ours; the queued **messages** are `JetStream`'s, and nothing
+/// here can unpublish them. A worker that pulls one of those messages after this call finds the
+/// task abandoned and its run cancelled, and [`claim_task`] answers `false` — that is where the
+/// cancellation is actually honoured. So a cancelled provider stops being crawled at its next task
+/// boundary, not mid-request: a task already in flight runs to its end, and its settle is a no-op
+/// against the terminal counters.
+///
+/// Abandoned tasks are `skipped`, and — unlike [`skip_task`] — they do **not** bump `done_tasks`.
+/// A skip means "nothing to do"; this means "told to stop", and counting it as done would render
+/// a cancelled run as a completed one on the progress bar.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only.
+pub async fn cancel_run<'e, E: PgExecutor<'e>>(
+    exec: E,
+    run_id: ScanRunId,
+) -> DbResult<Option<Cancelled>> {
+    let row = sqlx::query!(
+        "WITH stopped AS ( \
+             UPDATE scan_runs SET state = 'cancelled', finished_at = now() \
+             WHERE id = $1 AND state IN ('queued','running') \
+             RETURNING id \
+         ), abandoned AS ( \
+             UPDATE scan_tasks SET state = 'skipped', finished_at = now() \
+             WHERE run_id = (SELECT id FROM stopped) \
+               AND state NOT IN ('done','failed','skipped') \
+             RETURNING id \
+         ) \
+         SELECT (SELECT count(*) FROM stopped) AS \"runs!\", \
+                (SELECT count(*) FROM abandoned) AS \"tasks!\"",
+        run_id.as_uuid(),
+    )
+    .fetch_one(exec)
+    .await?;
+    Ok((row.runs > 0).then_some(Cancelled {
+        runs: row.runs,
+        tasks: row.tasks,
+    }))
+}
+
+/// Cancel every in-flight run, optionally narrowed to one provider slug and/or one mode.
+///
+/// The bulk counterpart to [`cancel_run`], with the same semantics per run — including that the
+/// abandoned tasks do not count as done. Both narrowings are `NULL`-tolerant, so an unnarrowed
+/// call is "stop everything", which is what an operator draining the queue is asking for.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only. Nothing in flight is `Cancelled::default()`, not an error.
+pub async fn cancel_active_runs<'e, E: PgExecutor<'e>>(
+    exec: E,
+    provider: Option<&str>,
+    mode: Option<ScanMode>,
+) -> DbResult<Cancelled> {
+    let row = sqlx::query!(
+        "WITH stopped AS ( \
+             UPDATE scan_runs r SET state = 'cancelled', finished_at = now() \
+             WHERE r.state IN ('queued','running') \
+               AND ($2::scan_mode IS NULL OR r.mode = $2) \
+               AND ($1::text IS NULL OR EXISTS ( \
+                       SELECT 1 FROM providers p WHERE p.id = r.provider_id AND p.slug = $1 \
+                   )) \
+             RETURNING r.id \
+         ), abandoned AS ( \
+             UPDATE scan_tasks t SET state = 'skipped', finished_at = now() \
+             WHERE t.run_id IN (SELECT id FROM stopped) \
+               AND t.state NOT IN ('done','failed','skipped') \
+             RETURNING t.id \
+         ) \
+         SELECT (SELECT count(*) FROM stopped) AS \"runs!\", \
+                (SELECT count(*) FROM abandoned) AS \"tasks!\"",
+        provider,
+        mode as Option<ScanMode>,
+    )
+    .fetch_one(exec)
+    .await?;
+    Ok(Cancelled {
+        runs: row.runs,
+        tasks: row.tasks,
+    })
+}
+
+// ---------------------------------------------------------------------------
 // Window health and live activity
 // ---------------------------------------------------------------------------
 
@@ -1086,8 +1286,6 @@ pub async fn provider_scan_health<'e, E: PgExecutor<'e>>(
     Ok(rows)
 }
 
-/// The task-level shape of one run that is still in flight.
-#[derive(Debug, Clone)]
 pub struct RunActivity {
     pub run_id: Uuid,
     pub queued_tasks: i64,
@@ -1100,6 +1298,26 @@ pub struct RunActivity {
     pub kinds: Vec<String>,
     /// Distinct workers holding a task right now.
     pub workers: i64,
+    /// The stage of the run's **oldest** held task — the one deciding how long the run takes.
+    ///
+    /// Picked by claim order rather than, say, the most common stage: a run's wall clock is set by
+    /// whatever has been running longest, and that is the task an operator is asking about.
+    pub stage: Option<String>,
+    /// When that task entered the stage above, which is what makes "stuck in `series_chapters`
+    /// for nine minutes" readable at all.
+    pub stage_at: Option<OffsetDateTime>,
+    pub stage_done: Option<i32>,
+    pub stage_total: Option<i32>,
+    /// What that stage is working against — a series path, a catalogue page.
+    pub stage_detail: Option<String>,
+    /// When the run's oldest still-queued task was created.
+    ///
+    /// Read together with `running_tasks = 0`, this is the answer to the console's worst
+    /// ambiguity: a run in `running` with nothing claimed is not working, it is **waiting for a
+    /// worker slot** — a worker serves one task per provider, so a provider's second run queues
+    /// behind its first. Both look identical through `scan_runs.state` alone, and the second one
+    /// reads as a run that has hung.
+    pub waiting_since: Option<OffsetDateTime>,
 }
 
 /// Per-run task activity for every run that has not reached a terminal state.
@@ -1117,11 +1335,20 @@ pub async fn active_run_activity<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec
                     array_agg(DISTINCT t.kind) FILTER (WHERE t.state = 'claimed'), \
                     ARRAY[]::text[] \
                 ) AS \"kinds!\", \
-                count(DISTINCT t.worker_id) FILTER (WHERE t.state = 'claimed') AS \"workers!\" \
+                count(DISTINCT t.worker_id) FILTER (WHERE t.state = 'claimed') AS \"workers!\", \
+                s.stage, s.stage_at, s.stage_done, s.stage_total, s.stage_detail, \
+                min(t.created_at) FILTER (WHERE t.state = 'queued') AS waiting_since \
          FROM scan_runs r \
          LEFT JOIN scan_tasks t ON t.run_id = r.id \
+         LEFT JOIN LATERAL ( \
+             SELECT h.stage, h.stage_at, h.stage_done, h.stage_total, h.stage_detail \
+             FROM scan_tasks h \
+             WHERE h.run_id = r.id AND h.state = 'claimed' \
+             ORDER BY h.claimed_at \
+             LIMIT 1 \
+         ) s ON true \
          WHERE r.state IN ('queued','running') \
-         GROUP BY r.id",
+         GROUP BY r.id, s.stage, s.stage_at, s.stage_done, s.stage_total, s.stage_detail",
     )
     .fetch_all(exec)
     .await?;
@@ -1172,6 +1399,180 @@ pub async fn recent_task_activity<'e, E: PgExecutor<'e>>(
     .fetch_all(exec)
     .await?;
     Ok(rows)
+}
+
+// ---------------------------------------------------------------------------
+// Where one run's time actually went
+// ---------------------------------------------------------------------------
+
+/// One task of a run, with its stage and the breakdown it recorded when it settled.
+#[derive(Debug, Clone)]
+pub struct TaskBreakdown {
+    pub id: Uuid,
+    pub kind: String,
+    pub target: Json,
+    pub state: TaskState,
+    pub attempts: i16,
+    pub worker_id: Option<String>,
+    pub error: Option<String>,
+    /// The stage the task is in, or — for a settled task — the one it ended in. A failure's stage
+    /// is the single most useful field here: it says whether the provider stopped answering or
+    /// our own ingest rejected the page.
+    pub stage: Option<String>,
+    pub stage_at: Option<OffsetDateTime>,
+    pub stage_done: Option<i32>,
+    pub stage_total: Option<i32>,
+    pub stage_detail: Option<String>,
+    pub created_at: Option<OffsetDateTime>,
+    pub claimed_at: Option<OffsetDateTime>,
+    pub finished_at: Option<OffsetDateTime>,
+    /// Milliseconds between creation and claim — time nobody was working on it.
+    pub wait_ms: Option<i32>,
+    /// Milliseconds between claim and settle — time someone was.
+    pub duration_ms: Option<i32>,
+    /// The [`tankovault_domain::StageTimings`] blob, as stored.
+    pub telemetry: Option<Json>,
+}
+
+/// How a page of one run's tasks is ordered.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum TaskSort {
+    /// Costliest first, with tasks still running ahead of settled ones.
+    ///
+    /// The default because it is the question being asked: a run with 4,000 tasks has no useful
+    /// "first" task, it has three that took a hundred times longer than the rest.
+    #[default]
+    Slowest,
+    /// Most recently settled first, with the ones still running at the top.
+    Recent,
+}
+
+impl TaskSort {
+    /// The token the statement's `ORDER BY` compares against.
+    #[must_use]
+    pub const fn token(self) -> &'static str {
+        match self {
+            Self::Slowest => "slowest",
+            Self::Recent => "recent",
+        }
+    }
+}
+
+/// One run's tasks, ordered so the ones that explain its duration come first.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only; a run with no tasks yet is an empty `Vec`.
+pub async fn run_tasks<'e, E: PgExecutor<'e>>(
+    exec: E,
+    run_id: ScanRunId,
+    sort: TaskSort,
+    limit: i64,
+) -> DbResult<Vec<TaskBreakdown>> {
+    let rows = sqlx::query_as!(
+        TaskBreakdown,
+        "SELECT t.id, t.kind, t.target AS \"target: Json\", t.state AS \"state: TaskState\", \
+                t.attempts, t.worker_id, t.error, \
+                t.stage, t.stage_at, t.stage_done, t.stage_total, t.stage_detail, \
+                t.created_at, t.claimed_at, t.finished_at, \
+                t.wait_ms, t.duration_ms, t.telemetry AS \"telemetry: Json\" \
+         FROM scan_tasks t \
+         WHERE t.run_id = $1 \
+         ORDER BY \
+           (t.state = 'claimed') DESC, \
+           CASE WHEN $2::text = 'recent' THEN t.finished_at END DESC NULLS FIRST, \
+           t.duration_ms DESC NULLS LAST, \
+           t.created_at DESC NULLS LAST \
+         LIMIT $3",
+        run_id.as_uuid(),
+        sort.token(),
+        limit,
+    )
+    .fetch_all(exec)
+    .await?;
+    Ok(rows)
+}
+
+/// One run's time, summed across every task that recorded a breakdown.
+#[derive(Debug, Clone, Default)]
+pub struct RunTelemetry {
+    /// Settled tasks carrying a breakdown. Everything below is a sum over exactly these, so a run
+    /// scanned before this instrumentation existed reports zero rather than a wrong total.
+    pub tasks_measured: i64,
+    /// Summed execution time. Exceeds the run's wall clock whenever tasks ran concurrently, which
+    /// is the point — it is work performed, not time elapsed.
+    pub busy_ms: i64,
+    /// Summed queue wait: time tasks spent created but unclaimed.
+    pub wait_ms: i64,
+    pub requests: i64,
+    pub fetch_ms: i64,
+    /// Time spent waiting for permission to send a request. Read against `busy_ms`, this is the
+    /// figure that separates "the scan is slow" from "the provider's crawl budget is small".
+    pub pace_wait_ms: i64,
+    pub solver_ms: i64,
+    pub solver_calls: i64,
+    pub throttled: i64,
+}
+
+/// Summed milliseconds for one stage across a run.
+#[derive(Debug, Clone)]
+pub struct StageTotal {
+    pub stage: String,
+    pub millis: i64,
+    /// Tasks that reported this stage at all.
+    pub tasks: i64,
+}
+
+/// The run's rollup and its per-stage split, as two statements.
+///
+/// Split rather than combined because the second one unnests a `jsonb` object per task: keeping
+/// it separate leaves the rollup — the part the drawer shows first — a plain aggregate.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only. A run whose tasks recorded nothing is a zeroed
+/// [`RunTelemetry`] and an empty stage list, never [`crate::DbError::NotFound`]: an old run is a
+/// legitimate answer, and the drawer must render it rather than 404.
+pub async fn run_telemetry<'e, E: PgExecutor<'e> + Copy>(
+    exec: E,
+    run_id: ScanRunId,
+) -> DbResult<(RunTelemetry, Vec<StageTotal>)> {
+    // `->>` then a cast, not `->` with a jsonb cast: the values are JSON numbers written by
+    // `serde_json`, and going through text is the one form that accepts every integer width
+    // serde may have chosen.
+    let rollup = sqlx::query_as!(
+        RunTelemetry,
+        "SELECT count(*) FILTER (WHERE t.telemetry IS NOT NULL) AS \"tasks_measured!\", \
+                COALESCE(sum(t.duration_ms), 0)::int8 AS \"busy_ms!\", \
+                COALESCE(sum(t.wait_ms), 0)::int8 AS \"wait_ms!\", \
+                COALESCE(sum((t.telemetry->>'requests')::int8), 0)::int8 AS \"requests!\", \
+                COALESCE(sum((t.telemetry->>'fetch_ms')::int8), 0)::int8 AS \"fetch_ms!\", \
+                COALESCE(sum((t.telemetry->>'pace_wait_ms')::int8), 0)::int8 \
+                    AS \"pace_wait_ms!\", \
+                COALESCE(sum((t.telemetry->>'solver_ms')::int8), 0)::int8 AS \"solver_ms!\", \
+                COALESCE(sum((t.telemetry->>'solver_calls')::int8), 0)::int8 \
+                    AS \"solver_calls!\", \
+                COALESCE(sum((t.telemetry->>'throttled')::int8), 0)::int8 AS \"throttled!\" \
+         FROM scan_tasks t WHERE t.run_id = $1",
+        run_id.as_uuid(),
+    )
+    .fetch_one(exec)
+    .await?;
+
+    let stages = sqlx::query_as!(
+        StageTotal,
+        "SELECT s.key AS \"stage!\", \
+                sum(s.value::text::int8)::int8 AS \"millis!\", \
+                count(*) AS \"tasks!\" \
+         FROM scan_tasks t \
+         CROSS JOIN LATERAL jsonb_each(t.telemetry->'stages') s \
+         WHERE t.run_id = $1 AND jsonb_typeof(t.telemetry->'stages') = 'object' \
+         GROUP BY s.key \
+         ORDER BY sum(s.value::text::int8) DESC",
+        run_id.as_uuid(),
+    )
+    .fetch_all(exec)
+    .await?;
+
+    Ok((rollup, stages))
 }
 
 #[cfg(test)]

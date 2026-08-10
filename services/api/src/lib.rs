@@ -175,8 +175,11 @@ pub fn route_features() -> RouteFeatures {
             Feature::AdminAdapterTest,
         )
         // Reads stay reachable when manual scanning is off: an operator who has just disabled
-        // scan triggers still needs the history that made them do it.
-        .gate_writes("/v1/admin/scans", Feature::ScanningManual)
+        // scan triggers still needs the history that made them do it. Exact, not a prefix, so
+        // the cancellations beneath it stay reachable too — switching triggering off is usually
+        // a response to a queue that is already the problem, and taking the stop button away at
+        // that moment is the last thing this flag should do.
+        .gate_path_writes("/v1/admin/scans", Feature::ScanningManual)
         .gate("/v1/admin/merge-candidates", Feature::ScanningMergeQueue)
         .gate("/v1/admin/series/merge", Feature::ScanningMergeQueue)
         // Longest prefix overrides the rule above for the sweep — the one route here that
@@ -523,6 +526,9 @@ fn documented_router() -> OpenApiRouter<AppState> {
         // Registered before `get_scan`, whose `{run_id}` would otherwise swallow the literals.
         .routes(routes!(admin::scan_summary))
         .routes(routes!(admin::scan_activity))
+        .routes(routes!(admin::cancel_scans))
+        .routes(routes!(admin::cancel_scan))
+        .routes(routes!(admin::scan_run_detail))
         // The console's one live stream. Deliberately absent from the feature-gate table
         // above: it carries two payloads behind two different features, and one prefix rule
         // would close the whole stream when either is off. The handler gates per event.

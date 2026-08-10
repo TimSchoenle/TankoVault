@@ -17,6 +17,7 @@ pub mod notifications;
 pub mod pacing;
 pub mod permissions;
 pub mod politeness;
+pub mod scan_stage;
 pub mod ssrf;
 pub mod tag_filter;
 pub mod tunables;
@@ -48,5 +49,6 @@ pub use permissions::{
     ParsePermissionError, Permission, PermissionGroup, PermissionPreset, PermissionSet,
 };
 pub use politeness::{BrowserEmulation, MIN_RPS, Politeness};
+pub use scan_stage::{ParseStageError, ScanStage, StageTimings};
 pub use tag_filter::{DEFAULT_BLOCKED_TAGS, TagBlocklist, slugify};
 pub use tunables::{Applies, ParseTunableError, Tunable, TunableGroup, TunableKind, TunableSpec};

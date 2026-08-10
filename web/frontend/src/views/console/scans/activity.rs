@@ -5,14 +5,18 @@
 //! was. The figures that can are here: how many tasks a worker is holding, how long the oldest
 //! claim has been held, how many workers are on it, and what settled in the last few seconds.
 
+use super::explain::ExplainPanel;
+use super::stages::stage_label;
 use super::{age_seconds, duration_label, elapsed_seconds, percent, scope_label};
+use crate::api;
+use crate::components::use_step_up_gate;
 use crate::i18n::use_i18n;
 use crate::models::{
     RunActivity, RunState, RunStateExt as _, ScanActivity, ScanRun, TaskEvent, TaskState,
     TaskStateExt as _,
 };
 use crate::util::rel_time;
-use crate::views::console::run_state_pill;
+use crate::views::console::{run_state_pill, RefreshTick};
 use dioxus::prelude::*;
 
 /// How long a single claim may sit before the card says so. Deliberately generous: a full
@@ -22,7 +26,11 @@ const STALE_CLAIM_SECONDS: f64 = 300.0;
 
 /// The runs in flight, with their task-level state, and the tail of what has just settled.
 #[component]
-pub(super) fn LivePanel(runs: Vec<ScanRun>, activity: Option<ScanActivity>) -> Element {
+pub(super) fn LivePanel(
+    runs: Vec<ScanRun>,
+    activity: Option<ScanActivity>,
+    tick: RefreshTick,
+) -> Element {
     let i18n = use_i18n();
     let active: Vec<ScanRun> = runs
         .into_iter()
@@ -47,6 +55,7 @@ pub(super) fn LivePanel(runs: Vec<ScanRun>, activity: Option<ScanActivity>) -> E
                             key: "{run.id}",
                             activity: per_run.iter().find(|a| a.run_id == run.id).cloned(),
                             run,
+                            tick,
                         }
                     }
                 }
@@ -56,10 +65,63 @@ pub(super) fn LivePanel(runs: Vec<ScanRun>, activity: Option<ScanActivity>) -> E
     }
 }
 
-/// One in-flight run: progress split by outcome, plus the figures that say whether it is moving.
+/// What a run is doing right now, in one line.
+///
+/// The distinction this exists to draw: a run in `running` with **nothing claimed** is not
+/// working, it is waiting for a worker slot — a worker serves one task per provider, so a
+/// provider's second run queues behind its first. Both read as `RUNNING` with an unmoving
+/// counter, and conflating them is what made a queued run look like a hung one.
+#[derive(Debug, Clone, PartialEq)]
+enum Doing {
+    /// A worker is on it, in this stage, since this many seconds ago.
+    Stage {
+        label: String,
+        detail: Option<String>,
+        progress: Option<(i32, i32)>,
+        seconds: Option<f64>,
+    },
+    /// Nothing is claimed and tasks are queued: waiting for a slot, for this long.
+    Waiting { seconds: Option<f64> },
+    /// Nothing claimed and nothing queued — the planner has not fanned out yet.
+    Planning,
+}
+
+impl Doing {
+    fn of(i18n: crate::i18n::Translator, activity: Option<&RunActivity>) -> Self {
+        let Some(activity) = activity else {
+            return Self::Planning;
+        };
+        if activity.running_tasks > 0 {
+            return Self::Stage {
+                label: activity.stage.as_deref().map_or_else(
+                    || i18n.t("console.scan.stage.unknown"),
+                    |s| stage_label(i18n, s),
+                ),
+                detail: activity.stage_detail.clone(),
+                progress: activity.stage_done.zip(activity.stage_total),
+                seconds: age_seconds(activity.stage_at.as_deref()),
+            };
+        }
+        if activity.queued_tasks > 0 {
+            return Self::Waiting {
+                seconds: age_seconds(activity.waiting_since.as_deref()),
+            };
+        }
+        Self::Planning
+    }
+}
+
+/// One in-flight run: what it is doing, progress split by outcome, the figures that say whether
+/// it is moving, and the two things an operator can do about it — explain it, or stop it.
 #[component]
-fn RunCard(run: ScanRun, activity: Option<RunActivity>) -> Element {
+fn RunCard(run: ScanRun, activity: Option<RunActivity>, tick: RefreshTick) -> Element {
     let i18n = use_i18n();
+    let api = api::use_api();
+    let gate = use_step_up_gate();
+    let mut explaining = use_signal(|| false);
+    let mut cancelling = use_signal(|| false);
+    let mut refused = use_signal(|| Option::<String>::None);
+    let run_id = run.id;
     let done_pct = if run.total_tasks > 0 {
         percent(f64::from(run.done_tasks) / f64::from(run.total_tasks))
     } else {
@@ -108,6 +170,27 @@ fn RunCard(run: ScanRun, activity: Option<RunActivity>) -> Element {
         .as_ref()
         .and_then(|a| age_seconds(a.oldest_claim_at.as_deref()))
         .filter(|age| *age >= STALE_CLAIM_SECONDS);
+    let doing = Doing::of(i18n, activity.as_ref());
+
+    let cancel = move |_| {
+        // Elevated: stopping a run is a mutating operator capability, which the API answers
+        // `403 step_up_required` to until it has a second factor.
+        let client = gate.client(api);
+        cancelling.set(true);
+        refused.set(None);
+        spawn(async move {
+            let result = client.cancel_scan().run_id(run_id).send().await;
+            cancelling.set(false);
+            match result {
+                Ok(_) => tick.bump(),
+                // The gate opens its own prompt for a step-up; anything else has to be said on
+                // the card, or a stop button that silently did nothing is the whole feedback an
+                // operator gets.
+                Err(e) if gate.refused(api::Refusal::of(&e)) => {}
+                Err(e) => refused.set(Some(api::guarded_error(i18n, e))),
+            }
+        });
+    };
 
     rsx! {
         div { class: "ik-tile", style: "padding:12px;",
@@ -119,19 +202,49 @@ fn RunCard(run: ScanRun, activity: Option<RunActivity>) -> Element {
                         "{scope_label(i18n, &run)}"
                     }
                 }
-                span { class: "ik-mono", style: "font-size:12px;",
-                    {
-                        i18n.args(
-                            "console.scans.progress",
-                            &[
-                                ("done", &run.done_tasks.to_string()),
-                                ("total", &run.total_tasks.to_string()),
-                                ("failed", &run.failed_tasks.to_string()),
-                            ],
-                        )
+                div { class: "ik-flex", style: "gap:8px;align-items:center;",
+                    span { class: "ik-mono", style: "font-size:12px;",
+                        {
+                            i18n.args(
+                                "console.scans.progress",
+                                &[
+                                    ("done", &run.done_tasks.to_string()),
+                                    ("total", &run.total_tasks.to_string()),
+                                    ("failed", &run.failed_tasks.to_string()),
+                                ],
+                            )
+                        }
+                    }
+                    button {
+                        class: "ik-btn ghost",
+                        style: "font-size:11.5px;padding:2px 8px;",
+                        onclick: move |_| {
+                            let open = *explaining.read();
+                            explaining.set(!open);
+                        },
+                        {
+                            i18n.t(
+                                if *explaining.read() {
+                                    "console.scan.explain.hide"
+                                } else {
+                                    "console.scan.explain.show"
+                                },
+                            )
+                        }
+                    }
+                    button {
+                        class: "ik-btn danger",
+                        style: "font-size:11.5px;padding:2px 8px;",
+                        disabled: *cancelling.read(),
+                        onclick: cancel,
+                        {i18n.t("console.scans.cancelRun")}
                     }
                 }
             }
+
+            // Above the bar, not beside the figures: with one task in flight the bar does not
+            // move for minutes at a time, and this is then the only thing on the card that does.
+            StageLine { doing }
             // Two segments, not one: a bar that fills to 100% on a run where every task failed
             // is the single most misleading thing this panel could draw.
             div { class: "ik-progress split", style: "margin-top:8px;",
@@ -158,6 +271,63 @@ fn RunCard(run: ScanRun, activity: Option<RunActivity>) -> Element {
                         )
                     }
                 }
+            }
+            if let Some(problem) = refused.read().clone() {
+                p { style: "margin:8px 0 0;font-size:12px;color:var(--vermilion);", "{problem}" }
+            }
+            if *explaining.read() {
+                ExplainPanel { run_id: run.id }
+            }
+        }
+    }
+}
+
+/// The one line that says what the run is doing right now.
+#[component]
+fn StageLine(doing: Doing) -> Element {
+    let i18n = use_i18n();
+    let since = |seconds: Option<f64>| {
+        seconds.map_or_else(
+            || i18n.t("time.unknown"),
+            |value| duration_label(i18n, value),
+        )
+    };
+    rsx! {
+        div {
+            class: "ik-flex",
+            style: "gap:8px;flex-wrap:wrap;align-items:baseline;margin-top:8px;",
+            match doing {
+                Doing::Stage { label, detail, progress, seconds } => rsx! {
+                    span { class: "ik-mono", style: "font-size:12.5px;", "{label}" }
+                    if let Some((done, total)) = progress {
+                        span { class: "ik-mono ik-muted", style: "font-size:12px;",
+                            "{done}/{total}"
+                        }
+                    }
+                    if let Some(detail) = detail {
+                        span {
+                            class: "ik-mono ik-muted",
+                            style: "font-size:11.5px;overflow:hidden;text-overflow:ellipsis;\
+                                    white-space:nowrap;max-width:40ch;",
+                            "{detail}"
+                        }
+                    }
+                    span { class: "ik-muted", style: "font-size:11.5px;",
+                        {i18n.args("console.scan.stage.since", &[("duration", &since(seconds))])}
+                    }
+                },
+                // Worded as waiting, not as running: this run has nothing claimed, and the
+                // reason is almost always that the provider's other run holds its only slot.
+                Doing::Waiting { seconds } => rsx! {
+                    span { style: "font-size:12.5px;color:var(--star-ink);",
+                        {i18n.args("console.scan.stage.waiting", &[("duration", &since(seconds))])}
+                    }
+                },
+                Doing::Planning => rsx! {
+                    span { class: "ik-muted", style: "font-size:12.5px;",
+                        {i18n.t("console.scan.stage.planning")}
+                    }
+                },
             }
         }
     }
@@ -236,7 +406,7 @@ fn ActivityTail(events: Vec<TaskEvent>) -> Element {
 /// a catalogue walk, `{"series_id":…}` for a series). Rendering the raw JSON would fill the tail
 /// with braces, so the two fields an operator actually reads are pulled out and everything else
 /// falls back to the compact JSON it already is.
-fn target_label(target: &serde_json::Value) -> String {
+pub(super) fn target_label(target: &serde_json::Value) -> String {
     let path = target.get("path").and_then(serde_json::Value::as_str);
     let page = target.get("page").and_then(serde_json::Value::as_i64);
     match (path, page) {

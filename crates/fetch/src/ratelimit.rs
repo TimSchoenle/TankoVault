@@ -78,6 +78,12 @@ impl<F: Fetcher> Fetcher for RateLimitedFetcher<F> {
     async fn get(&self, req: FetchRequest) -> Result<FetchResponse, FetchError> {
         // Concurrency gate first, then the token rate, then the spacing floor — whichever of
         // the crawl delay and the current penalty is wider.
+        //
+        // Measured as one span, not three: everything between here and the send is the request
+        // waiting for permission rather than for the provider, and that total is what explains a
+        // scan that is polite rather than stuck. Splitting it further would name which gate held
+        // the request without changing what an operator does about it.
+        let gate_entered = Instant::now();
         let _permit = self
             .concurrency
             .acquire()
@@ -88,6 +94,13 @@ impl<F: Fetcher> Fetcher for RateLimitedFetcher<F> {
         if !spacing.is_zero() {
             tokio::time::sleep(spacing).await;
         }
+        let waited = gate_entered.elapsed();
+        crate::accounting::record(crate::accounting::Metered::PaceWait(waited));
+        metrics::histogram!(
+            "provider_pace_wait_seconds",
+            "provider" => req.provider_slug.clone(),
+        )
+        .record(waited.as_secs_f64());
 
         let provider = req.provider_slug.clone();
         let resp = self.inner.get(req).await;
@@ -97,6 +110,7 @@ impl<F: Fetcher> Fetcher for RateLimitedFetcher<F> {
         if let Ok(resp) = &resp
             && THROTTLE_STATUSES.contains(&resp.status)
         {
+            crate::accounting::record(crate::accounting::Metered::Throttled);
             let now = Instant::now();
             self.throttle.penalise(now, None);
             let penalty = self.throttle.penalty(now);

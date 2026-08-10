@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH done AS ( UPDATE scan_tasks SET state = 'done', finished_at = now(), duration_ms = COALESCE($2, duration_ms), telemetry = COALESCE($3, telemetry), wait_ms = COALESCE(wait_ms, LEAST( EXTRACT(EPOCH FROM (COALESCE(claimed_at, now()) - created_at)) * 1000, 2147483647)::int) WHERE id = $1 AND state NOT IN ('done','failed','skipped') RETURNING run_id ) UPDATE scan_runs SET done_tasks = done_tasks + 1 WHERE id = (SELECT run_id FROM done)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fe23e86e4e22dd0d695f92effe104dde9ac26a05fcfd0c7441c552cc220d7382"
+}

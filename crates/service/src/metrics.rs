@@ -81,6 +81,12 @@ pub mod names {
     pub const SCAN_TASKS_SETTLED: &str = "scan_tasks_settled_total";
     /// How long one scan task took.
     pub const SCAN_TASK_DURATION: &str = "scan_task_duration_seconds";
+    /// How long one *stage* of a scan task took, by stage.
+    pub const SCAN_STAGE_DURATION: &str = "scan_stage_duration_seconds";
+    /// How much of a scan task went on waiting for permission to send a request.
+    pub const SCAN_TASK_PACE_WAIT: &str = "scan_task_pace_wait_seconds";
+    /// The same wait, per request, at the layer that imposes it.
+    pub const PROVIDER_PACE_WAIT: &str = "provider_pace_wait_seconds";
     /// Scan tasks a worker is executing right now — one per provider in flight.
     pub const SCAN_TASKS_INFLIGHT: &str = "scan_tasks_inflight";
     /// Chapters a scan accepted and recorded as new.
@@ -299,6 +305,27 @@ pub const CATALOGUE: &[Metric] = &[
         unit: Unit::Seconds,
         emitted_by: "worker",
         help: "Wall time for one scan task, by provider, tier and task kind.",
+    },
+    Metric {
+        name: names::SCAN_STAGE_DURATION,
+        kind: Kind::Histogram(WORK_BUCKETS),
+        unit: Unit::Seconds,
+        emitted_by: "worker",
+        help: "Wall time for one stage of a scan task, by provider, task kind and stage (catalog_fetch, series_chapters, series_ingest, ...). Which stage a slow scan spends its time in is the difference between a provider that has stopped answering and an ingest that is the bottleneck.",
+    },
+    Metric {
+        name: names::SCAN_TASK_PACE_WAIT,
+        kind: Kind::Histogram(WORK_BUCKETS),
+        unit: Unit::Seconds,
+        emitted_by: "worker",
+        help: "Of one scan task's wall time, how much went on waiting for permission to send a request — the concurrency gate, the token rate, the crawl delay and any adaptive 429 penalty. Read against scan_task_duration_seconds: a task that is nearly all pace-wait is polite, not broken.",
+    },
+    Metric {
+        name: names::PROVIDER_PACE_WAIT,
+        kind: Kind::Histogram(LATENCY_BUCKETS),
+        unit: Unit::Seconds,
+        emitted_by: "worker, sync",
+        help: "How long one request waited for permission to send, by provider. Rises on its own when a provider answers 429/503, because the adaptive penalty widens this provider's spacing.",
     },
     Metric {
         name: names::SCAN_TASKS_INFLIGHT,

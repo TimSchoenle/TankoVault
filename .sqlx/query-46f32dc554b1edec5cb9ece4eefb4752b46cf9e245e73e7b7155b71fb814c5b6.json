@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH stopped AS ( UPDATE scan_runs SET state = 'cancelled', finished_at = now() WHERE id = $1 AND state IN ('queued','running') RETURNING id ), abandoned AS ( UPDATE scan_tasks SET state = 'skipped', finished_at = now() WHERE run_id = (SELECT id FROM stopped) AND state NOT IN ('done','failed','skipped') RETURNING id ) SELECT (SELECT count(*) FROM stopped) AS \"runs!\", (SELECT count(*) FROM abandoned) AS \"tasks!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "runs!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "tasks!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "46f32dc554b1edec5cb9ece4eefb4752b46cf9e245e73e7b7155b71fb814c5b6"
+}

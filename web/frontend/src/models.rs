@@ -73,9 +73,11 @@ pub(crate) use crate::wire::types::FailedTaskView as FailedTask;
 // `sort` parameter; `RunSort` is what the panel and the repository both call it.
 pub(crate) use crate::wire::types::MergeCandidateView as MergeCandidate;
 pub(crate) use crate::wire::types::{
-    ClearFailuresBody, FailureGroupView as FailureGroup, ListScansSort as RunSort,
-    ProviderScanHealthView, RunActivityView as RunActivity, ScanActivityView as ScanActivity,
-    ScanSummaryView as ScanSummary, TaskEventView as TaskEvent, TaskState,
+    CancelScansBody, ClearFailuresBody, FailureGroupView as FailureGroup, ListScansSort as RunSort,
+    ProviderScanHealthView, RunActivityView as RunActivity, RunTelemetryView as RunTelemetry,
+    ScanActivityView as ScanActivity, ScanRunDetailView as ScanRunDetail, ScanRunId,
+    ScanSummaryView as ScanSummary, ScanTaskDetailView as ScanTaskDetail,
+    StageTotalView as StageTotal, TaskEventView as TaskEvent, TaskState,
 };
 // The two decision journals keep their generated names: `MergeDecision` is what the operator
 // console calls the row, and there is no shorter name that stays distinct from `MergeCandidate`.

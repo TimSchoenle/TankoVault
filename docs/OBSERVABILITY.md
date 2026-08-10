@@ -108,6 +108,9 @@ status codes would be an unbounded label source for a distinction no panel makes
 | `scan_tasks_served_total` | counter | `provider`, `scan` (`full`/`fast`) | `worker` |
 | `scan_tasks_settled_total` | counter | `provider`, `scan`, `outcome` (`completed`/`requeued`/`failed`) | `worker` |
 | `scan_task_duration_seconds` | histogram | `provider`, `scan`, `kind` | `worker` |
+| `scan_stage_duration_seconds` | histogram | `provider`, `kind`, `stage` | `worker` |
+| `scan_task_pace_wait_seconds` | histogram | `provider` | `worker` |
+| `provider_pace_wait_seconds` | histogram | `provider` | `worker`, `sync` |
 | `chapters_discovered_total` | counter | `provider` | `worker` |
 | `chapters_rejected_total` | counter | `provider` | `worker` |
 | `scan_catalog_pages_truncated_total` | counter | `provider` | `worker` |
@@ -121,6 +124,37 @@ throughput with retries; `scan_tasks_settled_total{outcome="failed"}` is the per
 rate, and `outcome="requeued"` is the retry rate the broker's `num_redelivered` shows in
 progress. `chapters_discovered_total` is the pipeline's actual output — a fleet that is busy and
 flat here is doing work and finding nothing.
+
+### Why a scan is slow
+
+`scan_task_duration_seconds` says a task took nine minutes; it does not say what for, and that is
+the question an operator actually has. Two metrics answer it without opening the database.
+
+`scan_stage_duration_seconds{stage}` splits a task into the things it does — `catalog_fetch`,
+`catalog_register`, `catalog_fanout`, `feed_fetch`, `feed_fanout`, `series_metadata`,
+`series_chapters`, `series_ingest`. Time in a `*_fetch` stage is the provider's; time in
+`series_ingest` is ours, and a rising ingest share is a database problem wearing a scan's clothes.
+
+`scan_task_pace_wait_seconds` is the one to read first. It is the part of a task spent waiting for
+*permission to send* — the concurrency gate, the token rate, the crawl delay, and the adaptive
+penalty a 429 imposes. Against `scan_task_duration_seconds` it separates the only two diagnoses
+that matter:
+
+```promql
+sum(rate(scan_task_pace_wait_seconds_sum[15m])) by (provider)
+  / sum(rate(scan_task_duration_seconds_sum[15m])) by (provider)
+```
+
+Near 1 means the scan is **polite, not broken**: it is being crawled exactly as fast as that
+provider's budget allows, and nothing in the code will speed it up — raise `politeness.rps` or
+lower `crawl_delay_ms` for that provider, or accept the duration. Near 0 with a long duration
+means the time is in the requests themselves or in the ingest, and
+`scan_stage_duration_seconds{stage}` says which. `provider_pace_wait_seconds` is the same wait per
+request rather than per task, and it climbs on its own when a provider answers 429/503 — a rise
+there with no config change is the adaptive penalty working.
+
+The same breakdown is stored per task (`scan_tasks.telemetry`) and surfaced per run by
+`GET /v1/admin/scans/{run_id}/tasks`, which is what the console's "Why so long?" panel reads.
 
 `chapters_rejected_total` counts listing entries a scan refused to index because the source
 cannot plausibly have released them (see `chapter_outliers` in [`CONFIGURATION.md`](CONFIGURATION.md)).

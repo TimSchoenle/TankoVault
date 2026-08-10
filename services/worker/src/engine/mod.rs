@@ -18,7 +18,10 @@ use tankovault_solver::ChallengeSolver;
 
 mod scans;
 mod series;
+mod stage;
 mod tasks;
+
+pub(crate) use stage::StageReporter;
 
 #[cfg(test)]
 mod tests;

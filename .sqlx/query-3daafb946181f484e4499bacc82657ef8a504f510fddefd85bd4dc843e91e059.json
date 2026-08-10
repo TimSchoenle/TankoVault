@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH stopped AS ( UPDATE scan_runs r SET state = 'cancelled', finished_at = now() WHERE r.state IN ('queued','running') AND ($2::scan_mode IS NULL OR r.mode = $2) AND ($1::text IS NULL OR EXISTS ( SELECT 1 FROM providers p WHERE p.id = r.provider_id AND p.slug = $1 )) RETURNING r.id ), abandoned AS ( UPDATE scan_tasks t SET state = 'skipped', finished_at = now() WHERE t.run_id IN (SELECT id FROM stopped) AND t.state NOT IN ('done','failed','skipped') RETURNING t.id ) SELECT (SELECT count(*) FROM stopped) AS \"runs!\", (SELECT count(*) FROM abandoned) AS \"tasks!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "runs!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "tasks!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        {
+          "Custom": {
+            "name": "scan_mode",
+            "kind": {
+              "Enum": [
+                "full",
+                "fast"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "3daafb946181f484e4499bacc82657ef8a504f510fddefd85bd4dc843e91e059"
+}

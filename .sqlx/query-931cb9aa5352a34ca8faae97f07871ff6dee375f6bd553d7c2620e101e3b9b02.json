@@ -1,0 +1,79 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(*) FILTER (WHERE t.telemetry IS NOT NULL) AS \"tasks_measured!\", COALESCE(sum(t.duration_ms), 0)::int8 AS \"busy_ms!\", COALESCE(sum(t.wait_ms), 0)::int8 AS \"wait_ms!\", COALESCE(sum((t.telemetry->>'requests')::int8), 0)::int8 AS \"requests!\", COALESCE(sum((t.telemetry->>'fetch_ms')::int8), 0)::int8 AS \"fetch_ms!\", COALESCE(sum((t.telemetry->>'pace_wait_ms')::int8), 0)::int8 AS \"pace_wait_ms!\", COALESCE(sum((t.telemetry->>'solver_ms')::int8), 0)::int8 AS \"solver_ms!\", COALESCE(sum((t.telemetry->>'solver_calls')::int8), 0)::int8 AS \"solver_calls!\", COALESCE(sum((t.telemetry->>'throttled')::int8), 0)::int8 AS \"throttled!\" FROM scan_tasks t WHERE t.run_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "tasks_measured!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "busy_ms!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "wait_ms!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "requests!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "fetch_ms!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "pace_wait_ms!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "solver_ms!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "solver_calls!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 8,
+        "name": "throttled!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "931cb9aa5352a34ca8faae97f07871ff6dee375f6bd553d7c2620e101e3b9b02"
+}

@@ -402,6 +402,172 @@ pub async fn scan_activity(
     }))
 }
 
+/// How many of a run's tasks the breakdown carries.
+///
+/// A full scan's run has one task per series — tens of thousands. The drawer answers "which of
+/// these cost me the time", and the ordering puts those first, so the tail is the part that adds
+/// nothing but bytes.
+const RUN_TASK_LIMIT: i64 = 100;
+
+#[derive(Debug, Deserialize, IntoParams)]
+pub struct RunTaskQuery {
+    /// Ordering: `slowest` (default) or `recent`.
+    #[serde(default)]
+    #[param(inline)]
+    pub sort: TaskSortParam,
+}
+
+/// How a run's tasks are ordered, as the `sort` parameter spells it.
+///
+/// Its own wire enum for the same reason [`RunSortParam`] is: an unknown token must be a 422 from
+/// the extractor rather than a silent fall back to an ordering the caller did not ask for.
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskSortParam {
+    /// Costliest first — the default, because that is the question being asked.
+    #[default]
+    Slowest,
+    /// Most recently settled first.
+    Recent,
+}
+
+impl From<TaskSortParam> for tankovault_db::repo::scans::TaskSort {
+    fn from(value: TaskSortParam) -> Self {
+        match value {
+            TaskSortParam::Slowest => Self::Slowest,
+            TaskSortParam::Recent => Self::Recent,
+        }
+    }
+}
+
+/// Explain a scan run
+///
+/// Where one run's time went: the summed breakdown, the per-stage split, and the tasks behind it
+/// ordered so the expensive ones come first. This is the endpoint that answers "why has this been
+/// running for twenty minutes" — a run whose `pace_wait_ms` is most of its `busy_ms` is being
+/// crawled exactly as politely as its provider is configured for, and nothing in the code will
+/// make it faster.
+#[utoipa::path(
+    get,
+    path = "/v1/admin/scans/{run_id}/tasks",
+    tag = ADMIN_SCANS_TAG,
+    params(("run_id" = ScanRunId, Path, description = "Scan run id"), RunTaskQuery),
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "The run's timing breakdown and its tasks", body = tankovault_contracts::admin::ScanRunDetailView),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
+    )
+)]
+pub async fn scan_run_detail(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(run_id): Path<ScanRunId>,
+    Query(q): Query<RunTaskQuery>,
+) -> ApiResult<Json<tankovault_contracts::admin::ScanRunDetailView>> {
+    user.require(Permission::ScansRead).await?;
+    let (telemetry, stages) =
+        tankovault_db::repo::scans::run_telemetry(&state.pool, run_id).await?;
+    let tasks =
+        tankovault_db::repo::scans::run_tasks(&state.pool, run_id, q.sort.into(), RUN_TASK_LIMIT)
+            .await?;
+    Ok(Json(tankovault_contracts::admin::ScanRunDetailView {
+        telemetry: telemetry.into_view(),
+        stages: stages.into_view(),
+        tasks: tasks.into_view(),
+    }))
+}
+
+/// Cancel a scan run
+///
+/// Stops one run and abandons the tasks it still had outstanding. A run that has already
+/// finished is a no-op, answered as `0` runs cancelled rather than a 404 — two operators pressing
+/// the same button is ordinary.
+///
+/// The queued broker messages cannot be unpublished, so cancellation takes effect at the next
+/// task boundary: a task already in flight runs to its end and settles into a run that is already
+/// terminal. Behind `scans.run` for the same reason clearing failures is — it changes what every
+/// other operator sees.
+#[utoipa::path(
+    post,
+    path = "/v1/admin/scans/{run_id}/cancel",
+    tag = ADMIN_SCANS_TAG,
+    params(("run_id" = ScanRunId, Path, description = "Scan run id")),
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "What the cancellation stopped", body = tankovault_contracts::admin::ScanCancelledView),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
+    )
+)]
+pub async fn cancel_scan(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(run_id): Path<ScanRunId>,
+) -> ApiResult<Json<tankovault_contracts::admin::ScanCancelledView>> {
+    user.require(Permission::ScansRun).await?;
+    let stopped = tankovault_db::repo::scans::cancel_run(&state.pool, run_id)
+        .await?
+        .unwrap_or_default();
+
+    audit(
+        &state,
+        &user,
+        "scan.cancel",
+        &run_id.to_string(),
+        &serde_json::json!({ "runs": stopped.runs, "tasks": stopped.tasks }),
+    )
+    .await;
+    Ok(Json(stopped.into_view()))
+}
+
+/// Cancel the scan queue
+///
+/// Stops every run currently queued or running, optionally narrowed to one provider and/or one
+/// mode. The drain an operator reaches for when a provider is misbehaving and the queue is full
+/// of work against it.
+#[utoipa::path(
+    post,
+    path = "/v1/admin/scans/cancel",
+    tag = ADMIN_SCANS_TAG,
+    request_body = tankovault_contracts::admin::CancelScansBody,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "What the cancellation stopped", body = tankovault_contracts::admin::ScanCancelledView),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
+    )
+)]
+pub async fn cancel_scans(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Json(body): Json<tankovault_contracts::admin::CancelScansBody>,
+) -> ApiResult<Json<tankovault_contracts::admin::ScanCancelledView>> {
+    user.require(Permission::ScansRun).await?;
+    let provider = body
+        .provider
+        .as_deref()
+        .map(str::trim)
+        .filter(|slug| !slug.is_empty());
+    let stopped =
+        tankovault_db::repo::scans::cancel_active_runs(&state.pool, provider, body.mode).await?;
+
+    audit(
+        &state,
+        &user,
+        "scan.cancel.all",
+        provider.unwrap_or("-"),
+        &serde_json::json!({
+            "provider": provider,
+            "mode": body.mode,
+            "runs": stopped.runs,
+            "tasks": stopped.tasks,
+        }),
+    )
+    .await;
+    Ok(Json(stopped.into_view()))
+}
+
 /// Which error group a clear request names, from the two fields the body carries.
 ///
 /// The pairing that matters is an absent `error` with `match_null_error` unset: that is "any

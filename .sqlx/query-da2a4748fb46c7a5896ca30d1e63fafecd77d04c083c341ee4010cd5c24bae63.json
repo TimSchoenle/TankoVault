@@ -1,0 +1,128 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT r.id AS \"run_id!\", count(t.id) FILTER (WHERE t.state = 'queued') AS \"queued_tasks!\", count(t.id) FILTER (WHERE t.state = 'claimed') AS \"running_tasks!\", min(t.claimed_at) FILTER (WHERE t.state = 'claimed') AS oldest_claim_at, COALESCE( array_agg(DISTINCT t.kind) FILTER (WHERE t.state = 'claimed'), ARRAY[]::text[] ) AS \"kinds!\", count(DISTINCT t.worker_id) FILTER (WHERE t.state = 'claimed') AS \"workers!\", s.stage, s.stage_at, s.stage_done, s.stage_total, s.stage_detail, min(t.created_at) FILTER (WHERE t.state = 'queued') AS waiting_since FROM scan_runs r LEFT JOIN scan_tasks t ON t.run_id = r.id LEFT JOIN LATERAL ( SELECT h.stage, h.stage_at, h.stage_done, h.stage_total, h.stage_detail FROM scan_tasks h WHERE h.run_id = r.id AND h.state = 'claimed' ORDER BY h.claimed_at LIMIT 1 ) s ON true WHERE r.state IN ('queued','running') GROUP BY r.id, s.stage, s.stage_at, s.stage_done, s.stage_total, s.stage_detail",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "run_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "scan_runs",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "queued_tasks!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "running_tasks!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "oldest_claim_at",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "kinds!",
+        "type_info": "TextArray",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "workers!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "stage",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "scan_tasks",
+            "name": "stage"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "stage_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "scan_tasks",
+            "name": "stage_at"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "stage_done",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "scan_tasks",
+            "name": "stage_done"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "stage_total",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "scan_tasks",
+            "name": "stage_total"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "stage_detail",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "scan_tasks",
+            "name": "stage_detail"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "waiting_since",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      null,
+      null,
+      null,
+      null,
+      null,
+      true,
+      true,
+      true,
+      true,
+      true,
+      null
+    ]
+  },
+  "hash": "da2a4748fb46c7a5896ca30d1e63fafecd77d04c083c341ee4010cd5c24bae63"
+}

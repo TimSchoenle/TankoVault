@@ -1100,6 +1100,42 @@
         "count": "{shown} of {total}",
         "countFiltered": "{shown} of {total} matching",
         "noneMatch": "No run matches this filter."
+      },
+      "stage": {
+        "starting": "Starting",
+        "catalogFetch": "Fetching catalogue page",
+        "catalogRegister": "Registering series",
+        "catalogFanout": "Queueing series",
+        "feedFetch": "Reading latest feed",
+        "feedFanout": "Queueing series",
+        "seriesMetadata": "Fetching series page",
+        "seriesChapters": "Fetching chapters",
+        "seriesIngest": "Writing to the catalogue",
+        "unknown": "Working",
+        "since": "for {duration}",
+        "waiting": "Waiting for a worker for {duration} — this provider's other run holds its slot.",
+        "planning": "Planning — no tasks queued yet."
+      },
+      "explain": {
+        "show": "Why so long?",
+        "hide": "Hide",
+        "busy": "Work done",
+        "waiting": "Queued",
+        "paceWait": "Crawl budget",
+        "requests": "Requests",
+        "solves": "Challenge solves",
+        "throttledCount": "Throttled",
+        "byStage": "Where the time went",
+        "slowest": "Costliest tasks",
+        "noStages": "No stage timings recorded for this run yet.",
+        "unmeasured": "No task has recorded a breakdown yet — come back once one settles.",
+        "trivial": "Too little work measured so far to say anything useful.",
+        "throttled": "The provider answered “too many requests” {count} times, so every later request was spaced further apart. Lower this provider's crawl rate.",
+        "pacing": "{percent}% of the time was spent waiting for permission to send — the scan is being as polite as this provider is configured for. Raise its crawl rate to go faster.",
+        "solving": "Most of the time went into {count} challenge solves. The provider is putting a bot check in front of the pages.",
+        "fetching": "{percent}% of the time was spent inside {requests} requests — the provider is answering slowly.",
+        "stage": "Most of the time went into {stage} ({percent}%).",
+        "mixed": "No single stage dominates; the time is spread across the run."
       }
     },
     "scans": {
@@ -1128,7 +1164,10 @@
       "scopeUnknown": "unknown",
       "title": "Scan queue",
       "trigger": "Trigger scan (all)",
-      "triggerMode": "Scan mode to trigger"
+      "triggerMode": "Scan mode to trigger",
+      "cancelRun": "Stop",
+      "cancelAll": "Stop queue",
+      "cancelled": "Stopped {runs} runs and abandoned {tasks} tasks."
     },
     "solver": {
       "active": "active",

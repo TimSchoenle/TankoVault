@@ -468,70 +468,85 @@ fn release(
 /// Run one claimed task to a terminal disposition, then settle its message.
 ///
 /// Owns its message for the whole lifetime — heartbeat, retry decision and ack all live here,
-/// so concurrent tasks cannot settle each other's messages.
+/// so concurrent tasks cannot settle each other's messages. It also owns the two measurements
+/// that explain the task afterwards: the stage reporter, and the fetch accounting scope, which
+/// is entered here because a scope covers exactly the futures of the tokio task that opened it
+/// and this is that task.
 async fn run_task(engine: Arc<Engine>, msg: tankovault_bus::BrokerMessage, task: ScanTaskMessage) {
     // Wrapped here rather than inside the engine: ack lifetime belongs to whoever owns the
     // message, and doing it at this level means *every* task kind is covered — a 20k-entry
     // catalogue page today, whatever runs long tomorrow — instead of each slow path having to
     // remember.
     let started = std::time::Instant::now();
-    let result = tankovault_bus::with_ack_heartbeat(
-        &msg,
-        tankovault_bus::TASK_ACK_HEARTBEAT,
-        handle_task(&engine, &task),
-    )
-    .await;
+    let stage = engine::StageReporter::for_task(engine.pool.clone(), task.task_id);
+    // Boxed: the composed future carries the whole dispatch state machine — a catalogue page's
+    // entry vectors included — and this one is held across the consumer loop's `JoinSet`, where
+    // an inline 35 KB future is 35 KB per concurrent provider on the stack.
+    let (result, fetched) =
+        tankovault_fetch::measured(Box::pin(tankovault_bus::with_ack_heartbeat(
+            &msg,
+            tankovault_bus::TASK_ACK_HEARTBEAT,
+            handle_task(&engine, &task, &stage),
+        )))
+        .await;
+    let elapsed = started.elapsed();
     metrics::histogram!(
         "scan_task_duration_seconds",
         "provider" => task.provider_slug.clone(),
         "scan" => task.mode.as_str(),
         "kind" => task.kind.as_str(),
     )
-    .record(started.elapsed().as_secs_f64());
+    .record(elapsed.as_secs_f64());
 
-    if let Err(e) = result {
-        let deliveries = tankovault_bus::delivery_count(&msg);
-        if is_retryable(&e) && deliveries < MAX_TASK_DELIVERIES {
-            let delay = retry_delay(deliveries);
-            log_task_failure(
-                &task,
-                deliveries,
-                &e,
-                &format!(
-                    "requeued; delivery {} of {MAX_TASK_DELIVERIES} follows in {}s",
-                    deliveries + 1,
-                    delay.as_secs()
-                ),
+    let timings = stage.finish(fetched);
+    record_stage_metrics(&task, &timings);
+    let outcome = tankovault_db::repo::scans::TaskOutcome {
+        duration_ms: i32::try_from(elapsed.as_millis()).unwrap_or(i32::MAX),
+        timings: &timings,
+    };
+
+    match result {
+        Ok(Handled::Declined) => {
+            // Neither done nor failed: the run either finished without this task or was
+            // cancelled, and both counters are already where they should be. Acked below so the
+            // message stops being redelivered into a claim that will refuse it again.
+            tracing::info!(
+                provider = %task.provider_slug,
+                task_id = %task.task_id,
+                run_id = %task.run_id,
+                "scan task declined; its run has settled or was cancelled"
             );
-            if let Err(e) = tankovault_bus::retry_later(&msg, delay).await {
+            settled(&task, "declined");
+            if let Err(e) = msg.ack().await {
+                tracing::warn!(error = %e, "failed to ack message");
+            }
+            return;
+        }
+        Ok(Handled::Executed) => {
+            settled(&task, "completed");
+            if let Err(e) = tankovault_db::repo::scans::complete_task(
+                &engine.pool,
+                task.task_id,
+                Some(&outcome),
+            )
+            .await
+            {
                 tracing::warn!(
                     task_id = %task.task_id,
                     error = %e,
-                    "could not requeue task; it will be redelivered when the ack deadline lapses"
+                    next = "the task stays unsettled until JetStream redelivers it",
+                    "could not complete the task"
                 );
             }
-            settled(&task, "requeued");
-            // Returns without acking or reporting progress: `retry_later` has already settled
-            // the message, and the run stays open *for this task* — the idempotent writes make
-            // the re-run a no-op for whatever it did do. The counter still moves, because
-            // "retrying" is the disposition an operator needs separated from "threw it away".
-            return;
         }
-        let next = if is_retryable(&e) {
-            format!(
-                "gave up after {MAX_TASK_DELIVERIES} deliveries; recorded as failed and the run \
-                 continues without it"
-            )
-        } else {
-            "will fail identically on replay; recorded as failed and the run continues without it"
-                .to_owned()
-        };
-        log_task_failure(&task, deliveries, &e, &next);
-        settled(&task, "failed");
-        let _ =
-            tankovault_db::repo::scans::fail_task(&engine.pool, task.task_id, &e.to_string()).await;
-    } else {
-        settled(&task, "completed");
+        Err(e) => {
+            if requeue_or_fail(&engine, &msg, &task, &e, &outcome).await == Disposition::Requeued {
+                // Returns without acking or reporting progress: `retry_later` has already settled
+                // the message, and the run stays open *for this task* — the idempotent writes make
+                // the re-run a no-op for whatever it did do.
+                return;
+            }
+        }
     }
     // Republish progress after the task settles (done or failed) so the control-plane
     // aggregator can finalise the run and the console can relay live progress over NATS
@@ -540,6 +555,103 @@ async fn run_task(engine: Arc<Engine>, msg: tankovault_bus::BrokerMessage, task:
     if let Err(e) = msg.ack().await {
         tracing::warn!(error = %e, "failed to ack message");
     }
+}
+
+/// What became of a task that failed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Disposition {
+    /// Handed back for another delivery; the message is already settled.
+    Requeued,
+    /// Recorded as failed; the run continues without it.
+    Failed,
+}
+
+/// Decide whether a failed task gets another delivery, and carry that decision out.
+///
+/// The retry budget is spent on failures the *provider* may recover from; anything else fails
+/// immediately, because a worker that cannot reach Postgres has a problem no redelivery fixes.
+async fn requeue_or_fail(
+    engine: &Engine,
+    msg: &tankovault_bus::BrokerMessage,
+    task: &ScanTaskMessage,
+    error: &anyhow::Error,
+    outcome: &tankovault_db::repo::scans::TaskOutcome<'_>,
+) -> Disposition {
+    let deliveries = tankovault_bus::delivery_count(msg);
+    if is_retryable(error) && deliveries < MAX_TASK_DELIVERIES {
+        let delay = retry_delay(deliveries);
+        log_task_failure(
+            task,
+            deliveries,
+            error,
+            &format!(
+                "requeued; delivery {} of {MAX_TASK_DELIVERIES} follows in {}s",
+                deliveries + 1,
+                delay.as_secs()
+            ),
+        );
+        if let Err(e) = tankovault_bus::retry_later(msg, delay).await {
+            tracing::warn!(
+                task_id = %task.task_id,
+                error = %e,
+                "could not requeue task; it will be redelivered when the ack deadline lapses"
+            );
+        }
+        // The counter still moves, because "retrying" is the disposition an operator needs
+        // separated from "threw it away".
+        settled(task, "requeued");
+        return Disposition::Requeued;
+    }
+
+    let next = if is_retryable(error) {
+        format!(
+            "gave up after {MAX_TASK_DELIVERIES} deliveries; recorded as failed and the run \
+             continues without it"
+        )
+    } else {
+        "will fail identically on replay; recorded as failed and the run continues without it"
+            .to_owned()
+    };
+    log_task_failure(task, deliveries, error, &next);
+    settled(task, "failed");
+    let _ = tankovault_db::repo::scans::fail_task(
+        &engine.pool,
+        task.task_id,
+        &error.to_string(),
+        Some(outcome),
+    )
+    .await;
+    Disposition::Failed
+}
+
+/// Publish the task's breakdown as metrics, so the same question the console answers per run is
+/// answerable per provider over a week without reading `scan_tasks`.
+fn record_stage_metrics(task: &ScanTaskMessage, timings: &tankovault_domain::StageTimings) {
+    for (stage, millis) in &timings.stages {
+        metrics::histogram!(
+            "scan_stage_duration_seconds",
+            "provider" => task.provider_slug.clone(),
+            "kind" => task.kind.as_str(),
+            "stage" => stage.clone(),
+        )
+        .record(seconds(*millis));
+    }
+    // The figure that answers "why is this slow" without any further digging: a provider whose
+    // pace-wait dominates its fetch time is being crawled exactly as politely as configured.
+    metrics::histogram!(
+        "scan_task_pace_wait_seconds",
+        "provider" => task.provider_slug.clone(),
+    )
+    .record(seconds(timings.pace_wait_ms));
+}
+
+/// Milliseconds as the seconds a histogram takes.
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "a millisecond count large enough to lose f64 precision is 285,000 years"
+)]
+fn seconds(millis: i64) -> f64 {
+    millis as f64 / 1_000.0
 }
 
 /// Deliveries a scan task gets before its failure is treated as final.
@@ -645,14 +757,34 @@ fn log_task_failure(task: &ScanTaskMessage, deliveries: u64, err: &anyhow::Error
     );
 }
 
-async fn handle_task(engine: &Engine, task: &ScanTaskMessage) -> anyhow::Result<()> {
+/// Whether the task's work actually ran, or the claim refused it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Handled {
+    Executed,
+    /// The claim was refused: the task had already settled, or its run has been cancelled. The
+    /// message is settled without touching the run counters.
+    Declined,
+}
+
+async fn handle_task(
+    engine: &Engine,
+    task: &ScanTaskMessage,
+    stage: &engine::StageReporter,
+) -> anyhow::Result<Handled> {
     let provider = tankovault_db::repo::providers::get(&engine.pool, task.provider_id).await?;
-    tankovault_db::repo::scans::claim_task(&engine.pool, task.task_id, &engine.worker_id).await?;
+    // The claim is the cancellation check. `JetStream` holds this message independently of the
+    // database, so an operator cancelling a run cannot unpublish its tasks — refusing to start
+    // one here is the only place the cancellation takes effect.
+    if !tankovault_db::repo::scans::claim_task(&engine.pool, task.task_id, &engine.worker_id)
+        .await?
+    {
+        return Ok(Handled::Declined);
+    }
     // A `CatalogPage` task fans out its children (and bumps the run total) before this
-    // returns, so completing it here cannot finalise the run prematurely.
-    engine.dispatch_task(&provider, task).await?;
-    tankovault_db::repo::scans::complete_task(&engine.pool, task.task_id).await?;
-    Ok(())
+    // returns, so completing it — in `run_task`, once the accounting scope closes — cannot
+    // finalise the run prematurely.
+    engine.dispatch_task(&provider, task, stage).await?;
+    Ok(Handled::Executed)
 }
 
 #[cfg(test)]

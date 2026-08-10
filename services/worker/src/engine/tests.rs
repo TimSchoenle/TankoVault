@@ -26,6 +26,26 @@ fn provider(rps: f64, ua: &str) -> Provider {
     }
 }
 
+/// A provider nobody has tuned crawls as the deployment, not as this project; a provider with
+/// an explicit user-agent keeps it, because that is a decision about how *that* site is
+/// approached and it outranks the deployment's generic identity.
+#[test]
+fn the_configured_crawler_identity_replaces_only_the_shipped_default() {
+    let branded = Some("MangaBoxBot/1.0 (+https://mangabox.example)");
+    assert_eq!(
+        crawl_identity(tankovault_domain::politeness::DEFAULT_USER_AGENT, branded),
+        "MangaBoxBot/1.0 (+https://mangabox.example)"
+    );
+    assert_eq!(
+        crawl_identity("SiteSpecific/2.0", branded),
+        "SiteSpecific/2.0"
+    );
+    assert_eq!(
+        crawl_identity(tankovault_domain::politeness::DEFAULT_USER_AGENT, None),
+        tankovault_domain::politeness::DEFAULT_USER_AGENT
+    );
+}
+
 /// The cache key must change when — and only when — a setting the fetch stack is built
 /// from changes. Too eager and every task rebuilds again (the bug this replaced); too
 /// lazy and an operator lowering `rps` mid-run is ignored until the process restarts.

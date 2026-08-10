@@ -6,6 +6,7 @@ use crate::components::{CloseToTray, SettingsSheet, TitleBar, TrayHost};
 use crate::components::{FocusTargets, Shell, UnreadBadge};
 use crate::i18n::I18nRoot;
 use crate::state::account_wall::AccountWall;
+use crate::state::branding::BrandingState;
 use crate::state::capabilities::CapabilitySet;
 use crate::state::legal::LegalIndex;
 use crate::state::source_order::SourceOrder;
@@ -101,6 +102,10 @@ pub(crate) fn App() -> Element {
     use_context_provider(SourceOrder::new);
     // Filled once by `Shell`; three surfaces read the same list.
     use_context_provider(LegalIndex::new);
+    // The shipped identity until `Shell` fetches this deployment's. Provided here, above
+    // `I18nRoot`, because the translator substitutes the product name into every message that
+    // names it — so it has to be in scope wherever a message is rendered.
+    use_context_provider(BrandingState::new);
     // Empty until a screen publishes a name only it knows; the route's own name covers the rest.
     use_context_provider(PageTitle::new);
     // Registered on mount by the two fields, read by the shortcut that focuses them.

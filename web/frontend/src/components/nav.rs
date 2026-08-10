@@ -1,8 +1,9 @@
 //! The left rail: brand lockup, grouped destinations and the user footer.
 
-use crate::components::UnreadBadge;
-use crate::i18n::use_i18n;
+use crate::components::{UnreadBadge, Wordmark};
+use crate::i18n::{use_i18n, Translator};
 use crate::icons::{Ic, Icon};
+use crate::state::branding::use_branding;
 use crate::state::capabilities::{use_capabilities, CapabilitySet};
 use crate::state::use_session;
 use crate::util::initial;
@@ -11,6 +12,18 @@ use crate::wire::types::Feature;
 use crate::Route;
 use dioxus::prelude::*;
 use inkstone_ui::{button_class, Size, Tone};
+/// The line under the rail's lockup: the operator's own tagline, or the catalogue's.
+///
+/// Same rule as the footer's — see `components::footer` — and the same one string, because two
+/// taglines for one deployment is a difference nobody chose.
+fn rail_tagline(i18n: Translator) -> String {
+    use_branding()
+        .read()
+        .tagline
+        .clone()
+        .unwrap_or_else(|| i18n.t("nav.tagline"))
+}
+
 #[component]
 pub(crate) fn Rail() -> Element {
     let i18n = use_i18n();
@@ -34,12 +47,10 @@ pub(crate) fn Rail() -> Element {
             div { class: "ik-brand",
                 div { class: "ik-brand-tile", Ic { icon: Icon::MenuBook, size: 22 } }
                 div {
-                    // The product's name, not a message: deliberately not in the catalogue.
-                    div { class: "ik-wordmark",
-                        "Tankō"
-                        span { class: "acc", "Vault" }
-                    }
-                    div { class: "ik-brand-tag", {i18n.t("nav.tagline")} }
+                    // The deployment's name, not a message: it is configuration, so it is
+                    // deliberately not in the catalogue.
+                    Wordmark { class: "ik-wordmark" }
+                    div { class: "ik-brand-tag", {rail_tagline(i18n)} }
                 }
             }
 

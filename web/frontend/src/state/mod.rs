@@ -13,6 +13,7 @@
 //! token (a display name) and why doing so unverified is safe.
 
 pub(crate) mod account_wall;
+pub(crate) mod branding;
 pub(crate) mod capabilities;
 mod jwt;
 pub(crate) mod legal;

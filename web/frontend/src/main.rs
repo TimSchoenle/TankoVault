@@ -73,7 +73,7 @@ fn main() {
                         .with_decorations(false)
                         // Names the taskbar button and the alt-tab entry; `crate::title`
                         // takes over from first render.
-                        .with_title("TankoVault")
+                        .with_title(crate::build_info::PRODUCT_NAME)
                         // A placeholder only: `platform::fit_window_to_display` replaces it
                         // from the first render, once the monitor is knowable, and the UI is
                         // held back until it has. Wide enough for the watchlist's full column

@@ -10,9 +10,9 @@
 use serde::{Deserialize, Serialize};
 
 pub(crate) use crate::wire::types::{
-    AccountStatus, AdapterKind, AssignRemoteEntry, ChapterDto, ChapterRead, ConflictPolicy,
-    ConflictRow, ContentType, ContinueItem, CreateProvider, DismissRequest, FeedEntry,
-    FeedbackBody, ForgotPasswordRequest, LegalDocumentView, LegalIndexEntry, LegalKind,
+    AccountStatus, AdapterKind, AssignRemoteEntry, BrandingView, ChapterDto, ChapterRead,
+    ConflictPolicy, ConflictRow, ContentType, ContinueItem, CreateProvider, DismissRequest,
+    FeedEntry, FeedbackBody, ForgotPasswordRequest, LegalDocumentView, LegalIndexEntry, LegalKind,
     LoginRequest, MarkRead, MarkReadTo, MergeRequest, NotificationsView, PasskeyLoginRequest,
     PermissionPreset, Politeness, PolitenessEmulation, PreferredProvider, ProblemDetails,
     ProfileUpdate, ProgressDto, ProgressUpdate, Provider, ProviderId, ProviderInfo, ProviderStat,

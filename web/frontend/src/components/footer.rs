@@ -10,26 +10,26 @@
 //! away from the rail or Account, and twenty footer links on every screen is noise.
 
 use crate::components::nav::NOTICES_ROUTE;
+use crate::components::Wordmark;
 use crate::i18n::{use_i18n, Translator};
 use crate::icons::{Ic, Icon};
 use crate::models::LegalKind;
+use crate::state::branding::use_branding;
 use crate::state::legal::{legal_title, use_legal_index};
 use crate::state::use_session;
 use crate::{build_info, Route};
 use dioxus::prelude::*;
 
-/// The project's licence, and where its text lives.
-const LICENCE: &str = "PolyForm Noncommercial 1.0.0";
-
 /// The full five-column footer, or the one-line variant used under the auth card.
 #[component]
 pub(crate) fn Footer(#[props(default = false)] compact: bool) -> Element {
     let i18n = use_i18n();
+    let branding = use_branding();
     if compact {
         return rsx! {
             footer { class: "ik-footer compact",
                 div { class: "ik-measure ik-footer-row",
-                    span { class: "ik-muted", style: "font-size:12.5px;", {i18n.t("footer.tagline")} }
+                    span { class: "ik-muted", style: "font-size:12.5px;", {tagline(i18n, &branding.read())} }
                     div { class: "ik-footer-groups", style: "gap:18px;",
                         {legal_links(i18n)}
                     }
@@ -43,11 +43,8 @@ pub(crate) fn Footer(#[props(default = false)] compact: bool) -> Element {
             div { class: "ik-measure",
                 div { class: "ik-footer-row",
                     div { class: "ik-footer-brand",
-                        div { class: "ik-wordmark",
-                            "Tankō"
-                            span { class: "acc", "Vault" }
-                        }
-                        div { class: "ik-footer-desc", {i18n.t("footer.tagline")} }
+                        Wordmark { class: "ik-wordmark" }
+                        div { class: "ik-footer-desc", {tagline(i18n, &branding.read())} }
                     }
                     div { class: "ik-footer-groups",
                         LegalColumn {}
@@ -80,6 +77,36 @@ fn LegalColumn() -> Element {
             {legal_links(i18n)}
         }
     }
+}
+
+/// The copyright notice: the operator's verbatim one, else the catalogue's line filled in with
+/// the holder and year the server resolved, else nothing at all.
+fn copyright(i18n: Translator, branding: &crate::state::branding::Branding) -> String {
+    if let Some(notice) = branding.copyright_notice.as_deref() {
+        return notice.to_owned();
+    }
+    if branding.copyright_holder.is_empty() {
+        return String::new();
+    }
+    i18n.args(
+        "footer.copyright",
+        &[
+            ("year", &branding.copyright_year),
+            ("holder", &branding.copyright_holder),
+        ],
+    )
+}
+
+/// The line under the wordmark: the operator's own, or the catalogue's translated one.
+///
+/// An operator who sets a tagline gets it in every language. That is the trade they asked for —
+/// a deployment whose product is not the one the catalogue describes is better served by one
+/// untranslated true sentence than by a translated false one.
+fn tagline(i18n: Translator, branding: &crate::state::branding::Branding) -> String {
+    branding
+        .tagline
+        .clone()
+        .unwrap_or_else(|| i18n.t("footer.tagline"))
 }
 
 /// One link per configured document, in the shape the index described it.
@@ -129,6 +156,8 @@ pub(crate) fn legal_links(i18n: Translator) -> Element {
 #[component]
 fn OpenSourceColumn() -> Element {
     let i18n = use_i18n();
+    let branding = use_branding();
+    let branding = branding.read();
     let origin = crate::platform::origin();
     let notices = format!("{}{NOTICES_ROUTE}", origin.trim_end_matches('/'));
     rsx! {
@@ -146,10 +175,24 @@ fn OpenSourceColumn() -> Element {
                     Ic { icon: Icon::OpenInNew, size: 12 }
                 }
             }
-            span { class: "ik-footer-link", style: "cursor:default;", "{LICENCE}" }
+            // Plain text unless the operator publishes the licence somewhere: a self-hosted
+            // deployment usually has nowhere to point, and a link into nothing is worse than a
+            // label that does not pretend to be one.
+            if let Some(url) = branding.licence_url.as_deref() {
+                a {
+                    class: "ik-footer-link",
+                    href: "{url}",
+                    target: "_blank",
+                    rel: "noopener noreferrer",
+                    "{branding.licence}"
+                    Ic { icon: Icon::OpenInNew, size: 12 }
+                }
+            } else {
+                span { class: "ik-footer-link", style: "cursor:default;", "{branding.licence}" }
+            }
             a {
                 class: "ik-footer-link",
-                href: build_info::PROJECT_URL,
+                href: "{branding.project_url}",
                 target: "_blank",
                 rel: "noopener noreferrer",
                 {i18n.t("footer.source")}
@@ -160,7 +203,7 @@ fn OpenSourceColumn() -> Element {
             if cfg!(feature = "web") {
                 a {
                     class: "ik-footer-link",
-                    href: build_info::RELEASES_URL,
+                    href: "{branding.releases_url}",
                     target: "_blank",
                     rel: "noopener noreferrer",
                     {i18n.t("footer.desktopApp")}
@@ -190,14 +233,19 @@ fn YourDataColumn() -> Element {
     }
 }
 
-/// `© 2026 Tim Schönle` left, `v0.9.4 · 7f3c1ab · api healthy` right.
+/// The deployment's copyright notice left, `v0.9.4 · 7f3c1ab · api healthy` right.
 ///
 /// The health pill is best-effort and **omitted** rather than shown red on failure: a footer
 /// that reports the API as down on the very page the API just rendered is either wrong or
 /// telling the reader something they can already see.
+///
+/// The notice is omitted the same way while it is unknown — until `/v1/branding` lands there is
+/// no holder to name, and naming this project's under someone else's deployment would be a
+/// false claim rather than a placeholder.
 #[component]
 fn MetaLine() -> Element {
     let i18n = use_i18n();
+    let branding = use_branding();
     let api = crate::api::use_api();
     // One call per session, not per navigation: the resource is created here and `Shell` keeps
     // the footer mounted across routes.
@@ -213,7 +261,7 @@ fn MetaLine() -> Element {
 
     rsx! {
         div { class: "ik-footer-meta",
-            span { {i18n.args("footer.copyright", &[("year", "2026")])} }
+            span { {copyright(i18n, &branding.read())} }
             span { class: "right",
                 span { "v{build_info::VERSION}" }
                 if let Some(commit) = build_info::commit() {

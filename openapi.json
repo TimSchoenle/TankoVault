@@ -333,6 +333,51 @@
         ],
         "type": "object"
       },
+      "BrandingView": {
+        "description": "What this deployment calls itself.",
+        "properties": {
+          "copyright": {
+            "$ref": "#/components/schemas/CopyrightView",
+            "description": "The footer's copyright line."
+          },
+          "licence": {
+            "$ref": "#/components/schemas/LicenceView",
+            "description": "How this deployment's code is licensed."
+          },
+          "name": {
+            "description": "The product name in prose.",
+            "type": "string"
+          },
+          "project_url": {
+            "description": "Where the project lives.",
+            "type": "string"
+          },
+          "releases_url": {
+            "description": "Where the native client is downloaded.",
+            "type": "string"
+          },
+          "tagline": {
+            "description": "An operator-supplied tagline that replaces the translated one. Absent keeps the\ncatalogue's.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "wordmark": {
+            "$ref": "#/components/schemas/WordmarkView",
+            "description": "The lockup drawn in the rail and the footer."
+          }
+        },
+        "required": [
+          "name",
+          "wordmark",
+          "copyright",
+          "licence",
+          "project_url",
+          "releases_url"
+        ],
+        "type": "object"
+      },
       "BrowserEmulation": {
         "description": "Which browser the fetch stack impersonates at the TLS/HTTP2 layer.\n\nProviders sit behind Cloudflare/DDoS-Guard, which fingerprint the TLS `ClientHello` and\nthe HTTP/2 SETTINGS frame and compare them against the `User-Agent` header. A mismatch\nis a stronger signal than an unknown client, so the whole profile — cipher suites,\nextension order, ALPS, header order and casing, and the user-agent itself — is picked as\none unit from a browser family rather than assembled field by field.\n\nFamilies, not versions: the concrete build is resolved to whatever the emulation\ncatalogue currently considers newest, so bumping the catalogue does not require a\ndatabase migration or an API-schema change.",
         "enum": [
@@ -880,6 +925,31 @@
           "series_title",
           "last_read_number",
           "unread"
+        ],
+        "type": "object"
+      },
+      "CopyrightView": {
+        "description": "The footer's copyright line.",
+        "properties": {
+          "holder": {
+            "description": "Who holds it.",
+            "type": "string"
+          },
+          "notice": {
+            "description": "The whole notice verbatim, when the operator supplied one. Renders instead of composing\n`holder` and `year`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "year": {
+            "description": "The year or range, resolved to the current year when the operator set none.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "holder",
+          "year"
         ],
         "type": "object"
       },
@@ -1687,6 +1757,25 @@
           "external"
         ],
         "type": "string"
+      },
+      "LicenceView": {
+        "description": "The licence label and where its text lives.",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "url": {
+            "description": "Absent renders the label as plain text rather than a dead link.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
       },
       "LoginRequest": {
         "properties": {
@@ -6535,6 +6624,26 @@
           "total",
           "counts",
           "groups"
+        ],
+        "type": "object"
+      },
+      "WordmarkView": {
+        "description": "The two halves of the wordmark.",
+        "properties": {
+          "accent": {
+            "description": "Drawn in the accent colour; absent draws the lockup as one word.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lead": {
+            "description": "Drawn in the body colour.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "lead"
         ],
         "type": "object"
       }
@@ -12649,6 +12758,28 @@
         ]
       }
     },
+    "/v1/branding": {
+      "get": {
+        "description": "The name, wordmark, tagline, copyright and links the client renders. Unauthenticated: the\nsign-in card shows all of it.",
+        "operationId": "branding",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrandingView"
+                }
+              }
+            },
+            "description": "This deployment's identity"
+          }
+        },
+        "summary": "Read the deployment's branding",
+        "tags": [
+          "branding"
+        ]
+      }
+    },
     "/v1/legal": {
       "get": {
         "description": "Only what this deployment actually publishes. An operator who configures no Imprint gets no\nImprint entry, so the footer renders no dead link rather than one that 404s.",
@@ -17225,6 +17356,10 @@
     {
       "description": "Operator-published legal documents; unauthenticated",
       "name": "legal"
+    },
+    {
+      "description": "The deployment's own name, wordmark and copyright; unauthenticated",
+      "name": "branding"
     },
     {
       "description": "The signed-in user's watchlist",

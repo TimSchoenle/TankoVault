@@ -19,6 +19,12 @@ const STORAGE_KEY: &str = "tv-lang";
 /// message is authored in.
 pub(crate) const DEFAULT_LANGUAGE: &str = "en";
 
+/// The placeholder every message uses instead of spelling the product's name.
+///
+/// Checked for before interpolating, because [`Translator::t`] is on the render path of every
+/// screen and resolving the name means reading a context and cloning a `String`.
+const BRAND_PLACEHOLDER: &str = "{brand}";
+
 /// A shipped language: its BCP-47 primary subtag, the name it calls itself, and its catalogue.
 pub(crate) struct Locale {
     /// BCP-47 primary subtag (`"en"`), also the `localStorage` value and `<html lang>`.
@@ -120,12 +126,25 @@ pub(crate) struct Translator {
 }
 
 impl Translator {
-    /// The message at `key`, in the active language.
+    /// The message at `key`, in the active language, with `{brand}` resolved to what this
+    /// deployment calls itself.
     ///
     /// Reading the signal subscribes the calling scope, so switching language re-renders
-    /// everything that displayed a message.
+    /// everything that displayed a message — and reading the branding signal does the same, so a
+    /// message naming the product corrects itself the moment `/v1/branding` lands.
+    ///
+    /// The catalogue never spells the product name out. Roughly forty messages name it — the
+    /// desktop app's whole vocabulary does — and every one of them would otherwise be a literal
+    /// no configuration could reach.
     pub(crate) fn t(self, key: &str) -> String {
-        self.i18n.read().t(key)
+        let message = self.i18n.read().t(key);
+        if message.contains(BRAND_PLACEHOLDER) {
+            return interpolate(
+                &message,
+                &[("brand", &crate::state::branding::brand_name())],
+            );
+        }
+        message
     }
 
     /// [`Translator::t`], with `{name}` placeholders replaced from `args`.

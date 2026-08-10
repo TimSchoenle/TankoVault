@@ -27,6 +27,7 @@ mod topbar;
 // reachable from the web build.
 #[cfg(feature = "desktop")]
 mod tray;
+mod wordmark;
 
 pub(crate) use bottombar::BottomTabs;
 pub(crate) use confirm::{InlineConfirm, TypeToConfirm};
@@ -52,6 +53,7 @@ pub(crate) use tabs::{TabBar, TabKind};
 pub(crate) use titlebar::TitleBar;
 #[cfg(feature = "desktop")]
 pub(crate) use tray::{CloseToTray, TrayHost};
+pub(crate) use wordmark::Wordmark;
 
 use dioxus::prelude::*;
 

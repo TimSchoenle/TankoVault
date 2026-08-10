@@ -60,6 +60,12 @@ pub(crate) struct Engine {
     pub(crate) adult_tags: AdultTagSet,
     /// Which scraped chapter numbers the source cannot plausibly have released.
     pub(crate) outliers: OutlierPolicy,
+    /// The operator's identifiable crawler user-agent, when they configured one.
+    ///
+    /// Applied only to a provider still carrying the built-in default: a per-provider value is
+    /// an explicit decision about how *that* site is approached and outranks the deployment's
+    /// generic identity.
+    pub(crate) bot_user_agent: Option<String>,
     /// One fetch stack per provider, keyed by the politeness settings it was built from.
     ///
     /// Load-bearing for correctness, not just speed: the rate limiter and adaptive 429
@@ -67,6 +73,21 @@ pub(crate) struct Engine {
     /// into a per-task budget instead of per-provider, and N concurrent tasks offer N ×
     /// rps to the provider.
     fetchers: Arc<Mutex<HashMap<ProviderId, CachedFetcher>>>,
+}
+
+/// How this deployment names itself to a provider it is not impersonating a browser for.
+///
+/// A provider that names its own user-agent keeps it; one still on the shipped default takes
+/// `branded`, so a fork does not crawl the open web announcing this project. The substitution is
+/// deliberately *after* [`politeness_fingerprint`]: `branded` is fixed for the process, so it
+/// cannot make a cached stack stale.
+fn crawl_identity(configured: &str, branded: Option<&str>) -> String {
+    match branded {
+        Some(branded) if configured == tankovault_domain::politeness::DEFAULT_USER_AGENT => {
+            branded.to_owned()
+        }
+        _ => configured.to_owned(),
+    }
 }
 
 /// Hash the provider settings a fetch stack is built from.
@@ -115,6 +136,7 @@ pub(crate) struct EngineSettings {
     pub(crate) tag_blocklist: TagBlocklist,
     pub(crate) adult_tags: AdultTagSet,
     pub(crate) outliers: OutlierPolicy,
+    pub(crate) bot_user_agent: Option<String>,
 }
 
 impl Engine {
@@ -142,6 +164,7 @@ impl Engine {
             tag_blocklist: settings.tag_blocklist,
             adult_tags: settings.adult_tags,
             outliers: settings.outliers,
+            bot_user_agent: settings.bot_user_agent,
             fetchers: Arc::default(),
         }
     }
@@ -163,7 +186,10 @@ impl Engine {
         }
 
         let mut fetch_cfg = ProviderFetchConfig::new(
-            provider.politeness.user_agent.clone(),
+            crawl_identity(
+                &provider.politeness.user_agent,
+                self.bot_user_agent.as_deref(),
+            ),
             self.solver.clone(),
             self.session_store.clone(),
         );

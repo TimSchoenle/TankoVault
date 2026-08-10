@@ -117,7 +117,10 @@ pub async fn register(
     // Confirmation isn't in play: activate and sign in immediately, preserving the
     // pre-confirmation experience for dev/CI and switched-off deployments.
     tankovault_db::repo::users::mark_email_verified(&state.pool, user.id).await?;
-    mailer::send_in_background(&state, mailer::welcome(&user.email, &user.username));
+    mailer::send_in_background(
+        &state,
+        mailer::welcome(state.branding.name(), &user.email, &user.username),
+    );
     let (jar, token) = issue_session_tokens(&state, jar, &user, Uuid::now_v7()).await?;
     Ok((
         jar,

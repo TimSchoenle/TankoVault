@@ -13,6 +13,7 @@
 //! again after a mounted file changes.
 
 mod audit;
+mod branding;
 mod chapter_outliers;
 mod cors;
 mod database;
@@ -30,6 +31,7 @@ mod security;
 mod telemetry;
 
 pub use audit::AuditConfig;
+pub use branding::{BrandingConfig, CopyrightConfig, LicenceConfig, WordmarkConfig};
 pub use chapter_outliers::ChapterOutlierConfig;
 pub use cors::CorsConfig;
 pub use database::DatabaseConfig;

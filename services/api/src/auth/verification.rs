@@ -80,7 +80,10 @@ pub async fn verify_email(
     tankovault_db::repo::users::mark_email_verified(&state.pool, record.user_id).await?;
     let user = tankovault_db::repo::users::get(&state.pool, record.user_id).await?;
     // Now that the address is confirmed, send the welcome email that registration deferred.
-    mailer::send_in_background(&state, mailer::welcome(&user.email, &user.username));
+    mailer::send_in_background(
+        &state,
+        mailer::welcome(state.branding.name(), &user.email, &user.username),
+    );
     issue_session(&state, jar, &user, Uuid::now_v7()).await
 }
 
@@ -142,7 +145,12 @@ async fn deliver_verification_resend(state: AppState, email: String) {
     };
     if let Err(e) = state
         .mailer
-        .send(mailer::verification(&user.email, &user.username, &link))
+        .send(mailer::verification(
+            state.branding.name(),
+            &user.email,
+            &user.username,
+            &link,
+        ))
         .await
     {
         tracing::warn!(error = %e, "failed to resend the confirmation email");
@@ -157,7 +165,7 @@ pub(crate) async fn send_verification_email(state: &AppState, user: &User) -> Ap
     let link = issue_verification_link(state, user).await?;
     mailer::send_in_background(
         state,
-        mailer::verification(&user.email, &user.username, &link),
+        mailer::verification(state.branding.name(), &user.email, &user.username, &link),
     );
     Ok(())
 }

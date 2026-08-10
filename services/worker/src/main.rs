@@ -60,6 +60,10 @@ struct Config {
     /// latest chapter.
     #[serde(default)]
     chapter_outliers: tankovault_config::ChapterOutlierConfig,
+    /// The deployment's identity. The worker reads one field of it — the identifiable crawler
+    /// user-agent — so a fork does not announce this project to every site it crawls.
+    #[serde(default)]
+    branding: tankovault_config::BrandingConfig,
 }
 
 fn default_bind() -> String {
@@ -169,9 +173,15 @@ async fn main() -> anyhow::Result<()> {
             // request-facing ops listener. Outside the reloadable runtime so a reload does
             // not rebind it.
             tankovault_service::spawn_metrics_server(metrics.clone(), shutdown.clone());
-            tankovault_service::run_reloading(boot, &shutdown, |cfg, generation| {
-                serve_once(cfg, metrics.clone(), generation)
-            })
+            // Boxed, not because the future is held across an await here — it is the whole
+            // program — but because it carries the config by value, and the worker's is the
+            // largest in the workspace. Left on the stack it trips `clippy::large_futures`,
+            // which is a stack-overflow guard rather than a style rule.
+            Box::pin(tankovault_service::run_reloading(
+                boot,
+                &shutdown,
+                |cfg, generation| serve_once(cfg, metrics.clone(), generation),
+            ))
             .await
         }
         _ => {
@@ -249,6 +259,7 @@ async fn build(cfg: &Config) -> anyhow::Result<Built> {
             tag_blocklist: cfg.metadata.tag_blocklist(),
             adult_tags: cfg.metadata.tags.adult_tags(),
             outliers: cfg.chapter_outliers.policy(),
+            bot_user_agent: cfg.branding.bot_user_agent.clone(),
         },
     );
 

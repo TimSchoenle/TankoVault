@@ -54,9 +54,6 @@ const CEREMONY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300
 /// not extra life for the challenge: the browser stops asking at five minutes regardless.
 const CEREMONY_GRACE: time::Duration = time::Duration::seconds(360);
 
-/// The default label shown in the authenticator's prompt ("Save a passkey for …").
-const DEFAULT_RP_NAME: &str = "TankoVault";
-
 /// A configured relying party, plus the values it was built from so a failure can name them.
 pub struct RelyingParty {
     webauthn: Webauthn,
@@ -89,13 +86,17 @@ impl RelyingParty {
     /// it is configurable separately only for the case where the app is served from a
     /// subdomain and credentials should be usable across the parent domain.
     ///
+    /// `rp_name` is the label the authenticator shows ("Save a passkey for …") and is resolved
+    /// by the caller, not defaulted here: it is the deployment's own name, which this module
+    /// has no business knowing.
+    ///
     /// # Errors
     /// When `origin` is not a URL, has no host, or `rp_id` does not cover it — reported at
     /// boot rather than left to a browser's opaque `SecurityError`.
     pub fn from_config(
         origin: Option<&str>,
         rp_id: Option<&str>,
-        rp_name: Option<&str>,
+        rp_name: &str,
     ) -> anyhow::Result<Option<Self>> {
         let Some(origin) = origin.map(str::trim).filter(|s| !s.is_empty()) else {
             return Ok(None);
@@ -123,7 +124,7 @@ impl RelyingParty {
                      The relying-party id must be the origin's host or a parent domain of it."
                 )
             })?
-            .rp_name(rp_name.unwrap_or(DEFAULT_RP_NAME))
+            .rp_name(rp_name)
             .timeout(CEREMONY_TIMEOUT)
             .build()
             .map_err(|e| anyhow::anyhow!("could not build the WebAuthn relying party: {e}"))?;
@@ -279,12 +280,12 @@ mod tests {
     #[test]
     fn an_absent_origin_disables_passkeys_rather_than_failing() {
         assert!(
-            RelyingParty::from_config(None, None, None)
+            RelyingParty::from_config(None, None, "TankoVault")
                 .expect("no origin is not an error")
                 .is_none()
         );
         assert!(
-            RelyingParty::from_config(Some("   "), None, None)
+            RelyingParty::from_config(Some("   "), None, "TankoVault")
                 .expect("a blank origin is not an error")
                 .is_none()
         );
@@ -294,7 +295,7 @@ mod tests {
     /// deployment always wants and what nobody should have to write out twice.
     #[test]
     fn the_relying_party_id_defaults_to_the_origins_host() {
-        let rp = RelyingParty::from_config(Some("https://tanko.example.com"), None, None)
+        let rp = RelyingParty::from_config(Some("https://tanko.example.com"), None, "TankoVault")
             .expect("a valid origin builds")
             .expect("and yields a relying party");
         assert_eq!(rp.rp_id(), "tanko.example.com");
@@ -307,9 +308,12 @@ mod tests {
     /// where both are in front of us is the difference between a one-line log and an afternoon.
     #[test]
     fn a_relying_party_id_that_does_not_cover_the_origin_is_refused() {
-        let err =
-            RelyingParty::from_config(Some("https://tanko.example.com"), Some("example.org"), None)
-                .expect_err("a foreign rp_id must not build");
+        let err = RelyingParty::from_config(
+            Some("https://tanko.example.com"),
+            Some("example.org"),
+            "TankoVault",
+        )
+        .expect_err("a foreign rp_id must not build");
         assert!(
             err.to_string().contains("does not cover"),
             "the refusal must name the mismatch, got: {err}"
@@ -319,7 +323,7 @@ mod tests {
     /// A malformed origin is a configuration error, reported in the operator's terms.
     #[test]
     fn a_malformed_origin_is_reported_as_configuration() {
-        let err = RelyingParty::from_config(Some("tanko.example.com"), None, None)
+        let err = RelyingParty::from_config(Some("tanko.example.com"), None, "TankoVault")
             .expect_err("a bare host is not an origin");
         assert!(err.to_string().contains("valid URL"), "got: {err}");
     }

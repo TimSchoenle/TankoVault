@@ -845,6 +845,75 @@ pub mod types {
             Default::default()
         }
     }
+    #[doc = "What this deployment calls itself."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"What this deployment calls itself.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"copyright\","]
+    #[doc = "    \"licence\","]
+    #[doc = "    \"name\","]
+    #[doc = "    \"project_url\","]
+    #[doc = "    \"releases_url\","]
+    #[doc = "    \"wordmark\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"copyright\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/CopyrightView\""]
+    #[doc = "    },"]
+    #[doc = "    \"licence\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/LicenceView\""]
+    #[doc = "    },"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"description\": \"The product name in prose.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"project_url\": {"]
+    #[doc = "      \"description\": \"Where the project lives.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"releases_url\": {"]
+    #[doc = "      \"description\": \"Where the native client is downloaded.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"tagline\": {"]
+    #[doc = "      \"description\": \"An operator-supplied tagline that replaces the translated one. Absent keeps the\\ncatalogue's.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"wordmark\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/WordmarkView\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct BrandingView {
+        pub copyright: CopyrightView,
+        pub licence: LicenceView,
+        #[doc = "The product name in prose."]
+        pub name: ::std::string::String,
+        #[doc = "Where the project lives."]
+        pub project_url: ::std::string::String,
+        #[doc = "Where the native client is downloaded."]
+        pub releases_url: ::std::string::String,
+        #[doc = "An operator-supplied tagline that replaces the translated one. Absent keeps the\ncatalogue's."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub tagline: ::std::option::Option<::std::string::String>,
+        pub wordmark: WordmarkView,
+    }
+    impl BrandingView {
+        pub fn builder() -> builder::BrandingView {
+            Default::default()
+        }
+    }
     #[doc = "Which browser the fetch stack impersonates at the TLS/HTTP2 layer.\n\nProviders sit behind Cloudflare/DDoS-Guard, which fingerprint the TLS `ClientHello` and\nthe HTTP/2 SETTINGS frame and compare them against the `User-Agent` header. A mismatch\nis a stronger signal than an unknown client, so the whole profile — cipher suites,\nextension order, ALPS, header order and casing, and the user-agent itself — is picked as\none unit from a browser family rather than assembled field by field.\n\nFamilies, not versions: the concrete build is resolved to whatever the emulation\ncatalogue currently considers newest, so bumping the catalogue does not require a\ndatabase migration or an API-schema change."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -2127,6 +2196,53 @@ pub mod types {
     }
     impl ContinueItem {
         pub fn builder() -> builder::ContinueItem {
+            Default::default()
+        }
+    }
+    #[doc = "The footer's copyright line."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"The footer's copyright line.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"holder\","]
+    #[doc = "    \"year\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"holder\": {"]
+    #[doc = "      \"description\": \"Who holds it.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"notice\": {"]
+    #[doc = "      \"description\": \"The whole notice verbatim, when the operator supplied one. Renders instead of composing\\n`holder` and `year`.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"year\": {"]
+    #[doc = "      \"description\": \"The year or range, resolved to the current year when the operator set none.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct CopyrightView {
+        #[doc = "Who holds it."]
+        pub holder: ::std::string::String,
+        #[doc = "The whole notice verbatim, when the operator supplied one. Renders instead of composing\n`holder` and `year`."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub notice: ::std::option::Option<::std::string::String>,
+        #[doc = "The year or range, resolved to the current year when the operator set none."]
+        pub year: ::std::string::String,
+    }
+    impl CopyrightView {
+        pub fn builder() -> builder::CopyrightView {
             Default::default()
         }
     }
@@ -3937,6 +4053,44 @@ pub mod types {
             value: ::std::string::String,
         ) -> ::std::result::Result<Self, self::error::ConversionError> {
             value.parse()
+        }
+    }
+    #[doc = "The licence label and where its text lives."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"The licence label and where its text lives.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"name\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"url\": {"]
+    #[doc = "      \"description\": \"Absent renders the label as plain text rather than a dead link.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct LicenceView {
+        pub name: ::std::string::String,
+        #[doc = "Absent renders the label as plain text rather than a dead link."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub url: ::std::option::Option<::std::string::String>,
+    }
+    impl LicenceView {
+        pub fn builder() -> builder::LicenceView {
+            Default::default()
         }
     }
     #[doc = "`ListCatalogueHealth`"]
@@ -14979,6 +15133,46 @@ pub mod types {
             Default::default()
         }
     }
+    #[doc = "The two halves of the wordmark."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"The two halves of the wordmark.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"lead\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"accent\": {"]
+    #[doc = "      \"description\": \"Drawn in the accent colour; absent draws the lockup as one word.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"lead\": {"]
+    #[doc = "      \"description\": \"Drawn in the body colour.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct WordmarkView {
+        #[doc = "Drawn in the accent colour; absent draws the lockup as one word."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub accent: ::std::option::Option<::std::string::String>,
+        #[doc = "Drawn in the body colour."]
+        pub lead: ::std::string::String,
+    }
+    impl WordmarkView {
+        pub fn builder() -> builder::WordmarkView {
+            Default::default()
+        }
+    }
     #[doc = r" Types for composing complex structures."]
     pub mod builder {
         #[derive(Clone, Debug)]
@@ -15901,6 +16095,133 @@ pub mod types {
         impl ::std::convert::From<super::AuthorizeUrl> for AuthorizeUrl {
             fn from(value: super::AuthorizeUrl) -> Self {
                 Self { url: Ok(value.url) }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct BrandingView {
+            copyright: ::std::result::Result<super::CopyrightView, ::std::string::String>,
+            licence: ::std::result::Result<super::LicenceView, ::std::string::String>,
+            name: ::std::result::Result<::std::string::String, ::std::string::String>,
+            project_url: ::std::result::Result<::std::string::String, ::std::string::String>,
+            releases_url: ::std::result::Result<::std::string::String, ::std::string::String>,
+            tagline: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            wordmark: ::std::result::Result<super::WordmarkView, ::std::string::String>,
+        }
+        impl ::std::default::Default for BrandingView {
+            fn default() -> Self {
+                Self {
+                    copyright: Err("no value supplied for copyright".to_string()),
+                    licence: Err("no value supplied for licence".to_string()),
+                    name: Err("no value supplied for name".to_string()),
+                    project_url: Err("no value supplied for project_url".to_string()),
+                    releases_url: Err("no value supplied for releases_url".to_string()),
+                    tagline: Ok(Default::default()),
+                    wordmark: Err("no value supplied for wordmark".to_string()),
+                }
+            }
+        }
+        impl BrandingView {
+            pub fn copyright<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::CopyrightView>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.copyright = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for copyright: {e}"));
+                self
+            }
+            pub fn licence<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::LicenceView>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.licence = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for licence: {e}"));
+                self
+            }
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+            pub fn project_url<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.project_url = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for project_url: {e}"));
+                self
+            }
+            pub fn releases_url<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.releases_url = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for releases_url: {e}"));
+                self
+            }
+            pub fn tagline<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.tagline = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for tagline: {e}"));
+                self
+            }
+            pub fn wordmark<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::WordmarkView>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.wordmark = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for wordmark: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<BrandingView> for super::BrandingView {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: BrandingView,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    copyright: value.copyright?,
+                    licence: value.licence?,
+                    name: value.name?,
+                    project_url: value.project_url?,
+                    releases_url: value.releases_url?,
+                    tagline: value.tagline?,
+                    wordmark: value.wordmark?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::BrandingView> for BrandingView {
+            fn from(value: super::BrandingView) -> Self {
+                Self {
+                    copyright: Ok(value.copyright),
+                    licence: Ok(value.licence),
+                    name: Ok(value.name),
+                    project_url: Ok(value.project_url),
+                    releases_url: Ok(value.releases_url),
+                    tagline: Ok(value.tagline),
+                    wordmark: Ok(value.wordmark),
+                }
             }
         }
         #[derive(Clone, Debug)]
@@ -17359,6 +17680,77 @@ pub mod types {
                     series_id: Ok(value.series_id),
                     series_title: Ok(value.series_title),
                     unread: Ok(value.unread),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct CopyrightView {
+            holder: ::std::result::Result<::std::string::String, ::std::string::String>,
+            notice: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            year: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+        impl ::std::default::Default for CopyrightView {
+            fn default() -> Self {
+                Self {
+                    holder: Err("no value supplied for holder".to_string()),
+                    notice: Ok(Default::default()),
+                    year: Err("no value supplied for year".to_string()),
+                }
+            }
+        }
+        impl CopyrightView {
+            pub fn holder<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.holder = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for holder: {e}"));
+                self
+            }
+            pub fn notice<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.notice = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for notice: {e}"));
+                self
+            }
+            pub fn year<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.year = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for year: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<CopyrightView> for super::CopyrightView {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: CopyrightView,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    holder: value.holder?,
+                    notice: value.notice?,
+                    year: value.year?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::CopyrightView> for CopyrightView {
+            fn from(value: super::CopyrightView) -> Self {
+                Self {
+                    holder: Ok(value.holder),
+                    notice: Ok(value.notice),
+                    year: Ok(value.year),
                 }
             }
         }
@@ -19508,6 +19900,63 @@ pub mod types {
                     slug: Ok(value.slug),
                     title: Ok(value.title),
                     updated: Ok(value.updated),
+                    url: Ok(value.url),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct LicenceView {
+            name: ::std::result::Result<::std::string::String, ::std::string::String>,
+            url: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+        impl ::std::default::Default for LicenceView {
+            fn default() -> Self {
+                Self {
+                    name: Err("no value supplied for name".to_string()),
+                    url: Ok(Default::default()),
+                }
+            }
+        }
+        impl LicenceView {
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+            pub fn url<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.url = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for url: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<LicenceView> for super::LicenceView {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: LicenceView,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    name: value.name?,
+                    url: value.url?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::LicenceView> for LicenceView {
+            fn from(value: super::LicenceView) -> Self {
+                Self {
+                    name: Ok(value.name),
                     url: Ok(value.url),
                 }
             }
@@ -32503,6 +32952,63 @@ pub mod types {
                 }
             }
         }
+        #[derive(Clone, Debug)]
+        pub struct WordmarkView {
+            accent: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            lead: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+        impl ::std::default::Default for WordmarkView {
+            fn default() -> Self {
+                Self {
+                    accent: Ok(Default::default()),
+                    lead: Err("no value supplied for lead".to_string()),
+                }
+            }
+        }
+        impl WordmarkView {
+            pub fn accent<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.accent = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for accent: {e}"));
+                self
+            }
+            pub fn lead<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.lead = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for lead: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<WordmarkView> for super::WordmarkView {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: WordmarkView,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    accent: value.accent?,
+                    lead: value.lead?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::WordmarkView> for WordmarkView {
+            fn from(value: super::WordmarkView) -> Self {
+                Self {
+                    accent: Ok(value.accent),
+                    lead: Ok(value.lead),
+                }
+            }
+        }
     }
     #[doc = r" Generation of default values for serde."]
     pub mod defaults {
@@ -32950,6 +33456,10 @@ impl Client {
     #[doc = "Resend the email-confirmation link\n\nAlways responds `202 Accepted`, whether or not the address is registered or already\nconfirmed, so the endpoint can't be used to probe which emails have accounts. A fresh\nlink is only sent when the address exists, is still unconfirmed, and email is configured.\n\nSpawned in full, for the reason `auth::password::forgot_password` explains at length\n(SEC-10). This endpoint's channel was in fact the wider of the two: the known-and-unconfirmed\nbranch performed the token `INSERT`, while both \"no such address\" *and* \"already confirmed\"\nreturned straight after the lookup — so the timing separated three states rather than two,\nand \"this address exists and has not been confirmed\" is the more useful answer of the pair.\nThe audit named `forgot_password`; this is the same defect in the sibling handler.\n\nSends a `POST` request to `/v1/auth/verify-email/resend`\n\n```ignore\nlet response = client.resend_verification()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn resend_verification(&self) -> builder::ResendVerification<'_> {
         builder::ResendVerification::new(self)
+    }
+    #[doc = "Read the deployment's branding\n\nThe name, wordmark, tagline, copyright and links the client renders. Unauthenticated: the\nsign-in card shows all of it.\n\nSends a `GET` request to `/v1/branding`\n\n```ignore\nlet response = client.branding()\n    .send()\n    .await;\n```"]
+    pub fn branding(&self) -> builder::Branding<'_> {
+        builder::Branding::new(self)
     }
     #[doc = "List the legal documents\n\nOnly what this deployment actually publishes. An operator who configures no Imprint gets no\nImprint entry, so the footer renders no dead link rather than one that 404s.\n\nSends a `GET` request to `/v1/legal`\n\nArguments:\n- `lang`: Language code (`en`, `de`). Falls back to `Accept-Language`, then to the first locale\nthe operator configured.\n```ignore\nlet response = client.legal_index()\n    .lang(lang)\n    .send()\n    .await;\n```"]
     pub fn legal_index(&self) -> builder::LegalIndex<'_> {
@@ -40226,6 +40736,47 @@ pub mod builder {
             let response = result?;
             match response.status().as_u16() {
                 202u16 => Ok(ResponseValue::empty(response)),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::branding`]\n\n[`Client::branding`]: super::Client::branding"]
+    #[derive(Debug, Clone)]
+    pub struct Branding<'a> {
+        client: &'a super::Client,
+    }
+    impl<'a> Branding<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+        #[doc = "Sends a `GET` request to `/v1/branding`"]
+        pub async fn send(self) -> Result<ResponseValue<types::BrandingView>, Error<()>> {
+            let Self { client } = self;
+            let url = format!("{}/v1/branding", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "branding",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
                 _ => Err(Error::UnexpectedResponse(response)),
             }
         }

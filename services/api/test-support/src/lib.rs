@@ -40,6 +40,7 @@ pub struct TestConfig {
     tunables: tankovault_service::TunableSet,
     webauthn: Option<tankovault_api::SharedRelyingParty>,
     legal: tankovault_config::LegalConfig,
+    branding: tankovault_config::BrandingConfig,
     step_up_max_ttl: Duration,
 }
 
@@ -53,13 +54,20 @@ impl Default for TestConfig {
             features: FeatureGate::defaults(),
             tunables: tankovault_service::TunableSet::defaults(),
             webauthn: Some(Arc::new(
-                tankovault_api::RelyingParty::from_config(Some("http://localhost"), None, None)
-                    .expect("the harness origin builds a relying party")
-                    .expect("and is not empty"),
+                tankovault_api::RelyingParty::from_config(
+                    Some("http://localhost"),
+                    None,
+                    "TankoVault Test",
+                )
+                .expect("the harness origin builds a relying party")
+                .expect("and is not empty"),
             )),
             // Empty by default, which is what most deployments run: `/v1/legal` answers with an
             // empty index rather than 404ing, and the footer publishes no Legal column.
             legal: tankovault_config::LegalConfig::default(),
+            // The shipped identity, so `/v1/branding` assertions read as what a stock
+            // deployment publishes.
+            branding: tankovault_config::BrandingConfig::default(),
             step_up_max_ttl: Duration::hours(1),
         }
     }
@@ -83,6 +91,13 @@ impl TestConfig {
     #[must_use]
     pub fn with_legal(mut self, legal: tankovault_config::LegalConfig) -> Self {
         self.legal = legal;
+        self
+    }
+
+    /// Rebrand the deployment, as an operator's `[branding]` section would.
+    #[must_use]
+    pub fn with_branding(mut self, branding: tankovault_config::BrandingConfig) -> Self {
+        self.branding = branding;
         self
     }
 
@@ -236,6 +251,7 @@ impl TestApp {
             mailer: cfg.mailer,
             email_base_url: "http://localhost".to_owned(),
             legal: tankovault_api::LegalDocs::new(cfg.legal.clone()),
+            branding: tankovault_api::Branding::new(cfg.branding.clone()),
             // Pass-through, not a short TTL: a test that seeds rows and reads a console rollup
             // back must see its own writes.
             system_stats: tankovault_api::Cached::uncached(),

@@ -12,6 +12,18 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [3.8.0](https://github.com/TimSchoenle/TankoVault/compare/v3.7.0...v3.8.0) (2026-08-10)
+
+
+### Features
+
+* **auth:** make the step-up prompt a modal that resumes what it interrupted ([#176](https://github.com/TimSchoenle/TankoVault/issues/176)) ([9d78962](https://github.com/TimSchoenle/TankoVault/commit/9d789621ed77909655f74e4a6eda0b4d29bca77f))
+
+
+### Bug Fixes
+
+* **scan:** unwedge the worker queue and repair dispatch that has drifted from the database ([#175](https://github.com/TimSchoenle/TankoVault/issues/175)) ([0dd2ddf](https://github.com/TimSchoenle/TankoVault/commit/0dd2ddf38425eebbdd261d2791fa6c01b97a2e6c))
+
 ## [3.7.0](https://github.com/TimSchoenle/TankoVault/compare/v3.6.2...v3.7.0) (2026-08-10)
 
 

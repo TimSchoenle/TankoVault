@@ -437,7 +437,7 @@ async fn toonily_series_reads_the_lazy_loaded_cover() {
 /// Regression: a catalogue that does not paginate must say so, or the walk never terminates.
 ///
 /// Rizz Fables lists all 88 of its series on one page and answers every `?page=N` with that
-/// same document. The MangaThemesia family default clears `catalog.next`, so `has_next` falls
+/// same document. The `MangaThemesia` family default clears `catalog.next`, so `has_next` falls
 /// back to "this page yielded items" — which is true forever on a site like this. A full scan
 /// re-fetched and re-ingested page 1 until the planner's page cap: twenty thousand requests for
 /// eighty-eight series, with no error anywhere, because every page genuinely succeeded.
@@ -463,7 +463,7 @@ async fn a_single_page_catalogue_reports_no_next_page() {
 
 /// Regression: in sitemap mode a 404 on shard `n+1` is how the catalogue ends, not a failure.
 ///
-/// MangaPill publishes one shard. Reported as an error, the walk ended *and* the run was marked
+/// `MangaPill` publishes one shard. Reported as an error, the walk ended *and* the run was marked
 /// degraded — a scan failure logged on every full scan, forever, for a provider behaving
 /// perfectly. Restricted to 404 on purpose: a 403 or a 5xx means part of the catalogue was not
 /// seen, and must keep surfacing.

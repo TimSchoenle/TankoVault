@@ -99,7 +99,7 @@ set in a TOML file.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `TANKOVAULT_PROFILE` | *(unset)* | The **only** value with an effect is `production` (case-insensitive). It turns on the production safety posture: `internal.token` becomes required, and `/scalar` + the OpenAPI document default to **off**. Nothing else reads it. Setting it to `staging`, `prod` or `dev` is the same as leaving it unset — a real trap, because `prod` looks like it should work. |
+| `TANKOVAULT_PROFILE` | *(unset)* | The **only** value with an effect is `production` (case-insensitive). It turns on the production safety posture: `internal.identity=off` becomes a boot failure, and `/scalar` + the OpenAPI document default to **off**. Nothing else reads it. Setting it to `staging`, `prod` or `dev` is the same as leaving it unset — a real trap, because `prod` looks like it should work. |
 | `TANKOVAULT_CONFIG` | `config.toml` | Path to the optional TOML layer — a file, or a directory whose `*.toml` entries are merged in name order. A missing file is not an error; a *misspelled path* is therefore also not an error. A named directory that cannot be read **is**. |
 | `TANKOVAULT_SECRETS_DIR` | *(unset)* | Directory of key-named files, one value per file — the shape a Kubernetes `Secret` mounted as a volume has. Unset disables the layer; set-but-unreadable fails the boot, because an operator who named it meant it and booting on defaults instead is the outcome worth avoiding. Entries starting with `.` and anything that is not a regular file are skipped, which is what makes a projected volume's `..data` layout work. |
 | `RUST_LOG` | *(unset)* | Standard `EnvFilter` syntax. When set it **replaces** `TANKOVAULT_TELEMETRY__LOG_FILTER` entirely rather than merging with it. |
@@ -511,7 +511,7 @@ that can disagree.
 
 | Key | Default | Notes |
 |---|---|---|
-| `TANKOVAULT_BIND_ADDR` | `0.0.0.0:8085` | Liveness, readiness **and** one internal route: `POST /internal/providers/{id}/test`, the adapter dry-run the API proxies here so that binary need not link the crawl stack (PERF-18). The dry-run sits inside `HttpStack::with_internal_auth`, so it needs `TANKOVAULT_INTERNAL__TOKEN`; `/health` and `/ready` are merged outside it and stay reachable to a probe without the secret. This port is also what the container healthcheck connects to. |
+| `TANKOVAULT_BIND_ADDR` | `0.0.0.0:8085` | Liveness, readiness **and** one internal route: `POST /internal/providers/{id}/test`, the adapter dry-run the API proxies here so that binary need not link the crawl stack (PERF-18). The dry-run sits inside `HttpStack::with_internal_auth`, so it is reachable only by `api`; `/health` and `/ready` are merged outside it and stay reachable to a probe with no credential. This port is also what the container healthcheck connects to. |
 | `TANKOVAULT_WORKER__CHALLENGE_SOLVER_ENDPOINT` | `http://challenge-solver:8090` | |
 | `TANKOVAULT_WORKER__MAX_CATALOG_PAGES` | `20000` | A runaway-paginator backstop, not a budget: real termination is the adapter's `has_next` marker. Some catalogues legitimately paginate into the thousands, so a value near a real catalogue size **silently truncates it**. |
 | `TANKOVAULT_WORKER__PROVIDER_REFRESH_SECS` | `60` | How often the round-robin queue re-reads the provider list. A newly created provider does not start scanning until its lane opens on the next refresh. |
@@ -670,7 +670,7 @@ existing installation exactly as it is, so a revoked permission stays revoked.
 ## 7. Secrets
 
 ```bash
-openssl rand -hex 32      # TANKOVAULT_AUTH__JWT_SECRET, TANKOVAULT_INTERNAL__TOKEN
+openssl rand -hex 32      # TANKOVAULT_AUTH__JWT_SECRET, and one per internal caller
 openssl rand -base64 32   # TANKOVAULT_ANILIST__TOKEN_ENCRYPTION_KEY (must decode to 32 bytes)
 ```
 

@@ -364,6 +364,52 @@ impl Bus {
         Ok(lanes)
     }
 
+    /// How many messages the broker still holds for one provider lane: waiting to be pulled,
+    /// plus claimed by a worker and not yet acked. The full lane's legacy filter is folded in,
+    /// because both subjects sit on the one consumer.
+    ///
+    /// This is the broker half of reconciling dispatch against the `scan_tasks` table, and the
+    /// count is the whole of what the broker can say: it names how many messages a lane holds,
+    /// never which. A caller therefore learns the size of a deficit, and has to choose for
+    /// itself which rows to blame it on.
+    ///
+    /// `None` means the lane has no consumer at all. That is not the same as an empty lane and
+    /// must not be collapsed into one: the worker pool opens its lanes on start, so before it
+    /// has ever run every lane is absent, and reading absence as "the broker holds nothing"
+    /// would have a reconciler republish every open task in the database.
+    ///
+    /// # Errors
+    /// [`BusError::Jetstream`] if the stream or the consumer cannot be read for any other
+    /// reason.
+    pub async fn lane_backlog(
+        &self,
+        provider_slug: &str,
+        mode: ScanMode,
+    ) -> Result<Option<u64>, BusError> {
+        let stream = self
+            .js
+            .get_stream(subjects::TASKS_STREAM)
+            .await
+            .map_err(|e| BusError::Jetstream(e.to_string()))?;
+        match stream
+            .consumer_info(subjects::worker_consumer(provider_slug, mode))
+            .await
+        {
+            Ok(info) => Ok(Some(info.num_pending.saturating_add(
+                u64::try_from(info.num_ack_pending).unwrap_or(u64::MAX),
+            ))),
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    jetstream::context::ConsumerInfoErrorKind::NotFound
+                ) =>
+            {
+                Ok(None)
+            }
+            Err(e) => Err(BusError::Jetstream(e.to_string())),
+        }
+    }
+
     /// Delete the pre-fairness wildcard task consumer, if it is still present.
     ///
     /// A work-queue stream refuses a consumer whose filter subject overlaps an existing

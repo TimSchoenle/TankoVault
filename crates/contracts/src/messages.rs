@@ -34,6 +34,17 @@ impl TaskKind {
             Self::LatestFeed => "latest_feed",
         }
     }
+
+    /// The kind a `scan_tasks.kind` value names, or `None` if it names none of them.
+    ///
+    /// The inverse of [`as_str`](Self::as_str), for the one direction the column has to be read
+    /// back in: rebuilding a task's message from its row.
+    #[must_use]
+    pub fn from_token(token: &str) -> Option<Self> {
+        [Self::CatalogPage, Self::Series, Self::LatestFeed]
+            .into_iter()
+            .find(|kind| kind.as_str() == token)
+    }
 }
 
 /// A dispatched unit of work, published to `scan.tasks.<provider_slug>` and mirrored
@@ -122,6 +133,24 @@ pub struct ProviderStateChanged {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every kind's column token must read back as the same kind.
+    ///
+    /// The pair is what lets a task be rebuilt from its row after its message was lost. A kind
+    /// missing from `from_token` is not a compile error — it is a task the reconciler quietly
+    /// refuses to republish, so its run never finishes.
+    #[test]
+    fn every_task_kind_round_trips_through_its_column_token() {
+        for kind in [
+            TaskKind::CatalogPage,
+            TaskKind::Series,
+            TaskKind::LatestFeed,
+        ] {
+            assert_eq!(TaskKind::from_token(kind.as_str()), Some(kind));
+        }
+        assert_eq!(TaskKind::from_token("catalogue_page"), None);
+        assert_eq!(TaskKind::from_token(""), None);
+    }
 
     #[test]
     fn task_message_round_trips() {

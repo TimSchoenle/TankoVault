@@ -1177,3 +1177,219 @@ async fn activity_tells_a_working_run_from_one_waiting_for_a_worker() {
         "a run with everything queued and nothing claimed must report how long it has waited"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Reconciliation — the queries that repair dispatch drift
+// ---------------------------------------------------------------------------
+
+/// Zero grace: every row already in the table counts as aged. Lets these tests assert on the
+/// aged/fresh split without sleeping or backdating.
+const NO_GRACE: std::time::Duration = std::time::Duration::ZERO;
+
+/// The id of the one task `a_run_in_flight` planned.
+async fn only_task(db: &TestDb, run: ScanRunId) -> ScanTaskId {
+    let id: uuid::Uuid = sqlx::query_scalar("SELECT id FROM scan_tasks WHERE run_id = $1")
+        .bind(run.as_uuid())
+        .fetch_one(&db.pool)
+        .await
+        .expect("the run planned exactly one task");
+    ScanTaskId::from_uuid(id)
+}
+
+/// The reconciler can only repair what this query reports, and it reports **per lane** — a
+/// provider and a scan mode — because that is the granularity the broker can be asked about.
+///
+/// Both halves of the row fail silently, in opposite directions. Under-reporting `open_tasks`
+/// invents a deficit and republishes tasks whose messages are perfectly fine; over-reporting
+/// `aged_tasks` republishes a task whose message is merely still in flight, which on a catalogue
+/// fan-out means a second pass over the whole provider.
+#[tokio::test]
+async fn an_open_lane_reports_its_provider_its_mode_and_how_much_work_is_aged() {
+    let db = TestDb::spawn().await;
+    let alpha = seed::provider(&db, "alpha").create().await;
+    a_run_in_flight(&db, alpha, ScanMode::Full).await;
+
+    let lanes = scans::open_task_lanes(&db.pool, NO_GRACE)
+        .await
+        .expect("open lanes");
+    let lane = lanes
+        .iter()
+        .find(|l| l.provider_id == alpha)
+        .expect("a provider with an in-flight run has an open lane");
+    assert_eq!(lane.provider_slug, "alpha");
+    assert_eq!(lane.mode, ScanMode::Full);
+    assert_eq!(lane.open_tasks, 1);
+    assert_eq!(
+        lane.aged_tasks, 1,
+        "past the grace period, an open task is aged"
+    );
+
+    // The same lane, asked with an hour of grace: still open, but nothing old enough to repair.
+    let lanes = scans::open_task_lanes(&db.pool, AN_HOUR)
+        .await
+        .expect("open lanes");
+    let lane = lanes
+        .iter()
+        .find(|l| l.provider_id == alpha)
+        .expect("the lane is still open");
+    assert_eq!(lane.open_tasks, 1);
+    assert_eq!(
+        lane.aged_tasks, 0,
+        "a task younger than the grace period must not be repairable, or every fan-out is \
+         republished while it is still being dispatched"
+    );
+}
+
+/// A settled task is not open work, and a lane with none of it is not reported at all.
+///
+/// The deficit the reconciler acts on is `aged rows - messages the broker holds`, so counting a
+/// task that has already been executed is not a cosmetic error: it manufactures a deficit on a
+/// healthy lane and republishes work that was already done.
+#[tokio::test]
+async fn a_lane_whose_tasks_have_settled_is_not_open_work() {
+    let db = TestDb::spawn().await;
+    let alpha = seed::provider(&db, "alpha").create().await;
+    let run = a_run_in_flight(&db, alpha, ScanMode::Full).await;
+    let task = only_task(&db, run).await;
+
+    scans::claim_task(&db.pool, task, "worker-1")
+        .await
+        .expect("claim");
+    let claimed = scans::open_task_lanes(&db.pool, NO_GRACE)
+        .await
+        .expect("open lanes");
+    assert_eq!(
+        claimed
+            .iter()
+            .find(|l| l.provider_id == alpha)
+            .map(|l| l.open_tasks),
+        Some(1),
+        "a claimed task is still open work: its worker may have died holding it"
+    );
+
+    scans::complete_task(&db.pool, task, None)
+        .await
+        .expect("complete");
+    let settled = scans::open_task_lanes(&db.pool, NO_GRACE)
+        .await
+        .expect("open lanes");
+    assert!(
+        !settled.iter().any(|l| l.provider_id == alpha),
+        "a lane with nothing open must not be reported, or its healthy state reads as a deficit"
+    );
+}
+
+/// The rows the reconciler republishes carry what the broker message needs, and only this lane.
+#[tokio::test]
+async fn stranded_tasks_are_the_lanes_own_open_work() {
+    let db = TestDb::spawn().await;
+    let alpha = seed::provider(&db, "alpha").create().await;
+    let run = a_run_in_flight(&db, alpha, ScanMode::Full).await;
+
+    let stranded = scans::stranded_tasks(&db.pool, alpha, ScanMode::Full, NO_GRACE, 10)
+        .await
+        .expect("stranded tasks");
+    assert_eq!(stranded.len(), 1);
+    assert_eq!(stranded[0].run_id, run);
+    assert_eq!(stranded[0].kind, "series");
+
+    // The other mode is a different lane, with its own consumer and its own backlog: draining it
+    // here would republish work against a count that was never taken for it.
+    let other = scans::stranded_tasks(&db.pool, alpha, ScanMode::Fast, NO_GRACE, 10)
+        .await
+        .expect("stranded tasks");
+    assert!(other.is_empty(), "a repair must not cross scan modes");
+}
+
+/// A run whose tasks have all settled but which is still `running` has to be findable.
+///
+/// Finalisation rides on a progress event and that event is best-effort, so one lost publish
+/// leaves a finished run open forever: the console counts it as active and, until it goes stale,
+/// the planner refuses to start another for that provider and mode. No further task will ever
+/// settle on it, so nothing else revisits it — this query is the only way back.
+#[tokio::test]
+async fn a_run_whose_tasks_have_all_settled_is_offered_for_finalisation() {
+    let db = TestDb::spawn().await;
+    let alpha = seed::provider(&db, "alpha").create().await;
+    let run = a_run_in_flight(&db, alpha, ScanMode::Full).await;
+    let task = only_task(&db, run).await;
+
+    assert!(
+        !scans::runs_awaiting_finalisation(&db.pool, 10)
+            .await
+            .expect("query")
+            .contains(&run),
+        "a run with work outstanding must not be closed"
+    );
+
+    scans::claim_task(&db.pool, task, "worker-1")
+        .await
+        .expect("claim");
+    scans::complete_task(&db.pool, task, None)
+        .await
+        .expect("complete");
+
+    assert!(
+        scans::runs_awaiting_finalisation(&db.pool, 10)
+            .await
+            .expect("query")
+            .contains(&run),
+        "every task settled and the run still running: this is the lost terminal event"
+    );
+
+    scans::finalize_if_complete(&db.pool, run)
+        .await
+        .expect("finalize")
+        .expect("the run was complete");
+    assert!(
+        !scans::runs_awaiting_finalisation(&db.pool, 10)
+            .await
+            .expect("query")
+            .contains(&run),
+        "a finalised run must not be offered again, or the reconciler loops on it every pass"
+    );
+}
+
+/// A run that never planned a task at all is failed, but only once it is old enough to be one.
+///
+/// The planner writes the run row, then the task, then publishes. Killed between the first two it
+/// leaves a run with nothing to republish and nothing that can ever settle it — invisible to both
+/// other repairs, and suppressing that provider's next run of the same mode until it goes stale.
+/// The age check is the only thing separating that from a plan milliseconds into the same
+/// sequence, so failing one of those would kill live scans as fast as the reconciler ran.
+#[tokio::test]
+async fn a_run_that_never_planned_a_task_is_failed_but_only_once_it_is_old() {
+    let db = TestDb::spawn().await;
+    let alpha = seed::provider(&db, "alpha").create().await;
+    let planned = a_run_in_flight(&db, alpha, ScanMode::Full).await;
+    let abandoned = scans::create_run(&db.pool, Some(alpha), ScanMode::Fast)
+        .await
+        .expect("create run");
+    scans::start_run(&db.pool, abandoned)
+        .await
+        .expect("start run");
+
+    assert!(
+        scans::fail_unplanned_runs(&db.pool, AN_HOUR, 10)
+            .await
+            .expect("query")
+            .is_empty(),
+        "a run still inside the grace period is a plan in progress, not an abandoned one"
+    );
+
+    let failed = scans::fail_unplanned_runs(&db.pool, NO_GRACE, 10)
+        .await
+        .expect("query");
+    assert_eq!(failed, vec![abandoned]);
+    assert!(
+        !failed.contains(&planned),
+        "a run that did plan its task must be repaired by republishing it, never by failing it"
+    );
+    assert_eq!(
+        scans::get_run(&db.pool, abandoned)
+            .await
+            .expect("read run")
+            .state,
+        RunState::Failed
+    );
+}

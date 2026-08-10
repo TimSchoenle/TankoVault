@@ -2,19 +2,35 @@
 
 use super::{duration_label, elapsed_seconds, percent, scope_label};
 use crate::api;
+use crate::components::{CompactPager, Window};
 use crate::hooks::use_reload;
 use crate::i18n::use_i18n;
 use crate::models::{RunStateExt as _, ScanRun, ScanRunExt as _};
 use crate::util::{rel_time, thousands};
 use crate::views::console::run_state_pill;
-use crate::views::console::use_console_nav;
+use crate::views::console::{use_console_nav, ConsoleQuery};
 use crate::wire::types::ScanRunId;
 use dioxus::prelude::*;
 use inkstone_ui::{Button, Size};
-/// Recent runs under the current filter, with the drawer for the selected one.
+/// Recent runs under the current filter, with the drawer for the selected one and a pager.
+///
+/// Paged rather than capped: the panel used to show whichever page the server's default handed
+/// it and print `30 of 743` beside it, with nothing that could reach the other 713.
 #[component]
-pub(super) fn RunHistory(runs: Vec<ScanRun>, total: i64, narrowed: bool) -> Element {
+pub(super) fn RunHistory(
+    runs: Vec<ScanRun>,
+    total: i64,
+    narrowed: bool,
+    page: u32,
+    page_size: i64,
+) -> Element {
     let i18n = use_i18n();
+    let nav = use_console_nav();
+    let window = Window {
+        offset: i64::from(page).saturating_mul(page_size),
+        page_len: i64::try_from(runs.len()).unwrap_or(page_size),
+        total,
+    };
     rsx! {
         RunDrawer {}
         div { style: "margin-top:16px;",
@@ -66,6 +82,20 @@ pub(super) fn RunHistory(runs: Vec<ScanRun>, total: i64, narrowed: bool) -> Elem
                             }
                         }
                     }
+                }
+            }
+            if window.has_prev() || window.has_next() {
+                CompactPager {
+                    page: i64::from(page),
+                    window,
+                    on_page: move |next: i64| {
+                        // Selection is dropped with the page: the drawer is open on a run this
+                        // page no longer holds.
+                        nav.select(ConsoleQuery {
+                            sel: None,
+                            ..nav.query().with_page(u32::try_from(next).unwrap_or(0))
+                        });
+                    },
                 }
             }
         }

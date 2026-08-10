@@ -1,6 +1,6 @@
 //! The removable "active filter" chip bar above Discover's results.
 
-use super::query::DiscoverFilters;
+use super::query::{DiscoverFilters, Tracking};
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
 use crate::models::*;
@@ -30,6 +30,20 @@ pub(super) fn ActiveFilters(
     });
     rsx! {
         div { class: "ik-active-filters",
+            // Counted by `active_count`, so it has to be removable from here too: a bar that
+            // says "2 active" while offering one chip is a filter the reader cannot find.
+            if filters.tracking != Tracking::Any {
+                {
+                    let mut next = filters.clone();
+                    next.tracking = Tracking::Any;
+                    rsx! {
+                        Chip {
+                            label: i18n.t(filters.tracking.label_key()),
+                            on_remove: move |()| on_change.call(next.clone()),
+                        }
+                    }
+                }
+            }
             if let Some(label) = provider_label {
                 {
                     let mut next = filters.clone();

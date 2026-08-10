@@ -35,16 +35,27 @@ const MAX_PAGE: i64 = 200;
 /// the request timeout. Emptying the deployment is what [`purge_catalogue`] is for.
 const MAX_BULK_DELETE: usize = 500;
 
-/// Series removed per purge call.
-///
-/// Sized so one call stays comfortably inside the request timeout on a large catalogue; the
-/// console repeats the call until nothing is left. See
-/// [`maintenance::purge_series_batch`] for why the purge is batched at all.
+/// Series removed per purge *batch*. See [`maintenance::purge_series_batch`] for why the purge
+/// is batched at all, and [`PURGE_BUDGET`] for how many batches one call runs.
 const PURGE_SERIES_BATCH: i64 = 500;
 
-/// Chapters removed per purge call. Higher than the series batch because a chapter row cascades
+/// Chapters removed per purge batch. Higher than the series batch because a chapter row cascades
 /// into nothing.
 const PURGE_CHAPTER_BATCH: i64 = 20_000;
+
+/// How long one purge call keeps running batches before it answers.
+///
+/// A batch is the unit the *database* can commit; it is not the unit a client should have to
+/// call. At 500 series a call, emptying a 50 000-series catalogue took a hundred requests, and
+/// this route draws on the tight write budget (`crate::route_classifier`) — ten of which is a
+/// burst, thirty a minute sustained. So the panel spent its budget in seconds and every call
+/// after that was a `429`: the purge could not finish, on any catalogue large enough to need one.
+///
+/// Draining to a deadline instead keeps every property the batching exists for — each batch
+/// commits, an interrupted purge leaves a smaller catalogue, the caller still repeats until
+/// `done` — while cutting the call count by two orders of magnitude. Well inside the 30 s
+/// request timeout, with room for the slowest batch to overrun it.
+const PURGE_BUDGET: std::time::Duration = std::time::Duration::from_secs(10);
 
 /// Which rows the maintenance list is narrowed to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, ToSchema)]
@@ -136,7 +147,7 @@ pub struct CatalogueSummaryView {
 }
 
 /// What a deletion actually removed, per table, counted rather than estimated.
-#[derive(Debug, Default, Serialize, ToSchema)]
+#[derive(Debug, Clone, Copy, Default, Serialize, ToSchema)]
 #[schema(as = CatalogueDeletion)]
 pub struct DeletionView {
     pub series: i64,
@@ -144,6 +155,27 @@ pub struct DeletionView {
     pub chapters: i64,
     pub watchlist_entries: i64,
     pub progress_rows: i64,
+}
+
+impl DeletionView {
+    /// Fold another batch's counts in, so one call's report covers everything it removed.
+    fn add(&mut self, other: Self) {
+        self.series += other.series;
+        self.sources += other.sources;
+        self.chapters += other.chapters;
+        self.watchlist_entries += other.watchlist_entries;
+        self.progress_rows += other.progress_rows;
+    }
+
+    /// Whether this batch removed anything of the purged kind.
+    ///
+    /// The loop's stop condition when the count of what is left refuses to fall: a batch that
+    /// deletes nothing while `remaining` stays positive would otherwise spin against the
+    /// database for the whole budget. Reaching it means something is wrong — a row the delete
+    /// cannot reach — and answering with the counts on screen is the honest outcome.
+    const fn is_empty(&self) -> bool {
+        self.series == 0 && self.chapters == 0
+    }
 }
 
 impl From<DeletionReport> for DeletionView {
@@ -358,16 +390,21 @@ pub async fn bulk_delete_series(
 
 /// Purge the catalogue
 ///
-/// Empties the catalogue, one batch per call. The response says how much is left, and the
-/// caller repeats until `done`.
+/// Empties the catalogue for up to ten seconds per call. The response says how much this call
+/// removed and how much is left, and the caller repeats until `done`.
 ///
 /// # Why this is not one request
 ///
 /// A full catalogue cascades into a dozen tables and takes minutes, far longer than the request
 /// timeout allows. A single statement would therefore be killed and rolled back every time, and
 /// the deployment could never actually be emptied. Batching makes the operation resumable
-/// instead: each call commits, and an interrupted purge leaves a smaller catalogue rather than
+/// instead: each batch commits, and an interrupted purge leaves a smaller catalogue rather than
 /// no progress at all.
+///
+/// # Why it is not one batch per request either
+///
+/// See [`PURGE_BUDGET`]: a call per batch spent the caller's rate-limit budget long before the
+/// catalogue was empty.
 #[utoipa::path(
     post,
     path = "/v1/admin/catalogue/purge",
@@ -407,23 +444,35 @@ pub async fn purge_catalogue(
         tracing::error!(error = %e, "failed to acquire a connection for a catalogue purge");
         ApiError::Internal
     })?;
-    let (report, remaining) = match body.scope {
-        PurgeScope::Chapters => {
-            maintenance::purge_chapters_batch(&mut conn, PURGE_CHAPTER_BATCH).await?
+    let started = std::time::Instant::now();
+    let mut removed = DeletionView::default();
+    let mut remaining;
+    loop {
+        let (report, left) = match body.scope {
+            PurgeScope::Chapters => {
+                maintenance::purge_chapters_batch(&mut conn, PURGE_CHAPTER_BATCH).await?
+            }
+            PurgeScope::Everything => {
+                maintenance::purge_series_batch(&mut conn, PURGE_SERIES_BATCH).await?
+            }
+        };
+        let batch = DeletionView::from(report);
+        let stalled = batch.is_empty();
+        removed.add(batch);
+        remaining = left;
+        if left == 0 || stalled || started.elapsed() >= PURGE_BUDGET {
+            break;
         }
-        PurgeScope::Everything => {
-            maintenance::purge_series_batch(&mut conn, PURGE_SERIES_BATCH).await?
-        }
-    };
+    }
     drop(conn);
 
     let view = PurgeView {
         scope: body.scope,
-        removed: report.into(),
+        removed,
         remaining,
         done: remaining == 0,
     };
-    // Every batch is audited, not just the first. Each one is a separate authorized destructive
+    // Every call is audited, not just the first. Each one is a separate authorized destructive
     // act, and a trail that recorded only the opening call could not answer how far a purge
     // someone interrupted actually got.
     audit(

@@ -26,8 +26,8 @@ use dioxus::prelude::*;
 use filters::FilterPanel;
 use inkstone_ui::Button;
 use progenitor_client::ResponseValue;
-pub(crate) use query::DiscoverQuery;
-use query::{DiscoverFilters, Sort, YEAR_MAX, YEAR_MIN};
+use query::{DiscoverFilters, YEAR_MAX, YEAR_MIN};
+pub(crate) use query::{DiscoverQuery, Sort, Tracking};
 use std::collections::BTreeSet;
 /// How many *rows* of covers one fetched page holds. How many series that is depends on how
 /// many columns the window fits — see [`crate::components::use_grid_fit`].
@@ -208,6 +208,9 @@ pub(crate) fn Discover(query: DiscoverQuery) -> Element {
             }
             if filters.min_chapters > 0 {
                 builder = builder.min_chapters(filters.min_chapters);
+            }
+            if let Some(tracking) = filters.tracking.param() {
+                builder = builder.tracking(tracking);
             }
             let outcome = builder
                 .sort(filters.sort.token())

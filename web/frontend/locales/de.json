@@ -591,6 +591,7 @@
       "purgeDone": "Bereinigung abgeschlossen: {count} Zeilen entfernt.",
       "purgeProgress": "{done} entfernt, {left} verbleiben…",
       "purgeStalled": "Die Bereinigung kam nicht mehr voran und wurde angehalten. Bitte vor einem neuen Versuch die Server-Protokolle prüfen.",
+      "purgeWaiting": "Ratenlimit — warte…",
       "searchPlaceholder": "Titel suchen…",
       "select": "{title} auswählen",
       "selectPage": "Alle Serien auf dieser Seite auswählen",
@@ -719,6 +720,12 @@
       "revert": "Zusammenführung rückgängig ({rows} Zeilen)",
       "reverted": "Zusammenführung rückgängig gemacht: {rows} Zeilen wiederhergestellt, das Paar wird nicht erneut zusammengeführt.",
       "revertedBecause": "Zurückgenommen: {reason}",
+      "search": {
+        "hits": "{count} von {loaded} geladenen",
+        "merges": "Titel, Ergebnisse, Gründe suchen…",
+        "sync": "Serien, Leser, Anbieter suchen…"
+      },
+      "searchEmpty": "Keine der geladenen Entscheidungen passt zu dieser Suche.",
       "showEvidence": "Belege anzeigen",
       "syncEmpty": "Noch keine Sync-Entscheidungen aufgezeichnet.",
       "syncReverted": "Rückgängig gemacht: {what} wiederhergestellt.",
@@ -765,7 +772,6 @@
       "pipeline": "Pipeline",
       "system": "System"
     },
-    "jump": "Serien, Tags, Autoren suchen…",
     "kpi": {
       "activeScans": "Aktive Scans",
       "activeScansSub": "{count} laufen gerade",
@@ -1431,6 +1437,12 @@
     "tagSearch": "{count} Tags filtern",
     "tags": "Genres / Tags",
     "toggleFilters": "Filter ein-/ausblenden",
+    "tracking": {
+      "any": "Alles",
+      "label": "Deine Bibliothek",
+      "tracked": "Nur Verfolgtes",
+      "untracked": "Verfolgtes ausblenden"
+    },
     "windowFull": "Hier angehalten, damit die Seite flüssig bleibt."
   },
   "enum": {
@@ -1555,6 +1567,7 @@
     },
     "feed": {
       "empty": "Du bist auf dem neuesten Stand. Neue Kapitel deiner Merkliste landen hier.",
+      "range": "#{first}–{last}",
       "title": "Neu auf deiner Merkliste"
     },
     "guest": {
@@ -1698,8 +1711,14 @@
     "whyLabel": "Warum"
   },
   "search": {
+    "anyStatus": "Beliebiger Status",
+    "anyType": "Beliebiger Typ",
     "countLine": "{count} Ergebnisse · unscharfe Trigramm-Suche",
     "empty": "Dazu passt keine Serie. Versuch es mit weniger Wörtern.",
+    "landing": {
+      "hint": "Titel und Alternativtitel über alle Quellen dieser Installation. Teilwörter und Tippfehler sind in Ordnung — die Suche ist unscharf."
+    },
+    "placeholder": "Katalog durchsuchen…",
     "title": "Ergebnisse für „{query}“"
   },
   "series": {

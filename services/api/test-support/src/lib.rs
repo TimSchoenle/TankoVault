@@ -240,6 +240,7 @@ impl TestApp {
             // back must see its own writes.
             system_stats: tankovault_api::Cached::uncached(),
             provider_stats: tankovault_api::Cached::uncached(),
+            adult_tags: Arc::new(tankovault_domain::AdultTagSet::defaults()),
         };
 
         let router = tankovault_api::build_router(

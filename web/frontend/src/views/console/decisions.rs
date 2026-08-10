@@ -7,12 +7,14 @@
 //! and only the terms say which title matched and what each rule contributed.
 
 use crate::api;
-use crate::components::{async_view, use_step_up_gate, SkeletonRows, StepUpGate, StepUpGuard};
+use crate::components::{
+    async_view, use_step_up_gate, ListSearch, SkeletonRows, StepUpGate, StepUpGuard,
+};
 use crate::i18n::{use_i18n, Translator};
 use crate::models::*;
 use crate::state::capabilities::use_capabilities;
 use crate::util::rel_time;
-use crate::views::console::{signal_label, RefreshTick};
+use crate::views::console::{signal_label, use_console_nav, RefreshTick};
 use crate::wire::types::Permission;
 use dioxus::prelude::*;
 use inkstone_ui::{Button, Pill, Size, ToggleButton, Tone};
@@ -20,6 +22,22 @@ use progenitor_client::ResponseValue;
 /// Rows per page. The server clamps regardless; this is the number that fits a screen without
 /// paging becoming the primary interaction.
 const PAGE_SIZE: u32 = 50;
+
+/// Rows per page while a search is running.
+///
+/// The endpoint has no text predicate — a decision is matched on titles, an account name and a
+/// provider slug, none of which it indexes — so the search runs over what is loaded. It is
+/// therefore worth loading more of the journal while one is being typed: this is the server's own
+/// ceiling, so nothing here is asking for a page it will not answer.
+const SEARCH_PAGE_SIZE: u32 = 200;
+
+/// Whether `haystack` contains the already-lowercased `needle`.
+fn matches(needle: &str, haystack: &[Option<&str>]) -> bool {
+    haystack
+        .iter()
+        .flatten()
+        .any(|field| field.to_lowercase().contains(needle))
+}
 
 /// Which journal the panel is showing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -95,6 +113,7 @@ fn MergeJournal(tick: RefreshTick) -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
     let caps = use_capabilities();
+    let nav = use_console_nav();
     let can_revert = caps.can(Permission::MergeRevert);
     let mut outcome = use_signal(String::new);
     let mut blocked_only = use_signal(|| false);
@@ -105,11 +124,24 @@ fn MergeJournal(tick: RefreshTick) -> Element {
 
     let filter_outcome = outcome.read().clone();
     let only_blocked = *blocked_only.read();
-    let rows = use_resource(use_reactive!(|(filter_outcome, only_blocked)| {
+    // In the URL like every other console filter, so an operator can send "the journal, around
+    // this title" rather than describing where to scroll to.
+    let search = nav.query().q;
+    let searching = !search.trim().is_empty();
+    let rows = use_resource(use_reactive!(|(
+        filter_outcome,
+        only_blocked,
+        searching,
+    )| {
         tick.track();
         let client = api.client();
         async move {
-            let mut request = client.list_merge_decisions().limit(PAGE_SIZE);
+            let depth = if searching {
+                SEARCH_PAGE_SIZE
+            } else {
+                PAGE_SIZE
+            };
+            let mut request = client.list_merge_decisions().limit(depth);
             if !filter_outcome.is_empty() {
                 request = request.outcome(filter_outcome);
             }
@@ -123,6 +155,20 @@ fn MergeJournal(tick: RefreshTick) -> Element {
                 .map_err(|e| api::friendly_error(i18n, e))
         }
     }));
+
+    let needle = search.trim().to_lowercase();
+    let keep = move |decision: &MergeDecision| {
+        needle.is_empty()
+            || matches(
+                &needle,
+                &[
+                    Some(decision.left_title.as_str()),
+                    Some(decision.right_title.as_str()),
+                    Some(decision.outcome.as_str()),
+                    Some(decision.reason.as_str()),
+                ],
+            )
+    };
 
     rsx! {
         div { class: "ik-flex", style: "gap:8px;flex-wrap:wrap;margin-bottom:10px;",
@@ -157,24 +203,37 @@ fn MergeJournal(tick: RefreshTick) -> Element {
                 tick.reload(),
                 || rsx! { SkeletonRows { count: 6, height: 28 } },
                 move |list| {
-                    if list.is_empty() {
-                        return rsx! {
-                            div { class: "ik-empty", style: "padding:24px;",
-                                {i18n.t("console.decisions.mergeEmpty")}
-                            }
-                        };
-                    }
-                    let list = list.clone();
+                    let loaded = list.len();
+                    let list: Vec<MergeDecision> = list.iter().filter(|d| keep(d)).cloned().collect();
+                    let hits = search_hits(i18n, list.len(), loaded, searching);
                     rsx! {
-                        div { class: "ik-cons-list",
-                            for decision in list {
-                                MergeDecisionRow {
-                                    key: "{decision.id}",
-                                    decision: Signal::new(decision),
-                                    can_revert,
-                                    notice,
-                                    tick,
-                                    gate,
+                        DecisionSearch {
+                            placeholder: i18n.t("console.decisions.search.merges"),
+                            hits,
+                        }
+                        if list.is_empty() {
+                            div { class: "ik-empty", style: "padding:24px;",
+                                {
+                                    i18n.t(
+                                        if searching {
+                                            "console.decisions.searchEmpty"
+                                        } else {
+                                            "console.decisions.mergeEmpty"
+                                        },
+                                    )
+                                }
+                            }
+                        } else {
+                            div { class: "ik-cons-list",
+                                for decision in list {
+                                    MergeDecisionRow {
+                                        key: "{decision.id}",
+                                        decision: Signal::new(decision),
+                                        can_revert,
+                                        notice,
+                                        tick,
+                                        gate,
+                                    }
                                 }
                             }
                         }
@@ -183,6 +242,43 @@ fn MergeJournal(tick: RefreshTick) -> Element {
             )
         }
     }
+}
+
+/// The journal's search box, wired to the console's own `?q=`.
+///
+/// Split out because both journals draw it identically and the wording of the hit count is the
+/// only thing that differs.
+#[component]
+fn DecisionSearch(placeholder: String, hits: String) -> Element {
+    let nav = use_console_nav();
+    rsx! {
+        div { style: "margin-bottom:10px;",
+            ListSearch {
+                placeholder,
+                query: nav.query().q,
+                on_input: move |text: String| nav.filter(nav.query().with_search(text)),
+                hits,
+            }
+        }
+    }
+}
+
+/// The hit count beside the search box.
+///
+/// States what was searched, not just what matched: the endpoint has no text predicate, so this
+/// covers the rows the journal has loaded and an operator has to be able to tell that from "the
+/// whole journal holds one match".
+fn search_hits(i18n: Translator, shown: usize, loaded: usize, searching: bool) -> String {
+    if !searching {
+        return String::new();
+    }
+    i18n.args(
+        "console.decisions.search.hits",
+        &[
+            ("count", &shown.to_string()),
+            ("loaded", &loaded.to_string()),
+        ],
+    )
 }
 
 /// One merge decision: the headline, the rule, and the evidence behind an expander.
@@ -438,6 +534,7 @@ fn SyncJournal(tick: RefreshTick) -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
     let caps = use_capabilities();
+    let nav = use_console_nav();
     let can_revert = caps.can(Permission::SyncRevert);
     let mut action = use_signal(String::new);
     // Default on: a reconciliation is mostly considerations, and an operator opening this panel
@@ -449,11 +546,18 @@ fn SyncJournal(tick: RefreshTick) -> Element {
 
     let filter_action = action.read().clone();
     let only_applied = *applied_only.read();
-    let rows = use_resource(use_reactive!(|(filter_action, only_applied)| {
+    let search = nav.query().q;
+    let searching = !search.trim().is_empty();
+    let rows = use_resource(use_reactive!(|(filter_action, only_applied, searching)| {
         tick.track();
         let client = api.client();
         async move {
-            let mut request = client.list_sync_decisions().limit(PAGE_SIZE);
+            let depth = if searching {
+                SEARCH_PAGE_SIZE
+            } else {
+                PAGE_SIZE
+            };
+            let mut request = client.list_sync_decisions().limit(depth);
             if !filter_action.is_empty() {
                 request = request.action(filter_action);
             }
@@ -467,6 +571,22 @@ fn SyncJournal(tick: RefreshTick) -> Element {
                 .map_err(|e| api::friendly_error(i18n, e))
         }
     }));
+
+    let needle = search.trim().to_lowercase();
+    let keep = move |decision: &SyncDecision| {
+        needle.is_empty()
+            || matches(
+                &needle,
+                &[
+                    decision.series_title.as_deref(),
+                    decision.username.as_deref(),
+                    Some(decision.provider.as_str()),
+                    Some(decision.action.as_str()),
+                    Some(decision.reason.as_str()),
+                    decision.external_id.as_deref(),
+                ],
+            )
+    };
 
     rsx! {
         div { class: "ik-flex", style: "gap:8px;flex-wrap:wrap;margin-bottom:10px;",
@@ -501,24 +621,37 @@ fn SyncJournal(tick: RefreshTick) -> Element {
                 tick.reload(),
                 || rsx! { SkeletonRows { count: 6, height: 28 } },
                 move |list| {
-                    if list.is_empty() {
-                        return rsx! {
-                            div { class: "ik-empty", style: "padding:24px;",
-                                {i18n.t("console.decisions.syncEmpty")}
-                            }
-                        };
-                    }
-                    let list = list.clone();
+                    let loaded = list.len();
+                    let list: Vec<SyncDecision> = list.iter().filter(|d| keep(d)).cloned().collect();
+                    let hits = search_hits(i18n, list.len(), loaded, searching);
                     rsx! {
-                        div { class: "ik-cons-list",
-                            for decision in list {
-                                SyncDecisionRow {
-                                    key: "{decision.id}",
-                                    decision: Signal::new(decision),
-                                    can_revert,
-                                    notice,
-                                    tick,
-                                    gate,
+                        DecisionSearch {
+                            placeholder: i18n.t("console.decisions.search.sync"),
+                            hits,
+                        }
+                        if list.is_empty() {
+                            div { class: "ik-empty", style: "padding:24px;",
+                                {
+                                    i18n.t(
+                                        if searching {
+                                            "console.decisions.searchEmpty"
+                                        } else {
+                                            "console.decisions.syncEmpty"
+                                        },
+                                    )
+                                }
+                            }
+                        } else {
+                            div { class: "ik-cons-list",
+                                for decision in list {
+                                    SyncDecisionRow {
+                                        key: "{decision.id}",
+                                        decision: Signal::new(decision),
+                                        can_revert,
+                                        notice,
+                                        tick,
+                                        gate,
+                                    }
                                 }
                             }
                         }

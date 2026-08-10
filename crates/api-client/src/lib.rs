@@ -7955,6 +7955,13 @@ pub mod types {
     #[doc = "        \"null\""]
     #[doc = "      ]"]
     #[doc = "    },"]
+    #[doc = "    \"blurb\": {"]
+    #[doc = "      \"description\": \"The opening of the description, trimmed to a card's worth. See\\n[`crate::series::blurb`] — one wording, so a recommendation and a search hit describe a\\nseries identically.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
     #[doc = "    \"chapter_count\": {"]
     #[doc = "      \"description\": \"Distinct whole chapters across every source — the figure a reader deciding whether to\\nstart something actually wants, and the same one the series screen prints.\","]
     #[doc = "      \"type\": \"integer\","]
@@ -8025,6 +8032,9 @@ pub mod types {
         pub because_series_id: ::std::option::Option<RecommendationBecauseSeriesId>,
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub because_title: ::std::option::Option<::std::string::String>,
+        #[doc = "The opening of the description, trimmed to a card's worth. See\n[`crate::series::blurb`] — one wording, so a recommendation and a search hit describe a\nseries identically."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub blurb: ::std::option::Option<::std::string::String>,
         #[doc = "Distinct whole chapters across every source — the figure a reader deciding whether to\nstart something actually wants, and the same one the series screen prints."]
         pub chapter_count: i64,
         pub content_type: ContentType,
@@ -10625,6 +10635,13 @@ pub mod types {
     #[doc = "    \"title\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
+    #[doc = "    \"blurb\": {"]
+    #[doc = "      \"description\": \"The opening of the description, trimmed to a card's worth. `None` when the series has\\nnone, which a card renders as nothing rather than as empty space.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
     #[doc = "    \"chapter_count\": {"]
     #[doc = "      \"description\": \"Distinct **whole** chapters across every source, so a title carried by four providers is\\nnot counted four times and a part release does not count as its own chapter. This is the\\nsame figure the series screen prints, so a card and the page it opens agree.\","]
     #[doc = "      \"type\": \"integer\","]
@@ -10685,6 +10702,9 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct SeriesSummary {
+        #[doc = "The opening of the description, trimmed to a card's worth. `None` when the series has\nnone, which a card renders as nothing rather than as empty space."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub blurb: ::std::option::Option<::std::string::String>,
         #[doc = "Distinct **whole** chapters across every source, so a title carried by four providers is\nnot counted four times and a part release does not count as its own chapter. This is the\nsame figure the series screen prints, so a card and the page it opens agree."]
         pub chapter_count: i64,
         pub content_type: ContentType,
@@ -10969,6 +10989,9 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct SimilarSeries {
+        #[doc = "The opening of the description, trimmed to a card's worth. `None` when the series has\nnone, which a card renders as nothing rather than as empty space."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub blurb: ::std::option::Option<::std::string::String>,
         #[doc = "Distinct **whole** chapters across every source, so a title carried by four providers is\nnot counted four times and a part release does not count as its own chapter. This is the\nsame figure the series screen prints, so a card and the page it opens agree."]
         pub chapter_count: i64,
         pub content_type: ContentType,
@@ -12986,6 +13009,7 @@ pub mod types {
     #[doc = "    \"recsys.diversity.lambda\","]
     #[doc = "    \"recsys.diversity.max_per_author\","]
     #[doc = "    \"recsys.diversity.max_per_tag\","]
+    #[doc = "    \"recsys.diversity.max_per_seed\","]
     #[doc = "    \"recsys.prior.weight.watchers\","]
     #[doc = "    \"recsys.prior.weight.external_score\","]
     #[doc = "    \"recsys.prior.weight.source_count\","]
@@ -13071,6 +13095,8 @@ pub mod types {
         RecsysDiversityMaxPerAuthor,
         #[serde(rename = "recsys.diversity.max_per_tag")]
         RecsysDiversityMaxPerTag,
+        #[serde(rename = "recsys.diversity.max_per_seed")]
+        RecsysDiversityMaxPerSeed,
         #[serde(rename = "recsys.prior.weight.watchers")]
         RecsysPriorWeightWatchers,
         #[serde(rename = "recsys.prior.weight.external_score")]
@@ -13148,6 +13174,7 @@ pub mod types {
                 Self::RecsysDiversityLambda => f.write_str("recsys.diversity.lambda"),
                 Self::RecsysDiversityMaxPerAuthor => f.write_str("recsys.diversity.max_per_author"),
                 Self::RecsysDiversityMaxPerTag => f.write_str("recsys.diversity.max_per_tag"),
+                Self::RecsysDiversityMaxPerSeed => f.write_str("recsys.diversity.max_per_seed"),
                 Self::RecsysPriorWeightWatchers => f.write_str("recsys.prior.weight.watchers"),
                 Self::RecsysPriorWeightExternalScore => {
                     f.write_str("recsys.prior.weight.external_score")
@@ -13216,6 +13243,7 @@ pub mod types {
                 "recsys.diversity.lambda" => Ok(Self::RecsysDiversityLambda),
                 "recsys.diversity.max_per_author" => Ok(Self::RecsysDiversityMaxPerAuthor),
                 "recsys.diversity.max_per_tag" => Ok(Self::RecsysDiversityMaxPerTag),
+                "recsys.diversity.max_per_seed" => Ok(Self::RecsysDiversityMaxPerSeed),
                 "recsys.prior.weight.watchers" => Ok(Self::RecsysPriorWeightWatchers),
                 "recsys.prior.weight.external_score" => Ok(Self::RecsysPriorWeightExternalScore),
                 "recsys.prior.weight.source_count" => Ok(Self::RecsysPriorWeightSourceCount),
@@ -23762,6 +23790,10 @@ pub mod types {
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
             >,
+            blurb: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
             chapter_count: ::std::result::Result<i64, ::std::string::String>,
             content_type: ::std::result::Result<super::ContentType, ::std::string::String>,
             cover_url: ::std::result::Result<
@@ -23790,6 +23822,7 @@ pub mod types {
                 Self {
                     because_series_id: Ok(Default::default()),
                     because_title: Ok(Default::default()),
+                    blurb: Ok(Default::default()),
                     chapter_count: Err("no value supplied for chapter_count".to_string()),
                     content_type: Err("no value supplied for content_type".to_string()),
                     cover_url: Ok(Default::default()),
@@ -23826,6 +23859,16 @@ pub mod types {
                 self.because_title = value
                     .try_into()
                     .map_err(|e| format!("error converting supplied value for because_title: {e}"));
+                self
+            }
+            pub fn blurb<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.blurb = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for blurb: {e}"));
                 self
             }
             pub fn chapter_count<T>(mut self, value: T) -> Self
@@ -23957,6 +24000,7 @@ pub mod types {
                 Ok(Self {
                     because_series_id: value.because_series_id?,
                     because_title: value.because_title?,
+                    blurb: value.blurb?,
                     chapter_count: value.chapter_count?,
                     content_type: value.content_type?,
                     cover_url: value.cover_url?,
@@ -23977,6 +24021,7 @@ pub mod types {
                 Self {
                     because_series_id: Ok(value.because_series_id),
                     because_title: Ok(value.because_title),
+                    blurb: Ok(value.blurb),
                     chapter_count: Ok(value.chapter_count),
                     content_type: Ok(value.content_type),
                     cover_url: Ok(value.cover_url),
@@ -26781,6 +26826,10 @@ pub mod types {
         }
         #[derive(Clone, Debug)]
         pub struct SeriesSummary {
+            blurb: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
             chapter_count: ::std::result::Result<i64, ::std::string::String>,
             content_type: ::std::result::Result<super::ContentType, ::std::string::String>,
             cover_url: ::std::result::Result<
@@ -26803,6 +26852,7 @@ pub mod types {
         impl ::std::default::Default for SeriesSummary {
             fn default() -> Self {
                 Self {
+                    blurb: Ok(Default::default()),
                     chapter_count: Err("no value supplied for chapter_count".to_string()),
                     content_type: Err("no value supplied for content_type".to_string()),
                     cover_url: Ok(Default::default()),
@@ -26818,6 +26868,16 @@ pub mod types {
             }
         }
         impl SeriesSummary {
+            pub fn blurb<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.blurb = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for blurb: {e}"));
+                self
+            }
             pub fn chapter_count<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<i64>,
@@ -26935,6 +26995,7 @@ pub mod types {
                 value: SeriesSummary,
             ) -> ::std::result::Result<Self, super::error::ConversionError> {
                 Ok(Self {
+                    blurb: value.blurb?,
                     chapter_count: value.chapter_count?,
                     content_type: value.content_type?,
                     cover_url: value.cover_url?,
@@ -26952,6 +27013,7 @@ pub mod types {
         impl ::std::convert::From<super::SeriesSummary> for SeriesSummary {
             fn from(value: super::SeriesSummary) -> Self {
                 Self {
+                    blurb: Ok(value.blurb),
                     chapter_count: Ok(value.chapter_count),
                     content_type: Ok(value.content_type),
                     cover_url: Ok(value.cover_url),
@@ -27317,6 +27379,10 @@ pub mod types {
         }
         #[derive(Clone, Debug)]
         pub struct SimilarSeries {
+            blurb: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
             chapter_count: ::std::result::Result<i64, ::std::string::String>,
             content_type: ::std::result::Result<super::ContentType, ::std::string::String>,
             cover_url: ::std::result::Result<
@@ -27344,6 +27410,7 @@ pub mod types {
         impl ::std::default::Default for SimilarSeries {
             fn default() -> Self {
                 Self {
+                    blurb: Ok(Default::default()),
                     chapter_count: Err("no value supplied for chapter_count".to_string()),
                     content_type: Err("no value supplied for content_type".to_string()),
                     cover_url: Ok(Default::default()),
@@ -27361,6 +27428,16 @@ pub mod types {
             }
         }
         impl SimilarSeries {
+            pub fn blurb<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.blurb = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for blurb: {e}"));
+                self
+            }
             pub fn chapter_count<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<i64>,
@@ -27498,6 +27575,7 @@ pub mod types {
                 value: SimilarSeries,
             ) -> ::std::result::Result<Self, super::error::ConversionError> {
                 Ok(Self {
+                    blurb: value.blurb?,
                     chapter_count: value.chapter_count?,
                     content_type: value.content_type?,
                     cover_url: value.cover_url?,
@@ -27517,6 +27595,7 @@ pub mod types {
         impl ::std::convert::From<super::SimilarSeries> for SimilarSeries {
             fn from(value: super::SimilarSeries) -> Self {
                 Self {
+                    blurb: Ok(value.blurb),
                     chapter_count: Ok(value.chapter_count),
                     content_type: Ok(value.content_type),
                     cover_url: Ok(value.cover_url),
@@ -32002,7 +32081,7 @@ impl Client {
     pub fn audit_actions(&self) -> builder::AuditActions<'_> {
         builder::AuditActions::new(self)
     }
-    #[doc = "Purge the catalogue\n\nEmpties the catalogue, one batch per call. The response says how much is left, and the\ncaller repeats until `done`.\n\n# Why this is not one request\n\nA full catalogue cascades into a dozen tables and takes minutes, far longer than the request\ntimeout allows. A single statement would therefore be killed and rolled back every time, and\nthe deployment could never actually be emptied. Batching makes the operation resumable\ninstead: each call commits, and an interrupted purge leaves a smaller catalogue rather than\nno progress at all.\n\nSends a `POST` request to `/v1/admin/catalogue/purge`\n\n```ignore\nlet response = client.purge_catalogue()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Purge the catalogue\n\nEmpties the catalogue for up to ten seconds per call. The response says how much this call\nremoved and how much is left, and the caller repeats until `done`.\n\n# Why this is not one request\n\nA full catalogue cascades into a dozen tables and takes minutes, far longer than the request\ntimeout allows. A single statement would therefore be killed and rolled back every time, and\nthe deployment could never actually be emptied. Batching makes the operation resumable\ninstead: each batch commits, and an interrupted purge leaves a smaller catalogue rather than\nno progress at all.\n\n# Why it is not one batch per request either\n\nSee [`PURGE_BUDGET`]: a call per batch spent the caller's rate-limit budget long before the\ncatalogue was empty.\n\nSends a `POST` request to `/v1/admin/catalogue/purge`\n\n```ignore\nlet response = client.purge_catalogue()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn purge_catalogue(&self) -> builder::PurgeCatalogue<'_> {
         builder::PurgeCatalogue::new(self)
     }
@@ -32638,7 +32717,7 @@ impl Client {
     pub fn providers(&self) -> builder::Providers<'_> {
         builder::Providers::new(self)
     }
-    #[doc = "Browse the catalogue\n\nFilter/sort/paginate the public series list (frontend §9.1). The body remains a plain\n`SeriesSummary[]`; pagination metadata rides on the `X-Total-Count` (rows matching the\nfilter) and `X-Next-Cursor` (next page index, absent on the last page) headers so existing\narray-decoding clients keep working.\n\nSends a `GET` request to `/v1/series`\n\nArguments:\n- `content_type`\n- `cursor`\n- `exclude_tag`: Tag slugs the series must not carry.\n- `limit`\n- `min_chapters`\n- `page`: Zero-based page index (alias: `cursor`).\n- `provider`: Provider slug the series must have a source on.\n- `query`\n- `sort`: `relevance | updated | title | chapters | sources | year | rating`. Defaults to\n`relevance` when `query` is supplied and `updated` when it is not; `relevance` without a\n`query` has nothing to rank and falls back to `updated`.\n- `status`\n- `tag`: Tag slugs the series must all carry.\n- `year_max`\n- `year_min`\n```ignore\nlet response = client.list()\n    .content_type(content_type)\n    .cursor(cursor)\n    .exclude_tag(exclude_tag)\n    .limit(limit)\n    .min_chapters(min_chapters)\n    .page(page)\n    .provider(provider)\n    .query(query)\n    .sort(sort)\n    .status(status)\n    .tag(tag)\n    .year_max(year_max)\n    .year_min(year_min)\n    .send()\n    .await;\n```"]
+    #[doc = "Browse the catalogue\n\nFilter/sort/paginate the public series list (frontend §9.1). The body remains a plain\n`SeriesSummary[]`; pagination metadata rides on the `X-Total-Count` (rows matching the\nfilter) and `X-Next-Cursor` (next page index, absent on the last page) headers so existing\narray-decoding clients keep working.\n\nSends a `GET` request to `/v1/series`\n\nArguments:\n- `content_type`\n- `cursor`\n- `exclude_tag`: Tag slugs the series must not carry.\n- `limit`\n- `min_chapters`\n- `page`: Zero-based page index (alias: `cursor`).\n- `provider`: Provider slug the series must have a source on.\n- `query`\n- `sort`: `relevance | updated | title | chapters | sources | year | rating`. Defaults to\n`relevance` when `query` is supplied and `updated` when it is not; `relevance` without a\n`query` has nothing to rank and falls back to `updated`.\n- `status`\n- `tag`: Tag slugs the series must all carry.\n- `tracking`: `tracked` narrows the list to series the caller already has on their watchlist,\n`untracked` to the rest. Requires an authenticated caller — whose watchlist it is comes\nfrom the token, never from a parameter.\n- `year_max`\n- `year_min`\n```ignore\nlet response = client.list()\n    .content_type(content_type)\n    .cursor(cursor)\n    .exclude_tag(exclude_tag)\n    .limit(limit)\n    .min_chapters(min_chapters)\n    .page(page)\n    .provider(provider)\n    .query(query)\n    .sort(sort)\n    .status(status)\n    .tag(tag)\n    .tracking(tracking)\n    .year_max(year_max)\n    .year_min(year_min)\n    .send()\n    .await;\n```"]
     pub fn list(&self) -> builder::List<'_> {
         builder::List::new(self)
     }
@@ -32654,7 +32733,7 @@ impl Client {
     pub fn similar(&self) -> builder::Similar<'_> {
         builder::Similar::new(self)
     }
-    #[doc = "List all tags\n\nEvery genre/tag in the catalogue with the number of series carrying it, commonest first\n(public).\n\nOrdered by usage rather than alphabetically because the facet panel that consumes this can\nonly show so many chips at once: an alphabetical list truncated to fit cuts off at whatever\nletter the cap lands on, hiding the genres most of the catalogue actually uses. The body is a\nsuperset of the previous `Tag[]`, so an older client reading only `id`/`slug`/`name` is\nunaffected — it just sees them in a different order.\n\nSends a `GET` request to `/v1/tags`\n\n```ignore\nlet response = client.tags()\n    .send()\n    .await;\n```"]
+    #[doc = "List all tags\n\nEvery genre/tag in the catalogue with the number of series carrying it, commonest first\n(public).\n\nOrdered by usage rather than alphabetically because the facet panel that consumes this can\nonly show so many chips at once: an alphabetical list truncated to fit cuts off at whatever\nletter the cap lands on, hiding the genres most of the catalogue actually uses. The body is a\nsuperset of the previous `Tag[]`, so an older client reading only `id`/`slug`/`name` is\nunaffected — it just sees them in a different order.\n\nAdult-classifying genres are withheld from a caller the gate closes on. They are the terms\nthat put a series behind [`crate::content_gate`] in the first place, so offering them as\nfilter chips advertises a slice of the catalogue the same request cannot return a single row\nof — and names it in the reader's own filter panel, which is the part the gate exists to\navoid.\n\nSends a `GET` request to `/v1/tags`\n\n```ignore\nlet response = client.tags()\n    .send()\n    .await;\n```"]
     pub fn tags(&self) -> builder::Tags<'_> {
         builder::Tags::new(self)
     }
@@ -44974,6 +45053,7 @@ pub mod builder {
         sort: Result<Option<::std::string::String>, String>,
         status: Result<Option<::std::string::String>, String>,
         tag: Result<Option<::std::vec::Vec<::std::string::String>>, String>,
+        tracking: Result<Option<::std::string::String>, String>,
         year_max: Result<Option<i32>, String>,
         year_min: Result<Option<i32>, String>,
     }
@@ -44992,6 +45072,7 @@ pub mod builder {
                 sort: Ok(None),
                 status: Ok(None),
                 tag: Ok(None),
+                tracking: Ok(None),
                 year_max: Ok(None),
                 year_min: Ok(None),
             }
@@ -45095,6 +45176,15 @@ pub mod builder {
             self . tag = value . try_into () . map (Some) . map_err (| _ | "conversion to `:: std :: vec :: Vec < :: std :: string :: String >` for tag failed" . to_string ()) ;
             self
         }
+        pub fn tracking<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.tracking = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for tracking failed".to_string()
+            });
+            self
+        }
         pub fn year_max<V>(mut self, value: V) -> Self
         where
             V: std::convert::TryInto<i32>,
@@ -45118,7 +45208,10 @@ pub mod builder {
         #[doc = "Sends a `GET` request to `/v1/series`"]
         pub async fn send(
             self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::SeriesSummary>>, Error<()>> {
+        ) -> Result<
+            ResponseValue<::std::vec::Vec<types::SeriesSummary>>,
+            Error<types::ProblemDetails>,
+        > {
             let Self {
                 client,
                 content_type,
@@ -45132,6 +45225,7 @@ pub mod builder {
                 sort,
                 status,
                 tag,
+                tracking,
                 year_max,
                 year_min,
             } = self;
@@ -45146,6 +45240,7 @@ pub mod builder {
             let sort = sort.map_err(Error::InvalidRequest)?;
             let status = status.map_err(Error::InvalidRequest)?;
             let tag = tag.map_err(Error::InvalidRequest)?;
+            let tracking = tracking.map_err(Error::InvalidRequest)?;
             let year_max = year_max.map_err(Error::InvalidRequest)?;
             let year_min = year_min.map_err(Error::InvalidRequest)?;
             let url = format!("{}/v1/series", client.baseurl,);
@@ -45182,6 +45277,7 @@ pub mod builder {
                 .query(&progenitor_client::QueryParam::new("sort", &sort))
                 .query(&progenitor_client::QueryParam::new("status", &status))
                 .query(&progenitor_client::QueryParam::new("tag", &tag))
+                .query(&progenitor_client::QueryParam::new("tracking", &tracking))
                 .query(&progenitor_client::QueryParam::new("year_max", &year_max))
                 .query(&progenitor_client::QueryParam::new("year_min", &year_min))
                 .headers(header_map)
@@ -45195,6 +45291,9 @@ pub mod builder {
             let response = result?;
             match response.status().as_u16() {
                 200u16 => ResponseValue::from_response(response).await,
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
                 _ => Err(Error::UnexpectedResponse(response)),
             }
         }

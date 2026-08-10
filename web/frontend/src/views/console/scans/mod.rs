@@ -50,6 +50,12 @@ fn parse_state(token: &str) -> Option<WireRunState> {
         .map(|(_, state)| *state)
 }
 
+/// Runs per page of the history table.
+///
+/// The server's own default, stated here because the panel now sends it: a page size the client
+/// leaves unsaid is one the pager cannot compute an offset from.
+const PAGE_SIZE: i64 = 30;
+
 /// The filter as every fetch on this panel reads it — resolved once from the URL rather than
 /// re-parsed per resource, so the history, the health figures and the failure feed cannot end up
 /// answering three slightly different questions.
@@ -61,6 +67,10 @@ struct ScanFilter {
     sort: String,
     cleared: bool,
     since: TimeWindow,
+    /// Zero-based page of the run history. Part of the filter because the fetch is keyed on it,
+    /// and only the *first* page may take runs the live stream has pushed since — see
+    /// [`merge_runs`].
+    page: u32,
 }
 
 impl ScanFilter {
@@ -80,7 +90,23 @@ impl ScanFilter {
                 .unwrap_or_else(|| RunSort::Recent.token().to_owned()),
             cleared: query.cleared,
             since: query.since,
+            page: query.page,
         }
+    }
+
+    /// Rows to skip for the requested page.
+    fn offset(&self) -> i64 {
+        i64::from(self.page).saturating_mul(PAGE_SIZE)
+    }
+
+    /// Whether the live push may contribute rows the fetch does not have.
+    ///
+    /// Only at the top of an unnarrowed, newest-first list: that is the one view whose first row
+    /// is by definition the newest run, so a run created since the fetch belongs at its head.
+    /// Anywhere else — under a filter, on a different ordering, or on page two — a pushed run is
+    /// a row from *somewhere* in the list, and putting it here would be a lie about where.
+    fn takes_live_head(&self) -> bool {
+        !self.narrows_runs() && self.page == 0
     }
 
     fn run_state(&self) -> Option<WireRunState> {
@@ -108,29 +134,49 @@ impl ScanFilter {
 
 /// Reconcile the fetched page with the live push.
 ///
-/// The stream carries an unfiltered, unsorted top-twenty by creation, which is the *right*
-/// answer only when nothing narrows the list. Under any filter the fetch is authoritative and
-/// the push is used solely to refresh the counters of rows the fetch already returned — so a
-/// run's progress still moves live, and the filter still means what it says.
+/// **The fetch decides membership and order. Always.** The stream carries an unfiltered top
+/// twenty by creation; it is used to refresh the counters of rows the fetch returned, so a run's
+/// progress moves live, and — at the head of an unnarrowed newest-first list only — to add runs
+/// created since the fetch, trimmed back to the page size.
 ///
-/// Showing the push wholesale under a filter is the bug this replaces: it silently answered a
-/// different question from the one the operator asked, with no indication that it had.
-fn merge_runs(fetched: &[ScanRun], pushed: Option<&Vec<ScanRun>>, filtered: bool) -> Vec<ScanRun> {
+/// Two bugs live here, and the second is why the first's fix was not enough:
+///
+/// 1. The push used to be rendered *instead of* the fetch whenever nothing narrowed the list, so
+///    a filter changed nothing an operator could see.
+/// 2. The fix made that conditional on a filter — which left the unfiltered case still replacing
+///    a thirty-row page with a twenty-row push. "Any mode, any state" showed ten fewer runs than
+///    the same panel under a filter, and the count beside it said `20 of 743` while the server
+///    had answered with thirty. Paging past the first page was impossible for the same reason:
+///    page two's rows were dropped in favour of page one's push.
+fn merge_runs(
+    fetched: &[ScanRun],
+    pushed: Option<&Vec<ScanRun>>,
+    live_head: bool,
+    page_size: usize,
+) -> Vec<ScanRun> {
     let Some(pushed) = pushed else {
         return fetched.to_vec();
     };
-    if !filtered {
-        return pushed.clone();
+    let refreshed = fetched.iter().map(|row| {
+        pushed
+            .iter()
+            .find(|fresh| fresh.id == row.id)
+            .cloned()
+            .unwrap_or_else(|| row.clone())
+    });
+    if !live_head {
+        return refreshed.collect();
     }
-    fetched
+    // Anything pushed that this page does not hold is newer than everything on it: the push is
+    // the newest twenty and the page is the newest thirty, so the difference can only be runs
+    // created since the fetch. They lead, in the push's own newest-first order.
+    let held: std::collections::HashSet<_> = fetched.iter().map(|row| row.id).collect();
+    pushed
         .iter()
-        .map(|row| {
-            pushed
-                .iter()
-                .find(|fresh| fresh.id == row.id)
-                .cloned()
-                .unwrap_or_else(|| row.clone())
-        })
+        .filter(|row| !held.contains(&row.id))
+        .cloned()
+        .chain(refreshed)
+        .take(page_size)
         .collect()
 }
 
@@ -160,7 +206,11 @@ pub(in crate::views::console) fn ScanQueue(tick: RefreshTick) -> Element {
         tick.track();
         let client = api.client();
         async move {
-            let mut request = client.list_scans().sort(filter.ordering());
+            let mut request = client
+                .list_scans()
+                .sort(filter.ordering())
+                .limit(i32::try_from(PAGE_SIZE).unwrap_or(30))
+                .offset(i32::try_from(filter.offset()).unwrap_or(0));
             if let Some(slug) = filter.provider.as_deref() {
                 request = request.provider(slug);
             }
@@ -321,6 +371,8 @@ pub(in crate::views::console) fn ScanQueue(tick: RefreshTick) -> Element {
     };
 
     let narrowed = filter.narrows_runs();
+    let live_head = filter.takes_live_head();
+    let page = filter.page;
     rsx! {
         section { class: "ik-tile", style: "margin-bottom:18px;",
             div { class: "ik-flex", style: "justify-content:space-between;flex-wrap:wrap;",
@@ -392,7 +444,8 @@ pub(in crate::views::console) fn ScanQueue(tick: RefreshTick) -> Element {
                         let merged = merge_runs(
                             &fetched.items,
                             live.runs.read().as_ref(),
-                            narrowed,
+                            live_head,
+                            usize::try_from(PAGE_SIZE).unwrap_or(30),
                         );
                         // The stream wins once it has pushed: it is at most three seconds old,
                         // and the seed behind it is from whenever the panel opened.
@@ -407,6 +460,8 @@ pub(in crate::views::console) fn ScanQueue(tick: RefreshTick) -> Element {
                                 runs: merged,
                                 total: fetched.total,
                                 narrowed,
+                                page,
+                                page_size: PAGE_SIZE,
                             }
                         }
                     },
@@ -498,7 +553,7 @@ fn scope_label(i18n: crate::i18n::Translator, run: &ScanRun) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{merge_runs, ScanFilter, STATE_FILTERS};
+    use super::{merge_runs, ScanFilter, PAGE_SIZE, STATE_FILTERS};
     use crate::models::{RunSort, RunSortExt, ScanMode, ScanModeExt, ScanRun};
     use crate::views::console::query::Window;
     use crate::views::console::ConsoleQuery;
@@ -529,7 +584,7 @@ mod tests {
         let fetched = vec![a_run(kept, 1)];
         let pushed = vec![a_run(kept, 7), a_run(excluded, 3)];
 
-        let merged = merge_runs(&fetched, Some(&pushed), true);
+        let merged = merge_runs(&fetched, Some(&pushed), false, 30);
         assert_eq!(merged.len(), 1, "the pushed extra row is not in the filter");
         assert_eq!(
             merged[0].done_tasks, 7,
@@ -537,24 +592,81 @@ mod tests {
         );
     }
 
-    /// With nothing narrowing the list the push *is* the better answer — it is two seconds old
-    /// and the fetch is from whenever the panel opened.
+    /// The second half of the same defect. With nothing narrowing the list the push used to be
+    /// shown *whole* — a twenty-row stream replacing a thirty-row page, so "any state, any mode"
+    /// showed ten fewer runs than the same panel under a filter and said `20 of 743` about it.
+    /// The fetch is the page; the push may only add what is newer than all of it.
     #[test]
-    fn an_unfiltered_list_shows_the_live_push_whole() {
-        let fetched = vec![a_run("018f4c2a-0000-7000-8000-000000000001", 1)];
-        let pushed = vec![
-            a_run("018f4c2a-0000-7000-8000-000000000001", 7),
-            a_run("018f4c2a-0000-7000-8000-000000000002", 3),
-        ];
-        assert_eq!(merge_runs(&fetched, Some(&pushed), false).len(), 2);
+    fn an_unfiltered_page_keeps_every_row_the_fetch_returned() {
+        let fetched: Vec<ScanRun> = (1..=30)
+            .map(|n| a_run(&format!("018f4c2a-0000-7000-8000-{n:012}"), 1))
+            .collect();
+        let pushed = vec![a_run("018f4c2a-0000-7000-8000-000000000001", 7)];
+
+        let merged = merge_runs(&fetched, Some(&pushed), true, 30);
+        assert_eq!(merged.len(), 30, "the push must not truncate the page");
+        assert_eq!(
+            merged[0].done_tasks, 7,
+            "the pushed row still refreshes its counters"
+        );
+    }
+
+    /// A run started while the panel was open belongs at the head of the newest-first page, and
+    /// the page must not grow past its own size to make room for it.
+    #[test]
+    fn a_run_created_since_the_fetch_leads_the_first_page() {
+        let held = "018f4c2a-0000-7000-8000-000000000001";
+        let created_since = "018f4c2a-0000-7000-8000-000000000009";
+        let fetched = vec![a_run(held, 1)];
+        let pushed = vec![a_run(created_since, 0), a_run(held, 4)];
+
+        let merged = merge_runs(&fetched, Some(&pushed), true, 30);
+        assert_eq!(merged.len(), 2);
+        assert_eq!(merged[0].id.to_string(), created_since);
+        assert_eq!(merged[1].done_tasks, 4);
+
+        // …but not on page two, where "newer than everything here" is not a thing the panel
+        // knows. Its fetch is authoritative whole.
+        let page_two = merge_runs(&fetched, Some(&pushed), false, 30);
+        assert_eq!(page_two.len(), 1);
     }
 
     /// Before a single push has landed there is nothing to merge, and the fetch stands alone.
     #[test]
     fn without_a_push_the_fetch_stands() {
         let fetched = vec![a_run("018f4c2a-0000-7000-8000-000000000001", 1)];
-        assert_eq!(merge_runs(&fetched, None, false).len(), 1);
-        assert_eq!(merge_runs(&fetched, None, true).len(), 1);
+        assert_eq!(merge_runs(&fetched, None, false, 30).len(), 1);
+        assert_eq!(merge_runs(&fetched, None, true, 30).len(), 1);
+    }
+
+    /// The live head is the *top of an unnarrowed list*, not merely an unfiltered one: every
+    /// control that reorders or pages the list has to withdraw it, or a run created a second ago
+    /// is drawn at the top of page four.
+    #[test]
+    fn only_the_top_of_an_unnarrowed_list_takes_the_live_push() {
+        assert!(ScanFilter::of(&ConsoleQuery::default()).takes_live_head());
+        let paged = ConsoleQuery {
+            page: 1,
+            ..ConsoleQuery::default()
+        };
+        assert!(!ScanFilter::of(&paged).takes_live_head());
+        let filtered = ConsoleQuery {
+            status: Some("failed".to_owned()),
+            ..ConsoleQuery::default()
+        };
+        assert!(!ScanFilter::of(&filtered).takes_live_head());
+    }
+
+    /// A pager that asks for the wrong rows is worse than none: page two must skip exactly one
+    /// page, and page one must skip nothing.
+    #[test]
+    fn the_page_index_becomes_the_offset_it_names() {
+        assert_eq!(ScanFilter::of(&ConsoleQuery::default()).offset(), 0);
+        let third = ConsoleQuery {
+            page: 2,
+            ..ConsoleQuery::default()
+        };
+        assert_eq!(ScanFilter::of(&third).offset(), PAGE_SIZE * 2);
     }
 
     /// Each control has to register as narrowing the list, or it silently loses to the push.

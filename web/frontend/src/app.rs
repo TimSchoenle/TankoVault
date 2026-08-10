@@ -13,7 +13,7 @@ use crate::title::PageTitle;
 use crate::views::{
     Account, AnilistCallback, Console, ConsoleEntity, ConsoleQuery, ConsoleSection, Discover,
     DiscoverQuery, ForgotPassword, Home, Legal, Login, NotFound, Notifications, Recommendations,
-    ResetPassword, Search, Series, VerifyEmail, Watchlist, WatchlistQuery,
+    ResetPassword, Search, SearchQuery, Series, VerifyEmail, Watchlist, WatchlistQuery,
 };
 use dioxus::prelude::*;
 
@@ -49,8 +49,10 @@ pub(crate) enum Route {
         // and exchanges it via the bearer-authenticated callback endpoint.
         #[route("/account/anilist-callback?:code")]
         AnilistCallback { code: String },
-        #[route("/search?:q")]
-        Search { q: String },
+        // The term *and* its options ride in the query string, so a search worth sending to
+        // someone arrives narrowed the way its sender narrowed it; see `views::search::query`.
+        #[route("/search?:..query")]
+        Search { query: SearchQuery },
         #[route("/login")]
         Login {},
         // Email-confirmation and password-reset landing pages; the token rides in the query

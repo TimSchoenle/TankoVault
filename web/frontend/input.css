@@ -316,6 +316,16 @@ a { color: inherit; text-decoration: none; }
 /* The sheet is already a gapped column, so the strip's own bottom margin would double it. */
 .ik-prefs .ik-tabs { margin-bottom: 0; }
 
+/* A screen's own sub-navigation, for the strips too long to wrap gracefully (Account's ten
+ * panels). One row that scrolls, so the strip stays a single line aligned with the page head
+ * above it however many entries a deployment's features leave visible. The fade marks that
+ * there is more to the right — a scroll container with a hidden scrollbar and no edge treatment
+ * reads as a list that simply stops. */
+.ik-subnav { position: relative; margin-bottom: 18px; }
+.ik-subnav .ik-tabs { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; margin-bottom: 0; scrollbar-width: thin; scroll-snap-type: x proximity; }
+.ik-subnav .ik-tab { flex: none; white-space: nowrap; scroll-snap-align: start; }
+.ik-subnav::after { content: ""; position: absolute; right: 0; top: 0; bottom: 1px; width: 28px; pointer-events: none; background: linear-gradient(to right, transparent, var(--bg)); }
+
 /* ---------------------------------------------------------------------------------------------
  * The step-up prompt (`components::StepUpGuard`).
  *
@@ -448,7 +458,11 @@ a { color: inherit; text-decoration: none; }
 .ik-userbox .who { flex: 1; min-width: 0; }
 .ik-userbox .name { font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ik-userbox .sub { font-family: var(--font-mono); font-size: 10px; color: var(--faint); display: flex; align-items: center; gap: 5px; }
-.ik-userbox .gear { color: var(--muted); display: grid; place-items: center; padding: 6px; border-radius: 8px; }
+/* `flex: none` and a fixed box: without them the gear is a flex item with no basis beside a
+   `flex: 1` name, so a long display name squeezed the anchor and the SVG inside it into a
+   sliver of itself. */
+.ik-userbox .gear { flex: none; width: 32px; height: 32px; color: var(--muted); display: grid; place-items: center; border-radius: 8px; }
+.ik-userbox .gear svg { flex: none; }
 .ik-userbox .gear:hover { background: rgba(255,255,255,.05); color: var(--text); }
 
 .ik-main { min-width: 0; display: flex; flex-direction: column; }
@@ -703,6 +717,9 @@ a { color: inherit; text-decoration: none; }
 .ik-card-meta { margin-top: 6px; display: flex; gap: 6px; align-items: center; color: var(--muted); font-size: 11.5px; flex-wrap: wrap; }
 .ik-card-meta + .ik-card-meta { margin-top: 4px; }
 .ik-card-dot { color: var(--faint-2); }
+/* Clamped rather than truncated server-side to a line count: the blurb arrives cut to a
+   character budget, and how many lines that is depends on the column width. */
+.ik-card-blurb { margin: 7px 0 0; font-size: 12px; line-height: 1.45; color: var(--text-3); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .ik-card-tags { margin-top: 8px; display: flex; gap: 5px; flex-wrap: wrap; overflow: hidden; max-height: 22px; }
 .ik-minitag { border: 1px solid var(--border-soft); border-radius: 6px; padding: 1px 6px; font-size: 10.5px; color: var(--text-3); white-space: nowrap; }
 
@@ -750,7 +767,11 @@ a { color: inherit; text-decoration: none; }
 /* The scan console's live tail: one line per settled task. Scrolls rather than growing, because
  * it is pushed every few seconds and a list that lengthens under the reader moves the rest of
  * the panel down while they are reading it. */
-.ik-tail { margin-top: 6px; max-height: 216px; overflow-y: auto; border: 1px solid var(--border); border-radius: 10px; }
+/* Grows with the window rather than staying at the 216px a 900px-tall laptop wanted: on a tall
+   display the tail was six rows and a scrollbar with empty page underneath it. `resize` keeps
+   the operator's own adjustment on top of that, which is the one thing a viewport unit cannot
+   answer — how much of *this* screen they want spent on the tail. */
+.ik-tail { margin-top: 6px; max-height: clamp(216px, 34vh, 640px); overflow: auto; resize: vertical; border: 1px solid var(--border); border-radius: 10px; }
 .ik-tail > .row { display: flex; align-items: center; gap: 8px; padding: 5px 10px; border-bottom: 1px solid var(--border-row); white-space: nowrap; }
 .ik-tail > .row:last-child { border-bottom: none; }
 .ik-tail .dot { width: 6px; height: 6px; border-radius: 999px; flex: none; }
@@ -1001,6 +1022,16 @@ a { color: inherit; text-decoration: none; }
 /* Results header + active filters + pagination. */
 .ik-results-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
 .ik-results-head .ik-page-title { margin: 0; }
+
+/* Search's own field and options. The landing state is the whole screen — a reader who clicked
+ * "Search" and got a heading about a search they had not made needed somewhere to type. */
+.ik-search-form { display: flex; align-items: center; gap: 10px; position: relative; margin-bottom: 14px; }
+.ik-search-form .ik-input { flex: 1; min-width: 0; padding-left: 36px; height: 42px; font-size: 15px; }
+.ik-search-icon { position: absolute; left: 12px; display: flex; color: var(--faint); pointer-events: none; }
+.ik-search-options { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; }
+.ik-search-landing { max-width: 640px; margin: clamp(24px, 9vh, 96px) auto 0; text-align: center; }
+.ik-search-landing .ik-search-form { text-align: left; }
+.ik-search-mark { width: 56px; height: 56px; margin: 0 auto; border-radius: 16px; display: grid; place-items: center; color: var(--acc3); background: color-mix(in srgb, var(--acc) 12%, transparent); }
 .ik-active-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
 .ik-afchip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid color-mix(in srgb, var(--acc) 40%, transparent); background: color-mix(in srgb, var(--acc) 12%, transparent); color: var(--acc3); border-radius: 20px; padding: 3px 6px 3px 11px; font-size: 12px; }
 .ik-afchip button { background: none; border: none; color: inherit; cursor: pointer; display: inline-flex; padding: 2px; border-radius: 999px; }
@@ -1267,18 +1298,21 @@ a { color: inherit; text-decoration: none; }
  * content column out of its max-width and padding instead of fighting them with negative
  * margins. Every other screen is unaffected.
  * ========================================================================== */
-/* The console opts out of the padding; it opts out of the *measure* by having `Shell` set
- * `--measure: none` for its route, which the `.ik-measure` row inside reads directly. */
-.ik-content:has(.ik-cons) { padding: 0; }
+/* The console keeps the page's top padding so its title sits on the same line as every other
+ * screen's, and drops the horizontal padding so the rail-and-pane grid still reaches both edges.
+ * It opts out of the *measure* by having `Shell` set `--measure: none` for its route, which the
+ * `.ik-measure` row inside reads directly. */
+.ik-content:has(.ik-cons) { padding: 28px 0 0; }
 .ik-cons { display: flex; flex-direction: column; min-height: calc(100vh - var(--chrome-h) - 64px); }
-.ik-cons-bar { display: flex; align-items: center; gap: 14px; padding: 0 18px; height: 56px; flex: none; background: var(--rail); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
-.ik-cons-brand { display: flex; align-items: center; gap: 9px; }
-.ik-cons-brand .nm { font-family: var(--font-display); font-weight: 600; font-size: 15px; }
-.ik-cons-tile { width: 26px; height: 26px; border-radius: 8px; flex: none; display: grid; place-items: center; color: #fff; background: linear-gradient(150deg, var(--acc), var(--acc-dk)); }
-.ik-cons-crumb { font-family: var(--font-mono); font-size: 12px; color: var(--faint); }
-.ik-cons-jump { display: flex; align-items: center; gap: 9px; flex: 1; max-width: 420px; background: var(--surface); border: 1px solid var(--border-ctl); border-radius: 10px; padding: 8px 11px; color: var(--faint); font: inherit; font-size: 13px; cursor: pointer; text-align: left; }
-.ik-cons-jump:hover { border-color: var(--acc); }
-.ik-cons-jump .kbd { margin-left: auto; font-family: var(--font-mono); font-size: 11px; border: 1px solid var(--border-ctl); border-radius: 6px; padding: 2px 6px; }
+/* A page head, not an app bar: no surface of its own, and indented to the page gutter so the
+ * title lines up with the one on Discover or Account. The `--rail` bar it replaces made the
+ * console read as a second application mounted inside the first. */
+.ik-cons-bar { display: flex; align-items: baseline; gap: 14px; padding: 0 var(--gutter) 16px; flex: none; flex-wrap: wrap; }
+.ik-cons-heading { display: flex; align-items: baseline; gap: 10px; min-width: 0; flex-wrap: wrap; }
+.ik-cons-bar .ik-page-title { margin: 0; }
+.ik-cons-crumb { font-family: var(--font-mono); font-size: 12.5px; color: var(--faint); }
+.ik-cons-crumb::before { content: "/"; margin-right: 7px; color: var(--faint-2); }
+.ik-cons-body { border-top: 1px solid var(--border); }
 
 .ik-cons-body { display: grid; grid-template-columns: 186px 328px 1fr; grid-template-areas: "rail list insp"; flex: 1; min-height: 660px; }
 .ik-cons-body.wide { grid-template-columns: 186px 1fr; grid-template-areas: "rail insp"; }
@@ -1378,7 +1412,7 @@ a { color: inherit; text-decoration: none; }
 @media (max-width: 1100px) {
   .ik-cons-body { grid-template-columns: 170px 1fr; grid-template-areas: "rail list" "rail insp"; }
   .ik-cons-body.wide { grid-template-columns: 170px 1fr; grid-template-areas: "rail insp"; }
-  .ik-cons-list { border-right: none; border-bottom: 1px solid var(--border); max-height: 300px; overflow-y: auto; }
+  .ik-cons-list { border-right: none; border-bottom: 1px solid var(--border); max-height: clamp(300px, 42vh, 720px); overflow: auto; resize: vertical; }
   .ik-cons-inspbody { grid-template-columns: 1fr; }
 }
 @media (max-width: 980px) {

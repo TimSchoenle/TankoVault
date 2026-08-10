@@ -93,6 +93,14 @@ pub struct AppState {
     /// The console's per-provider table, cached: it aggregates every chapter row by provider,
     /// and two console tabs request it.
     pub provider_stats: Arc<crate::cache::Cached<Vec<tankovault_db::repo::stats::ProviderStat>>>,
+    /// The genre terms that classify a series as adult, as intake applies them.
+    ///
+    /// The same set the worker ingests with, so the public tag facet withholds exactly the terms
+    /// that put a series behind the gate — a second, API-local list would drift from the one that
+    /// did the classifying and start naming genres the reader can, or cannot, actually reach.
+    ///
+    /// `Arc` because axum clones state per request, and this is a hash set.
+    pub adult_tags: Arc<tankovault_domain::AdultTagSet>,
 }
 
 /// Where a request came from, for the audit trail.

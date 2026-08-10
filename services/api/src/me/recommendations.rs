@@ -55,6 +55,7 @@ struct ShelfTuning {
     negative_weight: f32,
     diversity_lambda: f32,
     max_per_author: usize,
+    max_per_seed: usize,
     /// Both the default shelf length and the ceiling on what a caller may ask for. One knob,
     /// because the registry publishes one: an operator who wants shorter shelves means shorter
     /// shelves, not a shorter default a query parameter can walk straight past.
@@ -92,6 +93,7 @@ impl ShelfTuning {
             negative_weight: set.get_f32(Tunable::ScoreWeightNegative),
             diversity_lambda: set.get_f32(Tunable::DiversityLambda),
             max_per_author: set.get_usize(Tunable::DiversityMaxPerAuthor),
+            max_per_seed: set.get_usize(Tunable::DiversityMaxPerSeed),
             shelf_size: set.get_i64(Tunable::ServeShelfSize),
             shelf_ttl_secs: set.get(Tunable::ServeShelfTtlSeconds),
             feedback_decay_days: set.get_i32(Tunable::ServeFeedbackDecayDays),
@@ -125,6 +127,10 @@ pub struct Recommendation {
     pub chapter_count: i64,
     pub latest_chapter: Option<f64>,
     pub release_year: Option<i32>,
+    /// The opening of the description, trimmed to a card's worth. See
+    /// [`crate::series::blurb`] — one wording, so a recommendation and a search hit describe a
+    /// series identically.
+    pub blurb: Option<String>,
     /// Tag names, alphabetically, capped for the card that shows them.
     pub tags: Vec<String>,
     pub score: f32,
@@ -524,7 +530,10 @@ async fn rank_and_render(
         tuning.diversity_lambda,
         similarity,
     );
-    let capped = tankovault_recsys::cap_by(diversified, tuning.max_per_author, |id| {
+    // Before the author cap, not after: this one drops whole runs, and capping authors first
+    // would spend the shelf's places on picks the seed cap is about to remove.
+    let spread = tankovault_recsys::cap_by_seed(diversified, tuning.max_per_seed);
+    let capped = tankovault_recsys::cap_by(spread, tuning.max_per_author, |id| {
         vector_of.get(&id).and_then(|vector| {
             vector
                 .iter()
@@ -599,6 +608,7 @@ async fn render(
                 chapter_count: counts.map_or(0, |c| c.chapter_count),
                 latest_chapter: counts.and_then(|c| c.latest_number),
                 release_year: item.series.release_year,
+                blurb: crate::series::blurb(item.series.description.as_deref()),
                 tags: tags
                     .get(&id)
                     .map(|names| names.iter().take(CARD_TAGS).cloned().collect())

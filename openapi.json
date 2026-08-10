@@ -3442,6 +3442,13 @@
               "null"
             ]
           },
+          "blurb": {
+            "description": "The opening of the description, trimmed to a card's worth. See\n[`crate::series::blurb`] — one wording, so a recommendation and a search hit describe a\nseries identically.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "chapter_count": {
             "description": "Distinct whole chapters across every source — the figure a reader deciding whether to\nstart something actually wants, and the same one the series screen prints.",
             "format": "int64",
@@ -4596,6 +4603,13 @@
       "SeriesSummary": {
         "description": "One card in a catalogue grid.\n\nGrown rather than replaced: a deployed SPA outlives a server change, so every field an older\nclient reads is still here and the additions are ignored by it. `source_count` is kept for\nthat reason alone — the surfaces that used to print it now print [`Self::chapter_count`],\nwhich is what a reader was actually trying to learn from it.",
         "properties": {
+          "blurb": {
+            "description": "The opening of the description, trimmed to a card's worth. `None` when the series has\nnone, which a card renders as nothing rather than as empty space.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "chapter_count": {
             "description": "Distinct **whole** chapters across every source, so a title carried by four providers is\nnot counted four times and a part release does not count as its own chapter. This is the\nsame figure the series screen prints, so a card and the page it opens agree.",
             "format": "int64",
@@ -5750,6 +5764,7 @@
           "recsys.diversity.lambda",
           "recsys.diversity.max_per_author",
           "recsys.diversity.max_per_tag",
+          "recsys.diversity.max_per_seed",
           "recsys.prior.weight.watchers",
           "recsys.prior.weight.external_score",
           "recsys.prior.weight.source_count",
@@ -6650,7 +6665,7 @@
     },
     "/v1/admin/catalogue/purge": {
       "post": {
-        "description": "Empties the catalogue, one batch per call. The response says how much is left, and the\ncaller repeats until `done`.\n\n# Why this is not one request\n\nA full catalogue cascades into a dozen tables and takes minutes, far longer than the request\ntimeout allows. A single statement would therefore be killed and rolled back every time, and\nthe deployment could never actually be emptied. Batching makes the operation resumable\ninstead: each call commits, and an interrupted purge leaves a smaller catalogue rather than\nno progress at all.",
+        "description": "Empties the catalogue for up to ten seconds per call. The response says how much this call\nremoved and how much is left, and the caller repeats until `done`.\n\n# Why this is not one request\n\nA full catalogue cascades into a dozen tables and takes minutes, far longer than the request\ntimeout allows. A single statement would therefore be killed and rolled back every time, and\nthe deployment could never actually be emptied. Batching makes the operation resumable\ninstead: each batch commits, and an interrupted purge leaves a smaller catalogue rather than\nno progress at all.\n\n# Why it is not one batch per request either\n\nSee [`PURGE_BUDGET`]: a call per batch spent the caller's rate-limit budget long before the\ncatalogue was empty.",
         "operationId": "purge_catalogue",
         "requestBody": {
           "content": {
@@ -16802,6 +16817,15 @@
             }
           },
           {
+            "description": "`tracked` narrows the list to series the caller already has on their watchlist,\n`untracked` to the rest. Requires an authenticated caller — whose watchlist it is comes\nfrom the token, never from a parameter.",
+            "in": "query",
+            "name": "tracking",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "`relevance | updated | title | chapters | sources | year | rating`. Defaults to\n`relevance` when `query` is supplied and `updated` when it is not; `relevance` without a\n`query` has nothing to rank and falls back to `updated`.",
             "in": "query",
             "name": "sort",
@@ -16868,6 +16892,16 @@
                 }
               }
             }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "`tracking` was supplied without an authenticated caller"
           }
         },
         "summary": "Browse the catalogue",
@@ -17037,7 +17071,7 @@
     },
     "/v1/tags": {
       "get": {
-        "description": "Every genre/tag in the catalogue with the number of series carrying it, commonest first\n(public).\n\nOrdered by usage rather than alphabetically because the facet panel that consumes this can\nonly show so many chips at once: an alphabetical list truncated to fit cuts off at whatever\nletter the cap lands on, hiding the genres most of the catalogue actually uses. The body is a\nsuperset of the previous `Tag[]`, so an older client reading only `id`/`slug`/`name` is\nunaffected — it just sees them in a different order.",
+        "description": "Every genre/tag in the catalogue with the number of series carrying it, commonest first\n(public).\n\nOrdered by usage rather than alphabetically because the facet panel that consumes this can\nonly show so many chips at once: an alphabetical list truncated to fit cuts off at whatever\nletter the cap lands on, hiding the genres most of the catalogue actually uses. The body is a\nsuperset of the previous `Tag[]`, so an older client reading only `id`/`slug`/`name` is\nunaffected — it just sees them in a different order.\n\nAdult-classifying genres are withheld from a caller the gate closes on. They are the terms\nthat put a series behind [`crate::content_gate`] in the first place, so offering them as\nfilter chips advertises a slice of the catalogue the same request cannot return a single row\nof — and names it in the reader's own filter panel, which is the part the gate exists to\navoid.",
         "operationId": "tags",
         "responses": {
           "200": {

@@ -33,7 +33,7 @@ pub mod weighting;
 pub use affinity::{AffinityParams, Interaction, affinity};
 pub use embedding::{Basis, GramAccumulator};
 pub use features::{FeatureKey, FeatureKind, SeriesFacts, digest, extract, length_bucket};
-pub use ranking::{Candidate, Path, PathWeights, Scored, blend, cap_by, diversify};
+pub use ranking::{Candidate, Path, PathWeights, Scored, blend, cap_by, cap_by_seed, diversify};
 pub use similarity::{cosine, shared_features};
 pub use weighting::{apply_idf, idf, normalise};
 

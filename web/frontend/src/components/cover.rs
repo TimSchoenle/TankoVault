@@ -2,7 +2,7 @@
 
 use crate::i18n::use_i18n;
 use crate::models::{ContentTypeExt, SeriesStatusExt, SeriesSummary};
-use crate::util::{chapter_number, initial};
+use crate::util::initial;
 use crate::Route;
 use dioxus::prelude::*;
 
@@ -70,8 +70,8 @@ pub(crate) fn CoverCard(series: ReadSignal<SeriesSummary>) -> Element {
                     content_type: series.content_type,
                     status: series.status,
                     chapter_count: series.chapter_count,
-                    latest_chapter: series.latest_chapter,
                     release_year: series.release_year,
+                    blurb: series.blurb.clone(),
                     tags: series.tags.clone(),
                 }
             }
@@ -86,14 +86,13 @@ pub(crate) fn CardMeta(
     content_type: crate::models::ContentType,
     status: crate::models::SeriesStatus,
     chapter_count: i64,
-    latest_chapter: Option<f64>,
     release_year: Option<i32>,
+    /// The opening of the description, already trimmed server-side.
+    #[props(default)]
+    blurb: Option<String>,
     tags: Vec<String>,
 ) -> Element {
     let i18n = use_i18n();
-    // The newest number, not the count — they differ whenever a series skips numbers or starts
-    // above one, and "up to 412" is the more useful of the two when they disagree.
-    let latest = latest_chapter.map(chapter_number);
     rsx! {
         div { class: "ik-card-meta",
             span {
@@ -114,12 +113,13 @@ pub(crate) fn CardMeta(
             span { class: "ik-mono", style: "color:var(--text-2);",
                 {i18n.plural("series.chapterTally", chapter_count, &[])}
             }
-            if let Some(latest) = latest {
-                span { class: "ik-card-dot", "·" }
-                span { class: "ik-mono", style: "color:var(--faint);",
-                    {i18n.args("series.upTo", &[("number", &latest)])}
-                }
-            }
+        }
+        // What the series is about, where "up to 412" used to be. That number was the same fact
+        // as the tally beside it in every ordinary case — a series numbered from one with nothing
+        // skipped — so the card spent a line restating itself, and a reader deciding whether to
+        // open something learned nothing from either.
+        if let Some(blurb) = blurb {
+            p { class: "ik-card-blurb", "{blurb}" }
         }
         if !tags.is_empty() {
             div { class: "ik-card-tags",

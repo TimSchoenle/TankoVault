@@ -232,6 +232,39 @@ where
     picked
 }
 
+/// Cap how many picks one seed may explain.
+///
+/// A separate function rather than a [`cap_by`] call because the key is on the pick itself: a
+/// series' `because` is a property of *how it was retrieved*, not of the series, so no
+/// id-to-attribute lookup can recover it.
+///
+/// Picks with no seed — the profile, exact-feature and prior paths — are uncapped. They carry no
+/// "because you read" line, so there is no repetition here for a reader to see.
+///
+/// The defect this closes: seeds are the top of the reader's affinity ordering, so the strongest
+/// one's nearest neighbourhood is also the highest-scoring band of candidates. Left alone it
+/// takes the shelf, and someone who has read seven hundred series is told about one of them.
+#[must_use]
+pub fn cap_by_seed<Id: Copy + Eq + std::hash::Hash>(
+    ranked: Vec<Scored<Id>>,
+    max_per_seed: usize,
+) -> Vec<Scored<Id>> {
+    let mut picked_from: HashMap<Id, usize> = HashMap::new();
+    let mut out = Vec::with_capacity(ranked.len());
+    for candidate in ranked {
+        let Some(seed) = candidate.because else {
+            out.push(candidate);
+            continue;
+        };
+        let count = picked_from.entry(seed).or_insert(0);
+        if *count < max_per_seed {
+            *count += 1;
+            out.push(candidate);
+        }
+    }
+    out
+}
+
 /// Cap how many picks may share one attribute.
 ///
 /// Applied after [`diversify`] rather than instead of it: MMR discourages similarity in general,
@@ -598,5 +631,29 @@ mod tests {
             vec![1, 2, 4, 5, 6],
             "only two of the shared-author run survive"
         );
+    }
+
+    /// The strongest seed's neighbourhood is also the highest-scoring band of candidates, so
+    /// without a cap it takes the shelf and every row reads "because you read" the same series —
+    /// however many hundred the reader has actually read. Seedless picks are uncapped: they
+    /// carry no such line.
+    #[test]
+    fn cap_by_seed_stops_one_anchor_taking_the_shelf() {
+        let seeded = |id: u32, seed: Option<u32>| Scored {
+            id,
+            score: 1.0,
+            because: seed,
+            path: Path::Seed,
+        };
+        let ranked = vec![
+            seeded(1, Some(100)),
+            seeded(2, Some(100)),
+            seeded(3, Some(100)),
+            seeded(4, Some(200)),
+            seeded(5, None),
+            seeded(6, None),
+        ];
+        let ids: Vec<u32> = cap_by_seed(ranked, 2).iter().map(|s| s.id).collect();
+        assert_eq!(ids, vec![1, 2, 4, 5, 6]);
     }
 }

@@ -212,6 +212,13 @@ pub struct SeriesFilter {
     /// the deployment flag. A request parameter here would be an age gate anybody could open by
     /// editing a query string.
     pub include_adult: bool,
+    /// The reader whose watchlist [`Self::tracked`] is about. `None` — the `Default` — switches
+    /// the tracking filter off entirely, which is the only correct value for a caller with no
+    /// authenticated reader behind it.
+    pub tracked_by: Option<uuid::Uuid>,
+    /// `Some(true)` keeps only series that reader tracks, `Some(false)` only ones they do not,
+    /// `None` neither. Ignored without [`Self::tracked_by`].
+    pub tracked: Option<bool>,
     pub sort: SeriesSort,
     pub limit: i64,
     pub offset: i64,
@@ -253,12 +260,14 @@ struct CountRow {
 /// counts) instead of six times; `crates/db/tests/repo_browse.rs` is the differential over what
 /// still differs.
 ///
-/// The predicate binds `$1`–`$9`, so a call site numbers its own parameters from `$10` up. `$cte`
-/// and `$join` carry the search branch's matched-id set, `$tail` the ordering and paging.
+/// The predicate binds `$1`–`$11`, so a call site numbers its own parameters from `$12` up.
+/// `$cte` and `$join` carry the search branch's matched-id set, `$tail` the ordering and paging.
 ///
 /// `$9` is the adult gate, and it lives in the shared predicate rather than at the call sites
 /// precisely because there are six of them: a gate that has to be remembered six times is a gate
-/// that will be missing from the seventh statement somebody adds.
+/// that will be missing from the seventh statement somebody adds. `$10`/`$11` are the tracking
+/// filter, there for the same reason and for one more: the count and the page have to agree about
+/// it, or the pager offers a page that comes back empty.
 macro_rules! browse_statement {
     (page $cte:literal, $join:literal, $tail:literal, $($args:tt)*) => {
         browse_statement!(
@@ -309,7 +318,10 @@ macro_rules! browse_statement {
                      AND (cardinality($8::text[]) = 0 OR NOT EXISTS ( \
                            SELECT 1 FROM series_tags stg JOIN tags t ON t.id = stg.tag_id \
                            WHERE stg.series_id = s.id AND t.slug = ANY($8::text[]))) \
-                     AND (NOT s.adult_gated OR $9)"
+                     AND (NOT s.adult_gated OR $9) \
+                     AND ($10::uuid IS NULL OR $11::bool IS NULL OR $11 = EXISTS ( \
+                           SELECT 1 FROM watchlist_entries w \
+                           WHERE w.series_id = s.id AND w.user_id = $10))"
                 + $tail,
             $($args)*
         )
@@ -412,26 +424,26 @@ async fn fetch_page_by_relevance(
     let key = tankovault_domain::normalize_title(query);
     let rows = browse_statement!(
         page "WITH matched AS ( \
-                SELECT s.id FROM series s WHERE s.normalized_title % $12 \
+                SELECT s.id FROM series s WHERE s.normalized_title % $14 \
                 UNION \
                 SELECT s.id FROM series s \
-                 WHERE s.search_vec @@ plainto_tsquery('simple', $12) \
+                 WHERE s.search_vec @@ plainto_tsquery('simple', $14) \
                 UNION \
-                SELECT st.series_id FROM series_titles st WHERE st.normalized % $12 \
+                SELECT st.series_id FROM series_titles st WHERE st.normalized % $14 \
               ) ",
         " JOIN matched m ON m.id = s.id",
         " ORDER BY \
-            (s.normalized_title = $13) DESC, \
+            (s.normalized_title = $15) DESC, \
             EXISTS (SELECT 1 FROM series_titles st \
-                     WHERE st.series_id = s.id AND st.normalized = $13) DESC, \
-            (left(s.normalized_title, length($13)) = $13) DESC, \
+                     WHERE st.series_id = s.id AND st.normalized = $15) DESC, \
+            (left(s.normalized_title, length($15)) = $15) DESC, \
             GREATEST( \
-              similarity(s.normalized_title, $12), \
-              COALESCE((SELECT max(similarity(st.normalized, $12)) \
+              similarity(s.normalized_title, $14), \
+              COALESCE((SELECT max(similarity(st.normalized, $14)) \
                         FROM series_titles st WHERE st.series_id = s.id), 0) \
             ) DESC, \
             s.updated_at DESC, s.id DESC \
-          LIMIT $10 OFFSET $11",
+          LIMIT $12 OFFSET $13",
         filter.content_type as Option<ContentType>,
         filter.status as Option<SeriesStatus>,
         filter.year_min,
@@ -441,6 +453,8 @@ async fn fetch_page_by_relevance(
         &filter.tags as &[String],
         &filter.exclude_tags as &[String],
         filter.include_adult,
+        filter.tracked_by,
+        filter.tracked,
         filter.limit,
         filter.offset,
         query,
@@ -460,15 +474,15 @@ async fn fetch_page_by_recency(
     let rows = if let Some(q) = query {
         browse_statement!(
             page "WITH matched AS ( \
-                    SELECT s.id FROM series s WHERE s.normalized_title % $12 \
+                    SELECT s.id FROM series s WHERE s.normalized_title % $14 \
                     UNION \
                     SELECT s.id FROM series s \
-                     WHERE s.search_vec @@ plainto_tsquery('simple', $12) \
+                     WHERE s.search_vec @@ plainto_tsquery('simple', $14) \
                     UNION \
-                    SELECT st.series_id FROM series_titles st WHERE st.normalized % $12 \
+                    SELECT st.series_id FROM series_titles st WHERE st.normalized % $14 \
                   ) ",
             " JOIN matched m ON m.id = s.id",
-            " ORDER BY s.updated_at DESC, s.id DESC LIMIT $10 OFFSET $11",
+            " ORDER BY s.updated_at DESC, s.id DESC LIMIT $12 OFFSET $13",
             filter.content_type as Option<ContentType>,
             filter.status as Option<SeriesStatus>,
             filter.year_min,
@@ -478,6 +492,8 @@ async fn fetch_page_by_recency(
             &filter.tags as &[String],
             &filter.exclude_tags as &[String],
             filter.include_adult,
+            filter.tracked_by,
+            filter.tracked,
             filter.limit,
             filter.offset,
             q,
@@ -488,7 +504,7 @@ async fn fetch_page_by_recency(
         browse_statement!(
             page "",
             "",
-            " ORDER BY s.updated_at DESC, s.id DESC LIMIT $10 OFFSET $11",
+            " ORDER BY s.updated_at DESC, s.id DESC LIMIT $12 OFFSET $13",
             filter.content_type as Option<ContentType>,
             filter.status as Option<SeriesStatus>,
             filter.year_min,
@@ -498,6 +514,8 @@ async fn fetch_page_by_recency(
             &filter.tags as &[String],
             &filter.exclude_tags as &[String],
             filter.include_adult,
+            filter.tracked_by,
+            filter.tracked,
             filter.limit,
             filter.offset,
         )
@@ -519,25 +537,25 @@ async fn fetch_page_by_sort_token(
     let rows = if let Some(q) = query {
         browse_statement!(
             page "WITH matched AS ( \
-                    SELECT s.id FROM series s WHERE s.normalized_title % $13 \
+                    SELECT s.id FROM series s WHERE s.normalized_title % $15 \
                     UNION \
                     SELECT s.id FROM series s \
-                     WHERE s.search_vec @@ plainto_tsquery('simple', $13) \
+                     WHERE s.search_vec @@ plainto_tsquery('simple', $15) \
                     UNION \
-                    SELECT st.series_id FROM series_titles st WHERE st.normalized % $13 \
+                    SELECT st.series_id FROM series_titles st WHERE st.normalized % $15 \
                   ) ",
             " JOIN matched m ON m.id = s.id",
             " ORDER BY \
-                CASE WHEN $12 = 'title' THEN s.canonical_title END ASC NULLS LAST, \
-                CASE WHEN $12 = 'year' THEN s.release_year END DESC NULLS LAST, \
-                CASE WHEN $12 = 'chapters' THEN ( \
+                CASE WHEN $14 = 'title' THEN s.canonical_title END ASC NULLS LAST, \
+                CASE WHEN $14 = 'year' THEN s.release_year END DESC NULLS LAST, \
+                CASE WHEN $14 = 'chapters' THEN ( \
                       SELECT COALESCE(sum(ss.chapter_count),0)::int8 FROM series_sources ss \
                       WHERE ss.series_id = s.id) END DESC NULLS LAST, \
-                CASE WHEN $12 = 'sources' THEN ( \
+                CASE WHEN $14 = 'sources' THEN ( \
                       SELECT count(DISTINCT ss.provider_id)::int8 FROM series_sources ss \
                       WHERE ss.series_id = s.id) END DESC NULLS LAST, \
                 s.updated_at DESC, s.id DESC \
-              LIMIT $10 OFFSET $11",
+              LIMIT $12 OFFSET $13",
             filter.content_type as Option<ContentType>,
             filter.status as Option<SeriesStatus>,
             filter.year_min,
@@ -547,6 +565,8 @@ async fn fetch_page_by_sort_token(
             &filter.tags as &[String],
             &filter.exclude_tags as &[String],
             filter.include_adult,
+            filter.tracked_by,
+            filter.tracked,
             filter.limit,
             filter.offset,
             filter.sort.as_token(),
@@ -559,16 +579,16 @@ async fn fetch_page_by_sort_token(
             page "",
             "",
             " ORDER BY \
-                CASE WHEN $12 = 'title' THEN s.canonical_title END ASC NULLS LAST, \
-                CASE WHEN $12 = 'year' THEN s.release_year END DESC NULLS LAST, \
-                CASE WHEN $12 = 'chapters' THEN ( \
+                CASE WHEN $14 = 'title' THEN s.canonical_title END ASC NULLS LAST, \
+                CASE WHEN $14 = 'year' THEN s.release_year END DESC NULLS LAST, \
+                CASE WHEN $14 = 'chapters' THEN ( \
                       SELECT COALESCE(sum(ss.chapter_count),0)::int8 FROM series_sources ss \
                       WHERE ss.series_id = s.id) END DESC NULLS LAST, \
-                CASE WHEN $12 = 'sources' THEN ( \
+                CASE WHEN $14 = 'sources' THEN ( \
                       SELECT count(DISTINCT ss.provider_id)::int8 FROM series_sources ss \
                       WHERE ss.series_id = s.id) END DESC NULLS LAST, \
                 s.updated_at DESC, s.id DESC \
-              LIMIT $10 OFFSET $11",
+              LIMIT $12 OFFSET $13",
             filter.content_type as Option<ContentType>,
             filter.status as Option<SeriesStatus>,
             filter.year_min,
@@ -578,6 +598,8 @@ async fn fetch_page_by_sort_token(
             &filter.tags as &[String],
             &filter.exclude_tags as &[String],
             filter.include_adult,
+            filter.tracked_by,
+            filter.tracked,
             filter.limit,
             filter.offset,
             filter.sort.as_token(),
@@ -600,12 +622,12 @@ async fn count_filtered(
     let row = if let Some(q) = query {
         browse_statement!(
             count "WITH matched AS ( \
-                     SELECT s.id FROM series s WHERE s.normalized_title % $10 \
+                     SELECT s.id FROM series s WHERE s.normalized_title % $12 \
                      UNION \
                      SELECT s.id FROM series s \
-                      WHERE s.search_vec @@ plainto_tsquery('simple', $10) \
+                      WHERE s.search_vec @@ plainto_tsquery('simple', $12) \
                      UNION \
-                     SELECT st.series_id FROM series_titles st WHERE st.normalized % $10 \
+                     SELECT st.series_id FROM series_titles st WHERE st.normalized % $12 \
                    ) ",
             " JOIN matched m ON m.id = s.id",
             filter.content_type as Option<ContentType>,
@@ -617,6 +639,8 @@ async fn count_filtered(
             &filter.tags as &[String],
             &filter.exclude_tags as &[String],
             filter.include_adult,
+            filter.tracked_by,
+            filter.tracked,
             q,
         )
         .fetch_one(pool)
@@ -634,6 +658,8 @@ async fn count_filtered(
             &filter.tags as &[String],
             &filter.exclude_tags as &[String],
             filter.include_adult,
+            filter.tracked_by,
+            filter.tracked,
         )
         .fetch_one(pool)
         .await?

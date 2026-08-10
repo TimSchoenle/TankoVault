@@ -54,6 +54,8 @@ pub mod names {
     pub const RATE_LIMIT_STORE_ERRORS: &str = "rate_limit_store_errors_total";
     /// Requests refused because their feature flag is off.
     pub const FEATURE_DISABLED: &str = "http_feature_disabled_total";
+    /// Requests refused because the deployment requires an account and the caller had none.
+    pub const ACCOUNT_REQUIRED: &str = "http_account_required_total";
 
     /// Constant `1`, carrying the version and service name as labels.
     pub const BUILD_INFO: &str = "tankovault_build_info";
@@ -225,6 +227,13 @@ pub const CATALOGUE: &[Metric] = &[
         unit: Unit::Count,
         emitted_by: "api, sync",
         help: "Requests answered 404 because the feature flag gating the route is off.",
+    },
+    Metric {
+        name: names::ACCOUNT_REQUIRED,
+        kind: Kind::Counter,
+        unit: Unit::Count,
+        emitted_by: "api",
+        help: "Requests answered 401 because accounts.required is on and the caller presented no account. Zero on a public deployment.",
     },
     Metric {
         name: names::BUILD_INFO,

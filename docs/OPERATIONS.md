@@ -350,7 +350,7 @@ next to the route registration, mapping route-pattern prefixes to features; one 
 loops, which have no route to declare against, check their own flag at the top of each
 iteration — there the loop *is* the feature.
 
-- **Registry:** `tankovault_domain::Feature` — 38 features in 8 groups, each with a compiled
+- **Registry:** `tankovault_domain::Feature` — 45 features in 8 groups, each with a compiled
   default and an operator-facing description of what switching it off does.
 - **Storage:** `feature_flag_overrides` holds *only* deviations from the shipped defaults. An
   empty table is a fully working deployment; a feature added in code appears in the console at
@@ -386,10 +386,38 @@ disabling user administration removes the only way to grant the permission that 
 Either would brick the deployment from the operator's side. The API rejects the write *and* the
 runtime ignores a stored override for them, so a hand-edited database cannot do it either.
 
-**Two ship off by default** — `notifications.webhook` and `notifications.discord` — because
-they send data to third parties from configuration the installer has not necessarily reviewed.
-Everything else ships on: flags exist so an operator can narrow a working deployment, not so a
-fresh install arrives inert.
+**Five ship off by default.** `notifications.webhook` and `notifications.discord`, because they
+send data to third parties from configuration the installer has not necessarily reviewed;
+`catalogue.adult_content`, whose default-on failure mode is showing adult material to an
+audience nobody decided to show it to; and the two *requirements*, `accounts.mfa_required` and
+`accounts.required`, which narrow who may use the deployment rather than what it offers — see
+below. Everything else ships on: flags exist so an operator can narrow a working deployment, not
+so a fresh install arrives inert.
+
+### Making the deployment private
+
+`accounts.required` is the one flag whose refusal is **`401`, not `404`**, because it is a
+requirement placed on the caller rather than a route withdrawn from the API. With it on, every
+route refuses a request that carries no valid access token:
+
+```json
+{"type":"about:blank#account_required","title":"account_required","status":401,
+ "detail":"this deployment requires an account; sign in to continue"}
+```
+
+Its own problem type, not the generic `unauthorized`, so a client can tell "this deployment is
+private" from "your session ended" — the web app reads exactly that to send a signed-out visitor
+to the sign-in screen instead of showing a page of failed panels.
+
+What stays open is the surface a visitor needs in order to *get* an account: everything under
+`/v1/auth` (sign-in, registration, password reset, email confirmation, both legs of a passkey or
+second-factor sign-in) and `/v1/legal` (registering is the act of accepting the Terms). Nothing
+else — including the public catalogue and `/v1/me/capabilities`. The refusals are counted by
+`http_account_required_total`, which stays at zero on a public deployment.
+
+Turning it on does not create accounts. Pair it with `accounts.registration` **off** for a
+closed instance whose accounts an administrator creates, or leave registration on for one that
+is merely sign-in-walled.
 
 ---
 

@@ -4,6 +4,7 @@
 
 use crate::api;
 use crate::components::{nav::Rail, topbar::TopBar, BottomTabs, Footer, UnreadBadge};
+use crate::state::account_wall::{use_account_wall, Admission};
 use crate::state::capabilities::use_capabilities;
 use crate::state::use_session;
 use crate::Route;
@@ -37,6 +38,7 @@ pub(crate) fn Shell() -> Element {
 
     let i18n = crate::i18n::use_i18n();
     let route: Route = use_route();
+    let walled_out = use_account_wall_redirect(&route);
     rsx! {
         div { class: "ik-app",
             // Skip link: without it, a keyboard reader re-tabs the ~10-stop rail on every route.
@@ -49,7 +51,10 @@ pub(crate) fn Shell() -> Element {
             main { class: "ik-main", style: "--measure:{measure_for(&route)};",
                 TopBar {}
                 section { id: "ik-content", class: "ik-content",
-                    div { class: "ik-measure", Outlet::<Route> {} }
+                    // Withheld for the one render between deciding the reader may not be here
+                    // and the router arriving at the sign-in screen. Mounting the view anyway
+                    // would fire its fetches, every one of which the server refuses.
+                    div { class: "ik-measure", if !walled_out { Outlet::<Route> {} } }
                 }
                 Footer { compact: is_compact(&route) }
             }
@@ -58,6 +63,55 @@ pub(crate) fn Shell() -> Element {
             BottomTabs {}
         }
     }
+}
+
+/// Send a signed-out visitor to the sign-in screen on a deployment that serves nobody else, and
+/// report whether this render is one the reader may not see.
+///
+/// The client half of `accounts.required`. Only the server enforces it — every request is
+/// refused with or without this — but a reader left staring at a screen of failed panels has no
+/// way to tell a private deployment from a broken one, and no obvious way to the sign-in form.
+///
+/// Redirecting rather than rendering a "please sign in" card, because the wall is not about the
+/// route: on a private deployment *no* address serves this reader, so leaving them on one is
+/// leaving them somewhere that cannot ever load.
+fn use_account_wall_redirect(route: &Route) -> bool {
+    let session = use_session();
+    let wall = use_account_wall();
+    // No `is_settled` check here: the wall is only ever raised by a probe that already waited
+    // for the boot-time refresh, so it cannot be up while "signed out" still means "we have not
+    // looked yet".
+    let walled_out = wall.is_up() && !session.is_authenticated() && !is_reachable_signed_out(route);
+
+    use_effect(use_reactive!(|walled_out| {
+        if walled_out {
+            // `replace`, not `push`: the address the reader arrived at is one this deployment
+            // has no signed-out answer for, so it does not belong in their history.
+            navigator().replace(Route::Login {});
+        }
+    }));
+
+    walled_out
+}
+
+/// The screens a signed-out visitor may still reach while the deployment is private.
+///
+/// The mirror of `is_sign_in_surface` in `services/api/src/account_gate.rs`, and it has to stay
+/// one: a screen listed here whose data the server walls renders empty forever, and a screen
+/// missing from here that the server *does* serve is one the reader is bounced away from. There
+/// is no compile-time relationship between the two — `openapi.json` connects the workspaces, and
+/// it carries routes, not screens — so the pairing is this comment and the tests below it.
+fn is_reachable_signed_out(route: &Route) -> bool {
+    matches!(
+        route,
+        Route::Login {}
+            | Route::ForgotPassword {}
+            | Route::ResetPassword { .. }
+            | Route::VerifyEmail { .. }
+            // Registering is the act of accepting the Terms, so the documents behind that link
+            // have to open for someone who has not registered yet.
+            | Route::Legal { .. }
+    )
 }
 
 /// Whether this route gets the one-line footer instead of the five-column one.
@@ -184,19 +238,41 @@ fn use_token_refresh() {
 /// A failed fetch clears rather than keeps the previous answer: a stale capability set is how a
 /// reader ends up looking at a console tab they no longer have, and showing less than they are
 /// entitled to is the recoverable direction — the next refresh puts it back.
+///
+/// While signed *out* the same probe answers a different question: whether this deployment
+/// serves anonymous callers at all. Its refusal is the only channel that carries the answer —
+/// `account_required` rather than `unauthorized` — because a deployment behind
+/// `accounts.required` publishes nothing to a caller with no account, this endpoint included.
+/// Held back until the session has settled: before the boot-time silent refresh lands, "signed
+/// out" only means "we have not looked yet", and probing then would raise the wall in front of a
+/// reader who is a moment away from being signed in.
 fn use_capability_sync() {
     let session = use_session();
     let api = api::use_api();
     let capabilities = use_capabilities();
+    let wall = use_account_wall();
 
     use_resource(move || {
         let client = api.client();
         let signed_in = session.is_authenticated();
+        let settled = session.is_settled();
         async move {
             if !signed_in {
                 capabilities.clear();
+                if settled {
+                    if let Err(error) = client.capabilities().send().await {
+                        // A transport fault yields `None` and leaves the previous answer alone:
+                        // an unreachable server is not evidence of an admission policy.
+                        if let Some(admission) = api::admission(&error) {
+                            wall.set(admission);
+                        }
+                    }
+                }
                 return;
             }
+            // An account is through the wall by definition, so nothing here observes it; a
+            // sign-out re-runs this hook and the probe above answers again.
+            wall.set(Admission::Unknown);
             match client.capabilities().send().await {
                 Ok(response) => capabilities.set(response.into_inner()),
                 Err(_) => capabilities.clear(),
@@ -299,4 +375,79 @@ fn use_unread_count() {
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_reachable_signed_out, Route};
+    use crate::views::{ConsoleQuery, DiscoverQuery, SearchQuery, WatchlistQuery};
+
+    /// Every screen the API's `account_gate` also lets through, so a private deployment still
+    /// has a way in. A screen dropped from this list is a reader bounced off the very form they
+    /// were sent a link to — the password reset and the email confirmation both arrive by email
+    /// at an address whose owner is, by definition, signed out.
+    #[test]
+    fn the_way_in_is_reachable_signed_out() {
+        for route in [
+            Route::Login {},
+            Route::ForgotPassword {},
+            Route::ResetPassword {
+                token: "t".to_owned(),
+            },
+            Route::VerifyEmail {
+                token: "t".to_owned(),
+            },
+            Route::Legal {
+                slug: "terms".to_owned(),
+            },
+        ] {
+            assert!(
+                is_reachable_signed_out(&route),
+                "{route} is part of getting an account and must survive the wall"
+            );
+        }
+    }
+
+    /// The inverse leg: a predicate that answered `true` too readily would leave every screen
+    /// mounted, each one fetching data the server refuses, on a deployment whose whole point is
+    /// that it serves none of it.
+    #[test]
+    fn everything_a_reader_comes_for_is_behind_the_wall() {
+        for route in [
+            Route::Home {},
+            Route::Discover {
+                query: DiscoverQuery::default(),
+            },
+            Route::Search {
+                query: SearchQuery::default(),
+            },
+            Route::Series {
+                id: "id".to_owned(),
+            },
+            Route::Watchlist {
+                query: WatchlistQuery::default(),
+            },
+            Route::Notifications {},
+            Route::Account {},
+            Route::Console {},
+            Route::NotFound {
+                segments: Vec::new(),
+            },
+        ] {
+            assert!(
+                !is_reachable_signed_out(&route),
+                "{route} must not be reachable on a deployment that requires an account"
+            );
+        }
+    }
+
+    /// `ConsoleQuery` is in scope for the operator route above; naming it keeps the import
+    /// honest if that list ever changes.
+    #[test]
+    fn the_console_section_is_behind_the_wall_too() {
+        assert!(!is_reachable_signed_out(&Route::ConsoleSection {
+            entity: crate::views::ConsoleEntity::Overview,
+            query: ConsoleQuery::fresh(),
+        }));
+    }
 }

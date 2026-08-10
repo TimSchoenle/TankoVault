@@ -140,7 +140,7 @@ detail is. Read §6 "Pick up next" against that note — it predates all of it.
 > presets (Reader/Operator/Administrator) expand to a checklist the administrator then edits
 > and are never persisted; nothing in the database or in a decision knows presets exist.
 >
-> **2. Every feature is behind a runtime flag.** `tankovault_domain::Feature` — 38 features in
+> **2. Every feature is behind a runtime flag.** `tankovault_domain::Feature` — 45 features in
 > 8 groups, each with a compiled default and an operator-facing description of what switching
 > it off *does*. `feature_flag_overrides` stores only deviations, so an empty table is a working
 > deployment and a new feature needs no migration. Crucially this is a **different mechanism

@@ -66,12 +66,20 @@ dependency* failed, and `up`/`probe_success` remain the availability signals.
 | `http_rate_limited_total` | counter | `class` (`global`/`auth`/`expensive`) | services with a limiter |
 | `rate_limit_store_errors_total` | counter | `backend` (`redis`) | services on the Redis backend |
 | `http_feature_disabled_total` | counter | `feature` | `api`, `sync` |
+| `http_account_required_total` | counter | — | `api` |
 | `auth_attempts_total` | counter | `operation`, `result` (`success`/`failure`/`denied`) | `api` |
 
 `http_feature_disabled_total` is emitted by `flags::enforce`, the HTTP middleware — and only
 `api` and `sync` mount it. `control-plane` and `notifier` consult `FeatureGate::is_enabled`
 directly inside background loops, which records nothing. The earlier claim that all four emit it
 was the defect that motivated the lint rule.
+
+`http_account_required_total` counts requests refused because `accounts.required` is on and the
+caller presented no account (`api` only — see OPERATIONS.md §4). Unlabelled: the flag is
+deployment-wide, so the interesting series is its rate, and a `route` label would only re-derive
+what `http_requests_total{status="401"}` already carries. It stays at zero on a public
+deployment, which makes any non-zero rate a statement about the deployment rather than a signal
+to interpret.
 
 ### Database — `api`, `control-plane`, `worker`, `notifier`, `sync`
 

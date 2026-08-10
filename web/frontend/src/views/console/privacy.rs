@@ -19,8 +19,8 @@ use crate::wire::types::{
     AdminRequestRow, FulfilErasure, Permission, RequestKind, RequestStatus, ResolveRequest,
 };
 use dioxus::prelude::*;
+use inkstone_ui::{Button, Pill, Tone};
 use progenitor_client::ResponseValue;
-
 /// What this reader is allowed to do to the queue at all.
 ///
 /// `erase` is deliberately the conjunction of two permissions: answering an erasure request
@@ -188,7 +188,10 @@ fn QueueRow(row: AdminRequestRow, permits: QueuePermits, reload: Reload) -> Elem
                     strong { style: "font-size:13px;", {i18n.t(row.request.kind.label_key())} }
                     span { class: "ik-muted", style: "font-size:13px;", "{subject}" }
                     if row.overdue {
-                        span { class: "ik-pill vermilion", {i18n.t("console.privacy.overdue")} }
+                        Pill {
+                            tone: Tone::Accent,
+                            {i18n.t("console.privacy.overdue")}
+                        }
                     }
                 }
                 div { class: "ik-mono ik-muted", style: "font-size:11px;margin-top:2px;",
@@ -239,9 +242,8 @@ fn QueueRow(row: AdminRequestRow, permits: QueuePermits, reload: Reload) -> Elem
                             outcome,
                             gate,
                         }
-                        button {
-                            class: "ik-btn",
-                            onclick: move |_| {
+                        Button {
+                            on_click: move |_| {
                                 confirm_erase.set(false);
                                 typed.set(String::new());
                             },
@@ -267,10 +269,9 @@ fn QueueRow(row: AdminRequestRow, permits: QueuePermits, reload: Reload) -> Elem
                     ExportButton { id, busy, outcome, gate }
                 }
                 if can_erase && !*confirm_erase.read() {
-                    button {
-                        class: "ik-btn",
+                    Button {
                         style: "color:var(--vermilion);",
-                        onclick: move |_| confirm_erase.set(true),
+                        on_click: move |_| confirm_erase.set(true),
                         {i18n.t("console.privacy.erase")}
                     }
                 }
@@ -373,7 +374,11 @@ fn ActionButton(
     };
 
     rsx! {
-        button { class: "ik-btn", disabled: busy.is_busy(), onclick: click, "{label}" }
+        Button {
+            disabled: busy.is_busy(),
+            on_click: click,
+            "{label}"
+        }
     }
 }
 
@@ -431,7 +436,9 @@ fn ExportButton(
     };
 
     rsx! {
-        button { class: "ik-btn", disabled: busy.is_busy(), onclick: click,
+        Button {
+            disabled: busy.is_busy(),
+            on_click: click,
             {i18n.t("console.privacy.export")}
         }
     }
@@ -480,11 +487,10 @@ fn EraseButton(
     };
 
     rsx! {
-        button {
-            class: "ik-btn",
+        Button {
             style: "color:var(--vermilion);",
             disabled: busy.is_busy() || !enabled,
-            onclick: click,
+            on_click: click,
             {i18n.t("console.privacy.eraseConfirmCta")}
         }
     }

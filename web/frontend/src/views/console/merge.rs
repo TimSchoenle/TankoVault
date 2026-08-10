@@ -16,8 +16,8 @@ use crate::state::use_session;
 use crate::views::console::query::Band;
 use crate::views::console::{use_console_nav, ConsoleQuery};
 use dioxus::prelude::*;
+use inkstone_ui::{Button, Pill, ToggleButton, Tone};
 use progenitor_client::ResponseValue;
-
 /// Canonicalisation review queue with merge / dismiss actions and the duplicate sweep.
 #[component]
 pub(super) fn MergeQueue() -> Element {
@@ -147,19 +147,23 @@ pub(super) fn MergeQueue() -> Element {
             div { class: "ik-row", style: "gap:8px;flex-wrap:wrap;margin-bottom:12px;",
                 div { class: "ik-flex", style: "gap:4px;flex-wrap:wrap;",
                     for option in Band::ALL {
-                        button {
+                        ToggleButton {
                             key: "{option.token()}",
-                            class: if option == band { "ik-btn primary" } else { "ik-btn" },
-                            onclick: move |_| nav.filter(ConsoleQuery { band: option, ..nav.query() }),
+                            on: option == band,
+                            on_toggle: move |_| nav.filter(ConsoleQuery { band: option, ..nav.query() }),
                             {i18n.t(option.label_key())}
                         }
                     }
                 }
                 div { class: "grow" }
-                button { class: "ik-btn", disabled: *busy.read(), onclick: run_sweep,
+                Button {
+                    disabled: *busy.read(),
+                    on_click: run_sweep,
                     {i18n.t("console.merge.sweep")}
                 }
-                button { class: "ik-btn", disabled: *busy.read(), onclick: rebuild_keys,
+                Button {
+                    disabled: *busy.read(),
+                    on_click: rebuild_keys,
                     {i18n.t("console.merge.rebuildKeys")}
                 }
             }
@@ -293,7 +297,9 @@ pub(super) fn MergeRow(
                     div { class: "ik-muted", style: "font-size:13px;", "↔ {drop_side.title}" }
                     div { class: "ik-flex", style: "gap:4px;margin-top:6px;flex-wrap:wrap;",
                         for s in signals.iter() {
-                            span { key: "{s}", class: "ik-pill", style: "font-size:11px;",
+                            Pill {
+                                key: "{s}",
+                                style: "font-size:11px;",
                                 {crate::views::console::signal_label(i18n, s)}
                             }
                         }
@@ -315,28 +321,28 @@ pub(super) fn MergeRow(
                         }
                     }
                 }
-                button {
-                    class: "ik-btn",
-                    onclick: move |_| { let v = *keep_first.peek(); keep_first.set(!v); },
+                Button {
+                    on_click: move |_| { let v = *keep_first.peek(); keep_first.set(!v); },
                     {i18n.t("console.merge.swap")}
                 }
-                button {
-                    class: "ik-btn",
-                    onclick: move |_| { let v = *open.peek(); open.set(!v); },
+                Button {
+                    on_click: move |_| { let v = *open.peek(); open.set(!v); },
                     if *open.read() {
-                        {i18n.t("console.merge.hide")}
+                    {i18n.t("console.merge.hide")}
                     } else {
-                        {i18n.t("console.merge.compare")}
+                    {i18n.t("console.merge.compare")}
                     }
                 }
-                button {
-                    class: "ik-btn primary",
+                Button {
+                    tone: Tone::Primary,
                     disabled: *busy.read(),
                     title: "{keep_title}",
-                    onclick: merge,
+                    on_click: merge,
                     {i18n.t("console.merge.merge")}
                 }
-                button { class: "ik-btn", disabled: *busy.read(), onclick: dismiss,
+                Button {
+                    disabled: *busy.read(),
+                    on_click: dismiss,
                     {i18n.t("console.merge.distinct")}
                 }
             }
@@ -464,18 +470,24 @@ pub(super) fn SeriesMiniCard(series_id: SeriesId) -> Element {
                     div { class: "grow",
                         div { style: "font-weight:600;", "{d.title}" }
                         div { class: "ik-flex", style: "gap:6px;margin-top:4px;flex-wrap:wrap;",
-                            span { class: "ik-pill", {i18n.t(d.content_type.label_key())} }
-                            span { class: "ik-pill", {i18n.t(d.status.label_key())} }
-                            if !year.is_empty() {
-                                span { class: "ik-pill", "{year}" }
+                            Pill {
+                                {i18n.t(d.content_type.label_key())}
                             }
-                            span { class: "ik-pill",
+                            Pill {
+                                {i18n.t(d.status.label_key())}
+                            }
+                            if !year.is_empty() {
+                                Pill {
+                                    "{year}"
+                                }
+                            }
+                            Pill {
                                 {
-                                    i18n.plural(
-                                        "series.sources",
-                                        i64::try_from(d.sources.len()).unwrap_or(0),
-                                        &[],
-                                    )
+                                i18n.plural(
+                                "series.sources",
+                                i64::try_from(d.sources.len()).unwrap_or(0),
+                                &[],
+                                )
                                 }
                             }
                         }
@@ -502,7 +514,10 @@ pub(super) fn SeriesMiniCard(series_id: SeriesId) -> Element {
                 if !tags.is_empty() {
                     div { class: "ik-flex", style: "gap:4px;margin-top:8px;flex-wrap:wrap;",
                         for t in tags {
-                            span { class: "ik-pill", style: "font-size:11px;", "{t}" }
+                            Pill {
+                                style: "font-size:11px;",
+                                "{t}"
+                            }
                         }
                     }
                 }

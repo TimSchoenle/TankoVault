@@ -21,11 +21,11 @@ use crate::util::thousands;
 use crate::views::console::{use_console_nav, ConsoleQuery};
 use crate::wire::types::{BulkDeleteSeries, HealthFilter, Permission, SeriesId};
 use dioxus::prelude::*;
+use inkstone_ui::{Button, Size};
 use progenitor_client::ResponseValue;
 use purge::PurgePanel;
 use row::CatalogueTableRow;
 use std::collections::HashSet;
-
 /// Rows per page. The server's default; it clamps regardless.
 const PAGE_SIZE: i64 = 50;
 
@@ -217,9 +217,9 @@ pub(super) fn CatalogueEntity() -> Element {
                             });
                         },
                     }
-                    button {
-                        class: "ik-btn xs",
-                        onclick: move |_| reload.bump(),
+                    Button {
+                        size: Size::Xs,
+                        on_click: move |_| reload.bump(),
                         Ic { icon: Icon::Refresh, size: 12 }
                         {i18n.t("console.live.refresh")}
                     }
@@ -395,10 +395,10 @@ fn BulkBar(picked: Signal<HashSet<SeriesId>>, reload: crate::hooks::Reload) -> E
                 option { value: "", {i18n.t("console.catalogue.bulkActions")} }
                 option { value: "delete", {i18n.t("console.catalogue.bulk.delete")} }
             }
-            button {
-                class: "ik-btn xs",
+            Button {
+                size: Size::Xs,
                 style: "margin-left:auto;",
-                onclick: move |_| {
+                on_click: move |_| {
                     picked.write().clear();
                     confirming.set(false);
                 },

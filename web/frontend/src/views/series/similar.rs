@@ -54,7 +54,7 @@ pub(super) fn SimilarRail(series_id: SeriesId) -> Element {
     }
 
     rsx! {
-        div { class: "ik-sidebar-card",
+        div { class: "ik-panel",
             div { class: "ik-sec-lbl", style: "margin-bottom:10px;", {i18n.t("series.similar.title")} }
             {
                 async_view(

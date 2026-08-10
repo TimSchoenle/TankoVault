@@ -13,8 +13,8 @@ use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
 use crate::models::*;
 use dioxus::prelude::*;
+use inkstone_ui::{Button, Tone};
 use std::collections::HashSet;
-
 /// Floats bottom-centre, and exists only while something is selected.
 #[component]
 pub(super) fn BulkBar(
@@ -163,23 +163,19 @@ pub(super) fn BulkBar(
                     }
                 }
             }
-            button {
-                class: "ik-btn",
-                r#type: "button",
+            Button {
                 disabled: busy.is_busy(),
-                onclick: mark_read,
+                on_click: mark_read,
                 {i18n.t("watchlist.markAllRead")}
             }
-            button {
-                class: "ik-btn",
-                r#type: "button",
+            Button {
                 disabled: busy.is_busy(),
-                onclick: move |_| update(None, Some(!any_notifying)),
+                on_click: move |_| update(None, Some(!any_notifying)),
                 Ic { icon: mute_icon, size: 15 }
                 if any_notifying {
-                    {i18n.t("watchlist.mute")}
+                {i18n.t("watchlist.mute")}
                 } else {
-                    {i18n.t("watchlist.unmute")}
+                {i18n.t("watchlist.unmute")}
                 }
             }
             // Untracking forty titles is not undoable from this screen, so it asks once — the
@@ -187,11 +183,12 @@ pub(super) fn BulkBar(
             // 44px bar has room for: the first click arms the button and states the
             // consequence, the second acts. The rest of the bar does not ask, because a wrong
             // status or a wrong mute is one click to put back.
-            button {
-                class: if *arm_remove.read() { "ik-btn primary" } else { "ik-btn" },
-                r#type: "button",
+            Button {
+                // Lit once armed: the second click is the destructive one, and it must not look
+                // like the first.
+                tone: if *arm_remove.read() { Tone::Primary } else { Tone::Neutral },
                 disabled: busy.is_busy(),
-                onclick: move |_| {
+                on_click: move |_| {
                     if *arm_remove.peek() {
                         arm_remove.set(false);
                         remove(());

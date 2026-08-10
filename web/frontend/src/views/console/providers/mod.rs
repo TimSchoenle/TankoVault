@@ -32,11 +32,11 @@ use coverage::CoverageTab;
 use create::CreateProviderForm;
 use danger::DangerTab;
 use dioxus::prelude::*;
+use inkstone_ui::{Button, Size, Tone};
 use politeness::{emulation_token, politeness_body, EMULATION_CHOICES};
 use progenitor_client::ResponseValue;
 use row::ProviderRow;
 use runs::RunsTab;
-
 /// The inspector's tab strip.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Tab {
@@ -173,10 +173,10 @@ pub(super) fn ProvidersEntity() -> Element {
                     ),
                 }
                 if can_create {
-                    button {
-                        class: "ik-btn xs",
+                    Button {
+                        size: Size::Xs,
                         style: "align-self:flex-start;",
-                        onclick: move |_| {
+                        on_click: move |_| {
                             let next = !*creating.read();
                             creating.set(next);
                         },
@@ -500,15 +500,17 @@ fn ProviderInspector(
                                 option { value: "fast", {i18n.t("console.providers.fast")} }
                                 option { value: "full", {i18n.t("console.providers.full")} }
                             }
-                            button { class: "ik-btn sm", onclick: scan,
+                            Button {
+                                size: Size::Sm,
+                                on_click: scan,
                                 {i18n.t("console.providers.scanNow")}
                             }
                         }
                         if can_change_state {
-                            button {
-                                class: "ik-btn sm",
+                            Button {
+                                size: Size::Sm,
                                 disabled: busy.is_busy(),
-                                onclick: move |_| {
+                                on_click: move |_| {
                                     gate.attempt(move || {
                                         set_state.call(
                                             if is_disabled { ProviderState::Active } else { ProviderState::Disabled },
@@ -516,18 +518,19 @@ fn ProviderInspector(
                                     });
                                 },
                                 if is_disabled {
-                                    {i18n.t("console.providers.enable")}
+                                {i18n.t("console.providers.enable")}
                                 } else {
-                                    {i18n.t("console.providers.pause")}
+                                {i18n.t("console.providers.pause")}
                                 }
                             }
                         }
                         if can_edit {
-                            button {
-                                class: "ik-btn sm primary",
+                            Button {
+                                size: Size::Sm,
+                                tone: Tone::Primary,
                                 disabled: busy.is_busy() || save_blocked,
                                 title: if save_blocked { i18n.t("console.providers.saveGate") } else { String::new() },
-                                onclick: save,
+                                on_click: save,
                                 {i18n.t("console.providers.saveChanges")}
                             }
                         }
@@ -634,17 +637,17 @@ fn ProviderInspector(
                                 }
                                 div { class: "ik-flex", style: "gap:7px;margin-top:9px;flex-wrap:wrap;",
                                     if can_test {
-                                        button {
-                                            class: "ik-btn sm",
+                                        Button {
+                                            size: Size::Sm,
                                             disabled: busy.is_busy(),
-                                            onclick: run_dry,
+                                            on_click: run_dry,
                                             {i18n.t("console.providers.dryRun")}
                                         }
                                     }
-                                    button {
-                                        class: "ik-btn sm",
+                                    Button {
+                                        size: Size::Sm,
                                         disabled: !config_valid || !can_edit,
-                                        onclick: format_config,
+                                        on_click: format_config,
                                         {i18n.t("console.providers.format")}
                                     }
                                     span { class: "ik-mono", style: "margin-left:auto;align-self:center;font-size:11.5px;color:var(--faint);",

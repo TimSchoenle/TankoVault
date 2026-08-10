@@ -1,74 +1,29 @@
 //! Loading, empty and error states (§17.3: never a bare spinner; name what failed and how to
 //! retry), plus the [`async_view`] helper that renders all three from one `Resource`.
+//!
+//! The shapes themselves live in `inkstone-ui`. What stays here is the part that needs this
+//! app: the message catalogue, the session, and the [`Reload`] handle a retry bumps.
 
 use crate::hooks::Reload;
 use crate::i18n::use_i18n;
 use dioxus::prelude::*;
-
-/// Skeleton placeholder grid shown while covers load.
-#[component]
-pub(crate) fn SkeletonGrid(count: usize) -> Element {
-    rsx! {
-        div { class: "ik-grid",
-            for _ in 0..count {
-                div { class: "ik-card",
-                    div { class: "ik-skeleton ik-skel-cover" }
-                    div { class: "ik-card-body",
-                        div { class: "ik-skeleton", style: "height:14px;width:80%;margin-bottom:6px;" }
-                        div { class: "ik-skeleton", style: "height:12px;width:50%;" }
-                    }
-                }
-            }
-        }
-    }
-}
-
-/// A stack of skeleton rows, for list-shaped screens (feed, notifications, sessions).
-#[component]
-pub(crate) fn SkeletonRows(count: usize, #[props(default = 16)] height: u32) -> Element {
-    rsx! {
-        for _ in 0..count {
-            div { class: "ik-row",
-                div { class: "ik-skeleton", style: "height:{height}px;width:45%;" }
-            }
-        }
-    }
-}
-
-/// A plain rectangular skeleton, for a card-shaped region of known height.
-#[component]
-pub(crate) fn SkeletonBlock(#[props(default = 80)] height: u32) -> Element {
-    rsx! {
-        div { class: "ik-skeleton", style: "height:{height}px;" }
-    }
-}
+use inkstone_ui::{button_class, Size, Tone};
+pub(crate) use inkstone_ui::{
+    EmptyBox, ErrorLine, OutcomeLine, Skeleton as SkeletonBlock, SkeletonGrid, SkeletonRows,
+};
 
 /// A named error state with a retry affordance. `message` is an already-resolved sentence
 /// (typically from [`crate::api::friendly_error`]); the framing around it is translated here.
 #[component]
 pub(crate) fn ErrorBox(message: String, on_retry: EventHandler<()>) -> Element {
     let i18n = use_i18n();
+    let message = i18n.args("feedback.failed", &[("message", &message)]);
     rsx! {
-        div { class: "ik-error",
-            p { {i18n.args("feedback.failed", &[("message", &message)])} }
-            button { class: "ik-btn", onclick: move |_| on_retry.call(()), {i18n.t("common.tryAgain")} }
+        inkstone_ui::ErrorBox {
+            message,
+            retry_label: i18n.t("common.tryAgain"),
+            on_retry,
         }
-    }
-}
-
-/// A one-line inline failure, for a panel too small to justify a full error box.
-#[component]
-pub(crate) fn ErrorLine(message: String) -> Element {
-    rsx! {
-        p { style: "font-size:13px;color:var(--acc);margin:0;", "{message}" }
-    }
-}
-
-/// An inviting empty state (§17.2.1).
-#[component]
-pub(crate) fn EmptyBox(message: String) -> Element {
-    rsx! {
-        div { class: "ik-empty", "{message}" }
     }
 }
 
@@ -89,7 +44,11 @@ pub(crate) fn SignInGate() -> Element {
     rsx! {
         div { class: "ik-empty",
             p { {i18n.t("feedback.signInGate")} }
-            Link { to: crate::Route::Login {}, class: "ik-btn primary", {i18n.t("common.signIn")} }
+            Link {
+                to: crate::Route::Login {},
+                class: button_class(Tone::Primary, Size::Md, false),
+                {i18n.t("common.signIn")}
+            }
         }
     }
 }
@@ -107,30 +66,11 @@ pub(crate) fn AuthRequired(title: String) -> Element {
     }
 }
 
-/// A thin brush-stroke section divider (the one signature device, §17.1).
-#[component]
-pub(crate) fn Brush() -> Element {
-    rsx! {
-        div { class: "ik-brush" }
-    }
-}
-
-/// An outcome line under a form: green when the action succeeded, accent when it failed.
-#[component]
-pub(crate) fn OutcomeLine(outcome: Option<Result<String, String>>) -> Element {
-    match outcome {
-        Some(Ok(message)) => rsx! {
-            p { style: "font-size:13px;color:var(--jade-bright);margin:8px 0 0;", "{message}" }
-        },
-        Some(Err(message)) => rsx! {
-            p { style: "font-size:13px;color:var(--acc);margin:8px 0 0;", "{message}" }
-        },
-        None => rsx! {},
-    }
-}
-
 /// Render a fetched `Resource` through the standard three states: `loading` while it is in
 /// flight, an [`ErrorBox`] wired to `reload` when it failed, and `content` once it resolved.
+///
+/// Not the kit's own `async_view`: this one renders the [`ErrorBox`] above, which reaches the
+/// message catalogue from inside a component rather than asking every caller for a retry label.
 pub(crate) fn async_view<T: 'static>(
     resource: &Resource<Result<T, String>>,
     reload: Reload,
@@ -169,7 +109,7 @@ pub(crate) fn async_block<T: 'static>(
     )
 }
 
-/// [`async_list`] with a fixed-height [`SkeletonBlock`] as its loading state.
+/// [`async_block`] for a list, adding the empty state.
 pub(crate) fn async_block_list<T: 'static>(
     resource: &Resource<Result<Vec<T>, String>>,
     reload: Reload,

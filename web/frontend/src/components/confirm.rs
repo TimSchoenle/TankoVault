@@ -3,7 +3,7 @@
 
 use crate::i18n::use_i18n;
 use dioxus::prelude::*;
-
+use inkstone_ui::{Button, Size, Tone};
 /// A reversible destructive action: state the consequence, ask once more, act.
 #[component]
 pub(crate) fn InlineConfirm(
@@ -22,15 +22,16 @@ pub(crate) fn InlineConfirm(
                 div { class: "why", "{body}" }
             }
             div { class: "ik-flex", style: "margin-left:auto;gap:6px;flex:none;",
-                button {
-                    class: "ik-btn xs",
-                    onclick: move |_| on_cancel.call(()),
+                Button {
+                    size: Size::Xs,
+                    on_click: move |_| on_cancel.call(()),
                     {i18n.t("common.cancel")}
                 }
-                button {
-                    class: "ik-btn xs primary",
+                Button {
+                    size: Size::Xs,
+                    tone: Tone::Primary,
                     disabled: busy,
-                    onclick: move |_| on_confirm.call(()),
+                    on_click: move |_| on_confirm.call(()),
                     "{cta}"
                 }
             }

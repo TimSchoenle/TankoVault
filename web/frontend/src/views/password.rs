@@ -10,7 +10,7 @@ use crate::i18n::use_i18n;
 use crate::models::*;
 use crate::Route;
 use dioxus::prelude::*;
-
+use inkstone_ui::{button_class, Button, Size, Tone};
 /// Request a password-reset email. The API always answers `202 Accepted` whether or not the
 /// address is registered (so it can't be used to probe accounts), so the UI shows the same
 /// reassuring confirmation regardless — the only failure surfaced is a transport error.
@@ -57,7 +57,7 @@ pub(crate) fn ForgotPassword() -> Element {
                 p { class: "ik-muted", {i18n.t("password.forgot.sent")} }
                 Link {
                     to: Route::Login {},
-                    class: "ik-btn primary",
+                    class: button_class(Tone::Primary, Size::Md, false),
                     style: "width:100%;margin-top:8px;",
                     {i18n.t("common.backToSignIn")}
                 }
@@ -80,21 +80,21 @@ pub(crate) fn ForgotPassword() -> Element {
                     on_enter: move |()| submit.call(()),
                 }
 
-                button {
-                    class: "ik-btn primary",
+                Button {
+                    tone: Tone::Primary,
                     style: "width:100%;",
                     disabled: busy.is_busy(),
-                    onclick: move |_| submit.call(()),
+                    on_click: move |_| submit.call(()),
                     if busy.is_busy() {
-                        {i18n.t("password.forgot.sending")}
+                    {i18n.t("password.forgot.sending")}
                     } else {
-                        {i18n.t("password.forgot.submit")}
+                    {i18n.t("password.forgot.submit")}
                     }
                 }
 
                 Link {
                     to: Route::Login {},
-                    class: "ik-btn",
+                    class: button_class(Tone::Neutral, Size::Md, false),
                     style: "width:100%;margin-top:10px;",
                     {i18n.t("common.backToSignIn")}
                 }
@@ -164,7 +164,7 @@ pub(crate) fn ResetPassword(token: String) -> Element {
                 p { class: "ik-muted", {i18n.t("password.reset.done")} }
                 Link {
                     to: Route::Login {},
-                    class: "ik-btn primary",
+                    class: button_class(Tone::Primary, Size::Md, false),
                     style: "width:100%;margin-top:8px;",
                     {i18n.t("common.signIn")}
                 }
@@ -194,21 +194,21 @@ pub(crate) fn ResetPassword(token: String) -> Element {
                     on_enter: move |()| submit.call(()),
                 }
 
-                button {
-                    class: "ik-btn primary",
+                Button {
+                    tone: Tone::Primary,
                     style: "width:100%;",
                     disabled: busy.is_busy(),
-                    onclick: move |_| submit.call(()),
+                    on_click: move |_| submit.call(()),
                     if busy.is_busy() {
-                        {i18n.t("common.saving")}
+                    {i18n.t("common.saving")}
                     } else {
-                        {i18n.t("password.reset.submit")}
+                    {i18n.t("password.reset.submit")}
                     }
                 }
 
                 Link {
                     to: Route::Login {},
-                    class: "ik-btn",
+                    class: button_class(Tone::Neutral, Size::Md, false),
                     style: "width:100%;margin-top:10px;",
                     {i18n.t("common.backToSignIn")}
                 }

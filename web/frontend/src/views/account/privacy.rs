@@ -18,8 +18,8 @@ use crate::state::use_session;
 use crate::util::iso_date;
 use crate::wire::types::{DeleteAccount, Feature, NewPrivacyRequest, RequestKind, RequestRow};
 use dioxus::prelude::*;
+use inkstone_ui::{Button, Tone};
 use progenitor_client::ResponseValue;
-
 #[component]
 pub(crate) fn PrivacyPanel() -> Element {
     let caps = use_capabilities();
@@ -104,15 +104,15 @@ fn ExportCard() -> Element {
             }
             OutcomeLine { outcome: outcome.read().clone() }
             StepUpGuard { gate }
-            button {
-                class: "ik-btn primary",
+            Button {
+                tone: Tone::Primary,
                 style: "margin-top:12px;",
                 disabled: busy.is_busy(),
-                onclick: download,
+                on_click: download,
                 if busy.is_busy() {
-                    {i18n.t("account.privacy.export.preparing")}
+                {i18n.t("account.privacy.export.preparing")}
                 } else {
-                    {i18n.t("account.privacy.export.cta")}
+                {i18n.t("account.privacy.export.cta")}
                 }
             }
         }
@@ -229,15 +229,15 @@ fn RequestsCard() -> Element {
             // grant a reader earns for one of these covers the others for the next few minutes,
             // so a second copy of the question would only be a second place to ask it.
             StepUpGuard { gate }
-            button {
-                class: "ik-btn primary",
+            Button {
+                tone: Tone::Primary,
                 style: "margin-top:12px;",
                 disabled: busy.is_busy(),
-                onclick: submit,
+                on_click: submit,
                 if busy.is_busy() {
-                    {i18n.t("common.saving")}
+                {i18n.t("common.saving")}
                 } else {
-                    {i18n.t("account.privacy.requests.submit")}
+                {i18n.t("account.privacy.requests.submit")}
                 }
             }
 
@@ -320,7 +320,9 @@ fn RequestRowView(request: RequestRow, reload: Reload, gate: StepUpGate) -> Elem
                 }
             }
             if open {
-                button { class: "ik-btn", disabled: busy.is_busy(), onclick: cancel,
+                Button {
+                    disabled: busy.is_busy(),
+                    on_click: cancel,
                     {i18n.t("account.privacy.requests.withdraw")}
                 }
             }
@@ -401,16 +403,14 @@ fn DeleteAccountCard() -> Element {
                 }
                 OutcomeLine { outcome: outcome.read().clone() }
                 div { class: "ik-flex", style: "margin-top:12px;",
-                    button {
-                        class: "ik-btn",
+                    Button {
                         style: "color:var(--vermilion);",
                         disabled: busy.is_busy() || !matches_username,
-                        onclick: delete,
+                        on_click: delete,
                         {i18n.t("account.privacy.delete.confirmCta")}
                     }
-                    button {
-                        class: "ik-btn",
-                        onclick: move |_| {
+                    Button {
+                        on_click: move |_| {
                             armed.set(false);
                             typed.set(String::new());
                         },
@@ -418,10 +418,9 @@ fn DeleteAccountCard() -> Element {
                     }
                 }
             } else {
-                button {
-                    class: "ik-btn",
+                Button {
                     style: "margin-top:12px;color:var(--vermilion);",
-                    onclick: move |_| armed.set(true),
+                    on_click: move |_| armed.set(true),
                     {i18n.t("account.privacy.delete.cta")}
                 }
             }

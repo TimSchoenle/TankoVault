@@ -17,7 +17,7 @@ use crate::icons::{Ic, Icon};
 use crate::models::{PreferredProvider, ProviderId, PublicProvider, SourcePreferencesUpdate};
 use crate::state::source_order::use_source_order;
 use dioxus::prelude::*;
-
+use inkstone_ui::Button;
 #[component]
 pub(crate) fn SourcesPanel() -> Element {
     let i18n = use_i18n();
@@ -104,12 +104,11 @@ pub(crate) fn SourcesPanel() -> Element {
                             "{index + 1}"
                         }
                         div { class: "grow", "{provider.name}" }
-                        button {
-                            class: "ik-btn",
+                        Button {
                             disabled: index == 0,
                             title: i18n.t("account.sources.moveUp"),
-                            "aria-label": i18n.args("account.sources.moveUpOf", &[("source", &provider.name)]),
-                            onclick: {
+                            aria_label: i18n.args("account.sources.moveUpOf", &[("source", &provider.name)]),
+                            on_click: {
                                 let order = order.clone();
                                 move |_| {
                                     let mut next = ids(&order);
@@ -119,12 +118,11 @@ pub(crate) fn SourcesPanel() -> Element {
                             },
                             Ic { icon: Icon::ArrowUp, size: 14 }
                         }
-                        button {
-                            class: "ik-btn",
+                        Button {
                             disabled: index == last,
                             title: i18n.t("account.sources.moveDown"),
-                            "aria-label": i18n.args("account.sources.moveDownOf", &[("source", &provider.name)]),
-                            onclick: {
+                            aria_label: i18n.args("account.sources.moveDownOf", &[("source", &provider.name)]),
+                            on_click: {
                                 let order = order.clone();
                                 move |_| {
                                     let mut next = ids(&order);
@@ -134,11 +132,10 @@ pub(crate) fn SourcesPanel() -> Element {
                             },
                             Ic { icon: Icon::ArrowDown, size: 14 }
                         }
-                        button {
-                            class: "ik-btn",
+                        Button {
                             title: i18n.t("account.sources.unrank"),
-                            "aria-label": i18n.args("account.sources.unrankOf", &[("source", &provider.name)]),
-                            onclick: {
+                            aria_label: i18n.args("account.sources.unrankOf", &[("source", &provider.name)]),
+                            on_click: {
                                 let order = order.clone();
                                 move |_| {
                                     let mut next = ids(&order);
@@ -161,10 +158,9 @@ pub(crate) fn SourcesPanel() -> Element {
                                     {i18n.args("account.sources.seriesCount", &[("count", &provider.series_count.to_string())])}
                                 }
                             }
-                            button {
-                                class: "ik-btn",
-                                "aria-label": i18n.args("account.sources.rankOf", &[("source", &provider.name)]),
-                                onclick: {
+                            Button {
+                                aria_label: i18n.args("account.sources.rankOf", &[("source", &provider.name)]),
+                                on_click: {
                                     let order = order.clone();
                                     move |_| {
                                         let mut next = ids(&order);

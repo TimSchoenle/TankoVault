@@ -24,7 +24,7 @@ use crate::state::capabilities::{use_capabilities, CapabilitySet};
 use crate::state::use_session;
 use crate::wire::types::Feature;
 use dioxus::prelude::*;
-
+use inkstone_ui::Button;
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Panel {
     Profile,
@@ -155,7 +155,10 @@ pub(crate) fn Account() -> Element {
     rsx! {
         div { class: "ik-page-head",
             h1 { class: "ik-page-title", {i18n.t("nav.account")} }
-            button { class: "ik-btn", onclick: sign_out, {i18n.t("account.signOut")} }
+            Button {
+                on_click: sign_out,
+                {i18n.t("account.signOut")}
+            }
         }
         TabBar {
             selected: current,

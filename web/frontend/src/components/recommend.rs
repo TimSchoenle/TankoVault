@@ -13,7 +13,7 @@ use crate::icons::{Ic, Icon};
 use crate::models::{because_series, FeedbackBody, Recommendation, SeriesId};
 use crate::Route;
 use dioxus::prelude::*;
-
+use inkstone_ui::Button;
 /// The verdicts `POST /v1/me/recommendations/{id}/feedback` accepts.
 ///
 /// Wire tokens rather than an enum, because the endpoint publishes a free-form string and
@@ -61,12 +61,11 @@ pub(crate) fn RecCard(item: Recommendation, reload: Reload, detailed: bool) -> E
                     shared: item.shared.clone(),
                     detailed,
                 }
-                button {
-                    class: "ik-btn",
+                Button {
                     style: "position:absolute;top:8px;right:8px;width:30px;height:30px;padding:0;justify-content:center;background:color-mix(in srgb,var(--bg) 72%,transparent);backdrop-filter:blur(3px);",
                     title: i18n.args("home.recommendations.dismiss", &[("title", &item.title)]),
-                    "aria-label": i18n.args("home.recommendations.dismiss", &[("title", &item.title)]),
-                    onclick: move |_| asking.set(true),
+                    aria_label: i18n.args("home.recommendations.dismiss", &[("title", &item.title)]),
+                    on_click: move |_| asking.set(true),
                     Ic { icon: Icon::Close, size: 14 }
                 }
             }
@@ -187,27 +186,24 @@ fn Verdicts(series_id: SeriesId, reload: Reload, on_close: EventHandler<()>) -> 
                 p { style: "font-size:11.5px;color:var(--acc);margin:0 0 8px;", "{message}" }
             }
             div { class: "ik-flex", style: "flex-wrap:wrap;gap:6px;",
-                button {
-                    class: "ik-btn",
+                Button {
                     style: "font-size:12px;padding:6px 10px;",
                     disabled: busy.is_busy(),
                     title: i18n.t("home.recommendations.notInterestedHint"),
-                    onclick: move |_| send(NOT_INTERESTED),
+                    on_click: move |_| send(NOT_INTERESTED),
                     {i18n.t("home.recommendations.notInterested")}
                 }
-                button {
-                    class: "ik-btn",
+                Button {
                     style: "font-size:12px;padding:6px 10px;",
                     disabled: busy.is_busy(),
                     title: i18n.t("home.recommendations.hideForeverHint"),
-                    onclick: move |_| send(HIDE_FOREVER),
+                    on_click: move |_| send(HIDE_FOREVER),
                     {i18n.t("home.recommendations.hideForever")}
                 }
-                button {
-                    class: "ik-btn",
+                Button {
                     style: "font-size:12px;padding:6px 10px;margin-left:auto;",
                     disabled: busy.is_busy(),
-                    onclick: move |_| on_close.call(()),
+                    on_click: move |_| on_close.call(()),
                     {i18n.t("common.cancel")}
                 }
             }

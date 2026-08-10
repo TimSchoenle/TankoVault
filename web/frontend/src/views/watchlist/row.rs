@@ -13,6 +13,7 @@ use crate::models::*;
 use crate::util::{chapter_number, rel_time, thousands};
 use crate::Route;
 use dioxus::prelude::*;
+use inkstone_ui::{Pill, Tone};
 use std::collections::HashSet;
 use std::rc::Rc;
 
@@ -459,7 +460,7 @@ pub(super) fn WatchRow(
                             }
                         }
                         if !item.notify {
-                            span { class: "ik-pill", {i18n.t("watchlist.muted")} }
+                            Pill { {i18n.t("watchlist.muted")} }
                         }
                     }
                     div {
@@ -500,7 +501,7 @@ pub(super) fn WatchRow(
 
             span { class: "ik-wl-unread", role: "gridcell",
                 if item.unread > 0 {
-                    span { class: "ik-pill acc", "{thousands(item.unread)}" }
+                    Pill { tone: Tone::Accent, "{thousands(item.unread)}" }
                 } else {
                     span { class: "ik-faint", "—" }
                 }

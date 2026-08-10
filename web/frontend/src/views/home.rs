@@ -23,8 +23,8 @@ use crate::views::DiscoverQuery;
 use crate::wire::types::Feature;
 use crate::Route;
 use dioxus::prelude::*;
+use inkstone_ui::{button_class, Button, Pill, Size, Tone};
 use progenitor_client::ResponseValue;
-
 #[component]
 pub(crate) fn Home() -> Element {
     let session = use_session();
@@ -212,14 +212,14 @@ fn GuestHome() -> Element {
             p { class: "ik-muted", {i18n.t("home.guest.subtitle")} }
             Link {
                 to: Route::Login {},
-                class: "ik-btn primary block",
+                class: button_class(Tone::Primary, Size::Md, true),
                 style: "margin-top:20px;",
                 {i18n.t("common.signIn")}
             }
             if caps.has_feature(Feature::CatalogueBrowse) {
                 Link {
                     to: Route::Discover { query: DiscoverQuery::default() },
-                    class: "ik-btn block",
+                    class: button_class(Tone::Neutral, Size::Md, true),
                     style: "margin-top:10px;",
                     {i18n.t("home.guest.browse")}
                 }
@@ -265,7 +265,9 @@ fn ContinueCard(item: ContinueItem) -> Element {
                     }
                     span { class: "ik-rail-spacer" }
                     if item.unread > 0 {
-                        span { class: "ik-pill acc", style: "font-size:10px;",
+                        Pill {
+                            tone: Tone::Accent,
+                            style: "font-size:10px;",
                             {i18n.args("home.continue.new", &[("count", &item.unread.to_string())])}
                         }
                     }
@@ -319,8 +321,12 @@ fn FeedRow(entry: FeedEntry, reload: Reload) -> Element {
                 div { style: "font-weight:600;", "{entry.series_title}" }
                 div { class: "ik-muted", style: "font-size:13px;", "{label} · {entry.provider_slug}" }
             }
-            a { class: "ik-btn", href: "{entry.url}", target: "_blank", rel: "noopener", {i18n.t("common.open")} }
-            button { class: "ik-btn primary", onclick: mark_read, {i18n.t("common.markRead")} }
+            a { class: button_class(Tone::Neutral, Size::Md, false), href: "{entry.url}", target: "_blank", rel: "noopener", {i18n.t("common.open")} }
+            Button {
+                tone: Tone::Primary,
+                on_click: mark_read,
+                {i18n.t("common.markRead")}
+            }
         }
     }
 }

@@ -28,9 +28,9 @@ use crate::wire::types::{
     SecurityKeyRegisterFinish, SecurityKeyRegisterStart, SecurityKeyRename, TotpConfirm,
 };
 use dioxus::prelude::*;
+use inkstone_ui::{Button, Tone};
 use progenitor_client::ResponseValue;
 use webauthn_rs_proto::CreationChallengeResponse;
-
 #[component]
 pub(crate) fn MfaCard() -> Element {
     let session = use_session();
@@ -283,10 +283,9 @@ pub(crate) fn MfaCard() -> Element {
                             li { key: "{code}", "{code}" }
                         }
                     }
-                    button {
-                        class: "ik-btn",
+                    Button {
                         style: "margin-top:10px;",
-                        onclick: move |_| fresh_codes.set(Vec::new()),
+                        on_click: move |_| fresh_codes.set(Vec::new()),
                         {i18n.t("mfa.recovery.saved")}
                     }
                 }
@@ -323,9 +322,8 @@ pub(crate) fn MfaCard() -> Element {
                                     },
                                 }
                             } else {
-                                button {
-                                    class: "ik-btn",
-                                    onclick: move |_| removing_totp.set(true),
+                                Button {
+                                    on_click: move |_| removing_totp.set(true),
                                     {i18n.t("common.remove")}
                                 }
                             }
@@ -353,18 +351,17 @@ pub(crate) fn MfaCard() -> Element {
                                 on_input: move |v| confirm_code.set(v),
                                 on_enter: move |()| confirm_totp.call(()),
                             }
-                            button {
-                                class: "ik-btn primary",
+                            Button {
+                                tone: Tone::Primary,
                                 disabled: busy.is_busy(),
-                                onclick: move |_| confirm_totp.call(()),
+                                on_click: move |_| confirm_totp.call(()),
                                 {i18n.t("mfa.totp.confirm")}
                             }
                         }
                     } else {
-                        button {
-                            class: "ik-btn",
+                        Button {
                             disabled: busy.is_busy(),
-                            onclick: move |_| gate.attempt(move || begin_totp.call(())),
+                            on_click: move |_| gate.attempt(move || begin_totp.call(())),
                             {i18n.t("mfa.totp.add")}
                         }
                     }
@@ -409,10 +406,9 @@ pub(crate) fn MfaCard() -> Element {
                         on_input: move |v| key_label.set(v),
                         on_enter: move |()| gate.attempt(move || register_key.call(())),
                     }
-                    button {
-                        class: "ik-btn",
+                    Button {
                         disabled: busy.is_busy(),
-                        onclick: move |_| gate.attempt(move || register_key.call(())),
+                        on_click: move |_| gate.attempt(move || register_key.call(())),
                         {i18n.t("mfa.key.add")}
                     }
                 }
@@ -437,10 +433,9 @@ pub(crate) fn MfaCard() -> Element {
                         p { class: "ik-muted", style: "font-size:13px;margin:0 0 8px;",
                             {i18n.t("mfa.recovery.remaining")} " " "{remaining}"
                         }
-                        button {
-                            class: "ik-btn",
+                        Button {
                             disabled: busy.is_busy(),
-                            onclick: move |_| gate.attempt(move || regenerate.call(())),
+                            on_click: move |_| gate.attempt(move || regenerate.call(())),
                             {i18n.t("mfa.recovery.regenerate")}
                         }
                     }
@@ -552,9 +547,8 @@ fn SecurityKeyRow(
                     }
                 }
                 div { class: "ik-flex", style: "gap:6px;",
-                    button {
-                        class: "ik-btn",
-                        onclick: move |_| {
+                    Button {
+                        on_click: move |_| {
                             let open = *renaming.read();
                             if open {
                                 gate.attempt(move || rename.call(()));
@@ -563,9 +557,9 @@ fn SecurityKeyRow(
                             }
                         },
                         if *renaming.read() {
-                            {i18n.t("common.save")}
+                        {i18n.t("common.save")}
                         } else {
-                            {i18n.t("common.rename")}
+                        {i18n.t("common.rename")}
                         }
                     }
                     if *revoking.read() {
@@ -581,9 +575,8 @@ fn SecurityKeyRow(
                             },
                         }
                     } else {
-                        button {
-                            class: "ik-btn",
-                            onclick: move |_| revoking.set(true),
+                        Button {
+                            on_click: move |_| revoking.set(true),
                             {i18n.t("common.revoke")}
                         }
                     }

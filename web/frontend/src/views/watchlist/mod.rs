@@ -23,13 +23,13 @@ use crate::Route;
 use bulk::BulkBar;
 use dioxus::prelude::*;
 use grid::CoverGrid;
+use inkstone_ui::{button_class, Button, Pill, Size, Tone};
 use progenitor_client::ResponseValue;
 pub(crate) use query::WatchlistQuery;
 use query::{Order, Released, Sort, View};
 use row::{GroupHeader, RowCtx, WatchRow};
 use std::collections::HashSet;
 use toolbar::{FilterBar, StatusTabs};
-
 /// Rows fetched per page in the list view. The list pages on a scroll sentinel, so this is the
 /// size of one bite, not of the list. The cover grid sizes its own bite from [`PAGE_ROWS`],
 /// because a bite that is not a whole number of tiles ends every page in a half-empty row.
@@ -386,12 +386,14 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
             }
             div { class: "ik-flex", style: "gap:10px;align-items:center;",
                 {sync_chip(i18n, &sync_status)}
-                button { class: "ik-btn", disabled: syncing.is_busy(), onclick: sync_now,
+                Button {
+                    disabled: syncing.is_busy(),
+                    on_click: sync_now,
                     Ic { icon: Icon::CloudSync, size: 16 }
                     if syncing.is_busy() {
-                        {i18n.t("watchlist.syncing")}
+                    {i18n.t("watchlist.syncing")}
                     } else {
-                        {i18n.t("watchlist.sync")}
+                    {i18n.t("watchlist.sync")}
                     }
                 }
             }
@@ -597,7 +599,9 @@ fn sync_chip(i18n: Translator, status: &Resource<Option<SyncAccountStatus>>) -> 
     }
     let when = rel_time(i18n, status.last_synced_at.as_deref());
     rsx! {
-        span { class: "ik-pill jade", title: "{when}",
+        Pill {
+            tone: Tone::Positive,
+            title: "{when}",
             {i18n.args("watchlist.syncedAgo", &[("when", &when)])}
         }
     }
@@ -615,7 +619,7 @@ fn empty_state(
             div { class: "ik-empty",
                 Ic { icon: Icon::Watchlist, size: 28 }
                 p { style: "margin:10px 0 4px;font-weight:600;", {i18n.t("watchlist.empty")} }
-                Link { to: Route::Discover { query: crate::views::DiscoverQuery::default() }, class: "ik-btn", style: "margin-top:10px;",
+                Link { to: Route::Discover { query: crate::views::DiscoverQuery::default() }, class: button_class(Tone::Neutral, Size::Md, false), style: "margin-top:10px;",
                     {i18n.t("watchlist.emptyCta")}
                 }
             }
@@ -627,10 +631,9 @@ fn empty_state(
             Ic { icon: Icon::Search, size: 28 }
             p { style: "margin:10px 0 4px;font-weight:600;", {i18n.t("watchlist.noMatch.title")} }
             p { class: "ik-muted", style: "font-size:13px;", {i18n.t("watchlist.noMatch.hint")} }
-            button {
-                class: "ik-btn",
+            Button {
                 style: "margin-top:10px;",
-                onclick: move |_| go(WatchlistQuery { status: None, unread_only: false, ..WatchlistQuery::default() }),
+                on_click: move |_| go(WatchlistQuery { status: None, unread_only: false, ..WatchlistQuery::default() }),
                 {i18n.t("watchlist.resetFilters")}
             }
         }

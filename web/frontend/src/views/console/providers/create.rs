@@ -7,7 +7,7 @@ use crate::i18n::use_i18n;
 use crate::models::*;
 use crate::views::console::{adapter_label_key, ADAPTER_KINDS};
 use dioxus::prelude::*;
-
+use inkstone_ui::{Button, Size, Tone};
 /// Why the form would not submit, as the operator has to be told.
 enum Rejected {
     /// The catalogue key of a self-contained message.
@@ -188,15 +188,16 @@ pub(super) fn CreateProviderForm(reload: Reload, on_done: EventHandler<()>) -> E
                 StepUpGuard { gate, intro: Some(i18n.t("console.stepUp.intro")) }
                 OutcomeLine { outcome: outcome.read().clone() }
                 div { class: "ik-flex", style: "gap:8px;",
-                    button {
-                        class: "ik-btn sm primary",
+                    Button {
+                        size: Size::Sm,
+                        tone: Tone::Primary,
                         disabled: busy.is_busy(),
-                        onclick: submit,
+                        on_click: submit,
                         {i18n.t("console.providers.create")}
                     }
-                    button {
-                        class: "ik-btn sm",
-                        onclick: move |_| on_done.call(()),
+                    Button {
+                        size: Size::Sm,
+                        on_click: move |_| on_done.call(()),
                         {i18n.t("common.cancel")}
                     }
                 }

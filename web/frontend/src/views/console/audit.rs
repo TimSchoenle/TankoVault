@@ -12,6 +12,7 @@ use crate::util::rel_time;
 use crate::views::console::query::Window as TimeWindow;
 use crate::views::console::{config_editor_text, use_console_nav, ConsoleQuery, RefreshTick};
 use dioxus::prelude::*;
+use inkstone_ui::{Button, Size};
 use progenitor_client::ResponseValue;
 
 /// Rows per page. The server's default; it clamps regardless.
@@ -237,10 +238,10 @@ fn AuditRow(entry: Signal<AuditEntry>) -> Element {
             td { class: "ik-mono ik-muted", style: "font-size:12px;word-break:break-all;", "{target}" }
             td { style: "text-align:right;",
                 if has_detail {
-                    button {
-                        class: "ik-btn xs",
-                        "aria-expanded": if expanded { "true" } else { "false" },
-                        onclick: move |_| {
+                    Button {
+                        size: Size::Xs,
+                        expanded,
+                        on_click: move |_| {
                             let next = !*open.peek();
                             open.set(next);
                         },

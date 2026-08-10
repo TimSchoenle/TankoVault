@@ -19,8 +19,8 @@ use crate::icons::{Ic, Icon};
 use crate::models::*;
 use crate::util::{monogram, rel_time};
 use dioxus::prelude::*;
+use inkstone_ui::{button_class, Button, Pill, Size, ToggleButton, Tone};
 use progenitor_client::ResponseValue;
-
 /// The conflict resolution that adopts the local value, as the sync service spells it.
 const RESOLVE_LOCAL: &str = "local";
 /// The conflict resolution that adopts the remote value.
@@ -152,12 +152,12 @@ pub(super) fn TrackingCard(
 
     if !authed {
         return rsx! {
-            div { class: "ik-sidebar-card",
+            div { class: "ik-panel",
                 TrackingHead { conflicts: 0 }
                 p { class: "ik-muted", style: "font-size:13px;margin:0 0 12px;",
                     {i18n.t("series.signInToTrack")}
                 }
-                Link { to: crate::Route::Login {}, class: "ik-btn block", {i18n.t("common.signIn")} }
+                Link { to: crate::Route::Login {}, class: button_class(Tone::Neutral, Size::Md, true), {i18n.t("common.signIn")} }
             }
         };
     }
@@ -168,7 +168,7 @@ pub(super) fn TrackingCard(
     let conflict_rows = conflicts.read_unchecked().clone().unwrap_or_default();
 
     rsx! {
-        div { class: "ik-sidebar-card",
+        div { class: "ik-panel",
             TrackingHead { conflicts: open_conflicts }
 
             for conflict in conflict_rows {
@@ -275,7 +275,9 @@ fn TrackingHead(conflicts: usize) -> Element {
                 {i18n.t("series.tracking")}
             }
             if conflicts > 0 {
-                span { class: "ik-pill acc", style: "margin-left:auto;font-size:10px;",
+                Pill {
+                    tone: Tone::Accent,
+                    style: "margin-left:auto;font-size:10px;",
                     {i18n.plural("series.track.conflicts", count, &[])}
                 }
             }
@@ -379,23 +381,24 @@ fn ConflictCard(conflict: ConflictRow, reload_sync: Reload, reload_progress: Rel
                 }
             }
             div { class: "ik-flex", style: "gap:7px;flex-wrap:wrap;",
-                button {
-                    class: "ik-btn primary sm",
+                Button {
+                    tone: Tone::Primary,
+                    size: Size::Sm,
                     disabled: busy.is_busy(),
-                    onclick: move |_| resolve(RESOLVE_LOCAL),
+                    on_click: move |_| resolve(RESOLVE_LOCAL),
                     {i18n.args("series.track.push", &[("value", &conflict.local_value)])}
                 }
-                button {
-                    class: "ik-btn sm",
+                Button {
+                    size: Size::Sm,
                     disabled: busy.is_busy(),
-                    onclick: move |_| resolve(RESOLVE_REMOTE),
+                    on_click: move |_| resolve(RESOLVE_REMOTE),
                     {i18n.args("series.track.take", &[("value", &conflict.remote_value)])}
                 }
-                button {
-                    class: "ik-btn bare",
+                Button {
+                    tone: Tone::Bare,
                     style: "font-size:12px;",
                     disabled: busy.is_busy(),
-                    onclick: trust_newest,
+                    on_click: trust_newest,
                     {i18n.t("series.track.trustNewest")}
                 }
             }
@@ -511,11 +514,11 @@ fn ProgressEditor(
                     Ic { icon: Icon::Add, size: 15 }
                 }
             }
-            button {
-                class: "ik-btn sm",
+            Button {
+                size: Size::Sm,
                 style: "flex:1;justify-content:center;",
                 disabled: busy.is_busy(),
-                onclick: mark_to,
+                on_click: mark_to,
                 {i18n.t("series.track.markUpTo")}
             }
         }
@@ -576,11 +579,13 @@ fn TrackerRow(tracker: Tracker, reload_sync: Reload) -> Element {
                     "{sub}"
                 }
             }
-            button {
-                class: if linked { "ik-btn xs acc" } else { "ik-btn xs" },
+            ToggleButton {
+                on: linked,
+                on_tone: Tone::Accent,
+                size: Size::Xs,
                 style: "margin-left:auto;",
                 disabled: busy.is_busy(),
-                onclick: toggle,
+                on_toggle: toggle,
                 if linked {
                     {i18n.t("series.track.unlink")}
                 } else {

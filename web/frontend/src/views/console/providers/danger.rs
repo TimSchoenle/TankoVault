@@ -10,7 +10,7 @@ use crate::i18n::use_i18n;
 use crate::models::{Provider, ProviderStat, ProviderState, SetProviderStateBody};
 use crate::util::thousands;
 use dioxus::prelude::*;
-
+use inkstone_ui::{Button, Size};
 /// Two tiers, as designed: blocklisting is reversible and acts inline; deleting is not and is
 /// gated on typing the slug.
 #[component]
@@ -123,11 +123,11 @@ pub(super) fn DangerTab(
                                 div { class: "ttl", {i18n.t("console.providers.blocklist")} }
                                 div { class: "why", {i18n.t("console.providers.blocklistWhy")} }
                             }
-                            button {
-                                class: "ik-btn xs",
+                            Button {
+                                size: Size::Xs,
                                 style: "margin-left:auto;flex:none;",
                                 disabled: busy.is_busy(),
-                                onclick: move |_| {
+                                on_click: move |_| {
                                     if blocked {
                                         gate.attempt(move || set_blocked.call(ProviderState::Active));
                                     } else {
@@ -135,9 +135,9 @@ pub(super) fn DangerTab(
                                     }
                                 },
                                 if blocked {
-                                    {i18n.t("console.providers.unblock")}
+                                {i18n.t("console.providers.unblock")}
                                 } else {
-                                    {i18n.t("console.providers.blocklistCta")}
+                                {i18n.t("console.providers.blocklistCta")}
                                 }
                             }
                         }

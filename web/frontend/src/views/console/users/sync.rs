@@ -8,8 +8,8 @@ use crate::models::AdminSyncAccount;
 use crate::util::{monogram, rel_time};
 use crate::wire::types::{SyncAccountTarget, UserId};
 use dioxus::prelude::*;
+use inkstone_ui::{Button, Size, Tone};
 use progenitor_client::ResponseValue;
-
 /// This account's linked external trackers, with the two admin-side actions the API supports.
 #[component]
 pub(super) fn ExternalSync(user_id: String, username: String, editable: bool) -> Element {
@@ -173,13 +173,17 @@ pub(super) fn SyncLinkRow(
             }
             if editable {
                 div { class: "ik-flex", style: "margin-left:auto;gap:6px;flex:none;",
-                    button { class: "ik-btn xs", disabled: busy.is_busy(), onclick: pull,
+                    Button {
+                        size: Size::Xs,
+                        disabled: busy.is_busy(),
+                        on_click: pull,
                         {i18n.t("console.users.forcePull")}
                     }
-                    button {
-                        class: "ik-btn xs acc",
+                    Button {
+                        size: Size::Xs,
+                        tone: Tone::Accent,
                         disabled: busy.is_busy(),
-                        onclick: move |_| confirming.set(true),
+                        on_click: move |_| confirming.set(true),
                         {i18n.t("console.users.unlink")}
                     }
                 }

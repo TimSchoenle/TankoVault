@@ -19,8 +19,8 @@ use crate::state::use_session;
 use crate::util::{chapter_number, rel_time};
 use crate::Route;
 use dioxus::prelude::*;
+use inkstone_ui::{button_class, Button, Pill, Size, Tone};
 use progenitor_client::ResponseValue;
-
 /// Filter tabs (`DESIGN_SPEC` §7.5). Applied server-side: filtering the one loaded page is what
 /// let "Unread" render empty while unread rows sat on page two.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -199,7 +199,9 @@ pub(crate) fn Notifications() -> Element {
                     {i18n.args("notifications.summary", &[("count", &unread.to_string())])}
                 }
             }
-            button { class: "ik-btn", disabled: unread == 0, onclick: mark_all,
+            Button {
+                disabled: unread == 0,
+                on_click: mark_all,
                 {i18n.t("notifications.markAllRead")}
             }
         }
@@ -310,7 +312,10 @@ fn NotifRow(notification: Notification) -> Element {
             }
         }
         if !already_read {
-            span { class: "ik-pill vermilion", {i18n.t("notifications.new")} }
+            Pill {
+                tone: Tone::Accent,
+                {i18n.t("notifications.new")}
+            }
         }
     };
 
@@ -331,7 +336,7 @@ fn NotifRow(notification: Notification) -> Element {
             }
             if let Some(url) = chapter_url {
                 a {
-                    class: "ik-btn ik-notif-read",
+                    class: format!("{} ik-notif-read", button_class(Tone::Neutral, Size::Md, false)),
                     href: "{url}",
                     target: "_blank",
                     rel: "noopener noreferrer",

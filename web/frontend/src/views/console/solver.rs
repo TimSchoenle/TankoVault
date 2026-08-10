@@ -10,8 +10,8 @@ use crate::state::use_session;
 use crate::views::console::providers::AdapterTestPanel;
 use crate::views::console::RefreshTick;
 use dioxus::prelude::*;
+use inkstone_ui::{Button, Pill, Tone};
 use progenitor_client::ResponseValue;
-
 /// Challenge & solver panel: provider health with re-solve and re-enable actions.
 #[component]
 pub(super) fn SolverPanel(tick: RefreshTick) -> Element {
@@ -58,7 +58,10 @@ pub(super) fn SolverPanel(tick: RefreshTick) -> Element {
                             }
                         }
                     }
-                    span { class: "ik-pill jade", {i18n.t("console.solver.active")} }
+                    Pill {
+                        tone: Tone::Positive,
+                        {i18n.t("console.solver.active")}
+                    }
                 }
                 p { class: "ik-muted", style: "font-size:13px;margin:10px 0 0;",
                     {i18n.t("console.solver.note")}
@@ -142,9 +145,14 @@ pub(super) fn SolverRow(
             }
             HealthPill { state: Some(provider.state) }
             if blocked {
-                button { class: "ik-btn", onclick: reenable, {i18n.t("console.solver.reenable")} }
+                Button {
+                    on_click: reenable,
+                    {i18n.t("console.solver.reenable")}
+                }
             }
-            button { class: "ik-btn primary", onclick: resolve,
+            Button {
+                tone: Tone::Primary,
+                on_click: resolve,
                 Ic { icon: Icon::Refresh, size: 15 }
                 {i18n.t("console.solver.resolve")}
             }

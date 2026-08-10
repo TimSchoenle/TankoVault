@@ -10,7 +10,7 @@ use crate::views::console::run_state_pill;
 use crate::views::console::use_console_nav;
 use crate::wire::types::ScanRunId;
 use dioxus::prelude::*;
-
+use inkstone_ui::{Button, Size};
 /// Recent runs under the current filter, with the drawer for the selected one.
 #[component]
 pub(super) fn RunHistory(runs: Vec<ScanRun>, total: i64, narrowed: bool) -> Element {
@@ -189,9 +189,9 @@ fn RunDrawer() -> Element {
                     }
                     span { class: "ik-mono ik-muted", style: "font-size:11.5px;", "{run.id}" }
                 }
-                button {
-                    class: "ik-btn xs",
-                    onclick: move |_| nav.select(nav.query().with_selection(None)),
+                Button {
+                    size: Size::Xs,
+                    on_click: move |_| nav.select(nav.query().with_selection(None)),
                     {i18n.t("common.close")}
                 }
             }

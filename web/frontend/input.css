@@ -18,6 +18,16 @@
 @import "tailwindcss";
 @source "./src/**/*.rs";
 
+/* The component kit. `crates/inkstone-ui` owns every `ik-*` control class — button, pill, chip,
+ * input, field, table, modal, the layout primitives — and this file owns the app's chrome and
+ * the custom properties the kit reads (see the contract at the head of that stylesheet). It is
+ * imported here, before any rule below, so an app rule of equal specificity still wins.
+ *
+ * The `@source` is not optional: the scanner only walks paths it is given, and the kit's `rsx!`
+ * lives outside this crate's `src/`. */
+@import "./crates/inkstone-ui/styles/inkstone.css";
+@source "./crates/inkstone-ui/src/**/*.rs";
+
 /* Warm Paper is the opt-in theme, selected by `<html data-theme="light">` (written by the
  * appearance knob in Account → Appearance). Utilities can target it with `light:`. */
 @custom-variant light (&:where([data-theme="light"], [data-theme="light"] *));
@@ -191,7 +201,6 @@ a { color: inherit; text-decoration: none; }
 @keyframes ikbar { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 @keyframes ikpulse { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
 @keyframes ikflow { from { background-position: 0 0; } to { background-position: 40px 0; } }
-@keyframes ik-shimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; }
@@ -441,7 +450,6 @@ a { color: inherit; text-decoration: none; }
 .ik-userbox .sub { font-family: var(--font-mono); font-size: 10px; color: var(--faint); display: flex; align-items: center; gap: 5px; }
 .ik-userbox .gear { color: var(--muted); display: grid; place-items: center; padding: 6px; border-radius: 8px; }
 .ik-userbox .gear:hover { background: rgba(255,255,255,.05); color: var(--text); }
-.ik-status-dot { width: 6px; height: 6px; border-radius: 999px; background: var(--jade-bright); }
 
 .ik-main { min-width: 0; display: flex; flex-direction: column; }
 
@@ -467,12 +475,6 @@ a { color: inherit; text-decoration: none; }
   border: 1px solid var(--border-ctl); border-radius: 6px; padding: 1px 6px;
 }
 .ik-search .ik-input { padding-left: 38px; padding-right: 46px; }
-.ik-input {
-  width: 100%; background: var(--surface); border: 1px solid var(--border-ctl); color: var(--text);
-  border-radius: 10px; padding: 10px 14px; font: inherit; font-size: 14px; outline: none;
-}
-.ik-input::placeholder { color: var(--faint); }
-.ik-input:focus { border-color: var(--acc); box-shadow: 0 0 0 3px color-mix(in srgb, var(--acc) 25%, transparent); }
 /* Small viewports only (revealed in the ≤820px block): with the rail gone, the bar is the
  * only thing left that says which screen you are on. */
 .ik-topbar-page { display: none; align-items: center; gap: 10px; min-width: 0; flex: 1; }
@@ -715,45 +717,19 @@ a { color: inherit; text-decoration: none; }
 /* ============================================================================
  * Chips / pills / buttons / controls
  * ========================================================================== */
-.ik-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
-.ik-chip { border: 1px solid var(--border-ctl); background: var(--surface); color: var(--muted); padding: 5px 12px; border-radius: 999px; font-size: 13px; cursor: pointer; user-select: none; }
-.ik-chip.active { color: var(--acc3); border-color: var(--acc); background: color-mix(in srgb, var(--acc) 16%, transparent); }
 
 .ik-tagchip { border: 1px solid var(--border-ctl); background: var(--surface); color: var(--muted); padding: 4px 10px; border-radius: 8px; font-size: 12px; cursor: pointer; user-select: none; }
 .ik-tagchip.inc { color: var(--acc3); border-color: color-mix(in srgb, var(--acc) 40%, transparent); background: color-mix(in srgb, var(--acc) 12%, transparent); }
 .ik-tagchip.exc { color: #a94436; border-color: color-mix(in srgb, #a94436 55%, transparent); text-decoration: line-through; }
 .ik-tagchip-n { font-family: var(--font-mono); font-size: 10px; color: var(--faint-2); margin-left: 6px; }
 
-.ik-pill { font-family: var(--font-mono); font-size: 11px; padding: 3px 9px; border-radius: 20px; border: 1px solid var(--border-ctl); text-transform: uppercase; letter-spacing: .05em; }
-.ik-pill.jade { color: var(--jade-bright); border-color: color-mix(in srgb, var(--jade) 55%, transparent); background: color-mix(in srgb, var(--jade) 13%, transparent); }
-.ik-pill.vermilion, .ik-pill.acc { color: var(--acc3); border-color: color-mix(in srgb, var(--acc) 55%, transparent); background: color-mix(in srgb, var(--acc) 13%, transparent); }
-.ik-pill.run { color: var(--jade-bright); border-color: color-mix(in srgb, var(--jade) 55%, transparent); }
-/* Amber: needs attention but is not a failure — a suspended account, a degraded provider. */
-.ik-pill.star { color: var(--star); border-color: color-mix(in srgb, var(--star) 50%, transparent); background: color-mix(in srgb, var(--star) 12%, transparent); }
-/* `amber` is the caution tone `.star` carries; three call sites already asked for it by that
- * name and got an unstyled pill, so the audit trail drew a permission change the same neutral
- * grey as a scan trigger — the exact distinction that tone exists to make. */
-.ik-pill.amber { color: var(--star-ink); border-color: color-mix(in srgb, var(--star) 50%, transparent); background: color-mix(in srgb, var(--star) 12%, transparent); }
-
-.ik-btn { font: inherit; font-weight: 600; font-size: 14px; border-radius: 10px; padding: 9px 16px; border: 1px solid var(--border-ctl); background: var(--surface); color: var(--text-3); cursor: pointer; display: inline-flex; align-items: center; gap: 7px; }
-.ik-btn:hover { border-color: var(--acc); color: var(--text); }
-.ik-btn.primary { background: var(--acc); border-color: var(--acc); color: #fff; }
-.ik-btn.primary:hover { filter: brightness(1.06); }
-.ik-btn:disabled { opacity: .5; cursor: not-allowed; }
-.ik-btn.block { width: 100%; justify-content: center; }
-
-.ik-btn:focus-visible, .ik-nav-link:focus-visible, .ik-chip:focus-visible, .ik-tagchip:focus-visible, .ik-tab:focus-visible, .ik-bell:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+.ik-nav-link:focus-visible, .ik-tagchip:focus-visible, .ik-bell:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
 
 /* Inline link that stays the surrounding row's text color at rest, e.g. a label that
  * doubles as a "jump to external entry" link — only the hover state signals interactivity. */
 .ik-icon-link { display: inline-flex; color: inherit; transition: color 120ms ease; }
 .ik-icon-link:hover { color: var(--acc); }
 
-/* Tabs (notifications / console / settings). */
-.ik-tabs { display: flex; gap: 6px; flex-wrap: wrap; border-bottom: 1px solid var(--border); margin-bottom: 18px; }
-.ik-tab { font: inherit; font-size: 13px; color: var(--muted); background: transparent; border: 1px solid transparent; border-radius: 8px 8px 0 0; padding: 8px 14px; cursor: pointer; }
-.ik-tab:hover { color: var(--text); }
-.ik-tab.active { color: var(--acc3); border-color: var(--acc); background: color-mix(in srgb, var(--acc) 12%, transparent); }
 
 /* Toggle switch. */
 .ik-switch { width: 40px; height: 22px; border-radius: 999px; background: var(--border-ctl); position: relative; cursor: pointer; border: none; flex: none; transition: background 140ms ease; }
@@ -788,7 +764,6 @@ a { color: inherit; text-decoration: none; }
 /* `minmax(0,1fr)`, not `1fr`: a bare `1fr` floors at the content's min-content width, so one
  * unbreakable token in the synopsis pushed the sidebar off the measured column. */
 .ik-body-grid { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 28px; }
-.ik-sidebar-card { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 16px; }
 
 /* "More like this". The art box is sized in *both* dimensions on purpose: leaving the height to
  * the image's aspect ratio meant a cover that failed to load had no ratio to apply, collapsed to
@@ -829,9 +804,6 @@ a { color: inherit; text-decoration: none; }
  * ========================================================================== */
 .ik-daygroup { margin-bottom: 22px; }
 .ik-dayhead { color: var(--muted); font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 8px; }
-.ik-row { display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 8px; }
-.ik-row.unread { border-left: 3px solid var(--acc); background: var(--surface-unread); }
-.ik-row .grow { flex: 1; min-width: 0; }
 
 /* Notification row — §7.5: kind tile, cover thumb, title line, sub-line, relative time.
  * The tile had no rule at all before, so its size came from the icon alone and the covers,
@@ -898,8 +870,6 @@ a { color: inherit; text-decoration: none; }
 .ik-wl-toolbar .ik-chip { display: inline-flex; align-items: center; gap: 6px; }
 /* Amber, not vermilion: a degraded source is something to notice and fix, and
    vermilion is this app's accent/destructive role. */
-.ik-chip.warn { color: var(--star); border-color: color-mix(in srgb, var(--star) 45%, transparent); }
-.ik-chip.warn.active { background: color-mix(in srgb, var(--star) 14%, transparent); }
 .ik-wl-viewtoggle { display: inline-flex; margin-left: auto; border: 1px solid var(--border-ctl); border-radius: 9px; overflow: hidden; }
 .ik-wl-viewtoggle button { background: var(--surface); border: none; color: var(--muted); padding: 0 11px; height: 34px; cursor: pointer; display: grid; place-items: center; }
 .ik-wl-viewtoggle button.on { background: color-mix(in srgb, var(--acc) 16%, transparent); color: var(--acc3); }
@@ -1024,8 +994,6 @@ a { color: inherit; text-decoration: none; }
 .ik-filter-head .reset:hover { color: var(--acc); }
 .ik-filter-group { margin-top: 16px; }
 .ik-filter-group > .lbl { font-family: var(--font-mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--faint-2); margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
-.ik-range { width: 100%; accent-color: var(--acc); }
-.ik-range-row { display: flex; align-items: center; gap: 10px; font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
 .ik-legend { font-size: 11px; color: var(--faint); margin-top: 6px; display: flex; gap: 10px; }
 .ik-legend .inc { color: var(--acc3); }
 .ik-legend .exc { color: #a94436; }
@@ -1033,7 +1001,6 @@ a { color: inherit; text-decoration: none; }
 /* Results header + active filters + pagination. */
 .ik-results-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
 .ik-results-head .ik-page-title { margin: 0; }
-.ik-select { background: var(--surface); border: 1px solid var(--border-ctl); color: var(--text); border-radius: 10px; padding: 8px 12px; font: inherit; font-size: 13px; cursor: pointer; }
 .ik-active-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
 .ik-afchip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid color-mix(in srgb, var(--acc) 40%, transparent); background: color-mix(in srgb, var(--acc) 12%, transparent); color: var(--acc3); border-radius: 20px; padding: 3px 6px 3px 11px; font-size: 12px; }
 .ik-afchip button { background: none; border: none; color: inherit; cursor: pointer; display: inline-flex; padding: 2px; border-radius: 999px; }
@@ -1086,43 +1053,24 @@ a { color: inherit; text-decoration: none; }
 .ik-stat-inline .item { display: flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 14px; color: var(--text-3); }
 .ik-stat-inline .item .star { color: var(--star); }
 .ik-source-tile { width: 36px; height: 36px; border-radius: 9px; background: var(--surface); border: 1px solid var(--border-ctl); display: grid; place-items: center; font-family: var(--font-display); font-weight: 700; flex: none; }
-.ik-sidebar-card h4 { font-family: var(--font-display); font-size: 15px; margin: 0 0 12px; }
 
 /* ============================================================================
  * Skeletons / states / auth / console (ported)
  * ========================================================================== */
-.ik-skeleton { background: linear-gradient(90deg, var(--surface) 25%, rgba(255,255,255,.06) 37%, var(--surface) 63%); background-size: 400% 100%; animation: ik-shimmer 1.3s ease-in-out infinite; border-radius: 8px; }
-.ik-skel-cover { aspect-ratio: 2/3; width: 100%; }
 
-.ik-empty, .ik-error { border: 1px dashed var(--border); border-radius: var(--radius); padding: 40px; text-align: center; color: var(--muted); }
-.ik-error { border-color: color-mix(in srgb, var(--acc) 45%, var(--border)); }
+/* The panel an account or series form sits in. Capped at a comfortable measure: a text input
+ * stretched across a 1400px window is unreadable and looks unfinished. */
+.ik-panel-form { max-width: 560px; }
+/* The provider health pill, which sits inside a dense table cell. */
+.ik-pill-tiny { font-size: 9.5px; }
 
 .ik-auth { max-width: 400px; margin: 9vh auto; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 32px; }
 .ik-auth h1 { font-family: var(--font-display); font-size: 24px; margin: 0 0 4px; }
 /* Auth wordmark lockup (§7.9). */
 .ik-auth-brand { display: flex; align-items: center; gap: 11px; margin-bottom: 22px; }
 .ik-auth-brand .ik-wordmark { font-size: 22px; }
-.ik-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
-.ik-field label { font-size: 13px; color: var(--muted); }
 
-.ik-tile { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; }
 
-table.ik-table { width: 100%; border-collapse: collapse; }
-.ik-table th, .ik-table td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border-row); font-size: 14px; }
-.ik-table th { color: var(--muted); font-weight: 600; }
-.ik-tablewrap { width: 100%; overflow-x: auto; }
-.ik-table-compact th, .ik-table-compact td { padding: 8px 10px; font-size: 13px; vertical-align: middle; }
-.ik-table-compact th { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; white-space: nowrap; }
-
-/* A selectable table row. `.ik-cons-row` is the list-pane affordance and sets `display: block`,
- * which on a `<tr>` takes the row out of the table and detaches every cell from its column
- * heading — so the two cannot share one class. Backgrounds go on the cells because a collapsed
- * border model paints the row behind them. */
-.ik-table tr.ik-row-pick { cursor: pointer; }
-.ik-table tr.ik-row-pick:hover > td { background: var(--surface-2); }
-.ik-table tr.ik-row-pick.selected > td { background: color-mix(in srgb, var(--acc) 8%, transparent); }
-.ik-table tr.ik-row-pick.selected > td:first-child { box-shadow: inset 3px 0 0 var(--acc); }
-.ik-table tr.ik-row-pick:focus-visible { outline: 2px solid var(--acc); outline-offset: -2px; }
 
 .ik-kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
 /* Above ~1900px the extra width goes into the tiles rather than into four of them stretched
@@ -1148,10 +1096,6 @@ table.ik-table { width: 100%; border-collapse: collapse; }
 .ik-subhead { color: var(--muted); font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
 .ik-fail { border: 1px solid color-mix(in srgb, var(--acc) 35%, var(--border)); border-radius: 10px; padding: 10px 12px; background: color-mix(in srgb, var(--acc) 6%, var(--surface)); }
 
-.ik-muted { color: var(--muted); }
-.ik-mono { font-family: var(--font-mono); }
-.ik-flex { display: flex; gap: 10px; align-items: center; }
-.ik-brush { height: 8px; margin: 8px 0 20px; background: linear-gradient(90deg, var(--acc), transparent 72%); opacity: .8; border-radius: 4px; }
 
 /* ============================================================================
  * Split action button — one control, two targets.
@@ -1183,14 +1127,6 @@ table.ik-table { width: 100%; border-collapse: collapse; }
 .ik-split.sm > .main { font-size: 12.5px; padding: 9px 12px; }
 .ik-split.sm > .caret { padding: 0 9px; }
 
-/* Button size modifiers used by the console's dense inspector rows. */
-.ik-btn.sm { font-size: 12px; font-weight: 600; padding: 9px 12px; border-radius: 9px; }
-.ik-btn.xs { font-size: 11.5px; font-weight: 500; padding: 7px 10px; border-radius: 8px; }
-.ik-btn.acc { color: var(--acc3); background: color-mix(in srgb, var(--acc) 10%, transparent); border-color: color-mix(in srgb, var(--acc) 45%, transparent); }
-.ik-btn.acc:hover { background: color-mix(in srgb, var(--acc) 20%, transparent); color: var(--acc3); }
-/* A text-only action (no chrome until hover) — the third, least-committal choice in a row. */
-.ik-btn.bare { background: none; border-color: transparent; color: var(--muted); font-weight: 400; padding-left: 4px; padding-right: 4px; }
-.ik-btn.bare:hover { background: none; border-color: transparent; color: var(--acc3); }
 
 /* Source/provider/tracker monogram tile. One shape, four sizes. */
 .ik-mono-tile {
@@ -1300,7 +1236,6 @@ table.ik-table { width: 100%; border-collapse: collapse; }
  * Series detail — tracking sidebar
  * ========================================================================== */
 .ik-track-sec { margin-bottom: 14px; }
-.ik-sec-lbl { font-family: var(--font-mono); font-weight: 500; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); }
 .ik-conflict { border: 1px solid color-mix(in srgb, var(--acc) 40%, transparent); background: color-mix(in srgb, var(--acc) 6%, transparent); border-radius: 12px; padding: 12px 13px; margin-bottom: 14px; }
 .ik-valbox { flex: 1; min-width: 0; border: 1px solid var(--border-ctl); border-radius: 9px; padding: 8px 10px; background: var(--surface); }
 .ik-valbox .k { font-family: var(--font-mono); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); }
@@ -1312,11 +1247,6 @@ table.ik-table { width: 100%; border-collapse: collapse; }
 .ik-stepper button:disabled { opacity: .4; cursor: not-allowed; }
 .ik-stepper .val { width: 52px; height: 34px; display: grid; place-items: center; border-left: 1px solid var(--border-ctl); border-right: 1px solid var(--border-ctl); font-family: var(--font-mono); font-weight: 500; font-size: 13.5px; color: var(--text); }
 
-/* A bordered stack of rows with hairline rules between them, no rule on the last. */
-.ik-listbox { border: 1px solid var(--border); border-radius: 11px; overflow: hidden; }
-.ik-listbox > * { border-bottom: 1px solid var(--border-row); }
-.ik-listbox > *:last-child { border-bottom: none; }
-.ik-listrow { display: flex; align-items: center; gap: 10px; padding: 10px 12px; }
 .ik-listfoot { display: flex; align-items: center; gap: 9px; padding: 9px 12px; background: var(--rail); font-size: 11px; color: var(--faint); }
 .ik-grouphead { padding: 8px 12px; background: var(--rail); border-bottom: 1px solid var(--border); font-family: var(--font-mono); font-weight: 500; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); }
 
@@ -1392,26 +1322,9 @@ table.ik-table { width: 100%; border-collapse: collapse; }
 .ik-insp-title { font-family: var(--font-display); font-weight: 600; font-size: 24px; line-height: 1.15; margin: 0; }
 .ik-meta-line { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 6px; font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
 .ik-meta-line .ok { color: var(--jade-bright); }
-.ik-tabs.flush { margin-bottom: -1px; border-bottom: none; gap: 4px; }
 
-/* Label/field rows in the inspector. */
-.ik-kv { display: grid; grid-template-columns: 96px 1fr; align-items: center; gap: 10px; }
-.ik-kv.narrow { grid-template-columns: 92px 1fr; }
-.ik-kv > .k { font-size: 12.5px; color: var(--muted); }
-.ik-kv .warn { font-size: 11.5px; line-height: 1.4; color: var(--star); }
 
-/* Segmented control — a small closed set, one choice lit. */
-.ik-seg { display: flex; gap: 5px; width: fit-content; background: var(--surface); border: 1px solid var(--border-ctl); border-radius: 9px; padding: 3px; }
-.ik-seg button { font: inherit; font-size: 12px; color: var(--muted); background: none; border: none; border-radius: 7px; padding: 6px 10px; cursor: pointer; }
-.ik-seg button:hover { color: var(--text); }
-.ik-seg button.on { color: var(--text); font-weight: 500; background: var(--border-ctl); }
-.ik-seg button:focus-visible { outline: 2px solid var(--acc); outline-offset: 1px; }
 
-/* Politeness sliders: native range (keyboard-operable) tinted to the accent. */
-.ik-slider-row { display: flex; align-items: center; gap: 10px; }
-.ik-slider-row > .k { width: 92px; flex: none; font-size: 12px; color: var(--muted); }
-.ik-slider-row > .v { width: 56px; flex: none; text-align: right; font-family: var(--font-mono); font-weight: 500; font-size: 12px; color: var(--text); }
-.ik-range.grow { flex: 1; width: auto; }
 
 /* Adapter config editor. */
 .ik-jsonblock { width: 100%; min-height: 168px; resize: vertical; background: var(--bg); border: 1px solid var(--border-ctl); border-radius: 10px; padding: 11px 12px; color: var(--text-2); font-family: var(--font-mono); font-size: 12px; line-height: 1.65; outline: none; white-space: pre; overflow: auto; }

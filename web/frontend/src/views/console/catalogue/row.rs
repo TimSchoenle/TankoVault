@@ -4,6 +4,7 @@ use crate::i18n::use_i18n;
 use crate::util::{iso_date, thousands};
 use crate::wire::types::{CatalogueRow, SeriesId};
 use dioxus::prelude::*;
+use inkstone_ui::{Pill, Tone};
 use std::collections::HashSet;
 
 /// One series: what it is, who carries it, and the two numbers that say what deleting it costs.
@@ -71,13 +72,19 @@ pub(super) fn CatalogueTableRow(
             }
             td {
                 if entry.providers.is_empty() {
-                    span { class: "ik-pill amber", style: "font-size:9.5px;",
+                    Pill {
+                        tone: Tone::Caution,
+                        style: "font-size:9.5px;",
                         {i18n.t("console.catalogue.noProvider")}
                     }
                 } else {
                     div { class: "ik-flex", style: "gap:4px;flex-wrap:wrap;",
                         for slug in entry.providers.clone() {
-                            span { key: "{slug}", class: "ik-pill", style: "font-size:9.5px;", "{slug}" }
+                            Pill {
+                                key: "{slug}",
+                                style: "font-size:9.5px;",
+                                "{slug}"
+                            }
                         }
                     }
                 }

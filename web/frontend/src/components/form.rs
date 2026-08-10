@@ -1,8 +1,10 @@
-//! Form primitives: the labelled text input, the segmented control, the slider row and the
-//! list-pane search field.
+//! Form primitives, flavoured for this app: the kit's controls with this app's icons and its
+//! id conventions filled in.
 
 use crate::icons::{Ic, Icon};
 use dioxus::prelude::*;
+
+pub(crate) use inkstone_ui::SegControl;
 
 /// A labelled text input.
 ///
@@ -28,6 +30,9 @@ pub(crate) fn Field(
     /// Rendered under the input, for the "why is this needed" note.
     #[props(default)]
     hint: Option<String>,
+    /// A validation failure. Replaces the hint and is announced with the control.
+    #[props(default)]
+    error: Option<String>,
     /// Take focus as soon as the field appears. For the one field a dialog exists to collect —
     /// reaching for the mouse to answer a question that just took the screen is friction, and
     /// the HTML attribute is ignored by browsers on an element inserted after load.
@@ -35,67 +40,18 @@ pub(crate) fn Field(
     autofocus: bool,
 ) -> Element {
     rsx! {
-        div { class: "ik-field",
-            label { r#for: "{id}", "{label}" }
-            input {
-                id: "{id}",
-                class: "ik-input",
-                r#type: "{kind}",
-                autocomplete: autocomplete.clone().unwrap_or_default(),
-                placeholder: placeholder.clone().unwrap_or_default(),
-                value: "{value}",
-                onmounted: move |event| {
-                    if autofocus {
-                        let element = event.data();
-                        spawn(async move {
-                            let _ = element.set_focus(true).await;
-                        });
-                    }
-                },
-                oninput: move |e| on_input.call(e.value()),
-                onkeydown: move |e| {
-                    if e.key() == Key::Enter {
-                        if let Some(handler) = &on_enter {
-                            handler.call(());
-                        }
-                    }
-                },
-            }
-            if let Some(hint) = hint {
-                div { class: "ik-muted", style: "font-size:12px;margin-top:6px;", "{hint}" }
-            }
-        }
-    }
-}
-
-/// One option in a [`SegControl`]: the value written back, and the word for it.
-pub(crate) type SegOption = (String, String);
-
-/// A segmented control — a small closed set of choices with exactly one lit.
-#[component]
-pub(crate) fn SegControl(
-    options: Vec<SegOption>,
-    selected: String,
-    /// Read-only mode: the choice is shown but cannot be changed. Genuinely `disabled`, not
-    /// dimmed — a dimmed-but-live radio is worse than one that refuses the click.
-    #[props(default = false)]
-    disabled: bool,
-    on_select: EventHandler<String>,
-) -> Element {
-    rsx! {
-        div { class: "ik-seg", role: "radiogroup",
-            for (value , label) in options {
-                button {
-                    key: "{value}",
-                    class: if value == selected { "on" } else { "" },
-                    r#type: "button",
-                    role: "radio",
-                    disabled,
-                    "aria-checked": if value == selected { "true" } else { "false" },
-                    onclick: move |_| on_select.call(value.clone()),
-                    "{label}"
-                }
-            }
+        inkstone_ui::TextInput {
+            id,
+            label,
+            r#type: kind,
+            autocomplete,
+            placeholder,
+            value,
+            on_input,
+            on_enter,
+            hint,
+            error,
+            autofocus,
         }
     }
 }
@@ -116,23 +72,15 @@ pub(crate) fn SliderRow(
     on_input: EventHandler<f64>,
 ) -> Element {
     rsx! {
-        div { class: "ik-slider-row",
-            label { class: "k", r#for: "tv-slider-{label}", "{label}" }
-            input {
-                id: "tv-slider-{label}",
-                class: "ik-range grow",
-                r#type: "range",
-                min: "{min}",
-                max: "{max}",
-                step: "{step}",
-                value: "{value}",
-                oninput: move |event| {
-                    if let Ok(parsed) = event.value().parse::<f64>() {
-                        on_input.call(parsed);
-                    }
-                },
-            }
-            span { class: "v", "{display}" }
+        inkstone_ui::SliderRow {
+            id: format!("tv-slider-{label}"),
+            label,
+            value,
+            min,
+            max,
+            step,
+            display,
+            on_input,
         }
     }
 }
@@ -149,19 +97,14 @@ pub(crate) fn ListSearch(
     hits: String,
 ) -> Element {
     rsx! {
-        div { class: "ik-flex", style: "gap:8px;background:var(--surface);border:1px solid var(--border-ctl);border-radius:9px;padding:7px 10px;",
-            span { style: "display:flex;color:var(--faint);flex:none;",
+        inkstone_ui::SearchField {
+            placeholder,
+            query,
+            on_input,
+            hits,
+            icon: rsx! {
                 Ic { icon: Icon::Search, size: 14 }
-            }
-            input {
-                r#type: "search",
-                style: "flex:1;min-width:0;background:none;border:none;outline:none;color:var(--text);font:inherit;font-size:12.5px;",
-                placeholder: "{placeholder}",
-                "aria-label": "{placeholder}",
-                value: "{query}",
-                oninput: move |event| on_input.call(event.value()),
-            }
-            span { class: "ik-mono", style: "font-size:11px;color:var(--faint);flex:none;", "{hits}" }
+            },
         }
     }
 }

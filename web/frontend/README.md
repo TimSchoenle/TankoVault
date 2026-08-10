@@ -131,7 +131,8 @@ leaves the screen stuck on its signed-out result, 401ing forever.
 | `src/app.rs` | Route table, root contexts, bundled `@font-face` rules. |
 | `src/api/` | The `Api` handle (`mod.rs`) and user-facing failure text (`error.rs`). |
 | `src/state/` | Session (`mod.rs`), unverified JWT claim decoding (`jwt.rs`), appearance knobs (`prefs.rs`). |
-| `src/components/` | Shell, rail, command bar, cover cards, and the shared loading/empty/error primitives. |
+| `crates/inkstone-ui/` | The design system's components, in a crate with no application in it — see its README. A workspace member, so the gates below cover it. |
+| `src/components/` | App-flavoured wrappers over that kit (i18n + icons injected), plus the shell, rail, command bar and cover cards. |
 | `src/hooks.rs` | `Reload`, `Busy` and `Outcome` — the three patterns every screen repeats. |
 | `src/util.rs` | Dependency-free formatting (relative time, chapter numbers, thousands). |
 | `src/models.rs` | Re-exports of the generated types plus presentation-only label keys and colours. |
@@ -192,10 +193,15 @@ the primary subtag (`de-AT` → `de`).
 v4 is CSS-first — there is no `tailwind.config.js`. `input.css` holds, in order:
 
 1. `@import "tailwindcss"` + `@source "./src/**/*.rs"` (the content scan) and the `light:`
-   custom variant;
+   custom variant, then `@import` + `@source` for `crates/inkstone-ui` — the kit owns the
+   control classes and their markup lives outside this crate's `src/`, so the scanner has to be
+   told about it or every one of them is purged;
 2. the runtime design tokens as `:root` custom properties, plus the `[data-theme]` /
    `[data-accent]` / `[data-density]` / `[data-cover]` override blocks;
-3. the bespoke `ik-*` component classes as plain CSS (never purged);
+3. the app's own `ik-*` chrome as plain CSS (never purged); the kit's controls — button, pill,
+   chip, input, field, table, modal, the layout primitives — are in
+   `crates/inkstone-ui/styles/inkstone.css` instead, which names no colour and reads the
+   custom properties from (2);
 4. two `@theme` blocks at the foot — `@theme` for static tokens (fonts, radii, shadows,
    animations) and `@theme inline` for the palette, mapping `--color-*` onto the runtime `--*`
    variables so the `[data-*]` overrides keep re-tinting utilities at runtime. A non-inline

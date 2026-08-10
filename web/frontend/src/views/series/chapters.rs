@@ -15,7 +15,7 @@ use crate::icons::{Ic, Icon};
 use crate::models::{ChapterRead, SeriesId, SeriesSourceId};
 use crate::util::{chapter_number, is_fresh, monogram, rel_time};
 use dioxus::prelude::*;
-
+use inkstone_ui::{Button, Size, Tone};
 /// How many chapter groups the list shows before the "load more" footer.
 const PAGE: usize = 25;
 
@@ -138,17 +138,18 @@ pub(super) fn ChapterSection(
                 },
                 {i18n.t("series.hideParts")}
             }
-            button {
-                class: "ik-btn bare ik-mono",
+            Button {
+                tone: Tone::Bare,
+                class: "ik-mono",
                 style: "margin-left:auto;font-size:11.5px;",
-                onclick: move |_| {
+                on_click: move |_| {
                     let next = !*newest_first.read();
                     newest_first.set(next);
                 },
                 if *newest_first.read() {
-                    {i18n.t("series.newestFirst")}
+                {i18n.t("series.newestFirst")}
                 } else {
-                    {i18n.t("series.oldestFirst")}
+                {i18n.t("series.oldestFirst")}
                 }
                 Ic { icon: Icon::ChevronDown, size: 13 }
             }
@@ -419,10 +420,11 @@ fn ChapterRow(
             span { class: if fresh { "fresh new" } else { "fresh" }, "{when}" }
             div { class: "act",
                 if can_track {
-                    button {
-                        class: "ik-btn xs toggle-read",
+                    Button {
+                        size: Size::Xs,
+                        class: "toggle-read",
                         disabled: busy.is_busy(),
-                        onclick: toggle_read,
+                        on_click: toggle_read,
                         "{mark_label}"
                     }
                 }

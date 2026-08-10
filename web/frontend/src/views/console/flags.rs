@@ -14,8 +14,8 @@ use crate::state::capabilities::use_capabilities;
 use crate::util::iso_date;
 use crate::wire::types::{FeatureGroup, FlagView, Permission, SetFlag};
 use dioxus::prelude::*;
+use inkstone_ui::{Button, Pill, Tone};
 use progenitor_client::ResponseValue;
-
 /// The groups in display order, each with the catalogue key that titles it.
 const GROUPS: [(FeatureGroup, &str); 8] = [
     (FeatureGroup::Catalogue, "console.flags.group.catalogue"),
@@ -141,13 +141,17 @@ fn FlagRow(flag: FlagView, can_write: bool, reload: Reload, gate: StepUpGate) ->
                     }
                     strong { style: "font-size:13px;", "{flag.title}" }
                     if flag.locked {
-                        span { class: "ik-pill", title: i18n.t("console.flags.lockedHint"),
+                        Pill {
+                            title: i18n.t("console.flags.lockedHint"),
                             {i18n.t("console.flags.locked")}
                         }
                     }
                     // Show only when it differs from the shipped default: that's what an operator scans for.
                     if flag.overridden && flag.enabled != flag.default_enabled {
-                        span { class: "ik-pill acc", {i18n.t("console.flags.changed")} }
+                        Pill {
+                            tone: Tone::Accent,
+                            {i18n.t("console.flags.changed")}
+                        }
                     }
                 }
                 div { class: "ik-mono ik-muted", style: "font-size:11px;margin-top:2px;", "{key}" }
@@ -168,7 +172,7 @@ fn FlagRow(flag: FlagView, can_write: bool, reload: Reload, gate: StepUpGate) ->
             }
             if can_write && !flag.locked {
                 div { class: "ik-flex", style: "gap:6px;flex-shrink:0;",
-                    ToggleButton {
+                    FlagToggle {
                         feature: key.clone(),
                         enable: !enabled,
                         label: toggle_label,
@@ -188,7 +192,7 @@ fn FlagRow(flag: FlagView, can_write: bool, reload: Reload, gate: StepUpGate) ->
 
 /// Switch one feature on or off.
 #[component]
-fn ToggleButton(
+fn FlagToggle(
     feature: String,
     enable: bool,
     label: String,
@@ -228,10 +232,10 @@ fn ToggleButton(
         });
     };
     rsx! {
-        button {
-            class: if enable { "ik-btn primary" } else { "ik-btn" },
+        inkstone_ui::ToggleButton {
+            on: enable,
             disabled: busy.is_busy(),
-            onclick: click,
+            on_toggle: click,
             "{label}"
         }
     }
@@ -252,7 +256,7 @@ fn ResetButton(feature: String, busy: Busy, reload: Reload, gate: StepUpGate) ->
             let client = gate.client(api);
             spawn(async move {
                 if let Err(e) = client.reset_flag().key(key).send().await {
-                    // See `ToggleButton`: the refetch reports everything but the elevation demand.
+                    // See `FlagToggle`: the refetch reports everything but the elevation demand.
                     let _refused = gate.refused(api::Refusal::of(&e));
                 }
                 reload.bump();
@@ -261,11 +265,10 @@ fn ResetButton(feature: String, busy: Busy, reload: Reload, gate: StepUpGate) ->
         });
     };
     rsx! {
-        button {
-            class: "ik-btn",
+        Button {
             disabled: busy.is_busy(),
             title: i18n.t("console.flags.resetHint"),
-            onclick: click,
+            on_click: click,
             Ic { icon: Icon::Refresh, size: 14 }
         }
     }

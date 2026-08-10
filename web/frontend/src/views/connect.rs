@@ -11,8 +11,8 @@ use super::auth::AuthBrand;
 use crate::components::Field;
 use crate::i18n::use_i18n;
 use dioxus::prelude::*;
+use inkstone_ui::{Button, Tone};
 use tankovault_api_client::Client;
-
 /// Ask for a server, prove it answers, and store it.
 ///
 /// `on_connected` is called with the accepted origin; the caller re-renders into the app.
@@ -73,16 +73,15 @@ pub(crate) fn ConnectServer(on_connected: EventHandler<String>) -> Element {
                 on_enter: connect,
             }
 
-            button {
-                class: "ik-btn primary",
+            Button {
+                tone: Tone::Primary,
                 style: "width:100%;",
-                r#type: "button",
                 disabled: probing(),
-                onclick: move |_| connect(()),
+                on_click: move |_| connect(()),
                 if probing() {
-                    {i18n.t("connect.connecting")}
+                {i18n.t("connect.connecting")}
                 } else {
-                    {i18n.t("connect.action")}
+                {i18n.t("connect.action")}
                 }
             }
 

@@ -84,7 +84,7 @@ crates/          shared libraries, no binary
   fetch/         the crawl HTTP stack (wreq, emulation, politeness)
   ...
 services/        deployable binaries, one per tier
-web/frontend/    the Dioxus client — the SPA and the desktop app, one tree (§4.4)
+web/frontend/    the Dioxus client — the SPA and the desktop app, one tree (§4.5)
 xtask/           developer and CI tasks
 ```
 
@@ -405,7 +405,49 @@ its appearance preferences on boot, so the first eval killed it: a white page an
 user; `rsx!` escapes, these two parse. One use is allowed, as a budget of one:
 `icons.rs` interpolates `&'static str` from a closed match over an enum.
 
-### 4.4 Two builds, one component tree
+### 4.4 The component kit
+
+`web/frontend/crates/inkstone-ui` is the design system's components, in a crate that knows
+nothing about TankoVault: no message catalogue, no icon set, no API client, no router. Text
+arrives as `String`, glyphs as `Element`, actions as `EventHandler`. It ships its own stylesheet,
+`styles/inkstone.css`, which `input.css` imports and points the Tailwind scanner at. Both halves
+are meant to be liftable into another Dioxus project by copying the directory — that constraint
+is what keeps the app out of it.
+
+It is a workspace member by virtue of being a path dependency under `web/frontend`, so every
+gate run there already covers it, and both packages take their lints from
+`[workspace.lints]` in `web/frontend/Cargo.toml`.
+
+**[E] No screen writes a button's classes by hand** —
+`components::tests::no_screen_writes_button_classes_by_hand`, in `cargo test`. This is a test
+rather than a convention because the failure is invisible: `class: "ik-btn danger"` compiles,
+renders, and drew an ordinary neutral button, because no `.ik-btn.danger` rule was ever written.
+Four modifiers (`danger`, `ghost`, `vermilion`, `active`) were dead this way across five call
+sites, one of them a queue drain. `Tone` and `Size` can only name classes the stylesheet
+defines, and `inkstone_ui`'s own `every_variant_has_a_rule` reads `styles/inkstone.css` to hold
+that true. Where the element has to be an `<a>` — a router `Link` — use
+`inkstone_ui::button_class`.
+
+**[E] No component in the kit names a class** — `skin::tests::no_component_names_a_class`. Every
+element names a `Part` and its `Variant`s, and a `Skin` resolves them; `Inkstone` is the default
+and emits the `ik-*` vocabulary. Three axes vary independently and compose: the *theme* is the
+palette (`--acc`, `--surface`, …, what `[data-theme]`/`[data-accent]` already flip), the *style*
+is the `--ik-*` block at the head of `styles/inkstone.css` (shape, density, type, and a tint
+scale for how filled a tone-tinted control is), and the *vocabulary* is the `Skin` itself.
+Nothing visual is hard-coded in Rust and nothing is hard-coded in the rules, so a new style is
+an override block on a selector of the host's choosing.
+
+**A doc comment in that crate is scanned by Tailwind.** It sits under an `@source` glob — which
+is what keeps the `ik-*` names alive — and the scanner cannot tell a comment from markup, so an
+illustrative `bg-…` in a `//!` emits a real rule into the shipped stylesheet. It cost three
+stray theme tokens once already.
+
+**[R] App-flavoured wrappers live in `src/components/`.** That is where the i18n and the icons
+are injected: `components::ErrorBox` resolves the catalogue and renders the kit's, `PanelCard`
+supplies the icon, `TabBar` maps a screen's tab enum onto the kit's tablist. A view should reach
+for `crate::components` first and `inkstone_ui` only for what has no app flavour.
+
+### 4.5 Two builds, one component tree
 
 `web/frontend` compiles two ways from the same source. `web` (the default) is the
 `wasm32-unknown-unknown` SPA that `services/frontend` serves; `desktop` is a `wry` webview —

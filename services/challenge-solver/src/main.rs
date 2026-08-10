@@ -131,6 +131,7 @@ async fn serve_once(
 
     let state = AppState { solver };
     let limiter = RateLimiter::from_config(&cfg.rate_limit, RouteClassifier::new(), None);
+    let health = Health::builder().build();
 
     let app = HttpStack::new(&cfg.security, metrics.clone())
         .with_rate_limit(limiter)
@@ -143,11 +144,15 @@ async fn serve_once(
         // Readiness is just "listening": TRAWL has its own `/health` gate on the browser pool
         // and is deliberately not probed from here, since a solve already degrades to `502`
         // when it's unavailable.
-        .merge(tankovault_service::ops_router(
-            Health::builder().build(),
-            metrics,
-        ));
+        .merge(tankovault_service::ops_router(health.clone(), metrics));
 
-    tankovault_service::serve_internal(&cfg.bind_addr, app, &internal_auth, shutdown).await?;
+    tankovault_service::serve_internal(
+        &cfg.bind_addr,
+        app,
+        tankovault_service::probe_router(health),
+        &internal_auth,
+        shutdown,
+    )
+    .await?;
     Ok(())
 }

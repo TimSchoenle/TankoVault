@@ -73,7 +73,7 @@ pub struct PeerConfig {
 
 /// Where the mTLS material lives. Paths, not contents: whatever writes them — cert-manager, a
 /// mounted Secret, a hand-rolled CA — is outside this process's concern.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct InternalTlsConfig {
     /// PEM certificate chain this service serves and presents.
     #[serde(default)]
@@ -84,6 +84,41 @@ pub struct InternalTlsConfig {
     /// PEM bundle of the authorities a peer certificate must chain to.
     #[serde(default)]
     pub ca: Option<PathBuf>,
+    /// Address the credential-free `/health` and `/ready` probes bind to, in **plaintext**, on
+    /// their own listener (default `0.0.0.0:9091`). Read under `mtls` only.
+    ///
+    /// An orchestrator probe presents no client certificate, so on the mTLS port its plain
+    /// `GET` is answered with a TLS alert rather than a response and the replica is restarted
+    /// as unhealthy. `null` drops the listener, which is right only where whatever does the
+    /// probing *can* present a certificate.
+    #[serde(default = "InternalTlsConfig::default_probe_listen")]
+    pub probe_listen: Option<String>,
+}
+
+impl InternalTlsConfig {
+    // Must return `Option<String>` to match the field's serde-default signature; unwrapping
+    // as clippy suggests would break that.
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "must match the Option<String> field it defaults"
+    )]
+    fn default_probe_listen() -> Option<String> {
+        Some("0.0.0.0:9091".to_owned())
+    }
+}
+
+// Hand-written rather than derived so both ways this struct is produced agree: serde applies
+// the field default when `internal.tls` is present, `Default` when the whole table is absent,
+// and a derived `Default` would quietly mean "no probe listener".
+impl Default for InternalTlsConfig {
+    fn default() -> Self {
+        Self {
+            cert: None,
+            key: None,
+            ca: None,
+            probe_listen: Self::default_probe_listen(),
+        }
+    }
 }
 
 /// Authentication for service-to-service calls on the internal network.
@@ -148,6 +183,9 @@ pub struct ResolvedInternalAuth {
     pub caller: Option<ResolvedCaller>,
     pub peers: Vec<ResolvedPeer>,
     pub tls: Option<ResolvedTls>,
+    /// Plaintext address for the health probes, set under `mtls` only — every other mode
+    /// already answers them on the main listener.
+    pub probe_listen: Option<String>,
 }
 
 impl ResolvedInternalAuth {
@@ -193,12 +231,20 @@ impl InternalAuthConfig {
         let caller = self.resolve_caller()?;
         let peers = self.resolve_peers()?;
         let tls = self.resolve_tls()?;
+        // Tied to the mode, not merely to the key being set: outside `mtls` the probes are
+        // already reachable on the main listener, and a second copy of them would be a
+        // surface nobody asked for.
+        let probe_listen = tls
+            .is_some()
+            .then(|| self.tls.probe_listen.clone())
+            .flatten();
 
         Ok(ResolvedInternalAuth {
             mode: self.identity,
             caller,
             peers,
             tls,
+            probe_listen,
         })
     }
 
@@ -469,5 +515,57 @@ mod tests {
         assert!(resolved.caller.is_none());
         assert!(resolved.peers.is_empty());
         assert!(resolved.tls.is_none());
+        assert!(resolved.probe_listen.is_none());
+    }
+
+    /// The probes get a plaintext listener of their own under `mtls`, and under nothing else.
+    ///
+    /// A kubelet probe presents no client certificate, so on the mTLS listener its plain `GET
+    /// /health` is answered with a TLS alert — `malformed HTTP response "\x15\x03\x03…"` — and
+    /// every replica of every internal service was killed by its own startup probe.
+    #[test]
+    fn mtls_resolves_a_plaintext_probe_address_and_no_other_mode_does() {
+        let mtls = InternalAuthConfig {
+            identity: IdentityMode::Mtls,
+            tls: InternalTlsConfig {
+                cert: Some("/tls/tls.crt".into()),
+                key: Some("/tls/tls.key".into()),
+                ca: Some("/tls/ca.crt".into()),
+                ..InternalTlsConfig::default()
+            },
+            ..Default::default()
+        };
+        let resolved = mtls.resolve(false).expect("all three paths are set");
+        assert_eq!(resolved.probe_listen.as_deref(), Some("0.0.0.0:9091"));
+
+        // The same certificate material under `token` resolves no probe listener: those probes
+        // are answered on the main port, and a second copy would be surface nobody asked for.
+        let token = InternalAuthConfig {
+            identity: IdentityMode::Token,
+            ..mtls.clone()
+        };
+        assert!(
+            token
+                .resolve(false)
+                .expect("token needs no tls")
+                .probe_listen
+                .is_none()
+        );
+
+        // …and an operator whose probes can present a certificate opts out with `null`.
+        let opted_out = InternalAuthConfig {
+            tls: InternalTlsConfig {
+                probe_listen: None,
+                ..mtls.tls.clone()
+            },
+            ..mtls
+        };
+        assert!(
+            opted_out
+                .resolve(false)
+                .expect("still valid")
+                .probe_listen
+                .is_none()
+        );
     }
 }

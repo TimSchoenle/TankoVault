@@ -301,7 +301,12 @@ Eight per-service jobs on `<service>:9090`, plus Prometheus itself. Two delibera
   adding a gauge to the Rust runtime.
 
 `/ready` needs no credential even on the internal tier: `ops_router` is merged outside
-`HttpStack`, by design, so an orchestrator never needs the secret.
+`HttpStack`, by design, so an orchestrator never needs the secret. Under
+`internal.identity = "mtls"` the certificate is a credential the prober also does not have, so
+`/health` and `/ready` get a plaintext listener of their own on `internal.tls.probe_listen`
+(`0.0.0.0:9091`) — point the blackbox prober and the pod's own probes there, not at the service
+port, which answers a plain `GET` with a TLS alert. The scrape does **not** move with them: it
+stays wherever `metrics.listen` puts it.
 
 ### Recording rules
 

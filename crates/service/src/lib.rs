@@ -48,7 +48,8 @@ pub use flags::{FeatureGate, FeatureLayer, FlagSource, RouteFeatures};
 pub use health::{Health, HealthBuilder, HealthReport, HealthStatus};
 pub use healthcheck::{HEALTHCHECK_FLAG, run_and_exit as run_healthcheck_and_exit};
 pub use http::{
-    HttpStack, metrics_router, ops_router, serve, serve_internal, serve_tls, spawn_metrics_server,
+    HttpStack, metrics_router, ops_router, probe_router, serve, serve_internal, serve_tls,
+    spawn_metrics_server,
 };
 pub use internal_auth::{
     Caller, INTERNAL_TOKEN_HEADER, InternalAuth, InternalRoute, InternalToken, RouteTable,

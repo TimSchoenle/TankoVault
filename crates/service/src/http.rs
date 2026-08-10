@@ -265,15 +265,21 @@ async fn apply_security_headers(
     response
 }
 
-/// Shared state for the ops probes.
-#[derive(Clone)]
-struct OpsState {
-    health: Health,
-    metrics: MetricsRegistry,
+/// `/health` and `/ready`, and deliberately nothing else.
+///
+/// The credential-free surface: it is what an orchestrator probes, so it is also the whole of
+/// what [`serve_internal`] publishes in plaintext beside an mTLS listener. Keeping the scrape
+/// out of it is the point — a deployment that merged the scrape onto its mutually-authenticated
+/// port did so to keep it there.
+pub fn probe_router(health: Health) -> Router {
+    Router::new()
+        .route("/health", get(liveness))
+        .route("/ready", get(readiness))
+        .with_state(health)
 }
 
-/// The undocumented operational endpoints: `/health`, `/ready`, and — unless it has been
-/// isolated to its own port — the metrics scrape.
+/// The undocumented operational endpoints: [`probe_router`] plus — unless it has been isolated
+/// to its own port — the metrics scrape.
 ///
 /// Excluded from the `OpenAPI` document and mounted outside the middleware stack, so a
 /// rate limit or a body cap can never make a replica look unhealthy.
@@ -281,17 +287,13 @@ struct OpsState {
 /// When [`MetricsRegistry::listen`] is set the scrape route is not mounted here; it is
 /// served on its own listener instead (see [`spawn_metrics_server`]).
 pub fn ops_router(health: Health, metrics: MetricsRegistry) -> Router {
-    let mut router = Router::new()
-        .route("/health", get(liveness))
-        .route("/ready", get(readiness));
+    let probes = probe_router(health);
 
     // Only mount the scrape alongside the probes when it is not isolated to its own port.
-    if metrics.listen().is_none() {
-        let scrape_route = metrics.route().to_owned();
-        router = router.route(&scrape_route, get(scrape));
+    if metrics.listen().is_some() {
+        return probes;
     }
-
-    router.with_state(OpsState { health, metrics })
+    probes.merge(metrics_router(metrics))
 }
 
 /// A standalone router serving only the Prometheus scrape, for the isolated metrics port —
@@ -300,10 +302,7 @@ pub fn metrics_router(metrics: MetricsRegistry) -> Router {
     let scrape_route = metrics.route().to_owned();
     Router::new()
         .route(&scrape_route, get(scrape))
-        .with_state(OpsState {
-            health: Health::default(),
-            metrics,
-        })
+        .with_state(metrics)
 }
 
 /// Spawn a dedicated server for the metrics scrape when isolated to its own port via
@@ -332,8 +331,8 @@ async fn liveness() -> impl IntoResponse {
 
 /// Readiness: `200` when every dependency answered, `503` with a per-dependency body
 /// otherwise.
-async fn readiness(State(state): State<OpsState>) -> Response {
-    let report = state.health.report().await;
+async fn readiness(State(health): State<Health>) -> Response {
+    let report = health.report().await;
     let status = if report.is_ready() {
         StatusCode::OK
     } else {
@@ -346,8 +345,8 @@ async fn readiness(State(state): State<OpsState>) -> Response {
 ///
 /// `404` rather than an empty body so a misconfigured scrape target is an obvious failure
 /// in Prometheus rather than a silently flat graph.
-async fn scrape(State(state): State<OpsState>) -> Response {
-    match state.metrics.render() {
+async fn scrape(State(metrics): State<MetricsRegistry>) -> Response {
+    match metrics.render() {
         Some(body) => (
             StatusCode::OK,
             [(
@@ -377,7 +376,16 @@ pub async fn serve(
 ) -> Result<(), ServiceError> {
     let listener = TcpListener::bind(addr).await?;
     tracing::info!(%addr, "listening");
+    serve_on(listener, app, shutdown).await
+}
 
+/// [`serve`] on an already-bound listener, so a caller that needs the resolved port can bind
+/// first and still hand the socket over.
+async fn serve_on(
+    listener: TcpListener,
+    app: Router,
+    shutdown: CancellationToken,
+) -> Result<(), ServiceError> {
     axum::serve(
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
@@ -393,6 +401,32 @@ pub async fn serve(
 
     tracing::info!("http server stopped");
     Ok(())
+}
+
+/// Bind `addr` and serve `probes` — `/health` and `/ready`, nothing else — in plaintext,
+/// returning the bound address once the listener is up.
+///
+/// Binds before spawning so a port that is taken fails the boot that asked for it, rather than
+/// leaving a service that looks healthy and answers no probe.
+///
+/// # Errors
+/// Returns [`ServiceError::Server`] if `addr` cannot be bound.
+async fn serve_probes(
+    addr: &str,
+    probes: Router,
+    shutdown: CancellationToken,
+) -> Result<SocketAddr, ServiceError> {
+    let listener = TcpListener::bind(addr).await?;
+    let bound = listener.local_addr()?;
+    tracing::info!(%bound, "serving health probes in plaintext on their own port");
+
+    tokio::spawn(async move {
+        if let Err(e) = serve_on(listener, probes, shutdown).await {
+            tracing::error!(error = %e, "probe listener stopped");
+        }
+    });
+
+    Ok(bound)
 }
 
 /// Bind `addr` and serve `app` over mutually-authenticated TLS until `shutdown` is cancelled.
@@ -445,22 +479,41 @@ pub async fn serve_tls(
 /// `internal.identity`, so no service decides it independently and none can end up serving
 /// plaintext while its configuration says `mtls`.
 ///
+/// `probes` is [`probe_router`], and exists because mutual TLS breaks the one guarantee
+/// `ops_router` is merged outside [`HttpStack::apply`] to provide. An orchestrator presents no
+/// client certificate, so on the mTLS listener its plain `GET /health` is answered with a TLS
+/// alert rather than a response, and the replica is restarted while perfectly healthy. Under
+/// `mtls` the probes therefore also get a listener of their own at `internal.tls.probe_listen`,
+/// in plaintext, carrying `probes` and nothing else — the same credential-free surface every
+/// other identity mode publishes on its main port. The app routes stay behind both the
+/// certificate and `internal_auth`, and so does the metrics scrape when a deployment has merged
+/// it onto this port. Under `token` and `off` the probes are already reachable inside `app` and
+/// this argument goes unused.
+///
 /// # Errors
 /// As [`serve`] and [`serve_tls`], plus [`ServiceError::Tls`] if the certificate material named
-/// by `internal.tls` cannot be loaded.
+/// by `internal.tls` cannot be loaded, and [`ServiceError::Server`] if the probe address is
+/// already taken.
 pub async fn serve_internal(
     addr: &str,
     app: Router,
+    probes: Router,
     auth: &tankovault_config::ResolvedInternalAuth,
     shutdown: CancellationToken,
 ) -> Result<(), ServiceError> {
-    match auth.tls.as_ref() {
-        Some(paths) => {
-            let tls = std::sync::Arc::new(crate::tls::ReloadingTls::load(paths)?);
-            serve_tls(addr, app, tls, shutdown).await
-        }
-        None => serve(addr, app, shutdown).await,
+    let Some(paths) = auth.tls.as_ref() else {
+        return serve(addr, app, shutdown).await;
+    };
+
+    // Certificates first: an unreadable one is a boot failure, and failing it before any socket
+    // is open keeps a half-started replica from ever answering a probe it cannot back up.
+    let tls = std::sync::Arc::new(crate::tls::ReloadingTls::load(paths)?);
+
+    if let Some(probe_addr) = auth.probe_listen.as_deref() {
+        serve_probes(probe_addr, probes, shutdown.clone()).await?;
     }
+
+    serve_tls(addr, app, tls, shutdown).await
 }
 
 /// Split [`crate::tls::InternalPeer`] into the two extensions the rest of the stack expects.
@@ -532,23 +585,16 @@ mod tests {
 
     #[tokio::test]
     async fn readiness_reports_503_when_a_dependency_is_down() {
-        let state = OpsState {
-            health: Health::builder()
-                .check_fn("db", || async { Err("refused".to_owned()) })
-                .build(),
-            metrics: MetricsRegistry::disabled(),
-        };
-        let response = readiness(State(state)).await;
+        let health = Health::builder()
+            .check_fn("db", || async { Err("refused".to_owned()) })
+            .build();
+        let response = readiness(State(health)).await;
         assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
     }
 
     #[tokio::test]
     async fn scrape_is_404_when_metrics_are_disabled() {
-        let state = OpsState {
-            health: Health::default(),
-            metrics: MetricsRegistry::disabled(),
-        };
-        let response = scrape(State(state)).await;
+        let response = scrape(State(MetricsRegistry::disabled())).await;
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
@@ -610,6 +656,63 @@ mod tests {
             .await
             .expect("router should respond");
         assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    /// The probe router carries no scrape, whatever the metrics configuration says.
+    ///
+    /// It is what [`serve_internal`] publishes in plaintext beside an mTLS listener, and a
+    /// deployment that sets `metrics.listen = null` has merged the scrape onto that listener
+    /// on purpose — under `mtls`, to keep it behind a client certificate. Serving
+    /// `ops_router` there instead would have undone that silently.
+    #[tokio::test]
+    async fn the_probe_router_carries_no_scrape() {
+        let router = probe_router(Health::default());
+
+        let response = router
+            .oneshot(get("/metrics"))
+            .await
+            .expect("router should respond");
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert_ne!(body_string(response).await, "metrics are disabled");
+    }
+
+    /// A plain `GET /health` — the only kind an orchestrator sends — is answered on the probe
+    /// listener.
+    ///
+    /// The mTLS listener cannot answer it: with no client certificate the connection never
+    /// gets past the handshake, and what comes back is a TLS alert record, which the kubelet
+    /// reports as `malformed HTTP response "\x15\x03\x03\x00\x02\x02"` before restarting the
+    /// replica. Every service on `internal.identity = "mtls"` failed its startup probe that
+    /// way, so the probes need a listener that speaks what the probe speaks.
+    #[tokio::test]
+    async fn probes_answer_plain_http_on_their_own_listener() {
+        use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+
+        let shutdown = CancellationToken::new();
+        let bound = serve_probes(
+            "127.0.0.1:0",
+            ops_router(Health::default(), MetricsRegistry::disabled()),
+            shutdown.clone(),
+        )
+        .await
+        .expect("an ephemeral port should bind");
+
+        let mut conn = tokio::net::TcpStream::connect(bound)
+            .await
+            .expect("the probe listener should accept");
+        conn.write_all(b"GET /health HTTP/1.1\r\nHost: probe\r\nConnection: close\r\n\r\n")
+            .await
+            .expect("the request should send");
+
+        let mut answer = Vec::new();
+        conn.read_to_end(&mut answer)
+            .await
+            .expect("the response should arrive");
+        let answer = String::from_utf8_lossy(&answer);
+
+        assert!(answer.starts_with("HTTP/1.1 200 OK"), "{answer}");
+        assert!(answer.ends_with("ok"), "{answer}");
+        shutdown.cancel();
     }
 
     #[tokio::test]

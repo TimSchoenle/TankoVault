@@ -28,7 +28,9 @@ x-telemetry: &telemetry
 #
 # `token` is the portable mode. Under Kubernetes set TANKOVAULT_INTERNAL__IDENTITY=mtls and mount
 # cert-manager's key pair plus trust-manager's CA bundle instead; the peer entries then carry
-# `__SAN` rather than `__TOKEN`, and nothing else here changes.
+# `__SAN` rather than `__TOKEN`. The one thing that does change there: a kubelet probe presents no
+# client certificate, so `/health` and `/ready` move to the plaintext listener on
+# TANKOVAULT_INTERNAL__TLS__PROBE_LISTEN (`0.0.0.0:9091`) and every probe must point at it.
 #
 # Required, no fallback: the previous published default was refused only when missing, not when
 # present and well-known, so an inherited default authorized every inter-tier call. `xtask

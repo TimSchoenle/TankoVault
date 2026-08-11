@@ -1,6 +1,7 @@
 //! The standing duplicate sweep and the pair-level facts an operator decision is scored on.
 
 use crate::error::DbResult;
+use serde_json::Value as Json;
 use sqlx::{FromRow, PgExecutor};
 use tankovault_domain::{ContentType, SeriesId};
 use uuid::Uuid;
@@ -54,6 +55,16 @@ use super::MAX_KEY_FANOUT;
 /// [`open_merge_pairs`] and the scorer-distinct ones by [`distinct_merge_pairs`], each on its
 /// own budget and least-recently-scored first.
 ///
+/// # Why there is no ordering
+///
+/// There used to be an `ORDER BY (lo, hi)`. It sorts by uuid, so it expressed no priority at all,
+/// and it forced the entire pair set — all three branches, unioned and anti-joined — to be built
+/// and sorted before the `LIMIT` could take a prefix of it. Progress does not depend on it:
+/// every pair returned here is judged and leaves with a `merge_candidates` row of some kind,
+/// which the anti-join below then excludes, so an arbitrary budget-sized slice drains the
+/// shortlist exactly as a sorted one does. Do not restore an ordering without a priority that is
+/// worth paying for the sort.
+///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
 pub async fn find_duplicate_pairs<'e, E: PgExecutor<'e>>(
@@ -84,20 +95,23 @@ pub async fn find_duplicate_pairs<'e, E: PgExecutor<'e>>(
              ON replace(a.normalized_title, ' ', '') = replace(b.normalized_title, ' ', '') \
             AND a.id < b.id \
            WHERE a.normalized_title <> '' \
-             AND replace(a.normalized_title, ' ', '') NOT IN (SELECT key FROM over_shared) \
+             AND NOT EXISTS (SELECT 1 FROM over_shared o \
+                              WHERE o.key = replace(a.normalized_title, ' ', '')) \
          ), by_alias AS ( \
            SELECT LEAST(s.id, st.series_id) AS lo, GREATEST(s.id, st.series_id) AS hi \
            FROM series s JOIN series_titles st \
              ON replace(st.normalized, ' ', '') = replace(s.normalized_title, ' ', '') \
            WHERE st.series_id <> s.id AND s.normalized_title <> '' \
-             AND replace(s.normalized_title, ' ', '') NOT IN (SELECT key FROM over_shared) \
+             AND NOT EXISTS (SELECT 1 FROM over_shared o \
+                              WHERE o.key = replace(s.normalized_title, ' ', '')) \
          ), by_shared_alias AS ( \
            SELECT x.series_id AS lo, y.series_id AS hi \
            FROM series_titles x JOIN series_titles y \
              ON replace(x.normalized, ' ', '') = replace(y.normalized, ' ', '') \
             AND x.series_id < y.series_id \
            WHERE x.normalized <> '' \
-             AND replace(x.normalized, ' ', '') NOT IN (SELECT key FROM over_shared) \
+             AND NOT EXISTS (SELECT 1 FROM over_shared o \
+                              WHERE o.key = replace(x.normalized, ' ', '')) \
          ), pairs AS ( \
            SELECT lo, hi FROM by_canonical \
            UNION SELECT lo, hi FROM by_alias \
@@ -108,7 +122,6 @@ pub async fn find_duplicate_pairs<'e, E: PgExecutor<'e>>(
            SELECT 1 FROM merge_candidates mc \
            WHERE mc.series_id = p.lo AND mc.candidate_id = p.hi \
          ) \
-         ORDER BY p.lo, p.hi \
          LIMIT $1",
         limit,
         MAX_KEY_FANOUT,
@@ -320,10 +333,20 @@ pub async fn open_merge_pairs<'e, E: PgExecutor<'e>>(
         .collect())
 }
 
-/// Record the scorer's verdict that a pair is **not** a duplicate, closing any open queue row
-/// for it. Returns whether a row was open before this call.
+/// One pair the scorer has judged **not** a duplicate.
+#[derive(Debug, Clone, Copy)]
+pub struct DistinctVerdict<'a> {
+    /// The pair in any order; [`record_distinct_pairs`] stores it in canonical id order.
+    pub pair: DuplicatePair,
+    pub score: f32,
+    /// The stable slugs of the scoring rules that fired.
+    pub signals: &'a [&'a str],
+}
+
+/// Record the scorer's verdict that a batch of pairs are **not** duplicates, closing any open
+/// queue row for each. Returns, per pair, whether a row was open before this call.
 ///
-/// # Why this is a row rather than a deletion
+/// # Why these are rows rather than deletions
 ///
 /// It used to delete, so that a later sweep could reconsider the pair. Reconsidering it is
 /// right — "distinct" here is the *scorer's* conclusion, not an operator's, reached on evidence
@@ -338,32 +361,58 @@ pub async fn open_merge_pairs<'e, E: PgExecutor<'e>>(
 /// is exactly what re-entering the recheck rotation would undo.
 ///
 /// # Errors
-/// [`crate::DbError::Conflict`] when `a == b`; otherwise [`crate::DbError::Sqlx`].
-pub async fn record_distinct_pair<'e, E: PgExecutor<'e>>(
+/// [`crate::DbError::Conflict`] when a pair names one series twice, or when two entries name the
+/// same canonical pair — one `ON CONFLICT DO UPDATE` statement cannot touch a row twice.
+/// Otherwise [`crate::DbError::Sqlx`].
+pub async fn record_distinct_pairs<'e, E: PgExecutor<'e>>(
     exec: E,
-    a: SeriesId,
-    b: SeriesId,
-    score: f32,
-    signals: &[&str],
-) -> DbResult<bool> {
-    if a == b {
-        return Err(crate::error::DbError::Conflict(
-            "cannot judge a series against itself".to_owned(),
-        ));
+    verdicts: &[DistinctVerdict<'_>],
+) -> DbResult<Vec<(DuplicatePair, bool)>> {
+    if verdicts.is_empty() {
+        return Ok(Vec::new());
     }
-    let signals: Vec<String> = signals.iter().map(|s| (*s).to_owned()).collect();
+    let mut seen = std::collections::HashSet::with_capacity(verdicts.len());
+    let mut rows = Vec::with_capacity(verdicts.len());
+    for verdict in verdicts {
+        let (a, b) = verdict.pair;
+        if a == b {
+            return Err(crate::error::DbError::Conflict(
+                "cannot judge a series against itself".to_owned(),
+            ));
+        }
+        if !seen.insert((a.min(b), a.max(b))) {
+            return Err(crate::error::DbError::Conflict(
+                "the same pair was judged twice in one batch".to_owned(),
+            ));
+        }
+        rows.push(serde_json::json!({
+            "id": Uuid::now_v7(),
+            "a": a.as_uuid(),
+            "b": b.as_uuid(),
+            "score": verdict.score,
+            "signals": verdict.signals,
+        }));
+    }
+
     // `prior` reads the pre-insert snapshot, so it reports the state the upsert is about to
     // replace; a data-modifying CTE runs whether or not the outer query selects from it.
-    let was_open = sqlx::query_scalar!(
-        "WITH prior AS ( \
-           SELECT resolved FROM merge_candidates \
-            WHERE series_id = LEAST($2::uuid, $3::uuid) \
-              AND candidate_id = GREATEST($2::uuid, $3::uuid) \
+    let rows = sqlx::query!(
+        "WITH input AS ( \
+           SELECT d.id, LEAST(d.a, d.b) AS series_id, GREATEST(d.a, d.b) AS candidate_id, \
+                  d.score, d.signals \
+             FROM jsonb_to_recordset($1::jsonb) AS d( \
+                  id uuid, a uuid, b uuid, score real, signals text[]) \
+         ), prior AS ( \
+           SELECT i.series_id, i.candidate_id, mc.resolved \
+             FROM input i \
+             LEFT JOIN merge_candidates mc \
+               ON mc.series_id = i.series_id AND mc.candidate_id = i.candidate_id \
          ), upsert AS ( \
            INSERT INTO merge_candidates \
              (id, series_id, candidate_id, score, signals, reason, resolved, outcome, resolved_at) \
-           VALUES ($1, LEAST($2::uuid, $3::uuid), GREATEST($2::uuid, $3::uuid), $4, $5, \
-                   'duplicate sweep: below the review floor', true, 'distinct', now()) \
+           SELECT id, series_id, candidate_id, score, signals, \
+                  'duplicate sweep: below the review floor', true, 'distinct', now() \
+             FROM input \
            ON CONFLICT (series_id, candidate_id) DO UPDATE \
               SET score = EXCLUDED.score, \
                   signals = EXCLUDED.signals, \
@@ -375,16 +424,61 @@ pub async fn record_distinct_pair<'e, E: PgExecutor<'e>>(
               WHERE merge_candidates.outcome IS DISTINCT FROM 'dismissed' \
            RETURNING 1 AS touched \
          ) \
-         SELECT COALESCE((SELECT NOT resolved FROM prior), false) AS \"was_open!\"",
-        Uuid::now_v7(),
-        a.as_uuid(),
-        b.as_uuid(),
-        score,
-        &signals,
+         SELECT p.series_id AS \"series_id!\", p.candidate_id AS \"candidate_id!\", \
+                COALESCE(NOT p.resolved, false) AS \"was_open!\" \
+           FROM prior p",
+        Json::Array(rows),
     )
-    .fetch_one(exec)
+    .fetch_all(exec)
     .await?;
-    Ok(was_open)
+
+    Ok(rows
+        .into_iter()
+        .map(|r| {
+            (
+                (
+                    SeriesId::from_uuid(r.series_id),
+                    SeriesId::from_uuid(r.candidate_id),
+                ),
+                r.was_open,
+            )
+        })
+        .collect())
+}
+
+/// Record the scorer's verdict that one pair is **not** a duplicate. Returns whether a row was
+/// open before this call.
+///
+/// See [`record_distinct_pairs`] for the semantics; the sweep batches, this is for callers that
+/// hold a single pair.
+///
+/// # Errors
+/// As [`record_distinct_pairs`].
+pub async fn record_distinct_pair<'e, E: PgExecutor<'e>>(
+    exec: E,
+    a: SeriesId,
+    b: SeriesId,
+    score: f32,
+    signals: &[&str],
+) -> DbResult<bool> {
+    let outcomes = record_distinct_pairs(
+        exec,
+        &[DistinctVerdict {
+            pair: (a, b),
+            score,
+            signals,
+        }],
+    )
+    .await?;
+    // One row in, one row out: the statement selects from `prior`, which is a `LEFT JOIN` over
+    // the input and therefore preserves it.
+    outcomes
+        .into_iter()
+        .next()
+        .map(|(_, was_open)| was_open)
+        .ok_or_else(|| {
+            crate::error::DbError::Conflict("the distinct upsert returned no row".to_owned())
+        })
 }
 
 /// The pairs the scorer has judged distinct, least-recently-scored first, for the sweep to

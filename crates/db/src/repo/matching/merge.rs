@@ -14,7 +14,7 @@ use uuid::Uuid;
 ///
 /// Returns the [`MergeUndo`] journal — the exact inverse of everything this transaction did.
 /// The caller is expected to persist it (see
-/// [`record_merge_decision`](super::record_merge_decision)); a merge whose journal is dropped is
+/// [`record_merge_decisions`](super::record_merge_decisions)); a merge whose journal is dropped is
 /// a merge that cannot be reverted, which is the state this function used to leave the catalogue
 /// in unconditionally.
 ///

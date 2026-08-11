@@ -19,7 +19,7 @@ pub struct NewMergeDecision<'a> {
     /// `sweep_new` | `sweep_requeue` | `sweep_recheck` | `operator`.
     pub trigger: &'a str,
     pub actor: Option<UserId>,
-    /// The pair in any order — [`record_merge_decision`] puts it in canonical order itself.
+    /// The pair in any order — [`record_merge_decisions`] puts it in canonical order itself.
     pub pair: (SeriesId, SeriesId),
     pub titles: (&'a str, &'a str),
     /// `auto` | `review` | `distinct`, from `tankovault_matcher::Adjudication`.
@@ -42,16 +42,63 @@ pub struct NewMergeDecision<'a> {
     pub undo: Option<&'a MergeUndo>,
 }
 
-/// Record one decision and return its id.
+/// Record a batch of decisions in one statement, returning their ids in the order given.
+///
+/// # Why this is a batch and not a row at a time
+///
+/// A sweep journals one decision per pair it judges, and a run judges thousands. As one
+/// statement per decision the journal cost the sweep more round trips than the scoring it
+/// describes — and it is the part of the run nothing waits on, so paying latency for it row by
+/// row bought nothing. The payload travels as one `jsonb` document rather than twenty-one
+/// parallel arrays because four of the columns are themselves `jsonb` and two are `text[]`,
+/// which `UNNEST` cannot carry without a jagged-array workaround per column.
 ///
 /// # Errors
-/// [`DbError::Conflict`] when the pair names one series twice, which the table's own check
+/// [`DbError::Conflict`] when a decision names one series twice, which the table's own check
 /// constraint would reject anyway — returned here so the caller gets a domain error rather than
-/// a driver one. [`DbError::Sqlx`] otherwise, including a failure to serialise the undo journal.
-pub async fn record_merge_decision<'e, E: PgExecutor<'e>>(
+/// a driver one. [`DbError::Sqlx`] otherwise, including a failure to serialise an undo journal.
+pub async fn record_merge_decisions<'e, E: PgExecutor<'e>>(
     exec: E,
-    decision: &NewMergeDecision<'_>,
-) -> DbResult<Uuid> {
+    decisions: &[NewMergeDecision<'_>],
+) -> DbResult<Vec<Uuid>> {
+    if decisions.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut ids = Vec::with_capacity(decisions.len());
+    let mut rows = Vec::with_capacity(decisions.len());
+    for decision in decisions {
+        let id = Uuid::now_v7();
+        rows.push(decision_row(id, decision)?);
+        ids.push(id);
+    }
+
+    // The column definition list is what types the document; the `INSERT` column list is what
+    // sqlx checks against the table, so a column renamed out from under this still fails to
+    // compile.
+    sqlx::query!(
+        "INSERT INTO merge_decisions \
+            (id, sweep_id, trigger, actor_id, left_id, right_id, left_title, right_title, \
+             verdict, reason, blocked_by, outcome, survivor_id, absorbed_id, \
+             score, base_score, signals, terms, evidence, policy, undo) \
+         SELECT d.id, d.sweep_id, d.trigger, d.actor_id, d.left_id, d.right_id, \
+                d.left_title, d.right_title, d.verdict, d.reason, d.blocked_by, d.outcome, \
+                d.survivor_id, d.absorbed_id, d.score, d.base_score, d.signals, \
+                d.terms, d.evidence, d.policy, d.undo \
+           FROM jsonb_to_recordset($1::jsonb) AS d( \
+                id uuid, sweep_id uuid, trigger text, actor_id uuid, \
+                left_id uuid, right_id uuid, left_title text, right_title text, \
+                verdict text, reason text, blocked_by text[], outcome text, \
+                survivor_id uuid, absorbed_id uuid, score real, base_score real, \
+                signals text[], terms jsonb, evidence jsonb, policy jsonb, undo jsonb)",
+        Json::Array(rows),
+    )
+    .execute(exec)
+    .await?;
+    Ok(ids)
+}
+
+/// One decision as the row the batch insert reads back out of its `jsonb` payload.
+fn decision_row(id: Uuid, decision: &NewMergeDecision<'_>) -> DbResult<Json> {
     let (a, b) = decision.pair;
     if a == b {
         return Err(DbError::Conflict(
@@ -71,45 +118,30 @@ pub async fn record_merge_decision<'e, E: PgExecutor<'e>>(
         .map(serde_json::to_value)
         .transpose()
         .map_err(|e| DbError::Conflict(format!("undo journal is not serialisable: {e}")))?;
-    let blocked: Vec<String> = decision
-        .blocked_by
-        .iter()
-        .map(|s| (*s).to_owned())
-        .collect();
-    let signals: Vec<String> = decision.signals.iter().map(|s| (*s).to_owned()).collect();
 
-    let id = Uuid::now_v7();
-    sqlx::query!(
-        "INSERT INTO merge_decisions \
-            (id, sweep_id, trigger, actor_id, left_id, right_id, left_title, right_title, \
-             verdict, reason, blocked_by, outcome, survivor_id, absorbed_id, \
-             score, base_score, signals, terms, evidence, policy, undo) \
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)",
-        id,
-        decision.sweep_id,
-        decision.trigger,
-        decision.actor.map(UserId::as_uuid),
-        left.as_uuid(),
-        right.as_uuid(),
-        left_title,
-        right_title,
-        decision.verdict,
-        decision.reason,
-        &blocked,
-        decision.outcome,
-        decision.survivor_id.map(SeriesId::as_uuid),
-        decision.absorbed_id.map(SeriesId::as_uuid),
-        decision.score,
-        decision.base_score,
-        &signals,
-        decision.terms,
-        decision.evidence,
-        decision.policy,
-        undo,
-    )
-    .execute(exec)
-    .await?;
-    Ok(id)
+    Ok(serde_json::json!({
+        "id": id,
+        "sweep_id": decision.sweep_id,
+        "trigger": decision.trigger,
+        "actor_id": decision.actor.map(UserId::as_uuid),
+        "left_id": left.as_uuid(),
+        "right_id": right.as_uuid(),
+        "left_title": left_title,
+        "right_title": right_title,
+        "verdict": decision.verdict,
+        "reason": decision.reason,
+        "blocked_by": decision.blocked_by,
+        "outcome": decision.outcome,
+        "survivor_id": decision.survivor_id.map(SeriesId::as_uuid),
+        "absorbed_id": decision.absorbed_id.map(SeriesId::as_uuid),
+        "score": decision.score,
+        "base_score": decision.base_score,
+        "signals": decision.signals,
+        "terms": decision.terms,
+        "evidence": decision.evidence,
+        "policy": decision.policy,
+        "undo": undo,
+    }))
 }
 
 /// One decision as the console renders it.

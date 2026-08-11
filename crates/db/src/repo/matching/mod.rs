@@ -58,16 +58,17 @@ pub(super) const MAX_KEY_FANOUT: i64 = 16;
 pub use candidates::{find_candidates, find_candidates_multi};
 pub use decisions::{
     MergeDecisionFilter, MergeDecisionRow, NewMergeDecision, flag_merge_decision,
-    list_merge_decisions, record_merge_decision, revert_merge_decision,
+    list_merge_decisions, record_merge_decisions, revert_merge_decision,
 };
 pub use keys::{KeyRebuildReport, rebuild_normalized_keys};
 pub use merge::{merge_series, resolve_merged_series, resolve_merged_series_batch};
 pub use pairs::{
-    DuplicatePair, SeriesMatchFacts, distinct_merge_pairs, find_duplicate_pairs, open_merge_pairs,
-    pair_similarities, record_distinct_pair, series_match_facts,
+    DistinctVerdict, DuplicatePair, SeriesMatchFacts, distinct_merge_pairs, find_duplicate_pairs,
+    open_merge_pairs, pair_similarities, record_distinct_pair, record_distinct_pairs,
+    series_match_facts,
 };
 pub use queue::{
-    MergeCandidateView, QueueOutcome, dismiss_merge_candidate, list_open_merge_candidates,
-    record_merge_candidate, suppress_pair,
+    MergeCandidateView, NewMergeCandidate, QueueOutcome, dismiss_merge_candidate,
+    list_open_merge_candidates, record_merge_candidate, record_merge_candidates, suppress_pair,
 };
 pub use undo::{MergeUndo, UNDO_VERSION, revert_merge};

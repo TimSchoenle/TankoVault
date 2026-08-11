@@ -2375,3 +2375,346 @@ async fn snapshot(db: &TestDb) -> std::collections::BTreeMap<String, Vec<String>
     }
     out
 }
+
+// ---------------------------------------------------------------------------
+// The sweep's batched writes
+// ---------------------------------------------------------------------------
+
+/// Canonical key for a pair, so an assertion does not depend on argument order.
+fn pair_key(a: SeriesId, b: SeriesId) -> (SeriesId, SeriesId) {
+    (a.min(b), a.max(b))
+}
+
+/// **Each pair in a batched queue write must be judged against its own prior state.**
+///
+/// The sweep writes a run's review verdicts in one statement, and its `prior` CTE reads
+/// `merge_candidates` in the same statement as the upsert that changes it. That is only correct
+/// because a data-modifying CTE sees the snapshot taken at statement start; read after the write
+/// instead â€” or join against the upsert's `RETURNING` â€” and every pair in the batch comes back
+/// `refreshed`, the one outcome that reports the queue as not having grown. The console's queue
+/// arithmetic (`queued + reopened - withdrawn`) is computed from exactly these.
+#[tokio::test]
+async fn a_batched_queue_write_judges_each_pair_against_its_own_prior_state() {
+    use tankovault_db::repo::matching::{
+        NewMergeCandidate, QueueOutcome, record_distinct_pair, record_merge_candidate,
+        record_merge_candidates, suppress_pair,
+    };
+
+    let db = TestDb::spawn().await;
+    let operator = seed::user(&db, "operator").create().await;
+
+    // One pair in each of the four states the upsert distinguishes.
+    let mut pairs = Vec::new();
+    for name in ["Fresh", "Open", "Judged", "Dismissed"] {
+        let a = insert_series_directly(&db, &format!("{name} Work")).await;
+        let b = insert_series_directly(&db, &format!("{name}work")).await;
+        pairs.push((a, b));
+    }
+    let (fresh, open, judged, dismissed) = (pairs[0], pairs[1], pairs[2], pairs[3]);
+
+    record_merge_candidate(&db.pool, open.0, open.1, 0.7, &[], "already open")
+        .await
+        .expect("seed an open row");
+    record_distinct_pair(&db.pool, judged.0, judged.1, 0.3, &[])
+        .await
+        .expect("seed a scorer-distinct row");
+    suppress_pair(&db.pool, dismissed.0, dismissed.1, Some(operator))
+        .await
+        .expect("seed an operator dismissal");
+
+    let signals = ["compact_identity"];
+    let batch: Vec<NewMergeCandidate<'_>> = pairs
+        .iter()
+        .map(|pair| NewMergeCandidate {
+            pair: *pair,
+            score: 0.9,
+            signals: &signals,
+            reason: "duplicate sweep",
+        })
+        .collect();
+    let outcomes: std::collections::HashMap<_, _> = record_merge_candidates(&db.pool, &batch)
+        .await
+        .expect("batched queue write")
+        .into_iter()
+        .map(|(a, b, outcome)| (pair_key(a, b), outcome))
+        .collect();
+
+    assert_eq!(outcomes.len(), 4, "one row out per row in: {outcomes:?}");
+    assert_eq!(
+        outcomes.get(&pair_key(fresh.0, fresh.1)),
+        Some(&QueueOutcome::Added),
+    );
+    assert_eq!(
+        outcomes.get(&pair_key(open.0, open.1)),
+        Some(&QueueOutcome::Refreshed),
+        "an open row is re-scored in place and does not lengthen the queue",
+    );
+    assert_eq!(
+        outcomes.get(&pair_key(judged.0, judged.1)),
+        Some(&QueueOutcome::Reopened),
+        "a scorer-distinct row comes back, and that does lengthen the queue",
+    );
+    assert_eq!(
+        outcomes.get(&pair_key(dismissed.0, dismissed.1)),
+        Some(&QueueOutcome::Unchanged),
+        "an operator's dismissal survives a batch exactly as it survives a single write",
+    );
+
+    // And the dismissal is still dismissed, not merely reported as untouched.
+    let outcome: String = sqlx::query_scalar(
+        "SELECT outcome FROM merge_candidates WHERE series_id = $1 AND candidate_id = $2",
+    )
+    .bind(dismissed.0.min(dismissed.1).as_uuid())
+    .bind(dismissed.0.max(dismissed.1).as_uuid())
+    .fetch_one(&db.pool)
+    .await
+    .expect("the dismissed row");
+    assert_eq!(outcome, "dismissed");
+}
+
+/// **A batched distinct verdict must report, per pair, whether it closed an open row.**
+///
+/// `withdrawn` is how a sweep reports the review queue shrinking and it is derived from this flag
+/// alone. The batch has the same statement-snapshot hazard as the review batch, plus one of its
+/// own: an operator's `dismissed` must not be written over, and an unconditional upsert would
+/// quietly re-judge every pair a human had already decided.
+#[tokio::test]
+async fn a_batched_distinct_verdict_reports_what_it_closed_and_spares_a_dismissal() {
+    use tankovault_db::repo::matching::{
+        DistinctVerdict, distinct_merge_pairs, record_distinct_pairs, record_merge_candidate,
+        suppress_pair,
+    };
+
+    let db = TestDb::spawn().await;
+    let operator = seed::user(&db, "operator").create().await;
+
+    let mut pairs = Vec::new();
+    for name in ["Unseen", "Queued", "Settled"] {
+        let a = insert_series_directly(&db, &format!("{name} Title")).await;
+        let b = insert_series_directly(&db, &format!("{name}title")).await;
+        pairs.push((a, b));
+    }
+    let (unseen, queued, settled) = (pairs[0], pairs[1], pairs[2]);
+
+    record_merge_candidate(&db.pool, queued.0, queued.1, 0.8, &[], "open for review")
+        .await
+        .expect("seed an open row");
+    suppress_pair(&db.pool, settled.0, settled.1, Some(operator))
+        .await
+        .expect("seed an operator dismissal");
+
+    let signals = ["near_identical"];
+    let batch: Vec<DistinctVerdict<'_>> = pairs
+        .iter()
+        .map(|pair| DistinctVerdict {
+            pair: *pair,
+            score: 0.2,
+            signals: &signals,
+        })
+        .collect();
+    let closed: std::collections::HashMap<_, _> = record_distinct_pairs(&db.pool, &batch)
+        .await
+        .expect("batched distinct write")
+        .into_iter()
+        .map(|((a, b), was_open)| (pair_key(a, b), was_open))
+        .collect();
+
+    assert_eq!(closed.len(), 3, "one row out per row in: {closed:?}");
+    assert_eq!(
+        closed.get(&pair_key(unseen.0, unseen.1)),
+        Some(&false),
+        "nothing was open, so nothing was withdrawn",
+    );
+    assert_eq!(
+        closed.get(&pair_key(queued.0, queued.1)),
+        Some(&true),
+        "this one closed an open row, which is what `withdrawn` counts",
+    );
+    assert_eq!(
+        closed.get(&pair_key(settled.0, settled.1)),
+        Some(&false),
+        "a dismissal was already resolved, so it closed nothing",
+    );
+
+    // The dismissal keeps its outcome and stays out of the recheck rotation; the two the scorer
+    // judged are in it.
+    let outcome: String = sqlx::query_scalar(
+        "SELECT outcome FROM merge_candidates WHERE series_id = $1 AND candidate_id = $2",
+    )
+    .bind(settled.0.min(settled.1).as_uuid())
+    .bind(settled.0.max(settled.1).as_uuid())
+    .fetch_one(&db.pool)
+    .await
+    .expect("the dismissed row");
+    assert_eq!(outcome, "dismissed");
+
+    let recheck = distinct_merge_pairs(&db.pool, 50).await.expect("recheck");
+    assert_eq!(
+        recheck.len(),
+        2,
+        "only the scorer's verdicts rotate: {recheck:?}"
+    );
+    assert!(!recheck.contains(&pair_key(settled.0, settled.1)));
+}
+
+/// **The decision journal's batch insert must round-trip its arrays and its documents.**
+///
+/// A run's review and distinct decisions travel as one `jsonb` document, unpacked by
+/// `jsonb_to_recordset` against an explicit column list â€” two of those columns are `text[]` and
+/// three are `jsonb`. A wrong type there does not fail the statement; it yields NULL or an empty
+/// array. `signals`, `blocked_by` and the itemised score would then arrive empty, and those are
+/// the whole reason the journal exists: they are what an operator reads to decide whether an
+/// automatic merge was justified.
+#[tokio::test]
+async fn the_decision_journal_batch_round_trips_arrays_and_documents() {
+    use tankovault_db::repo::matching::{
+        MergeDecisionFilter, NewMergeDecision, list_merge_decisions, record_merge_decisions,
+    };
+
+    let db = TestDb::spawn().await;
+    let left = insert_series_directly(&db, "Spy X Family").await;
+    let right = insert_series_directly(&db, "Spyxfamily").await;
+    let low = insert_series_directly(&db, "Vinland Saga").await;
+    let high = insert_series_directly(&db, "Vinlandsaga").await;
+
+    let sweep_id = uuid::Uuid::now_v7();
+    let terms = serde_json::json!([{ "rule": "base_similarity", "delta": 0.5, "detail": null }]);
+    let evidence = serde_json::json!({ "trigram_similarity": 0.42 });
+    let policy = serde_json::json!({ "auto_merge": 0.95 });
+
+    let decisions = vec![
+        NewMergeDecision {
+            sweep_id: Some(sweep_id),
+            trigger: "sweep_new",
+            actor: None,
+            pair: (left, right),
+            titles: ("Spy X Family", "Spyxfamily"),
+            verdict: "review",
+            reason: "below_auto_merge_threshold",
+            blocked_by: &["author_conflict", "year_conflict"],
+            outcome: "queued",
+            survivor_id: None,
+            absorbed_id: None,
+            score: 0.87,
+            base_score: 0.5,
+            signals: &["compact_identity", "shared_author"],
+            terms: &terms,
+            evidence: &evidence,
+            policy: &policy,
+            undo: None,
+        },
+        NewMergeDecision {
+            sweep_id: Some(sweep_id),
+            trigger: "sweep_recheck",
+            actor: None,
+            // Deliberately the higher id first: the writer puts the pair in canonical order, and
+            // each title has to travel with its own id when it does.
+            pair: (low.max(high), low.min(high)),
+            titles: ("higher", "lower"),
+            verdict: "distinct",
+            reason: "no_structural_identity",
+            blocked_by: &[],
+            outcome: "withdrawn",
+            survivor_id: None,
+            absorbed_id: None,
+            score: 0.1,
+            base_score: 0.1,
+            signals: &[],
+            terms: &terms,
+            evidence: &evidence,
+            policy: &policy,
+            undo: None,
+        },
+    ];
+
+    let ids = record_merge_decisions(&db.pool, &decisions)
+        .await
+        .expect("batched journal write");
+    assert_eq!(ids.len(), 2, "one id per decision, in order");
+
+    let rows = list_merge_decisions(&db.pool, &MergeDecisionFilter::default(), 10, 0)
+        .await
+        .expect("read the journal");
+    assert_eq!(rows.len(), 2);
+
+    let queued = rows
+        .iter()
+        .find(|r| r.outcome == "queued")
+        .expect("the review decision");
+    assert_eq!(queued.sweep_id, Some(sweep_id));
+    assert_eq!(queued.trigger, "sweep_new");
+    assert_eq!(
+        queued.signals,
+        vec!["compact_identity".to_owned(), "shared_author".to_owned()],
+        "an empty signal list is the silent failure this pins",
+    );
+    assert_eq!(
+        queued.blocked_by,
+        vec!["author_conflict".to_owned(), "year_conflict".to_owned()],
+    );
+    assert_eq!(queued.terms, terms);
+    assert_eq!(queued.evidence, evidence);
+    assert_eq!(queued.policy, policy);
+    assert!(
+        (queued.score - 0.87).abs() < 1e-6,
+        "score: {}",
+        queued.score
+    );
+    assert_eq!(queued.left_id, left.min(right));
+    assert_eq!(queued.right_id, left.max(right));
+
+    // The pair handed over higher-id-first is stored lower-id-first, and the titles followed.
+    let withdrawn = rows
+        .iter()
+        .find(|r| r.outcome == "withdrawn")
+        .expect("the distinct decision");
+    assert_eq!(withdrawn.left_id, low.min(high));
+    assert_eq!(withdrawn.right_id, low.max(high));
+    assert_eq!(
+        withdrawn.left_title, "lower",
+        "the lower id's title must be the one stored against it",
+    );
+    assert_eq!(withdrawn.right_title, "higher");
+    assert!(withdrawn.signals.is_empty());
+    assert!(withdrawn.blocked_by.is_empty());
+}
+
+/// **A batch must refuse two entries naming one pair rather than sending them to the database.**
+///
+/// `ON CONFLICT DO UPDATE` cannot touch the same row twice in one statement â€” Postgres raises a
+/// cardinality violation â€” so the shape of the bug is not a wrong answer but a whole sweep's
+/// queue write failing on a driver error, taking the run's counts with it. Rejecting it in the
+/// caller names the problem instead.
+#[tokio::test]
+async fn a_batch_refuses_the_same_pair_twice() {
+    use tankovault_db::repo::matching::{NewMergeCandidate, record_merge_candidates};
+
+    let db = TestDb::spawn().await;
+    let a = insert_series_directly(&db, "Berserk").await;
+    let b = insert_series_directly(&db, "Berserk!").await;
+
+    let signals: [&str; 0] = [];
+    // The same pair written both ways round: canonical ordering makes them one row.
+    let batch = [
+        NewMergeCandidate {
+            pair: (a, b),
+            score: 0.9,
+            signals: &signals,
+            reason: "first",
+        },
+        NewMergeCandidate {
+            pair: (b, a),
+            score: 0.8,
+            signals: &signals,
+            reason: "second",
+        },
+    ];
+
+    assert!(
+        matches!(
+            record_merge_candidates(&db.pool, &batch).await,
+            Err(DbError::Conflict(_))
+        ),
+        "a duplicated pair is a caller error, not a driver error",
+    );
+}

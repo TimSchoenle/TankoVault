@@ -5350,14 +5350,11 @@ dependencies = [
 name = "tankovault-api-client"
 version = "7.0.0"
 dependencies = [
- "bytes",
- "futures",
  "progenitor-client",
  "reqwest",
  "serde",
  "serde_json",
  "tankovault-domain",
- "thiserror 2.0.20",
  "url",
  "uuid",
 ]
@@ -5448,8 +5445,6 @@ name = "tankovault-challenge-solver"
 version = "7.0.0"
 dependencies = [
  "anyhow",
- "axum",
- "metrics",
  "serde",
  "tankovault-config",
  "tankovault-service",
@@ -5490,7 +5485,6 @@ dependencies = [
  "anyhow",
  "axum",
  "fred",
- "futures",
  "metrics",
  "secrecy",
  "serde",
@@ -5615,7 +5609,6 @@ dependencies = [
  "anyhow",
  "async-trait",
  "axum",
- "futures",
  "metrics",
  "reqwest",
  "secrecy",
@@ -5662,7 +5655,6 @@ dependencies = [
  "tankovault-solver",
  "tokio",
  "tracing",
- "url",
 ]
 
 [[package]]
@@ -5694,7 +5686,6 @@ dependencies = [
  "tankovault-domain",
  "terrace-config",
  "thiserror 2.0.20",
- "time",
  "tokio",
  "tokio-rustls",
  "tokio-util",
@@ -5718,7 +5709,6 @@ dependencies = [
  "tankovault-domain",
  "tankovault-service",
  "thiserror 2.0.20",
- "time",
  "tokio",
  "tracing",
  "wiremock",
@@ -5785,7 +5775,6 @@ dependencies = [
  "axum",
  "futures",
  "metrics",
- "secrecy",
  "serde",
  "serde_json",
  "sha2 0.11.0",

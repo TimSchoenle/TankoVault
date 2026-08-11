@@ -19,7 +19,6 @@ tankovault-service = { workspace = true }
 # For the SSRF address policy only. Deliberately not `tankovault-fetch`: this service needs
 # the *table*, not the wreq/BoringSSL client stack the Docker build has to work around.
 tankovault-domain = { workspace = true }
-url = { workspace = true }
 tankovault-solver = { workspace = true, features = ["axum"] }
 axum = { workspace = true }
 tokio = { workspace = true }

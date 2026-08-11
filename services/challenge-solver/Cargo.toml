@@ -17,12 +17,10 @@ path = "src/main.rs"
 tankovault-config = { workspace = true }
 tankovault-service = { workspace = true }
 tankovault-solver = { workspace = true, features = ["axum"] }
-axum = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }
-metrics = { workspace = true }
 
 [lints]
 workspace = true

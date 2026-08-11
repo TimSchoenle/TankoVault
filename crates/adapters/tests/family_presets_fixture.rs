@@ -9,6 +9,7 @@
 use async_trait::async_trait;
 use std::sync::Arc;
 use tankovault_adapters::{Ctx, SourceAdapter, build_adapter, builtin_presets};
+use tankovault_domain::SeriesStatus;
 use tankovault_fetch::{FetchError, FetchRequest, FetchResponse, Fetcher};
 
 /// Serves one fixture per URL shape. Unset fields serve an empty body, so each test supplies
@@ -19,6 +20,8 @@ struct SiteFetcher {
     series: &'static str,
     /// Body for the Manganato family's JSON chapter endpoint (`/api/manga/{slug}/chapters`).
     chapters_api: &'static str,
+    /// Body for a feed served from a URL of its own, as Keyoapp's `/latest/` is.
+    latest: &'static str,
 }
 
 #[async_trait]
@@ -36,6 +39,12 @@ impl Fetcher for SiteFetcher {
         }
         let body = if req.url.contains("/api/manga/") {
             self.chapters_api
+        } else if req.url.contains("/latest/") {
+            self.latest
+        } else if req.url.ends_with("/series/") {
+            // Keyoapp's whole catalogue is this one document; a *series* page is one segment
+            // deeper, which is the only thing that tells the two apart.
+            self.catalog
         } else if req.url.contains("page=")
             || req.url.contains("/projects")
             || req.url.contains("/page/")
@@ -477,4 +486,188 @@ async fn a_missing_sitemap_shard_ends_the_walk_without_failing_it() {
         .expect("a missing shard must not be an error");
     assert!(past_end.items.is_empty());
     assert!(!past_end.has_next, "there is nothing after a missing shard");
+}
+
+// -----------------------------------------------------------------------------------------
+// Keyoapp — asmotoon
+// -----------------------------------------------------------------------------------------
+
+const KEYO_CATALOG: &str = include_str!("../fixtures/keyoapp/catalog.html");
+const KEYO_LATEST: &str = include_str!("../fixtures/keyoapp/latest.html");
+const KEYO_SERIES: &str = include_str!("../fixtures/keyoapp/series.html");
+
+/// The platform renders its whole catalogue into one document and filters it in the browser, so
+/// `pages: 1` is what ends the walk. Without it the yielded-items fallback never goes false —
+/// the same document answers every page number — and the walk re-ingests it until the planner's
+/// cap, with every request "succeeding".
+#[tokio::test]
+async fn keyoapp_catalogue_is_one_page_and_says_so() {
+    let (adapter, ctx) = preset_adapter(
+        "asmotoon",
+        SiteFetcher {
+            catalog: KEYO_CATALOG,
+            ..SiteFetcher::default()
+        },
+    );
+    let page = adapter
+        .list_catalog(&ctx, 1)
+        .await
+        .expect("catalogue parses");
+
+    assert_eq!(
+        page.items.len(),
+        3,
+        "one item per #searched_series_page button"
+    );
+    assert!(!page.has_next, "the catalogue is a single document");
+    assert!(
+        page.items.iter().all(|i| i.path.starts_with("/series/")),
+        "{:?}",
+        page.items.iter().map(|i| &i.path).collect::<Vec<_>>()
+    );
+    // The button's own `title` concatenates the title with every alternative; the anchor's
+    // carries the canonical one alone, and that is what the matching key is built from.
+    assert!(
+        page.items
+            .iter()
+            .all(|i| !i.title.is_empty() && !i.title.contains("Ponkotsu")),
+        "titles come from the anchor, not the button: {:?}",
+        page.items.iter().map(|i| &i.title).collect::<Vec<_>>()
+    );
+}
+
+#[tokio::test]
+async fn keyoapp_latest_feed_reads_series_links_not_chapter_links() {
+    let (adapter, ctx) = preset_adapter(
+        "asmotoon",
+        SiteFetcher {
+            latest: KEYO_LATEST,
+            ..SiteFetcher::default()
+        },
+    );
+    let updates = adapter.list_latest(&ctx).await.expect("feed parses");
+
+    assert_eq!(updates.len(), 2);
+    // Each card links to both the series and its newest chapters. A feed that registered the
+    // chapter link as a series path would store series that can never have chapters, since a
+    // chapter page carries no chapter list.
+    assert!(
+        updates.iter().all(|u| u.path.starts_with("/series/")),
+        "{:?}",
+        updates.iter().map(|u| &u.path).collect::<Vec<_>>()
+    );
+    assert!(updates.iter().all(|u| !u.title.is_empty()));
+    assert!(
+        updates.iter().all(|u| u.latest_chapter > 0.0),
+        "the card's chapter link carries `Chapter N` in its title attribute: {:?}",
+        updates.iter().map(|u| u.latest_chapter).collect::<Vec<_>>()
+    );
+}
+
+#[tokio::test]
+async fn keyoapp_series_reads_the_labelled_info_rows() {
+    let (adapter, ctx) = preset_adapter(
+        "asmotoon",
+        SiteFetcher {
+            series: KEYO_SERIES,
+            ..SiteFetcher::default()
+        },
+    );
+    let meta = adapter
+        .fetch_series(
+            &ctx,
+            "/series/c-level-magic-student-who-thinks-he-is-sss-class/",
+        )
+        .await
+        .expect("series parses");
+
+    assert_eq!(
+        meta.title,
+        "C-level Magic Student Who Thinks He Is SSS Class"
+    );
+    assert_eq!(meta.status, SeriesStatus::Ongoing);
+    // Author, Artist, Type and Status render as structurally identical two-cell grids whose
+    // only distinguishing feature is the label text. Selecting the row without matching that
+    // text stores the labels themselves — into `series_titles` for `alt`, whose `normalized`
+    // column the trigram matcher and catalogue search both score against.
+    assert_eq!(meta.authors, vec!["NKMR".to_owned()]);
+    assert!(
+        meta.alt_titles
+            .iter()
+            .all(|t| !t.eq_ignore_ascii_case("alternative titles")),
+        "the label must not survive as an alternative title: {:?}",
+        meta.alt_titles
+    );
+    assert!(meta.alt_titles.iter().any(|t| t.contains("Jibun Wo SSS")));
+    // The cover is a CSS `background-image`; the Open Graph tag is the only readable copy.
+    assert!(
+        meta.cover_url
+            .as_deref()
+            .is_some_and(|u| u.contains("http")),
+        "cover comes from og:image: {:?}",
+        meta.cover_url
+    );
+}
+
+/// The row's own `d` attribute is the date, and `self@d` is the only way to reach it: the
+/// rendered copy sits behind two other `.text-xs` elements (a "New" badge and the coin price)
+/// that a first-match selector picks up instead.
+#[tokio::test]
+async fn keyoapp_chapters_carry_the_row_attribute_date_and_the_paywall() {
+    let (adapter, ctx) = preset_adapter(
+        "asmotoon",
+        SiteFetcher {
+            series: KEYO_SERIES,
+            ..SiteFetcher::default()
+        },
+    );
+    let chapters = adapter
+        .fetch_chapters(
+            &ctx,
+            "/series/c-level-magic-student-who-thinks-he-is-sss-class/",
+        )
+        .await
+        .expect("chapters parse");
+
+    assert_eq!(chapters.len(), 3);
+    assert!(
+        chapters.iter().all(|c| c.path.starts_with("/chapter/")),
+        "{:?}",
+        chapters.iter().map(|c| &c.path).collect::<Vec<_>>()
+    );
+    assert!(
+        chapters.iter().all(|c| c.published_at.is_some()),
+        "every row states a date in `d`: {:?}",
+        chapters.iter().map(|c| c.published_at).collect::<Vec<_>>()
+    );
+    // The platform states a price and never a date, so a locked chapter has no unlock time —
+    // and must stay locked rather than being read as "unlocks now".
+    let locked: Vec<_> = chapters
+        .iter()
+        .filter(|c| c.access != tankovault_adapters::ChapterAccess::Free)
+        .collect();
+    assert_eq!(
+        locked.len(),
+        2,
+        "two of the three rows carry the coin badge: {:?}",
+        chapters
+            .iter()
+            .map(|c| (c.number, c.access))
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        locked
+            .iter()
+            .all(|c| c.access
+                == tankovault_adapters::ChapterAccess::EarlyAccess { unlocks_at: None }),
+        "a price is not a date, so a paid row must stay locked indefinitely"
+    );
+    // And the unbadged row must still read as free — a marker that matched every row would
+    // empty the unread count for the whole provider.
+    assert!(
+        chapters
+            .iter()
+            .any(|c| c.access == tankovault_adapters::ChapterAccess::Free),
+        "the row with no coin badge is free"
+    );
 }

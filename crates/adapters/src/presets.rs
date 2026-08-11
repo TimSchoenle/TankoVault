@@ -36,32 +36,48 @@ pub fn builtin() -> Vec<BuiltinPreset> {
     let mut all = madara_family();
     all.extend(mangathemesia_family());
     all.extend(manganato_family());
+    all.extend(keyoapp_family());
     all.extend(selector_only());
+    all.extend(iken_platform());
     all.extend(custom_code());
     all
+}
+
+/// Shorthands for the two families that name most of the presets below.
+const THEMESIA: AdapterKind = AdapterKind::MangaThemesia;
+const KEYOAPP: AdapterKind = AdapterKind::Keyoapp;
+
+/// A site that runs a family theme with no deviation from its defaults at all.
+///
+/// Most of a family's sites are this: the platform is hosted or the theme is installed
+/// unmodified, so the row is pure identity. Spelling them as a helper keeps the deviations that
+/// *do* exist visible instead of buried in repeated boilerplate.
+fn plain(
+    slug: &'static str,
+    name: &'static str,
+    base_url: &'static str,
+    adapter: AdapterKind,
+) -> BuiltinPreset {
+    BuiltinPreset {
+        slug,
+        name,
+        base_url,
+        adapter,
+        config: json!({}),
+        politeness: Politeness::default(),
+    }
 }
 
 /// Providers on the Madara `WordPress` theme: config only, overriding just what differs.
 fn madara_family() -> Vec<BuiltinPreset> {
     vec![
-        // Standard Madara. Only three deviations from the defaults.
+        // Standard Madara; covers are the only deviation from the defaults.
         BuiltinPreset {
             slug: "manhuaus",
             name: "Manhuaus",
             base_url: "https://manhuaus.com",
             adapter: AdapterKind::Madara,
             config: json!({
-                "catalog": {
-                    // Paginates as `/manga/page/{n}/` (page 1 redirects to `/manga/`).
-                    "path": "/manga/page/{page}/",
-                    // `next` is null on purpose: this theme's paginator is an always-rendered
-                    // AJAX button, not a page marker, so any selector here either loops forever
-                    // or (as a stale `link[rel=next]` once did) matches nothing and silently
-                    // truncates the scan. `list_catalog` falls back instead to "another page
-                    // exists while this one yielded items", exact here since the 404 shell past
-                    // the last page renders zero items.
-                    "next": null
-                },
                 "series": {
                     // Covers are lazy-loaded — the real URL lives in `data-src`.
                     "cover": "div.summary_image img@data-src"
@@ -78,9 +94,11 @@ fn madara_family() -> Vec<BuiltinPreset> {
             config: json!({
                 "catalog": {
                     // `/manga/` is not a listing on this site; `/search/` is, and it paginates
-                    // on the path. Its paginator does render `a.nextpostslink`, so the default
-                    // marker is kept rather than falling back to the yielded-items heuristic.
-                    "path": "/search/page/{page}/"
+                    // on the path. Unlike the rest of the family this one *does* render the
+                    // theme's `a.nextpostslink`, so it names the marker rather than leaning on
+                    // the family default's yielded-items fallback.
+                    "path": "/search/page/{page}/",
+                    "next": "a.nextpostslink"
                 },
                 "series": {
                     // The `<h1>` also holds the theme's HOT/NEW/END badge, so the default
@@ -94,26 +112,46 @@ fn madara_family() -> Vec<BuiltinPreset> {
             }),
             politeness: Politeness::default(),
         },
-        // Plain Madara, no bot management in front of it — the defaults apply unchanged apart
-        // from the path shape.
-        BuiltinPreset {
-            slug: "mangaread",
-            name: "MangaRead",
-            base_url: "https://www.mangaread.org",
-            adapter: AdapterKind::Madara,
-            config: json!({
-                "catalog": { "path": "/manga/page/{page}/" }
-            }),
-            politeness: Politeness::default(),
-        },
+        // Plain Madara, no bot management in front of it: the defaults apply unchanged.
+        plain(
+            "mangaread",
+            "MangaRead",
+            "https://www.mangaread.org",
+            AdapterKind::Madara,
+        ),
         BuiltinPreset {
             slug: "manhuaplus",
             name: "Manhua Plus",
             base_url: "https://manhuaplus.com",
             adapter: AdapterKind::Madara,
             config: json!({
-                "catalog": { "path": "/manga/page/{page}/" },
                 "series": { "cover": "div.summary_image img@data-src" }
+            }),
+            politeness: Politeness::default(),
+        },
+        // The 2026-08 expansion. Only one of the candidates survived, and that is a finding
+        // rather than a shortfall: most live Madara installs render their chapter list from
+        // `POST {series}/ajax/chapters/` and serve a series page with no `li.wp-manga-chapter`
+        // in it at all. The fetch stack is GET-only by construction, so such a site parses a
+        // perfect catalogue and a perfect feed and then ingests zero chapters — silently,
+        // because an empty list is a valid answer. They stay out until that capability exists.
+        BuiltinPreset {
+            slug: "yakshacomics",
+            name: "Yaksha Comics",
+            base_url: "https://yakshacomics.com",
+            adapter: AdapterKind::Madara,
+            config: json!({
+                "catalog": {
+                    // The one site here that must name a marker, because the family default's
+                    // fallback cannot terminate on this host: it answers **every** 404 with a
+                    // Cloudflare challenge the solver cannot clear, so the empty page that ends
+                    // a walk is never reachable — the request that should say "stop" fails
+                    // instead, and the scan task is retried forever after ingesting the whole
+                    // catalogue correctly. This install does render `link[rel=next]`, present on
+                    // every page but the last, so the walk ends without asking for a page past
+                    // the end at all.
+                    "next": "link[rel=\"next\"]"
+                }
             }),
             politeness: Politeness::default(),
         },
@@ -122,24 +160,148 @@ fn madara_family() -> Vec<BuiltinPreset> {
 
 /// Providers on the `MangaThemesia` theme.
 fn mangathemesia_family() -> Vec<BuiltinPreset> {
-    vec![BuiltinPreset {
-        slug: "rizzfables",
-        name: "Rizz Fables",
-        base_url: "https://rizzfables.com",
-        adapter: AdapterKind::MangaThemesia,
+    vec![
+        BuiltinPreset {
+            slug: "rizzfables",
+            name: "Rizz Fables",
+            base_url: "https://rizzfables.com",
+            adapter: AdapterKind::MangaThemesia,
+            config: json!({
+                "catalog": {
+                    // This site lists its whole catalogue — 88 series — on one page and ignores
+                    // `?page=`, answering every page number with the same document. The theme's
+                    // paginator markup is commented out for the same reason. Without `pages: 1`
+                    // the yielded-items fallback never goes false, so the walk re-fetched and
+                    // re-ingested page 1 until the planner's cap: 20 000 requests for 88 series,
+                    // and no error anywhere, because every page "succeeded".
+                    "path": "/series/?page={page}",
+                    "pages": 1
+                },
+                "latest": { "path": "/series/?order=update" }
+            }),
+            politeness: Politeness::default(),
+        },
+        // The 2026-08 expansion: the ex-Asura scanlator sites, all on the stock theme. Where
+        // one appears with a `catalog`/`latest` override it is the same one thing — the install
+        // renamed the theme's listing directory — and nothing else about the layout differs.
+        plain(
+            "akazascans",
+            "Akaza Scans",
+            "https://akazascans.org",
+            THEMESIA,
+        ),
+        // This one and `kingofshojo` below serve the same catalogue from two domains. Both are
+        // kept, for the reason the Manganato clones are: each has its own rate limit, health
+        // state and reader-facing links, and the matcher collapses the duplicated series into
+        // one entry with two sources — which is exactly what a second mirror is worth.
+        plain(
+            "arenascans",
+            "Arena Scans",
+            "https://arenascan.com",
+            THEMESIA,
+        ),
+        plain("ragescans", "Rage Scans", "https://ragescans.com", THEMESIA),
+        plain(
+            "rokaricomics",
+            "Rokari Comics",
+            "https://rokaricomics.com",
+            THEMESIA,
+        ),
+        plain(
+            "witchscans",
+            "Witch Scans",
+            "https://witchscans.com",
+            THEMESIA,
+        ),
+        plain(
+            "kingofshojo",
+            "King of Shojo",
+            "https://kingofshojo.com",
+            THEMESIA,
+        ),
+        plain(
+            "noxenscans",
+            "Noxen Scans",
+            "https://noxenscan.com",
+            THEMESIA,
+        ),
+        plain(
+            "mangatrend",
+            "Manga Trend",
+            "https://mangatrend.org",
+            THEMESIA,
+        ),
+        themesia_in(
+            "violetscans",
+            "Violet Scans",
+            "https://violetscans.org",
+            "comics",
+        ),
+        themesia_in(
+            "thunderscans",
+            "Thunder Scans",
+            "https://en-thunderscans.com",
+            "comics",
+        ),
+        themesia_in("razure", "Razure", "https://razure.org", "series"),
+    ]
+}
+
+/// A `MangaThemesia` install that renamed the theme's listing directory. That one rename moves
+/// both the catalogue and the feed, since the feed is the same listing re-sorted.
+fn themesia_in(
+    slug: &'static str,
+    name: &'static str,
+    base_url: &'static str,
+    directory: &str,
+) -> BuiltinPreset {
+    BuiltinPreset {
+        slug,
+        name,
+        base_url,
+        adapter: THEMESIA,
         config: json!({
-            "catalog": {
-                // This site lists its whole catalogue — 88 series — on one page and ignores
-                // `?page=`, answering every page number with the same document. The theme's
-                // paginator markup is commented out for the same reason. Without `pages: 1`
-                // the yielded-items fallback never goes false, so the walk re-fetched and
-                // re-ingested page 1 until the planner's cap: 20 000 requests for 88 series,
-                // and no error anywhere, because every page "succeeded".
-                "pages": 1
-            }
+            "catalog": { "path": format!("/{directory}/?page={{page}}") },
+            "latest": { "path": format!("/{directory}/?page=1&order=update") }
         }),
         politeness: Politeness::default(),
-    }]
+    }
+}
+
+/// Providers on the Keyoapp platform: hosted, so every install is the stock layout and each
+/// site is identity alone.
+fn keyoapp_family() -> Vec<BuiltinPreset> {
+    vec![
+        plain(
+            "asmotoon",
+            "Asmodeus Scans",
+            "https://asmotoon.com",
+            KEYOAPP,
+        ),
+        plain(
+            "sirenscans",
+            "Siren Scans",
+            "https://sirenscans.com",
+            KEYOAPP,
+        ),
+        plain("genztoons", "Genz Toons", "https://genztoons.org", KEYOAPP),
+        plain(
+            "timelesstoons",
+            "Timeless Toons",
+            "https://timelesstoons.org",
+            KEYOAPP,
+        ),
+        plain("mistscans", "Mist Scans", "https://mistscans.com", KEYOAPP),
+        plain("grimscans", "Grim Scans", "https://grimscans.com", KEYOAPP),
+        plain("kewnscans", "Kewn Scans", "https://kewnscans.org", KEYOAPP),
+        plain(
+            "writerscans",
+            "Writer Scans",
+            "https://writerscans.com",
+            KEYOAPP,
+        ),
+        plain("nyanukafe", "Nyanu Kafe", "https://nyanukafe.com", KEYOAPP),
+    ]
 }
 
 /// The Manganato clone family — three domains serving the same application, each its own
@@ -337,6 +499,38 @@ fn mangapill() -> BuiltinPreset {
     }
 }
 
+/// An Iken-hosted site. The API host is `api.` prefixed onto the reader host on every one of
+/// them, but it is stated rather than derived: the adapter must not have to guess where a
+/// deployment put its API, and the config is the one place a move is fixable without a release.
+fn iken(slug: &'static str, name: &'static str, base_url: &'static str) -> BuiltinPreset {
+    BuiltinPreset {
+        slug,
+        name,
+        base_url,
+        adapter: AdapterKind::Custom,
+        config: json!({ "api": base_url.replace("https://", "https://api.") }),
+        politeness: Politeness::default(),
+    }
+}
+
+/// The Iken platform: one hosted back end behind several scanlator sites, each serving its JSON
+/// from a sibling host the preset names. `base_url` stays the reader host so stored paths remain
+/// openable. Not a `family`, because a family merges *selectors* onto defaults and there is no
+/// markup here to select.
+fn iken_platform() -> Vec<BuiltinPreset> {
+    vec![
+        iken("vortexscans", "Vortex Scans", "https://vortexscans.org"),
+        iken("magustoon", "Magus Manga", "https://magustoon.org"),
+        iken("nyxscans", "Nyx Scans", "https://nyxscans.com"),
+        iken("kencomics", "Ken Scans", "https://kencomics.com"),
+        iken("sanascans", "Sana Scans", "https://sanascans.com"),
+        iken("orionscans", "Orion Scans", "https://orion-scans.com"),
+        iken("renascans", "Rena Scans", "https://renascans.net"),
+        iken("kaynscans", "Kayn Scans", "https://kaynscan.org"),
+        iken("hijalascans", "Hijala Scans", "https://en-hijala.com"),
+    ]
+}
+
 /// Providers driven by a bespoke adapter, each for a reason selectors cannot express.
 fn custom_code() -> Vec<BuiltinPreset> {
     vec![
@@ -415,6 +609,7 @@ fn custom_code() -> Vec<BuiltinPreset> {
             config: json!({ "api": "https://api.omegascans.org" }),
             politeness: Politeness::default(),
         },
+        // Iken, added with the 2026-08 expansion; see `iken_platform` below.
         BuiltinPreset {
             slug: "asura",
             name: "Asura Scans",

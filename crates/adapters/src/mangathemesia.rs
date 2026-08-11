@@ -13,7 +13,10 @@ use serde_json::{Value, json};
 pub fn mangathemesia_default_config() -> Value {
     json!({
         "catalog": {
-            "path": "/series/?page={page}",
+            // The theme's `mangaUrlDirectory`, which installs rename freely (`/series/`,
+            // `/comics/`); a site that has is a one-line path override on both this and
+            // `latest`, and its listing is otherwise identical.
+            "path": "/manga/?page={page}",
             "item": "div.bsx",
             "link": "a",
             // The visible title is clipped by CSS; the anchor's `title` carries it in full.
@@ -25,11 +28,16 @@ pub fn mangathemesia_default_config() -> Value {
             "next": null
         },
         "latest": {
-            "path": "/",
-            "item": "div.utao div.uta",
-            "link": "div.imgu a",
-            "title": "div.imgu a@title",
-            "chapter": "div.luf ul li a"
+            // The same listing re-sorted, not the home page. The home page's `div.utao` slider
+            // is a *widget*: installs that drop it — most of them — served a feed that parsed
+            // to zero items, which is the failure mode with no alarm attached, since an empty
+            // feed is a valid answer. This listing is rendered by the same template as the
+            // catalogue, so a site whose catalogue works has a working feed by construction.
+            "path": "/manga/?page=1&order=update",
+            "item": "div.bsx",
+            "link": "a",
+            "title": "a@title",
+            "chapter": "div.epxs"
         },
         "series": {
             "title": "h1.entry-title",
@@ -52,7 +60,12 @@ pub fn mangathemesia_default_config() -> Value {
         },
         "chapters": {
             "container": "li[data-num]",
-            "link": "div.eph-num a",
+            // The row's first anchor, not `div.eph-num a`: forks of this theme disagree about
+            // whether the link sits inside that div or wraps it, and a selector that picks the
+            // inner shape finds nothing on the outer one — so the site ingested a full
+            // catalogue and zero chapters, with nothing failing. Both shapes put the chapter
+            // link first.
+            "link": "a",
             "number_from": "text",
             "title": "span.chapternum",
             "date": "span.chapterdate"

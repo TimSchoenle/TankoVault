@@ -108,8 +108,9 @@ fn kunmanga_fixtures() -> SiteFetcher {
 /// via an AJAX "LOAD MORE" control and renders neither that link nor `a.nextpostslink` — so
 /// `has_next` was false on every page and the fan-out stopped after page 1.
 ///
-/// The preset now clears `catalog.next`, putting termination on item count; this pins that a
-/// populated listing continues, and that neither selector re-appears in the fixture.
+/// The *family default* now clears `catalog.next`, putting termination on item count; this
+/// pins that a populated listing continues, and that neither selector re-appears in the
+/// fixture.
 #[tokio::test]
 async fn manhuaus_catalog_continues_while_pages_yield_items() {
     let (adapter, ctx) = preset_adapter(
@@ -296,5 +297,68 @@ async fn kunmanga_chapters_from_json_api() {
     assert!(
         ch118.published_at.is_some(),
         "updated_at parsed into a date"
+    );
+}
+
+/// Bug: `mangaread` carried only a `catalog.path` override and inherited `a.nextpostslink` as
+/// its has-next marker. No live Madara install checked renders that element — the theme
+/// paginates through an always-present AJAX control — so `has_next` was false on page 1 and
+/// every full scan ingested 12 series out of the site's ~3 200, silently and forever, because a
+/// walk that ends early is indistinguishable from a catalogue that is small.
+///
+/// The marker is cleared family-wide now, so a site that deviates has to *add* one (toonily
+/// does) rather than inherit one nothing renders.
+#[tokio::test]
+async fn the_madara_family_does_not_inherit_a_paginator_nothing_renders() {
+    assert!(
+        tankovault_adapters::madara_default_config()["catalog"]["next"].is_null(),
+        "clearing the marker is what puts termination on item count"
+    );
+
+    let (adapter, ctx) = preset_adapter(
+        "mangaread",
+        SiteFetcher {
+            catalog: MANHUAUS_CATALOG,
+            catalog_past_end: MANHUAUS_CATALOG_EMPTY,
+            ..SiteFetcher::default()
+        },
+    );
+
+    let first = adapter.list_catalog(&ctx, 1).await.expect("catalog parses");
+    assert!(
+        first.has_next,
+        "a populated listing must chain the next page"
+    );
+    let past_end = adapter.list_catalog(&ctx, 2).await.expect("shell parses");
+    assert!(!past_end.has_next, "an empty listing ends the walk");
+}
+
+/// Bug: `yakshacomics` inherited the family's yielded-items termination, and that host answers
+/// **every** 404 with a Cloudflare challenge the solver cannot clear. The empty page that ends a
+/// walk is therefore unreachable: the scan enumerated all 52 series correctly, then failed on
+/// the request that should have said "stop", and was redelivered — forever. Its preset names
+/// `link[rel=next]`, which this install renders on every page but the last, so the walk ends
+/// without ever asking for a page past the end.
+///
+/// Served a populated listing that carries **no** marker, this preset must therefore stop. A
+/// fixture with items in it is the point: the fallback it must not use would say "continue".
+#[tokio::test]
+async fn yakshacomics_ends_its_walk_on_the_marker_not_on_an_empty_page() {
+    let (adapter, ctx) = preset_adapter(
+        "yakshacomics",
+        SiteFetcher {
+            catalog: MANHUAUS_CATALOG,
+            ..SiteFetcher::default()
+        },
+    );
+    let page = adapter.list_catalog(&ctx, 1).await.expect("catalog parses");
+
+    assert!(
+        !page.items.is_empty(),
+        "the fixture must yield items, or this proves nothing"
+    );
+    assert!(
+        !page.has_next,
+        "no `link[rel=next]` means the last page, however many items it carries"
     );
 }

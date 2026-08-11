@@ -19,8 +19,13 @@ tests, so a provider layout change fails a test rather than corrupting productio
 
 A third onboarding route was added with the 2026-08 source expansion: a **family**. Madara was
 always this in spirit — one theme, many sites, one shared selector set — and it is now spelled
-that way in `AdapterKind`, alongside two more (`mangathemesia`, `manganato`). A site on a family
-theme is a config row carrying only its deviations, exactly like a Madara one.
+that way in `AdapterKind`, alongside three more (`mangathemesia`, `manganato`, `keyoapp`). A site
+on a family theme is a config row carrying only its deviations, exactly like a Madara one.
+
+That is where the leverage is, and the second half of the expansion (2026-08-11, thirty sites)
+spent it: twenty-one of the thirty are a family row with **no** deviation at all, and the nine
+that are not share one adapter between them. Deriving a family's defaults from one site is what
+made the first half fragile — see [Deriving a family's defaults](#deriving-a-familys-defaults).
 
 ## Managed presets
 
@@ -78,6 +83,27 @@ are named per provider in the job's output.
 | MangaRead | `www.mangaread.org` | Madara | **Config only** | Madara + overrides |
 | Manhua Plus | `manhuaplus.com` | Madara | **Config only** | Madara + overrides |
 | Rizz Fables | `rizzfables.com` | MangaThemesia | **Config only** | family defaults |
+| Akaza Scans | `akazascans.org` | MangaThemesia | **Config only** | family defaults |
+| Arena Scans | `arenascan.com` | MangaThemesia | **Config only** | family defaults |
+| Rage Scans | `ragescans.com` | MangaThemesia | **Config only** | family defaults |
+| Rokari Comics | `rokaricomics.com` | MangaThemesia | **Config only** | family defaults |
+| Witch Scans | `witchscans.com` | MangaThemesia | **Config only** | family defaults |
+| King of Shojo | `kingofshojo.com` | MangaThemesia | **Config only** | family defaults |
+| Noxen Scans | `noxenscan.com` | MangaThemesia | **Config only** | family defaults |
+| Manga Trend | `mangatrend.org` | MangaThemesia | **Config only** | family defaults |
+| Violet Scans | `violetscans.org` | MangaThemesia | **Config only** | family + `/comics/` |
+| Thunder Scans | `en-thunderscans.com` | MangaThemesia | **Config only** | family + `/comics/` |
+| Razure | `razure.org` | MangaThemesia | **Config only** | family + `/series/` |
+| Asmodeus Scans | `asmotoon.com` | Keyoapp | **Config only** | family defaults |
+| Siren Scans | `sirenscans.com` | Keyoapp | **Config only** | family defaults |
+| Genz Toons | `genztoons.org` | Keyoapp | **Config only** | family defaults |
+| Timeless Toons | `timelesstoons.org` | Keyoapp | **Config only** | family defaults |
+| Mist Scans | `mistscans.com` | Keyoapp | **Config only** | family defaults |
+| Grim Scans | `grimscans.com` | Keyoapp | **Config only** | family defaults |
+| Kewn Scans | `kewnscans.org` | Keyoapp | **Config only** | family defaults |
+| Writer Scans | `writerscans.com` | Keyoapp | **Config only** | family defaults |
+| Nyanu Kafe | `nyanukafe.com` | Keyoapp | **Config only** | family defaults |
+| Yaksha Comics | `yakshacomics.com` | Madara | **Config only** | family defaults |
 | NatoManga | `www.natomanga.com` | Manganato | **Config + code** | `ManganatoAdapter` |
 | Mangakakalot | `www.mangakakalot.gg` | Manganato | **Config + code** | `ManganatoAdapter` |
 | NeloManga | `www.nelomanga.net` | Manganato | **Config + code** | `ManganatoAdapter` |
@@ -90,6 +116,15 @@ are named per provider in the job's output.
 | Hive Toons | `hivetoons.org` | Astro islands | **Custom code** | `AstroIslandAdapter` |
 | Flame Comics | `flamecomics.xyz` | Next.js | **Custom code** | `FlameComicsAdapter` |
 | WEBTOON | `www.webtoons.com` | Licensed, bespoke | **Custom code** | `WebtoonsAdapter` |
+| Vortex Scans | `vortexscans.org` | Iken JSON | **Custom code** | `IkenAdapter` |
+| Magus Manga | `magustoon.org` | Iken JSON | **Custom code** | `IkenAdapter` |
+| Nyx Scans | `nyxscans.com` | Iken JSON | **Custom code** | `IkenAdapter` |
+| Ken Scans | `kencomics.com` | Iken JSON | **Custom code** | `IkenAdapter` |
+| Sana Scans | `sanascans.com` | Iken JSON | **Custom code** | `IkenAdapter` |
+| Orion Scans | `orion-scans.com` | Iken JSON | **Custom code** | `IkenAdapter` |
+| Rena Scans | `renascans.net` | Iken JSON | **Custom code** | `IkenAdapter` |
+| Kayn Scans | `kaynscan.org` | Iken JSON | **Custom code** | `IkenAdapter` |
+| Hijala Scans | `en-hijala.com` | Iken JSON | **Custom code** | `IkenAdapter` |
 
 ## Early-access (paid) chapters
 
@@ -106,6 +141,8 @@ Where each provider publishes the fact:
 | Asura Scans | `is_locked` in the Astro island props | `unlock_time` / `early_access_until` |
 | Hive Toons | `isLocked` / `isTimeLocked` in the series island | `unlockAt`, on the **chapter** page — fetched per locked chapter, because the listing omits it and the window is per-chapter configurable |
 | Toonily and other Madara sites | `chapters.locked` selector in the provider config | `chapters.unlock`, where rendered |
+| Keyoapp sites | the coin-price badge on the chapter card (`img[alt="Coin"]`) | none — the platform states a price, never a date, so such a chapter stays locked |
+| Iken sites | `isLocked` in the chapter JSON | `unlockAt`, null on a permanently paid chapter |
 | WEBTOON | none: Fast Pass episodes are not rendered to an anonymous visitor at all | n/a |
 
 A locked chapter does **not** count as unread. It starts counting when either its stated unlock
@@ -117,6 +154,49 @@ missing date is not a date in the past.
 
 `crates/db/tests/repo_tracking.rs` pins all of that, including the two ways it opens and the
 per-provider scoping of the opt-in.
+
+## Deriving a family's defaults
+
+A family default set derived from **one** site is a preset for that site wearing a family's name,
+and the 2026-08-11 expansion found three of them the hard way. Each failed the same way: parsed
+cleanly, returned nothing, reported no error.
+
+| Default | Held on | Broke on | Now |
+|---|---|---|---|
+| Madara `catalog.next: a.nextpostslink` | nothing checked | every install checked | cleared: a populated page chains the next one, and `mangaread` went from 12 series to ~3 200 |
+| MangaThemesia `latest` = the home page's `div.utao` slider | `rizzfables` | every other install, which drops that widget | the catalogue listing re-sorted (`?order=update`), so a working catalogue implies a working feed |
+| MangaThemesia `chapters.link: div.eph-num a` | `rizzfables` | forks that wrap the row in the anchor instead | the row's first anchor, which both shapes place first |
+
+A fourth, found by walking catalogues rather than sampling one page: **a host that answers its
+404s with a challenge cannot use the yielded-items fallback at all.** `yakshacomics` enumerated
+all 52 of its series correctly and then failed on the request that should have ended the walk —
+loud rather than silent, but retried forever. Its preset names `link[rel=next]`, which that
+install renders on every page but the last, so the walk stops without asking for a page past the
+end.
+
+The rule that follows: **verify a family default against three installs before shipping it**, and
+prefer the selector that is true of the theme's *contract* (an id, a data attribute, the listing
+template) over one that is true of one site's stylesheet. `cargo run -p tankovault-adapters
+--example probe -- <slug>` is the tool — it runs a preset's fast scan and a bounded slice of its
+full scan against the live site through the production fetch stack, and reports what each would
+ingest. `--walk <n>` is the deeper form: it walks consecutive catalogue pages, counts how many
+series each one *adds*, and then probes a page far past the end — which is what distinguishes a
+walk that terminates from one that re-serves page 1 forever, and from one that stops on page 1
+because its path template only works there. Neither is visible in a single-page sample, and
+neither reports an error.
+
+## A limitation worth stating: Madara's AJAX chapter list
+
+Most live Madara installs no longer render `li.wp-manga-chapter` on the series page at all; the
+list arrives from `POST {series}/ajax/chapters/`, and a `GET` of that path returns the series page
+again. The fetch stack is GET-only by construction (`FetchRequest`), so such a site parses a
+perfect catalogue, a perfect feed, and then ingests **zero chapters** — silently, because an empty
+list is a valid answer.
+
+Seven otherwise-healthy Madara candidates were left out of the expansion for this reason. Adding
+them means giving the fetch stack a POST it does not have today, which widens provider egress and
+is a policy decision rather than a patch; until then, a Madara site has to be checked for a
+server-rendered chapter list before it is worth a preset.
 
 **manhuaus** is **just a config of the existing Madara parser**. **kunmanga** renders
 Madara-shaped series HTML but serves chapters from a JSON API and cannot be enumerated

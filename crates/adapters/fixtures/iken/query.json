@@ -1,0 +1,21 @@
+{
+  "posts": [
+    {
+      "id": 795,
+      "slug": "we're-not-a-couple!",
+      "postTitle": "We're not a couple!",
+      "isNovel": false,
+      "seriesType": "MANHWA",
+      "seriesStatus": "ONGOING"
+    },
+    {
+      "id": 794,
+      "slug": "my-nerdy-neighbor-is-the-master-of-the-magic-tower",
+      "postTitle": "My Nerdy Neighbor Is the Master of the Magic Tower",
+      "isNovel": false,
+      "seriesType": "MANHWA",
+      "seriesStatus": "ONGOING"
+    }
+  ],
+  "totalCount": 687
+}

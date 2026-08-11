@@ -7,6 +7,8 @@ use crate::error::AdapterError;
 use crate::flamecomics::FlameComicsAdapter;
 use crate::generic::GenericConfigAdapter;
 use crate::heancms::HeanCmsAdapter;
+use crate::iken::IkenAdapter;
+use crate::keyoapp::keyoapp_default_config;
 use crate::kunmanga::KunMangaAdapter;
 use crate::madara::madara_default_config;
 use crate::mangadex::MangaDexAdapter;
@@ -54,6 +56,10 @@ pub fn build_adapter(
             manganato_default_config(),
             config,
         )?))),
+        AdapterKind::Keyoapp => Ok(Box::new(GenericConfigAdapter::new(family_config(
+            keyoapp_default_config(),
+            config,
+        )?))),
         AdapterKind::GenericConfig => {
             let cfg = AdapterConfig::from_value(config)?;
             Ok(Box::new(GenericConfigAdapter::new(cfg)))
@@ -70,6 +76,12 @@ pub fn build_adapter(
             "mangadex" => Ok(Box::new(MangaDexAdapter::new())),
             // HeanCMS, whose chapter rows carry the paywall as `price`/`free_at`.
             "omegascans" => Ok(Box::new(HeanCmsAdapter::new(config)?)),
+            // Iken: one hosted platform behind several scanlator sites, driven entirely by its
+            // JSON API. Not a `family`, because a family merges *selectors* onto defaults and
+            // there is no markup here to select — the whole config is the API host, so a new
+            // site on the platform is a preset entry plus its slug in this list.
+            "vortexscans" | "magustoon" | "nyxscans" | "kencomics" | "sanascans" | "orionscans"
+            | "renascans" | "kaynscans" | "hijalascans" => Ok(Box::new(IkenAdapter::new(config)?)),
             // Astro islands: the chapter list, with its lock flags, is the island's props.
             "asura" | "hivetoons" => Ok(Box::new(AstroIslandAdapter::new(slug)?)),
             "flamecomics" => Ok(Box::new(FlameComicsAdapter::new())),

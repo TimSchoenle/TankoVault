@@ -105,6 +105,7 @@ set in a TOML file.
 | `RUST_LOG` | *(unset)* | Standard `EnvFilter` syntax. When set it **replaces** `TANKOVAULT_TELEMETRY__LOG_FILTER` entirely rather than merging with it. |
 | `DATABASE_URL` | — | Required by `xtask` (`migrate`, `reset`, `seed`, `sqlx-prepare`) only. The services **and the `bootstrap` image** use `TANKOVAULT_DATABASE__URL`; these two are not interchangeable. |
 | `TANKOVAULT_CONFIRM_RESET` | *(unset)* | Must be exactly `1` for `xtask reset`, which **drops and recreates the `public` schema**. Local development only. |
+| `TANKOVAULT_PROBE_SOLVER` | `http://127.0.0.1:8191` | The TRAWL endpoint `cargo run -p tankovault-adapters --example probe` sends challenged fetches to. A developer tool for deriving and verifying provider presets against the live sites (`docs/PROVIDERS.md`); no service reads it, and the compose stack's own solver reaches TRAWL over the internal network instead. |
 | `SQLX_OFFLINE` | *(unset)* | Build-time, not runtime: resolves sqlx's compile-time-checked queries from the committed `.sqlx/` cache instead of a live database. |
 
 ---

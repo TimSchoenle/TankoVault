@@ -1,0 +1,42 @@
+{
+  "post": {
+    "chapters": [
+      {
+        "id": 31725,
+        "slug": "chapter-20",
+        "number": 20,
+        "title": "",
+        "unlockAt": null,
+        "isPermanentlyLocked": true,
+        "price": 100,
+        "createdAt": "2026-08-07T15:14:44.759Z",
+        "isLocked": true,
+        "isAccessible": false
+      },
+      {
+        "id": 31727,
+        "slug": "chapter-19",
+        "number": 19,
+        "title": "",
+        "unlockAt": null,
+        "isPermanentlyLocked": true,
+        "price": 100,
+        "createdAt": "2026-08-07T15:18:16.471Z",
+        "isLocked": true,
+        "isAccessible": false
+      },
+      {
+        "id": 31720,
+        "slug": "chapter-1",
+        "number": 1,
+        "title": "",
+        "unlockAt": null,
+        "isPermanentlyLocked": false,
+        "price": 0,
+        "createdAt": "2026-08-07T15:06:10.912Z",
+        "isLocked": false,
+        "isAccessible": true
+      }
+    ]
+  }
+}

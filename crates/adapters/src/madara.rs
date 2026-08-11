@@ -8,11 +8,20 @@ use serde_json::{Value, json};
 pub fn madara_default_config() -> Value {
     json!({
         "catalog": {
-            "path": "/manga/?page={page}",
+            // The theme's archive paginates on the path. `?page=` is the WordPress fallback and
+            // every install checked answers it with page 1, so a walk over it re-ingests one
+            // page forever.
+            "path": "/manga/page/{page}/",
             "item": "div.page-item-detail",
             "link": "a",
             "title": "h3 a",
-            "next": "a.nextpostslink"
+            // No next-page marker by default. `a.nextpostslink` is the theme's own paginator
+            // and most installs render it nowhere — they paginate through an always-present
+            // AJAX "load more" button instead — so a preset that trusted it walked exactly one
+            // page and called the catalogue complete. Cleared, this falls back to "another page
+            // exists while this one yielded items", which is exact here: past the last page
+            // WordPress answers with a 404 shell carrying zero items.
+            "next": null
         },
         "latest": {
             "path": "/",

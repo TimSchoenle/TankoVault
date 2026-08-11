@@ -15,8 +15,8 @@ struct FixtureFetcher;
 #[async_trait]
 impl Fetcher for FixtureFetcher {
     async fn get(&self, req: FetchRequest) -> Result<FetchResponse, FetchError> {
-        // Catalogue listing pages carry `/manga/?page=`; everything else is a series page.
-        let body = if req.url.contains("/manga/?page=") {
+        // Catalogue listing pages carry `/manga/page/{n}/`; everything else is a series page.
+        let body = if req.url.contains("/manga/page/") {
             CATALOG_HTML
         } else {
             SERIES_HTML
@@ -99,7 +99,9 @@ async fn parses_catalog_page() {
         .expect("catalog parses");
 
     assert_eq!(page.items.len(), 3);
-    assert!(page.has_next); // a.nextpostslink is present
+    // The family default names no next-page marker, so a populated page is what chains the
+    // next one — see `the_madara_family_does_not_inherit_a_paginator_nothing_renders`.
+    assert!(page.has_next);
     assert_eq!(page.items[0].title, "Solo Leveling");
     assert!(page.items[0].path.starts_with("/manga/"));
 }

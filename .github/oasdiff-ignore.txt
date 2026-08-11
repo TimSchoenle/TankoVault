@@ -53,3 +53,12 @@ in api put /v1/me/notification-prefs the request's body `type` changed from `any
 in api post /v1/auth/login removed the required property `access_token` from the response with the `200` status
 in api post /v1/auth/login removed the required property `token_type` from the response with the `200` status
 in api post /v1/auth/login removed the required property `expires_in` from the response with the `200` status
+
+# `manga_themesia` was never a value this API accepted. `AdapterKind` publishes one token per
+# variant and the schema derive did not read the per-variant `#[serde(rename)]`, so the document
+# carried the container's `rename_all` applied to the identifier while the database, the handlers
+# and every response said `mangathemesia`. Removing it takes away a value that could only ever
+# have produced a 422, and the drift is what broke the console: a client generated from the
+# document refused every provider list carrying such a provider. Pinned by
+# `tankovault_domain::enums`' `the_published_vocabulary_is_the_one_serde_writes`.
+in api post /v1/admin/providers removed the enum value `manga_themesia` of the request property `adapter`

@@ -27,6 +27,13 @@ macro_rules! str_enum {
         $vis enum $name {
             $(
                 #[serde(rename = $token)]
+                // utoipa needs telling separately: it does not read the `serde(rename)` above,
+                // so without this it publishes the container's `rename_all` applied to the
+                // *variant identifier* — a different string whenever the token is not that
+                // identifier's snake_case (`MangaThemesia` → `manga_themesia`, while the
+                // column, the wire and this enum all say `mangathemesia`). A client generated
+                // from the document then cannot read the value the server actually sends.
+                #[schema(rename = $token)]
                 #[cfg_attr(feature = "sqlx", sqlx(rename = $token))]
                 $variant
             ),+
@@ -231,6 +238,63 @@ mod tests {
         for &s in ProviderState::all() {
             assert_eq!(ProviderState::from_str(s.as_str()).unwrap(), s);
         }
+    }
+
+    /// Every enum publishes exactly the vocabulary it serializes.
+    ///
+    /// The defect this pins: the schema derive ignores the per-variant `#[serde(rename)]` and
+    /// fell back to the container's `rename_all`, so `AdapterKind::MangaThemesia` was published
+    /// as `manga_themesia` while the database, the API and this enum all said `mangathemesia`.
+    /// Nothing compared the two vocabularies, so the drift only surfaced as a client generated
+    /// from the document refusing every response that carried such a provider — the console's
+    /// provider and challenge screens both failed with "the server sent something this app
+    /// couldn't read".
+    #[test]
+    fn the_published_vocabulary_is_the_one_serde_writes() {
+        let mut covered: Vec<&str> = Vec::new();
+        macro_rules! assert_published {
+            ($($ty:ty),+ $(,)?) => {$({
+                let schema = serde_json::to_value(<$ty as utoipa::PartialSchema>::schema())
+                    .expect("a schema serializes");
+                let published: Vec<&str> = schema["enum"]
+                    .as_array()
+                    .unwrap_or_else(|| panic!("{} publishes a vocabulary", stringify!($ty)))
+                    .iter()
+                    .map(|token| token.as_str().expect("tokens are strings"))
+                    .collect();
+                let written: Vec<&str> = <$ty>::all().iter().map(|v| v.as_str()).collect();
+                assert_eq!(
+                    published, written,
+                    "{} publishes tokens it does not serialize", stringify!($ty)
+                );
+                covered.push(stringify!($ty));
+            })+};
+        }
+        assert_published!(
+            ContentType,
+            SeriesStatus,
+            AdapterKind,
+            ChapterAccess,
+            ProviderState,
+            ScanMode,
+            RunState,
+            TaskState,
+            WatchStatus,
+            AccountStatus,
+        );
+
+        // The list above is hand-written, so it is checked against the file rather than
+        // trusted: a `str_enum!` nobody adds here would go unchecked, and going unchecked is
+        // the whole failure mode.
+        let declared: Vec<&str> = include_str!("enums.rs")
+            .lines()
+            .filter_map(|line| line.trim_start().strip_prefix("pub enum "))
+            .filter_map(|rest| rest.split_whitespace().next())
+            .collect();
+        assert_eq!(
+            declared, covered,
+            "a `str_enum!` is missing from this test (declaration order)"
+        );
     }
 
     #[test]

@@ -42,7 +42,7 @@
         "description": "Which adapter implementation drives a provider.\n\n`Madara`, `MangaThemesia` and `Manganato` are *families*: each names a shared site theme\nwhose default selector set ships in this workspace, so a site running one onboards as a\nsingle config row carrying only its deviations. `Custom` is the escape hatch, dispatched\nby slug.",
         "enum": [
           "madara",
-          "manga_themesia",
+          "mangathemesia",
           "manganato",
           "generic_config",
           "custom"

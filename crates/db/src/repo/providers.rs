@@ -4,7 +4,9 @@ use crate::error::{DbError, DbResult};
 use serde_json::Value as Json;
 use sqlx::types::Json as SqlxJson;
 use sqlx::{FromRow, PgExecutor};
-use tankovault_domain::{AdapterKind, Politeness, Provider, ProviderId, ProviderState};
+use tankovault_domain::{
+    AdapterKind, Politeness, PresetDefinition, PresetLink, Provider, ProviderId, ProviderState,
+};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -19,6 +21,9 @@ struct ProviderRow {
     config: Json,
     state: ProviderState,
     politeness: SqlxJson<Politeness>,
+    preset_slug: Option<String>,
+    preset_locked: bool,
+    preset_synced_at: Option<OffsetDateTime>,
     last_full_scan_at: Option<OffsetDateTime>,
     created_at: OffsetDateTime,
     updated_at: OffsetDateTime,
@@ -35,6 +40,13 @@ impl From<ProviderRow> for Provider {
             config: r.config,
             state: r.state,
             politeness: r.politeness.0.clamped(),
+            // The CHECK constraint makes a lock without a slug unrepresentable, so the link is
+            // present exactly when the row names a preset.
+            preset: r.preset_slug.map(|slug| PresetLink {
+                slug,
+                locked: r.preset_locked,
+                synced_at: r.preset_synced_at,
+            }),
             last_full_scan_at: r.last_full_scan_at,
             created_at: r.created_at,
             updated_at: r.updated_at,
@@ -50,6 +62,11 @@ pub struct NewProvider {
     pub adapter: AdapterKind,
     pub config: Json,
     pub politeness: Politeness,
+    /// The preset this row is being installed from, if any. A provider created from a preset
+    /// starts **locked** — the installer just wrote the shipped values, so there is nothing of
+    /// the operator's to protect yet. Everything else (the console's own registration form,
+    /// a clone) passes `None` and is never rewritten.
+    pub preset_slug: Option<String>,
 }
 
 /// Insert a provider, returning the created row.
@@ -60,11 +77,17 @@ pub async fn create<'e, E: PgExecutor<'e>>(exec: E, new: NewProvider) -> DbResul
     let id = ProviderId::new();
     let row = sqlx::query_as!(
         ProviderRow,
-        "INSERT INTO providers (id, slug, name, base_url, adapter, config, politeness) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7) \
+        // `preset_locked` is derived from the slug rather than passed: "installed from a preset"
+        // and "follows that preset" are the same thing at creation, and one expression here is
+        // one fewer way for a caller to create a row that is linked but silently not synced.
+        "INSERT INTO providers (id, slug, name, base_url, adapter, config, politeness, \
+                                preset_slug, preset_locked, preset_synced_at) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8::text, $8::text IS NOT NULL, \
+                 CASE WHEN $8::text IS NULL THEN NULL ELSE now() END) \
          RETURNING id, slug, name, base_url, adapter AS \"adapter: AdapterKind\", \
                    config AS \"config: Json\", state AS \"state: ProviderState\", \
                    politeness AS \"politeness: SqlxJson<Politeness>\", \
+                   preset_slug, preset_locked, preset_synced_at, \
                    last_full_scan_at, created_at, updated_at",
         id.as_uuid(),
         new.slug,
@@ -73,6 +96,7 @@ pub async fn create<'e, E: PgExecutor<'e>>(exec: E, new: NewProvider) -> DbResul
         new.adapter as AdapterKind,
         new.config,
         SqlxJson(new.politeness.clamped()) as _,
+        new.preset_slug,
     )
     .fetch_one(exec)
     .await
@@ -97,6 +121,7 @@ pub async fn list<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<Provider>> {
         "SELECT id, slug, name, base_url, adapter AS \"adapter: AdapterKind\", \
                 config AS \"config: Json\", state AS \"state: ProviderState\", \
                 politeness AS \"politeness: SqlxJson<Politeness>\", \
+                preset_slug, preset_locked, preset_synced_at, \
                 last_full_scan_at, created_at, updated_at \
          FROM providers ORDER BY updated_at DESC",
     )
@@ -115,6 +140,7 @@ pub async fn get<'e, E: PgExecutor<'e>>(exec: E, id: ProviderId) -> DbResult<Pro
         "SELECT id, slug, name, base_url, adapter AS \"adapter: AdapterKind\", \
                 config AS \"config: Json\", state AS \"state: ProviderState\", \
                 politeness AS \"politeness: SqlxJson<Politeness>\", \
+                preset_slug, preset_locked, preset_synced_at, \
                 last_full_scan_at, created_at, updated_at \
          FROM providers WHERE id = $1",
         id.as_uuid(),
@@ -134,6 +160,7 @@ pub async fn get_by_slug<'e, E: PgExecutor<'e>>(exec: E, slug: &str) -> DbResult
         "SELECT id, slug, name, base_url, adapter AS \"adapter: AdapterKind\", \
                 config AS \"config: Json\", state AS \"state: ProviderState\", \
                 politeness AS \"politeness: SqlxJson<Politeness>\", \
+                preset_slug, preset_locked, preset_synced_at, \
                 last_full_scan_at, created_at, updated_at \
          FROM providers WHERE slug = $1",
         slug,
@@ -164,12 +191,116 @@ pub async fn update<'e, E: PgExecutor<'e>>(
          RETURNING id, slug, name, base_url, adapter AS \"adapter: AdapterKind\", \
                    config AS \"config: Json\", state AS \"state: ProviderState\", \
                    politeness AS \"politeness: SqlxJson<Politeness>\", \
+                   preset_slug, preset_locked, preset_synced_at, \
                    last_full_scan_at, created_at, updated_at",
         id.as_uuid(),
         name,
         base_url,
         config,
         SqlxJson(politeness.clamped()) as _,
+    )
+    .fetch_optional(exec)
+    .await?;
+    Ok(row.ok_or(DbError::NotFound)?.into())
+}
+
+/// Overwrite the preset-owned fields from `preset` and (re-)lock the row to it.
+///
+/// The write set **is** the lock contract ([`tankovault_domain::PresetLink`]): `name`,
+/// `base_url`, `adapter`, `config`. `politeness` and `state` are not preset-owned and are not
+/// touched here — that is the whole reason an operator can tune a crawl budget on a managed
+/// provider without unlocking it. Both the installer's per-rollout sync and the console's
+/// "follow the preset again" action land here, so there is one implementation of "what the
+/// preset owns" rather than two that can drift.
+///
+/// # Errors
+/// `NotFound` (404) when `id` matches no row, otherwise `Sqlx`.
+pub async fn apply_preset<'e, E: PgExecutor<'e>>(
+    exec: E,
+    id: ProviderId,
+    preset: &PresetDefinition,
+) -> DbResult<Provider> {
+    let row = sqlx::query_as!(
+        ProviderRow,
+        "UPDATE providers SET name = $2, base_url = $3, adapter = $4, config = $5, \
+                              preset_slug = $6, preset_locked = true, preset_synced_at = now(), \
+                              updated_at = now() \
+         WHERE id = $1 \
+         RETURNING id, slug, name, base_url, adapter AS \"adapter: AdapterKind\", \
+                   config AS \"config: Json\", state AS \"state: ProviderState\", \
+                   politeness AS \"politeness: SqlxJson<Politeness>\", \
+                   preset_slug, preset_locked, preset_synced_at, \
+                   last_full_scan_at, created_at, updated_at",
+        id.as_uuid(),
+        preset.name,
+        preset.base_url,
+        preset.adapter as AdapterKind,
+        preset.config,
+        preset.slug,
+    )
+    .fetch_optional(exec)
+    .await?;
+    Ok(row.ok_or(DbError::NotFound)?.into())
+}
+
+/// Set whether a provider follows its preset, without changing any preset-owned field.
+///
+/// Unlocking is the console's "edit freely" action: the row keeps naming the preset it came
+/// from, so the inspector can still offer a re-link, but no rollout rewrites it again.
+///
+/// # Errors
+/// `NotFound` (404) when `id` matches no row. Locking a row that names no preset is refused by
+/// the `providers_lock_needs_preset` CHECK and surfaces as `Sqlx`; callers hold the preset and
+/// go through [`apply_preset`] instead.
+pub async fn set_preset_lock<'e, E: PgExecutor<'e>>(
+    exec: E,
+    id: ProviderId,
+    locked: bool,
+) -> DbResult<Provider> {
+    let row = sqlx::query_as!(
+        ProviderRow,
+        "UPDATE providers SET preset_locked = $2, updated_at = now() WHERE id = $1 \
+         RETURNING id, slug, name, base_url, adapter AS \"adapter: AdapterKind\", \
+                   config AS \"config: Json\", state AS \"state: ProviderState\", \
+                   politeness AS \"politeness: SqlxJson<Politeness>\", \
+                   preset_slug, preset_locked, preset_synced_at, \
+                   last_full_scan_at, created_at, updated_at",
+        id.as_uuid(),
+        locked,
+    )
+    .fetch_optional(exec)
+    .await?;
+    Ok(row.ok_or(DbError::NotFound)?.into())
+}
+
+/// Adopt an existing row into the preset catalogue without rewriting it.
+///
+/// Used once per row by the installer, for providers that predate the preset link. `locked`
+/// decides whether it starts following updates; see the adoption rule in
+/// `services/bootstrap`.
+///
+/// # Errors
+/// `NotFound` (404) when `id` matches no row, otherwise `Sqlx`.
+pub async fn adopt_preset<'e, E: PgExecutor<'e>>(
+    exec: E,
+    id: ProviderId,
+    preset_slug: &str,
+    locked: bool,
+) -> DbResult<Provider> {
+    let row = sqlx::query_as!(
+        ProviderRow,
+        "UPDATE providers SET preset_slug = $2, preset_locked = $3, \
+                              preset_synced_at = CASE WHEN $3 THEN now() ELSE preset_synced_at END, \
+                              updated_at = now() \
+         WHERE id = $1 \
+         RETURNING id, slug, name, base_url, adapter AS \"adapter: AdapterKind\", \
+                   config AS \"config: Json\", state AS \"state: ProviderState\", \
+                   politeness AS \"politeness: SqlxJson<Politeness>\", \
+                   preset_slug, preset_locked, preset_synced_at, \
+                   last_full_scan_at, created_at, updated_at",
+        id.as_uuid(),
+        preset_slug,
+        locked,
     )
     .fetch_optional(exec)
     .await?;
@@ -226,7 +357,7 @@ pub async fn get_many<'e, E: PgExecutor<'e>>(
     let ids: Vec<Uuid> = ids.iter().map(|id| id.as_uuid()).collect();
     let rows = sqlx::query_as!(
         ProviderRow,
-        "SELECT id, slug, name, base_url, adapter AS \"adapter: AdapterKind\",                 config AS \"config: Json\", state AS \"state: ProviderState\",                 politeness AS \"politeness: SqlxJson<Politeness>\",                 last_full_scan_at, created_at, updated_at          FROM providers WHERE id = ANY($1)",
+        "SELECT id, slug, name, base_url, adapter AS \"adapter: AdapterKind\",                 config AS \"config: Json\", state AS \"state: ProviderState\",                 politeness AS \"politeness: SqlxJson<Politeness>\",                 preset_slug, preset_locked, preset_synced_at,                 last_full_scan_at, created_at, updated_at          FROM providers WHERE id = ANY($1)",
         &ids,
     )
     .fetch_all(exec)

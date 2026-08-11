@@ -112,6 +112,10 @@ impl<'a> ProviderBuilder<'a> {
                 adapter: self.adapter,
                 config: self.config,
                 politeness: self.politeness,
+                // Fixtures stand for operator-registered providers. A suite that needs the
+                // preset link exercises it through the repo, so no fixture is silently
+                // rewritten by a reconcile.
+                preset_slug: None,
             },
         )
         .await

@@ -16,8 +16,8 @@ pub(in crate::views::console) use test::AdapterTestPanel;
 
 use crate::api;
 use crate::components::{
-    async_view, use_step_up_gate, HealthPill, ListFooter, ListSearch, NoSelection, OutcomeLine,
-    Section, SkeletonBlock, SliderRow, StepUpGuard, TabBar, TabKind,
+    async_view, use_step_up_gate, HealthPill, InlineConfirm, ListFooter, ListSearch, NoSelection,
+    OutcomeLine, Section, SkeletonBlock, SliderRow, StepUpGuard, TabBar, TabKind,
 };
 use crate::hooks::{use_busy, use_outcome, use_reload, Reload};
 use crate::i18n::use_i18n;
@@ -29,10 +29,10 @@ use crate::views::console::{config_editor_text, use_console_nav};
 use crate::wire::types::Permission;
 use config::DryRunResult;
 use coverage::CoverageTab;
-use create::CreateProviderForm;
+use create::{CloneSeed, CreateProviderForm};
 use danger::DangerTab;
 use dioxus::prelude::*;
-use inkstone_ui::{Button, Size, Tone};
+use inkstone_ui::{Button, Pill, Size, Tone};
 use politeness::{emulation_token, politeness_body, EMULATION_CHOICES};
 use progenitor_client::ResponseValue;
 use row::ProviderRow;
@@ -102,6 +102,9 @@ pub(super) fn ProvidersEntity() -> Element {
     let nav = use_console_nav();
     let view = nav.query();
     let mut creating = use_signal(|| false);
+    // Set together with `creating`: which provider the registration form was opened as a copy
+    // of, or `None` for a blank one.
+    let mut clone_seed: Signal<Option<CloneSeed>> = use_signal(|| None);
 
     let providers = use_resource(move || {
         reload.track();
@@ -113,6 +116,22 @@ pub(super) fn ProvidersEntity() -> Element {
                 .await
                 .map(ResponseValue::into_inner)
                 .map_err(|e| api::friendly_error(i18n, e))
+        }
+    });
+
+    // The preset catalogue the last install run recorded. Loaded once for the whole pane: the
+    // inspector needs the shipped definition to show what re-linking would restore, and the
+    // list needs nothing more than each row's own link.
+    let presets = use_resource(move || {
+        reload.track();
+        let client = api.client();
+        async move {
+            client
+                .list_provider_presets()
+                .send()
+                .await
+                .map(ResponseValue::into_inner)
+                .unwrap_or_default()
         }
     });
 
@@ -178,6 +197,7 @@ pub(super) fn ProvidersEntity() -> Element {
                         style: "align-self:flex-start;",
                         on_click: move |_| {
                             let next = !*creating.read();
+                            clone_seed.set(None);
                             creating.set(next);
                         },
                         Ic { icon: Icon::Add, size: 13 }
@@ -232,7 +252,11 @@ pub(super) fn ProvidersEntity() -> Element {
             div { class: "ik-cons-pane",
                 CreateProviderForm {
                     reload,
-                    on_done: move |()| creating.set(false),
+                    seed: clone_seed.read().clone(),
+                    on_done: move |()| {
+                        clone_seed.set(None);
+                        creating.set(false);
+                    },
                 }
             }
         } else if let Some(provider) = chosen {
@@ -240,7 +264,12 @@ pub(super) fn ProvidersEntity() -> Element {
                 key: "{provider.id}",
                 provider: provider.clone(),
                 stat: stat_rows.iter().find(|s| s.slug == provider.slug).cloned(),
+                preset: preset_for(presets.read().as_ref(), &provider),
                 reload,
+                on_clone: move |seed: CloneSeed| {
+                    clone_seed.set(Some(seed));
+                    creating.set(true);
+                },
                 on_deleted: move |()| nav.select(nav.query().with_selection(None)),
             }
         } else {
@@ -249,12 +278,112 @@ pub(super) fn ProvidersEntity() -> Element {
     }
 }
 
+/// The preset link, stated in the one place an operator is about to edit the fields it governs.
+///
+/// Three states, and each has exactly one action: locked offers "unlock to edit"; unlocked
+/// offers "follow the preset again" behind a confirmation, because that discards local edits;
+/// a retired preset offers nothing, and says why.
+#[component]
+fn PresetBanner(
+    link: PresetLink,
+    /// The build no longer ships this preset, so there is nothing to follow.
+    retired: bool,
+    can_edit: bool,
+    busy: bool,
+    relinking: Signal<bool>,
+    on_unlock: EventHandler<()>,
+    on_relink: EventHandler<()>,
+) -> Element {
+    let i18n = use_i18n();
+    let mut relinking = relinking;
+    let synced = rel_time(i18n, link.synced_at.as_deref());
+    let args = [("preset", link.slug.as_str()), ("when", synced.as_str())];
+
+    rsx! {
+        // Tinted with the accent while the row follows its preset and with the warning colour
+        // once it has stopped: styled inline rather than as a new class, so this needs no
+        // Tailwind rebuild of the shipped stylesheet.
+        div {
+            style: if link.locked {
+                "margin-bottom:14px;padding:11px 13px;border-radius:var(--radius);border:1px solid var(--border-soft);background:color-mix(in srgb, var(--acc) 6%, transparent);"
+            } else {
+                "margin-bottom:14px;padding:11px 13px;border-radius:var(--radius);border:1px solid var(--border-soft);background:color-mix(in srgb, var(--star) 8%, transparent);"
+            },
+            div { style: "font-weight:600;font-size:12.5px;margin-bottom:3px;",
+                if retired {
+                {i18n.t("console.providers.preset.retiredHead")}
+                } else if link.locked {
+                {i18n.t("console.providers.preset.lockedHead")}
+                } else {
+                {i18n.t("console.providers.preset.customHead")}
+                }
+            }
+            p { class: "ik-muted", style: "font-size:11.5px;line-height:1.55;margin:0;",
+                if retired {
+                {i18n.args("console.providers.preset.retiredBody", &args)}
+                } else if link.locked {
+                {i18n.args("console.providers.preset.lockedBody", &args)}
+                } else {
+                {i18n.args("console.providers.preset.customBody", &args)}
+                }
+            }
+            if can_edit && !retired {
+                div { class: "ik-flex", style: "gap:7px;margin-top:9px;flex-wrap:wrap;",
+                    if link.locked {
+                        Button {
+                            size: Size::Sm,
+                            disabled: busy,
+                            on_click: move |_| on_unlock.call(()),
+                            {i18n.t("console.providers.preset.unlockCta")}
+                        }
+                    } else if *relinking.read() {
+                        InlineConfirm {
+                            title: i18n.t("console.providers.preset.relinkConfirmHead"),
+                            body: i18n.t("console.providers.preset.relinkConfirmBody"),
+                            cta: i18n.t("console.providers.preset.relinkCta"),
+                            busy,
+                            on_cancel: move |()| relinking.set(false),
+                            on_confirm: move |()| on_relink.call(()),
+                        }
+                    } else {
+                        Button {
+                            size: Size::Sm,
+                            disabled: busy,
+                            on_click: move |_| relinking.set(true),
+                            {i18n.t("console.providers.preset.relinkCta")}
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// The shipped definition governing `provider`, if it came from a preset this build still
+/// ships.
+///
+/// A miss is meaningful rather than a loading artefact: it is a provider whose preset the
+/// build has retired, and the inspector says so instead of offering a re-link it cannot honour.
+fn preset_for(
+    catalogue: Option<&Vec<PresetDefinition>>,
+    provider: &Provider,
+) -> Option<PresetDefinition> {
+    let link = preset_link(provider)?;
+    catalogue?
+        .iter()
+        .find(|preset| preset.slug == link.slug)
+        .cloned()
+}
+
 /// The full editor for one provider.
 #[component]
 fn ProviderInspector(
     provider: Provider,
     stat: Option<ProviderStat>,
+    /// The shipped preset this provider follows, when the build still ships it.
+    preset: Option<PresetDefinition>,
     reload: Reload,
+    on_clone: EventHandler<CloneSeed>,
     on_deleted: EventHandler<()>,
 ) -> Element {
     let api = api::use_api();
@@ -262,6 +391,8 @@ fn ProviderInspector(
     let caps = use_capabilities();
     // One control per capability: each appears exactly when the server would accept the call.
     let can_edit = caps.can(Permission::ProvidersWrite);
+    // A clone is a registration, so it needs the registration capability rather than write.
+    let can_create = caps.can(Permission::ProvidersCreate);
     let can_change_state = caps.can(Permission::ProvidersState);
     let can_scan = caps.can(Permission::ScansRun);
     let can_test = caps.can(Permission::ProvidersTest);
@@ -271,6 +402,15 @@ fn ProviderInspector(
     let original_base = provider.base_url.clone();
     let original_config = config_editor_text(&provider.config);
     let is_disabled = provider.state == ProviderState::Disabled;
+
+    // The preset link drives what may be edited here. `locked` is the server's rule too: a
+    // PATCH touching a preset-owned field of a locked provider is refused with a 409, so
+    // disabling the inputs is the courtesy, not the enforcement.
+    let link = preset_link(&provider).cloned();
+    let locked = link.as_ref().is_some_and(|l| l.locked);
+    // Everything preset-owned is read-only while locked; politeness never is.
+    let can_edit_owned = can_edit && !locked;
+    let retired_preset = link.is_some() && preset.is_none();
 
     let nav = use_console_nav();
     let tab = Tab::parse(nav.query().tab_token());
@@ -416,6 +556,41 @@ fn ProviderInspector(
         });
     };
 
+    // Both directions of the preset link. Re-locking discards the local edits to the
+    // preset-owned fields, so it is behind an inline confirmation below.
+    let set_lock = use_callback(move |lock: bool| {
+        if !busy.claim() {
+            return;
+        }
+        outcome.set(None);
+        let client = gate.client(api);
+        spawn(async move {
+            match client
+                .set_provider_preset_lock()
+                .id(id)
+                .body(SetPresetLockBody { locked: lock })
+                .send()
+                .await
+            {
+                Ok(_) => {
+                    outcome.set(Some(Ok(i18n.t(if lock {
+                        "console.providers.preset.relinked"
+                    } else {
+                        "console.providers.preset.unlocked"
+                    }))));
+                    reload.bump();
+                }
+                Err(e) => {
+                    if !gate.refused(api::Refusal::of(&e)) {
+                        outcome.set(Some(Err(api::guarded_error(i18n, e))));
+                    }
+                }
+            }
+            busy.release();
+        });
+    });
+    let mut relinking = use_signal(|| false);
+
     let run_dry = move |_| {
         if !busy.claim() {
             return;
@@ -462,6 +637,24 @@ fn ProviderInspector(
                         div { class: "ik-flex", style: "gap:10px;flex-wrap:wrap;",
                             h2 { class: "ik-insp-title", "{provider.name}" }
                             HealthPill { state: Some(provider.state) }
+                            if let Some(link) = link.clone() {
+                                Pill {
+                                    tone: if link.locked { Tone::Accent } else { Tone::Caution },
+                                    title: i18n.args(
+                                        if link.locked {
+                                            "console.providers.preset.pillLockedTitle"
+                                        } else {
+                                            "console.providers.preset.pillCustomTitle"
+                                        },
+                                        &[("preset", &link.slug)],
+                                    ),
+                                    if link.locked {
+                                    {i18n.t("console.providers.preset.pillLocked")}
+                                    } else {
+                                    {i18n.t("console.providers.preset.pillCustom")}
+                                    }
+                                }
+                            }
                         }
                         div { class: "ik-meta-line",
                             span { "{provider.adapter}" }
@@ -524,6 +717,30 @@ fn ProviderInspector(
                                 }
                             }
                         }
+                        if can_create {
+                            Button {
+                                size: Size::Sm,
+                                title: i18n.t("console.providers.cloneHint"),
+                                on_click: {
+                                    let provider = provider.clone();
+                                    move |_| {
+                                        on_clone
+                                            .call(CloneSeed {
+                                                slug: format!("{}-copy", provider.slug),
+                                                name: i18n
+                                                    .args(
+                                                        "console.providers.cloneName",
+                                                        &[("name", &provider.name)],
+                                                    ),
+                                                base_url: provider.base_url.clone(),
+                                                adapter: provider.adapter.to_string(),
+                                                config: config_editor_text(&provider.config),
+                                            });
+                                    }
+                                },
+                                {i18n.t("console.providers.clone")}
+                            }
+                        }
                         if can_edit {
                             Button {
                                 size: Size::Sm,
@@ -550,6 +767,20 @@ fn ProviderInspector(
                 Tab::Config => rsx! {
                     div { class: "ik-cons-inspbody",
                         div { class: "ik-cons-col",
+                            if let Some(link) = link.clone() {
+                                PresetBanner {
+                                    link,
+                                    retired: retired_preset,
+                                    can_edit,
+                                    busy: busy.is_busy(),
+                                    relinking,
+                                    on_unlock: move |()| gate.attempt(move || set_lock.call(false)),
+                                    on_relink: move |()| {
+                                        relinking.set(false);
+                                        gate.attempt(move || set_lock.call(true));
+                                    },
+                                }
+                            }
                             Section { label: i18n.t("console.providers.identity"),
                                 div { style: "display:flex;flex-direction:column;gap:9px;",
                                     div { class: "ik-kv",
@@ -558,7 +789,7 @@ fn ProviderInspector(
                                             id: "tv-p-name",
                                             class: "ik-input",
                                             style: "font-size:12.5px;padding:9px 11px;",
-                                            disabled: !can_edit,
+                                            disabled: !can_edit_owned,
                                             value: "{name}",
                                             oninput: move |e| name.set(e.value()),
                                         }
@@ -569,7 +800,7 @@ fn ProviderInspector(
                                             id: "tv-p-base",
                                             class: "ik-input ik-mono",
                                             style: "font-size:12.5px;padding:9px 11px;",
-                                            disabled: !can_edit,
+                                            disabled: !can_edit_owned,
                                             value: "{base_url}",
                                             oninput: move |e| base_url.set(e.value()),
                                         }
@@ -627,7 +858,7 @@ fn ProviderInspector(
                                 textarea {
                                     class: if config_valid { "ik-jsonblock" } else { "ik-jsonblock bad" },
                                     spellcheck: "false",
-                                    disabled: !can_edit,
+                                    disabled: !can_edit_owned,
                                     "aria-label": i18n.t("console.providers.adapterConfig"),
                                     value: "{config}",
                                     oninput: move |e| {
@@ -646,7 +877,7 @@ fn ProviderInspector(
                                     }
                                     Button {
                                         size: Size::Sm,
-                                        disabled: !config_valid || !can_edit,
+                                        disabled: !config_valid || !can_edit_owned,
                                         on_click: format_config,
                                         {i18n.t("console.providers.format")}
                                     }
@@ -725,6 +956,46 @@ fn ProviderInspector(
                             }
                         }
                         div { class: "ik-cons-col",
+                            if let Some(preset) = preset.clone() {
+                                Section { label: i18n.t("console.providers.preset.budgetHead"),
+                                    p { class: "ik-muted", style: "font-size:11.5px;line-height:1.55;margin:0 0 9px;",
+                                        {i18n.t("console.providers.preset.budgetNote")}
+                                    }
+                                    div { class: "ik-mono", style: "font-size:11.5px;color:var(--muted);",
+                                        {
+                                            i18n.args(
+                                                "console.providers.preset.budgetValues",
+                                                &[
+                                                    ("rps", &format!("{:.1}", preset.politeness.rps.unwrap_or(1.0))),
+                                                    ("concurrency", &preset.politeness.concurrency.unwrap_or(2).to_string()),
+                                                    ("delay", &preset.politeness.crawl_delay_ms.unwrap_or(0).to_string()),
+                                                ],
+                                            )
+                                        }
+                                    }
+                                    if can_edit {
+                                        Button {
+                                            size: Size::Sm,
+                                            style: "margin-top:9px;",
+                                            on_click: {
+                                                let preset = preset.clone();
+                                                move |_| {
+                                                    rps.set(preset.politeness.rps.unwrap_or(1.0));
+                                                    concurrency
+                                                        .set(f64::from(preset.politeness.concurrency.unwrap_or(2)));
+                                                    #[expect(
+                                                        clippy::cast_precision_loss,
+                                                        reason = "crawl delays are milliseconds, well inside f64's exact integer range"
+                                                    )]
+                                                    crawl_delay
+                                                        .set(preset.politeness.crawl_delay_ms.unwrap_or(0) as f64);
+                                                }
+                                            },
+                                            {i18n.t("console.providers.preset.budgetCta")}
+                                        }
+                                    }
+                                }
+                            }
                             Section { label: i18n.t("console.providers.limitsHead"),
                                 p { class: "ik-muted", style: "font-size:11.5px;line-height:1.5;margin:0 0 8px;",
                                     {i18n.t("console.providers.clampNote")}

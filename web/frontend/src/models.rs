@@ -33,7 +33,8 @@ pub(crate) use crate::wire::types::{
 pub(crate) use crate::wire::types::BulkResult;
 
 pub(crate) use crate::wire::types::{
-    NextUnread, RecommendationBecauseSeriesId, WatchlistItemNextUnread,
+    NextUnread, PresetDefinition, PresetLink, ProviderPreset, RecommendationBecauseSeriesId,
+    SetPresetLock as SetPresetLockBody, WatchlistItemNextUnread,
 };
 
 /// The chapter a row's `Continue` would open, or `None` when the reader is caught up.
@@ -45,6 +46,18 @@ pub(crate) use crate::wire::types::{
 pub(crate) fn next_unread(item: &WatchlistItem) -> Option<&NextUnread> {
     match item.next_unread.as_ref() {
         Some(WatchlistItemNextUnread::Variant1(next)) => Some(next),
+        _ => None,
+    }
+}
+
+/// How a provider relates to the built-in preset catalogue, or `None` when an operator
+/// registered it by hand (and for every clone).
+///
+/// Same generated `oneOf: [null, $ref]` shape as [`next_unread`], unwrapped here for the same
+/// reason.
+pub(crate) fn preset_link(provider: &Provider) -> Option<&PresetLink> {
+    match provider.preset.as_ref() {
+        Some(ProviderPreset::Variant1(link)) => Some(link),
         _ => None,
     }
 }

@@ -215,7 +215,7 @@ destructive command:
 |---|---|---|
 | `bootstrap migrate` | Before every rollout, as a `Job` or `initContainer`. Idempotent. | `TANKOVAULT_DATABASE__URL` |
 | `bootstrap seed-admin` | Once, at install. Creates the first administrator — the only account privilege is ever minted for, since registration confers none. Create-only: re-running changes nothing. | `TANKOVAULT_SEED_ADMIN_PASSWORD`, and `TANKOVAULT_AUTH__PASSWORD_PEPPER` **exactly as the api has it** |
-| `bootstrap seed-providers` | Once, at install, if you want the built-in provider presets. Each can be disabled or retargeted from the admin console afterwards. | `TANKOVAULT_DATABASE__URL` |
+| `bootstrap seed-providers` | **Before every rollout**, alongside `migrate`. Installs presets this build ships that the deployment lacks, and re-applies each one to the providers still following it — that is how a selector fix reaches an existing installation. It never touches a provider you registered yourself, one you have unlocked in the console, or *any* provider's crawl budget or pause state. New rows arrive enabled. | `TANKOVAULT_DATABASE__URL` |
 
 Resetting the schema is deliberately not available in any published image; `xtask reset` does
 it, from a checkout, behind `TANKOVAULT_CONFIRM_RESET=1`.

@@ -28,6 +28,9 @@ pub struct Provider {
     pub config: serde_json::Value,
     pub state: ProviderState,
     pub politeness: Politeness,
+    /// How this row relates to the built-in preset catalogue; `None` for a provider an
+    /// operator registered by hand.
+    pub preset: Option<PresetLink>,
     /// Wire shape is a plain string (whatever `time`'s serde impl emits), never parsed
     /// client-side — kept untyped here so the generated frontend type doesn't need a date
     /// crate (mirrors the `no date crate in the bundle` constraint on the other timestamp
@@ -38,6 +41,52 @@ pub struct Provider {
     #[serde(with = "time::serde::rfc3339")]
     #[schema(value_type = String)]
     pub created_at: OffsetDateTime,
+    #[serde(with = "time::serde::rfc3339")]
+    #[schema(value_type = String)]
+    pub updated_at: OffsetDateTime,
+}
+
+/// A provider row's link to the preset catalogue shipped with the build.
+///
+/// `locked` is the contract the whole feature turns on: while it holds, the installer
+/// overwrites the **preset-owned fields** — `name`, `base_url`, `adapter` and `config` — from
+/// the shipped definition on every rollout, so a selector fix reaches deployments that already
+/// carry the row. Unlocking detaches the row for good; it keeps the slug so the console can
+/// still offer a re-link, but nothing rewrites it again unless an operator asks.
+///
+/// `politeness` and `state` sit outside the lock on purpose, and must stay there: a crawl
+/// budget and a pause are an operator's answer to their own infrastructure, robots policy and
+/// legal position, none of which a shipped preset can know. A lock that silently restored a
+/// rate limit an operator had lowered would be a worse bug than a stale selector.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct PresetLink {
+    /// The governing preset — the row's own slug for anything the installer created.
+    pub slug: String,
+    /// Whether the preset-owned fields still follow the shipped definition.
+    pub locked: bool,
+    /// When those fields were last written from the preset.
+    #[serde(with = "time::serde::rfc3339::option")]
+    #[schema(value_type = Option<String>)]
+    pub synced_at: Option<OffsetDateTime>,
+}
+
+/// One entry of the preset catalogue bundled with the build, as the installer recorded it.
+///
+/// Persisted rather than read from `tankovault_adapters`, because the api tier deliberately
+/// does not link the adapter crate (it would drag `BoringSSL` into that image); the install job
+/// writes the catalogue down and every other tier reads it as data.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct PresetDefinition {
+    pub slug: String,
+    pub name: String,
+    pub base_url: String,
+    pub adapter: AdapterKind,
+    pub config: serde_json::Value,
+    /// What a *new* provider from this preset starts at. Never re-applied to an existing row —
+    /// see [`PresetLink`] on why politeness is outside the lock.
+    pub politeness: Politeness,
+    /// When the installer last recorded this entry, which is also the answer to "did my
+    /// rollout run the install job at all?".
     #[serde(with = "time::serde::rfc3339")]
     #[schema(value_type = String)]
     pub updated_at: OffsetDateTime,

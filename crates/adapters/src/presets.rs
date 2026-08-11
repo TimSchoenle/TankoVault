@@ -7,7 +7,7 @@ use tankovault_domain::{AdapterKind, Politeness};
 /// A ready-to-seed provider definition: identity, domain, adapter kind, the selector
 /// overrides merged onto the adapter defaults (empty for a fully custom adapter), and the
 /// crawl budget the site's size warrants.
-pub struct ProviderPreset {
+pub struct BuiltinPreset {
     /// Stable slug (rate-limit + custom-adapter dispatch key).
     pub slug: &'static str,
     /// Human-readable display name.
@@ -23,15 +23,16 @@ pub struct ProviderPreset {
     pub politeness: Politeness,
 }
 
-/// The provider presets bundled with this build: `demonicscans` and `kunmanga` are custom Rust
-/// adapters (bespoke layout / hybrid JSON+HTML), `manhuaus` is the shared Madara adapter with a
-/// few selector overrides.
 /// Every provider preset bundled with this build.
 ///
 /// Grouped by how each is onboarded — the grouping is the point: a site on a shared theme is a
 /// config row, and only a genuinely bespoke one costs a Rust module.
+///
+/// This is the definition side of the preset link: `bootstrap seed-providers` records the list
+/// in `provider_presets` and re-applies it to every locked provider, so editing an entry here
+/// reaches deployments that already carry the row.
 #[must_use]
-pub fn builtin() -> Vec<ProviderPreset> {
+pub fn builtin() -> Vec<BuiltinPreset> {
     let mut all = madara_family();
     all.extend(mangathemesia_family());
     all.extend(manganato_family());
@@ -41,10 +42,10 @@ pub fn builtin() -> Vec<ProviderPreset> {
 }
 
 /// Providers on the Madara `WordPress` theme: config only, overriding just what differs.
-fn madara_family() -> Vec<ProviderPreset> {
+fn madara_family() -> Vec<BuiltinPreset> {
     vec![
         // Standard Madara. Only three deviations from the defaults.
-        ProviderPreset {
+        BuiltinPreset {
             slug: "manhuaus",
             name: "Manhuaus",
             base_url: "https://manhuaus.com",
@@ -69,7 +70,7 @@ fn madara_family() -> Vec<ProviderPreset> {
             politeness: Politeness::default(),
         },
         // Large manhwa catalogue. Cloudflare-gated, so every fetch goes through the solver.
-        ProviderPreset {
+        BuiltinPreset {
             slug: "toonily",
             name: "Toonily",
             base_url: "https://toonily.com",
@@ -95,7 +96,7 @@ fn madara_family() -> Vec<ProviderPreset> {
         },
         // Plain Madara, no bot management in front of it — the defaults apply unchanged apart
         // from the path shape.
-        ProviderPreset {
+        BuiltinPreset {
             slug: "mangaread",
             name: "MangaRead",
             base_url: "https://www.mangaread.org",
@@ -105,7 +106,7 @@ fn madara_family() -> Vec<ProviderPreset> {
             }),
             politeness: Politeness::default(),
         },
-        ProviderPreset {
+        BuiltinPreset {
             slug: "manhuaplus",
             name: "Manhua Plus",
             base_url: "https://manhuaplus.com",
@@ -120,8 +121,8 @@ fn madara_family() -> Vec<ProviderPreset> {
 }
 
 /// Providers on the `MangaThemesia` theme.
-fn mangathemesia_family() -> Vec<ProviderPreset> {
-    vec![ProviderPreset {
+fn mangathemesia_family() -> Vec<BuiltinPreset> {
+    vec![BuiltinPreset {
         slug: "rizzfables",
         name: "Rizz Fables",
         base_url: "https://rizzfables.com",
@@ -143,11 +144,11 @@ fn mangathemesia_family() -> Vec<ProviderPreset> {
 
 /// The Manganato clone family — three domains serving the same application, each its own
 /// provider because each has its own rate limit, health state and reader-facing links.
-fn manganato_family() -> Vec<ProviderPreset> {
+fn manganato_family() -> Vec<BuiltinPreset> {
     vec![
         // Three domains serving the same application; each is its own provider because each
         // has its own rate limit, health state and reader-facing links.
-        ProviderPreset {
+        BuiltinPreset {
             slug: "natomanga",
             name: "NatoManga",
             base_url: "https://www.natomanga.com",
@@ -162,7 +163,7 @@ fn manganato_family() -> Vec<ProviderPreset> {
                 ..Politeness::default()
             },
         },
-        ProviderPreset {
+        BuiltinPreset {
             slug: "mangakakalot",
             name: "Mangakakalot",
             base_url: "https://www.mangakakalot.gg",
@@ -174,7 +175,7 @@ fn manganato_family() -> Vec<ProviderPreset> {
                 ..Politeness::default()
             },
         },
-        ProviderPreset {
+        BuiltinPreset {
             slug: "nelomanga",
             name: "NeloManga",
             base_url: "https://www.nelomanga.net",
@@ -190,7 +191,7 @@ fn manganato_family() -> Vec<ProviderPreset> {
 }
 
 /// Bespoke layouts that still reduce to selectors, so they need no Rust of their own.
-fn selector_only() -> Vec<ProviderPreset> {
+fn selector_only() -> Vec<BuiltinPreset> {
     let mut all = vec![tcbscans()];
     all.push(weebcentral());
     all.push(mangapill());
@@ -198,8 +199,8 @@ fn selector_only() -> Vec<ProviderPreset> {
 }
 
 /// Nineteen series, all weekly and high-demand, with no theme underneath.
-fn tcbscans() -> ProviderPreset {
-    ProviderPreset {
+fn tcbscans() -> BuiltinPreset {
+    BuiltinPreset {
         slug: "tcbscans",
         name: "TCB Scans",
         base_url: "https://tcbonepiecechapters.com",
@@ -244,8 +245,8 @@ fn tcbscans() -> ProviderPreset {
 
 /// Server-rendered, offset-paginated, and the only site here serving its chapter list from a
 /// URL of its own — all three expressible as config.
-fn weebcentral() -> ProviderPreset {
-    ProviderPreset {
+fn weebcentral() -> BuiltinPreset {
+    BuiltinPreset {
         slug: "weebcentral",
         name: "Weeb Central",
         base_url: "https://weebcentral.com",
@@ -297,8 +298,8 @@ fn weebcentral() -> ProviderPreset {
 
 /// No browsable catalogue: search is the only listing and it caps at 100 rows, so enumeration
 /// is the sitemap `robots.txt` advertises.
-fn mangapill() -> ProviderPreset {
-    ProviderPreset {
+fn mangapill() -> BuiltinPreset {
+    BuiltinPreset {
         slug: "mangapill",
         name: "MangaPill",
         base_url: "https://mangapill.com",
@@ -337,10 +338,10 @@ fn mangapill() -> ProviderPreset {
 }
 
 /// Providers driven by a bespoke adapter, each for a reason selectors cannot express.
-fn custom_code() -> Vec<ProviderPreset> {
+fn custom_code() -> Vec<BuiltinPreset> {
     vec![
         // Bespoke PHP layout, driven by `DemonicScansAdapter`, dispatched on this slug.
-        ProviderPreset {
+        BuiltinPreset {
             slug: "demonicscans",
             name: "Demonic Scans",
             base_url: "https://demonicscans.org",
@@ -350,7 +351,7 @@ fn custom_code() -> Vec<ProviderPreset> {
         },
         // Hybrid: Madara HTML for catalogue/series, JSON API for chapters; a custom adapter
         // reuses the Madara selectors below and overrides only chapter fetching.
-        ProviderPreset {
+        BuiltinPreset {
             slug: "kunmanga",
             name: "KunManga",
             base_url: "https://www.kunmanga.co.uk",
@@ -391,7 +392,7 @@ fn custom_code() -> Vec<ProviderPreset> {
         },
         // The reader host and the API host differ for both of these; `base_url` is the reader
         // one so stored paths stay openable, and the adapters name the API absolutely.
-        ProviderPreset {
+        BuiltinPreset {
             slug: "mangadex",
             name: "MangaDex",
             base_url: "https://mangadex.org",
@@ -405,7 +406,7 @@ fn custom_code() -> Vec<ProviderPreset> {
                 ..Politeness::default()
             },
         },
-        ProviderPreset {
+        BuiltinPreset {
             slug: "comick",
             name: "ComicK",
             base_url: "https://comick.dev",
@@ -418,7 +419,7 @@ fn custom_code() -> Vec<ProviderPreset> {
             },
         },
         // HeanCMS. `api` is required by the adapter and cannot be derived from `base_url`.
-        ProviderPreset {
+        BuiltinPreset {
             slug: "omegascans",
             name: "Omega Scans",
             base_url: "https://omegascans.org",
@@ -426,7 +427,7 @@ fn custom_code() -> Vec<ProviderPreset> {
             config: json!({ "api": "https://api.omegascans.org" }),
             politeness: Politeness::default(),
         },
-        ProviderPreset {
+        BuiltinPreset {
             slug: "asura",
             name: "Asura Scans",
             base_url: "https://asurascans.com",
@@ -434,7 +435,7 @@ fn custom_code() -> Vec<ProviderPreset> {
             config: json!({}),
             politeness: Politeness::default(),
         },
-        ProviderPreset {
+        BuiltinPreset {
             slug: "hivetoons",
             name: "Hive Toons",
             base_url: "https://hivetoons.org",
@@ -442,7 +443,7 @@ fn custom_code() -> Vec<ProviderPreset> {
             config: json!({}),
             politeness: Politeness::default(),
         },
-        ProviderPreset {
+        BuiltinPreset {
             slug: "flamecomics",
             name: "Flame Comics",
             base_url: "https://flamecomics.xyz",
@@ -452,7 +453,7 @@ fn custom_code() -> Vec<ProviderPreset> {
         },
         // The only licensed source here. Its `robots.txt` disallows `/*/search`, which is why
         // the adapter enumerates by genre.
-        ProviderPreset {
+        BuiltinPreset {
             slug: "webtoons",
             name: "WEBTOON",
             base_url: "https://www.webtoons.com",

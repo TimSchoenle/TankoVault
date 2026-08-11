@@ -1,0 +1,111 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT slug, name, base_url, adapter AS \"adapter: AdapterKind\", config AS \"config: Json\", politeness AS \"politeness: SqlxJson<Politeness>\", updated_at FROM provider_presets ORDER BY slug",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "slug",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "provider_presets",
+            "name": "slug"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "provider_presets",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "base_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "provider_presets",
+            "name": "base_url"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "adapter: AdapterKind",
+        "type_info": {
+          "Custom": {
+            "name": "adapter_kind",
+            "kind": {
+              "Enum": [
+                "madara",
+                "generic_config",
+                "custom",
+                "mangathemesia",
+                "manganato"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "provider_presets",
+            "name": "adapter"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "config: Json",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "provider_presets",
+            "name": "config"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "politeness: SqlxJson<Politeness>",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "provider_presets",
+            "name": "politeness"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "provider_presets",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "04499836366e628ead54b1deddecd97036a6b093bf64dbaf23dabb7c4f13af1e"
+}

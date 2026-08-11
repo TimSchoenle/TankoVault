@@ -123,9 +123,9 @@ pub(crate) fn remembered() -> Branding {
 /// Those are the two update notifications: one is raised from `main` before the window exists,
 /// the other on the first render of the build an installer produced, both far too early for
 /// `/v1/branding` to have answered. Before this they resolved `{brand}` to nothing at all and to
-/// the shipped name respectively, so a rebranded deployment's reader was told that *TankoVault*
-/// was updating — the one moment the app takes over their machine, over a name they have never
-/// seen.
+/// the shipped name respectively, so a rebranded deployment's reader was told that this project
+/// was updating — the one moment the app takes over their machine, announced over a name they
+/// have never seen.
 pub(crate) fn remembered_name() -> String {
     remembered().name
 }

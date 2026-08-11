@@ -52,6 +52,21 @@ pub(crate) struct Range {
 }
 
 impl Range {
+    /// Both ends as they arrived, or `None` when either is present and unusable.
+    ///
+    /// All-or-nothing, and that is the point: a bound this client would discard reads as a
+    /// configured ceiling and behaves as none, so one unreadable end voids the document rather
+    /// than quietly leaving the range half-applied.
+    fn parse(min: Option<&str>, max: Option<&str>) -> Option<Self> {
+        let mut range = Self::default();
+        for (value, slot) in [(min, &mut range.min), (max, &mut range.max)] {
+            if let Some(value) = value {
+                *slot = Some(plain_version(value)?);
+            }
+        }
+        Some(range)
+    }
+
     /// Whether `version` is one this deployment supports.
     pub(crate) fn contains(&self, version: &semver::Version) -> bool {
         self.min.as_ref().is_none_or(|min| version >= min)
@@ -156,24 +171,18 @@ fn parse(stored: &Stored) -> Option<Channel> {
     };
     Some(Channel {
         repo,
-        supported: Range {
-            min: bound(stored.min.as_deref())?,
-            max: bound(stored.max.as_deref())?,
-        },
+        supported: Range::parse(stored.min.as_deref(), stored.max.as_deref())?,
     })
 }
 
-/// One end of the range: `Some(None)` for absent, `None` for present and unusable.
+/// One bound, or `None` if this client could never compare a candidate against it.
 ///
 /// Prerelease and build metadata are rejected rather than compared, so a bound accepts exactly
 /// the set [`super::discover::version_of`] offers — a bound that cannot be compared against a
 /// candidate is not a bound.
-fn bound(value: Option<&str>) -> Option<Option<semver::Version>> {
-    let Some(value) = value else {
-        return Some(None);
-    };
+fn plain_version(value: &str) -> Option<semver::Version> {
     let version = semver::Version::parse(value.trim()).ok()?;
-    (version.pre.is_empty() && version.build.is_empty()).then_some(Some(version))
+    (version.pre.is_empty() && version.build.is_empty()).then_some(version)
 }
 
 /// Whether `value` is a GitHub `owner/name` and nothing else.

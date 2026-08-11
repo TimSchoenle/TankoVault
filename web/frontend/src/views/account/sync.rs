@@ -237,7 +237,7 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
             let client = api.client();
             spawn(async move {
                 let opts = SyncOpts {
-                    policy: Some(policy.into()),
+                    policy: Some(policy),
                 };
                 match client.sync_pull().provider(slug).body(opts).send().await {
                     Ok(_) => {
@@ -262,7 +262,7 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
             let client = api.client();
             spawn(async move {
                 let opts = SyncOpts {
-                    policy: Some(policy.into()),
+                    policy: Some(policy),
                 };
                 match client.sync_push().provider(slug).body(opts).send().await {
                     Ok(_) => {
@@ -371,7 +371,7 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
                                     "aria-pressed": policy == option,
                                     onclick: move |_| patch_settings(SyncSettingsPatch {
                                         auto_sync_enabled: None,
-                                        conflict_policy: Some(option.into()),
+                                        conflict_policy: Some(option),
                                     }),
                                     {i18n.t(option.label_key())}
                                 }

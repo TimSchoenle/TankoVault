@@ -365,7 +365,7 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
         let client = api.client();
         spawn(async move {
             let opts = SyncOpts {
-                policy: Some(ConflictPolicy::NewestWins.into()),
+                policy: Some(ConflictPolicy::NewestWins),
             };
             // Pull before push, or a title just added on the other side gets overwritten.
             let result = match client

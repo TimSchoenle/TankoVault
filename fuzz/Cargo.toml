@@ -27,7 +27,6 @@ tankovault-auth = { path = "../crates/auth" }
 tankovault-config = { path = "../crates/config" }
 tankovault-domain = { path = "../crates/domain" }
 async-trait = "0.1"
-serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread"] }
 
 # Versions here are the host workspace's, restated rather than inherited: this is a workspace of

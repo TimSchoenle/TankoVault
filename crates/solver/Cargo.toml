@@ -29,7 +29,6 @@ thiserror = { workspace = true }
 # Used by the shared `/v1/solve` router (`http.rs`), which this crate gained after the audit
 # listed `tracing` as unused here.
 tracing = { workspace = true }
-time = { workspace = true }
 
 axum = { workspace = true, optional = true }
 metrics = { workspace = true, optional = true }

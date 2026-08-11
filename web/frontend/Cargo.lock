@@ -6797,14 +6797,11 @@ dependencies = [
 name = "tankovault-api-client"
 version = "7.0.0"
 dependencies = [
- "bytes",
- "futures",
  "progenitor-client",
  "reqwest 0.13.4",
  "serde",
  "serde_json",
  "tankovault-domain",
- "thiserror 2.0.20",
  "url",
  "uuid",
 ]
@@ -6855,7 +6852,6 @@ dependencies = [
  "sha2 0.11.0",
  "sys-locale",
  "tankovault-api-client",
- "tankovault-domain",
  "tokio",
  "uuid",
  "wasm-bindgen",

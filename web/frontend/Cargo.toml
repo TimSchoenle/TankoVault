@@ -54,7 +54,6 @@ gloo-net = { version = "0.7", features = ["http", "json", "eventsource"], option
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "json"] }
 progenitor-client = "0.14"
 tankovault-api-client = { path = "../../crates/api-client" }
-tankovault-domain = { path = "../../crates/domain" }
 # Console dashboard auto-refresh loop (wasm-friendly async sleep).
 gloo-timers = { version = "0.4", features = ["futures"], optional = true }
 futures-util = "0.3"

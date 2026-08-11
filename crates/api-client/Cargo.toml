@@ -11,12 +11,16 @@ reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true }
-futures = { workspace = true }
-bytes = { workspace = true }
 url = { workspace = true }
-thiserror = { workspace = true }
 tankovault-domain = { workspace = true }
 progenitor-client = { workspace = true }
+
+# Both are used, heavily, and `cargo machete` cannot see it: `prettyplease` formats the
+# generated absolute paths as `:: serde :: Deserialize` and `:: url :: Url`, which its
+# source scan does not recognise as a crate reference. Without this the next unused-dependency
+# sweep deletes two dependencies the crate does not compile without.
+[package.metadata.cargo-machete]
+ignored = ["serde", "url"]
 
 # This crate is 100% generated codegen output (`src/lib.rs` is emitted by `xtask`
 # and marked "DO NOT EDIT"), so the workspace's `clippy::pedantic` group is not

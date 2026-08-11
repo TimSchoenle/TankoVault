@@ -1,19 +1,12 @@
 # TankoVault — Design Specification (enhanced)
 
-> **What this is.** A cleaned, implementation-ready extraction of the raw Claude Design
-> handoff in `project/TankoVault.dc.html`. The raw file is a 1,171-line obfuscated
-> `x-dc` template (inline styles, a mock data generator, a proprietary `<sc-for>/<sc-if>`
-> runtime). This document distills it into the design tokens, component inventory, screen
-> breakdowns, and interaction rules an implementer actually needs — with every value read
-> directly from the source, not guessed.
+> **What this is.** The design system the SPA is built to: tokens, component inventory,
+> per-screen breakdowns and interaction rules. It was extracted from the original HTML mockup,
+> which is no longer kept in the tree — this document replaced it, and `web/frontend/input.css`
+> plus `web/frontend/crates/inkstone-ui` are the implementation.
 >
-> **Companion:** `IMPLEMENTATION_PLAN.md` maps this spec onto the current Dioxus + Tailwind
-> codebase (`web/frontend/`).
->
-> **Ignore `project/_ds/nocturne-*/`.** That bundled "Nocturne" design system (blurple
-> `#9184d9` accent, Inter, Phosphor icons, outlined buttons) is boilerplate scaffolding that
-> does **not** match the actual TankoVault mockup. The real design language lives inline in
-> `TankoVault.dc.html` and is captured below. Do not link `nocturne/styles.css`.
+> Source files cite it by section (`DESIGN_SPEC §7.1`), so section numbers here are load-bearing.
+> Where the shipped UI and this document disagree, the code is right and this is the bug.
 
 ---
 
@@ -362,10 +355,7 @@ Carried from `docs/design.md` §17.3 — the redesign must not regress:
 
 ## 10. Source-of-truth notes for implementers
 
-- Every hex/px above is read from `project/TankoVault.dc.html` (`:root` §31, `_accents()`
-  §948, `_coverFor()` §944, `renderVals()` §992, `_extraVals()` §1070). Line refs are to that
-  file.
-- The mock's data (series, providers, runs, users, sessions) is **generated client-side** for
-  preview only — it defines *shape and states to support*, not real content.
-- `support.js` is the Claude Design preview runtime; it is **not** shipped and has no bearing on
-  implementation.
+- Every hex/px above was read from the original mockup rather than guessed, and the shipped
+  values live in `web/frontend/input.css` — check there before trusting a number here.
+- The mockup's data (series, providers, runs, users, sessions) was generated client-side for
+  preview only: it defines *shape and states to support*, not real content.

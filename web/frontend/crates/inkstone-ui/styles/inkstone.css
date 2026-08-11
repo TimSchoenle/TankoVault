@@ -190,6 +190,11 @@ table.ik-table { width: 100%; border-collapse: collapse; }
 .ik-table th, .ik-table td { text-align: left; padding: var(--ik-pad-cell); border-bottom: var(--ik-border) solid var(--border-row); font-size: var(--ik-font-cell); }
 .ik-table th { color: var(--muted); font-weight: 600; }
 .ik-tablewrap { width: 100%; overflow-x: auto; }
+/* These two selectors are specificity 0-2-1, so a single-class utility cannot override a cell's
+ * padding or font-size here. That is why the console's compact tables carry inline `style:`
+ * attributes on cells rather than utilities: converting them silently regresses every cell,
+ * and the only fixes are a tripled selector or `!important`. Giving `ik-*` a real utility tier
+ * (`@layer`) is the actual answer, and it is a design-system decision, not a sweep. */
 .ik-table-compact th, .ik-table-compact td { padding: var(--ik-pad-cell-compact); font-size: var(--ik-font-cell-compact); vertical-align: middle; }
 .ik-table-compact th { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; white-space: nowrap; }
 

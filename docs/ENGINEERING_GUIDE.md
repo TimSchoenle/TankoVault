@@ -28,8 +28,7 @@ A rule with no answer to that is a suggestion. Both are useful; they are labelle
 
 Related documents, none of which this one replaces: [`CONTRIBUTING.md`](../CONTRIBUTING.md)
 (workflow, setup, what to run), [`docs/design.md`](design.md) (the system design),
-[`docs/CONFIGURATION.md`](CONFIGURATION.md) (the `TANKOVAULT_*` surface),
-[`docs/audit/`](audit/) (the 2026-07 audit, frozen, with `PROGRESS.md` as its live status).
+[`docs/CONFIGURATION.md`](CONFIGURATION.md) (the `TANKOVAULT_*` surface).
 
 ---
 
@@ -343,7 +342,7 @@ whichever you choose, the `# Errors` section says so.
 
 **[R]** Every fix that could silently come back gets a test whose **doc comment says what the bug
 was**. This is not documentation for its own sake: it is what stops the next reader deleting the
-test as redundant. `docs/audit/PROGRESS.md` is full of worked examples.
+test as redundant.
 
 **[R] Fixtures come from `tankovault_test_support::seed`** —
 `seed::provider(&db, "alpha").create().await`, `seed::user`, `seed::series(…).chapters(&[…])`.

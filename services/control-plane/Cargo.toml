@@ -41,7 +41,6 @@ anyhow = { workspace = true }
 tracing = { workspace = true }
 metrics = { workspace = true }
 time = { workspace = true }
-futures = { workspace = true }
 fred = { workspace = true }
 uuid = { workspace = true }
 

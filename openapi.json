@@ -39,11 +39,12 @@
         "type": "string"
       },
       "AdapterKind": {
-        "description": "Which adapter implementation drives a provider.\n\n`Madara`, `MangaThemesia` and `Manganato` are *families*: each names a shared site theme\nwhose default selector set ships in this workspace, so a site running one onboards as a\nsingle config row carrying only its deviations. `Custom` is the escape hatch, dispatched\nby slug.",
+        "description": "Which adapter implementation drives a provider.\n\n`Madara`, `MangaThemesia`, `Manganato` and `Keyoapp` are *families*: each names a shared\nsite theme or hosting platform whose default selector set ships in this workspace, so a\nsite running one onboards as a single config row carrying only its deviations. `Custom`\nis the escape hatch, dispatched by slug.",
         "enum": [
           "madara",
           "mangathemesia",
           "manganato",
+          "keyoapp",
           "generic_config",
           "custom"
         ],

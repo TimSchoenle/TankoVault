@@ -363,6 +363,7 @@ pub(super) const ADAPTER_KINDS: &[AdapterKind] = &[
     AdapterKind::Madara,
     AdapterKind::Mangathemesia,
     AdapterKind::Manganato,
+    AdapterKind::Keyoapp,
     AdapterKind::Custom,
 ];
 
@@ -373,6 +374,7 @@ pub(super) fn adapter_label_key(a: AdapterKind) -> &'static str {
         AdapterKind::Madara => "console.adapterKind.madara",
         AdapterKind::Mangathemesia => "console.adapterKind.mangathemesia",
         AdapterKind::Manganato => "console.adapterKind.manganato",
+        AdapterKind::Keyoapp => "console.adapterKind.keyoapp",
         AdapterKind::Custom => "console.adapterKind.custom",
     }
 }

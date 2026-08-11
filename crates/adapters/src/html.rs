@@ -75,6 +75,23 @@ where
     .map_err(|e| AdapterError::Parse(format!("HTML parse task failed: {e}")))?
 }
 
+/// Flatten a **short** HTML fragment to its text, collapsing whitespace.
+///
+/// For markup that arrives inside a JSON field — a synopsis a platform stores as `<p>` blocks —
+/// rather than for a document: it parses inline, so the caller must keep the input small.
+/// A page body belongs in [`parse_blocking`], which moves the parse off the async worker.
+#[must_use]
+pub fn text_from_fragment(markup: &str) -> String {
+    let fragment = scraper::Html::parse_fragment(markup);
+    fragment
+        .root_element()
+        .text()
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// Split a `sel@attr` spec into `(selector, Some(attr))`, or `(selector, None)`.
 #[must_use]
 pub fn split_attr(spec: &str) -> (&str, Option<&str>) {
@@ -163,12 +180,23 @@ pub fn text_of(el: ElementRef<'_>) -> String {
         .join(" ")
 }
 
-/// Extract the first match of `spec` under `root` (text or `@attr`).
+/// The spec meaning "the container element itself", for rows whose own attributes carry the
+/// value — a list item that *is* the anchor, or a chapter row holding its date in an attribute.
+///
+/// `scraper::select` only ever walks descendants, so without this there is no way to express
+/// "read it off the element the `item`/`container` selector already matched", and rewriting that
+/// selector to the parent is not equivalent when the parent holds several rows.
+pub const SELF_SPEC: &str = "self";
+
+/// Extract the first match of `spec` under `root` (text or `@attr`); [`SELF_SPEC`] reads `root`.
 ///
 /// # Errors
 /// [`AdapterError::Selector`] on an invalid selector.
 pub fn extract_first(root: ElementRef<'_>, spec: &str) -> Result<Option<String>, AdapterError> {
     let (sel_str, attr) = split_attr(spec);
+    if sel_str == SELF_SPEC {
+        return Ok(Some(value_of(root, attr)).filter(|s| !s.is_empty()));
+    }
     let sel = parse_selector(sel_str)?;
     Ok(root
         .select(&sel)
@@ -177,12 +205,15 @@ pub fn extract_first(root: ElementRef<'_>, spec: &str) -> Result<Option<String>,
         .filter(|s| !s.is_empty()))
 }
 
-/// Extract all non-empty matches of `spec` under `root`.
+/// Extract all non-empty matches of `spec` under `root`; [`SELF_SPEC`] reads `root` alone.
 ///
 /// # Errors
 /// [`AdapterError::Selector`] on an invalid selector.
 pub fn extract_all(root: ElementRef<'_>, spec: &str) -> Result<Vec<String>, AdapterError> {
     let (sel_str, attr) = split_attr(spec);
+    if sel_str == SELF_SPEC {
+        return Ok(extract_first(root, spec)?.into_iter().collect());
+    }
     let sel = parse_selector(sel_str)?;
     Ok(root
         .select(&sel)
@@ -567,6 +598,35 @@ mod tests {
             parse_number(&"9".repeat(308)).map(f64::is_finite),
             Some(true)
         );
+    }
+
+    /// `self` reads the matched element rather than a descendant. Without it a row that carries
+    /// its own data — Keyoapp puts a chapter's date in a `d` attribute on the anchor — is
+    /// unreachable, because `scraper::select` only ever walks downwards; the nearest selector
+    /// picks up a sibling badge instead and stores the wrong value.
+    #[test]
+    fn the_self_spec_reads_the_element_itself() {
+        let doc = scraper::Html::parse_fragment(
+            "<a d=\"4 hours ago\" title=\"Chapter 7.1\"><span d=\"nested\">Chapter 7.1</span></a>",
+        );
+        let anchor = doc
+            .select(&parse_selector("a").unwrap())
+            .next()
+            .expect("the fragment has an anchor");
+
+        assert_eq!(
+            extract_first(anchor, "self@d").unwrap().as_deref(),
+            Some("4 hours ago"),
+            "the row's own attribute wins over the descendant's"
+        );
+        assert_eq!(
+            extract_first(anchor, "self@title").unwrap().as_deref(),
+            Some("Chapter 7.1")
+        );
+        assert_eq!(extract_all(anchor, "self@d").unwrap().len(), 1);
+        // An absent attribute is still absent, not an empty string, so a missing date leaves the
+        // field unset instead of failing to parse.
+        assert_eq!(extract_first(anchor, "self@missing").unwrap(), None);
     }
 
     #[test]

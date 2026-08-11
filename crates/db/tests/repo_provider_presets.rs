@@ -245,3 +245,36 @@ async fn a_lock_without_a_preset_is_refused_by_the_schema() {
         "locking a provider that came from no preset must not be storable"
     );
 }
+
+/// Every `AdapterKind` the Rust enum declares must be storable, because the two definitions are
+/// separate artefacts: the variant lives in `crates/domain/src/enums.rs` and the label in a
+/// migration, with nothing but review connecting them. Adding one without the other compiles,
+/// passes every offline gate, and then fails at runtime the first time an installer writes that
+/// provider — `invalid input value for enum adapter_kind`, from `seed-providers`, on a rollout.
+#[tokio::test]
+async fn every_declared_adapter_kind_exists_in_the_sql_enum() {
+    let db = TestDb::spawn().await;
+
+    for kind in AdapterKind::all() {
+        let slug = format!("kind-probe-{kind}");
+        provider_presets::upsert(
+            &db.pool,
+            &provider_presets::NewPreset {
+                slug: slug.clone(),
+                name: format!("{kind} probe"),
+                base_url: "https://kind.invalid".to_owned(),
+                adapter: *kind,
+                config: json!({}),
+                politeness: Politeness::default(),
+            },
+        )
+        .await
+        .unwrap_or_else(|e| panic!("the SQL enum has no label for {kind}: {e}"));
+
+        let stored = provider_presets::get(&db.pool, &slug)
+            .await
+            .expect("read it back")
+            .expect("the entry exists");
+        assert_eq!(stored.adapter, *kind, "the label round-trips unchanged");
+    }
+}

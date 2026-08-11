@@ -4,8 +4,9 @@
 use crate::config::{AdapterConfig, ChaptersCfg, TextSource};
 use crate::error::AdapterError;
 use crate::html::{
-    absolutize, extract_all, extract_first, map_status, parse_blocking, parse_chapter_number,
-    parse_date_label, parse_selector, parse_year, relativize, split_attr, split_titles, text_of,
+    SELF_SPEC, absolutize, extract_all, extract_first, map_status, parse_blocking,
+    parse_chapter_number, parse_date_label, parse_selector, parse_year, relativize, split_attr,
+    split_titles, text_of,
 };
 use crate::types::{
     CatalogItem, CatalogPage, ChapterAccess, ChapterMeta, Ctx, LatestUpdate, SeriesMeta,
@@ -213,13 +214,6 @@ fn merge_unique(mut base: Vec<String>, extra: Vec<String>) -> Vec<String> {
     }
     base
 }
-
-/// The spec meaning "the container element itself", for sites whose list item *is* the anchor.
-///
-/// `scraper::select` only ever walks descendants, so without this there is no way to express
-/// "read the href off the element the `item` selector already matched" — and rewriting `item` to
-/// the anchor's parent is not equivalent when the parent holds several.
-pub(crate) const SELF_SPEC: &str = "self";
 
 /// Extract the first link href under `root` matching `spec` (`@attr` defaults to `href`),
 /// relativised against `page_url`. `spec` of [`SELF_SPEC`] reads `root`'s own attribute.

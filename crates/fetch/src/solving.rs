@@ -99,7 +99,18 @@ fn solved_status(reported: Option<u16>, html: &str) -> u16 {
     if is_rate_limit_page(html) {
         return 429;
     }
-    reported.unwrap_or(200)
+    // A redirect is the one status the body outranks in the other direction. The solver drives
+    // a browser, which follows redirects before it returns — so a reported `3xx` describes a hop
+    // that has already been taken and the html is the *destination* document. `BaseHttpFetcher`
+    // follows redirects too and never surfaces one, so believing this report made the same URL
+    // succeed unsolved and fail solved: `/manga/page/1/` on a Madara site 301s to `/manga/`, and
+    // every full scan of a Cloudflare-gated one failed on its first page with the archive it had
+    // just been handed.
+    match reported {
+        Some(status) if (300..400).contains(&status) => 200,
+        Some(status) => status,
+        None => 200,
+    }
 }
 
 fn apply_session(mut req: FetchRequest, session: &SolvedSession) -> FetchRequest {
@@ -266,6 +277,25 @@ mod tests {
         .expect("the response is returned, not an error");
         assert_eq!(resp.status, 503);
         assert_eq!(resp.header("Retry-After"), Some("30"));
+    }
+
+    /// Regression: a solved fetch whose winning tier reported a redirect used to fail the
+    /// caller, even though the browser had already followed it and the body was the
+    /// destination. `/manga/page/1/` on a Madara site 301s to `/manga/`, so the first page of
+    /// every full scan of a Cloudflare-gated one errored — while the same URL fetched without
+    /// a solve succeeded, because `BaseHttpFetcher` follows redirects itself.
+    #[tokio::test]
+    async fn a_reported_redirect_is_a_hop_the_solver_already_followed() {
+        let resp = solving_with(
+            "<html><head><title>Manga Archive</title></head><body>the destination</body></html>",
+            Some(301),
+            Vec::new(),
+        )
+        .get(req())
+        .await
+        .expect("the destination document is returned, not an error");
+        assert_eq!(resp.status, 200);
+        assert!(resp.body.contains("the destination"));
     }
 
     #[tokio::test]

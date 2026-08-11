@@ -423,6 +423,7 @@
     "adapterKind": {
       "custom": "Custom (built-in)",
       "genericConfig": "Generic (config-driven)",
+      "keyoapp": "Keyoapp platform",
       "madara": "Madara / WordPress",
       "mangathemesia": "MangaThemesia theme",
       "manganato": "Manganato family"

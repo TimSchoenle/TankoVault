@@ -111,14 +111,15 @@ str_enum! {
 str_enum! {
     /// Which adapter implementation drives a provider.
     ///
-    /// `Madara`, `MangaThemesia` and `Manganato` are *families*: each names a shared site theme
-    /// whose default selector set ships in this workspace, so a site running one onboards as a
-    /// single config row carrying only its deviations. `Custom` is the escape hatch, dispatched
-    /// by slug.
+    /// `Madara`, `MangaThemesia`, `Manganato` and `Keyoapp` are *families*: each names a shared
+    /// site theme or hosting platform whose default selector set ships in this workspace, so a
+    /// site running one onboards as a single config row carrying only its deviations. `Custom`
+    /// is the escape hatch, dispatched by slug.
     pub enum AdapterKind {
         Madara => "madara",
         MangaThemesia => "mangathemesia",
         Manganato => "manganato",
+        Keyoapp => "keyoapp",
         GenericConfig => "generic_config",
         Custom => "custom",
     }

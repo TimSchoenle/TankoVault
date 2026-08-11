@@ -156,18 +156,19 @@ pub mod types {
             value.parse()
         }
     }
-    #[doc = "Which adapter implementation drives a provider.\n\n`Madara`, `MangaThemesia` and `Manganato` are *families*: each names a shared site theme\nwhose default selector set ships in this workspace, so a site running one onboards as a\nsingle config row carrying only its deviations. `Custom` is the escape hatch, dispatched\nby slug."]
+    #[doc = "Which adapter implementation drives a provider.\n\n`Madara`, `MangaThemesia`, `Manganato` and `Keyoapp` are *families*: each names a shared\nsite theme or hosting platform whose default selector set ships in this workspace, so a\nsite running one onboards as a single config row carrying only its deviations. `Custom`\nis the escape hatch, dispatched by slug."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Which adapter implementation drives a provider.\\n\\n`Madara`, `MangaThemesia` and `Manganato` are *families*: each names a shared site theme\\nwhose default selector set ships in this workspace, so a site running one onboards as a\\nsingle config row carrying only its deviations. `Custom` is the escape hatch, dispatched\\nby slug.\","]
+    #[doc = "  \"description\": \"Which adapter implementation drives a provider.\\n\\n`Madara`, `MangaThemesia`, `Manganato` and `Keyoapp` are *families*: each names a shared\\nsite theme or hosting platform whose default selector set ships in this workspace, so a\\nsite running one onboards as a single config row carrying only its deviations. `Custom`\\nis the escape hatch, dispatched by slug.\","]
     #[doc = "  \"type\": \"string\","]
     #[doc = "  \"enum\": ["]
     #[doc = "    \"madara\","]
     #[doc = "    \"mangathemesia\","]
     #[doc = "    \"manganato\","]
+    #[doc = "    \"keyoapp\","]
     #[doc = "    \"generic_config\","]
     #[doc = "    \"custom\""]
     #[doc = "  ]"]
@@ -193,6 +194,8 @@ pub mod types {
         Mangathemesia,
         #[serde(rename = "manganato")]
         Manganato,
+        #[serde(rename = "keyoapp")]
+        Keyoapp,
         #[serde(rename = "generic_config")]
         GenericConfig,
         #[serde(rename = "custom")]
@@ -204,6 +207,7 @@ pub mod types {
                 Self::Madara => f.write_str("madara"),
                 Self::Mangathemesia => f.write_str("mangathemesia"),
                 Self::Manganato => f.write_str("manganato"),
+                Self::Keyoapp => f.write_str("keyoapp"),
                 Self::GenericConfig => f.write_str("generic_config"),
                 Self::Custom => f.write_str("custom"),
             }
@@ -216,6 +220,7 @@ pub mod types {
                 "madara" => Ok(Self::Madara),
                 "mangathemesia" => Ok(Self::Mangathemesia),
                 "manganato" => Ok(Self::Manganato),
+                "keyoapp" => Ok(Self::Keyoapp),
                 "generic_config" => Ok(Self::GenericConfig),
                 "custom" => Ok(Self::Custom),
                 _ => Err("invalid value".into()),

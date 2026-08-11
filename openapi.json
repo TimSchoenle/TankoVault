@@ -968,7 +968,14 @@
             "type": "string"
           },
           "politeness": {
-            "$ref": "#/components/schemas/Politeness"
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PolitenessInput"
+              }
+            ]
           },
           "slug": {
             "type": "string"
@@ -3003,6 +3010,44 @@
           },
           "user_agent": {
             "description": "User-agent sent on ordinary (non-challenge) requests — **only when `emulation` is\n`None`**. An emulated client sends the user-agent belonging to its profile, because\na custom string over a browser TLS fingerprint is exactly the mismatch WAFs look for.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PolitenessInput": {
+        "description": "The politeness block as a *request body* carries it.\n\nMirrors [`Politeness`] field for field and differs in exactly one way: an absent `emulation`\nmeans *no* emulation, where [`Politeness`] reads an absent key as [`BrowserEmulation::Chrome`].\n\nThat asymmetry is load-bearing on both sides, which is why the two shapes cannot be one type.\n[`Politeness`] is also the stored JSONB document, and a row written before emulation existed\ncarries no such key — reading it as \"no emulation\" would put an upgraded install back to\ncrawling as an identifiable bot. A client generated from this API's schema, meanwhile, has no\nway to *send* an explicit `null`: `Option` fields are omitted when they are `None`. So if\nabsent meant Chrome here too, choosing \"no emulation\" in the console would silently put the\nprovider back on Chrome and report the save as successful.\n\nKept in step with [`Politeness`] by the exhaustive `From` below (a new stored field fails to\ncompile) and by `every_stored_field_survives_the_request_shape` (a new field hardcoded to\nsilence that failure).",
+        "properties": {
+          "concurrency": {
+            "description": "Maximum concurrent requests to this provider, per worker process.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "crawl_delay_ms": {
+            "description": "Minimum delay between requests, in milliseconds.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "emulation": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BrowserEmulation",
+                "description": "Browser to impersonate. Absent (or null) crawls as an identifiable bot using `user_agent`."
+              }
+            ]
+          },
+          "rps": {
+            "description": "Requests per second, per worker process (see [`Politeness`] on fleet totals).",
+            "format": "double",
+            "type": "number"
+          },
+          "user_agent": {
+            "description": "User-agent sent on ordinary (non-challenge) requests — only when `emulation` is absent.",
             "type": "string"
           }
         },
@@ -6229,7 +6274,14 @@
             "type": "string"
           },
           "politeness": {
-            "$ref": "#/components/schemas/Politeness"
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PolitenessInput"
+              }
+            ]
           }
         },
         "required": [

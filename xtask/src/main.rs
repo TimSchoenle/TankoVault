@@ -455,6 +455,44 @@ fn inject_rust_types(value: &mut serde_json::Value) {
     }
 }
 
+/// Replace `oneOf: [{"type": "null"}, X]` with `X`, so a nullable schema reference survives as
+/// one schema rather than as a union.
+///
+/// `utoipa` publishes `Option<T>` of a schema type as that two-member union. Carried into the 3.0
+/// document verbatim, `progenitor` renders it as an untagged
+/// `Variant0(serde_json::Value) | Variant1(T)` — and serde tries untagged arms in declaration
+/// order, so `Variant0`, which accepts *any* JSON including the object `Variant1` was meant to
+/// hold, makes `Variant1` unreachable. Every such field then reads as absent at runtime, which is
+/// how the console's managed-preset pill and the watchlist's Continue column silently vanished.
+///
+/// Dropping the null arm is not a loss of nullability: the field is absent from its schema's
+/// `required` list, which is what makes `progenitor` emit `Option<T>` in the first place. What it
+/// costs is the ability to *send* an explicit `null` — the generated struct omits a `None` field
+/// instead — so a request shape that needs `null` and absent to differ needs its own schema
+/// (`tankovault_domain::PolitenessInput` is the one that did).
+///
+/// Loops rather than collapsing once: a nested `Option<Option<T>>` merges an inner union into the
+/// same map, and leaving it for the next pass would break [`downgrade_to_3_0`]'s idempotence,
+/// which `openapi --check` depends on.
+#[cfg(feature = "full")]
+fn collapse_nullable_union(map: &mut serde_json::Map<String, serde_json::Value>) {
+    let null_schema = serde_json::json!({ "type": "null" });
+    while let Some(serde_json::Value::Array(members)) = map.get("oneOf").cloned() {
+        if members.len() != 2 || !members.contains(&null_schema) {
+            return;
+        }
+        let Some(serde_json::Value::Object(fields)) =
+            members.into_iter().find(|member| *member != null_schema)
+        else {
+            return;
+        };
+        map.remove("oneOf");
+        for (key, value) in fields {
+            map.insert(key, value);
+        }
+    }
+}
+
 /// Downgrade `OpenAPI` 3.1.0 (utoipa 5 default) to 3.0.3 (openapiv3 crate requirement).
 /// This handles the `type: [string, null]` -> `type: string, nullable: true` conversion
 /// and changes the version string.
@@ -467,6 +505,8 @@ fn downgrade_to_3_0(value: &mut serde_json::Value) {
             {
                 *v = serde_json::json!("3.0.3");
             }
+
+            collapse_nullable_union(map);
 
             // Handle 'type' which can be a string or an array in 3.1
             if let Some(type_val) = map.remove("type") {
@@ -678,6 +718,52 @@ mod tests {
         );
     }
 
+    /// A nullable `$ref` must reach `progenitor` as one schema, not as a union.
+    ///
+    /// Left as `oneOf: [null, $ref]` it became an untagged enum whose first arm is a bare
+    /// `serde_json::Value`; serde matches untagged arms in order, so the typed arm was
+    /// unreachable and 23 fields — `preset_link`, `next_unread`, `because_series_id` among them —
+    /// read as absent on every response that carried them.
+    #[test]
+    fn a_nullable_reference_collapses_onto_the_referenced_schema() {
+        let out = downgraded(json!({
+            "oneOf": [
+                { "type": "null" },
+                { "$ref": "#/components/schemas/PresetLink", "description": "how it relates" },
+            ],
+        }));
+        assert_eq!(out["$ref"], "#/components/schemas/PresetLink");
+        assert_eq!(out["description"], "how it relates");
+        assert!(out.get("oneOf").is_none());
+    }
+
+    /// Only the two-member nullable union is the generator's `Option<T>`; a real union of
+    /// alternatives has to arrive intact, or a genuine `oneOf` loses an arm.
+    #[test]
+    fn a_union_that_is_not_a_nullable_reference_is_left_alone() {
+        // The null arm of a wider union is still rewritten in place (`nullable: true`), but the
+        // union itself must keep all three arms rather than collapsing onto one of them.
+        let three = downgraded(json!({
+            "oneOf": [{ "type": "null" }, { "type": "string" }, { "type": "integer" }],
+        }));
+        assert_eq!(three["oneOf"].as_array().map(Vec::len), Some(3));
+        assert_eq!(three["oneOf"][0]["nullable"], true);
+
+        let no_null = json!({ "oneOf": [{ "type": "string" }, { "type": "integer" }] });
+        assert_eq!(downgraded(no_null.clone())["oneOf"], no_null["oneOf"]);
+    }
+
+    /// The collapsed member is itself downgraded, not spliced in raw: it arrives in the same
+    /// pass that rewrites `type`, so a nullable union of a nullable type must come out converted.
+    #[test]
+    fn the_collapsed_member_is_downgraded_too() {
+        let out = downgraded(json!({
+            "oneOf": [{ "type": "null" }, { "type": ["string", "null"] }],
+        }));
+        assert_eq!(out["type"], "string");
+        assert_eq!(out["nullable"], true);
+    }
+
     #[test]
     fn a_nullable_union_becomes_a_type_plus_a_nullable_flag() {
         // The conversion this function exists for; getting it wrong makes every optional field
@@ -798,8 +884,8 @@ mod tests {
             prop_assert_eq!(once, twice);
         }
 
-        /// The rewriter touches only `openapi`, `type` and `examples`; everything else must
-        /// arrive at `progenitor` byte-identical.
+        /// The rewriter touches only `openapi`, `type`, `examples` and `oneOf`; everything else
+        /// must arrive at `progenitor` byte-identical.
         #[test]
         fn keys_the_rewriter_does_not_own_pass_through_unchanged(
             key in "[a-z$][a-zA-Z0-9_-]{0,10}",
@@ -808,7 +894,7 @@ mod tests {
                 json!(["a", "b"]), json!({ "nested": "value" }),
             ]),
         ) {
-            prop_assume!(!["type", "examples", "openapi"].contains(&key.as_str()));
+            prop_assume!(!["type", "examples", "openapi", "oneOf"].contains(&key.as_str()));
             let document = json!({ key.clone(): value.clone() });
             prop_assert_eq!(downgraded(document.clone()), document);
         }

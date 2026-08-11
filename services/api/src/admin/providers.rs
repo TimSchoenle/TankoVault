@@ -12,8 +12,8 @@ use serde::Deserialize;
 use serde::Serialize;
 use tankovault_db::repo::providers::NewProvider;
 use tankovault_domain::{
-    AdapterKind, Permission, Politeness, PresetDefinition, Provider, ProviderId, ProviderState,
-    ScanMode,
+    AdapterKind, Permission, Politeness, PolitenessInput, PresetDefinition, Provider, ProviderId,
+    ProviderState, ScanMode,
 };
 use utoipa::ToSchema;
 
@@ -48,7 +48,18 @@ pub struct CreateProvider {
     #[serde(default = "empty_object")]
     pub config: serde_json::Value,
     #[serde(default)]
-    pub politeness: Politeness,
+    pub politeness: Option<PolitenessInput>,
+}
+
+/// The crawl budget a request settles on: the block it sent, or the server's defaults when it
+/// sent none.
+///
+/// The two absences are different statements. No `emulation` key *inside* a block means "no
+/// emulation" — that is what lets the console turn impersonation off, since a generated client
+/// omits a `None` field rather than sending `null`. No block at all means the caller is not
+/// specifying a crawl budget, and the registration form deliberately never guesses one.
+fn resolve_politeness(sent: Option<PolitenessInput>) -> Politeness {
+    sent.map_or_else(Politeness::default, Into::into)
 }
 
 fn empty_object() -> serde_json::Value {
@@ -106,7 +117,7 @@ pub async fn create_provider(
             base_url: req.base_url,
             adapter: req.adapter,
             config: req.config,
-            politeness: req.politeness,
+            politeness: resolve_politeness(req.politeness),
             // Never preset-managed, and that includes the console's "clone" — which posts here
             // with another provider's fields. A copy is the operator's from the moment it
             // exists; only the installer creates rows that follow a preset.
@@ -137,7 +148,7 @@ pub struct UpdateProvider {
     #[serde(default = "empty_object")]
     pub config: serde_json::Value,
     #[serde(default)]
-    pub politeness: Politeness,
+    pub politeness: Option<PolitenessInput>,
 }
 
 /// Refuse an edit to a preset-owned field of a provider that still follows its preset.
@@ -211,7 +222,7 @@ pub async fn update_provider(
         &req.name,
         &req.base_url,
         &req.config,
-        req.politeness,
+        resolve_politeness(req.politeness),
     )
     .await?;
 
@@ -592,8 +603,30 @@ mod tests {
             name: from.name.clone(),
             base_url: from.base_url.clone(),
             config: from.config.clone(),
-            politeness: Politeness::default(),
+            politeness: None,
         }
+    }
+
+    /// Registering a provider without a politeness block must leave it emulating Chrome.
+    ///
+    /// A block that carries no `emulation` key means "no emulation" — that is what makes the
+    /// console's picker work at all, since a generated client omits a `None` field instead of
+    /// sending `null`. Reading an absent *block* the same way put every newly registered
+    /// provider behind an identifiable bot user-agent, which is what the sites this crawls sit
+    /// behind Cloudflare to refuse. The registration form sends no block by design.
+    #[test]
+    fn a_registration_without_a_politeness_block_keeps_the_server_defaults() {
+        let bare: CreateProvider = serde_json::from_str(
+            r#"{"slug":"s","name":"n","base_url":"https://b.invalid","adapter":"custom"}"#,
+        )
+        .expect("the block is optional");
+        assert_eq!(resolve_politeness(bare.politeness), Politeness::default());
+
+        let empty: CreateProvider = serde_json::from_str(
+            r#"{"slug":"s","name":"n","base_url":"https://b.invalid","adapter":"custom","politeness":{}}"#,
+        )
+        .expect("an empty block is a complete one");
+        assert!(resolve_politeness(empty.politeness).emulation.is_none());
     }
 
     /// Tuning a crawl budget must work on a managed provider without unlocking it.
@@ -607,11 +640,11 @@ mod tests {
     fn politeness_is_editable_while_the_preset_is_locked() {
         let managed = provider(true, true);
         let mut body = edit(&managed);
-        body.politeness = Politeness {
+        body.politeness = Some(PolitenessInput {
             rps: 0.5,
             concurrency: 1,
-            ..Politeness::default()
-        };
+            ..PolitenessInput::default()
+        });
         assert!(refuse_locked_edit(&managed, &body).is_ok());
     }
 

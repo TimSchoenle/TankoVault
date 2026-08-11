@@ -239,13 +239,7 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
                 let opts = SyncOpts {
                     policy: Some(policy.into()),
                 };
-                match client
-                    .sync_pull()
-                    .provider(slug)
-                    .body(SyncPullBody::Variant1(opts))
-                    .send()
-                    .await
-                {
+                match client.sync_pull().provider(slug).body(opts).send().await {
                     Ok(_) => {
                         outcome.set(Some(Ok(i18n.t("account.sync.pullStarted"))));
                         reload.bump();
@@ -270,13 +264,7 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
                 let opts = SyncOpts {
                     policy: Some(policy.into()),
                 };
-                match client
-                    .sync_push()
-                    .provider(slug)
-                    .body(SyncPushBody::Variant1(opts))
-                    .send()
-                    .await
-                {
+                match client.sync_push().provider(slug).body(opts).send().await {
                     Ok(_) => {
                         outcome.set(Some(Ok(i18n.t("account.sync.pushStarted"))));
                         reload.bump();

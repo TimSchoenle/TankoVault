@@ -2,7 +2,7 @@
 
 use crate::components::HealthPill;
 use crate::i18n::use_i18n;
-use crate::models::{preset_link, Provider, ProviderId, ProviderStat, ProviderState};
+use crate::models::{Provider, ProviderId, ProviderStat, ProviderState};
 use crate::util::{rel_time, thousands};
 use dioxus::prelude::*;
 
@@ -21,7 +21,7 @@ pub(super) fn ProviderRow(
     // A glyph rather than a word: the row is dense, and the inspector states the link in full.
     // Present only for preset-derived rows, so the absence of one is itself the answer for a
     // provider an operator registered.
-    let preset_mark = preset_link(&provider).map(|link| {
+    let preset_mark = provider.preset.as_ref().map(|link| {
         if link.locked {
             ("\u{1f512}", "console.providers.preset.pillLocked")
         } else {

@@ -448,7 +448,7 @@ pub(super) fn WatchRow(
             // Only rendered above 1500px (`.ik-wl-next` is display:none below the step), where
             // the column answers "what would Continue actually open?" without a hover.
             span { class: "ik-wl-next", role: "gridcell",
-                if let Some(next) = crate::models::next_unread(&item) {
+                if let Some(next) = item.next_unread.as_ref() {
                     div { class: "ik-wl-next-ch",
                         span { class: "num",
                             {i18n.args("watchlist.chapterNo", &[("number", &chapter_number(next.number))])}

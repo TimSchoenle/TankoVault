@@ -371,14 +371,14 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
             let result = match client
                 .sync_pull()
                 .provider(SYNC_PROVIDER)
-                .body(SyncPullBody::Variant1(opts.clone()))
+                .body(opts.clone())
                 .send()
                 .await
             {
                 Ok(_) => client
                     .sync_push()
                     .provider(SYNC_PROVIDER)
-                    .body(SyncPushBody::Variant1(opts))
+                    .body(opts)
                     .send()
                     .await
                     .map(|_| i18n.t("watchlist.synced"))

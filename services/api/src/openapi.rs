@@ -91,6 +91,7 @@ impl Modify for SecurityAddon {
     tankovault_domain::Tag,
     tankovault_domain::Author,
     tankovault_domain::Politeness,
+    tankovault_domain::PolitenessInput,
     // --- domain enums ---
     tankovault_domain::ContentType,
     tankovault_domain::SeriesStatus,

@@ -48,7 +48,7 @@ pub use pacing::{Pacer, PacingPolicy};
 pub use permissions::{
     ParsePermissionError, Permission, PermissionGroup, PermissionPreset, PermissionSet,
 };
-pub use politeness::{BrowserEmulation, MIN_RPS, Politeness};
+pub use politeness::{BrowserEmulation, MIN_RPS, Politeness, PolitenessInput};
 pub use scan_stage::{ParseStageError, ScanStage, StageTimings};
 pub use tag_filter::{DEFAULT_BLOCKED_TAGS, TagBlocklist, slugify};
 pub use tunables::{Applies, ParseTunableError, Tunable, TunableGroup, TunableKind, TunableSpec};

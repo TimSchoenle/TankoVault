@@ -71,11 +71,12 @@ pub enum LoginStatus {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct LoginResponse {
     pub status: LoginStatus,
-    // `nullable = false` on both payloads is load-bearing, not decoration. Without it utoipa
-    // publishes an `Option<T>` as `oneOf [null, $ref]`, and the client generator turns *that*
-    // into an untagged two-variant enum whose first variant is a bare `serde_json::Value` —
-    // a type no caller can pattern-match usefully. Absent-vs-present is already expressed by
-    // the field being outside `required`, which is what a client actually reads.
+    // `nullable = false` on both payloads keeps the published document saying what it means:
+    // without it utoipa writes an `Option<T>` as `oneOf [null, $ref]`, a union standing in for
+    // something `required` already expresses, and `required` is what a client actually reads.
+    // (`xtask`'s `collapse_nullable_union` now flattens such a union before the client is
+    // generated, so this no longer decides whether the field is usable — it decides whether the
+    // document is honest.)
     /// Present iff `status` is `authenticated`.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schema(nullable = false)]

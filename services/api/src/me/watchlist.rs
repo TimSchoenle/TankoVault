@@ -71,9 +71,9 @@ pub struct WatchlistItem {
     /// [`Self::preferred_source_name`], which stays the derived richest source the ledger row
     /// displays. Set through `PUT /v1/me/watchlist/{series_id}/source-pin`.
     // A bare `Uuid`, not `Option<SeriesSourceId>`: an optional newtype publishes as
-    // `oneOf [null, $ref]`, which progenitor turns into a `Variant0/Variant1` wrapper enum with
-    // no conversion a caller can use. Inline `{type: [string, null], format: uuid}` costs the
-    // client one `SeriesSourceId::from(uuid)` instead.
+    // `oneOf [null, $ref]`, and this field stays out of that union rather than relying on
+    // `xtask`'s `collapse_nullable_union` to undo it. Inline `{type: [string, null], format:
+    // uuid}` costs the client one `SeriesSourceId::from(uuid)` instead.
     pub pinned_source_id: Option<uuid::Uuid>,
 }
 

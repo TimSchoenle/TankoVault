@@ -368,7 +368,7 @@ fn preset_for(
     catalogue: Option<&Vec<PresetDefinition>>,
     provider: &Provider,
 ) -> Option<PresetDefinition> {
-    let link = preset_link(provider)?;
+    let link = provider.preset.as_ref()?;
     catalogue?
         .iter()
         .find(|preset| preset.slug == link.slug)
@@ -406,7 +406,7 @@ fn ProviderInspector(
     // The preset link drives what may be edited here. `locked` is the server's rule too: a
     // PATCH touching a preset-owned field of a locked provider is refused with a 409, so
     // disabling the inputs is the courtesy, not the enforcement.
-    let link = preset_link(&provider).cloned();
+    let link = provider.preset.clone();
     let locked = link.as_ref().is_some_and(|l| l.locked);
     // Everything preset-owned is read-only while locked; politeness never is.
     let can_edit_owned = can_edit && !locked;
@@ -542,7 +542,7 @@ fn ProviderInspector(
             spawn(async move {
                 let body = TriggerScan {
                     mode: *scan_mode.peek(),
-                    provider_id: Some(TriggerScanProviderId::Variant1(id)),
+                    provider_id: Some(id),
                 };
                 match client.trigger_scan().body(body).send().await {
                     Ok(_) => outcome.set(Some(Ok(i18n.t("console.providers.scanQueued")))),
@@ -601,7 +601,7 @@ fn ProviderInspector(
             let outcome_value = client
                 .test_adapter()
                 .id(id)
-                .body(TestAdapterBody::Variant1(TestAdapterRequest { path: None }))
+                .body(TestAdapterRequest { path: None })
                 .send()
                 .await
                 .map(ResponseValue::into_inner)

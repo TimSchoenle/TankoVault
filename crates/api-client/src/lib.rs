@@ -1093,12 +1093,7 @@ pub mod types {
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"mode\": {"]
-    #[doc = "      \"oneOf\": ["]
-    #[doc = "        {},"]
-    #[doc = "        {"]
-    #[doc = "          \"$ref\": \"#/components/schemas/ScanMode\""]
-    #[doc = "        }"]
-    #[doc = "      ]"]
+    #[doc = "      \"$ref\": \"#/components/schemas/ScanMode\""]
     #[doc = "    },"]
     #[doc = "    \"provider\": {"]
     #[doc = "      \"description\": \"Provider slug.\","]
@@ -1114,7 +1109,7 @@ pub mod types {
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct CancelScansBody {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub mode: ::std::option::Option<CancelScansBodyMode>,
+        pub mode: ::std::option::Option<ScanMode>,
         #[doc = "Provider slug."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub provider: ::std::option::Option<::std::string::String>,
@@ -1130,37 +1125,6 @@ pub mod types {
     impl CancelScansBody {
         pub fn builder() -> builder::CancelScansBody {
             Default::default()
-        }
-    }
-    #[doc = "`CancelScansBodyMode`"]
-    #[doc = r""]
-    #[doc = r" <details><summary>JSON schema</summary>"]
-    #[doc = r""]
-    #[doc = r" ```json"]
-    #[doc = "{"]
-    #[doc = "  \"oneOf\": ["]
-    #[doc = "    {},"]
-    #[doc = "    {"]
-    #[doc = "      \"$ref\": \"#/components/schemas/ScanMode\""]
-    #[doc = "    }"]
-    #[doc = "  ]"]
-    #[doc = "}"]
-    #[doc = r" ```"]
-    #[doc = r" </details>"]
-    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
-    #[serde(untagged)]
-    pub enum CancelScansBodyMode {
-        Variant0(::serde_json::Value),
-        Variant1(ScanMode),
-    }
-    impl ::std::convert::From<::serde_json::Value> for CancelScansBodyMode {
-        fn from(value: ::serde_json::Value) -> Self {
-            Self::Variant0(value)
-        }
-    }
-    impl ::std::convert::From<ScanMode> for CancelScansBodyMode {
-        fn from(value: ScanMode) -> Self {
-            Self::Variant1(value)
         }
     }
     #[doc = "The caller's capabilities and the deployment's enabled features."]
@@ -1727,12 +1691,7 @@ pub mod types {
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"run_id\": {"]
-    #[doc = "      \"oneOf\": ["]
-    #[doc = "        {},"]
-    #[doc = "        {"]
-    #[doc = "          \"$ref\": \"#/components/schemas/ScanRunId\""]
-    #[doc = "        }"]
-    #[doc = "      ]"]
+    #[doc = "      \"$ref\": \"#/components/schemas/ScanRunId\""]
     #[doc = "    },"]
     #[doc = "    \"since\": {"]
     #[doc = "      \"description\": \"Inclusive lower bound on the failure's `finished_at`, RFC 3339.\","]
@@ -1757,7 +1716,7 @@ pub mod types {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub provider: ::std::option::Option<::std::string::String>,
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub run_id: ::std::option::Option<ClearFailuresBodyRunId>,
+        pub run_id: ::std::option::Option<ScanRunId>,
         #[doc = "Inclusive lower bound on the failure's `finished_at`, RFC 3339."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub since: ::std::option::Option<::std::string::String>,
@@ -1776,37 +1735,6 @@ pub mod types {
     impl ClearFailuresBody {
         pub fn builder() -> builder::ClearFailuresBody {
             Default::default()
-        }
-    }
-    #[doc = "`ClearFailuresBodyRunId`"]
-    #[doc = r""]
-    #[doc = r" <details><summary>JSON schema</summary>"]
-    #[doc = r""]
-    #[doc = r" ```json"]
-    #[doc = "{"]
-    #[doc = "  \"oneOf\": ["]
-    #[doc = "    {},"]
-    #[doc = "    {"]
-    #[doc = "      \"$ref\": \"#/components/schemas/ScanRunId\""]
-    #[doc = "    }"]
-    #[doc = "  ]"]
-    #[doc = "}"]
-    #[doc = r" ```"]
-    #[doc = r" </details>"]
-    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
-    #[serde(untagged)]
-    pub enum ClearFailuresBodyRunId {
-        Variant0(::serde_json::Value),
-        Variant1(ScanRunId),
-    }
-    impl ::std::convert::From<::serde_json::Value> for ClearFailuresBodyRunId {
-        fn from(value: ::serde_json::Value) -> Self {
-            Self::Variant0(value)
-        }
-    }
-    impl ::std::convert::From<ScanRunId> for ClearFailuresBodyRunId {
-        fn from(value: ScanRunId) -> Self {
-            Self::Variant1(value)
         }
     }
     #[doc = "How to settle a local/remote disagreement when a series exists on both sides\n(design v2 §B.3).\n\n# Why this is here rather than in `services/sync`\n\nIt was a `pub(crate)` enum in the sync service and a **bare string** on the wire, which put\nthe vocabulary in three places that nothing connected: the service's enum, a prose list in\nthis file's doc comment, and a closed enumeration the frontend maintained by hand\n(FRONTEND F10). A policy added to the service would have compiled everywhere and then\nsilently failed to appear in the picker; a token misspelled in the frontend would have been\nrejected by the service at the far end of a round trip, if at all. Declaring it once here —\nwhere `utoipa` publishes it, `progenitor` generates it and the frontend consumes the\ngenerated form — makes the compiler the connection in both directions.\n\nThe JSON representation is unchanged: `snake_case`, the same four tokens the wire always\ncarried. What changed is that the *schema* now says so, so an unknown token is a `422` at\nthe edge instead of a value that reaches the merge and is quietly read as `newest_wins`."]
@@ -2281,7 +2209,7 @@ pub mod types {
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
     #[doc = "    \"politeness\": {"]
-    #[doc = "      \"$ref\": \"#/components/schemas/Politeness\""]
+    #[doc = "      \"$ref\": \"#/components/schemas/PolitenessInput\""]
     #[doc = "    },"]
     #[doc = "    \"slug\": {"]
     #[doc = "      \"type\": \"string\""]
@@ -2298,7 +2226,7 @@ pub mod types {
         pub config: ::std::option::Option<::serde_json::Value>,
         pub name: ::std::string::String,
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub politeness: ::std::option::Option<Politeness>,
+        pub politeness: ::std::option::Option<PolitenessInput>,
         pub slug: ::std::string::String,
     }
     impl CreateProvider {
@@ -4103,68 +4031,6 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "`ListCatalogueHealth`"]
-    #[doc = r""]
-    #[doc = r" <details><summary>JSON schema</summary>"]
-    #[doc = r""]
-    #[doc = r" ```json"]
-    #[doc = "{"]
-    #[doc = "  \"oneOf\": ["]
-    #[doc = "    {},"]
-    #[doc = "    {"]
-    #[doc = "      \"$ref\": \"#/components/schemas/HealthFilter\""]
-    #[doc = "    }"]
-    #[doc = "  ]"]
-    #[doc = "}"]
-    #[doc = r" ```"]
-    #[doc = r" </details>"]
-    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
-    #[serde(untagged)]
-    pub enum ListCatalogueHealth {
-        Variant0(::serde_json::Value),
-        Variant1(HealthFilter),
-    }
-    impl ::std::convert::From<::serde_json::Value> for ListCatalogueHealth {
-        fn from(value: ::serde_json::Value) -> Self {
-            Self::Variant0(value)
-        }
-    }
-    impl ::std::convert::From<HealthFilter> for ListCatalogueHealth {
-        fn from(value: HealthFilter) -> Self {
-            Self::Variant1(value)
-        }
-    }
-    #[doc = "`ListScansMode`"]
-    #[doc = r""]
-    #[doc = r" <details><summary>JSON schema</summary>"]
-    #[doc = r""]
-    #[doc = r" ```json"]
-    #[doc = "{"]
-    #[doc = "  \"oneOf\": ["]
-    #[doc = "    {},"]
-    #[doc = "    {"]
-    #[doc = "      \"$ref\": \"#/components/schemas/ScanMode\""]
-    #[doc = "    }"]
-    #[doc = "  ]"]
-    #[doc = "}"]
-    #[doc = r" ```"]
-    #[doc = r" </details>"]
-    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
-    #[serde(untagged)]
-    pub enum ListScansMode {
-        Variant0(::serde_json::Value),
-        Variant1(ScanMode),
-    }
-    impl ::std::convert::From<::serde_json::Value> for ListScansMode {
-        fn from(value: ::serde_json::Value) -> Self {
-            Self::Variant0(value)
-        }
-    }
-    impl ::std::convert::From<ScanMode> for ListScansMode {
-        fn from(value: ScanMode) -> Self {
-            Self::Variant1(value)
-        }
-    }
     #[doc = "How a page of runs is ordered, as the `sort` parameter spells it.\n\nIts own wire enum rather than the repository's, so an unknown token is a 422 from the\nextractor instead of a silent fall back to the default ordering — a sort control that\nquietly ignores what it was asked for is exactly the defect this panel had."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -4246,37 +4112,6 @@ pub mod types {
             value: ::std::string::String,
         ) -> ::std::result::Result<Self, self::error::ConversionError> {
             value.parse()
-        }
-    }
-    #[doc = "`ListScansState`"]
-    #[doc = r""]
-    #[doc = r" <details><summary>JSON schema</summary>"]
-    #[doc = r""]
-    #[doc = r" ```json"]
-    #[doc = "{"]
-    #[doc = "  \"oneOf\": ["]
-    #[doc = "    {},"]
-    #[doc = "    {"]
-    #[doc = "      \"$ref\": \"#/components/schemas/RunState\""]
-    #[doc = "    }"]
-    #[doc = "  ]"]
-    #[doc = "}"]
-    #[doc = r" ```"]
-    #[doc = r" </details>"]
-    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
-    #[serde(untagged)]
-    pub enum ListScansState {
-        Variant0(::serde_json::Value),
-        Variant1(RunState),
-    }
-    impl ::std::convert::From<::serde_json::Value> for ListScansState {
-        fn from(value: ::serde_json::Value) -> Self {
-            Self::Variant0(value)
-        }
-    }
-    impl ::std::convert::From<RunState> for ListScansState {
-        fn from(value: RunState) -> Self {
-            Self::Variant1(value)
         }
     }
     #[doc = "`LoginRequest`"]
@@ -4694,12 +4529,7 @@ pub mod types {
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"absorbed_id\": {"]
-    #[doc = "      \"oneOf\": ["]
-    #[doc = "        {},"]
-    #[doc = "        {"]
-    #[doc = "          \"$ref\": \"#/components/schemas/SeriesId\""]
-    #[doc = "        }"]
-    #[doc = "      ]"]
+    #[doc = "      \"$ref\": \"#/components/schemas/SeriesId\""]
     #[doc = "    },"]
     #[doc = "    \"actor\": {"]
     #[doc = "      \"type\": ["]
@@ -4806,12 +4636,7 @@ pub mod types {
     #[doc = "      }"]
     #[doc = "    },"]
     #[doc = "    \"survivor_id\": {"]
-    #[doc = "      \"oneOf\": ["]
-    #[doc = "        {},"]
-    #[doc = "        {"]
-    #[doc = "          \"$ref\": \"#/components/schemas/SeriesId\""]
-    #[doc = "        }"]
-    #[doc = "      ]"]
+    #[doc = "      \"$ref\": \"#/components/schemas/SeriesId\""]
     #[doc = "    },"]
     #[doc = "    \"sweep_id\": {"]
     #[doc = "      \"description\": \"Groups every decision of one sweep run; absent for an operator's console merge.\","]
@@ -4844,7 +4669,7 @@ pub mod types {
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct MergeDecision {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub absorbed_id: ::std::option::Option<MergeDecisionAbsorbedId>,
+        pub absorbed_id: ::std::option::Option<SeriesId>,
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub actor: ::std::option::Option<::uuid::Uuid>,
         #[doc = "The similarity the score started from, before any bonus or penalty."]
@@ -4880,7 +4705,7 @@ pub mod types {
         pub score: f32,
         pub signals: ::std::vec::Vec<::std::string::String>,
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub survivor_id: ::std::option::Option<MergeDecisionSurvivorId>,
+        pub survivor_id: ::std::option::Option<SeriesId>,
         #[doc = "Groups every decision of one sweep run; absent for an operator's console merge."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub sweep_id: ::std::option::Option<::uuid::Uuid>,
@@ -4895,68 +4720,6 @@ pub mod types {
     impl MergeDecision {
         pub fn builder() -> builder::MergeDecision {
             Default::default()
-        }
-    }
-    #[doc = "`MergeDecisionAbsorbedId`"]
-    #[doc = r""]
-    #[doc = r" <details><summary>JSON schema</summary>"]
-    #[doc = r""]
-    #[doc = r" ```json"]
-    #[doc = "{"]
-    #[doc = "  \"oneOf\": ["]
-    #[doc = "    {},"]
-    #[doc = "    {"]
-    #[doc = "      \"$ref\": \"#/components/schemas/SeriesId\""]
-    #[doc = "    }"]
-    #[doc = "  ]"]
-    #[doc = "}"]
-    #[doc = r" ```"]
-    #[doc = r" </details>"]
-    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
-    #[serde(untagged)]
-    pub enum MergeDecisionAbsorbedId {
-        Variant0(::serde_json::Value),
-        Variant1(SeriesId),
-    }
-    impl ::std::convert::From<::serde_json::Value> for MergeDecisionAbsorbedId {
-        fn from(value: ::serde_json::Value) -> Self {
-            Self::Variant0(value)
-        }
-    }
-    impl ::std::convert::From<SeriesId> for MergeDecisionAbsorbedId {
-        fn from(value: SeriesId) -> Self {
-            Self::Variant1(value)
-        }
-    }
-    #[doc = "`MergeDecisionSurvivorId`"]
-    #[doc = r""]
-    #[doc = r" <details><summary>JSON schema</summary>"]
-    #[doc = r""]
-    #[doc = r" ```json"]
-    #[doc = "{"]
-    #[doc = "  \"oneOf\": ["]
-    #[doc = "    {},"]
-    #[doc = "    {"]
-    #[doc = "      \"$ref\": \"#/components/schemas/SeriesId\""]
-    #[doc = "    }"]
-    #[doc = "  ]"]
-    #[doc = "}"]
-    #[doc = r" ```"]
-    #[doc = r" </details>"]
-    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
-    #[serde(untagged)]
-    pub enum MergeDecisionSurvivorId {
-        Variant0(::serde_json::Value),
-        Variant1(SeriesId),
-    }
-    impl ::std::convert::From<::serde_json::Value> for MergeDecisionSurvivorId {
-        fn from(value: ::serde_json::Value) -> Self {
-            Self::Variant0(value)
-        }
-    }
-    impl ::std::convert::From<SeriesId> for MergeDecisionSurvivorId {
-        fn from(value: SeriesId) -> Self {
-            Self::Variant1(value)
         }
     }
     #[doc = "`MergeRequest`"]
@@ -5388,12 +5151,7 @@ pub mod types {
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"security_key\": {"]
-    #[doc = "      \"oneOf\": ["]
-    #[doc = "        {},"]
-    #[doc = "        {"]
-    #[doc = "          \"$ref\": \"#/components/schemas/SecurityKeyAssertion\""]
-    #[doc = "        }"]
-    #[doc = "      ]"]
+    #[doc = "      \"$ref\": \"#/components/schemas/SecurityKeyAssertion\""]
     #[doc = "    },"]
     #[doc = "    \"totp_code\": {"]
     #[doc = "      \"description\": \"A code from the enrolled authenticator app.\","]
@@ -5414,7 +5172,7 @@ pub mod types {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub recovery_code: ::std::option::Option<::std::string::String>,
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub security_key: ::std::option::Option<MfaVerifyRequestSecurityKey>,
+        pub security_key: ::std::option::Option<SecurityKeyAssertion>,
         #[doc = "A code from the enrolled authenticator app."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub totp_code: ::std::option::Option<::std::string::String>,
@@ -5422,37 +5180,6 @@ pub mod types {
     impl MfaVerifyRequest {
         pub fn builder() -> builder::MfaVerifyRequest {
             Default::default()
-        }
-    }
-    #[doc = "`MfaVerifyRequestSecurityKey`"]
-    #[doc = r""]
-    #[doc = r" <details><summary>JSON schema</summary>"]
-    #[doc = r""]
-    #[doc = r" ```json"]
-    #[doc = "{"]
-    #[doc = "  \"oneOf\": ["]
-    #[doc = "    {},"]
-    #[doc = "    {"]
-    #[doc = "      \"$ref\": \"#/components/schemas/SecurityKeyAssertion\""]
-    #[doc = "    }"]
-    #[doc = "  ]"]
-    #[doc = "}"]
-    #[doc = r" ```"]
-    #[doc = r" </details>"]
-    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
-    #[serde(untagged)]
-    pub enum MfaVerifyRequestSecurityKey {
-        Variant0(::serde_json::Value),
-        Variant1(SecurityKeyAssertion),
-    }
-    impl ::std::convert::From<::serde_json::Value> for MfaVerifyRequestSecurityKey {
-        fn from(value: ::serde_json::Value) -> Self {
-            Self::Variant0(value)
-        }
-    }
-    impl ::std::convert::From<SecurityKeyAssertion> for MfaVerifyRequestSecurityKey {
-        fn from(value: SecurityKeyAssertion) -> Self {
-            Self::Variant1(value)
         }
     }
     #[doc = "The recommendation model's current state, as an operator needs it before touching anything."]
@@ -6841,12 +6568,7 @@ pub mod types {
     #[doc = "      \"minimum\": 0.0"]
     #[doc = "    },"]
     #[doc = "    \"emulation\": {"]
-    #[doc = "      \"oneOf\": ["]
-    #[doc = "        {},"]
-    #[doc = "        {"]
-    #[doc = "          \"$ref\": \"#/components/schemas/BrowserEmulation\""]
-    #[doc = "        }"]
-    #[doc = "      ]"]
+    #[doc = "      \"$ref\": \"#/components/schemas/BrowserEmulation\""]
     #[doc = "    },"]
     #[doc = "    \"rps\": {"]
     #[doc = "      \"description\": \"Requests per second, per worker process (see the type-level note on fleet totals).\","]
@@ -6871,7 +6593,7 @@ pub mod types {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub crawl_delay_ms: ::std::option::Option<i64>,
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub emulation: ::std::option::Option<PolitenessEmulation>,
+        pub emulation: ::std::option::Option<BrowserEmulation>,
         #[doc = "Requests per second, per worker process (see the type-level note on fleet totals)."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub rps: ::std::option::Option<f64>,
@@ -6895,35 +6617,74 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "`PolitenessEmulation`"]
+    #[doc = "The politeness block as a *request body* carries it.\n\nMirrors [`Politeness`] field for field and differs in exactly one way: an absent `emulation`\nmeans *no* emulation, where [`Politeness`] reads an absent key as [`BrowserEmulation::Chrome`].\n\nThat asymmetry is load-bearing on both sides, which is why the two shapes cannot be one type.\n[`Politeness`] is also the stored JSONB document, and a row written before emulation existed\ncarries no such key — reading it as \"no emulation\" would put an upgraded install back to\ncrawling as an identifiable bot. A client generated from this API's schema, meanwhile, has no\nway to *send* an explicit `null`: `Option` fields are omitted when they are `None`. So if\nabsent meant Chrome here too, choosing \"no emulation\" in the console would silently put the\nprovider back on Chrome and report the save as successful.\n\nKept in step with [`Politeness`] by the exhaustive `From` below (a new stored field fails to\ncompile) and by `every_stored_field_survives_the_request_shape` (a new field hardcoded to\nsilence that failure)."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"oneOf\": ["]
-    #[doc = "    {},"]
-    #[doc = "    {"]
+    #[doc = "  \"description\": \"The politeness block as a *request body* carries it.\\n\\nMirrors [`Politeness`] field for field and differs in exactly one way: an absent `emulation`\\nmeans *no* emulation, where [`Politeness`] reads an absent key as [`BrowserEmulation::Chrome`].\\n\\nThat asymmetry is load-bearing on both sides, which is why the two shapes cannot be one type.\\n[`Politeness`] is also the stored JSONB document, and a row written before emulation existed\\ncarries no such key — reading it as \\\"no emulation\\\" would put an upgraded install back to\\ncrawling as an identifiable bot. A client generated from this API's schema, meanwhile, has no\\nway to *send* an explicit `null`: `Option` fields are omitted when they are `None`. So if\\nabsent meant Chrome here too, choosing \\\"no emulation\\\" in the console would silently put the\\nprovider back on Chrome and report the save as successful.\\n\\nKept in step with [`Politeness`] by the exhaustive `From` below (a new stored field fails to\\ncompile) and by `every_stored_field_survives_the_request_shape` (a new field hardcoded to\\nsilence that failure).\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"concurrency\": {"]
+    #[doc = "      \"description\": \"Maximum concurrent requests to this provider, per worker process.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int32\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"crawl_delay_ms\": {"]
+    #[doc = "      \"description\": \"Minimum delay between requests, in milliseconds.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"emulation\": {"]
     #[doc = "      \"$ref\": \"#/components/schemas/BrowserEmulation\""]
+    #[doc = "    },"]
+    #[doc = "    \"rps\": {"]
+    #[doc = "      \"description\": \"Requests per second, per worker process (see [`Politeness`] on fleet totals).\","]
+    #[doc = "      \"type\": \"number\","]
+    #[doc = "      \"format\": \"double\""]
+    #[doc = "    },"]
+    #[doc = "    \"user_agent\": {"]
+    #[doc = "      \"description\": \"User-agent sent on ordinary (non-challenge) requests — only when `emulation` is absent.\","]
+    #[doc = "      \"type\": \"string\""]
     #[doc = "    }"]
-    #[doc = "  ]"]
+    #[doc = "  }"]
     #[doc = "}"]
     #[doc = r" ```"]
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
-    #[serde(untagged)]
-    pub enum PolitenessEmulation {
-        Variant0(::serde_json::Value),
-        Variant1(BrowserEmulation),
+    pub struct PolitenessInput {
+        #[doc = "Maximum concurrent requests to this provider, per worker process."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub concurrency: ::std::option::Option<i32>,
+        #[doc = "Minimum delay between requests, in milliseconds."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub crawl_delay_ms: ::std::option::Option<i64>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub emulation: ::std::option::Option<BrowserEmulation>,
+        #[doc = "Requests per second, per worker process (see [`Politeness`] on fleet totals)."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub rps: ::std::option::Option<f64>,
+        #[doc = "User-agent sent on ordinary (non-challenge) requests — only when `emulation` is absent."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub user_agent: ::std::option::Option<::std::string::String>,
     }
-    impl ::std::convert::From<::serde_json::Value> for PolitenessEmulation {
-        fn from(value: ::serde_json::Value) -> Self {
-            Self::Variant0(value)
+    impl ::std::default::Default for PolitenessInput {
+        fn default() -> Self {
+            Self {
+                concurrency: Default::default(),
+                crawl_delay_ms: Default::default(),
+                emulation: Default::default(),
+                rps: Default::default(),
+                user_agent: Default::default(),
+            }
         }
     }
-    impl ::std::convert::From<BrowserEmulation> for PolitenessEmulation {
-        fn from(value: BrowserEmulation) -> Self {
-            Self::Variant1(value)
+    impl PolitenessInput {
+        pub fn builder() -> builder::PolitenessInput {
+            Default::default()
         }
     }
     #[doc = "One provider in the reader's order."]
@@ -7508,12 +7269,7 @@ pub mod types {
     #[doc = "      \"$ref\": \"#/components/schemas/Politeness\""]
     #[doc = "    },"]
     #[doc = "    \"preset\": {"]
-    #[doc = "      \"oneOf\": ["]
-    #[doc = "        {},"]
-    #[doc = "        {"]
-    #[doc = "          \"$ref\": \"#/components/schemas/PresetLink\""]
-    #[doc = "        }"]
-    #[doc = "      ]"]
+    #[doc = "      \"$ref\": \"#/components/schemas/PresetLink\""]
     #[doc = "    },"]
     #[doc = "    \"slug\": {"]
     #[doc = "      \"type\": \"string\""]
@@ -7543,7 +7299,7 @@ pub mod types {
         pub name: ::std::string::String,
         pub politeness: Politeness,
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub preset: ::std::option::Option<ProviderPreset>,
+        pub preset: ::std::option::Option<PresetLink>,
         pub slug: ::std::string::String,
         pub state: ProviderState,
         pub updated_at: ::std::string::String,
@@ -7645,37 +7401,6 @@ pub mod types {
     impl ProviderInfo {
         pub fn builder() -> builder::ProviderInfo {
             Default::default()
-        }
-    }
-    #[doc = "`ProviderPreset`"]
-    #[doc = r""]
-    #[doc = r" <details><summary>JSON schema</summary>"]
-    #[doc = r""]
-    #[doc = r" ```json"]
-    #[doc = "{"]
-    #[doc = "  \"oneOf\": ["]
-    #[doc = "    {},"]
-    #[doc = "    {"]
-    #[doc = "      \"$ref\": \"#/components/schemas/PresetLink\""]
-    #[doc = "    }"]
-    #[doc = "  ]"]
-    #[doc = "}"]
-    #[doc = r" ```"]
-    #[doc = r" </details>"]
-    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
-    #[serde(untagged)]
-    pub enum ProviderPreset {
-        Variant0(::serde_json::Value),
-        Variant1(PresetLink),
-    }
-    impl ::std::convert::From<::serde_json::Value> for ProviderPreset {
-        fn from(value: ::serde_json::Value) -> Self {
-            Self::Variant0(value)
-        }
-    }
-    impl ::std::convert::From<PresetLink> for ProviderPreset {
-        fn from(value: PresetLink) -> Self {
-            Self::Variant1(value)
         }
     }
     #[doc = "One provider's scan health over the summary's window."]
@@ -8262,12 +7987,7 @@ pub mod types {
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"because_series_id\": {"]
-    #[doc = "      \"oneOf\": ["]
-    #[doc = "        {},"]
-    #[doc = "        {"]
-    #[doc = "          \"$ref\": \"#/components/schemas/SeriesId\""]
-    #[doc = "        }"]
-    #[doc = "      ]"]
+    #[doc = "      \"$ref\": \"#/components/schemas/SeriesId\""]
     #[doc = "    },"]
     #[doc = "    \"because_title\": {"]
     #[doc = "      \"type\": ["]
@@ -8349,7 +8069,7 @@ pub mod types {
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct Recommendation {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub because_series_id: ::std::option::Option<RecommendationBecauseSeriesId>,
+        pub because_series_id: ::std::option::Option<SeriesId>,
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub because_title: ::std::option::Option<::std::string::String>,
         #[doc = "The opening of the description, trimmed to a card's worth. See\n[`crate::series::blurb`] — one wording, so a recommendation and a search hit describe a\nseries identically."]
@@ -8378,37 +8098,6 @@ pub mod types {
     impl Recommendation {
         pub fn builder() -> builder::Recommendation {
             Default::default()
-        }
-    }
-    #[doc = "`RecommendationBecauseSeriesId`"]
-    #[doc = r""]
-    #[doc = r" <details><summary>JSON schema</summary>"]
-    #[doc = r""]
-    #[doc = r" ```json"]
-    #[doc = "{"]
-    #[doc = "  \"oneOf\": ["]
-    #[doc = "    {},"]
-    #[doc = "    {"]
-    #[doc = "      \"$ref\": \"#/components/schemas/SeriesId\""]
-    #[doc = "    }"]
-    #[doc = "  ]"]
-    #[doc = "}"]
-    #[doc = r" ```"]
-    #[doc = r" </details>"]
-    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
-    #[serde(untagged)]
-    pub enum RecommendationBecauseSeriesId {
-        Variant0(::serde_json::Value),
-        Variant1(SeriesId),
-    }
-    impl ::std::convert::From<::serde_json::Value> for RecommendationBecauseSeriesId {
-        fn from(value: ::serde_json::Value) -> Self {
-            Self::Variant0(value)
-        }
-    }
-    impl ::std::convert::From<SeriesId> for RecommendationBecauseSeriesId {
-        fn from(value: SeriesId) -> Self {
-            Self::Variant1(value)
         }
     }
     #[doc = "A recovery-code set, returned exactly once."]
@@ -9604,12 +9293,7 @@ pub mod types {
     #[doc = "      \"$ref\": \"#/components/schemas/ScanMode\""]
     #[doc = "    },"]
     #[doc = "    \"provider_id\": {"]
-    #[doc = "      \"oneOf\": ["]
-    #[doc = "        {},"]
-    #[doc = "        {"]
-    #[doc = "          \"$ref\": \"#/components/schemas/ProviderId\""]
-    #[doc = "        }"]
-    #[doc = "      ]"]
+    #[doc = "      \"$ref\": \"#/components/schemas/ProviderId\""]
     #[doc = "    },"]
     #[doc = "    \"provider_slug\": {"]
     #[doc = "      \"description\": \"`null` for an all-provider run, and for a run whose provider has since been deleted.\","]
@@ -9645,7 +9329,7 @@ pub mod types {
         pub id: ScanRunId,
         pub mode: ScanMode,
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub provider_id: ::std::option::Option<ScanRunProviderId>,
+        pub provider_id: ::std::option::Option<ProviderId>,
         #[doc = "`null` for an all-provider run, and for a run whose provider has since been deleted."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub provider_slug: ::std::option::Option<::std::string::String>,
@@ -9874,37 +9558,6 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "`ScanRunProviderId`"]
-    #[doc = r""]
-    #[doc = r" <details><summary>JSON schema</summary>"]
-    #[doc = r""]
-    #[doc = r" ```json"]
-    #[doc = "{"]
-    #[doc = "  \"oneOf\": ["]
-    #[doc = "    {},"]
-    #[doc = "    {"]
-    #[doc = "      \"$ref\": \"#/components/schemas/ProviderId\""]
-    #[doc = "    }"]
-    #[doc = "  ]"]
-    #[doc = "}"]
-    #[doc = r" ```"]
-    #[doc = r" </details>"]
-    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
-    #[serde(untagged)]
-    pub enum ScanRunProviderId {
-        Variant0(::serde_json::Value),
-        Variant1(ProviderId),
-    }
-    impl ::std::convert::From<::serde_json::Value> for ScanRunProviderId {
-        fn from(value: ::serde_json::Value) -> Self {
-            Self::Variant0(value)
-        }
-    }
-    impl ::std::convert::From<ProviderId> for ScanRunProviderId {
-        fn from(value: ProviderId) -> Self {
-            Self::Variant1(value)
-        }
-    }
     #[doc = "What the scan filter matched, as figures rather than rows.\n\nScoped by the *same* provider and window the row list uses, so a narrowed filter reports its\nown success rate. Rates are left to the reader to divide: publishing `tasks_done` and\n`tasks_total` rather than a percentage keeps the panel able to show both the ratio and the\nmagnitude behind it, which a lone percentage cannot."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -10124,12 +9777,7 @@ pub mod types {
     #[doc = "      \"$ref\": \"#/components/schemas/Value\""]
     #[doc = "    },"]
     #[doc = "    \"telemetry\": {"]
-    #[doc = "      \"oneOf\": ["]
-    #[doc = "        {},"]
-    #[doc = "        {"]
-    #[doc = "          \"$ref\": \"#/components/schemas/Value\""]
-    #[doc = "        }"]
-    #[doc = "      ]"]
+    #[doc = "      \"$ref\": \"#/components/schemas/Value\""]
     #[doc = "    },"]
     #[doc = "    \"wait_ms\": {"]
     #[doc = "      \"description\": \"Milliseconds between creation and claim: time nobody was working on it.\","]
@@ -10180,7 +9828,7 @@ pub mod types {
         pub state: TaskState,
         pub target: Value,
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub telemetry: ::std::option::Option<ScanTaskDetailViewTelemetry>,
+        pub telemetry: ::std::option::Option<Value>,
         #[doc = "Milliseconds between creation and claim: time nobody was working on it."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub wait_ms: ::std::option::Option<i32>,
@@ -10190,37 +9838,6 @@ pub mod types {
     impl ScanTaskDetailView {
         pub fn builder() -> builder::ScanTaskDetailView {
             Default::default()
-        }
-    }
-    #[doc = "`ScanTaskDetailViewTelemetry`"]
-    #[doc = r""]
-    #[doc = r" <details><summary>JSON schema</summary>"]
-    #[doc = r""]
-    #[doc = r" ```json"]
-    #[doc = "{"]
-    #[doc = "  \"oneOf\": ["]
-    #[doc = "    {},"]
-    #[doc = "    {"]
-    #[doc = "      \"$ref\": \"#/components/schemas/Value\""]
-    #[doc = "    }"]
-    #[doc = "  ]"]
-    #[doc = "}"]
-    #[doc = r" ```"]
-    #[doc = r" </details>"]
-    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
-    #[serde(untagged)]
-    pub enum ScanTaskDetailViewTelemetry {
-        Variant0(::serde_json::Value),
-        Variant1(Value),
-    }
-    impl ::std::convert::From<::serde_json::Value> for ScanTaskDetailViewTelemetry {
-        fn from(value: ::serde_json::Value) -> Self {
-            Self::Variant0(value)
-        }
-    }
-    impl ::std::convert::From<Value> for ScanTaskDetailViewTelemetry {
-        fn from(value: Value) -> Self {
-            Self::Variant1(value)
         }
     }
     #[doc = "Identifies a scan task."]
@@ -12116,12 +11733,7 @@ pub mod types {
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
     #[doc = "    \"series_id\": {"]
-    #[doc = "      \"oneOf\": ["]
-    #[doc = "        {},"]
-    #[doc = "        {"]
-    #[doc = "          \"$ref\": \"#/components/schemas/SeriesId\""]
-    #[doc = "        }"]
-    #[doc = "      ]"]
+    #[doc = "      \"$ref\": \"#/components/schemas/SeriesId\""]
     #[doc = "    },"]
     #[doc = "    \"series_title\": {"]
     #[doc = "      \"type\": ["]
@@ -12192,7 +11804,7 @@ pub mod types {
         #[doc = "`match` | `progress` | `status` | `series` | `metadata`."]
         pub scope: ::std::string::String,
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub series_id: ::std::option::Option<SyncDecisionSeriesId>,
+        pub series_id: ::std::option::Option<SeriesId>,
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub series_title: ::std::option::Option<::std::string::String>,
         pub user_id: ::uuid::Uuid,
@@ -12202,37 +11814,6 @@ pub mod types {
     impl SyncDecision {
         pub fn builder() -> builder::SyncDecision {
             Default::default()
-        }
-    }
-    #[doc = "`SyncDecisionSeriesId`"]
-    #[doc = r""]
-    #[doc = r" <details><summary>JSON schema</summary>"]
-    #[doc = r""]
-    #[doc = r" ```json"]
-    #[doc = "{"]
-    #[doc = "  \"oneOf\": ["]
-    #[doc = "    {},"]
-    #[doc = "    {"]
-    #[doc = "      \"$ref\": \"#/components/schemas/SeriesId\""]
-    #[doc = "    }"]
-    #[doc = "  ]"]
-    #[doc = "}"]
-    #[doc = r" ```"]
-    #[doc = r" </details>"]
-    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
-    #[serde(untagged)]
-    pub enum SyncDecisionSeriesId {
-        Variant0(::serde_json::Value),
-        Variant1(SeriesId),
-    }
-    impl ::std::convert::From<::serde_json::Value> for SyncDecisionSeriesId {
-        fn from(value: ::serde_json::Value) -> Self {
-            Self::Variant0(value)
-        }
-    }
-    impl ::std::convert::From<SeriesId> for SyncDecisionSeriesId {
-        fn from(value: SeriesId) -> Self {
-            Self::Variant1(value)
         }
     }
     #[doc = "`SyncExcluded`"]
@@ -12367,12 +11948,7 @@ pub mod types {
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"policy\": {"]
-    #[doc = "      \"oneOf\": ["]
-    #[doc = "        {},"]
-    #[doc = "        {"]
-    #[doc = "          \"$ref\": \"#/components/schemas/ConflictPolicy\""]
-    #[doc = "        }"]
-    #[doc = "      ]"]
+    #[doc = "      \"$ref\": \"#/components/schemas/ConflictPolicy\""]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -12381,7 +11957,7 @@ pub mod types {
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct SyncOpts {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub policy: ::std::option::Option<SyncOptsPolicy>,
+        pub policy: ::std::option::Option<ConflictPolicy>,
     }
     impl ::std::default::Default for SyncOpts {
         fn default() -> Self {
@@ -12393,68 +11969,6 @@ pub mod types {
     impl SyncOpts {
         pub fn builder() -> builder::SyncOpts {
             Default::default()
-        }
-    }
-    #[doc = "`SyncOptsPolicy`"]
-    #[doc = r""]
-    #[doc = r" <details><summary>JSON schema</summary>"]
-    #[doc = r""]
-    #[doc = r" ```json"]
-    #[doc = "{"]
-    #[doc = "  \"oneOf\": ["]
-    #[doc = "    {},"]
-    #[doc = "    {"]
-    #[doc = "      \"$ref\": \"#/components/schemas/ConflictPolicy\""]
-    #[doc = "    }"]
-    #[doc = "  ]"]
-    #[doc = "}"]
-    #[doc = r" ```"]
-    #[doc = r" </details>"]
-    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
-    #[serde(untagged)]
-    pub enum SyncOptsPolicy {
-        Variant0(::serde_json::Value),
-        Variant1(ConflictPolicy),
-    }
-    impl ::std::convert::From<::serde_json::Value> for SyncOptsPolicy {
-        fn from(value: ::serde_json::Value) -> Self {
-            Self::Variant0(value)
-        }
-    }
-    impl ::std::convert::From<ConflictPolicy> for SyncOptsPolicy {
-        fn from(value: ConflictPolicy) -> Self {
-            Self::Variant1(value)
-        }
-    }
-    #[doc = "`SyncPullBody`"]
-    #[doc = r""]
-    #[doc = r" <details><summary>JSON schema</summary>"]
-    #[doc = r""]
-    #[doc = r" ```json"]
-    #[doc = "{"]
-    #[doc = "  \"oneOf\": ["]
-    #[doc = "    {},"]
-    #[doc = "    {"]
-    #[doc = "      \"$ref\": \"#/components/schemas/SyncOpts\""]
-    #[doc = "    }"]
-    #[doc = "  ]"]
-    #[doc = "}"]
-    #[doc = r" ```"]
-    #[doc = r" </details>"]
-    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
-    #[serde(untagged)]
-    pub enum SyncPullBody {
-        Variant0(::serde_json::Value),
-        Variant1(SyncOpts),
-    }
-    impl ::std::convert::From<::serde_json::Value> for SyncPullBody {
-        fn from(value: ::serde_json::Value) -> Self {
-            Self::Variant0(value)
-        }
-    }
-    impl ::std::convert::From<SyncOpts> for SyncPullBody {
-        fn from(value: SyncOpts) -> Self {
-            Self::Variant1(value)
         }
     }
     #[doc = "Outcome of a pull (provider → local)."]
@@ -12510,37 +12024,6 @@ pub mod types {
     impl SyncPullReport {
         pub fn builder() -> builder::SyncPullReport {
             Default::default()
-        }
-    }
-    #[doc = "`SyncPushBody`"]
-    #[doc = r""]
-    #[doc = r" <details><summary>JSON schema</summary>"]
-    #[doc = r""]
-    #[doc = r" ```json"]
-    #[doc = "{"]
-    #[doc = "  \"oneOf\": ["]
-    #[doc = "    {},"]
-    #[doc = "    {"]
-    #[doc = "      \"$ref\": \"#/components/schemas/SyncOpts\""]
-    #[doc = "    }"]
-    #[doc = "  ]"]
-    #[doc = "}"]
-    #[doc = r" ```"]
-    #[doc = r" </details>"]
-    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
-    #[serde(untagged)]
-    pub enum SyncPushBody {
-        Variant0(::serde_json::Value),
-        Variant1(SyncOpts),
-    }
-    impl ::std::convert::From<::serde_json::Value> for SyncPushBody {
-        fn from(value: ::serde_json::Value) -> Self {
-            Self::Variant0(value)
-        }
-    }
-    impl ::std::convert::From<SyncOpts> for SyncPushBody {
-        fn from(value: SyncOpts) -> Self {
-            Self::Variant1(value)
         }
     }
     #[doc = "Outcome of a push (local → provider)."]
@@ -12714,12 +12197,7 @@ pub mod types {
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"conflict_policy\": {"]
-    #[doc = "      \"oneOf\": ["]
-    #[doc = "        {},"]
-    #[doc = "        {"]
-    #[doc = "          \"$ref\": \"#/components/schemas/ConflictPolicy\""]
-    #[doc = "        }"]
-    #[doc = "      ]"]
+    #[doc = "      \"$ref\": \"#/components/schemas/ConflictPolicy\""]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -12730,7 +12208,7 @@ pub mod types {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub auto_sync_enabled: ::std::option::Option<bool>,
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub conflict_policy: ::std::option::Option<SyncSettingsPatchConflictPolicy>,
+        pub conflict_policy: ::std::option::Option<ConflictPolicy>,
     }
     impl ::std::default::Default for SyncSettingsPatch {
         fn default() -> Self {
@@ -12743,37 +12221,6 @@ pub mod types {
     impl SyncSettingsPatch {
         pub fn builder() -> builder::SyncSettingsPatch {
             Default::default()
-        }
-    }
-    #[doc = "`SyncSettingsPatchConflictPolicy`"]
-    #[doc = r""]
-    #[doc = r" <details><summary>JSON schema</summary>"]
-    #[doc = r""]
-    #[doc = r" ```json"]
-    #[doc = "{"]
-    #[doc = "  \"oneOf\": ["]
-    #[doc = "    {},"]
-    #[doc = "    {"]
-    #[doc = "      \"$ref\": \"#/components/schemas/ConflictPolicy\""]
-    #[doc = "    }"]
-    #[doc = "  ]"]
-    #[doc = "}"]
-    #[doc = r" ```"]
-    #[doc = r" </details>"]
-    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
-    #[serde(untagged)]
-    pub enum SyncSettingsPatchConflictPolicy {
-        Variant0(::serde_json::Value),
-        Variant1(ConflictPolicy),
-    }
-    impl ::std::convert::From<::serde_json::Value> for SyncSettingsPatchConflictPolicy {
-        fn from(value: ::serde_json::Value) -> Self {
-            Self::Variant0(value)
-        }
-    }
-    impl ::std::convert::From<ConflictPolicy> for SyncSettingsPatchConflictPolicy {
-        fn from(value: ConflictPolicy) -> Self {
-            Self::Variant1(value)
         }
     }
     #[doc = "System-wide rollup for the console header."]
@@ -13320,37 +12767,6 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "`TestAdapterBody`"]
-    #[doc = r""]
-    #[doc = r" <details><summary>JSON schema</summary>"]
-    #[doc = r""]
-    #[doc = r" ```json"]
-    #[doc = "{"]
-    #[doc = "  \"oneOf\": ["]
-    #[doc = "    {},"]
-    #[doc = "    {"]
-    #[doc = "      \"$ref\": \"#/components/schemas/TestAdapterRequest\""]
-    #[doc = "    }"]
-    #[doc = "  ]"]
-    #[doc = "}"]
-    #[doc = r" ```"]
-    #[doc = r" </details>"]
-    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
-    #[serde(untagged)]
-    pub enum TestAdapterBody {
-        Variant0(::serde_json::Value),
-        Variant1(TestAdapterRequest),
-    }
-    impl ::std::convert::From<::serde_json::Value> for TestAdapterBody {
-        fn from(value: ::serde_json::Value) -> Self {
-            Self::Variant0(value)
-        }
-    }
-    impl ::std::convert::From<TestAdapterRequest> for TestAdapterBody {
-        fn from(value: TestAdapterRequest) -> Self {
-            Self::Variant1(value)
-        }
-    }
     #[doc = "`TestAdapterRequest`"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -13506,12 +12922,7 @@ pub mod types {
     #[doc = "      \"$ref\": \"#/components/schemas/ScanMode\""]
     #[doc = "    },"]
     #[doc = "    \"provider_id\": {"]
-    #[doc = "      \"oneOf\": ["]
-    #[doc = "        {},"]
-    #[doc = "        {"]
-    #[doc = "          \"$ref\": \"#/components/schemas/ProviderId\""]
-    #[doc = "        }"]
-    #[doc = "      ]"]
+    #[doc = "      \"$ref\": \"#/components/schemas/ProviderId\""]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -13521,42 +12932,11 @@ pub mod types {
     pub struct TriggerScan {
         pub mode: ScanMode,
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub provider_id: ::std::option::Option<TriggerScanProviderId>,
+        pub provider_id: ::std::option::Option<ProviderId>,
     }
     impl TriggerScan {
         pub fn builder() -> builder::TriggerScan {
             Default::default()
-        }
-    }
-    #[doc = "`TriggerScanProviderId`"]
-    #[doc = r""]
-    #[doc = r" <details><summary>JSON schema</summary>"]
-    #[doc = r""]
-    #[doc = r" ```json"]
-    #[doc = "{"]
-    #[doc = "  \"oneOf\": ["]
-    #[doc = "    {},"]
-    #[doc = "    {"]
-    #[doc = "      \"$ref\": \"#/components/schemas/ProviderId\""]
-    #[doc = "    }"]
-    #[doc = "  ]"]
-    #[doc = "}"]
-    #[doc = r" ```"]
-    #[doc = r" </details>"]
-    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
-    #[serde(untagged)]
-    pub enum TriggerScanProviderId {
-        Variant0(::serde_json::Value),
-        Variant1(ProviderId),
-    }
-    impl ::std::convert::From<::serde_json::Value> for TriggerScanProviderId {
-        fn from(value: ::serde_json::Value) -> Self {
-            Self::Variant0(value)
-        }
-    }
-    impl ::std::convert::From<ProviderId> for TriggerScanProviderId {
-        fn from(value: ProviderId) -> Self {
-            Self::Variant1(value)
         }
     }
     #[doc = "One operator-tunable value in the recommendation pipeline.\n\nEvery value is transported and stored as `f64` regardless of what it means; the registry\nsupplies the typing and the readers clamp. A typed column per kind would buy nothing and\ncost a schema change per knob."]
@@ -14254,7 +13634,7 @@ pub mod types {
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
     #[doc = "    \"politeness\": {"]
-    #[doc = "      \"$ref\": \"#/components/schemas/Politeness\""]
+    #[doc = "      \"$ref\": \"#/components/schemas/PolitenessInput\""]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -14267,7 +13647,7 @@ pub mod types {
         pub config: ::std::option::Option<::serde_json::Value>,
         pub name: ::std::string::String,
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub politeness: ::std::option::Option<Politeness>,
+        pub politeness: ::std::option::Option<PolitenessInput>,
     }
     impl UpdateProvider {
         pub fn builder() -> builder::UpdateProvider {
@@ -14715,12 +14095,7 @@ pub mod types {
     #[doc = "      }"]
     #[doc = "    },"]
     #[doc = "    \"status\": {"]
-    #[doc = "      \"oneOf\": ["]
-    #[doc = "        {},"]
-    #[doc = "        {"]
-    #[doc = "          \"$ref\": \"#/components/schemas/WatchStatus\""]
-    #[doc = "        }"]
-    #[doc = "      ]"]
+    #[doc = "      \"$ref\": \"#/components/schemas/WatchStatus\""]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -14733,42 +14108,11 @@ pub mod types {
         pub notify: ::std::option::Option<bool>,
         pub series_ids: ::std::vec::Vec<SeriesId>,
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub status: ::std::option::Option<WatchlistBulkUpdateStatus>,
+        pub status: ::std::option::Option<WatchStatus>,
     }
     impl WatchlistBulkUpdate {
         pub fn builder() -> builder::WatchlistBulkUpdate {
             Default::default()
-        }
-    }
-    #[doc = "`WatchlistBulkUpdateStatus`"]
-    #[doc = r""]
-    #[doc = r" <details><summary>JSON schema</summary>"]
-    #[doc = r""]
-    #[doc = r" ```json"]
-    #[doc = "{"]
-    #[doc = "  \"oneOf\": ["]
-    #[doc = "    {},"]
-    #[doc = "    {"]
-    #[doc = "      \"$ref\": \"#/components/schemas/WatchStatus\""]
-    #[doc = "    }"]
-    #[doc = "  ]"]
-    #[doc = "}"]
-    #[doc = r" ```"]
-    #[doc = r" </details>"]
-    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
-    #[serde(untagged)]
-    pub enum WatchlistBulkUpdateStatus {
-        Variant0(::serde_json::Value),
-        Variant1(WatchStatus),
-    }
-    impl ::std::convert::From<::serde_json::Value> for WatchlistBulkUpdateStatus {
-        fn from(value: ::serde_json::Value) -> Self {
-            Self::Variant0(value)
-        }
-    }
-    impl ::std::convert::From<WatchStatus> for WatchlistBulkUpdateStatus {
-        fn from(value: WatchStatus) -> Self {
-            Self::Variant1(value)
         }
     }
     #[doc = "Entry counts per status, for the tab strip."]
@@ -14848,12 +14192,7 @@ pub mod types {
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"entry\": {"]
-    #[doc = "      \"oneOf\": ["]
-    #[doc = "        {},"]
-    #[doc = "        {"]
-    #[doc = "          \"$ref\": \"#/components/schemas/WatchlistItem\""]
-    #[doc = "        }"]
-    #[doc = "      ]"]
+    #[doc = "      \"$ref\": \"#/components/schemas/WatchlistItem\""]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -14862,7 +14201,7 @@ pub mod types {
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct WatchlistEntryView {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub entry: ::std::option::Option<WatchlistEntryViewEntry>,
+        pub entry: ::std::option::Option<WatchlistItem>,
     }
     impl ::std::default::Default for WatchlistEntryView {
         fn default() -> Self {
@@ -14874,37 +14213,6 @@ pub mod types {
     impl WatchlistEntryView {
         pub fn builder() -> builder::WatchlistEntryView {
             Default::default()
-        }
-    }
-    #[doc = "`WatchlistEntryViewEntry`"]
-    #[doc = r""]
-    #[doc = r" <details><summary>JSON schema</summary>"]
-    #[doc = r""]
-    #[doc = r" ```json"]
-    #[doc = "{"]
-    #[doc = "  \"oneOf\": ["]
-    #[doc = "    {},"]
-    #[doc = "    {"]
-    #[doc = "      \"$ref\": \"#/components/schemas/WatchlistItem\""]
-    #[doc = "    }"]
-    #[doc = "  ]"]
-    #[doc = "}"]
-    #[doc = r" ```"]
-    #[doc = r" </details>"]
-    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
-    #[serde(untagged)]
-    pub enum WatchlistEntryViewEntry {
-        Variant0(::serde_json::Value),
-        Variant1(WatchlistItem),
-    }
-    impl ::std::convert::From<::serde_json::Value> for WatchlistEntryViewEntry {
-        fn from(value: ::serde_json::Value) -> Self {
-            Self::Variant0(value)
-        }
-    }
-    impl ::std::convert::From<WatchlistItem> for WatchlistEntryViewEntry {
-        fn from(value: WatchlistItem) -> Self {
-            Self::Variant1(value)
         }
     }
     #[doc = "One release-recency band's aggregates, for a group header."]
@@ -15004,12 +14312,7 @@ pub mod types {
     #[doc = "      \"format\": \"double\""]
     #[doc = "    },"]
     #[doc = "    \"next_unread\": {"]
-    #[doc = "      \"oneOf\": ["]
-    #[doc = "        {},"]
-    #[doc = "        {"]
-    #[doc = "          \"$ref\": \"#/components/schemas/NextUnread\""]
-    #[doc = "        }"]
-    #[doc = "      ]"]
+    #[doc = "      \"$ref\": \"#/components/schemas/NextUnread\""]
     #[doc = "    },"]
     #[doc = "    \"notify\": {"]
     #[doc = "      \"type\": \"boolean\""]
@@ -15093,7 +14396,7 @@ pub mod types {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub latest_chapter_number: ::std::option::Option<f64>,
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub next_unread: ::std::option::Option<WatchlistItemNextUnread>,
+        pub next_unread: ::std::option::Option<NextUnread>,
         pub notify: bool,
         #[doc = "The source this reader pinned for this series, or `null` to follow the global order.\n\nThe reader's explicit choice, and not the same question as\n[`Self::preferred_source_name`], which stays the derived richest source the ledger row\ndisplays. Set through `PUT /v1/me/watchlist/{series_id}/source-pin`."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
@@ -15123,37 +14426,6 @@ pub mod types {
     impl WatchlistItem {
         pub fn builder() -> builder::WatchlistItem {
             Default::default()
-        }
-    }
-    #[doc = "`WatchlistItemNextUnread`"]
-    #[doc = r""]
-    #[doc = r" <details><summary>JSON schema</summary>"]
-    #[doc = r""]
-    #[doc = r" ```json"]
-    #[doc = "{"]
-    #[doc = "  \"oneOf\": ["]
-    #[doc = "    {},"]
-    #[doc = "    {"]
-    #[doc = "      \"$ref\": \"#/components/schemas/NextUnread\""]
-    #[doc = "    }"]
-    #[doc = "  ]"]
-    #[doc = "}"]
-    #[doc = r" ```"]
-    #[doc = r" </details>"]
-    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
-    #[serde(untagged)]
-    pub enum WatchlistItemNextUnread {
-        Variant0(::serde_json::Value),
-        Variant1(NextUnread),
-    }
-    impl ::std::convert::From<::serde_json::Value> for WatchlistItemNextUnread {
-        fn from(value: ::serde_json::Value) -> Self {
-            Self::Variant0(value)
-        }
-    }
-    impl ::std::convert::From<NextUnread> for WatchlistItemNextUnread {
-        fn from(value: NextUnread) -> Self {
-            Self::Variant1(value)
         }
     }
     #[doc = "One provider carrying a series, for the ledger's `Sources` column."]
@@ -16530,7 +15802,7 @@ pub mod types {
         #[derive(Clone, Debug)]
         pub struct CancelScansBody {
             mode: ::std::result::Result<
-                ::std::option::Option<super::CancelScansBodyMode>,
+                ::std::option::Option<super::ScanMode>,
                 ::std::string::String,
             >,
             provider: ::std::result::Result<
@@ -16549,7 +15821,7 @@ pub mod types {
         impl CancelScansBody {
             pub fn mode<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<super::CancelScansBodyMode>>,
+                T: ::std::convert::TryInto<::std::option::Option<super::ScanMode>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.mode = value
@@ -17389,7 +16661,7 @@ pub mod types {
                 ::std::string::String,
             >,
             run_id: ::std::result::Result<
-                ::std::option::Option<super::ClearFailuresBodyRunId>,
+                ::std::option::Option<super::ScanRunId>,
                 ::std::string::String,
             >,
             since: ::std::result::Result<
@@ -17441,7 +16713,7 @@ pub mod types {
             }
             pub fn run_id<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<super::ClearFailuresBodyRunId>>,
+                T: ::std::convert::TryInto<::std::option::Option<super::ScanRunId>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.run_id = value
@@ -17972,7 +17244,7 @@ pub mod types {
             >,
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
             politeness: ::std::result::Result<
-                ::std::option::Option<super::Politeness>,
+                ::std::option::Option<super::PolitenessInput>,
                 ::std::string::String,
             >,
             slug: ::std::result::Result<::std::string::String, ::std::string::String>,
@@ -18032,7 +17304,7 @@ pub mod types {
             }
             pub fn politeness<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<super::Politeness>>,
+                T: ::std::convert::TryInto<::std::option::Option<super::PolitenessInput>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.politeness = value
@@ -20732,7 +20004,7 @@ pub mod types {
         #[derive(Clone, Debug)]
         pub struct MergeDecision {
             absorbed_id: ::std::result::Result<
-                ::std::option::Option<super::MergeDecisionAbsorbedId>,
+                ::std::option::Option<super::SeriesId>,
                 ::std::string::String,
             >,
             actor:
@@ -20779,7 +20051,7 @@ pub mod types {
                 ::std::string::String,
             >,
             survivor_id: ::std::result::Result<
-                ::std::option::Option<super::MergeDecisionSurvivorId>,
+                ::std::option::Option<super::SeriesId>,
                 ::std::string::String,
             >,
             sweep_id:
@@ -20827,7 +20099,7 @@ pub mod types {
         impl MergeDecision {
             pub fn absorbed_id<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<super::MergeDecisionAbsorbedId>>,
+                T: ::std::convert::TryInto<::std::option::Option<super::SeriesId>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.absorbed_id = value
@@ -21057,7 +20329,7 @@ pub mod types {
             }
             pub fn survivor_id<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<super::MergeDecisionSurvivorId>>,
+                T: ::std::convert::TryInto<::std::option::Option<super::SeriesId>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.survivor_id = value
@@ -21726,7 +20998,7 @@ pub mod types {
                 ::std::string::String,
             >,
             security_key: ::std::result::Result<
-                ::std::option::Option<super::MfaVerifyRequestSecurityKey>,
+                ::std::option::Option<super::SecurityKeyAssertion>,
                 ::std::string::String,
             >,
             totp_code: ::std::result::Result<
@@ -21767,9 +21039,7 @@ pub mod types {
             }
             pub fn security_key<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<super::MfaVerifyRequestSecurityKey>,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<super::SecurityKeyAssertion>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.security_key = value
@@ -23188,7 +22458,7 @@ pub mod types {
             crawl_delay_ms:
                 ::std::result::Result<::std::option::Option<i64>, ::std::string::String>,
             emulation: ::std::result::Result<
-                ::std::option::Option<super::PolitenessEmulation>,
+                ::std::option::Option<super::BrowserEmulation>,
                 ::std::string::String,
             >,
             rps: ::std::result::Result<::std::option::Option<f64>, ::std::string::String>,
@@ -23231,7 +22501,7 @@ pub mod types {
             }
             pub fn emulation<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<super::PolitenessEmulation>>,
+                T: ::std::convert::TryInto<::std::option::Option<super::BrowserEmulation>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.emulation = value
@@ -23276,6 +22546,109 @@ pub mod types {
         }
         impl ::std::convert::From<super::Politeness> for Politeness {
             fn from(value: super::Politeness) -> Self {
+                Self {
+                    concurrency: Ok(value.concurrency),
+                    crawl_delay_ms: Ok(value.crawl_delay_ms),
+                    emulation: Ok(value.emulation),
+                    rps: Ok(value.rps),
+                    user_agent: Ok(value.user_agent),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct PolitenessInput {
+            concurrency: ::std::result::Result<::std::option::Option<i32>, ::std::string::String>,
+            crawl_delay_ms:
+                ::std::result::Result<::std::option::Option<i64>, ::std::string::String>,
+            emulation: ::std::result::Result<
+                ::std::option::Option<super::BrowserEmulation>,
+                ::std::string::String,
+            >,
+            rps: ::std::result::Result<::std::option::Option<f64>, ::std::string::String>,
+            user_agent: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+        impl ::std::default::Default for PolitenessInput {
+            fn default() -> Self {
+                Self {
+                    concurrency: Ok(Default::default()),
+                    crawl_delay_ms: Ok(Default::default()),
+                    emulation: Ok(Default::default()),
+                    rps: Ok(Default::default()),
+                    user_agent: Ok(Default::default()),
+                }
+            }
+        }
+        impl PolitenessInput {
+            pub fn concurrency<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<i32>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.concurrency = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for concurrency: {e}"));
+                self
+            }
+            pub fn crawl_delay_ms<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<i64>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.crawl_delay_ms = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for crawl_delay_ms: {e}")
+                });
+                self
+            }
+            pub fn emulation<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<super::BrowserEmulation>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.emulation = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for emulation: {e}"));
+                self
+            }
+            pub fn rps<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<f64>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.rps = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for rps: {e}"));
+                self
+            }
+            pub fn user_agent<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.user_agent = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for user_agent: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<PolitenessInput> for super::PolitenessInput {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: PolitenessInput,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    concurrency: value.concurrency?,
+                    crawl_delay_ms: value.crawl_delay_ms?,
+                    emulation: value.emulation?,
+                    rps: value.rps?,
+                    user_agent: value.user_agent?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::PolitenessInput> for PolitenessInput {
+            fn from(value: super::PolitenessInput) -> Self {
                 Self {
                     concurrency: Ok(value.concurrency),
                     crawl_delay_ms: Ok(value.crawl_delay_ms),
@@ -23940,7 +23313,7 @@ pub mod types {
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
             politeness: ::std::result::Result<super::Politeness, ::std::string::String>,
             preset: ::std::result::Result<
-                ::std::option::Option<super::ProviderPreset>,
+                ::std::option::Option<super::PresetLink>,
                 ::std::string::String,
             >,
             slug: ::std::result::Result<::std::string::String, ::std::string::String>,
@@ -24048,7 +23421,7 @@ pub mod types {
             }
             pub fn preset<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<super::ProviderPreset>>,
+                T: ::std::convert::TryInto<::std::option::Option<super::PresetLink>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.preset = value
@@ -24876,7 +24249,7 @@ pub mod types {
         #[derive(Clone, Debug)]
         pub struct Recommendation {
             because_series_id: ::std::result::Result<
-                ::std::option::Option<super::RecommendationBecauseSeriesId>,
+                ::std::option::Option<super::SeriesId>,
                 ::std::string::String,
             >,
             because_title: ::std::result::Result<
@@ -24934,9 +24307,7 @@ pub mod types {
         impl Recommendation {
             pub fn because_series_id<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<super::RecommendationBecauseSeriesId>,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<super::SeriesId>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.because_series_id = value.try_into().map_err(|e| {
@@ -26346,7 +25717,7 @@ pub mod types {
             id: ::std::result::Result<super::ScanRunId, ::std::string::String>,
             mode: ::std::result::Result<super::ScanMode, ::std::string::String>,
             provider_id: ::std::result::Result<
-                ::std::option::Option<super::ScanRunProviderId>,
+                ::std::option::Option<super::ProviderId>,
                 ::std::string::String,
             >,
             provider_slug: ::std::result::Result<
@@ -26440,7 +25811,7 @@ pub mod types {
             }
             pub fn provider_id<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<super::ScanRunProviderId>>,
+                T: ::std::convert::TryInto<::std::option::Option<super::ProviderId>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.provider_id = value
@@ -26923,10 +26294,8 @@ pub mod types {
             stage_total: ::std::result::Result<::std::option::Option<i32>, ::std::string::String>,
             state: ::std::result::Result<super::TaskState, ::std::string::String>,
             target: ::std::result::Result<super::Value, ::std::string::String>,
-            telemetry: ::std::result::Result<
-                ::std::option::Option<super::ScanTaskDetailViewTelemetry>,
-                ::std::string::String,
-            >,
+            telemetry:
+                ::std::result::Result<::std::option::Option<super::Value>, ::std::string::String>,
             wait_ms: ::std::result::Result<::std::option::Option<i32>, ::std::string::String>,
             worker_id: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
@@ -27110,9 +26479,7 @@ pub mod types {
             }
             pub fn telemetry<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<super::ScanTaskDetailViewTelemetry>,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<super::Value>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.telemetry = value
@@ -29709,7 +29076,7 @@ pub mod types {
             run_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
             scope: ::std::result::Result<::std::string::String, ::std::string::String>,
             series_id: ::std::result::Result<
-                ::std::option::Option<super::SyncDecisionSeriesId>,
+                ::std::option::Option<super::SeriesId>,
                 ::std::string::String,
             >,
             series_title: ::std::result::Result<
@@ -30010,7 +29377,7 @@ pub mod types {
             }
             pub fn series_id<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<super::SyncDecisionSeriesId>>,
+                T: ::std::convert::TryInto<::std::option::Option<super::SeriesId>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.series_id = value
@@ -30313,7 +29680,7 @@ pub mod types {
         #[derive(Clone, Debug)]
         pub struct SyncOpts {
             policy: ::std::result::Result<
-                ::std::option::Option<super::SyncOptsPolicy>,
+                ::std::option::Option<super::ConflictPolicy>,
                 ::std::string::String,
             >,
         }
@@ -30327,7 +29694,7 @@ pub mod types {
         impl SyncOpts {
             pub fn policy<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<super::SyncOptsPolicy>>,
+                T: ::std::convert::TryInto<::std::option::Option<super::ConflictPolicy>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.policy = value
@@ -30673,7 +30040,7 @@ pub mod types {
             auto_sync_enabled:
                 ::std::result::Result<::std::option::Option<bool>, ::std::string::String>,
             conflict_policy: ::std::result::Result<
-                ::std::option::Option<super::SyncSettingsPatchConflictPolicy>,
+                ::std::option::Option<super::ConflictPolicy>,
                 ::std::string::String,
             >,
         }
@@ -30698,9 +30065,7 @@ pub mod types {
             }
             pub fn conflict_policy<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<super::SyncSettingsPatchConflictPolicy>,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<super::ConflictPolicy>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.conflict_policy = value.try_into().map_err(|e| {
@@ -31660,7 +31025,7 @@ pub mod types {
         pub struct TriggerScan {
             mode: ::std::result::Result<super::ScanMode, ::std::string::String>,
             provider_id: ::std::result::Result<
-                ::std::option::Option<super::TriggerScanProviderId>,
+                ::std::option::Option<super::ProviderId>,
                 ::std::string::String,
             >,
         }
@@ -31685,7 +31050,7 @@ pub mod types {
             }
             pub fn provider_id<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<super::TriggerScanProviderId>>,
+                T: ::std::convert::TryInto<::std::option::Option<super::ProviderId>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.provider_id = value
@@ -32035,7 +31400,7 @@ pub mod types {
             >,
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
             politeness: ::std::result::Result<
-                ::std::option::Option<super::Politeness>,
+                ::std::option::Option<super::PolitenessInput>,
                 ::std::string::String,
             >,
         }
@@ -32082,7 +31447,7 @@ pub mod types {
             }
             pub fn politeness<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<super::Politeness>>,
+                T: ::std::convert::TryInto<::std::option::Option<super::PolitenessInput>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.politeness = value
@@ -32543,7 +31908,7 @@ pub mod types {
             series_ids:
                 ::std::result::Result<::std::vec::Vec<super::SeriesId>, ::std::string::String>,
             status: ::std::result::Result<
-                ::std::option::Option<super::WatchlistBulkUpdateStatus>,
+                ::std::option::Option<super::WatchStatus>,
                 ::std::string::String,
             >,
         }
@@ -32579,7 +31944,7 @@ pub mod types {
             }
             pub fn status<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<super::WatchlistBulkUpdateStatus>>,
+                T: ::std::convert::TryInto<::std::option::Option<super::WatchStatus>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.status = value
@@ -32736,7 +32101,7 @@ pub mod types {
         #[derive(Clone, Debug)]
         pub struct WatchlistEntryView {
             entry: ::std::result::Result<
-                ::std::option::Option<super::WatchlistEntryViewEntry>,
+                ::std::option::Option<super::WatchlistItem>,
                 ::std::string::String,
             >,
         }
@@ -32750,7 +32115,7 @@ pub mod types {
         impl WatchlistEntryView {
             pub fn entry<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<super::WatchlistEntryViewEntry>>,
+                T: ::std::convert::TryInto<::std::option::Option<super::WatchlistItem>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.entry = value
@@ -32860,7 +32225,7 @@ pub mod types {
             latest_chapter_number:
                 ::std::result::Result<::std::option::Option<f64>, ::std::string::String>,
             next_unread: ::std::result::Result<
-                ::std::option::Option<super::WatchlistItemNextUnread>,
+                ::std::option::Option<super::NextUnread>,
                 ::std::string::String,
             >,
             notify: ::std::result::Result<bool, ::std::string::String>,
@@ -32962,7 +32327,7 @@ pub mod types {
             }
             pub fn next_unread<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<super::WatchlistItemNextUnread>>,
+                T: ::std::convert::TryInto<::std::option::Option<super::NextUnread>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.next_unread = value
@@ -34587,7 +33952,7 @@ pub mod builder {
     #[derive(Debug, Clone)]
     pub struct ListCatalogue<'a> {
         client: &'a super::Client,
-        health: Result<Option<types::ListCatalogueHealth>, String>,
+        health: Result<Option<types::HealthFilter>, String>,
         limit: Result<Option<i64>, String>,
         offset: Result<Option<i64>, String>,
         provider: Result<Option<::std::string::String>, String>,
@@ -34606,12 +33971,12 @@ pub mod builder {
         }
         pub fn health<V>(mut self, value: V) -> Self
         where
-            V: std::convert::TryInto<types::ListCatalogueHealth>,
+            V: std::convert::TryInto<types::HealthFilter>,
         {
             self.health = value
                 .try_into()
                 .map(Some)
-                .map_err(|_| "conversion to `ListCatalogueHealth` for health failed".to_string());
+                .map_err(|_| "conversion to `HealthFilter` for health failed".to_string());
             self
         }
         pub fn limit<V>(mut self, value: V) -> Self
@@ -36894,14 +36259,14 @@ pub mod builder {
     pub struct TestAdapter<'a> {
         client: &'a super::Client,
         id: Result<types::ProviderId, String>,
-        body: Result<types::TestAdapterBody, String>,
+        body: Result<types::builder::TestAdapterRequest, String>,
     }
     impl<'a> TestAdapter<'a> {
         pub fn new(client: &'a super::Client) -> Self {
             Self {
                 client: client,
                 id: Err("id was not initialized".to_string()),
-                body: Err("body was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
             }
         }
         pub fn id<V>(mut self, value: V) -> Self
@@ -36915,11 +36280,22 @@ pub mod builder {
         }
         pub fn body<V>(mut self, value: V) -> Self
         where
-            V: std::convert::TryInto<types::TestAdapterBody>,
+            V: std::convert::TryInto<types::TestAdapterRequest>,
+            <V as std::convert::TryInto<types::TestAdapterRequest>>::Error: std::fmt::Display,
         {
             self.body = value
                 .try_into()
-                .map_err(|_| "conversion to `TestAdapterBody` for body failed".to_string());
+                .map(From::from)
+                .map_err(|s| format!("conversion to `TestAdapterRequest` for body failed: {}", s));
+            self
+        }
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::TestAdapterRequest,
+                ) -> types::builder::TestAdapterRequest,
+        {
+            self.body = self.body.map(f);
             self
         }
         #[doc = "Sends a `POST` request to `/v1/admin/providers/{id}/test`"]
@@ -36928,7 +36304,9 @@ pub mod builder {
         ) -> Result<ResponseValue<::serde_json::Value>, Error<types::ProblemDetails>> {
             let Self { client, id, body } = self;
             let id = id.map_err(Error::InvalidRequest)?;
-            let body = body.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::TestAdapterRequest::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
             let url = format!(
                 "{}/v1/admin/providers/{}/test",
                 client.baseurl,
@@ -37638,12 +37016,12 @@ pub mod builder {
     pub struct ListScans<'a> {
         client: &'a super::Client,
         limit: Result<Option<i32>, String>,
-        mode: Result<Option<types::ListScansMode>, String>,
+        mode: Result<Option<types::ScanMode>, String>,
         offset: Result<Option<i32>, String>,
         provider: Result<Option<::std::string::String>, String>,
         since: Result<Option<::std::string::String>, String>,
         sort: Result<Option<types::ListScansSort>, String>,
-        state: Result<Option<types::ListScansState>, String>,
+        state: Result<Option<types::RunState>, String>,
     }
     impl<'a> ListScans<'a> {
         pub fn new(client: &'a super::Client) -> Self {
@@ -37670,12 +37048,12 @@ pub mod builder {
         }
         pub fn mode<V>(mut self, value: V) -> Self
         where
-            V: std::convert::TryInto<types::ListScansMode>,
+            V: std::convert::TryInto<types::ScanMode>,
         {
             self.mode = value
                 .try_into()
                 .map(Some)
-                .map_err(|_| "conversion to `ListScansMode` for mode failed".to_string());
+                .map_err(|_| "conversion to `ScanMode` for mode failed".to_string());
             self
         }
         pub fn offset<V>(mut self, value: V) -> Self
@@ -37718,12 +37096,12 @@ pub mod builder {
         }
         pub fn state<V>(mut self, value: V) -> Self
         where
-            V: std::convert::TryInto<types::ListScansState>,
+            V: std::convert::TryInto<types::RunState>,
         {
             self.state = value
                 .try_into()
                 .map(Some)
-                .map_err(|_| "conversion to `ListScansState` for state failed".to_string());
+                .map_err(|_| "conversion to `RunState` for state failed".to_string());
             self
         }
         #[doc = "Sends a `GET` request to `/v1/admin/scans`"]
@@ -45305,14 +44683,14 @@ pub mod builder {
     pub struct SyncPull<'a> {
         client: &'a super::Client,
         provider: Result<::std::string::String, String>,
-        body: Result<types::SyncPullBody, String>,
+        body: Result<types::builder::SyncOpts, String>,
     }
     impl<'a> SyncPull<'a> {
         pub fn new(client: &'a super::Client) -> Self {
             Self {
                 client: client,
                 provider: Err("provider was not initialized".to_string()),
-                body: Err("body was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
             }
         }
         pub fn provider<V>(mut self, value: V) -> Self
@@ -45326,11 +44704,20 @@ pub mod builder {
         }
         pub fn body<V>(mut self, value: V) -> Self
         where
-            V: std::convert::TryInto<types::SyncPullBody>,
+            V: std::convert::TryInto<types::SyncOpts>,
+            <V as std::convert::TryInto<types::SyncOpts>>::Error: std::fmt::Display,
         {
             self.body = value
                 .try_into()
-                .map_err(|_| "conversion to `SyncPullBody` for body failed".to_string());
+                .map(From::from)
+                .map_err(|s| format!("conversion to `SyncOpts` for body failed: {}", s));
+            self
+        }
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(types::builder::SyncOpts) -> types::builder::SyncOpts,
+        {
+            self.body = self.body.map(f);
             self
         }
         #[doc = "Sends a `POST` request to `/v1/me/sync/{provider}/pull`"]
@@ -45343,7 +44730,9 @@ pub mod builder {
                 body,
             } = self;
             let provider = provider.map_err(Error::InvalidRequest)?;
-            let body = body.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::SyncOpts::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
             let url = format!(
                 "{}/v1/me/sync/{}/pull",
                 client.baseurl,
@@ -45389,14 +44778,14 @@ pub mod builder {
     pub struct SyncPush<'a> {
         client: &'a super::Client,
         provider: Result<::std::string::String, String>,
-        body: Result<types::SyncPushBody, String>,
+        body: Result<types::builder::SyncOpts, String>,
     }
     impl<'a> SyncPush<'a> {
         pub fn new(client: &'a super::Client) -> Self {
             Self {
                 client: client,
                 provider: Err("provider was not initialized".to_string()),
-                body: Err("body was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
             }
         }
         pub fn provider<V>(mut self, value: V) -> Self
@@ -45410,11 +44799,20 @@ pub mod builder {
         }
         pub fn body<V>(mut self, value: V) -> Self
         where
-            V: std::convert::TryInto<types::SyncPushBody>,
+            V: std::convert::TryInto<types::SyncOpts>,
+            <V as std::convert::TryInto<types::SyncOpts>>::Error: std::fmt::Display,
         {
             self.body = value
                 .try_into()
-                .map_err(|_| "conversion to `SyncPushBody` for body failed".to_string());
+                .map(From::from)
+                .map_err(|s| format!("conversion to `SyncOpts` for body failed: {}", s));
+            self
+        }
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(types::builder::SyncOpts) -> types::builder::SyncOpts,
+        {
+            self.body = self.body.map(f);
             self
         }
         #[doc = "Sends a `POST` request to `/v1/me/sync/{provider}/push`"]
@@ -45427,7 +44825,9 @@ pub mod builder {
                 body,
             } = self;
             let provider = provider.map_err(Error::InvalidRequest)?;
-            let body = body.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::SyncOpts::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
             let url = format!(
                 "{}/v1/me/sync/{}/push",
                 client.baseurl,

@@ -905,6 +905,7 @@
       "badConcurrency": "Parallelität muss eine ganze Zahl sein.",
       "badConfig": "Die Konfiguration ist kein gültiges JSON: {message}",
       "badCrawlDelay": "Crawl-Verzögerung muss eine ganze Zahl in Millisekunden sein.",
+      "badEmulation": "Dieses Browser-Profil akzeptiert der Server nicht.",
       "badRps": "Anfragen/Sek. muss eine Zahl sein.",
       "blocked": "Blockierte Verknüpfungen",
       "blocklist": "Anbieter auf die Blockliste",

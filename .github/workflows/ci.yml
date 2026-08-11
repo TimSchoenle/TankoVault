@@ -82,7 +82,6 @@ jobs:
       full: ${{ steps.decide.outputs.full }}
       images: ${{ steps.decide.outputs.images }}
       arches: ${{ steps.depsscope.outputs.arches }}
-      wasm_arches: ${{ steps.depsscope.outputs.wasm_arches }}
       arm64: ${{ steps.depsscope.outputs.arm64 }}
       toolchain: ${{ steps.versions.outputs.toolchain }}
       msrv: ${{ steps.versions.outputs.msrv }}
@@ -258,17 +257,6 @@ jobs:
           else
             echo "arm64=false" >> "$GITHUB_OUTPUT"
             echo "arches=[${amd64}]" >> "$GITHUB_OUTPUT"
-          fi
-
-          # The wasm half follows a stricter rule than `arches`, because its export rule is
-          # stricter: `docker-wasm-deps` writes `frontend-deps-<arch>` on non-pull-request events
-          # only, with no release-pull-request tag to mirror `release-pr-deps`. So on *any* pull
-          # request its arm64 leg would compile for 9 minutes and publish nothing, and no job in
-          # this workflow reads that architecture — the frontend image is amd64 here.
-          if [ "$EVENT" != "pull_request" ] || [ "$FULL" = "true" ]; then
-            echo "wasm_arches=[${amd64},${arm64}]" >> "$GITHUB_OUTPUT"
-          else
-            echo "wasm_arches=[${amd64}]" >> "$GITHUB_OUTPUT"
           fi
 
       # Skipped on `schedule` and `workflow_dispatch`: those runs are already `full`, so every
@@ -1367,13 +1355,19 @@ jobs:
       # this step writes — which is precisely why it is a constant there. This build exports no
       # image, so the value clamps nothing here; it is set anyway so the tag stays readable by the
       # publishing legs in release-please.yaml, which do export one.
-      - name: cook dependency graph and compile every binary
+      # `build-cache`, so one export carries the musl chain *and* the wasm one under one tag. That
+      # is what keeps every consumer on a single lineage — see the stage's comment in
+      # `deploy/docker/Dockerfile` for the 43 minutes the second lineage cost `docker-frontend`
+      # on every run. `builder` and `wasm-builder` share no edge, so this stays one solve's worth
+      # of wall clock rather than two, and it replaces the `docker-wasm-deps` job that used to run
+      # beside it.
+      - name: cook both dependency graphs and compile every binary
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: deploy/docker/Dockerfile
           platforms: linux/${{ matrix.arch }}
-          target: builder
+          target: build-cache
           push: false
           outputs: type=cacheonly
           provenance: false
@@ -1388,67 +1382,6 @@ jobs:
             type=registry,ref=${{ needs.changes.outputs.buildcache }}:release-pr-deps-${{ matrix.arch }}
           # The tag comes from `changes`, which is where the rule for choosing it lives.
           cache-to: ${{ needs.changes.outputs.deps_scope != '' && format('type=registry,ref={0}:{1}-{2},mode=max,compression=zstd,image-manifest=true,oci-mediatypes=true', needs.changes.outputs.buildcache, needs.changes.outputs.deps_scope, matrix.arch) || '' }}
-
-  # The wasm half, warmed in the same shape as `docker-deps` and for the same reasons — read that
-  # job's comment for the arch-qualified scope and the pull-request `cache-to` rule.
-  #
-  # A separate job and tag rather than a `cache-to` on `docker-frontend`, because that image also
-  # consumes the Alpine `builder` — a `mode=max` export there would re-upload the whole backend
-  # cache under a second tag. GHCR will hold it, but every consumer then pulls a second copy of
-  # the one chain it already has, so the duplication costs wall clock on every leg that imports.
-  #
-  # The arm64 leg warms a cache no job in *this* workflow reads: the frontend image is built for
-  # amd64 only here. It exists for `release-please.yaml`, which publishes `frontend` for both
-  # architectures — and `cook-web` is arch-dependent despite emitting wasm, because `dx` and
-  # `cargo-chef` are compiled from source for the host.
-  #
-  # Not `needs: lint`, for the reason spelled out on `docker-deps`.
-  docker-wasm-deps:
-    name: docker build (wasm deps, ${{ matrix.arch }})
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 90
-    needs: [changes]
-    if: ${{ !cancelled() && !failure() && needs.changes.outputs.docker == 'true' }}
-    permissions:
-      contents: read # to check out the build context
-      packages: write # to export the layer cache to ghcr.io
-    strategy:
-      fail-fast: false
-      # `wasm_arches`, not `arches` — a stricter rule, for the reason `changes` gives.
-      matrix:
-        include: ${{ fromJSON(needs.changes.outputs.wasm_arches) }}
-    steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
-        with:
-          egress-policy: audit
-
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
-
-      - name: log in to GHCR
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: cook the wasm dependency graph
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
-        with:
-          context: .
-          file: deploy/docker/Dockerfile
-          platforms: linux/${{ matrix.arch }}
-          target: cook-web
-          push: false
-          outputs: type=cacheonly
-          provenance: false
-          cache-from: type=registry,ref=${{ needs.changes.outputs.buildcache }}:frontend-deps-${{ matrix.arch }}
-          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}:frontend-deps-{1},mode=max,compression=zstd,image-manifest=true,oci-mediatypes=true', needs.changes.outputs.buildcache, matrix.arch) || '' }}
 
   docker:
     name: docker build (${{ matrix.bin }})
@@ -1653,15 +1586,13 @@ jobs:
   docker-frontend:
     name: docker build (frontend)
     runs-on: ubuntu-latest
-    # 90, matching `docker-deps`, because this leg has the longest cold path in the workflow: it
-    # consumes both lineages, so with nothing to import it builds the backend `builder` chain *and*
-    # the wasm one. That happens whenever the Dockerfile itself changes, since a pull request
+    # 90, matching `docker-deps`, because this leg still has the workflow's longest cold path: it
+    # assembles both compile chains, so with nothing to import it builds `builder` *and*
+    # `wasm-builder`. That happens whenever the Dockerfile itself changes, since a pull request
     # exports no cache and `main`'s tag is then keyed on the old file — this job timed out at
     # exactly 45m00s on the change that fixed the toolchain mismatch, having built correctly.
     timeout-minutes: 90
-    # Both warm-ups: this image consumes both lineages — the musl binary from `backend-deps` and
-    # the SPA bundle from `frontend-deps`.
-    needs: [changes, lint, docker-deps, docker-wasm-deps]
+    needs: [changes, lint, docker-deps]
     if: ${{ !cancelled() && !failure() && needs.changes.outputs.docker == 'true' }}
     permissions:
       contents: read # to check out the build context
@@ -1698,13 +1629,19 @@ jobs:
           load: true
           tags: tankovault-frontend:ci
           provenance: false
-          # Import both warm-up tags, write neither: a `mode=max` export here re-uploads imported
-          # layers too, so it would publish a second copy of the whole backend chain under this
-          # image's own tag and every later import would pull it twice.
+          # The same two tags every other leg reads, in the same order, and **no third**: both are
+          # written from `build-cache`, so they describe one lineage covering both compile chains.
+          # Adding a second lineage back — which is what `frontend-deps-amd64` was — makes BuildKit
+          # resolve one and drop the other, and this leg then recompiles `cook` and `builder` from
+          # cold: 43 minutes here against under a minute for its nine siblings, on every run. The
+          # stage comment in `deploy/docker/Dockerfile` carries the measurement.
+          #
+          # Import only, write neither: a `mode=max` export here re-uploads imported layers too, so
+          # it would publish a second copy of the whole chain under this image's own tag and every
+          # later import would pull it twice.
           cache-from: |
             ${{ needs.changes.outputs.deps_scope != '' && format('type=registry,ref={0}:{1}-amd64', needs.changes.outputs.buildcache, needs.changes.outputs.deps_scope) || '' }}
             type=registry,ref=${{ needs.changes.outputs.buildcache }}:backend-deps-amd64
-            type=registry,ref=${{ needs.changes.outputs.buildcache }}:frontend-deps-amd64
 
       # Enforces the frontend image contract: non-root 1001:1001, the unprivileged 3000 port, the
       # entrypoint, the static-dir env var, and the server binary plus built SPA bundle.
@@ -1757,7 +1694,6 @@ jobs:
       - supply-chain
       - compose
       - docker-deps
-      - docker-wasm-deps
       - docker
       - docker-arm64
       - docker-frontend

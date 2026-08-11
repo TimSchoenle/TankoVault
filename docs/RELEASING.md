@@ -23,7 +23,7 @@ commit to main (conventional commits)
   └─ merge → release-please.yaml
         release-please    → creates the GitHub release for vX.Y.Z as a **draft**. No tag yet.
         ├─ plan (xtask release-plan: which images changed since each one's published tag)
-        │     └─ release-deps (2 legs: one `builder` compile per architecture)
+        │     └─ release-deps (2 legs: one `build-cache` compile per architecture)
         │           └─ build (2 legs per planned image: amd64 + arm64, native runners)
         │                 └─ manifest (1 job per planned image: list, cosign sign, SBOM attest)
         │                       └─ helm-release → chart bump PR against TimSchoenle/helm-charts
@@ -323,29 +323,46 @@ place would sit outside everything that keeps them in step.
 ## Build caching
 
 `cook` and `builder` are the entire wall clock of an image build, and `builder` takes no
-`ARG BIN` — so one compile per architecture serves every image. Three arch-qualified BuildKit
-cache tags on the GHCR `buildcache` repository carry it (a cache does not cross architectures;
-the `chef` base resolves to a different digest per platform, so every key downstream of it
-differs):
+`ARG BIN` — so one compile per architecture serves every image. Arch-qualified BuildKit cache tags
+on the GHCR `buildcache` repository carry it (a cache does not cross architectures; the `chef` base
+resolves to a different digest per platform, so every key downstream of it differs):
 
 | Tag | Written by | Read by |
 | --- | --- | --- |
 | `backend-deps-<arch>` | `ci.yml` `docker-deps`, off `main` only | every image build in both workflows |
-| `frontend-deps-<arch>` | `ci.yml` `docker-wasm-deps`, off `main` only | the `frontend` legs |
+| `pr-<number>-deps-<arch>` | `ci.yml` `docker-deps`, off an ordinary pull request | that pull request's own image legs |
+| `release-pr-deps-<arch>` | `ci.yml` `docker-deps`, off the release-please branch only | `release-please.yaml`'s warm-up |
 | `release-deps-<arch>` | `release-please.yaml` `release-deps` | the release legs |
+
+**Every one of them is written from the Dockerfile's `build-cache` target, and that is a contract
+rather than a coincidence.** `build-cache` names `builder` and `wasm-builder` in one stage, so a
+single `mode=max` export carries the musl chain and the wasm chain together and any one tag is a
+complete lineage on its own.
+
+The rule that makes it necessary: **a build that imports two registry cache lineages resolves one
+and drops the other**, then recompiles the dropped one from cold. `frontend` is the only image
+consuming both chains, so while the wasm half lived in its own `frontend-deps-<arch>` family it was
+the only leg that paid — and it paid every run, on every architecture: 43 minutes in `ci.yml`'s
+`docker build (frontend)` against under a minute for its nine siblings, 39 and 29 minutes in
+release v5.0.0's two `frontend` legs against one minute each. The logs show `cook-web` hitting and
+`cook` plus `builder` recompiling, against a tag a sibling leg had just read in full. So: one
+lineage, and no leg imports a tag written from a narrower target.
+
+Folding the two warm-ups into one costs nothing in wall clock — `builder` and `wasm-builder` share
+no edge, so BuildKit solves them concurrently — and it takes `dx build` off the `frontend` leg's
+critical path, since that leg now imports `wasm-builder` instead of running it.
 
 `release-deps` exists because both workflows fire on the push that merges the release PR, so the
 CI tags are still at the previous commit when the release legs start — and the release commit
 changes `Cargo.toml`, `Cargo.lock` and `CHANGELOG.md`, which misses `builder`'s `COPY . .`.
 Without the warm-up every leg recompiled the workspace independently.
 
-`SERVICE_BINS` is narrowed to the planned set, which drops a thin-LTO link (`codegen-units = 1`)
-for every image not being published. It comes from one place — `plan`'s `service_bins` output —
-and is passed to the warm-up and to both `build-push-action` calls in every leg. Those three have
-to stay the same string: the value is part of the `builder` layer's cache key, so a warm-up cooked
-under a different one is a cache the legs cannot read. It no longer matches `ci.yml`'s default,
-which costs nothing, because the release commit misses `backend-deps-<arch>`'s `COPY . .`
-regardless; `cook` sits above the ARG and still hits.
+`SERVICE_BINS` is left at the Dockerfile's default everywhere. Narrowing it to `plan`'s set saved a
+thin-LTO link per unpublished image and cost far more than it saved: the value is part of
+`builder`'s cache key, so a release warm-up cooked under a narrowed one could not read anything
+`ci.yml` writes — including `release-pr-deps-<arch>`, which is the same tree already compiled. The
+same rule governs `SOURCE_DATE_EPOCH` and `TANKOVAULT_COMMIT`: a build arg the warm-up does not
+pass is a build arg no leg may pass either.
 
 The `plan` job has **no** compilation cache, and that is the one place the rule below costs
 something real: `xtask` reaches the API crate, so building it compiles most of the backend from

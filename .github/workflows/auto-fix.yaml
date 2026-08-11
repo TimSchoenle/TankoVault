@@ -109,33 +109,17 @@ name: auto-fix
 # `too_many_lines` and the other suggestion-less clippy lints are excluded for the weaker version
 # of the same reason: no machine-applicable suggestion means no determined output.
 
+# **Unfiltered on purpose, and it must stay that way while this workflow reports a required
+# check.** The path filter that used to live here was a `paths:` on this trigger, and a trigger
+# GitHub declines to fire creates no run and therefore no check run — so `apply the mechanical
+# fixes` sat at "Expected — waiting for status to be reported" forever on any pull request that
+# touched no Rust. Not a slow check: an unreportable one, on a branch with nothing to fix.
+#
+# `ci.yml` says the same thing about its own gate and avoids it the same way: filter *inside* the
+# workflow, never at the trigger. `changes` below decides what this run has to do, and the gate at
+# the bottom reports the verdict whether or not anything ran.
 on:
   pull_request:
-    # The union of `ci.yml`'s `rust`, `notices` and `frontend` filters — the inputs the two
-    # lockfiles and the four artefacts are a function of. Directories, never `**/*.rs`, for the
-    # reason `ci.yml` gives: `web/frontend` is a separate workspace and a glob would silently
-    # couple the two.
-    #
-    # `update-lockfile` and `auto-format` ran unfiltered on every pull request. They no longer
-    # need to: a manifest that could move either lockfile lives under `crates/**`, `services/**`,
-    # `xtask/**`, `web/frontend/**` or the root `Cargo.toml`, and a pull request that touches none
-    # of these has no Rust to format either. Running a twenty-minute compile on a docs-only change
-    # is what the filter buys back.
-    paths:
-      - ".github/workflows/auto-fix.yaml"
-      - ".github/actions/**"
-      - "crates/**"
-      - "services/**"
-      - "xtask/**"
-      - "migrations/**"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "rust-toolchain.toml"
-      - "rustfmt.toml"
-      - "openapi.json"
-      - "about.toml"
-      - "THIRD-PARTY-NOTICES"
-      - "web/frontend/**"
 
 # One workflow, one group — see the block above for what the two- and three-member versions of
 # this group cost. `cancel-in-progress: false` because this job writes: a run cancelled mid-push
@@ -158,16 +142,72 @@ env:
   RUSTFLAGS: "-D warnings"
 
 jobs:
-  fix:
-    name: apply the mechanical fixes
+  # Whether this pull request contains anything the job below can act on. This is the filter that
+  # used to be a `paths:` on the trigger — see the note there for why it moved rather than went
+  # away. Cheap enough to run on every pull request, which is the point: it always reports.
+  changes:
+    name: what changed
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read # to check out the tree and diff it against the base
+    outputs:
+      relevant: ${{ steps.filter.outputs.fixable }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
+        with:
+          egress-policy: audit
+
+      # `fetch-depth: 0` because `persist-credentials: false` leaves `dorny/paths-filter` no token
+      # to fetch the base with; a full clone means it never needs one. Same reasoning as `ci.yml`.
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # The union of `ci.yml`'s `rust`, `notices` and `frontend` filters — the inputs the two
+      # lockfiles and the four artefacts are a function of. Directories, never `**/*.rs`, for the
+      # reason `ci.yml` gives: `web/frontend` is a separate workspace and a glob would silently
+      # couple the two.
+      #
+      # A pull request touching none of these has no lockfile to move and no Rust to format, so
+      # the twenty-minute compile below is skipped rather than run to discover it has nothing to
+      # do. That saving is what the old trigger filter bought, and it is kept here — what changed
+      # is only that the run still happens, and still reports.
+      - name: path filters
+        id: filter
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          filters: |
+            fixable:
+              - '.github/workflows/auto-fix.yaml'
+              - '.github/actions/**'
+              - 'crates/**'
+              - 'services/**'
+              - 'xtask/**'
+              - 'migrations/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'rust-toolchain.toml'
+              - 'rustfmt.toml'
+              - 'openapi.json'
+              - 'about.toml'
+              - 'THIRD-PARTY-NOTICES'
+              - 'web/frontend/**'
+
+  fix:
+    name: mechanical fixes
+    runs-on: ubuntu-latest
+    needs: [changes]
     # Generous: this job compiles the workspace under `--all-targets` for `clippy --fix`, checks it
     # again, and then builds `tankovault-api` for `xtask openapi`. Generous is not a budget to
     # spend — a run approaching it means something is rebuilding what the cache already holds.
     timeout-minutes: 60
     # Forks cannot read the app secrets, and a fork PR must not be able to make this repository
     # commit on its behalf. Skipping is correct: a fork's drift is the author's to fix.
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: ${{ needs.changes.outputs.relevant == 'true' && github.event.pull_request.head.repo.full_name == github.repository }}
     permissions: {}
     steps:
       - name: Harden Runner
@@ -451,3 +491,35 @@ jobs:
           token: ${{ steps.generate_token.outputs.token }}
           branch: ${{ github.event.pull_request.head.ref }}
           file_pattern: "Cargo.lock web/frontend/Cargo.lock crates services xtask fuzz openapi.json THIRD-PARTY-NOTICES web/frontend/src web/frontend/assets/main.css"
+
+  # **The name branch protection points at — point it here and nowhere else.** This job carries the
+  # required check because it is the only one that always runs: `fix` skips on a pull request with
+  # no Rust in it and on every fork, and a skipped job is a weaker promise to a ruleset than a job
+  # that ran and said so.
+  #
+  # `if: always()` rather than `success()`, which would inherit the skips. It fails only on a real
+  # `failure` or `cancelled`; a skipped `fix` is a pull request with nothing to fix, which is a
+  # pass. Same shape, and the same reasoning, as `ci.yml`'s `ci` gate.
+  auto-fix:
+    name: apply the mechanical fixes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: always()
+    needs: [changes, fix]
+    permissions: {}
+    steps:
+      - name: verdict
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          set -euo pipefail
+          echo "job results: $RESULTS"
+          for r in $RESULTS; do
+            case "$r" in
+              failure|cancelled)
+                echo "::error::a required job reported '$r'"
+                exit 1
+                ;;
+            esac
+          done
+          echo "All required jobs passed or were skipped as unaffected."

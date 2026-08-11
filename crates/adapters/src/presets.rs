@@ -390,8 +390,8 @@ fn custom_code() -> Vec<BuiltinPreset> {
                 ..Politeness::default()
             },
         },
-        // The reader host and the API host differ for both of these; `base_url` is the reader
-        // one so stored paths stay openable, and the adapters name the API absolutely.
+        // The reader host and the API host differ; `base_url` is the reader one so stored paths
+        // stay openable, and the adapter names the API absolutely.
         BuiltinPreset {
             slug: "mangadex",
             name: "MangaDex",
@@ -400,18 +400,6 @@ fn custom_code() -> Vec<BuiltinPreset> {
             config: json!({}),
             // The API documents ~5 requests/second per IP, enforced at the load balancer. At the
             // shipped two worker replicas this is 4 rps aggregate, comfortably inside it.
-            politeness: Politeness {
-                rps: 2.0,
-                concurrency: 4,
-                ..Politeness::default()
-            },
-        },
-        BuiltinPreset {
-            slug: "comick",
-            name: "ComicK",
-            base_url: "https://comick.dev",
-            adapter: AdapterKind::Custom,
-            config: json!({}),
             politeness: Politeness {
                 rps: 2.0,
                 concurrency: 4,

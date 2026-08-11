@@ -2,7 +2,6 @@
 //! [`GenericConfigAdapter`] drives config-driven providers from `providers.config` selectors.
 
 mod astro;
-mod comick;
 mod config;
 mod demonicscans;
 mod diagnostics;
@@ -23,7 +22,6 @@ mod types;
 mod webtoons;
 
 pub use astro::{AstroFlavour, AstroIslandAdapter};
-pub use comick::ComickAdapter;
 pub use config::AdapterConfig;
 pub use demonicscans::DemonicScansAdapter;
 pub use error::AdapterError;

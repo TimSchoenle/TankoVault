@@ -1,7 +1,6 @@
 //! Adapter construction: map a provider's `adapter` kind + `config` to a live adapter.
 
 use crate::astro::AstroIslandAdapter;
-use crate::comick::ComickAdapter;
 use crate::config::AdapterConfig;
 use crate::demonicscans::DemonicScansAdapter;
 use crate::error::AdapterError;
@@ -66,10 +65,9 @@ pub fn build_adapter(
                 madara_default_config(),
                 config,
             )?))),
-            // First-party JSON APIs. Both split the reader host from the API host, which is why
-            // neither is a config row: the requests go somewhere the `base_url` does not.
+            // First-party JSON API. It splits the reader host from the API host, which is why
+            // it is not a config row: the requests go somewhere the `base_url` does not.
             "mangadex" => Ok(Box::new(MangaDexAdapter::new())),
-            "comick" => Ok(Box::new(ComickAdapter::new())),
             // HeanCMS, whose chapter rows carry the paywall as `price`/`free_at`.
             "omegascans" => Ok(Box::new(HeanCmsAdapter::new(config)?)),
             // Astro islands: the chapter list, with its lock flags, is the island's props.

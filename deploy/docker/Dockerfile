@@ -204,6 +204,30 @@ RUN --mount=type=cache,id=tankovault-wasm-cargo-registry,target=/usr/local/cargo
     cp -r "${matches}/." /dist/; \
     test -f /dist/index.html || { echo "bundle missing index.html" >&2; exit 1; }
 
+# The warm-up target both workflows build. Nothing is published from it; it exists to be a cache.
+#
+# **A build that imports two registry cache lineages resolves one and drops the other**, and
+# BuildKit then re-runs the dropped lineage's vertices from cold. `frontend` is the only image
+# consuming both — the musl server binary from `builder`, the SPA bundle from `wasm-builder` — so
+# while the wasm half lived in a cache tag of its own it was the only leg that paid, and it paid
+# every run, on every architecture. Measured on the push that released v5.0.0: `ci.yml`'s
+# `docker build (frontend)` took 43 minutes against under a minute for each of its nine siblings,
+# and the release's two `frontend` legs took 39 and 29 against one minute each. All four logs show
+# the same thing — `cook-web` a cache hit, `cook` and `builder` recompiling — against a tag a
+# sibling leg had just read in full.
+#
+# Naming both stages here puts them in one solve, so one `mode=max` export carries both chains
+# under one tag and every consumer imports exactly one. That is the whole fix; the copies below
+# are only what forces the two stages into the graph.
+#
+# It is also strictly cheaper than the two warm-ups it replaces: `builder` and `wasm-builder`
+# share no edge, so BuildKit runs them concurrently and the warm-up's wall clock is the longer of
+# the two rather than their sum — and `dx build`, five minutes that used to sit on the `frontend`
+# leg's critical path, becomes an import there.
+FROM scratch AS build-cache
+COPY --from=builder /out/ /out/
+COPY --from=wasm-builder /dist/ /dist/
+
 # Debian + Chromium for the render tier (chromiumoxide, design §9); `scratch` can't host a browser.
 FROM debian:13-slim@sha256:3a39a0592364683e6bab97937b72cad5a8fa6dcbbee90edb3bb48c7f8e94f258 AS runtime-browser
 RUN apt-get update \

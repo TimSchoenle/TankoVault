@@ -41,6 +41,7 @@ pub struct TestConfig {
     webauthn: Option<tankovault_api::SharedRelyingParty>,
     legal: tankovault_config::LegalConfig,
     branding: tankovault_config::BrandingConfig,
+    client: tankovault_config::ClientConfig,
     step_up_max_ttl: Duration,
 }
 
@@ -68,6 +69,9 @@ impl Default for TestConfig {
             // The shipped identity, so `/v1/branding` assertions read as what a stock
             // deployment publishes.
             branding: tankovault_config::BrandingConfig::default(),
+            // The upstream channel, so `/v1/client` assertions read as what a stock deployment
+            // publishes.
+            client: tankovault_config::ClientConfig::default(),
             step_up_max_ttl: Duration::hours(1),
         }
     }
@@ -98,6 +102,13 @@ impl TestConfig {
     #[must_use]
     pub fn with_branding(mut self, branding: tankovault_config::BrandingConfig) -> Self {
         self.branding = branding;
+        self
+    }
+
+    /// Name a different client channel, as an operator's `[client]` section would.
+    #[must_use]
+    pub fn with_client(mut self, client: tankovault_config::ClientConfig) -> Self {
+        self.client = client;
         self
     }
 
@@ -252,6 +263,8 @@ impl TestApp {
             email_base_url: "http://localhost".to_owned(),
             legal: tankovault_api::LegalDocs::new(cfg.legal.clone()),
             branding: tankovault_api::Branding::new(cfg.branding.clone()),
+            client_channel: tankovault_api::ClientChannel::new(&cfg.client, "0.0.0")
+                .expect("the harness client channel resolves"),
             // Pass-through, not a short TTL: a test that seeds rows and reads a console rollup
             // back must see its own writes.
             system_stats: tankovault_api::Cached::uncached(),

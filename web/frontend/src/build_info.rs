@@ -25,10 +25,10 @@ pub(crate) const LICENCE: &str = "PolyForm Noncommercial 1.0.0";
 /// Both builds use it — the footer's source link and the desktop sheet's About tab — so it is
 /// one constant rather than a literal per call site.
 ///
-/// It deliberately does **not** feed `update::discover`, which names the same repository in its
-/// own constant. That one decides where an executable this app will *run* comes from, and the
-/// two must be changeable independently: a fork that repoints its links has not thereby earned
-/// the right to ship the update channel's binaries.
+/// It deliberately does **not** feed `update::channel`, whose fallback names the same repository
+/// in its own constant. That one decides where an executable this app will *run* comes from, and
+/// the two must be changeable independently: a fork that repoints its links has not thereby
+/// earned the right to ship the update channel's binaries.
 pub(crate) const PROJECT_URL: &str = "https://github.com/TimSchoenle/TankoVault";
 
 /// Where a reader downloads the native client. The `latest` alias rather than a version, because

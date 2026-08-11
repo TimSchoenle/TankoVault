@@ -271,6 +271,38 @@ under a running install would strand saved credentials and silence toasts rather
 anything. So do the repository's own metadata (`Cargo.toml`, `LICENSE`, `THIRD-PARTY-NOTICES`),
 which no runtime configuration can reach.
 
+### `client` — the native client's update channel
+
+Read by `api` only, which publishes it unauthenticated at `GET /v1/client`. Two decisions an
+installed desktop client cannot make for itself: **which repository** its releases come from, and
+**which client versions this deployment supports**.
+
+The version range is the reason the endpoint exists. Client and server speak one API and are cut
+from one repository at one version, so a client that updates past its server ends up talking to a
+deployment that has never heard of half of what it sends. The client honours the range as a
+ceiling and simply does not offer a release above it — and says so, rather than reporting itself
+up to date, so a reader can tell a held-back release from a broken updater.
+
+`GET /v1/client` stays open on a deployment with `accounts.required` on, for the same reason
+`/v1/branding` does: the updater runs from the moment the app starts, and behind the wall it would
+fall back to having no ceiling at all.
+
+| Key | Default | Notes |
+|---|---|---|
+| `TANKOVAULT_CLIENT__RELEASE_REPO` | `TimSchoenle/TankoVault` | The GitHub repository the native client reads its releases from, as `owner/name`. Blank publishes none, and the client then stays on whichever repository it was built with. Anything that is not `owner/name` **fails the boot**: the client interpolates it into an `api.github.com` path, checks the same shape on arrival, and discards a value that does not match — so a typo would otherwise be a channel nobody's client accepts. |
+| `TANKOVAULT_CLIENT__MIN_VERSION` | *(unset)* | The oldest client version this deployment supports. Unset means no floor. |
+| `TANKOVAULT_CLIENT__MAX_VERSION` | *(this build's version)* | The newest client version this deployment supports. Unset resolves to the running service's own version, which is the right answer for a deployment tracking releases. |
+
+Both bounds are plain `major.minor.patch`; a prerelease, a `v` prefix or a partial version fails
+the boot, because that is exactly the set the client compares against and a bound it discards is
+no bound.
+
+**Naming a repository here does not make the deployment a trust anchor.** The client verifies
+every release against a signing key compiled into it and refuses anything else, so the worst a
+server can name is a repository whose releases the client will then reject. A fork that ships its
+own installers therefore changes *both*: this setting, and the trusted keys its client is built
+with (`docs/RELEASING.md`).
+
 ### `features` — runtime feature-flag plumbing
 
 | Key | Default | Services | Notes |

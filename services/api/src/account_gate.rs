@@ -71,6 +71,9 @@ pub(crate) async fn enforce(State(state): State<AppState>, req: Request, next: N
 ///   falls back to the *shipped* identity, so a rebranded private deployment would greet every
 ///   visitor under this project's name. It publishes nothing a visitor could not read off the
 ///   page it is rendered on.
+/// - `/v1/client` — the desktop updater runs from the moment the app starts, so on a private
+///   deployment it would otherwise never learn which releases its own server supports, and would
+///   fall back to having no ceiling at all.
 ///
 /// `/v1/me/capabilities` is deliberately **not** here. It is the probe the web app gates its UI
 /// on, and its refusal is how a signed-out client learns this deployment is private at all: a
@@ -78,7 +81,10 @@ pub(crate) async fn enforce(State(state): State<AppState>, req: Request, next: N
 /// `401 unauthorized` means only that this particular session has ended. Exempting it would
 /// answer the same for both and leave the client unable to tell them apart.
 fn is_sign_in_surface(path: &str) -> bool {
-    path.starts_with("/v1/auth") || path.starts_with("/v1/legal") || path == "/v1/branding"
+    path.starts_with("/v1/auth")
+        || path.starts_with("/v1/legal")
+        || path == "/v1/branding"
+        || path == "/v1/client"
 }
 
 /// Whether the request presents an access token this deployment issued.
@@ -111,6 +117,7 @@ mod tests {
             "/v1/legal",
             "/v1/legal/{slug}",
             "/v1/branding",
+            "/v1/client",
         ] {
             assert!(
                 is_sign_in_surface(path),

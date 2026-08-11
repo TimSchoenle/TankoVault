@@ -59,6 +59,11 @@ struct Config {
     /// client at `/v1/branding` and stamped into email and the authenticator prompts.
     #[serde(default)]
     branding: tankovault_config::BrandingConfig,
+    /// Which repository the native client updates from, and the client versions this
+    /// deployment supports. Served at `/v1/client`; an absent section publishes the upstream
+    /// channel with this build's own version as the ceiling.
+    #[serde(default)]
+    client: tankovault_config::ClientConfig,
     /// Metadata intake rules. The API writes no metadata; it reads this section for the adult
     /// classifier alone, and shares it with the worker so the genres the public tag facet
     /// withholds are exactly the ones that put a series behind the gate.
@@ -435,6 +440,13 @@ async fn serve_once(
     let webauthn = build_relying_party(&cfg.auth, &cfg.email.base_url, &cfg.branding.name)?;
     let mfa_sealer = build_mfa_sealer(&cfg.auth)?;
 
+    // Fatal for the same reason the origin above is: a client that cannot read the ceiling
+    // behaves as though there were none, so an unusable value would quietly undo the version
+    // range rather than report it. The service's own version is the default ceiling — client and
+    // server are cut from this repository at one version.
+    let client_channel = tankovault_api::ClientChannel::new(&cfg.client, env!("CARGO_PKG_VERSION"))
+        .map_err(|error| anyhow::anyhow!(error))?;
+
     // Abandoned ceremonies — a user who closed the tab at the authenticator prompt — are
     // already unusable, so this reclaims rows rather than enforcing anything. The same sweep
     // clears expired sign-in challenges and step-up grants, which have the same shape.
@@ -487,6 +499,7 @@ async fn serve_once(
         email_base_url: cfg.email.base_url.clone(),
         legal: tankovault_api::LegalDocs::new(cfg.legal.clone()),
         branding: tankovault_api::Branding::new(cfg.branding.clone()),
+        client_channel,
         system_stats: tankovault_api::Cached::new(tankovault_api::ADMIN_STATS_TTL),
         provider_stats: tankovault_api::Cached::new(tankovault_api::ADMIN_STATS_TTL),
         adult_tags: Arc::new(cfg.metadata.tags.adult_tags()),

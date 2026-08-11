@@ -1737,6 +1737,56 @@ pub mod types {
             Default::default()
         }
     }
+    #[doc = "The client channel this deployment names."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"The client channel this deployment names.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"max_version\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"max_version\": {"]
+    #[doc = "      \"description\": \"The newest client version this deployment supports. A client does not install past it.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"min_version\": {"]
+    #[doc = "      \"description\": \"The oldest client version this deployment supports. Absent means no floor.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"release_repo\": {"]
+    #[doc = "      \"description\": \"The GitHub repository the native client reads its releases from, as `owner/name`.\\nAbsent leaves the client on whichever repository it was built with.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct ClientView {
+        #[doc = "The newest client version this deployment supports. A client does not install past it."]
+        pub max_version: ::std::string::String,
+        #[doc = "The oldest client version this deployment supports. Absent means no floor."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub min_version: ::std::option::Option<::std::string::String>,
+        #[doc = "The GitHub repository the native client reads its releases from, as `owner/name`.\nAbsent leaves the client on whichever repository it was built with."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub release_repo: ::std::option::Option<::std::string::String>,
+    }
+    impl ClientView {
+        pub fn builder() -> builder::ClientView {
+            Default::default()
+        }
+    }
     #[doc = "How to settle a local/remote disagreement when a series exists on both sides\n(design v2 §B.3).\n\n# Why this is here rather than in `services/sync`\n\nIt was a `pub(crate)` enum in the sync service and a **bare string** on the wire, which put\nthe vocabulary in three places that nothing connected: the service's enum, a prose list in\nthis file's doc comment, and a closed enumeration the frontend maintained by hand\n(FRONTEND F10). A policy added to the service would have compiled everywhere and then\nsilently failed to appear in the picker; a token misspelled in the frontend would have been\nrejected by the service at the far end of a round trip, if at all. Declaring it once here —\nwhere `utoipa` publishes it, `progenitor` generates it and the frontend consumes the\ngenerated form — makes the compiler the connection in both directions.\n\nThe JSON representation is unchanged: `snake_case`, the same four tokens the wire always\ncarried. What changed is that the *schema* now says so, so an unknown token is a `422` at\nthe edge instead of a value that reaches the merge and is quietly read as `newest_wins`."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -16754,6 +16804,80 @@ pub mod types {
                     provider: Ok(value.provider),
                     run_id: Ok(value.run_id),
                     since: Ok(value.since),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct ClientView {
+            max_version: ::std::result::Result<::std::string::String, ::std::string::String>,
+            min_version: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            release_repo: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+        impl ::std::default::Default for ClientView {
+            fn default() -> Self {
+                Self {
+                    max_version: Err("no value supplied for max_version".to_string()),
+                    min_version: Ok(Default::default()),
+                    release_repo: Ok(Default::default()),
+                }
+            }
+        }
+        impl ClientView {
+            pub fn max_version<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.max_version = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for max_version: {e}"));
+                self
+            }
+            pub fn min_version<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.min_version = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for min_version: {e}"));
+                self
+            }
+            pub fn release_repo<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.release_repo = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for release_repo: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<ClientView> for super::ClientView {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: ClientView,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    max_version: value.max_version?,
+                    min_version: value.min_version?,
+                    release_repo: value.release_repo?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::ClientView> for ClientView {
+            fn from(value: super::ClientView) -> Self {
+                Self {
+                    max_version: Ok(value.max_version),
+                    min_version: Ok(value.min_version),
+                    release_repo: Ok(value.release_repo),
                 }
             }
         }
@@ -33332,6 +33456,10 @@ impl Client {
     pub fn branding(&self) -> builder::Branding<'_> {
         builder::Branding::new(self)
     }
+    #[doc = "Read the client update channel\n\nWhich repository the native client updates from, and the version range this deployment\nsupports. Unauthenticated: the updater runs before there is a session.\n\nSends a `GET` request to `/v1/client`\n\n```ignore\nlet response = client.client_channel()\n    .send()\n    .await;\n```"]
+    pub fn client_channel(&self) -> builder::ClientChannel<'_> {
+        builder::ClientChannel::new(self)
+    }
     #[doc = "List the legal documents\n\nOnly what this deployment actually publishes. An operator who configures no Imprint gets no\nImprint entry, so the footer renders no dead link rather than one that 404s.\n\nSends a `GET` request to `/v1/legal`\n\nArguments:\n- `lang`: Language code (`en`, `de`). Falls back to `Accept-Language`, then to the first locale\nthe operator configured.\n```ignore\nlet response = client.legal_index()\n    .lang(lang)\n    .send()\n    .await;\n```"]
     pub fn legal_index(&self) -> builder::LegalIndex<'_> {
         builder::LegalIndex::new(self)
@@ -40806,6 +40934,47 @@ pub mod builder {
                 .build()?;
             let info = OperationInfo {
                 operation_id: "branding",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::client_channel`]\n\n[`Client::client_channel`]: super::Client::client_channel"]
+    #[derive(Debug, Clone)]
+    pub struct ClientChannel<'a> {
+        client: &'a super::Client,
+    }
+    impl<'a> ClientChannel<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+        #[doc = "Sends a `GET` request to `/v1/client`"]
+        pub async fn send(self) -> Result<ResponseValue<types::ClientView>, Error<()>> {
+            let Self { client } = self;
+            let url = format!("{}/v1/client", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "client_channel",
             };
             client.pre(&mut request, &info).await?;
             let result = client.exec(request, &info).await;

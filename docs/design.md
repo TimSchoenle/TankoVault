@@ -870,9 +870,9 @@ POST   /v1/admin/series/merge             { keep, merge }
 > **Superseded by `docs/READING_PROGRESS_AND_SYNC.md` Part B**: persisted (not env-config)
 > per-account `auto_sync_enabled` + `conflict_policy`, a three-way merge (not two-way) with an
 > `ask_me` policy and a conflict-review queue, a scheduled reconciliation loop in addition to
-> the reactive targeted push, and a per-series (opt-out) sync-exclusion flag. As-built v1
-> (env-only policy, two-way `reconcile_progress`, reactive push only) is described in
-> `IMPLEMENTATION_STATUS.md` §7.
+> the reactive targeted push, and a per-series (opt-out) sync-exclusion flag. The v1 this
+> section describes (env-only policy, two-way `reconcile_progress`, reactive push only) is
+> gone from the code; read Part B, not this.
 
 ---
 
@@ -978,7 +978,7 @@ the one bold move — used only for unread counts, the primary CTA, and the acti
 **Typography (2 roles + data):**
 - Display: **Bricolage Grotesque** (variable, 400–800) for the wordmark and screen titles, used
   with restraint. (Supersedes the earlier *Zodiak / Clash Display* placeholder; the TankoVault
-  redesign standardises on Bricolage Grotesque — see `docs/frontend/DESIGN_SPEC.md` §3.)
+  redesign standardises on Bricolage Grotesque — see `docs/DESIGN_SPEC.md` §3.)
 - Body/UI: a clean humanist sans (*IBM Plex Sans*).
 - Data/labels: a mono (*IBM Plex Mono*) for chapter numbers and counts — makes numeric scanning fast.
 - Type scale: 12 / 14 / 16 / 20 / 28 / 40, generous line-height on descriptions.
@@ -1069,8 +1069,8 @@ responsive masonry of 2:3 cards.
   a Helm chart at `deploy/helm/tankovault` with HPAs, probe wiring and a linked README; that
   directory has never contained a file. The claim is removed rather than aspirational, because
   `deploy/README.md` linked to it as the production deployment path and an operator following it
-  reached a dead end. `docs/IMPLEMENTATION_STATUS.md` carries the live status. When it is built,
-  the shape below is still the intent, and most of its prerequisites already exist:
+  reached a dead end. `docker compose` on a single host is the only supported shape today. When
+  a chart is built, the shape below is still the intent, and most of its prerequisites exist:
    - `api` and `worker` `HorizontalPodAutoscaler`-scaled (worker on queue depth, api on CPU/RPS).
    - `challenge-solver` as its own Deployment with a **TRAWL** companion container; scaled
      on solve queue depth/latency, with a modest CPU/memory floor (a headless browser is heavy).

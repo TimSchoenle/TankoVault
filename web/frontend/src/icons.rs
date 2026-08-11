@@ -1,4 +1,4 @@
-//! Inline-SVG icon module (`IMPLEMENTATION_PLAN` §4). A single Rust enum + `Ic` component,
+//! Inline-SVG icon module. A single Rust enum + `Ic` component,
 //! no web font: works offline, tree-shaken, crisp at any size. Glyphs are 24×24 Lucide
 //! (MIT) paths, drawn with `currentColor` so a text-color utility tints them.
 

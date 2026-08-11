@@ -390,7 +390,7 @@ CREATE INDEX sync_history_user_idx ON sync_history (user_id, created_at DESC);
 
 (IDs use `gen_random_uuid()` as the column default per the project's existing deviation from
 the `design.md` UUIDv7-everywhere text — app code still generates and passes real v7 ids
-explicitly; see `IMPLEMENTATION_STATUS.md` §4.1.)
+explicitly, so the default only fires for rows inserted outside it.)
 
 `sync_history` is expected to grow; it is a diagnostic/transparency log, not an audit-of-record
 — an operational follow-up (not blocking this design) should prune rows older than e.g. 90

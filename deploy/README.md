@@ -189,7 +189,7 @@ of rules to edit and only one of them deployed.
 
 ## Kubernetes
 
-**Not implemented.** Tracked as design §19; `docs/IMPLEMENTATION_STATUS.md` is the live status.
+**Not implemented.** Tracked as design §19.
 
 This section previously described a Helm chart at `deploy/helm/tankovault` — its values,
 HPAs, probe wiring and a linked `README.md` — none of which has ever existed: `deploy/helm/`

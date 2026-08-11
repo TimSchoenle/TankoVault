@@ -45,12 +45,19 @@ metrics port, which are not request-facing surfaces.
 This is tracked, not secret. It is here because a deployment is affected by it today and no
 code change closes it:
 
-- **`SEC-2b` — renderer DNS rebinding.** The SSRF guard validates and re-resolves in-process, but
-  Chromium and TRAWL resolve independently, so a name that answers differently on a second
-  lookup can still reach an internal address from the `render` tier. Closing it needs
-  container-level egress restriction, not a patch.
+- **Renderer DNS rebinding.** The SSRF guard validates and re-resolves in-process, but Chromium
+  and TRAWL resolve independently, so a name that answers differently on a second lookup can
+  still reach an internal address from the `render` tier.
 
-It is, with its full reasoning, in `docs/audit/PROGRESS.md`.
+  Chromium's `--host-resolver-rules` does not close it: that is a *launch* flag, and
+  `BrowserManager` launches one browser lazily and reuses it for the life of the process.
+  Pinning resolution to the address `ssrf::validate_and_resolve` already produced would mean a
+  browser per request — a Chrome start is seconds against a render's tens of milliseconds, which
+  is the entire cost the service exists to amortise. CDP has no per-page substitute: it can
+  block URLs and rewrite headers, but nothing in it overrides DNS for one target. So the
+  options are a browser per request, a resolver the container controls, or an egress-restricted
+  network namespace. **The last is the cheapest, and it is a deployment change rather than a
+  patch** — restrict the `render` container's egress to the public internet.
 
 ## What the deployment expects of you
 

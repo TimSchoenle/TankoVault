@@ -1,7 +1,13 @@
 # TankoVault
 
-A fully-Rust, multi-microservice **manga / manhwa / manhua aggregator and tracker**. TankoVault
-indexes series metadata across many independent provider sites, treats each work as one **canonical
+> **This is a hobby project.** I build it for my own use and because building it is the point.
+> There is no hosted instance, no support, no SLA and no roadmap I am committed to. It is built
+> carefully — strict lints, real integration tests, a CI gate that means something — but that is
+> a matter of taste, not of anyone paying for it. Issues and pull requests are welcome; I get to
+> them when I get to them.
+
+A fully-Rust, multi-service **manga / manhwa / manhua aggregator and tracker**. TankoVault indexes
+series metadata across many independent provider sites, treats each work as one **canonical
 series** with many **provider sources**, and layers watchlists, read progress, notifications, and
 AniList sync on top.
 
@@ -63,6 +69,7 @@ crates/
   adapters/     SourceAdapter trait + Madara/config-driven + custom adapters
   fetch/        Fetcher trait, browser emulation, rate limiting, caching, solver client
   solver/       ChallengeSolver trait + detection + TRAWL/render back-ends
+  recsys/       the recommendation model as pure functions over plain data
   contracts/    NATS message/event schemas (serde)
   auth/         password hashing, JWT, RBAC guards
   config/       layered, typed config loading (file + env)
@@ -72,12 +79,13 @@ crates/
   bus/          NATS JetStream client helpers
   api-client/   generated typed client (from the OpenAPI spec)
   test-support/ shared test fixtures
-services/       api, control-plane, worker, notifier, sync, challenge-solver, render, frontend
+services/       the eight deployable services in the table above, plus bootstrap — one-shot
+                install steps (migrate, seed) shipped as its own image, so a deployment
+                never carries `xtask` and its `reset`
 web/frontend/   Dioxus WASM SPA + Tailwind (excluded from the host workspace)
 migrations/     versioned sqlx migration SQL
 deploy/         Dockerfiles, docker-compose (+ an observability overlay), local env example
-xtask/          dev/ops tasks: ci, migrate, reset, seed, openapi, sqlx-prepare,
-                install-hooks, coverage-ratchet
+xtask/          dev/ops tasks — see "Local development" below
 ```
 
 ## Tech stack
@@ -185,12 +193,16 @@ Dev/ops tasks live in `xtask` (`migrate` / `reset` / `seed` / `sqlx-prepare` rea
 `openapi` does not):
 
 ```bash
+cargo run -p xtask -- ci              # every offline gate CI runs, in CI's order
 cargo run -p xtask -- migrate         # apply pending migrations
 cargo run -p xtask -- reset           # DESTRUCTIVE: drop + recreate schema (dev only)
 cargo run -p xtask -- seed            # demo admin + built-in provider presets
 cargo run -p xtask -- openapi         # regenerate openapi.json + the typed api-client
 cargo run -p xtask -- sqlx-prepare    # refresh the committed sqlx offline query cache
+cargo run -p xtask -- config-docs     # print the current TANKOVAULT_* surface
 cargo run -p xtask -- notices         # regenerate THIRD-PARTY-NOTICES from both lockfiles
+cargo run -p xtask -- repo-lint       # the invariants no compiler sees (CSP, secrets, metrics)
+cargo run -p xtask -- install-hooks   # the pre-commit hook
 ```
 
 ### Frontend
@@ -211,14 +223,17 @@ client, and the i18n rules.
 ## Documentation
 
 - [`docs/design.md`](docs/design.md) — authoritative architecture and build specification.
+- [`docs/ENGINEERING_GUIDE.md`](docs/ENGINEERING_GUIDE.md) — the rules the code is written to, and
+  what enforces each one. Start here before changing anything.
 - [`docs/OPERATIONS.md`](docs/OPERATIONS.md) — running and operating the fleet.
 - [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) — every `TANKOVAULT_*` key and its default.
+- [`docs/OBSERVABILITY.md`](docs/OBSERVABILITY.md) — the metric catalogue and what to alert on.
 - [`docs/PROVIDERS.md`](docs/PROVIDERS.md) — provider adapters.
 - [`docs/READING_PROGRESS_AND_SYNC.md`](docs/READING_PROGRESS_AND_SYNC.md) — progress and AniList sync.
-- [`docs/PRODUCTION_READINESS.md`](docs/PRODUCTION_READINESS.md) — closed; a record of the
-  readiness roadmap and what delivered it. Live status is in [`docs/audit/PROGRESS.md`](docs/audit/PROGRESS.md).
-- [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md) — current status.
-- [`docs/audit/`](docs/audit/README.md) — full codebase audit (2026-07-29): findings and cleanup roadmap.
+- [`docs/RECOMMENDATIONS.md`](docs/RECOMMENDATIONS.md) — the suggestion system.
+- [`docs/DESIGN_SPEC.md`](docs/DESIGN_SPEC.md) — the SPA's design system; source files cite it by
+  section.
+- [`docs/RELEASING.md`](docs/RELEASING.md) — how a release is cut and published.
 - [`openapi.json`](openapi.json) — canonical REST API spec (also served at `/scalar`).
 
 ## License

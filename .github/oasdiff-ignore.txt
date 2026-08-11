@@ -16,8 +16,8 @@
 # Keep each entry pinned to the exact operation and the exact from/to shape, so this file cannot
 # quietly absolve a *different* break on the same endpoint later.
 
-# docs/frontend/new-console.md §4.2, §4.4: the audit trail and the scan history were fixed-size
-# unfiltered feeds that fall off the end under load. Paging them needs a total, a pager cannot say
+# The audit trail and the scan history were fixed-size unfiltered feeds that fall off the end
+# under load. Paging them needs a total, a pager cannot say
 # "1-40 of N" without one, and a total cannot ride alongside a bare array — so both responses
 # became `{ items, total }`. Consumed only by the operator console.
 in api get /v1/admin/audit the response's body `type` changed from `array<object>` to `object` for status `200`

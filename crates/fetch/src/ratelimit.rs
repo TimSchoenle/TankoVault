@@ -6,8 +6,8 @@
 //! shared: a fresh stack per task turns `rps`/`concurrency` into a per-*task* budget and
 //! discards the self-imposed penalty each time. `Engine::fetcher_for` caches per provider id;
 //! anything else constructing a fetch stack must do the same. The budget is per worker
-//! *process*; an aggregate cross-replica limiter is a documented follow-up
-//! (`docs/IMPLEMENTATION_STATUS.md`).
+//! *process*; an aggregate cross-replica limiter is a follow-up, so N replicas crawl a
+//! provider at N times the configured rate.
 
 use crate::error::FetchError;
 use crate::fetcher::Fetcher;

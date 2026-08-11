@@ -11,6 +11,7 @@ pub mod gdpr;
 pub mod matching;
 pub mod permissions;
 pub mod privacy;
+pub mod provider_presets;
 pub mod providers;
 pub mod recsys;
 pub mod scans;

@@ -585,12 +585,12 @@ async fn seed(pool: &tankovault_db::PgPool) -> anyhow::Result<()> {
         println!("no super user existed; promoted {owner}");
     }
 
-    for outcome in tankovault_bootstrap::seed_providers(pool).await? {
-        if outcome.created {
-            println!("seeded provider '{}'", outcome.slug);
-        } else {
-            println!("provider '{}' already present; skipping", outcome.slug);
-        }
+    let report = tankovault_bootstrap::seed_providers(pool).await?;
+    for (slug, outcome) in &report.providers {
+        println!("provider '{slug}': {}", outcome.as_str());
+    }
+    for slug in &report.retired {
+        println!("preset '{slug}' is no longer shipped; providers using it are untouched");
     }
 
     Ok(())

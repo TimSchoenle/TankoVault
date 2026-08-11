@@ -6966,6 +6966,64 @@ pub mod types {
             Default::default()
         }
     }
+    #[doc = "One entry of the preset catalogue bundled with the build, as the installer recorded it.\n\nPersisted rather than read from `tankovault_adapters`, because the api tier deliberately\ndoes not link the adapter crate (it would drag `BoringSSL` into that image); the install job\nwrites the catalogue down and every other tier reads it as data."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One entry of the preset catalogue bundled with the build, as the installer recorded it.\\n\\nPersisted rather than read from `tankovault_adapters`, because the api tier deliberately\\ndoes not link the adapter crate (it would drag `BoringSSL` into that image); the install job\\nwrites the catalogue down and every other tier reads it as data.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"adapter\","]
+    #[doc = "    \"base_url\","]
+    #[doc = "    \"config\","]
+    #[doc = "    \"name\","]
+    #[doc = "    \"politeness\","]
+    #[doc = "    \"slug\","]
+    #[doc = "    \"updated_at\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"adapter\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/AdapterKind\""]
+    #[doc = "    },"]
+    #[doc = "    \"base_url\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"config\": {},"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"politeness\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/Politeness\""]
+    #[doc = "    },"]
+    #[doc = "    \"slug\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"updated_at\": {"]
+    #[doc = "      \"description\": \"When the installer last recorded this entry, which is also the answer to \\\"did my\\nrollout run the install job at all?\\\".\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct PresetDefinition {
+        pub adapter: AdapterKind,
+        pub base_url: ::std::string::String,
+        pub config: ::serde_json::Value,
+        pub name: ::std::string::String,
+        pub politeness: Politeness,
+        pub slug: ::std::string::String,
+        #[doc = "When the installer last recorded this entry, which is also the answer to \"did my\nrollout run the install job at all?\"."]
+        pub updated_at: ::std::string::String,
+    }
+    impl PresetDefinition {
+        pub fn builder() -> builder::PresetDefinition {
+            Default::default()
+        }
+    }
     #[doc = "A named starting point in the permission editor."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -7001,6 +7059,53 @@ pub mod types {
     }
     impl PresetInfo {
         pub fn builder() -> builder::PresetInfo {
+            Default::default()
+        }
+    }
+    #[doc = "A provider row's link to the preset catalogue shipped with the build.\n\n`locked` is the contract the whole feature turns on: while it holds, the installer\noverwrites the **preset-owned fields** — `name`, `base_url`, `adapter` and `config` — from\nthe shipped definition on every rollout, so a selector fix reaches deployments that already\ncarry the row. Unlocking detaches the row for good; it keeps the slug so the console can\nstill offer a re-link, but nothing rewrites it again unless an operator asks.\n\n`politeness` and `state` sit outside the lock on purpose, and must stay there: a crawl\nbudget and a pause are an operator's answer to their own infrastructure, robots policy and\nlegal position, none of which a shipped preset can know. A lock that silently restored a\nrate limit an operator had lowered would be a worse bug than a stale selector."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"A provider row's link to the preset catalogue shipped with the build.\\n\\n`locked` is the contract the whole feature turns on: while it holds, the installer\\noverwrites the **preset-owned fields** — `name`, `base_url`, `adapter` and `config` — from\\nthe shipped definition on every rollout, so a selector fix reaches deployments that already\\ncarry the row. Unlocking detaches the row for good; it keeps the slug so the console can\\nstill offer a re-link, but nothing rewrites it again unless an operator asks.\\n\\n`politeness` and `state` sit outside the lock on purpose, and must stay there: a crawl\\nbudget and a pause are an operator's answer to their own infrastructure, robots policy and\\nlegal position, none of which a shipped preset can know. A lock that silently restored a\\nrate limit an operator had lowered would be a worse bug than a stale selector.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"locked\","]
+    #[doc = "    \"slug\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"locked\": {"]
+    #[doc = "      \"description\": \"Whether the preset-owned fields still follow the shipped definition.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"slug\": {"]
+    #[doc = "      \"description\": \"The governing preset — the row's own slug for anything the installer created.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"synced_at\": {"]
+    #[doc = "      \"description\": \"When those fields were last written from the preset.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct PresetLink {
+        #[doc = "Whether the preset-owned fields still follow the shipped definition."]
+        pub locked: bool,
+        #[doc = "The governing preset — the row's own slug for anything the installer created."]
+        pub slug: ::std::string::String,
+        #[doc = "When those fields were last written from the preset."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub synced_at: ::std::option::Option<::std::string::String>,
+    }
+    impl PresetLink {
+        pub fn builder() -> builder::PresetLink {
             Default::default()
         }
     }
@@ -7402,6 +7507,14 @@ pub mod types {
     #[doc = "    \"politeness\": {"]
     #[doc = "      \"$ref\": \"#/components/schemas/Politeness\""]
     #[doc = "    },"]
+    #[doc = "    \"preset\": {"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {},"]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/PresetLink\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    },"]
     #[doc = "    \"slug\": {"]
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
@@ -7429,6 +7542,8 @@ pub mod types {
         pub last_full_scan_at: ::std::option::Option<::std::string::String>,
         pub name: ::std::string::String,
         pub politeness: Politeness,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub preset: ::std::option::Option<ProviderPreset>,
         pub slug: ::std::string::String,
         pub state: ProviderState,
         pub updated_at: ::std::string::String,
@@ -7530,6 +7645,37 @@ pub mod types {
     impl ProviderInfo {
         pub fn builder() -> builder::ProviderInfo {
             Default::default()
+        }
+    }
+    #[doc = "`ProviderPreset`"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {},"]
+    #[doc = "    {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/PresetLink\""]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    #[serde(untagged)]
+    pub enum ProviderPreset {
+        Variant0(::serde_json::Value),
+        Variant1(PresetLink),
+    }
+    impl ::std::convert::From<::serde_json::Value> for ProviderPreset {
+        fn from(value: ::serde_json::Value) -> Self {
+            Self::Variant0(value)
+        }
+    }
+    impl ::std::convert::From<PresetLink> for ProviderPreset {
+        fn from(value: PresetLink) -> Self {
+            Self::Variant1(value)
         }
     }
     #[doc = "One provider's scan health over the summary's window."]
@@ -11012,6 +11158,35 @@ pub mod types {
     }
     impl SetPermissions {
         pub fn builder() -> builder::SetPermissions {
+            Default::default()
+        }
+    }
+    #[doc = "`SetPresetLock`"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"locked\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"locked\": {"]
+    #[doc = "      \"description\": \"`false` detaches the provider so an operator can edit it freely; `true` re-applies the\\npreset now and resumes following it.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct SetPresetLock {
+        #[doc = "`false` detaches the provider so an operator can edit it freely; `true` re-applies the\npreset now and resumes following it."]
+        pub locked: bool,
+    }
+    impl SetPresetLock {
+        pub fn builder() -> builder::SetPresetLock {
             Default::default()
         }
     }
@@ -23179,6 +23354,130 @@ pub mod types {
             }
         }
         #[derive(Clone, Debug)]
+        pub struct PresetDefinition {
+            adapter: ::std::result::Result<super::AdapterKind, ::std::string::String>,
+            base_url: ::std::result::Result<::std::string::String, ::std::string::String>,
+            config: ::std::result::Result<::serde_json::Value, ::std::string::String>,
+            name: ::std::result::Result<::std::string::String, ::std::string::String>,
+            politeness: ::std::result::Result<super::Politeness, ::std::string::String>,
+            slug: ::std::result::Result<::std::string::String, ::std::string::String>,
+            updated_at: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+        impl ::std::default::Default for PresetDefinition {
+            fn default() -> Self {
+                Self {
+                    adapter: Err("no value supplied for adapter".to_string()),
+                    base_url: Err("no value supplied for base_url".to_string()),
+                    config: Err("no value supplied for config".to_string()),
+                    name: Err("no value supplied for name".to_string()),
+                    politeness: Err("no value supplied for politeness".to_string()),
+                    slug: Err("no value supplied for slug".to_string()),
+                    updated_at: Err("no value supplied for updated_at".to_string()),
+                }
+            }
+        }
+        impl PresetDefinition {
+            pub fn adapter<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::AdapterKind>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.adapter = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for adapter: {e}"));
+                self
+            }
+            pub fn base_url<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.base_url = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for base_url: {e}"));
+                self
+            }
+            pub fn config<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::serde_json::Value>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.config = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for config: {e}"));
+                self
+            }
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+            pub fn politeness<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::Politeness>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.politeness = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for politeness: {e}"));
+                self
+            }
+            pub fn slug<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.slug = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for slug: {e}"));
+                self
+            }
+            pub fn updated_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.updated_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for updated_at: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<PresetDefinition> for super::PresetDefinition {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: PresetDefinition,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    adapter: value.adapter?,
+                    base_url: value.base_url?,
+                    config: value.config?,
+                    name: value.name?,
+                    politeness: value.politeness?,
+                    slug: value.slug?,
+                    updated_at: value.updated_at?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::PresetDefinition> for PresetDefinition {
+            fn from(value: super::PresetDefinition) -> Self {
+                Self {
+                    adapter: Ok(value.adapter),
+                    base_url: Ok(value.base_url),
+                    config: Ok(value.config),
+                    name: Ok(value.name),
+                    politeness: Ok(value.politeness),
+                    slug: Ok(value.slug),
+                    updated_at: Ok(value.updated_at),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
         pub struct PresetInfo {
             key: ::std::result::Result<super::PermissionPreset, ::std::string::String>,
             permissions:
@@ -23230,6 +23529,77 @@ pub mod types {
                 Self {
                     key: Ok(value.key),
                     permissions: Ok(value.permissions),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct PresetLink {
+            locked: ::std::result::Result<bool, ::std::string::String>,
+            slug: ::std::result::Result<::std::string::String, ::std::string::String>,
+            synced_at: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+        impl ::std::default::Default for PresetLink {
+            fn default() -> Self {
+                Self {
+                    locked: Err("no value supplied for locked".to_string()),
+                    slug: Err("no value supplied for slug".to_string()),
+                    synced_at: Ok(Default::default()),
+                }
+            }
+        }
+        impl PresetLink {
+            pub fn locked<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.locked = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for locked: {e}"));
+                self
+            }
+            pub fn slug<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.slug = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for slug: {e}"));
+                self
+            }
+            pub fn synced_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.synced_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for synced_at: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<PresetLink> for super::PresetLink {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: PresetLink,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    locked: value.locked?,
+                    slug: value.slug?,
+                    synced_at: value.synced_at?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::PresetLink> for PresetLink {
+            fn from(value: super::PresetLink) -> Self {
+                Self {
+                    locked: Ok(value.locked),
+                    slug: Ok(value.slug),
+                    synced_at: Ok(value.synced_at),
                 }
             }
         }
@@ -23569,6 +23939,10 @@ pub mod types {
             >,
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
             politeness: ::std::result::Result<super::Politeness, ::std::string::String>,
+            preset: ::std::result::Result<
+                ::std::option::Option<super::ProviderPreset>,
+                ::std::string::String,
+            >,
             slug: ::std::result::Result<::std::string::String, ::std::string::String>,
             state: ::std::result::Result<super::ProviderState, ::std::string::String>,
             updated_at: ::std::result::Result<::std::string::String, ::std::string::String>,
@@ -23584,6 +23958,7 @@ pub mod types {
                     last_full_scan_at: Ok(Default::default()),
                     name: Err("no value supplied for name".to_string()),
                     politeness: Err("no value supplied for politeness".to_string()),
+                    preset: Ok(Default::default()),
                     slug: Err("no value supplied for slug".to_string()),
                     state: Err("no value supplied for state".to_string()),
                     updated_at: Err("no value supplied for updated_at".to_string()),
@@ -23671,6 +24046,16 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for politeness: {e}"));
                 self
             }
+            pub fn preset<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<super::ProviderPreset>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.preset = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for preset: {e}"));
+                self
+            }
             pub fn slug<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::std::string::String>,
@@ -23716,6 +24101,7 @@ pub mod types {
                     last_full_scan_at: value.last_full_scan_at?,
                     name: value.name?,
                     politeness: value.politeness?,
+                    preset: value.preset?,
                     slug: value.slug?,
                     state: value.state?,
                     updated_at: value.updated_at?,
@@ -23733,6 +24119,7 @@ pub mod types {
                     last_full_scan_at: Ok(value.last_full_scan_at),
                     name: Ok(value.name),
                     politeness: Ok(value.politeness),
+                    preset: Ok(value.preset),
                     slug: Ok(value.slug),
                     state: Ok(value.state),
                     updated_at: Ok(value.updated_at),
@@ -27911,6 +28298,46 @@ pub mod types {
             fn from(value: super::SetPermissions) -> Self {
                 Self {
                     permissions: Ok(value.permissions),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct SetPresetLock {
+            locked: ::std::result::Result<bool, ::std::string::String>,
+        }
+        impl ::std::default::Default for SetPresetLock {
+            fn default() -> Self {
+                Self {
+                    locked: Err("no value supplied for locked".to_string()),
+                }
+            }
+        }
+        impl SetPresetLock {
+            pub fn locked<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.locked = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for locked: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<SetPresetLock> for super::SetPresetLock {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: SetPresetLock,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    locked: value.locked?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::SetPresetLock> for SetPresetLock {
+            fn from(value: super::SetPresetLock) -> Self {
+                Self {
+                    locked: Ok(value.locked),
                 }
             }
         }
@@ -33280,6 +33707,10 @@ impl Client {
     pub fn create_provider(&self) -> builder::CreateProvider<'_> {
         builder::CreateProvider::new(self)
     }
+    #[doc = "List the built-in provider presets\n\nThe preset catalogue this deployment's last install run recorded — the definitions\n`bootstrap seed-providers` installs from and re-applies to every locked provider. The\nconsole reads it to show what a managed provider would look like if it followed its preset\nagain, and what crawl budget the preset suggests.\n\nAn empty list means the install job has not run since the preset catalogue became data;\n`updated_at` on each entry is how old the recorded catalogue is.\n\nSends a `GET` request to `/v1/admin/providers/presets`\n\n```ignore\nlet response = client.list_provider_presets()\n    .send()\n    .await;\n```"]
+    pub fn list_provider_presets(&self) -> builder::ListProviderPresets<'_> {
+        builder::ListProviderPresets::new(self)
+    }
     #[doc = "Get per-provider crawl stats\n\nPer-provider crawl statistics table.\n\nSends a `GET` request to `/v1/admin/providers/stats`\n\n```ignore\nlet response = client.provider_stats()\n    .send()\n    .await;\n```"]
     pub fn provider_stats(&self) -> builder::ProviderStats<'_> {
         builder::ProviderStats::new(self)
@@ -33291,6 +33722,10 @@ impl Client {
     #[doc = "Update a provider\n\nIncludes the domain-migration `base_url` change: one field, and every stored relative link\nre-resolves against the new domain.\n\nSends a `PATCH` request to `/v1/admin/providers/{id}`\n\nArguments:\n- `id`: Provider id\n- `body`\n```ignore\nlet response = client.update_provider()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn update_provider(&self) -> builder::UpdateProvider<'_> {
         builder::UpdateProvider::new(self)
+    }
+    #[doc = "Follow or stop following a provider's preset\n\nUnlocking is the console's \"edit freely\" action: the provider keeps naming the preset it came\nfrom, but no rollout rewrites it again, and the preset-owned fields become editable.\n\nLocking is the reverse, and it is **destructive to local edits**: it re-applies the preset's\n`name`, `base_url`, `adapter` and `config` immediately, discarding whatever the operator had\nthere. Politeness and health state are untouched in both directions — they are not\npreset-owned.\n\nSends a `POST` request to `/v1/admin/providers/{id}/preset`\n\nArguments:\n- `id`: Provider id\n- `body`\n```ignore\nlet response = client.set_provider_preset_lock()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn set_provider_preset_lock(&self) -> builder::SetProviderPresetLock<'_> {
+        builder::SetProviderPresetLock::new(self)
     }
     #[doc = "Re-solve a provider\n\nRe-solve/refresh a single provider by queuing a **fast** re-scan (frontend §9.5). This is\nthe console \"Re-solve\" action; it is proxied to the control-plane planner exactly like\n[`trigger_scan`], scoped to one provider.\n\nSends a `POST` request to `/v1/admin/providers/{id}/resolve`\n\nArguments:\n- `id`: Provider id\n```ignore\nlet response = client.resolve_provider()\n    .id(id)\n    .send()\n    .await;\n```"]
     pub fn resolve_provider(&self) -> builder::ResolveProvider<'_> {
@@ -35922,6 +36357,58 @@ pub mod builder {
             }
         }
     }
+    #[doc = "Builder for [`Client::list_provider_presets`]\n\n[`Client::list_provider_presets`]: super::Client::list_provider_presets"]
+    #[derive(Debug, Clone)]
+    pub struct ListProviderPresets<'a> {
+        client: &'a super::Client,
+    }
+    impl<'a> ListProviderPresets<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+        #[doc = "Sends a `GET` request to `/v1/admin/providers/presets`"]
+        pub async fn send(
+            self,
+        ) -> Result<
+            ResponseValue<::std::vec::Vec<types::PresetDefinition>>,
+            Error<types::ProblemDetails>,
+        > {
+            let Self { client } = self;
+            let url = format!("{}/v1/admin/providers/presets", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_provider_presets",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
     #[doc = "Builder for [`Client::provider_stats`]\n\n[`Client::provider_stats`]: super::Client::provider_stats"]
     #[derive(Debug, Clone)]
     pub struct ProviderStats<'a> {
@@ -36130,6 +36617,106 @@ pub mod builder {
                     ResponseValue::from_response(response).await?,
                 )),
                 404u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                409u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::set_provider_preset_lock`]\n\n[`Client::set_provider_preset_lock`]: super::Client::set_provider_preset_lock"]
+    #[derive(Debug, Clone)]
+    pub struct SetProviderPresetLock<'a> {
+        client: &'a super::Client,
+        id: Result<types::ProviderId, String>,
+        body: Result<types::builder::SetPresetLock, String>,
+    }
+    impl<'a> SetProviderPresetLock<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                id: Err("id was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+        pub fn id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::ProviderId>,
+        {
+            self.id = value
+                .try_into()
+                .map_err(|_| "conversion to `ProviderId` for id failed".to_string());
+            self
+        }
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::SetPresetLock>,
+            <V as std::convert::TryInto<types::SetPresetLock>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `SetPresetLock` for body failed: {}", s));
+            self
+        }
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(types::builder::SetPresetLock) -> types::builder::SetPresetLock,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+        #[doc = "Sends a `POST` request to `/v1/admin/providers/{id}/preset`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::Provider>, Error<types::ProblemDetails>> {
+            let Self { client, id, body } = self;
+            let id = id.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::SetPresetLock::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/admin/providers/{}/preset",
+                client.baseurl,
+                encode_path(&id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "set_provider_preset_lock",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                404u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                409u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
                 _ => Err(Error::UnexpectedResponse(response)),

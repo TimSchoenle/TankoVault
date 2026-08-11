@@ -3029,6 +3029,42 @@
         ],
         "type": "object"
       },
+      "PresetDefinition": {
+        "description": "One entry of the preset catalogue bundled with the build, as the installer recorded it.\n\nPersisted rather than read from `tankovault_adapters`, because the api tier deliberately\ndoes not link the adapter crate (it would drag `BoringSSL` into that image); the install job\nwrites the catalogue down and every other tier reads it as data.",
+        "properties": {
+          "adapter": {
+            "$ref": "#/components/schemas/AdapterKind"
+          },
+          "base_url": {
+            "type": "string"
+          },
+          "config": {},
+          "name": {
+            "type": "string"
+          },
+          "politeness": {
+            "$ref": "#/components/schemas/Politeness",
+            "description": "What a *new* provider from this preset starts at. Never re-applied to an existing row —\nsee [`PresetLink`] on why politeness is outside the lock."
+          },
+          "slug": {
+            "type": "string"
+          },
+          "updated_at": {
+            "description": "When the installer last recorded this entry, which is also the answer to \"did my\nrollout run the install job at all?\".",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "name",
+          "base_url",
+          "adapter",
+          "config",
+          "politeness",
+          "updated_at"
+        ],
+        "type": "object"
+      },
       "PresetInfo": {
         "description": "A named starting point in the permission editor.",
         "properties": {
@@ -3046,6 +3082,31 @@
         "required": [
           "key",
           "permissions"
+        ],
+        "type": "object"
+      },
+      "PresetLink": {
+        "description": "A provider row's link to the preset catalogue shipped with the build.\n\n`locked` is the contract the whole feature turns on: while it holds, the installer\noverwrites the **preset-owned fields** — `name`, `base_url`, `adapter` and `config` — from\nthe shipped definition on every rollout, so a selector fix reaches deployments that already\ncarry the row. Unlocking detaches the row for good; it keeps the slug so the console can\nstill offer a re-link, but nothing rewrites it again unless an operator asks.\n\n`politeness` and `state` sit outside the lock on purpose, and must stay there: a crawl\nbudget and a pause are an operator's answer to their own infrastructure, robots policy and\nlegal position, none of which a shipped preset can know. A lock that silently restored a\nrate limit an operator had lowered would be a worse bug than a stale selector.",
+        "properties": {
+          "locked": {
+            "description": "Whether the preset-owned fields still follow the shipped definition.",
+            "type": "boolean"
+          },
+          "slug": {
+            "description": "The governing preset — the row's own slug for anything the installer created.",
+            "type": "string"
+          },
+          "synced_at": {
+            "description": "When those fields were last written from the preset.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "slug",
+          "locked"
         ],
         "type": "object"
       },
@@ -3208,6 +3269,17 @@
           },
           "politeness": {
             "$ref": "#/components/schemas/Politeness"
+          },
+          "preset": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PresetLink",
+                "description": "How this row relates to the built-in preset catalogue; `None` for a provider an\noperator registered by hand."
+              }
+            ]
           },
           "slug": {
             "type": "string"
@@ -4823,6 +4895,18 @@
         },
         "required": [
           "permissions"
+        ],
+        "type": "object"
+      },
+      "SetPresetLock": {
+        "properties": {
+          "locked": {
+            "description": "`false` detaches the provider so an operator can edit it freely; `true` re-applies the\npreset now and resumes following it.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "locked"
         ],
         "type": "object"
       },
@@ -8600,6 +8684,56 @@
         ]
       }
     },
+    "/v1/admin/providers/presets": {
+      "get": {
+        "description": "The preset catalogue this deployment's last install run recorded — the definitions\n`bootstrap seed-providers` installs from and re-applies to every locked provider. The\nconsole reads it to show what a managed provider would look like if it followed its preset\nagain, and what crawl budget the preset suggests.\n\nAn empty list means the install job has not run since the preset catalogue became data;\n`updated_at` on each entry is how old the recorded catalogue is.",
+        "operationId": "list_provider_presets",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PresetDefinition"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "The recorded preset catalogue"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "no second factor is enrolled, or the caller does not hold the required permission"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "List the built-in provider presets",
+        "tags": [
+          "admin-providers"
+        ]
+      }
+    },
     "/v1/admin/providers/stats": {
       "get": {
         "description": "Per-provider crawl statistics table.",
@@ -8782,6 +8916,16 @@
               }
             },
             "description": "Provider not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Provider follows a preset; unlock it before editing the preset-owned fields"
           }
         },
         "security": [
@@ -8790,6 +8934,94 @@
           }
         ],
         "summary": "Update a provider",
+        "tags": [
+          "admin-providers"
+        ]
+      }
+    },
+    "/v1/admin/providers/{id}/preset": {
+      "post": {
+        "description": "Unlocking is the console's \"edit freely\" action: the provider keeps naming the preset it came\nfrom, but no rollout rewrites it again, and the preset-owned fields become editable.\n\nLocking is the reverse, and it is **destructive to local edits**: it re-applies the preset's\n`name`, `base_url`, `adapter` and `config` immediately, discarding whatever the operator had\nthere. Politeness and health state are untouched in both directions — they are not\npreset-owned.",
+        "operationId": "set_provider_preset_lock",
+        "parameters": [
+          {
+            "description": "Provider id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ProviderId"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetPresetLock"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Provider"
+                }
+              }
+            },
+            "description": "Updated"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Provider not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Provider came from no preset, or this build no longer ships it"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Follow or stop following a provider's preset",
         "tags": [
           "admin-providers"
         ]

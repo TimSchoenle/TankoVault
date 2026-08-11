@@ -63,10 +63,33 @@ fn registration(
     })
 }
 
+/// The fields a clone starts from: everything the form can carry, taken off the source
+/// provider.
+///
+/// Politeness is deliberately not among them. A clone exists to point at a *different* site —
+/// that is what the operator changes the base URL to — and a crawl budget tuned for one host is
+/// a guess about the new one. The server's polite defaults apply, and the inspector tunes them.
+#[derive(Clone, PartialEq)]
+pub(super) struct CloneSeed {
+    pub slug: String,
+    pub name: String,
+    pub base_url: String,
+    pub adapter: String,
+    pub config: String,
+}
+
 /// Register a provider. Politeness is left at the polite server defaults and tuned afterwards
 /// from the provider's own inspector.
+///
+/// With a `seed`, this is the console's "clone": the same registration, opened with another
+/// provider's fields filled in. A clone is therefore never preset-managed — it goes through the
+/// same create endpoint as any hand-registered provider.
 #[component]
-pub(super) fn CreateProviderForm(reload: Reload, on_done: EventHandler<()>) -> Element {
+pub(super) fn CreateProviderForm(
+    reload: Reload,
+    #[props(default)] seed: Option<CloneSeed>,
+    on_done: EventHandler<()>,
+) -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
     let busy = use_busy();
@@ -74,11 +97,22 @@ pub(super) fn CreateProviderForm(reload: Reload, on_done: EventHandler<()>) -> E
     // Elevated: registering a provider is a mutating operator capability, and the API answers
     // `403 step_up_required` until a second factor has been presented.
     let gate = use_step_up_gate();
-    let mut slug = use_signal(String::new);
-    let mut name = use_signal(String::new);
-    let mut base_url = use_signal(String::new);
-    let mut adapter = use_signal(|| "generic_config".to_owned());
-    let mut config = use_signal(|| "{}".to_owned());
+    let cloning = seed.is_some();
+    let mut slug = use_signal(|| seed.as_ref().map(|s| s.slug.clone()).unwrap_or_default());
+    let mut name = use_signal(|| seed.as_ref().map(|s| s.name.clone()).unwrap_or_default());
+    let mut base_url = use_signal(|| {
+        seed.as_ref()
+            .map(|s| s.base_url.clone())
+            .unwrap_or_default()
+    });
+    let mut adapter = use_signal(|| {
+        seed.as_ref()
+            .map_or_else(|| "generic_config".to_owned(), |s| s.adapter.clone())
+    });
+    let mut config = use_signal(|| {
+        seed.as_ref()
+            .map_or_else(|| "{}".to_owned(), |s| s.config.clone())
+    });
 
     let submit = move |_| {
         gate.attempt(move || {
@@ -125,7 +159,16 @@ pub(super) fn CreateProviderForm(reload: Reload, on_done: EventHandler<()>) -> E
     rsx! {
         div { style: "max-width:620px;",
             h2 { class: "ik-insp-title", style: "margin-bottom:16px;",
+                if cloning {
+                {i18n.t("console.providers.cloneTitle")}
+                } else {
                 {i18n.t("console.providers.add")}
+                }
+            }
+            if cloning {
+                p { class: "ik-muted", style: "font-size:11.5px;line-height:1.5;margin:-8px 0 14px;",
+                    {i18n.t("console.providers.cloneIntro")}
+                }
             }
             div { style: "display:flex;flex-direction:column;gap:10px;",
                 div { class: "ik-kv",

@@ -32,6 +32,8 @@ secrecy = { workspace = true }
 tankovault-adapters = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }
+# The preset reconcile compares `providers.config` against the shipped definition.
+serde_json = { workspace = true }
 anyhow = { workspace = true }
 
 [lints]

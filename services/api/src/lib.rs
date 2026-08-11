@@ -500,6 +500,8 @@ fn documented_router() -> OpenApiRouter<AppState> {
         .routes(routes!(admin::provider_stats))
         .routes(routes!(admin::update_provider, admin::delete_provider))
         .routes(routes!(admin::set_provider_state))
+        .routes(routes!(admin::list_provider_presets))
+        .routes(routes!(admin::set_provider_preset_lock))
         .routes(routes!(admin::test_adapter))
         .routes(routes!(admin::resolve_provider))
         // admin — user administration: directory, identity, suspension, sessions, grants,

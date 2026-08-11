@@ -148,14 +148,14 @@ fn resolve_pepper(configured: Option<&SecretString>, production: bool) -> anyhow
     Ok(pepper)
 }
 
-/// Install the built-in provider presets.
+/// Record the shipped preset catalogue and reconcile every provider against it.
 async fn seed_providers(pool: &tankovault_db::PgPool) -> anyhow::Result<()> {
-    for outcome in tankovault_bootstrap::seed_providers(pool).await? {
-        if outcome.created {
-            println!("provider '{}' installed", outcome.slug);
-        } else {
-            println!("provider '{}' already present; skipping", outcome.slug);
-        }
+    let report = tankovault_bootstrap::seed_providers(pool).await?;
+    for (slug, outcome) in &report.providers {
+        println!("provider '{slug}': {}", outcome.as_str());
+    }
+    for slug in &report.retired {
+        println!("preset '{slug}' is no longer shipped; providers using it are untouched");
     }
     Ok(())
 }

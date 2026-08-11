@@ -12,7 +12,8 @@ use serde::Deserialize;
 use serde::Serialize;
 use tankovault_db::repo::providers::NewProvider;
 use tankovault_domain::{
-    AdapterKind, Permission, Politeness, Provider, ProviderId, ProviderState, ScanMode,
+    AdapterKind, Permission, Politeness, PresetDefinition, Provider, ProviderId, ProviderState,
+    ScanMode,
 };
 use utoipa::ToSchema;
 
@@ -106,6 +107,10 @@ pub async fn create_provider(
             adapter: req.adapter,
             config: req.config,
             politeness: req.politeness,
+            // Never preset-managed, and that includes the console's "clone" — which posts here
+            // with another provider's fields. A copy is the operator's from the moment it
+            // exists; only the installer creates rows that follow a preset.
+            preset_slug: None,
         },
     )
     .await?;
@@ -135,6 +140,42 @@ pub struct UpdateProvider {
     pub politeness: Politeness,
 }
 
+/// Refuse an edit to a preset-owned field of a provider that still follows its preset.
+///
+/// The next install run would overwrite the edit anyway, so accepting it would mean storing a
+/// change that quietly disappears at the next rollout. Politeness is deliberately absent from
+/// the comparison: it is not preset-owned, and tuning a crawl budget on a managed provider is
+/// meant to work without unlocking anything.
+///
+/// The console disables these inputs, so reaching this is either a direct API call or a stale
+/// tab — both of which are exactly why the rule lives here and not only in the UI.
+///
+/// # Errors
+/// `Conflict` (409) naming the fields that would have been overwritten.
+fn refuse_locked_edit(before: &Provider, req: &UpdateProvider) -> ApiResult<()> {
+    if !before.preset.as_ref().is_some_and(|link| link.locked) {
+        return Ok(());
+    }
+    let mut owned = Vec::new();
+    if before.name != req.name {
+        owned.push("name");
+    }
+    if before.base_url != req.base_url {
+        owned.push("base_url");
+    }
+    if before.config != req.config {
+        owned.push("config");
+    }
+    if owned.is_empty() {
+        return Ok(());
+    }
+    Err(ApiError::Conflict(format!(
+        "provider {} follows its built-in preset; unlock it before editing {}",
+        before.slug,
+        owned.join(", ")
+    )))
+}
+
 /// Update a provider
 ///
 /// Includes the domain-migration `base_url` change: one field, and every stored relative link
@@ -151,6 +192,7 @@ pub struct UpdateProvider {
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
         (status = 404, description = "Provider not found", body = crate::error::ProblemDetails),
+        (status = 409, description = "Provider follows a preset; unlock it before editing the preset-owned fields", body = crate::error::ProblemDetails),
     )
 )]
 pub async fn update_provider(
@@ -161,6 +203,7 @@ pub async fn update_provider(
 ) -> ApiResult<Json<Provider>> {
     user.require(Permission::ProvidersWrite).await?;
     let before = tankovault_db::repo::providers::get(&state.pool, id).await?;
+    refuse_locked_edit(&before, &req)?;
     validate_base_url(&req.base_url).await?;
     let provider = tankovault_db::repo::providers::update(
         &state.pool,
@@ -182,6 +225,117 @@ pub async fn update_provider(
             "domain_migration": migrated,
             "base_url_from": before.base_url,
             "base_url_to": provider.base_url,
+        }),
+    )
+    .await;
+
+    Ok(Json(provider))
+}
+
+/// List the built-in provider presets
+///
+/// The preset catalogue this deployment's last install run recorded — the definitions
+/// `bootstrap seed-providers` installs from and re-applies to every locked provider. The
+/// console reads it to show what a managed provider would look like if it followed its preset
+/// again, and what crawl budget the preset suggests.
+///
+/// An empty list means the install job has not run since the preset catalogue became data;
+/// `updated_at` on each entry is how old the recorded catalogue is.
+#[utoipa::path(
+    get,
+    path = "/v1/admin/providers/presets",
+    tag = ADMIN_PROVIDERS_TAG,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "The recorded preset catalogue", body = Vec<PresetDefinition>),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
+    )
+)]
+pub async fn list_provider_presets(
+    State(state): State<AppState>,
+    user: AuthUser,
+) -> ApiResult<Json<Vec<PresetDefinition>>> {
+    user.require(Permission::ProvidersRead).await?;
+    Ok(Json(
+        tankovault_db::repo::provider_presets::list(&state.pool).await?,
+    ))
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct SetPresetLock {
+    /// `false` detaches the provider so an operator can edit it freely; `true` re-applies the
+    /// preset now and resumes following it.
+    pub locked: bool,
+}
+
+/// Follow or stop following a provider's preset
+///
+/// Unlocking is the console's "edit freely" action: the provider keeps naming the preset it came
+/// from, but no rollout rewrites it again, and the preset-owned fields become editable.
+///
+/// Locking is the reverse, and it is **destructive to local edits**: it re-applies the preset's
+/// `name`, `base_url`, `adapter` and `config` immediately, discarding whatever the operator had
+/// there. Politeness and health state are untouched in both directions — they are not
+/// preset-owned.
+#[utoipa::path(
+    post,
+    path = "/v1/admin/providers/{id}/preset",
+    tag = ADMIN_PROVIDERS_TAG,
+    params(("id" = ProviderId, Path, description = "Provider id")),
+    request_body = SetPresetLock,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Updated", body = Provider),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 404, description = "Provider not found", body = crate::error::ProblemDetails),
+        (status = 409, description = "Provider came from no preset, or this build no longer ships it", body = crate::error::ProblemDetails),
+    )
+)]
+pub async fn set_provider_preset_lock(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<ProviderId>,
+    Json(req): Json<SetPresetLock>,
+) -> ApiResult<Json<Provider>> {
+    user.require(Permission::ProvidersWrite).await?;
+    let before = tankovault_db::repo::providers::get(&state.pool, id).await?;
+    let Some(link) = before.preset.as_ref() else {
+        return Err(ApiError::Conflict(format!(
+            "provider {} was not installed from a preset, so there is nothing to follow",
+            before.slug
+        )));
+    };
+
+    let provider = if req.locked {
+        // Re-linking has to write the preset it is re-linking to, so a build that no longer
+        // ships it is refused rather than leaving the row locked to nothing.
+        let preset = tankovault_db::repo::provider_presets::get(&state.pool, &link.slug)
+            .await?
+            .ok_or_else(|| {
+                ApiError::Conflict(format!(
+                    "this build no longer ships the preset {:?}; the provider stays yours",
+                    link.slug
+                ))
+            })?;
+        tankovault_db::repo::providers::apply_preset(&state.pool, id, &preset).await?
+    } else {
+        tankovault_db::repo::providers::set_preset_lock(&state.pool, id, false).await?
+    };
+
+    audit(
+        &state,
+        &user,
+        "provider.preset_lock",
+        &id.to_string(),
+        &serde_json::json!({
+            "slug": provider.slug,
+            "preset": link.slug,
+            "locked": req.locked,
+            // The one thing an audit reader needs that the flag does not carry: re-locking
+            // overwrote whatever was in the preset-owned fields.
+            "discarded_local_edits": req.locked,
         }),
     )
     .await;
@@ -405,4 +559,104 @@ pub async fn test_adapter(
     )
     .await;
     Ok(Json(sample))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tankovault_domain::PresetLink;
+
+    fn provider(locked: bool, linked: bool) -> Provider {
+        Provider {
+            id: ProviderId::new(),
+            slug: "kunmanga".to_owned(),
+            name: "KunManga".to_owned(),
+            base_url: "https://kunmanga.invalid".to_owned(),
+            adapter: AdapterKind::Custom,
+            config: serde_json::json!({ "latest": { "item": "div.shipped" } }),
+            state: ProviderState::Active,
+            politeness: Politeness::default(),
+            preset: linked.then(|| PresetLink {
+                slug: "kunmanga".to_owned(),
+                locked,
+                synced_at: None,
+            }),
+            last_full_scan_at: None,
+            created_at: time::OffsetDateTime::UNIX_EPOCH,
+            updated_at: time::OffsetDateTime::UNIX_EPOCH,
+        }
+    }
+
+    fn edit(from: &Provider) -> UpdateProvider {
+        UpdateProvider {
+            name: from.name.clone(),
+            base_url: from.base_url.clone(),
+            config: from.config.clone(),
+            politeness: Politeness::default(),
+        }
+    }
+
+    /// Tuning a crawl budget must work on a managed provider without unlocking it.
+    ///
+    /// The lock exists to keep *layout* in step with the build; a rate limit answers to the
+    /// operator's own infrastructure and legal position. A guard that compared whole request
+    /// bodies would refuse this and push operators to unlock — permanently detaching the
+    /// provider from the fixes the lock exists to deliver, to change a number the lock was
+    /// never about.
+    #[test]
+    fn politeness_is_editable_while_the_preset_is_locked() {
+        let managed = provider(true, true);
+        let mut body = edit(&managed);
+        body.politeness = Politeness {
+            rps: 0.5,
+            concurrency: 1,
+            ..Politeness::default()
+        };
+        assert!(refuse_locked_edit(&managed, &body).is_ok());
+    }
+
+    /// Each preset-owned field is refused while locked, and named in the message.
+    ///
+    /// Named because the console's inputs are disabled: reaching this means a direct API call
+    /// or a stale tab, and "something you sent is managed" is not enough to act on.
+    #[test]
+    fn a_preset_owned_edit_is_refused_and_says_which_field() {
+        let managed = provider(true, true);
+
+        for (label, mutate) in [
+            (
+                "name",
+                (|b: &mut UpdateProvider| {
+                    b.name = "Mine".to_owned();
+                }) as fn(&mut UpdateProvider),
+            ),
+            ("base_url", |b: &mut UpdateProvider| {
+                b.base_url = "https://mine.invalid".to_owned();
+            }),
+            ("config", |b: &mut UpdateProvider| {
+                b.config = serde_json::json!({ "latest": { "item": "div.mine" } });
+            }),
+        ] {
+            let mut body = edit(&managed);
+            mutate(&mut body);
+            let Err(ApiError::Conflict(message)) = refuse_locked_edit(&managed, &body) else {
+                panic!("editing {label} on a locked provider must be refused");
+            };
+            assert!(
+                message.contains(label),
+                "the message names {label}: {message}"
+            );
+        }
+    }
+
+    /// Unlocked and never-linked providers are ordinary rows.
+    #[test]
+    fn an_unlocked_or_unlinked_provider_edits_freely() {
+        for subject in [provider(false, true), provider(false, false)] {
+            let mut body = edit(&subject);
+            body.name = "Mine".to_owned();
+            body.config = serde_json::json!({ "mine": true });
+            assert!(refuse_locked_edit(&subject, &body).is_ok());
+        }
+    }
 }

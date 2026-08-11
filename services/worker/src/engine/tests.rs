@@ -20,6 +20,9 @@ fn provider(rps: f64, ua: &str) -> Provider {
             user_agent: ua.to_owned(),
             emulation: None,
         },
+        // These tests are about the crawl budget, which no preset ever owns — so the link this
+        // fixture carries makes no difference to them either way.
+        preset: None,
         last_full_scan_at: None,
         created_at: OffsetDateTime::UNIX_EPOCH,
         updated_at: OffsetDateTime::UNIX_EPOCH,

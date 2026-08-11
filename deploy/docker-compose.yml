@@ -217,6 +217,11 @@ services:
       migrate: { condition: service_completed_successfully }
     restart: "no"
 
+  # Runs on every `up`, not just the first: it installs presets this build ships that the
+  # database lacks *and* re-applies each one to the providers still following it, which is how
+  # a selector fix reaches a stack that already has the row. Providers you registered yourself,
+  # ones unlocked in the console, and every provider's crawl budget and pause state are left
+  # alone — see docs/PROVIDERS.md §Managed presets.
   seed-providers:
     build:
       <<: *build

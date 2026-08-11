@@ -25,8 +25,8 @@ pub mod tunables;
 pub use adult::{AdultTagSet, DEFAULT_ADULT_TAGS};
 pub use chapter_outliers::{OutlierPolicy, implausible_indices};
 pub use entities::{
-    Author, Chapter, Notification, Provider, ReadProgress, ScanRun, ScanTask, Series, SeriesSource,
-    SeriesTitle, Tag, User, WatchlistEntry,
+    Author, Chapter, Notification, PresetDefinition, PresetLink, Provider, ReadProgress, ScanRun,
+    ScanTask, Series, SeriesSource, SeriesTitle, Tag, User, WatchlistEntry,
 };
 pub use enums::{
     AccountStatus, AdapterKind, ChapterAccess, ContentType, ParseEnumError, ProviderState,

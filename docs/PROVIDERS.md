@@ -22,6 +22,51 @@ always this in spirit — one theme, many sites, one shared selector set — and
 that way in `AdapterKind`, alongside two more (`mangathemesia`, `manganato`). A site on a family
 theme is a config row carrying only its deviations, exactly like a Madara one.
 
+## Managed presets
+
+A provider row installed from a preset stays **linked** to it, and while that link is *locked*
+the installer rewrites the row's preset-owned fields on every rollout. That is the mechanism by
+which a selector fix in this repository reaches a deployment that already carries the provider —
+before it existed, `seed-providers` was create-only and a fix reached new installations only.
+
+| Field | Owner while locked | Why |
+|---|---|---|
+| `name`, `base_url`, `adapter`, `config` | the preset | They describe the *site's* layout, which is what this repository tracks and fixes. |
+| `politeness` | always the operator | A crawl budget answers to the operator's infrastructure, robots policy and legal position. A rollout that restored a rate limit somebody had lowered would be a worse bug than a stale selector. |
+| `state` (pause/blocklist) | always the operator | Same reason, and it is usually an incident response. |
+
+Three things an operator can do with the link, all from **Console → Providers**:
+
+- **Unlock to edit.** The preset-owned fields become editable and no rollout touches them again.
+  The row keeps naming its preset so the console can still offer the reverse.
+- **Follow the preset again.** Re-applies the shipped values immediately, discarding local edits
+  to those four fields — behind a confirmation, because it is destructive to them. Politeness
+  and pause state survive it.
+- **Clone.** Opens the ordinary registration form filled in from the provider. A clone is never
+  preset-managed: it is the way to run a *second* site on the same theme, and it starts at the
+  default crawl budget rather than inheriting one tuned for a different host.
+
+While locked, the API refuses a `PATCH` that would change a preset-owned field (409), so the
+read-only inputs in the console are a courtesy rather than the enforcement. A politeness-only
+`PATCH` is accepted whether the row is locked or not.
+
+The catalogue itself is data: `bootstrap seed-providers` mirrors this build's presets into
+`provider_presets` and the console reads them from there, because the api tier deliberately does
+not link `tankovault-adapters`. A preset a later release stops shipping is deleted from that
+mirror; providers installed from it keep running, unmanaged, and the console says so.
+
+**Run `bootstrap seed-providers` on every rollout.** It is create-only for rows it does not
+manage and idempotent for the ones it does; skipping it means new providers never arrive and
+managed ones stop receiving fixes. The compose stack runs it automatically.
+
+### What an upgrade does to rows that predate the link
+
+The first run after upgrading adopts them, and the rule is deliberately conservative: a row is
+locked only if every preset-owned field still equals the shipped definition exactly. Anything
+else is labelled *customised*, linked for reference and left untouched — an operator's
+hand-tuned config has no other copy, and no upgrade may overwrite it silently. Both outcomes
+are named per provider in the job's output.
+
 ## Summary
 
 | Provider | Domain | Layout | Onboarding | Adapter |
@@ -187,9 +232,10 @@ never match. The resulting `latest_chapter` of `0.0` costs nothing, because both
 `list_latest` (`TaskKind::LatestFeed` and `run_fast_scan_inline`) re-ingest by `path` and
 read neither the title nor the chapter number.
 
-Because `seed-providers` is create-only, this preset change reaches **new installations
-only**. An existing deployment keeps the config already in its `providers` row until an
-operator updates it from the admin console.
+This preset change reaches an existing deployment on its next `bootstrap seed-providers` run,
+because the `kunmanga` row follows its preset — see [Managed presets](#managed-presets). It
+did **not**, before that link existed: seeding was create-only, so the fix reached new
+installations and nothing else.
 
 > **Note on body size.** A shard is ~2.9 MB as raw XML, comfortably under the fetch stack's
 > 8 MB cap. When a fetch has to be solved, the headless browser returns an XML *viewer* page

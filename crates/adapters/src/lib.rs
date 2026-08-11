@@ -36,7 +36,7 @@ pub use madara::madara_default_config;
 pub use mangadex::MangaDexAdapter;
 pub use manganato::{ManganatoAdapter, manganato_default_config};
 pub use mangathemesia::mangathemesia_default_config;
-pub use presets::{ProviderPreset, builtin as builtin_presets};
+pub use presets::{BuiltinPreset, builtin as builtin_presets};
 pub use types::{
     CatalogItem, CatalogPage, ChapterAccess, ChapterMeta, Ctx, LatestUpdate, SeriesMeta,
     SourceAdapter,

@@ -151,6 +151,7 @@ impl Fixture {
                 adapter: AdapterKind::GenericConfig,
                 config: serde_json::json!({}),
                 politeness: Politeness::default(),
+                preset_slug: None,
             },
         )
         .await

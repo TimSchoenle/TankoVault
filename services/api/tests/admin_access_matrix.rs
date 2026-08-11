@@ -344,6 +344,22 @@ fn admin_gates() -> Vec<Gate> {
             body: empty,
         },
         Gate {
+            method: "GET",
+            template: "/v1/admin/providers/presets",
+            path: "/v1/admin/providers/presets",
+            required: &[Permission::ProvidersRead],
+            body: empty,
+        },
+        Gate {
+            // Detaching a provider from its preset is an ordinary provider edit, and carries
+            // the same authority: it is the edit the operator is about to make.
+            method: "POST",
+            template: "/v1/admin/providers/{id}/preset",
+            path: "/v1/admin/providers/00000000-0000-7000-8000-00000000000a/preset",
+            required: &[Permission::ProvidersWrite],
+            body: || Some(json!({ "locked": false })),
+        },
+        Gate {
             method: "POST",
             template: "/v1/admin/providers/{id}/test",
             path: "/v1/admin/providers/00000000-0000-7000-8000-00000000000a/test",

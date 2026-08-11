@@ -12,6 +12,21 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [7.1.0](https://github.com/TimSchoenle/TankoVault/compare/v7.0.0...v7.1.0) (2026-08-11)
+
+
+### Features
+
+* **adapters:** drop the comick preset and its adapter ([#206](https://github.com/TimSchoenle/TankoVault/issues/206)) ([3040a2f](https://github.com/TimSchoenle/TankoVault/commit/3040a2f32b860ab0552ea651ff146ff87cadee62))
+* **adapters:** onboard thirty sources, and fix the family defaults that silently truncated scans ([#207](https://github.com/TimSchoenle/TankoVault/issues/207)) ([f4b5863](https://github.com/TimSchoenle/TankoVault/commit/f4b5863f76b5bbdbc8144d0cbb9dfff1010ece0e))
+
+
+### Miscellaneous
+
+* clean up the repository — retire finished docs, drop unused dependencies ([#202](https://github.com/TimSchoenle/TankoVault/issues/202)) ([c73b2a5](https://github.com/TimSchoenle/TankoVault/commit/c73b2a58b49b8daf782962244b80285028e9b6f3))
+* **deps:** update timschoenle/actions/.github/workflows/maintenance-auto-approve-renovate.yaml to vworkflows-maintenance-auto-approve-renovate-v1.4.19 ([#203](https://github.com/TimSchoenle/TankoVault/issues/203)) ([f00f5c0](https://github.com/TimSchoenle/TankoVault/commit/f00f5c079ee57f5620795cbf1b602b6474e40d24))
+* **deps:** update timschoenle/actions/.github/workflows/maintenance-timed-auto-pr-approve.yaml to vworkflows-maintenance-timed-auto-pr-approve-v1.2.30 ([#204](https://github.com/TimSchoenle/TankoVault/issues/204)) ([6a894fc](https://github.com/TimSchoenle/TankoVault/commit/6a894fc1ac87b84d3d06b91904dd86db37a42b44))
+
 ## [7.0.0](https://github.com/TimSchoenle/TankoVault/compare/v6.0.1...v7.0.0) (2026-08-11)
 
 

@@ -12,6 +12,22 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [6.0.0](https://github.com/TimSchoenle/TankoVault/compare/v5.0.0...v6.0.0) (2026-08-11)
+
+
+### ⚠ BREAKING CHANGES
+
+* **providers:** keep built-in presets in step with the build, and let operators break away ([#194](https://github.com/TimSchoenle/TankoVault/issues/194))
+
+### Features
+
+* **providers:** keep built-in presets in step with the build, and let operators break away ([#194](https://github.com/TimSchoenle/TankoVault/issues/194)) ([b536e25](https://github.com/TimSchoenle/TankoVault/commit/b536e2501771baa0d35f2fd4c8b595c3c98da411))
+
+
+### Bug Fixes
+
+* **service:** accept the private key encodings the mount actually carries ([#192](https://github.com/TimSchoenle/TankoVault/issues/192)) ([f7c25b8](https://github.com/TimSchoenle/TankoVault/commit/f7c25b819b4d8cf9bf7eeb01dc38524b607620ea))
+
 ## [5.0.0](https://github.com/TimSchoenle/TankoVault/compare/v4.0.1...v5.0.0) (2026-08-10)
 
 

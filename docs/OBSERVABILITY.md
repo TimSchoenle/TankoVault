@@ -112,7 +112,7 @@ status codes would be an unbounded label source for a distinction no panel makes
 | `scheduler_sweep_duration_seconds` | histogram | `scan` | `control-plane` |
 | `scheduler_leader` | gauge | — | `control-plane` |
 | `merge_sweep_actions_total` | counter | `action` | `control-plane` |
-| `merge_sweep_duration_seconds` | histogram | — | `control-plane` |
+| `merge_sweep_duration_seconds` | histogram | `scope` (`full`/`rotation`) | `control-plane` |
 | `scan_tasks_served_total` | counter | `provider`, `scan` (`full`/`fast`) | `worker` |
 | `scan_tasks_settled_total` | counter | `provider`, `scan`, `outcome` (`completed`/`requeued`/`failed`) | `worker` |
 | `scan_task_duration_seconds` | histogram | `provider`, `scan`, `kind` | `worker` |

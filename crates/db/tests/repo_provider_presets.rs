@@ -84,7 +84,14 @@ async fn a_preset_sync_never_touches_politeness_or_state() {
         .await
         .expect("sync from the preset");
 
-    assert_eq!(synced.politeness.rps, careful.rps, "rate limit survives");
+    // Bit-identical rather than approximate on purpose: this value is carried through, never
+    // recomputed, so anything but an exact match means a conversion crept into the path.
+    assert!(
+        (synced.politeness.rps - careful.rps).abs() < f64::EPSILON,
+        "rate limit survives: {} != {}",
+        synced.politeness.rps,
+        careful.rps,
+    );
     assert_eq!(
         synced.politeness.concurrency, careful.concurrency,
         "concurrency survives"

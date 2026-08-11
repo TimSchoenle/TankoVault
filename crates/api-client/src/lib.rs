@@ -4869,6 +4869,7 @@ pub mod types {
     #[doc = "  \"required\": ["]
     #[doc = "    \"auto_merged\","]
     #[doc = "    \"blocked\","]
+    #[doc = "    \"chains_deferred\","]
     #[doc = "    \"deferred\","]
     #[doc = "    \"distinct\","]
     #[doc = "    \"pairs_examined\","]
@@ -4885,6 +4886,11 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"blocked\": {"]
     #[doc = "      \"description\": \"Pairs an auto-merge guard held back: identical titles, a score above the automatic\\nthreshold, and a signal saying the two are different works anyway. These are the near\\nmisses, and they are the rows to read first — each is either a duplicate the guard is\\ncosting you or a merge the guard just prevented.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"chains_deferred\": {"]
+    #[doc = "      \"description\": \"Pairs skipped because a merge earlier in this same run absorbed one of their two series.\\n\\nTheir facts were loaded before that merge and are now stale, so re-judging them here would\\nscore the survivor as it was rather than as it is. A three-way duplicate therefore takes\\nmore than one pass; non-zero means another pass has something to do, and the scheduler\\nruns one rather than leaving the chain until the next tick.\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
@@ -4933,6 +4939,8 @@ pub mod types {
         pub auto_merged: i64,
         #[doc = "Pairs an auto-merge guard held back: identical titles, a score above the automatic\nthreshold, and a signal saying the two are different works anyway. These are the near\nmisses, and they are the rows to read first — each is either a duplicate the guard is\ncosting you or a merge the guard just prevented."]
         pub blocked: i64,
+        #[doc = "Pairs skipped because a merge earlier in this same run absorbed one of their two series.\n\nTheir facts were loaded before that merge and are now stale, so re-judging them here would\nscore the survivor as it was rather than as it is. A three-way duplicate therefore takes\nmore than one pass; non-zero means another pass has something to do, and the scheduler\nruns one rather than leaving the chain until the next tick."]
+        pub chains_deferred: i64,
         #[doc = "Pairs skipped because the sweep's per-run automatic-merge budget was exhausted. Non-zero\nmeans the next sweep has more to do, not that anything failed."]
         pub deferred: i64,
         #[doc = "Pairs the sweep judged distinct and left alone."]
@@ -20739,6 +20747,7 @@ pub mod types {
         pub struct MergeSweepView {
             auto_merged: ::std::result::Result<i64, ::std::string::String>,
             blocked: ::std::result::Result<i64, ::std::string::String>,
+            chains_deferred: ::std::result::Result<i64, ::std::string::String>,
             deferred: ::std::result::Result<i64, ::std::string::String>,
             distinct: ::std::result::Result<i64, ::std::string::String>,
             pairs_examined: ::std::result::Result<i64, ::std::string::String>,
@@ -20752,6 +20761,7 @@ pub mod types {
                 Self {
                     auto_merged: Err("no value supplied for auto_merged".to_string()),
                     blocked: Err("no value supplied for blocked".to_string()),
+                    chains_deferred: Err("no value supplied for chains_deferred".to_string()),
                     deferred: Err("no value supplied for deferred".to_string()),
                     distinct: Err("no value supplied for distinct".to_string()),
                     pairs_examined: Err("no value supplied for pairs_examined".to_string()),
@@ -20781,6 +20791,16 @@ pub mod types {
                 self.blocked = value
                     .try_into()
                     .map_err(|e| format!("error converting supplied value for blocked: {e}"));
+                self
+            }
+            pub fn chains_deferred<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.chains_deferred = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for chains_deferred: {e}")
+                });
                 self
             }
             pub fn deferred<T>(mut self, value: T) -> Self
@@ -20862,6 +20882,7 @@ pub mod types {
                 Ok(Self {
                     auto_merged: value.auto_merged?,
                     blocked: value.blocked?,
+                    chains_deferred: value.chains_deferred?,
                     deferred: value.deferred?,
                     distinct: value.distinct?,
                     pairs_examined: value.pairs_examined?,
@@ -20877,6 +20898,7 @@ pub mod types {
                 Self {
                     auto_merged: Ok(value.auto_merged),
                     blocked: Ok(value.blocked),
+                    chains_deferred: Ok(value.chains_deferred),
                     deferred: Ok(value.deferred),
                     distinct: Ok(value.distinct),
                     pairs_examined: Ok(value.pairs_examined),

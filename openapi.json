@@ -2241,6 +2241,11 @@
             "format": "int64",
             "type": "integer"
           },
+          "chains_deferred": {
+            "description": "Pairs skipped because a merge earlier in this same run absorbed one of their two series.\n\nTheir facts were loaded before that merge and are now stale, so re-judging them here would\nscore the survivor as it was rather than as it is. A three-way duplicate therefore takes\nmore than one pass; non-zero means another pass has something to do, and the scheduler\nruns one rather than leaving the chain until the next tick.",
+            "format": "int64",
+            "type": "integer"
+          },
           "deferred": {
             "description": "Pairs skipped because the sweep's per-run automatic-merge budget was exhausted. Non-zero\nmeans the next sweep has more to do, not that anything failed.",
             "format": "int64",
@@ -2286,7 +2291,8 @@
           "withdrawn",
           "distinct",
           "deferred",
-          "blocked"
+          "blocked",
+          "chains_deferred"
         ],
         "type": "object"
       },

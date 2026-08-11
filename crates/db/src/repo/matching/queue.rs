@@ -1,6 +1,7 @@
 //! The merge-candidate queue an ambiguous match feeds, and the operator actions that drain it.
 
 use crate::error::DbResult;
+use serde_json::Value as Json;
 use sqlx::PgExecutor;
 use tankovault_domain::SeriesId;
 use uuid::Uuid;
@@ -23,9 +24,20 @@ pub enum QueueOutcome {
     Unchanged,
 }
 
-/// Record — or refresh — an operator-review merge candidate for the pair `{a, b}`.
-///
-/// Returns which of the four things in [`QueueOutcome`] happened.
+/// One pair to record — or refresh — in the review queue.
+#[derive(Debug, Clone, Copy)]
+pub struct NewMergeCandidate<'a> {
+    /// The pair in any order; [`record_merge_candidates`] stores it in canonical id order.
+    pub pair: (SeriesId, SeriesId),
+    pub score: f32,
+    /// The stable slugs of the scoring rules that fired.
+    pub signals: &'a [&'a str],
+    /// The human sentence the console shows.
+    pub reason: &'a str,
+}
+
+/// Record — or refresh — a batch of operator-review merge candidates, returning what happened to
+/// each in canonical pair order.
 ///
 /// # Idempotent, and durably dismissed
 ///
@@ -41,39 +53,63 @@ pub enum QueueOutcome {
 ///
 /// The update is guarded so that only two states can be written over: an open row, and one the
 /// *scorer* previously closed as `distinct`. Reopening the latter is the point of
-/// [`record_distinct_pair`](super::record_distinct_pair) keeping a row at all — a pair judged apart before enrichment gave
+/// [`record_distinct_pairs`](super::record_distinct_pairs) keeping a row at all — a pair judged apart before enrichment gave
 /// both sides authors and synonyms has to be able to come back — while `dismissed`, `merged` and
 /// `auto_merged` stay untouchable, the first because a human decided it and the other two
 /// because the merge already happened.
 ///
 /// # Errors
-/// [`crate::DbError::Conflict`] when `a == b`, which the table's own check constraint would
-/// reject anyway — returned here so the caller gets a domain error rather than a driver one.
-/// Otherwise [`crate::DbError::Sqlx`].
-pub async fn record_merge_candidate<'e, E: PgExecutor<'e>>(
+/// [`crate::DbError::Conflict`] when a pair names one series twice, which the table's own check
+/// constraint would reject anyway, or when two entries name the same canonical pair — one
+/// `ON CONFLICT DO UPDATE` statement cannot touch a row twice, and silently keeping the last
+/// would discard a verdict. Otherwise [`crate::DbError::Sqlx`].
+pub async fn record_merge_candidates<'e, E: PgExecutor<'e>>(
     exec: E,
-    a: SeriesId,
-    b: SeriesId,
-    score: f32,
-    signals: &[&str],
-    reason: &str,
-) -> DbResult<QueueOutcome> {
-    if a == b {
-        return Err(crate::error::DbError::Conflict(
-            "cannot queue a series against itself".to_owned(),
-        ));
+    candidates: &[NewMergeCandidate<'_>],
+) -> DbResult<Vec<(SeriesId, SeriesId, QueueOutcome)>> {
+    if candidates.is_empty() {
+        return Ok(Vec::new());
     }
-    let signals: Vec<String> = signals.iter().map(|s| (*s).to_owned()).collect();
+    let mut seen = std::collections::HashSet::with_capacity(candidates.len());
+    let mut rows = Vec::with_capacity(candidates.len());
+    for candidate in candidates {
+        let (a, b) = candidate.pair;
+        if a == b {
+            return Err(crate::error::DbError::Conflict(
+                "cannot queue a series against itself".to_owned(),
+            ));
+        }
+        if !seen.insert((a.min(b), a.max(b))) {
+            return Err(crate::error::DbError::Conflict(
+                "the same pair was queued twice in one batch".to_owned(),
+            ));
+        }
+        rows.push(serde_json::json!({
+            "id": Uuid::now_v7(),
+            "a": a.as_uuid(),
+            "b": b.as_uuid(),
+            "score": candidate.score,
+            "signals": candidate.signals,
+            "reason": candidate.reason,
+        }));
+    }
+
     // `prior` reads the pre-insert snapshot, so it reports the state the upsert is about to
     // replace; a data-modifying CTE runs whether or not the outer query selects from it.
-    let outcome = sqlx::query_scalar!(
-        "WITH prior AS ( \
-           SELECT resolved, outcome FROM merge_candidates \
-            WHERE series_id = LEAST($2::uuid, $3::uuid) \
-              AND candidate_id = GREATEST($2::uuid, $3::uuid) \
+    let rows = sqlx::query!(
+        "WITH input AS ( \
+           SELECT d.id, LEAST(d.a, d.b) AS series_id, GREATEST(d.a, d.b) AS candidate_id, \
+                  d.score, d.signals, d.reason \
+             FROM jsonb_to_recordset($1::jsonb) AS d( \
+                  id uuid, a uuid, b uuid, score real, signals text[], reason text) \
+         ), prior AS ( \
+           SELECT i.series_id, i.candidate_id, mc.resolved, mc.outcome \
+             FROM input i \
+             LEFT JOIN merge_candidates mc \
+               ON mc.series_id = i.series_id AND mc.candidate_id = i.candidate_id \
          ), upsert AS ( \
            INSERT INTO merge_candidates (id, series_id, candidate_id, score, signals, reason) \
-           VALUES ($1, LEAST($2::uuid, $3::uuid), GREATEST($2::uuid, $3::uuid), $4, $5, $6) \
+           SELECT id, series_id, candidate_id, score, signals, reason FROM input \
            ON CONFLICT (series_id, candidate_id) DO UPDATE \
               SET score = EXCLUDED.score, \
                   signals = EXCLUDED.signals, \
@@ -86,26 +122,68 @@ pub async fn record_merge_candidate<'e, E: PgExecutor<'e>>(
               WHERE NOT merge_candidates.resolved OR merge_candidates.outcome = 'distinct' \
            RETURNING 1 AS touched \
          ) \
-         SELECT CASE \
-            WHEN NOT EXISTS (SELECT 1 FROM prior) THEN 'added' \
-            WHEN (SELECT NOT resolved FROM prior) THEN 'refreshed' \
-            WHEN (SELECT outcome FROM prior) = 'distinct' THEN 'reopened' \
-            ELSE 'unchanged' END AS \"outcome!\"",
-        Uuid::now_v7(),
-        a.as_uuid(),
-        b.as_uuid(),
-        score,
-        &signals,
-        reason,
+         SELECT p.series_id AS \"series_id!\", p.candidate_id AS \"candidate_id!\", \
+                CASE WHEN p.resolved IS NULL THEN 'added' \
+                     WHEN NOT p.resolved THEN 'refreshed' \
+                     WHEN p.outcome = 'distinct' THEN 'reopened' \
+                     ELSE 'unchanged' END AS \"outcome!\" \
+           FROM prior p",
+        Json::Array(rows),
     )
-    .fetch_one(exec)
+    .fetch_all(exec)
     .await?;
-    Ok(match outcome.as_str() {
-        "added" => QueueOutcome::Added,
-        "refreshed" => QueueOutcome::Refreshed,
-        "reopened" => QueueOutcome::Reopened,
-        _ => QueueOutcome::Unchanged,
-    })
+
+    Ok(rows
+        .into_iter()
+        .map(|r| {
+            (
+                SeriesId::from_uuid(r.series_id),
+                SeriesId::from_uuid(r.candidate_id),
+                match r.outcome.as_str() {
+                    "added" => QueueOutcome::Added,
+                    "refreshed" => QueueOutcome::Refreshed,
+                    "reopened" => QueueOutcome::Reopened,
+                    _ => QueueOutcome::Unchanged,
+                },
+            )
+        })
+        .collect())
+}
+
+/// Record — or refresh — a single operator-review merge candidate for the pair `{a, b}`.
+///
+/// The create-time ingest path resolves one series at a time, so it has exactly one pair to
+/// record; every other caller batches. See [`record_merge_candidates`] for the semantics.
+///
+/// # Errors
+/// As [`record_merge_candidates`].
+pub async fn record_merge_candidate<'e, E: PgExecutor<'e>>(
+    exec: E,
+    a: SeriesId,
+    b: SeriesId,
+    score: f32,
+    signals: &[&str],
+    reason: &str,
+) -> DbResult<QueueOutcome> {
+    let outcomes = record_merge_candidates(
+        exec,
+        &[NewMergeCandidate {
+            pair: (a, b),
+            score,
+            signals,
+            reason,
+        }],
+    )
+    .await?;
+    // One row in, one row out: the statement selects from `prior`, which is a `LEFT JOIN` over
+    // the input and therefore preserves it.
+    outcomes
+        .into_iter()
+        .next()
+        .map(|(_, _, outcome)| outcome)
+        .ok_or_else(|| {
+            crate::error::DbError::Conflict("the queue upsert returned no row".to_owned())
+        })
 }
 
 /// A pending merge candidate enriched with everything an operator needs to judge it without

@@ -1,0 +1,37 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH input AS ( SELECT d.id, LEAST(d.a, d.b) AS series_id, GREATEST(d.a, d.b) AS candidate_id, d.score, d.signals, d.reason FROM jsonb_to_recordset($1::jsonb) AS d( id uuid, a uuid, b uuid, score real, signals text[], reason text) ), prior AS ( SELECT i.series_id, i.candidate_id, mc.resolved, mc.outcome FROM input i LEFT JOIN merge_candidates mc ON mc.series_id = i.series_id AND mc.candidate_id = i.candidate_id ), upsert AS ( INSERT INTO merge_candidates (id, series_id, candidate_id, score, signals, reason) SELECT id, series_id, candidate_id, score, signals, reason FROM input ON CONFLICT (series_id, candidate_id) DO UPDATE SET score = EXCLUDED.score, signals = EXCLUDED.signals, reason = EXCLUDED.reason, resolved = false, outcome = NULL, resolved_by = NULL, resolved_at = NULL, updated_at = now() WHERE NOT merge_candidates.resolved OR merge_candidates.outcome = 'distinct' RETURNING 1 AS touched ) SELECT p.series_id AS \"series_id!\", p.candidate_id AS \"candidate_id!\", CASE WHEN p.resolved IS NULL THEN 'added' WHEN NOT p.resolved THEN 'refreshed' WHEN p.outcome = 'distinct' THEN 'reopened' ELSE 'unchanged' END AS \"outcome!\" FROM prior p",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "series_id!",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "candidate_id!",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "outcome!",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Jsonb"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      null
+    ]
+  },
+  "hash": "0544efbdb1929bc9e79085a5a8f2ac186f9dc44e2dd5927cca7616821d2e4bc2"
+}

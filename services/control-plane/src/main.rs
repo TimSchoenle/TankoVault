@@ -113,12 +113,21 @@ struct SchedulerConfig {
     /// Seconds between full-scan sweeps. 0 disables (full scans are usually on demand).
     #[serde(default)]
     full_interval_secs: u64,
-    /// Seconds between duplicate-reconciliation sweeps. 0 disables.
+    /// Seconds between full duplicate-reconciliation sweeps. 0 disables.
     ///
-    /// Hourly by default: the enrichment the sweep needs (authors, year, alt titles)
-    /// happens on the order of hours, not minutes.
+    /// Hourly by default: this is the cadence of *discovery*, which blocks the whole catalogue on
+    /// the compact title key and so costs the same whether anything changed or not.
     #[serde(default = "default_merge_sweep_interval")]
     merge_sweep_interval_secs: u64,
+    /// Seconds between rotation-only sweeps — the open queue and the recheck set, no discovery.
+    /// 0 disables.
+    ///
+    /// Four times an hour by default. These two shortlists are index scans bounded by their own
+    /// budgets, and re-scoring is how a pair that was genuinely ambiguous in January becomes an
+    /// automatic merge once both sides have been enriched; tying that to the discovery cadence
+    /// meant a queue of thousands took most of a day to turn over once.
+    #[serde(default = "default_merge_sweep_rotation_interval")]
+    merge_sweep_rotation_interval_secs: u64,
     /// Newly-blocked duplicate pairs shortlisted per sweep.
     #[serde(default = "default_merge_sweep_pairs")]
     merge_sweep_pairs: i64,
@@ -176,6 +185,7 @@ impl Default for SchedulerConfig {
             fast_interval_secs: default_fast_interval(),
             full_interval_secs: 0,
             merge_sweep_interval_secs: default_merge_sweep_interval(),
+            merge_sweep_rotation_interval_secs: default_merge_sweep_rotation_interval(),
             merge_sweep_pairs: default_merge_sweep_pairs(),
             merge_sweep_requeue: default_merge_sweep_requeue(),
             merge_sweep_recheck: default_merge_sweep_recheck(),
@@ -199,6 +209,28 @@ impl SchedulerConfig {
             max_auto_merges: self.merge_sweep_max_auto_merges,
         }
     }
+
+    /// The budget for a rotation-only pass.
+    ///
+    /// Discovery is dropped, and the automatic-merge ceiling is scaled by how much more often
+    /// this runs than the full sweep does. That ceiling is really a *rate* — the bound on how
+    /// many rows a bad threshold can delete before an operator looks — so running the rotation
+    /// four times an hour at the full sweep's per-run ceiling would quintuple the rate without
+    /// anyone having chosen to. With discovery disabled there is no other sweep to share the rate
+    /// with, and the rotation carries the whole ceiling.
+    fn rotation_budget(&self) -> dedupe::SweepBudget {
+        let full = self.merge_budget();
+        let scaled = i64::try_from(self.merge_sweep_rotation_interval_secs)
+            .unwrap_or(i64::MAX)
+            .saturating_mul(full.max_auto_merges)
+            .checked_div(i64::try_from(self.merge_sweep_interval_secs).unwrap_or(i64::MAX))
+            .unwrap_or(full.max_auto_merges);
+        dedupe::SweepBudget {
+            pairs: 0,
+            max_auto_merges: scaled.clamp(1, full.max_auto_merges.max(1)),
+            ..full
+        }
+    }
 }
 
 fn default_fast_interval() -> u64 {
@@ -207,14 +239,17 @@ fn default_fast_interval() -> u64 {
 fn default_merge_sweep_interval() -> u64 {
     3600
 }
+fn default_merge_sweep_rotation_interval() -> u64 {
+    900
+}
 fn default_merge_sweep_pairs() -> i64 {
     500
 }
 fn default_merge_sweep_requeue() -> i64 {
-    250
+    500
 }
 fn default_merge_sweep_recheck() -> i64 {
-    250
+    500
 }
 fn default_merge_sweep_max_auto_merges() -> i64 {
     200
@@ -267,8 +302,11 @@ struct AppState {
     recsys_batch: i64,
     /// Ceiling on one incremental model build.
     recsys_incremental_max: i64,
-    /// How much work one duplicate sweep may do — including how many series it may delete.
+    /// How much work one full duplicate sweep may do — including how many series it may delete.
     merge_budget: dedupe::SweepBudget,
+    /// The same for a rotation-only pass, whose merge ceiling is scaled by its cadence so that
+    /// running it more often does not raise how much the sweeps may delete per hour.
+    rotation_budget: dedupe::SweepBudget,
     /// How long an unfinished run suppresses another for the same provider and mode.
     run_stale_after: Duration,
 }
@@ -349,6 +387,7 @@ async fn serve_once(
         tunables,
         matching: cfg.matching.clone(),
         merge_budget: cfg.scheduler.merge_budget(),
+        rotation_budget: cfg.scheduler.rotation_budget(),
         run_stale_after: Duration::from_secs(cfg.scheduler.run_stale_after_secs),
         recsys_batch: cfg.scheduler.recsys_batch,
         recsys_incremental_max: cfg.scheduler.recsys_incremental_max,
@@ -495,15 +534,24 @@ async fn trigger_merge_sweep(
         ));
     }
     let actor = body.and_then(|Json(b)| b.actor);
-    let report = dedupe::sweep(&state.pool, &state.matching, state.merge_budget, actor)
-        .await
-        .map_err(internal)?;
+    // Always the full scope: an operator asking for a sweep is asking it to look for duplicates,
+    // not only to re-score the ones already recorded.
+    let report = dedupe::sweep(
+        &state.pool,
+        &state.matching,
+        state.merge_budget,
+        dedupe::SweepScope::Full,
+        actor,
+    )
+    .await
+    .map_err(internal)?;
     tracing::info!(
         examined = report.pairs_examined,
         auto_merged = report.auto_merged,
         queued = report.queued,
         withdrawn = report.withdrawn,
         deferred = report.deferred,
+        chains_deferred = report.chains_deferred,
         "duplicate sweep (on demand) complete"
     );
     Ok(Json(report))
@@ -717,6 +765,7 @@ async fn run_scheduler(
     if cfg.fast_interval_secs == 0
         && cfg.full_interval_secs == 0
         && cfg.merge_sweep_interval_secs == 0
+        && cfg.merge_sweep_rotation_interval_secs == 0
         && cfg.recsys_incremental_interval_secs == 0
         && cfg.recsys_full_interval_secs == 0
         && cfg.reconcile_interval_secs == 0
@@ -727,6 +776,7 @@ async fn run_scheduler(
     let mut fast = interval_or_never(cfg.fast_interval_secs);
     let mut full = interval_or_never(cfg.full_interval_secs);
     let mut merge = interval_or_never(cfg.merge_sweep_interval_secs);
+    let mut merge_rotation = interval_or_never(cfg.merge_sweep_rotation_interval_secs);
     let mut repair = interval_or_never(cfg.reconcile_interval_secs);
     let mut recsys_incremental = interval_or_never(cfg.recsys_incremental_interval_secs);
     let mut recsys_full = interval_or_never(cfg.recsys_full_interval_secs);
@@ -743,7 +793,12 @@ async fn run_scheduler(
             }
             () = tick(&mut fast) => maybe_sweep(&state, &leadership, ScanMode::Fast).await,
             () = tick(&mut full) => maybe_sweep(&state, &leadership, ScanMode::Full).await,
-            () = tick(&mut merge) => maybe_merge_sweep(&state, &leadership).await,
+            () = tick(&mut merge) => {
+                maybe_merge_sweep(&state, &leadership, dedupe::SweepScope::Full).await;
+            }
+            () = tick(&mut merge_rotation) => {
+                maybe_merge_sweep(&state, &leadership, dedupe::SweepScope::Rotation).await;
+            }
             () = tick(&mut repair) => maybe_reconcile(&state, &leadership).await,
             () = tick(&mut recsys_incremental) => {
                 maybe_recsys_build(&state, &cfg, &leadership, false).await;
@@ -843,7 +898,11 @@ async fn maybe_reconcile(state: &AppState, leadership: &leader::Leadership) {
 ///
 /// Leadership matters more than for a scan sweep: two replicas merging the same pair
 /// race on a destructive transaction, and the loser finds its series already gone.
-async fn maybe_merge_sweep(state: &AppState, leadership: &leader::Leadership) {
+async fn maybe_merge_sweep(
+    state: &AppState,
+    leadership: &leader::Leadership,
+    scope: dedupe::SweepScope,
+) {
     if !state.features.is_enabled(Feature::ScanningAutoMerge) {
         tracing::debug!("skipping duplicate sweep; automatic merging is switched off");
         return;
@@ -852,8 +911,12 @@ async fn maybe_merge_sweep(state: &AppState, leadership: &leader::Leadership) {
         tracing::debug!("skipping duplicate sweep; not scheduler leader");
         return;
     }
+    let budget = match scope {
+        dedupe::SweepScope::Full => state.merge_budget,
+        dedupe::SweepScope::Rotation => state.rotation_budget,
+    };
     let started = std::time::Instant::now();
-    match dedupe::sweep(&state.pool, &state.matching, state.merge_budget, None).await {
+    match dedupe::sweep(&state.pool, &state.matching, budget, scope, None).await {
         Ok(report) => {
             tracing::info!(
                 examined = report.pairs_examined,
@@ -861,6 +924,7 @@ async fn maybe_merge_sweep(state: &AppState, leadership: &leader::Leadership) {
                 queued = report.queued,
                 withdrawn = report.withdrawn,
                 deferred = report.deferred,
+                chains_deferred = report.chains_deferred,
                 "duplicate sweep complete"
             );
             // `auto_merged` is the destructive one and the only arm bounded by the merge
@@ -871,6 +935,7 @@ async fn maybe_merge_sweep(state: &AppState, leadership: &leader::Leadership) {
                 ("queued", report.queued),
                 ("withdrawn", report.withdrawn),
                 ("deferred", report.deferred),
+                ("chains_deferred", report.chains_deferred),
             ] {
                 // The report's counts are `i64` and cannot be negative; a saturating
                 // conversion keeps a future signed field from wrapping into a huge counter
@@ -881,7 +946,16 @@ async fn maybe_merge_sweep(state: &AppState, leadership: &leader::Leadership) {
         }
         Err(e) => tracing::warn!(error = %e, "duplicate sweep failed"),
     }
-    metrics::histogram!("merge_sweep_duration_seconds").record(started.elapsed().as_secs_f64());
+    // Labelled by scope: a rotation pass and a full sweep have different costs by design, and
+    // one histogram over both reads as bimodal noise rather than as either.
+    metrics::histogram!(
+        "merge_sweep_duration_seconds",
+        "scope" => match scope {
+            dedupe::SweepScope::Full => "full",
+            dedupe::SweepScope::Rotation => "rotation",
+        },
+    )
+    .record(started.elapsed().as_secs_f64());
 }
 
 /// Runs a sweep only when this replica holds scheduler leadership *and* scheduled scanning
@@ -949,4 +1023,67 @@ async fn tick(maybe: &mut Option<tokio::time::Interval>) {
 fn internal<E: std::fmt::Display>(e: E) -> Problem {
     tracing::error!(error = %e, "control-plane request failed");
     Problem::internal()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{SchedulerConfig, default_merge_sweep_max_auto_merges};
+
+    /// Running the queue rotation more often must not raise how many series the sweeps may
+    /// delete per hour.
+    ///
+    /// `merge_sweep_max_auto_merges` is the only bound on a destructive background action, and it
+    /// is written per run. Splitting the sweep into an hourly discovery pass and a frequent
+    /// rotation pass silently multiplied that bound by the number of rotations in an hour â€” the
+    /// ceiling would still have read `200` in the configuration while permitting five times as
+    /// many deletions between two looks at the catalogue. The rotation's share is therefore
+    /// scaled by its cadence, and this pins the arithmetic.
+    #[test]
+    fn a_rotation_pass_does_not_multiply_the_hourly_merge_ceiling() {
+        let cfg = SchedulerConfig::default();
+        let per_hour = 3600 / cfg.merge_sweep_rotation_interval_secs;
+        let rotation = cfg.rotation_budget();
+
+        assert_eq!(
+            rotation.max_auto_merges * i64::try_from(per_hour).expect("a small count"),
+            cfg.merge_budget().max_auto_merges,
+            "four rotations at the scaled ceiling must equal one full sweep at the configured one",
+        );
+        assert_eq!(
+            rotation.pairs, 0,
+            "a rotation pass does no discovery, which is the expensive half",
+        );
+        assert_eq!(rotation.requeue, cfg.merge_sweep_requeue);
+        assert_eq!(rotation.recheck, cfg.merge_sweep_recheck);
+    }
+
+    /// With discovery switched off the rotation is the only sweep, so it carries the whole
+    /// ceiling rather than a share of a cadence that never runs.
+    #[test]
+    fn the_rotation_carries_the_whole_ceiling_when_discovery_is_disabled() {
+        let cfg = SchedulerConfig {
+            merge_sweep_interval_secs: 0,
+            ..SchedulerConfig::default()
+        };
+        assert_eq!(
+            cfg.rotation_budget().max_auto_merges,
+            default_merge_sweep_max_auto_merges(),
+        );
+    }
+
+    /// A rotation may always merge at least one pair.
+    ///
+    /// The scaling is integer division, so a rotation interval short enough relative to the
+    /// discovery one rounds its share to zero â€” which would not be a conservative ceiling but a
+    /// rotation that can re-score the queue forever and never act on it.
+    #[test]
+    fn a_rotation_may_always_merge_at_least_one_pair() {
+        let cfg = SchedulerConfig {
+            merge_sweep_interval_secs: 86_400,
+            merge_sweep_rotation_interval_secs: 60,
+            merge_sweep_max_auto_merges: 10,
+            ..SchedulerConfig::default()
+        };
+        assert_eq!(cfg.rotation_budget().max_auto_merges, 1);
+    }
 }

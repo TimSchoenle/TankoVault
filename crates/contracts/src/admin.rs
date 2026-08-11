@@ -558,6 +558,13 @@ pub struct MergeSweepView {
     /// misses, and they are the rows to read first — each is either a duplicate the guard is
     /// costing you or a merge the guard just prevented.
     pub blocked: i64,
+    /// Pairs skipped because a merge earlier in this same run absorbed one of their two series.
+    ///
+    /// Their facts were loaded before that merge and are now stale, so re-judging them here would
+    /// score the survivor as it was rather than as it is. A three-way duplicate therefore takes
+    /// more than one pass; non-zero means another pass has something to do, and the scheduler
+    /// runs one rather than leaving the chain until the next tick.
+    pub chains_deferred: i64,
 }
 
 /// What a normalized-key rebuild changed.

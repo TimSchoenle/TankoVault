@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO merge_decisions (id, sweep_id, trigger, actor_id, left_id, right_id, left_title, right_title, verdict, reason, blocked_by, outcome, survivor_id, absorbed_id, score, base_score, signals, terms, evidence, policy, undo) SELECT d.id, d.sweep_id, d.trigger, d.actor_id, d.left_id, d.right_id, d.left_title, d.right_title, d.verdict, d.reason, d.blocked_by, d.outcome, d.survivor_id, d.absorbed_id, d.score, d.base_score, d.signals, d.terms, d.evidence, d.policy, d.undo FROM jsonb_to_recordset($1::jsonb) AS d( id uuid, sweep_id uuid, trigger text, actor_id uuid, left_id uuid, right_id uuid, left_title text, right_title text, verdict text, reason text, blocked_by text[], outcome text, survivor_id uuid, absorbed_id uuid, score real, base_score real, signals text[], terms jsonb, evidence jsonb, policy jsonb, undo jsonb)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "318507605c05bd3d2e3ab45fa6820ceb6cb6b82681652fe48a0dddb9a5ea6566"
+}

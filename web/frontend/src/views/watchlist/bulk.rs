@@ -75,7 +75,7 @@ pub(super) fn BulkBar(
                 .bulk_update_watchlist()
                 .body(WatchlistBulkUpdate {
                     series_ids,
-                    status: status.map(Into::into),
+                    status,
                     notify,
                 })
                 .send()

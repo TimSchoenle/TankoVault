@@ -365,20 +365,20 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
         let client = api.client();
         spawn(async move {
             let opts = SyncOpts {
-                policy: Some(ConflictPolicy::NewestWins.into()),
+                policy: Some(ConflictPolicy::NewestWins),
             };
             // Pull before push, or a title just added on the other side gets overwritten.
             let result = match client
                 .sync_pull()
                 .provider(SYNC_PROVIDER)
-                .body(SyncPullBody::Variant1(opts.clone()))
+                .body(opts.clone())
                 .send()
                 .await
             {
                 Ok(_) => client
                     .sync_push()
                     .provider(SYNC_PROVIDER)
-                    .body(SyncPushBody::Variant1(opts))
+                    .body(opts)
                     .send()
                     .await
                     .map(|_| i18n.t("watchlist.synced"))

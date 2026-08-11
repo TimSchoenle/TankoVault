@@ -140,6 +140,69 @@ impl Default for Politeness {
     }
 }
 
+/// The politeness block as a *request body* carries it.
+///
+/// Mirrors [`Politeness`] field for field and differs in exactly one way: an absent `emulation`
+/// means *no* emulation, where [`Politeness`] reads an absent key as [`BrowserEmulation::Chrome`].
+///
+/// That asymmetry is load-bearing on both sides, which is why the two shapes cannot be one type.
+/// [`Politeness`] is also the stored JSONB document, and a row written before emulation existed
+/// carries no such key — reading it as "no emulation" would put an upgraded install back to
+/// crawling as an identifiable bot. A client generated from this API's schema, meanwhile, has no
+/// way to *send* an explicit `null`: `Option` fields are omitted when they are `None`. So if
+/// absent meant Chrome here too, choosing "no emulation" in the console would silently put the
+/// provider back on Chrome and report the save as successful.
+///
+/// Kept in step with [`Politeness`] by the exhaustive `From` below (a new stored field fails to
+/// compile) and by `every_stored_field_survives_the_request_shape` (a new field hardcoded to
+/// silence that failure).
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct PolitenessInput {
+    /// Requests per second, per worker process (see [`Politeness`] on fleet totals).
+    #[serde(default = "Politeness::default_rps")]
+    pub rps: f64,
+    /// Maximum concurrent requests to this provider, per worker process.
+    #[serde(default = "Politeness::default_concurrency")]
+    pub concurrency: u32,
+    /// Minimum delay between requests, in milliseconds.
+    #[serde(default)]
+    pub crawl_delay_ms: u64,
+    /// User-agent sent on ordinary (non-challenge) requests — only when `emulation` is absent.
+    #[serde(default = "Politeness::default_user_agent")]
+    pub user_agent: String,
+    /// Browser to impersonate. Absent (or null) crawls as an identifiable bot using `user_agent`.
+    #[serde(default)]
+    pub emulation: Option<BrowserEmulation>,
+}
+
+impl Default for PolitenessInput {
+    fn default() -> Self {
+        // Deliberately not `Politeness::default()`: this must agree with what an empty `{}` body
+        // deserializes to, and that carries no `emulation` key — which here is "no emulation".
+        // A request that omits the block *entirely* is a different statement, and the handler
+        // that receives `None` answers it with the server's defaults rather than with this.
+        Self {
+            rps: Politeness::default_rps(),
+            concurrency: Politeness::default_concurrency(),
+            crawl_delay_ms: 0,
+            user_agent: Politeness::default_user_agent(),
+            emulation: None,
+        }
+    }
+}
+
+impl From<PolitenessInput> for Politeness {
+    fn from(input: PolitenessInput) -> Self {
+        Self {
+            rps: input.rps,
+            concurrency: input.concurrency,
+            crawl_delay_ms: input.crawl_delay_ms,
+            user_agent: input.user_agent,
+            emulation: input.emulation,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     // Clamping returns exactly the ceiling constants, so exact float comparison is correct.
@@ -230,6 +293,7 @@ mod tests {
 
     /// Providers stored before emulation existed deserialize into the new default rather
     /// than into "no emulation", so an upgrade does not silently keep crawling as a bot.
+    /// This is the half of the contract [`PolitenessInput`] deliberately inverts.
     #[test]
     fn missing_emulation_deserializes_to_default() {
         let p: Politeness = serde_json::from_str(r#"{"rps":1.0,"concurrency":2}"#).unwrap();
@@ -240,5 +304,38 @@ mod tests {
     fn explicit_null_emulation_disables_it() {
         let p: Politeness = serde_json::from_str(r#"{"emulation":null}"#).unwrap();
         assert!(p.emulation.is_none());
+    }
+
+    /// A request that names no emulation is asking for none — the opposite of what the same
+    /// absence means in a stored document, and the whole reason the two shapes are two types.
+    /// `Default` has to agree with an empty body, since a caller cannot tell which one a server
+    /// used to fill the gaps.
+    #[test]
+    fn a_request_without_emulation_means_no_emulation() {
+        let sparse: PolitenessInput = serde_json::from_str(r#"{"rps":1.0}"#).unwrap();
+        assert!(sparse.emulation.is_none());
+        assert!(PolitenessInput::default().emulation.is_none());
+        let explicit: PolitenessInput = serde_json::from_str(r#"{"emulation":null}"#).unwrap();
+        assert!(explicit.emulation.is_none());
+    }
+
+    /// `PolitenessInput` hand-mirrors `Politeness`, and a tunable carried by one and not the
+    /// other is one the API publishes in its schema and then throws away. Adding a field to
+    /// `Politeness` already fails to compile in the `From` impl; what this pins is the tempting
+    /// way to silence that — filling the new field with a constant instead of reading it off the
+    /// request. Every value below is therefore a non-default one.
+    #[test]
+    fn every_stored_field_survives_the_request_shape() {
+        let tuned = Politeness {
+            rps: 3.5,
+            concurrency: 7,
+            crawl_delay_ms: 250,
+            user_agent: "TankoVault/test".to_owned(),
+            emulation: Some(BrowserEmulation::Firefox),
+        };
+        let sent = serde_json::to_value(&tuned).expect("the stored shape serialises");
+        let received: PolitenessInput =
+            serde_json::from_value(sent).expect("the request shape carries every stored field");
+        assert_eq!(Politeness::from(received), tuned);
     }
 }

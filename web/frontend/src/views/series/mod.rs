@@ -149,12 +149,7 @@ fn SeriesPage(id: String) -> Element {
                 .series_id(id)
                 .send()
                 .await
-                .map(|r| match r.into_inner().entry {
-                    Some(WatchlistEntryViewEntry::Variant1(item)) => Some(item),
-                    // `Variant0` is the generated shape of the schema's `null` arm; it and an
-                    // absent field mean the same thing — this series is not tracked.
-                    _ => None,
-                })
+                .map(|r| r.into_inner().entry)
                 .map_err(|e| api::friendly_error(i18n, e))
         }
     });

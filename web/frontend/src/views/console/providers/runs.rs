@@ -4,7 +4,7 @@ use crate::api;
 use crate::components::{async_view, EmptyBox, SkeletonBlock};
 use crate::hooks::use_reload;
 use crate::i18n::use_i18n;
-use crate::models::{ProviderId, RunStateExt as _, ScanRun, ScanRunProviderId};
+use crate::models::{ProviderId, RunStateExt as _, ScanRun};
 use crate::util::rel_time;
 use crate::views::console::run_state_pill;
 use dioxus::prelude::*;
@@ -38,9 +38,7 @@ pub(super) fn RunsTab(provider_id: ProviderId) -> Element {
             let mine: Vec<ScanRun> = all
                 .items
                 .iter()
-                .filter(|run| {
-                    matches!(&run.provider_id, Some(ScanRunProviderId::Variant1(id)) if *id == provider_id)
-                })
+                .filter(|run| run.provider_id == Some(provider_id))
                 .cloned()
                 .collect();
             if mine.is_empty() {

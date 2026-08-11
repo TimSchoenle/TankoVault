@@ -335,7 +335,7 @@ fn ConflictCard(conflict: ConflictRow, reload_sync: Reload, reload_progress: Rel
             spawn(async move {
                 let body = SyncSettingsPatch {
                     auto_sync_enabled: None,
-                    conflict_policy: Some(ConflictPolicy::NewestWins.into()),
+                    conflict_policy: Some(ConflictPolicy::NewestWins),
                 };
                 match client
                     .sync_settings_patch()

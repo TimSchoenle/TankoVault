@@ -905,6 +905,7 @@
       "badConcurrency": "Concurrency must be a whole number.",
       "badConfig": "Config is not valid JSON: {message}",
       "badCrawlDelay": "Crawl delay must be a whole number of milliseconds.",
+      "badEmulation": "That browser profile is not one this server accepts.",
       "badRps": "Requests/sec must be a number.",
       "blocked": "Blocked links",
       "blocklist": "Blocklist this provider",

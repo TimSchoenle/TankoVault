@@ -1,6 +1,6 @@
 //! The politeness editor's emulation vocabulary, and the body its Save submits.
 
-use crate::models::{Politeness, PolitenessEmulation};
+use crate::models::PolitenessInput;
 // Not re-exported by `crate::models`: only this picker names the profiles.
 use crate::wire::types::BrowserEmulation;
 
@@ -18,13 +18,8 @@ pub(super) const EMULATION_CHOICES: [(BrowserEmulation, &str); 5] = [
 ];
 
 /// The picker's value for a provider's stored emulation; empty is the "no emulation" option.
-pub(super) fn emulation_token(stored: Option<&PolitenessEmulation>) -> String {
-    match stored {
-        Some(PolitenessEmulation::Variant1(profile)) => profile.to_string(),
-        // The raw-JSON arm of the generated untagged nullable `$ref`; `null` reads as empty.
-        Some(PolitenessEmulation::Variant0(value)) => value.as_str().unwrap_or_default().to_owned(),
-        None => String::new(),
-    }
+pub(super) fn emulation_token(stored: Option<&BrowserEmulation>) -> String {
+    stored.map(ToString::to_string).unwrap_or_default()
 }
 
 /// Build the politeness body from the editor's fields, or the catalogue key of the field that
@@ -34,15 +29,15 @@ pub(super) fn emulation_token(stored: Option<&PolitenessEmulation>) -> String {
 ///
 /// # Errors
 ///
-/// The catalogue key naming the first of `rps`, `concurrency` or `crawl_delay_ms` that is not a
-/// non-negative number.
+/// The catalogue key naming the first of `rps`, `concurrency`, `crawl_delay_ms` or `emulation`
+/// that the server would not accept.
 pub(super) fn politeness_body(
     rps: &str,
     concurrency: &str,
     crawl_delay_ms: &str,
     user_agent: &str,
     emulation: &str,
-) -> Result<Politeness, &'static str> {
+) -> Result<PolitenessInput, &'static str> {
     let rps: f64 = rps.trim().parse().map_err(|_| "console.providers.badRps")?;
     // Parsed unsigned and then narrowed, so a negative or oversized figure is refused here
     // rather than reaching the server as a value it would clamp into something else.
@@ -58,34 +53,35 @@ pub(super) fn politeness_body(
         .ok()
         .and_then(|n| i64::try_from(n).ok())
         .ok_or("console.providers.badCrawlDelay")?;
-    Ok(Politeness {
+    Ok(PolitenessInput {
         rps: Some(rps),
         concurrency: Some(concurrency),
         crawl_delay_ms: Some(crawl_delay_ms),
         user_agent: Some(user_agent.to_owned()),
-        emulation: Some(emulation_field(emulation)),
+        emulation: emulation_field(emulation)?,
     })
 }
 
-/// The `emulation` field, with "no emulation" carried as the explicit `null` the server needs.
+/// The `emulation` field: a profile, or `None` for "no emulation".
 ///
-/// This must never be `None`. The generated `Politeness` skips a `None` emulation when it
-/// serialises, and the server's serde default for an absent `emulation` key is
-/// `Some(BrowserEmulation::Chrome)` — so omitting the key does not mean "no emulation", it
-/// means "put this provider back on Chrome". `Variant0` is the raw-JSON arm of the generated
-/// untagged nullable `$ref`, and holding `Value::Null` in it is the only way this client can
-/// put a literal `null` on the wire.
-fn emulation_field(token: &str) -> PolitenessEmulation {
+/// `None` leaves the key out of the request, and `PolitenessInput` is the schema that makes that
+/// mean what it says — the stored `Politeness` reads an absent `emulation` as Chrome, which is
+/// the right answer for a provider row written before the field existed and the wrong one for a
+/// request. Sending the two shapes at the same schema is what made this silently unfixable.
+///
+/// # Errors
+///
+/// `console.providers.badEmulation` for a token no profile answers to. Not degraded to `None`:
+/// an unrecognised token can only be a bug in the picker above, and refusing the save names it,
+/// where a quiet `None` would turn emulation off and look like it worked.
+fn emulation_field(token: &str) -> Result<Option<BrowserEmulation>, &'static str> {
     if token.is_empty() {
-        return PolitenessEmulation::Variant0(serde_json::Value::Null);
+        return Ok(None);
     }
-    match token.parse::<BrowserEmulation>() {
-        Ok(profile) => PolitenessEmulation::Variant1(profile),
-        // Not degraded to `null`: an unrecognised token can only be a bug in the picker above,
-        // and the server refusing it names the value, where a quiet `null` would silently turn
-        // emulation off and look like it worked.
-        Err(_) => PolitenessEmulation::Variant0(serde_json::Value::String(token.to_owned())),
-    }
+    token
+        .parse::<BrowserEmulation>()
+        .map(Some)
+        .map_err(|_| "console.providers.badEmulation")
 }
 
 #[cfg(test)]
@@ -100,22 +96,25 @@ mod tests {
 
     /// Choosing "no emulation" and saving used to leave the provider on Chrome.
     ///
-    /// The editor built the payload as a `serde_json::Value` carrying an explicit
-    /// `"emulation": null` — which is what the server needs, because its serde default for an
-    /// *absent* key is `Some(BrowserEmulation::Chrome)` — and then round-tripped it through
-    /// `serde_json::from_value::<Politeness>(…)`. That deserialised the `null` to
-    /// `Option::None`, and the generated struct's `skip_serializing_if = "Option::is_none"`
-    /// dropped the key from the request entirely. The provider went back to impersonating
-    /// Chrome, the save reported success, and reloading showed the picker on "no emulation"
-    /// until the next fetch.
+    /// Twice, for the same reason wearing two shapes. The editor first built the payload as a
+    /// `serde_json::Value` carrying an explicit `"emulation": null` and round-tripped it through
+    /// the generated struct, whose `skip_serializing_if = "Option::is_none"` dropped the key from
+    /// the request entirely. The workaround that replaced it — holding `Value::Null` in the
+    /// raw-JSON arm of the generated untagged nullable `$ref` — worked only because that arm
+    /// swallowed every such field, which was itself the bug it stood on.
+    ///
+    /// Both are gone because the server no longer reads an absent key as Chrome on this path:
+    /// `PolitenessInput` is a request-only schema whose absent `emulation` means no emulation, so
+    /// the key the generated client omits is the key the server wants omitted. Either way the
+    /// symptom was the same — the provider went back to impersonating Chrome, the save reported
+    /// success, and the picker still read "no emulation" until the next fetch.
     #[test]
-    fn choosing_no_emulation_sends_an_explicit_null() {
-        assert_eq!(body("")["emulation"], serde_json::Value::Null);
+    fn choosing_no_emulation_omits_the_key() {
         assert!(
             body("")
                 .as_object()
-                .is_some_and(|o| o.contains_key("emulation")),
-            "the key must be present and null, not absent — an absent key defaults to Chrome"
+                .is_some_and(|o| !o.contains_key("emulation")),
+            "the key must be absent — that is how this request shape spells \"no emulation\""
         );
     }
 
@@ -125,11 +124,14 @@ mod tests {
         assert_eq!(body("ok_http")["emulation"], serde_json::json!("ok_http"));
     }
 
-    /// An unrecognised token must reach the server, which refuses it by name. Mapping it to
-    /// `null` instead would silently disable emulation on a save that looked like it worked.
+    /// An unrecognised token fails the save and names itself. Mapping it to "no emulation"
+    /// instead would silently disable emulation on a save that looked like it worked.
     #[test]
     fn an_unrecognised_token_is_not_quietly_turned_into_no_emulation() {
-        assert_eq!(body("netscape")["emulation"], serde_json::json!("netscape"));
+        assert_eq!(
+            politeness_body("1", "4", "250", "", "netscape").unwrap_err(),
+            "console.providers.badEmulation"
+        );
     }
 
     /// The picker's value for a provider must round-trip: what seeds the control has to be a
@@ -147,16 +149,10 @@ mod tests {
         }
     }
 
-    /// A stored emulation of `null` seeds the "no emulation" option, not the first one.
+    /// A provider with no stored emulation seeds the "no emulation" option, not the first one.
     #[test]
-    fn a_null_emulation_seeds_the_no_emulation_option() {
+    fn no_stored_emulation_seeds_the_no_emulation_option() {
         assert_eq!(emulation_token(None), "");
-        assert_eq!(
-            emulation_token(Some(&PolitenessEmulation::Variant0(
-                serde_json::Value::Null
-            ))),
-            ""
-        );
     }
 
     /// Each numeric field reports itself, so the message names the control to correct.

@@ -5,7 +5,7 @@ use super::config::DryRunResult;
 use crate::api;
 use crate::hooks::use_busy;
 use crate::i18n::use_i18n;
-use crate::models::{ProviderId, TestAdapterBody, TestAdapterRequest};
+use crate::models::{ProviderId, TestAdapterRequest};
 use dioxus::prelude::*;
 use inkstone_ui::{Button, Tone};
 use progenitor_client::ResponseValue;
@@ -33,7 +33,7 @@ pub(in crate::views::console) fn AdapterTestPanel(provider_id: ProviderId) -> El
             let out = client
                 .test_adapter()
                 .id(provider_id)
-                .body(TestAdapterBody::Variant1(body))
+                .body(body)
                 .send()
                 .await
                 .map(ResponseValue::into_inner)

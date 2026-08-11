@@ -10,7 +10,7 @@ use crate::components::{CardMeta, Cover};
 use crate::hooks::{use_busy, Reload};
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
-use crate::models::{because_series, FeedbackBody, Recommendation, SeriesId};
+use crate::models::{FeedbackBody, Recommendation, SeriesId};
 use crate::Route;
 use dioxus::prelude::*;
 use inkstone_ui::Button;
@@ -30,7 +30,7 @@ pub(crate) fn RecCard(item: Recommendation, reload: Reload, detailed: bool) -> E
     let i18n = use_i18n();
     let mut asking = use_signal(|| false);
 
-    let seed = because_series(&item);
+    let seed = item.because_series_id;
     // The score is deliberately not shown. It is a blended, rank-normalised number whose scale
     // is only meaningful against the other candidates in the same request — a reader comparing
     // two shelves would be comparing nothing.

@@ -47,6 +47,12 @@ impl HttpChallengeSolver {
     /// # Panics
     /// As [`Self::new`], and additionally if `material` is not valid PEM — which is a
     /// misconfigured mount, caught at boot before the process serves anything.
+    ///
+    /// `from_pkcs8_pem` is the strictest consumer of the three in this workspace: it tests the
+    /// first bytes of the key against the `PRIVATE KEY` banner PKCS#8 carries, where rustls and
+    /// reqwest take PKCS#1 and SEC1 keys as well. `ClientMaterial` therefore hands over a key already
+    /// re-encoded as PKCS#8, and a mount this rejects has already failed when the configuration
+    /// resolved, with the path in the message.
     #[must_use]
     pub fn with_mtls(
         endpoint: impl Into<String>,
@@ -70,7 +76,7 @@ impl HttpChallengeSolver {
             builder = builder
                 .tls_identity(
                     wreq::tls::trust::Identity::from_pkcs8_pem(&material.cert, &material.key)
-                        .expect("the mounted client certificate and key are valid PEM"),
+                        .expect("ClientMaterial holds a certificate and a PKCS#8 key"),
                 )
                 // Only the internal authority, never the public roots: a solver endpoint signed
                 // by a public CA is not this deployment's solver.

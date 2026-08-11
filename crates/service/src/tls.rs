@@ -12,6 +12,9 @@
 //! probe presents no client certificate.
 
 use arc_swap::ArcSwap;
+use pkcs8::der::pem::PemLabel as _;
+use pkcs8::der::zeroize::Zeroizing;
+use pkcs8::der::{Decode as _, Encode as _};
 use rustls::pki_types::pem::PemObject as _;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use rustls::server::WebPkiClientVerifier;
@@ -58,6 +61,8 @@ pub enum TlsError {
     },
     #[error("{path} contains no {want}")]
     Empty { path: String, want: &'static str },
+    #[error("{path} is not a private key this stack can present: {reason}")]
+    Key { path: String, reason: String },
     #[error("building the TLS configuration: {0}")]
     Config(String),
 }
@@ -263,8 +268,9 @@ fn build(paths: &ResolvedTls) -> Result<Arc<ServerConfig>, TlsError> {
 pub struct ClientMaterial {
     /// The certificate chain, PEM.
     pub cert: Vec<u8>,
-    /// The private key, PEM. Not a `secrecy` type: it never leaves this struct as text, and the
-    /// TLS builders that consume it take `&[u8]`.
+    /// The private key, **PKCS#8 PEM** whatever the mounted file held — see [`pkcs8_pem`]. Not a
+    /// `secrecy` type: it never leaves this struct as text, and the TLS builders that consume it
+    /// take `&[u8]`.
     pub key: Vec<u8>,
     /// The authorities a server certificate must chain to, PEM.
     pub ca: Vec<u8>,
@@ -284,7 +290,8 @@ impl std::fmt::Debug for ClientMaterial {
 /// Read the three files an outbound mTLS client needs.
 ///
 /// # Errors
-/// [`TlsError::Read`] naming whichever path could not be read.
+/// [`TlsError::Read`] naming whichever path could not be read, or [`TlsError::Key`] when the key
+/// is not one [`pkcs8_pem`] can normalise.
 pub fn client_material(paths: &ResolvedTls) -> Result<ClientMaterial, TlsError> {
     let read = |path: &Path| {
         std::fs::read(path).map_err(|source| TlsError::Read {
@@ -294,9 +301,93 @@ pub fn client_material(paths: &ResolvedTls) -> Result<ClientMaterial, TlsError> 
     };
     Ok(ClientMaterial {
         cert: read(&paths.cert)?,
-        key: read(&paths.key)?,
+        key: pkcs8_pem(&read(&paths.key)?, &paths.key)?,
         ca: read(&paths.ca)?,
     })
+}
+
+/// `rsaEncryption`, RFC 8017 appendix A.1.
+const RSA_ENCRYPTION: pkcs8::ObjectIdentifier =
+    pkcs8::ObjectIdentifier::new_unwrap("1.2.840.113549.1.1.1");
+
+/// `id-ecPublicKey`, RFC 5480 §2.1.1.
+const ID_EC_PUBLIC_KEY: pkcs8::ObjectIdentifier =
+    pkcs8::ObjectIdentifier::new_unwrap("1.2.840.10045.2.1");
+
+/// Re-encode a PEM private key as PKCS#8, whatever encoding the operator mounted.
+///
+/// The three TLS stacks that consume this one file disagree about what a private key may look
+/// like. rustls (the internal listener) and reqwest (the api tier) accept PKCS#8, PKCS#1 and
+/// SEC1; `wreq::tls::trust::Identity::from_pkcs8_pem`, which the worker's solver hop in
+/// `tankovault-fetch` runs on, tests the *first bytes* against the `PRIVATE KEY` banner PKCS#8
+/// carries and refuses everything else. cert-manager's default `privateKey.encoding` is PKCS#1, as is
+/// `openssl genrsa`, and `openssl ecparam -genkey` writes SEC1 — so a mount that satisfied the
+/// documented contract and every other consumer took the worker down at boot with `expected
+/// PKCS#8 PEM`. Normalising once, where the file is read, is what keeps the stacks agreeing.
+///
+/// Re-encoding an already-PKCS#8 key is deliberate, not a wasted round trip: it also strips a
+/// leading `Bag Attributes` preamble or comment, which some tooling emits and which defeats the
+/// same prefix test.
+///
+/// # Errors
+/// [`TlsError::Key`] if `pem` holds no private key, or an elliptic-curve key that names no curve
+/// (RFC 5480 forbids the implicit and explicit forms, and there is nothing to wrap it with).
+fn pkcs8_pem(pem: &[u8], path: &Path) -> Result<Vec<u8>, TlsError> {
+    fn encode(info: &pkcs8::PrivateKeyInfo<'_>) -> Result<Zeroizing<String>, String> {
+        let doc = pkcs8::SecretDocument::try_from(info).map_err(|e| e.to_string())?;
+        doc.to_pem(pkcs8::PrivateKeyInfo::PEM_LABEL, pkcs8::LineEnding::LF)
+            .map_err(|e| e.to_string())
+    }
+
+    /// RFC 5915 §1: the curve moves into the PKCS#8 algorithm identifier, and repeating it
+    /// inside the wrapped `ECPrivateKey` is redundant, so it is dropped on the way through.
+    fn wrap_sec1(der: &[u8]) -> Result<Zeroizing<String>, String> {
+        let mut ec = sec1::EcPrivateKey::from_der(der).map_err(|e| e.to_string())?;
+        let curve = ec
+            .parameters
+            .and_then(sec1::EcParameters::named_curve)
+            .ok_or_else(|| "the elliptic-curve key names no curve".to_owned())?;
+        ec.parameters = None;
+        let inner = Zeroizing::new(ec.to_der().map_err(|e| e.to_string())?);
+        encode(&pkcs8::PrivateKeyInfo {
+            algorithm: pkcs8::AlgorithmIdentifierRef {
+                oid: ID_EC_PUBLIC_KEY,
+                parameters: Some((&curve).into()),
+            },
+            private_key: &inner,
+            public_key: None,
+        })
+    }
+
+    let key = PrivateKeyDer::from_pem_slice(pem).map_err(|e| TlsError::Key {
+        path: path.display().to_string(),
+        reason: e.to_string(),
+    })?;
+
+    let normalised = match &key {
+        PrivateKeyDer::Pkcs8(key) => pkcs8::PrivateKeyInfo::try_from(key.secret_pkcs8_der())
+            .map_err(|e| e.to_string())
+            .and_then(|info| encode(&info)),
+        PrivateKeyDer::Pkcs1(key) => encode(&pkcs8::PrivateKeyInfo {
+            algorithm: pkcs8::AlgorithmIdentifierRef {
+                oid: RSA_ENCRYPTION,
+                parameters: Some(pkcs8::der::asn1::AnyRef::NULL),
+            },
+            private_key: key.secret_pkcs1_der(),
+            public_key: None,
+        }),
+        PrivateKeyDer::Sec1(key) => wrap_sec1(key.secret_sec1_der()),
+        // `PrivateKeyDer` is `#[non_exhaustive]`; a variant added upstream is not silently
+        // mis-wrapped under one of the algorithm identifiers above.
+        _ => Err("unrecognised private key encoding".to_owned()),
+    };
+
+    normalised
+        .map(|pem| pem.as_bytes().to_vec())
+        .map_err(|reason| TlsError::Key {
+            path: path.display().to_string(),
+            reason,
+        })
 }
 
 /// Every DNS subject alternative name in `cert`.
@@ -454,5 +545,133 @@ mod tests {
         })
         .expect_err("nothing is readable there");
         assert!(err.to_string().contains("tls.crt"), "{err}");
+    }
+
+    /// `prime256v1`, RFC 5480 §2.1.1.1.1 — the curve of the generated key below.
+    const PRIME256V1: pkcs8::ObjectIdentifier =
+        pkcs8::ObjectIdentifier::new_unwrap("1.2.840.10045.3.1.7");
+
+    fn pem(label: &str, der: &[u8]) -> Vec<u8> {
+        pkcs8::der::pem::encode_string(label, pkcs8::LineEnding::LF, der)
+            .expect("the label is valid PEM")
+            .into_bytes()
+    }
+
+    fn normalise(key: &[u8]) -> Vec<u8> {
+        pkcs8_pem(key, Path::new("/tls/tls.key")).expect("the key normalises")
+    }
+
+    /// The opening banner `wreq` tests for, assembled from the label rather than written out: a
+    /// PEM private-key header spelled in full anywhere in the tree is what the secret scan is
+    /// looking for, and it cannot tell this one from a leaked key.
+    fn banner() -> Vec<u8> {
+        format!("-----BEGIN {}-----", pkcs8::PrivateKeyInfo::PEM_LABEL).into_bytes()
+    }
+
+    /// A SEC1 elliptic-curve key — what `openssl ecparam -genkey` and cert-manager's default
+    /// `privateKey.encoding` write — used to take the worker down at boot: the solver client
+    /// runs on `wreq`, whose `Identity::from_pkcs8_pem` tests the first bytes of the key against
+    /// the PKCS#8 banner and panicked the process with `expected PKCS#8 PEM`, while rustls and
+    /// reqwest had already accepted the very same mount.
+    ///
+    /// The fixture is a real generated key rather than a committed one, and the assertion is
+    /// byte equality against the PKCS#8 that produced it: an independent implementation decides
+    /// what the rewrap should have emitted, down to the algorithm identifier and the stripped
+    /// parameters. The result is then loaded through rustls, so it is a key that signs and not
+    /// merely a blob with the right header.
+    #[test]
+    fn a_sec1_elliptic_curve_key_is_rewrapped_into_the_pkcs8_it_came_from() {
+        let generated = ring::signature::EcdsaKeyPair::generate_pkcs8(
+            &ring::signature::ECDSA_P256_SHA256_ASN1_SIGNING,
+            &ring::rand::SystemRandom::new(),
+        )
+        .expect("a P-256 key generates");
+        let expected = pem("PRIVATE KEY", generated.as_ref());
+
+        // The SEC1 file an operator mounts carries the curve inside the structure, which is
+        // where `openssl ec` and cert-manager put it and where PKCS#8 does not.
+        let info = pkcs8::PrivateKeyInfo::try_from(generated.as_ref()).expect("a PKCS#8 key");
+        let mut inner = sec1::EcPrivateKey::from_der(info.private_key).expect("a SEC1 key inside");
+        inner.parameters = Some(sec1::EcParameters::NamedCurve(PRIME256V1));
+        let normalised = normalise(&pem(
+            "EC PRIVATE KEY",
+            &inner.to_der().expect("the fixture encodes"),
+        ));
+
+        assert!(
+            normalised.starts_with(&banner()),
+            "wreq tests exactly this prefix: {}",
+            String::from_utf8_lossy(&normalised)
+        );
+        assert_eq!(
+            normalised, expected,
+            "the rewrap is not the original PKCS#8"
+        );
+
+        crate::crypto::install_default_provider();
+        let parsed = PrivateKeyDer::from_pem_slice(&normalised).expect("the output is a key");
+        rustls::crypto::ring::sign::any_supported_type(&parsed).expect("the key is usable");
+    }
+
+    /// The RSA half of the same bug: `openssl genrsa` writes PKCS#1, and so does cert-manager
+    /// for an RSA certificate. The key bytes are opaque to the rewrap — the algorithm identifier
+    /// is the whole of what it decides, and naming the wrong one produces a key no peer can use.
+    #[test]
+    fn a_pkcs1_rsa_key_is_rewrapped_under_the_rsa_encryption_algorithm_identifier() {
+        let pkcs1 = b"an opaque RSAPrivateKey body";
+        let normalised = normalise(&pem("RSA PRIVATE KEY", pkcs1));
+
+        assert!(normalised.starts_with(&banner()));
+        let parsed = PrivateKeyDer::from_pem_slice(&normalised).expect("the output is a key");
+        let info = pkcs8::PrivateKeyInfo::try_from(match &parsed {
+            PrivateKeyDer::Pkcs8(key) => key.secret_pkcs8_der(),
+            other => panic!("expected PKCS#8, got {other:?}"),
+        })
+        .expect("the output is a PrivateKeyInfo");
+        assert_eq!(info.algorithm.oid, RSA_ENCRYPTION);
+        assert_eq!(
+            info.algorithm.parameters,
+            Some(pkcs8::der::asn1::AnyRef::NULL),
+            "RFC 8017 A.1 requires the explicit NULL"
+        );
+        assert_eq!(info.private_key, pkcs1);
+    }
+
+    /// A key that is already PKCS#8 still goes through the rewrap, because the prefix test is on
+    /// the *first bytes* of the file: a `Bag Attributes` preamble or a leading comment — both of
+    /// which some tooling emits and every PEM parser skips — fails it just as a PKCS#1 key does.
+    #[test]
+    fn an_already_pkcs8_key_loses_a_preamble_that_would_defeat_the_prefix_test() {
+        let inner = pkcs8::PrivateKeyInfo {
+            algorithm: pkcs8::AlgorithmIdentifierRef {
+                oid: RSA_ENCRYPTION,
+                parameters: Some(pkcs8::der::asn1::AnyRef::NULL),
+            },
+            private_key: b"an opaque RSAPrivateKey body",
+            public_key: None,
+        };
+        let canonical = normalise(
+            pkcs8::SecretDocument::try_from(&inner)
+                .expect("the fixture encodes")
+                .to_pem(pkcs8::PrivateKeyInfo::PEM_LABEL, pkcs8::LineEnding::LF)
+                .expect("the fixture encodes")
+                .as_bytes(),
+        );
+
+        let mut with_preamble = b"Bag Attributes\n    friendlyName: worker\n".to_vec();
+        with_preamble.extend_from_slice(&canonical);
+
+        assert_eq!(normalise(&with_preamble), canonical);
+        assert!(canonical.starts_with(&banner()));
+    }
+
+    /// The failure has to name the path and stay an error. It is reached while the configuration
+    /// resolves, where the operator can still be told which of three mounts is wrong; a panic
+    /// there is a crash-looping replica with a message about PEM and no file name in it.
+    #[test]
+    fn a_key_that_cannot_be_normalised_names_its_path_rather_than_panicking() {
+        let err = pkcs8_pem(b"-----BEGIN CERTIFICATE-----\n", Path::new("/tls/tls.key"))
+            .expect_err("a certificate is not a private key");
+        assert!(err.to_string().contains("/tls/tls.key"), "{err}");
     }
 }

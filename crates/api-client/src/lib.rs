@@ -166,7 +166,7 @@ pub mod types {
     #[doc = "  \"type\": \"string\","]
     #[doc = "  \"enum\": ["]
     #[doc = "    \"madara\","]
-    #[doc = "    \"manga_themesia\","]
+    #[doc = "    \"mangathemesia\","]
     #[doc = "    \"manganato\","]
     #[doc = "    \"generic_config\","]
     #[doc = "    \"custom\""]
@@ -189,8 +189,8 @@ pub mod types {
     pub enum AdapterKind {
         #[serde(rename = "madara")]
         Madara,
-        #[serde(rename = "manga_themesia")]
-        MangaThemesia,
+        #[serde(rename = "mangathemesia")]
+        Mangathemesia,
         #[serde(rename = "manganato")]
         Manganato,
         #[serde(rename = "generic_config")]
@@ -202,7 +202,7 @@ pub mod types {
         fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
             match *self {
                 Self::Madara => f.write_str("madara"),
-                Self::MangaThemesia => f.write_str("manga_themesia"),
+                Self::Mangathemesia => f.write_str("mangathemesia"),
                 Self::Manganato => f.write_str("manganato"),
                 Self::GenericConfig => f.write_str("generic_config"),
                 Self::Custom => f.write_str("custom"),
@@ -214,7 +214,7 @@ pub mod types {
         fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
             match value {
                 "madara" => Ok(Self::Madara),
-                "manga_themesia" => Ok(Self::MangaThemesia),
+                "mangathemesia" => Ok(Self::Mangathemesia),
                 "manganato" => Ok(Self::Manganato),
                 "generic_config" => Ok(Self::GenericConfig),
                 "custom" => Ok(Self::Custom),

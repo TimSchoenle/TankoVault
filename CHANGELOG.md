@@ -12,6 +12,25 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [5.0.0](https://github.com/TimSchoenle/TankoVault/compare/v4.0.1...v5.0.0) (2026-08-10)
+
+
+### ⚠ BREAKING CHANGES
+
+* **adapters:** onboard fifteen sources, model paid early access, and fix the catalogue caps that truncated scans ([#186](https://github.com/TimSchoenle/TankoVault/issues/186))
+* **config:** move branding and copyright into a [branding] config block ([#190](https://github.com/TimSchoenle/TankoVault/issues/190))
+
+### Features
+
+* **adapters:** onboard fifteen sources, model paid early access, and fix the catalogue caps that truncated scans ([#186](https://github.com/TimSchoenle/TankoVault/issues/186)) ([bdd5326](https://github.com/TimSchoenle/TankoVault/commit/bdd5326dd6eb802d8e795f7cf6cca1a4cbd39ca0))
+* **api:** lock the whole deployment behind an account with accounts.required ([#188](https://github.com/TimSchoenle/TankoVault/issues/188)) ([9e393f2](https://github.com/TimSchoenle/TankoVault/commit/9e393f2b5b6cc79049dceb08fa132365c0626605))
+* **config:** move branding and copyright into a [branding] config block ([#190](https://github.com/TimSchoenle/TankoVault/issues/190)) ([ac48306](https://github.com/TimSchoenle/TankoVault/commit/ac483061c65f0a80287914d270dbc4868a1ac1bc))
+
+
+### Bug Fixes
+
+* **service:** give the health probes a plaintext listener under mutual TLS ([#191](https://github.com/TimSchoenle/TankoVault/issues/191)) ([a5bd7a4](https://github.com/TimSchoenle/TankoVault/commit/a5bd7a470b2e1ed2ae0b252f2fff1ffe9aeaaae8))
+
 ## [4.0.1](https://github.com/TimSchoenle/TankoVault/compare/v4.0.0...v4.0.1) (2026-08-10)
 
 

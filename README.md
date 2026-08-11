@@ -1,10 +1,7 @@
 # TankoVault
 
-> **This is a hobby project.** I build it for my own use and because building it is the point.
-> There is no hosted instance, no support, no SLA and no roadmap I am committed to. It is built
-> carefully — strict lints, real integration tests, a CI gate that means something — but that is
-> a matter of taste, not of anyone paying for it. Issues and pull requests are welcome; I get to
-> them when I get to them.
+> **This is a hobby project.** I build it for my own use.
+> There is no publicly hosted instance.
 
 A fully-Rust, multi-service **manga / manhwa / manhua aggregator and tracker**. TankoVault indexes
 series metadata across many independent provider sites, treats each work as one **canonical

@@ -12,6 +12,18 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [6.0.1](https://github.com/TimSchoenle/TankoVault/compare/v6.0.0...v6.0.1) (2026-08-11)
+
+
+### Bug Fixes
+
+* **domain:** publish the adapter token the API actually sends ([#197](https://github.com/TimSchoenle/TankoVault/issues/197)) ([f0467ff](https://github.com/TimSchoenle/TankoVault/commit/f0467ff1320b883b3f93e906717e34a112686ae3))
+
+
+### CI
+
+* **build:** warm both compile chains under one cache lineage ([#195](https://github.com/TimSchoenle/TankoVault/issues/195)) ([c50e397](https://github.com/TimSchoenle/TankoVault/commit/c50e397854f1093f44b109c20f013c1327f84cb4))
+
 ## [6.0.0](https://github.com/TimSchoenle/TankoVault/compare/v5.0.0...v6.0.0) (2026-08-11)
 
 

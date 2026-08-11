@@ -273,6 +273,15 @@ tokio-rustls = { version = "0.26", default-features = false, features = ["loggin
 # Reads the subject alternative names out of a verified peer certificate; `rustls` verifies a
 # chain but deliberately does not expose the parsed extensions.
 x509-parser = "0.16"
+# Re-encodes a mounted private key as PKCS#8 (`crates/service/src/tls.rs`). rustls and reqwest
+# take PKCS#1 and SEC1 keys too, `wreq` takes PKCS#8 and nothing else, and the operator mounts
+# one file for all three. `sec1` is parsing only — a SEC1 key names its curve inside the
+# structure, and that OID has to move into the PKCS#8 algorithm identifier.
+pkcs8 = { version = "0.10", features = ["alloc", "pem"] }
+sec1 = { version = "0.7", default-features = false, features = ["der", "alloc"] }
+# Test only: generates the real elliptic-curve key that re-encoding is checked against, so no
+# private key has to be committed. Already in the graph as rustls' cryptography provider.
+ring = "0.17"
 # One lock-free swap of the whole `ServerConfig` on rotation, read once per connection.
 arc-swap = "1.7"
 # TOTP (RFC 6238). Three small crates rather than one `totp-rs`, because all three are already

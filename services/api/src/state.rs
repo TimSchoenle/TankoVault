@@ -91,6 +91,9 @@ pub struct AppState {
     /// What this deployment calls itself: the name stamped into email and the authenticator
     /// prompt, and the identity `GET /v1/branding` publishes to the client.
     pub branding: crate::branding::Branding,
+    /// Which repository the native client updates from and which client versions this
+    /// deployment supports, as `GET /v1/client` publishes them.
+    pub client_channel: crate::client::ClientChannel,
     /// The console's system rollup, cached: it is a `count(*)` over every large table.
     pub system_stats: Arc<crate::cache::Cached<tankovault_db::repo::stats::SystemStats>>,
     /// The console's per-provider table, cached: it aggregates every chapter row by provider,

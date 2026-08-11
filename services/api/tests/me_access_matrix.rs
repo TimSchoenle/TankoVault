@@ -527,6 +527,9 @@ fn public_gates() -> Vec<(&'static str, &'static str)> {
         // The sign-in card draws the wordmark, so the client has to be able to read the
         // deployment's identity before it has a session.
         ("/v1/branding", "/v1/branding"),
+        // The desktop updater runs before there is a session, so it has to be able to read which
+        // releases this deployment supports without one.
+        ("/v1/client", "/v1/client"),
     ]
 }
 

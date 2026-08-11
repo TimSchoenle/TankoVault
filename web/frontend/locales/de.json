@@ -382,7 +382,7 @@
         "prompt": "Nachfragen"
       },
       "quit": "Zum Abschließen neu starten",
-      "source": "Eine Prüfung fragt die Versionsliste bei github.com ab. Sonst verlässt nichts dieses Gerät, und es werden keine Kontodaten übertragen.",
+      "source": "Eine Prüfung fragt zuerst deinen Server, welche Versionen er unterstützt, und danach die Versionsliste bei github.com ab. Sonst verlässt nichts dieses Gerät, und es werden keine Kontodaten übertragen.",
       "state": {
         "applied": "Auf Version {version} aktualisiert.",
         "available": "Version {version} ist verfügbar.",
@@ -391,6 +391,7 @@
         "downloading": "Wird heruntergeladen… {percent}%",
         "idle": "Es wurde noch nicht geprüft.",
         "staged": "Version {version} ist bereit. Sie wird beim nächsten Start von {brand} installiert, und {brand} öffnet sich danach von selbst wieder.",
+        "unsupported": "Version {version} ist erschienen, aber der Server, mit dem du verbunden bist, unterstützt {brand} nur bis Version {supported}. Sie wird angeboten, sobald dieser Server aktualisiert wurde.",
         "upToDate": "Das ist die neueste Version, die du übernehmen kannst."
       },
       "title": "Aktualisierungen",

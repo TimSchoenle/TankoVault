@@ -12,10 +12,11 @@
 //!
 //! ## What actually runs, and when
 //!
-//! [`run`] waits out first paint, then checks at most every six hours. A check asks GitHub for
-//! the recent releases, picks the newest one that is both newer than this build **and** older than
-//! the hold-back window ([`discover::eligible`]), and then — depending on the policy — announces
-//! it or downloads it. Nothing is executed at that point: [`install::apply_staged`] runs the
+//! [`run`] waits out first paint, then checks at most every six hours. A check asks the connected
+//! server which repository to read and how far it may go ([`channel`]), asks GitHub for that
+//! repository's recent releases, picks the newest one that is newer than this build, older than
+//! the hold-back window **and** within the server's supported range ([`discover::eligible`]), and
+//! then — depending on the policy — announces it or downloads it. Nothing is executed at that point: [`install::apply_staged`] runs the
 //! installer from `main` at the *next* start, which is why an unattended update never interrupts
 //! a reading session with an elevation prompt.
 //!
@@ -28,11 +29,13 @@
 //!
 //! Two consequences worth stating because they read as omissions:
 //!
-//! * **The HTTP client here is its own**, built below rather than taken from [`crate::api`]. That
-//!   one carries the process-wide cookie jar holding the refresh credential
+//! * **The HTTP client that talks to GitHub is its own**, built below rather than taken from
+//!   [`crate::api`]. That one carries the process-wide cookie jar holding the refresh credential
 //!   ([`crate::api::session_store`]); using it would send the reader's session cookie to
 //!   github.com on every check. This client has no jar, no `Authorization` header and no
-//!   credential of any kind — the release list and the assets are public.
+//!   credential of any kind — the release list and the assets are public. [`channel`] is the one
+//!   part of the updater that *does* use [`crate::api`], and correctly: it asks the reader's own
+//!   deployment about itself.
 //! * **A check contacts `api.github.com`**, which is the only request this app makes to anywhere
 //!   but the reader's own server. The settings sheet says so, and `Policy::Off` stops it.
 //!
@@ -41,6 +44,7 @@
 //! through the reader's own translator. They all live under `settings.update.error.`, which the
 //! `# Errors` sections below abbreviate to `…`.
 
+mod channel;
 mod discover;
 mod install;
 
@@ -226,6 +230,14 @@ pub(crate) enum Status {
     Staged {
         version: String,
     },
+    /// A newer release exists that the connected server does not support.
+    ///
+    /// Not a failure and not `UpToDate`: the client is as current as this deployment allows, and
+    /// what has to move is the server. `supported` names the ceiling it published.
+    Unsupported {
+        version: String,
+        supported: String,
+    },
     /// The installer ran and this is the build it produced.
     ///
     /// Set once, by [`adopt_applied`], at the start that follows the hand-off. It is the only
@@ -268,6 +280,9 @@ impl UpdateState {
             | Status::Checking
             | Status::UpToDate
             | Status::Downloading { .. }
+            // Nothing the reader can do about it from here, so it does not ask for their
+            // attention; the settings sheet says so when they next open it.
+            | Status::Unsupported { .. }
             | Status::Failed(_) => false,
         }
     }
@@ -328,7 +343,7 @@ pub(crate) fn dismiss(state: UpdateState) {
 }
 
 /// The periodic check. Runs for the life of the app; the caller's `use_future` drops it.
-pub(crate) async fn run(state: UpdateState, i18n: Translator) {
+pub(crate) async fn run(state: UpdateState, api: crate::api::Api, i18n: Translator) {
     // Nothing below can produce a sensible answer for a build with no release version or no key to
     // verify one against, and both are permanent for the life of the process.
     if running_version().is_none() || !is_configured() {
@@ -337,7 +352,7 @@ pub(crate) async fn run(state: UpdateState, i18n: Translator) {
     crate::platform::sleep_ms(STARTUP_DELAY_MS).await;
     loop {
         if policy() != Policy::Off && due() {
-            check(state, i18n).await;
+            check(state, api, i18n).await;
         }
         crate::platform::sleep_ms(CHECK_INTERVAL_MS).await;
     }
@@ -358,10 +373,10 @@ fn due() -> bool {
 ///
 /// Also the "check now" button's handler, which is why it does not consult [`due`] — that gate
 /// belongs to the loop, not to a reader who asked.
-pub(crate) async fn check(state: UpdateState, i18n: Translator) {
+pub(crate) async fn check(state: UpdateState, api: crate::api::Api, i18n: Translator) {
     let previous = state.status();
     state.set(Status::Checking);
-    match look(state, policy() == Policy::Auto).await {
+    match look(state, api, policy() == Policy::Auto).await {
         Ok(status) => {
             announce(&previous, &status, i18n);
             state.set(status);
@@ -372,9 +387,9 @@ pub(crate) async fn check(state: UpdateState, i18n: Translator) {
 
 /// Download and stage the release currently on offer, whatever the policy says — the reader
 /// pressed the button.
-pub(crate) async fn install_now(state: UpdateState, i18n: Translator) {
+pub(crate) async fn install_now(state: UpdateState, api: crate::api::Api, i18n: Translator) {
     let previous = state.status();
-    match look(state, true).await {
+    match look(state, api, true).await {
         Ok(status) => {
             announce(&previous, &status, i18n);
             state.set(status);
@@ -385,6 +400,10 @@ pub(crate) async fn install_now(state: UpdateState, i18n: Translator) {
 
 /// Resolve the release on offer, staging it when `stage` and the install allow.
 ///
+/// The channel is refreshed first, so the ceiling a check honours is the one the server holds
+/// *now* rather than the one it held when the app started — an operator who upgrades their
+/// deployment on Tuesday should not have to restart every reader's client to unblock them.
+///
 /// The discovery is repeated rather than remembered between the check and the install. It is two
 /// small requests, and the alternative is holding a manifest and its signature in a signal across
 /// an arbitrary gap — during which the reader can change the hold-back window, and the answer
@@ -392,20 +411,36 @@ pub(crate) async fn install_now(state: UpdateState, i18n: Translator) {
 ///
 /// # Errors
 /// A catalogue key from [`discover`] or [`install`].
-async fn look(state: UpdateState, download: bool) -> Result<Status, &'static str> {
+async fn look(
+    state: UpdateState,
+    api: crate::api::Api,
+    download: bool,
+) -> Result<Status, &'static str> {
     let current = running_version().ok_or("settings.update.error.unconfigured")?;
     let client = client()?;
 
-    let releases = discover::releases(&client).await?;
+    channel::refresh(api).await;
+    let channel = channel::current();
+
+    let releases = discover::releases(&client, &channel.repo).await?;
     crate::platform::store_set(LAST_CHECK_KEY, &crate::platform::now_ms().to_string());
 
-    let Some(candidate) = discover::eligible(
+    let candidate = match discover::eligible(
         &releases,
         &current,
         min_age_days(),
         crate::platform::now_ms(),
-    ) else {
-        return Ok(Status::UpToDate);
+        &channel.supported,
+    ) {
+        discover::Offer::Ready(candidate) => candidate,
+        discover::Offer::None => return Ok(Status::UpToDate),
+        discover::Offer::Unsupported(version) => {
+            return Ok(Status::Unsupported {
+                version: version.to_string(),
+                // A refusal can only come from the ceiling, so there is one to name.
+                supported: channel.supported.ceiling().unwrap_or_default(),
+            });
+        }
     };
 
     let version = candidate.version.to_string();
@@ -468,6 +503,7 @@ fn announce(previous: &Status, next: &Status, i18n: Translator) {
         | Status::Idle
         | Status::Checking
         | Status::UpToDate
+        | Status::Unsupported { .. }
         | Status::Downloading { .. }
         // Announced by `adopt_applied`, which is the only thing that can set it.
         | Status::Applied { .. }

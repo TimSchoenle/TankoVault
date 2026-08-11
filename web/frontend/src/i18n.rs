@@ -243,13 +243,19 @@ fn interpolate(template: &str, args: &[(&str, &str)]) -> String {
     out
 }
 
-/// The message at `key`, with `{name}` placeholders substituted, resolved **without** the
-/// Dioxus context.
+/// The message at `key`, with `{brand}` and the `args` placeholders substituted, resolved
+/// **without** the Dioxus context.
 ///
 /// For the one caller that has none: `update::install`'s hand-off runs from `main`, before the
 /// app is launched, and it is the moment the reader most needs telling — the window they just
 /// opened is about to vanish for a minute while an installer runs. A [`Translator`] is a context
 /// lookup, so there is nothing to ask.
+///
+/// `{brand}` therefore comes from the branding this client last saw from this server
+/// ([`crate::state::branding::remembered_name`]) rather than from a signal. Without it the two
+/// messages here — the only ones in the app rendered outside a component tree — kept the
+/// placeholder verbatim, so the notification that takes over a rebranded deployment's reader for
+/// a minute read `{brand} is updating`.
 ///
 /// It resolves the language the way [`I18nRoot`] would for a first run — the system's, if it is
 /// shipped — rather than the one the reader last chose, which the desktop build does not persist.
@@ -269,7 +275,15 @@ pub(crate) fn translate_offline(key: &str, args: &[(&str, &str)]) -> String {
                 .and_then(|locale| lookup(locale.messages, key))
         })
         .unwrap_or_else(|| key.to_owned());
-    interpolate(&message, args)
+    if !message.contains(BRAND_PLACEHOLDER) {
+        return interpolate(&message, args);
+    }
+    // The caller's arguments first: `interpolate` takes the first match, so a caller that means
+    // something else by `brand` still wins.
+    let brand = crate::state::branding::remembered_name();
+    let mut all = args.to_vec();
+    all.push(("brand", &brand));
+    interpolate(&message, &all)
 }
 
 /// The string at a dot path in a catalogue, or `None` for a missing or non-leaf path.
@@ -363,6 +377,33 @@ mod tests {
     fn passes_literal_braces_through() {
         assert_eq!(interpolate("100% {", &[("a", "b")]), "100% {");
         assert_eq!(interpolate("no holes", &[("a", "b")]), "no holes");
+    }
+
+    /// A message resolved outside the component tree still names the deployment.
+    ///
+    /// The bug this pins: [`translate_offline`] interpolated only the caller's arguments, so
+    /// `{brand}` survived into the text verbatim. Its two callers are the notifications either
+    /// side of an unattended update — the one raised as the app hands itself to an installer, and
+    /// the one the build that comes back raises — which is to say the only moment the app takes
+    /// over the reader's machine announced itself as `{brand} is updating`. Neither has a
+    /// [`Translator`] to ask, so nothing in the rest of the app could have caught it.
+    ///
+    /// Asserted as "no placeholder survives" rather than against a name, so it holds whatever
+    /// the cached branding resolves to on the machine running the test.
+    #[cfg(feature = "desktop")]
+    #[test]
+    fn a_message_resolved_without_the_context_still_names_the_product() {
+        for key in [
+            "settings.update.notify.applyingTitle",
+            "settings.update.notify.applying",
+        ] {
+            let message = translate_offline(key, &[("version", "2.1.0")]);
+            assert!(
+                !message.contains(BRAND_PLACEHOLDER),
+                "`{key}` reached the reader with the placeholder in it: {message}"
+            );
+            assert!(!message.is_empty(), "`{key}` resolved to nothing");
+        }
     }
 
     #[test]

@@ -16,6 +16,7 @@ mod audit;
 mod auth;
 mod branding;
 mod cache;
+mod client;
 mod content_gate;
 mod error;
 mod legal;
@@ -35,6 +36,7 @@ mod views;
 use axum::Router;
 pub use branding::Branding;
 pub use cache::{ADMIN_STATS_TTL, Cached};
+pub use client::ClientChannel;
 pub use legal::LegalDocs;
 pub use passkey::{RelyingParty, SharedRelyingParty};
 pub use state::AppState;
@@ -394,6 +396,9 @@ fn documented_router() -> OpenApiRouter<AppState> {
         // What this deployment calls itself. Unauthenticated for the same reason: the sign-in
         // card carries the wordmark, and it renders before anyone has a session.
         .routes(routes!(branding::branding))
+        // Which releases the native client may move to, and how far. Unauthenticated because the
+        // updater runs from the moment the app starts, session or not.
+        .routes(routes!(client::client_channel))
         // me
         .routes(routes!(me::watchlist))
         .routes(routes!(me::watchlist_summary))

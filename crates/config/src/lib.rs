@@ -15,6 +15,7 @@
 mod audit;
 mod branding;
 mod chapter_outliers;
+mod client;
 mod cors;
 mod database;
 mod email;
@@ -33,6 +34,7 @@ mod telemetry;
 pub use audit::AuditConfig;
 pub use branding::{BrandingConfig, CopyrightConfig, LicenceConfig, WordmarkConfig};
 pub use chapter_outliers::ChapterOutlierConfig;
+pub use client::ClientConfig;
 pub use cors::CorsConfig;
 pub use database::DatabaseConfig;
 pub use email::{EmailConfig, EmailSecurity};

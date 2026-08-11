@@ -8,6 +8,12 @@
 //! "run what the holder of the release key published": the transport is TLS to GitHub, but TLS
 //! only says who served the bytes, not who made them.
 //!
+//! **Which repository is asked is not part of that trust.** It comes from the server this client
+//! is connected to ([`super::channel`]) and falls back to a constant here, and neither is a
+//! statement about provenance: a release that did not verify against a key below is refused
+//! whoever pointed at it. What the caller owes this module is a repository that has already been
+//! checked to be `owner/name`, since it goes into a `api.github.com` path.
+//!
 //! The keys are a **list** on purpose. Rotating a signing key otherwise means every installed
 //! client stops updating the moment the signer changes — the new signature verifies against a key
 //! they do not have, and the only way out is a manual download. With a list it is a two-release
@@ -17,16 +23,9 @@
 //! Errors are catalogue keys under `settings.update.error.`, abbreviated to `…` below; see
 //! [`super`].
 
+use super::channel::Range;
 use serde::Deserialize;
 use std::collections::BTreeMap;
-
-/// The repository releases are read from.
-///
-/// A constant, not configuration. It decides where an executable this app will *run* comes from,
-/// and a settings file is writable by anything running as the reader — so making it a preference
-/// would hand that decision to the weakest thing in the chain. A fork changes this line and its
-/// own keys below.
-const REPO: &str = "TimSchoenle/TankoVault";
 
 /// The minisign public keys a manifest may be signed with.
 ///
@@ -149,13 +148,20 @@ pub(crate) fn is_configured() -> bool {
     !TRUSTED_KEYS.is_empty()
 }
 
-/// Fetch the recent releases.
+/// Fetch the recent releases from `repo`.
+///
+/// `repo` is `owner/name` and is interpolated into the request path, so it must already have
+/// passed [`super::channel`]'s shape check — this is the point where a value carrying a `/` or a
+/// `?` would stop naming a repository and start naming a different endpoint.
 ///
 /// # Errors
 /// `…network` for a refused request, a non-success status, or a body that is not the release
 /// list.
-pub(crate) async fn releases(client: &reqwest::Client) -> Result<Vec<Release>, &'static str> {
-    let url = format!("https://api.github.com/repos/{REPO}/releases?per_page={RELEASE_PAGE_SIZE}");
+pub(crate) async fn releases(
+    client: &reqwest::Client,
+    repo: &str,
+) -> Result<Vec<Release>, &'static str> {
+    let url = format!("https://api.github.com/repos/{repo}/releases?per_page={RELEASE_PAGE_SIZE}");
     let response = client
         .get(&url)
         .header(reqwest::header::ACCEPT, "application/vnd.github+json")
@@ -172,18 +178,34 @@ pub(crate) async fn releases(client: &reqwest::Client) -> Result<Vec<Release>, &
         .map_err(|_| "settings.update.error.network")
 }
 
-/// The newest release this installation may move to, or `None`.
+/// What a check found.
+#[derive(Debug, Clone)]
+pub(crate) enum Offer {
+    /// Nothing newer this installation may move to.
+    None,
+    /// A release to announce or install.
+    Ready(Candidate),
+    /// A newer release exists and the connected server does not support that client version.
+    ///
+    /// Distinct from [`Offer::None`] because the reader's answer is different: nothing they do
+    /// to this app changes it, and the thing that has to move is the server.
+    Unsupported(semver::Version),
+}
+
+/// The newest release this installation may move to.
 ///
-/// Three conditions, all of which have to hold:
+/// Four conditions, all of which have to hold:
 ///
 /// * it parses as a semver release — no draft, no prerelease, no `-rc` in the tag;
 /// * it is **newer than `current`**;
-/// * it is **at least `min_age_days` old**.
+/// * it is **at least `min_age_days` old**;
+/// * it is a version the connected server **supports** — see [`Range`].
 ///
-/// The last two together are why this is not `releases.first()`. With a seven-day hold-back, a
+/// The middle two together are why this is not `releases.first()`. With a seven-day hold-back, a
 /// 2.1.0 published yesterday is not offered while a 2.0.5 published a month ago still is — the
 /// point of the window is that a release pulled within days of publication is never installed, and
-/// that only works if the *next best* release is still reachable.
+/// that only works if the *next best* release is still reachable. The range behaves the same way:
+/// a ceiling at 2.1.0 still offers 2.0.5.
 ///
 /// A release whose `published_at` cannot be read is skipped rather than treated as old enough. The
 /// window is the reader's protection and an unreadable timestamp cannot honour it; refusing to
@@ -193,9 +215,10 @@ pub(crate) fn eligible(
     current: &semver::Version,
     min_age_days: u32,
     now_ms: f64,
-) -> Option<Candidate> {
+    supported: &Range,
+) -> Offer {
     let hold_back_ms = f64::from(min_age_days) * DAY_MS;
-    releases
+    let candidates: Vec<Candidate> = releases
         .iter()
         .filter(|release| !release.draft && !release.prerelease)
         .filter_map(|release| {
@@ -215,7 +238,26 @@ pub(crate) fn eligible(
                 assets: release.assets.clone(),
             })
         })
-        .max_by(|a, b| a.version.cmp(&b.version))
+        .collect();
+
+    let newest = |set: Vec<Candidate>| set.into_iter().max_by(|a, b| a.version.cmp(&b.version));
+    let (allowed, refused): (Vec<Candidate>, Vec<Candidate>) = candidates
+        .into_iter()
+        .partition(|candidate| supported.contains(&candidate.version));
+    if let Some(candidate) = newest(allowed) {
+        return Offer::Ready(candidate);
+    }
+    // Only reported when nothing was offered, and only for the ceiling: with a 2.1.0 ceiling, a
+    // reader on 2.0.0 takes 2.0.5 and is told nothing about the 2.2.0 they may not have. It is
+    // the *silence* that needed a name — a client that says "up to date" for a year because its
+    // server is old is indistinguishable from one whose updater is broken.
+    let beyond = refused
+        .into_iter()
+        .filter(|candidate| supported.exceeds_ceiling(&candidate.version))
+        .collect();
+    newest(beyond).map_or(Offer::None, |candidate| {
+        Offer::Unsupported(candidate.version)
+    })
 }
 
 /// A release's version, or `None` if the tag is not a plain `vX.Y.Z`.
@@ -403,6 +445,19 @@ y/rUw2y8/hOUYjZU71eHp/Wo1KZ40fGy2VJEDl34XMJM+TX48Ss/17u3IvIfbVR1FkZZSNCisQbuQY+b
         )
     }
 
+    /// Everything is offered, as a deployment that has named no ceiling does.
+    fn unbounded() -> Range {
+        Range::default()
+    }
+
+    /// The candidate an offer names, or `None` for anything else.
+    fn ready(offer: Offer) -> Option<Candidate> {
+        match offer {
+            Offer::Ready(candidate) => Some(candidate),
+            Offer::None | Offer::Unsupported(_) => None,
+        }
+    }
+
     /// The hold-back window has to reach *past* the newest release, not merely delay it.
     ///
     /// The first version of this returned the latest release and then refused it when it was too
@@ -414,18 +469,24 @@ y/rUw2y8/hOUYjZU71eHp/Wo1KZ40fGy2VJEDl34XMJM+TX48Ss/17u3IvIfbVR1FkZZSNCisQbuQY+b
         let releases = [signed("v2.1.0", 1.0), signed("v2.0.5", 30.0)];
         let current = semver::Version::new(2, 0, 0);
 
-        let held = eligible(&releases, &current, 7, NOW_MS).expect("2.0.5 has cleared the window");
+        let held = ready(eligible(&releases, &current, 7, NOW_MS, &unbounded()))
+            .expect("2.0.5 has cleared the window");
         assert_eq!(held.version, semver::Version::new(2, 0, 5));
 
-        let immediate = eligible(&releases, &current, 0, NOW_MS).expect("no window, take the top");
+        let immediate = ready(eligible(&releases, &current, 0, NOW_MS, &unbounded()))
+            .expect("no window, take the top");
         assert_eq!(immediate.version, semver::Version::new(2, 1, 0));
     }
 
     #[test]
     fn a_release_no_newer_than_the_running_build_is_not_offered() {
         let releases = [signed("v2.0.0", 30.0)];
-        assert!(eligible(&releases, &semver::Version::new(2, 0, 0), 0, NOW_MS).is_none());
-        assert!(eligible(&releases, &semver::Version::new(2, 1, 0), 0, NOW_MS).is_none());
+        for current in [semver::Version::new(2, 0, 0), semver::Version::new(2, 1, 0)] {
+            assert!(matches!(
+                eligible(&releases, &current, 0, NOW_MS, &unbounded()),
+                Offer::None
+            ));
+        }
     }
 
     /// Drafts, prereleases and hand-made tags are all invisible to the updater.
@@ -444,7 +505,16 @@ y/rUw2y8/hOUYjZU71eHp/Wo1KZ40fGy2VJEDl34XMJM+TX48Ss/17u3IvIfbVR1FkZZSNCisQbuQY+b
             signed("v3.0.2-rc.1", 30.0),
             signed("nightly", 30.0),
         ];
-        assert!(eligible(&releases, &semver::Version::new(2, 0, 0), 0, NOW_MS).is_none());
+        assert!(matches!(
+            eligible(
+                &releases,
+                &semver::Version::new(2, 0, 0),
+                0,
+                NOW_MS,
+                &unbounded()
+            ),
+            Offer::None
+        ));
     }
 
     /// A timestamp that cannot be read means the window cannot be honoured, so the release is
@@ -460,7 +530,16 @@ y/rUw2y8/hOUYjZU71eHp/Wo1KZ40fGy2VJEDl34XMJM+TX48Ss/17u3IvIfbVR1FkZZSNCisQbuQY+b
                 &[MANIFEST_ASSET, SIGNATURE_ASSET],
             ),
         ];
-        assert!(eligible(&releases, &semver::Version::new(2, 0, 0), 0, NOW_MS).is_none());
+        assert!(matches!(
+            eligible(
+                &releases,
+                &semver::Version::new(2, 0, 0),
+                0,
+                NOW_MS,
+                &unbounded()
+            ),
+            Offer::None
+        ));
     }
 
     /// A release cut before the manifest existed is announced, never installed: there is nothing
@@ -472,8 +551,14 @@ y/rUw2y8/hOUYjZU71eHp/Wo1KZ40fGy2VJEDl34XMJM+TX48Ss/17u3IvIfbVR1FkZZSNCisQbuQY+b
             Some(&days_ago(NOW_MS, 30.0)),
             &["Tankovault_2.1.0_x64_en-US.msi"],
         )];
-        let candidate = eligible(&releases, &semver::Version::new(2, 0, 0), 0, NOW_MS)
-            .expect("still a newer version");
+        let candidate = ready(eligible(
+            &releases,
+            &semver::Version::new(2, 0, 0),
+            0,
+            NOW_MS,
+            &unbounded(),
+        ))
+        .expect("still a newer version");
         assert!(!candidate.is_installable());
     }
 
@@ -484,10 +569,76 @@ y/rUw2y8/hOUYjZU71eHp/Wo1KZ40fGy2VJEDl34XMJM+TX48Ss/17u3IvIfbVR1FkZZSNCisQbuQY+b
             Some(&days_ago(NOW_MS, 30.0)),
             &[MANIFEST_ASSET, SIGNATURE_ASSET, "real.msi"],
         )];
-        let candidate =
-            eligible(&releases, &semver::Version::new(2, 0, 0), 0, NOW_MS).expect("a candidate");
+        let candidate = ready(eligible(
+            &releases,
+            &semver::Version::new(2, 0, 0),
+            0,
+            NOW_MS,
+            &unbounded(),
+        ))
+        .expect("a candidate");
         assert!(candidate.asset_url("real.msi").is_some());
         assert!(candidate.asset_url("invented.msi").is_none());
+    }
+
+    /// The server's ceiling behaves like the hold-back window: it holds the *newest* release
+    /// back without hiding the ones below it. A reader on 2.0.0 whose server supports up to
+    /// 2.1.0 still takes 2.0.5 while 2.2.0 waits.
+    #[test]
+    fn the_supported_range_falls_back_to_the_newest_version_the_server_allows() {
+        let releases = [
+            signed("v2.2.0", 30.0),
+            signed("v2.0.5", 30.0),
+            signed("v2.1.0", 30.0),
+        ];
+        let offer = eligible(
+            &releases,
+            &semver::Version::new(2, 0, 0),
+            0,
+            NOW_MS,
+            &Range::between(None, Some("2.1.0")),
+        );
+        assert_eq!(
+            ready(offer).expect("2.1.0 is supported").version,
+            semver::Version::new(2, 1, 0)
+        );
+    }
+
+    /// A release the server cannot support is reported as such, not as "up to date".
+    ///
+    /// The distinction is the whole point of the range: a client whose server is a year behind
+    /// would otherwise say it was on the newest release available for the rest of that year,
+    /// which is indistinguishable on screen from an updater that has quietly stopped working.
+    #[test]
+    fn a_release_beyond_the_servers_ceiling_is_named_rather_than_hidden() {
+        let releases = [signed("v2.2.0", 30.0)];
+        let offer = eligible(
+            &releases,
+            &semver::Version::new(2, 1, 0),
+            0,
+            NOW_MS,
+            &Range::between(None, Some("2.1.0")),
+        );
+        let Offer::Unsupported(version) = offer else {
+            panic!("2.2.0 is past the ceiling, so it is neither offered nor silence");
+        };
+        assert_eq!(version, semver::Version::new(2, 2, 0));
+    }
+
+    /// A client older than its server's floor is not moved onto another version below it.
+    #[test]
+    fn a_release_below_the_servers_floor_is_not_offered() {
+        let releases = [signed("v1.4.0", 30.0)];
+        assert!(matches!(
+            eligible(
+                &releases,
+                &semver::Version::new(1, 0, 0),
+                0,
+                NOW_MS,
+                &Range::between(Some("1.5.0"), Some("2.0.0")),
+            ),
+            Offer::None
+        ));
     }
 
     #[test]

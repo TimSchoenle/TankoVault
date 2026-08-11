@@ -775,6 +775,33 @@
         },
         "type": "object"
       },
+      "ClientView": {
+        "description": "The client channel this deployment names.",
+        "properties": {
+          "max_version": {
+            "description": "The newest client version this deployment supports. A client does not install past it.",
+            "type": "string"
+          },
+          "min_version": {
+            "description": "The oldest client version this deployment supports. Absent means no floor.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "release_repo": {
+            "description": "The GitHub repository the native client reads its releases from, as `owner/name`.\nAbsent leaves the client on whichever repository it was built with.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "max_version"
+        ],
+        "type": "object"
+      },
       "ConflictPolicy": {
         "description": "How to settle a local/remote disagreement when a series exists on both sides\n(design v2 §B.3).\n\n# Why this is here rather than in `services/sync`\n\nIt was a `pub(crate)` enum in the sync service and a **bare string** on the wire, which put\nthe vocabulary in three places that nothing connected: the service's enum, a prose list in\nthis file's doc comment, and a closed enumeration the frontend maintained by hand\n(FRONTEND F10). A policy added to the service would have compiled everywhere and then\nsilently failed to appear in the picker; a token misspelled in the frontend would have been\nrejected by the service at the far end of a round trip, if at all. Declaring it once here —\nwhere `utoipa` publishes it, `progenitor` generates it and the frontend consumes the\ngenerated form — makes the compiler the connection in both directions.\n\nThe JSON representation is unchanged: `snake_case`, the same four tokens the wire always\ncarried. What changed is that the *schema* now says so, so an unknown token is a `422` at\nthe edge instead of a value that reaches the merge and is quietly read as `newest_wins`.",
         "enum": [
@@ -13084,6 +13111,28 @@
         ]
       }
     },
+    "/v1/client": {
+      "get": {
+        "description": "Which repository the native client updates from, and the version range this deployment\nsupports. Unauthenticated: the updater runs before there is a session.",
+        "operationId": "client_channel",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientView"
+                }
+              }
+            },
+            "description": "This deployment's client channel"
+          }
+        },
+        "summary": "Read the client update channel",
+        "tags": [
+          "client"
+        ]
+      }
+    },
     "/v1/legal": {
       "get": {
         "description": "Only what this deployment actually publishes. An operator who configures no Imprint gets no\nImprint entry, so the footer renders no dead link rather than one that 404s.",
@@ -17664,6 +17713,10 @@
     {
       "description": "The deployment's own name, wordmark and copyright; unauthenticated",
       "name": "branding"
+    },
+    {
+      "description": "The native client's update channel and supported version range; unauthenticated",
+      "name": "client"
     },
     {
       "description": "The signed-in user's watchlist",

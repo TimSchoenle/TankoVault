@@ -125,6 +125,22 @@ names from the product name and version and nothing here controls that string. A
 of the four extensions fails the release, rather than shipping a manifest that silently omits a
 platform.
 
+### Which releases a client is offered
+
+**Which repository** is asked, and **how far** the client may go, come from the server it is
+connected to — `GET /v1/client`, configured under `[client]` (`docs/CONFIGURATION.md`). A
+deployment's ceiling defaults to its own version, so a reader on a deployment that has not been
+upgraded is not moved onto a client that speaks an API their server does not have; the client
+names the held-back release in its settings sheet rather than reporting itself up to date. With no
+server answer at all it falls back to the repository compiled into it and no ceiling, which is
+what it did before the endpoint existed.
+
+None of that is trust. The signing keys stay compiled into the client, so a server can only name
+a repository whose releases the client then verifies — or refuses. **A fork therefore has to
+change both**: `client.release_repo` on its deployments, and `TRUSTED_KEYS` in the client it
+builds. Changing only the first publishes a channel every stock client rejects as untrusted;
+changing only the second leaves its readers on this project's releases.
+
 ### What the reader sees when one is applied
 
 An update is *staged* while the app runs and *applied* at the next start, before there is a

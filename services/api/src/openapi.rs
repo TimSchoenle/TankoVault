@@ -9,6 +9,7 @@ pub const AUTH_TAG: &str = "auth";
 pub const SERIES_TAG: &str = "series";
 pub const LEGAL_TAG: &str = "legal";
 pub const BRANDING_TAG: &str = "branding";
+pub const CLIENT_TAG: &str = "client";
 pub const ME_WATCHLIST_TAG: &str = "me-watchlist";
 pub const ME_PROGRESS_TAG: &str = "me-progress";
 pub const ME_DASHBOARD_TAG: &str = "me-dashboard";
@@ -67,6 +68,7 @@ impl Modify for SecurityAddon {
         (name = SERIES_TAG, description = "Public catalogue browse/detail/chapters"),
         (name = LEGAL_TAG, description = "Operator-published legal documents; unauthenticated"),
         (name = BRANDING_TAG, description = "The deployment's own name, wordmark and copyright; unauthenticated"),
+        (name = CLIENT_TAG, description = "The native client's update channel and supported version range; unauthenticated"),
         (name = ME_WATCHLIST_TAG, description = "The signed-in user's watchlist"),
         (name = ME_PROGRESS_TAG, description = "Per-series reading progress"),
         (name = ME_DASHBOARD_TAG, description = "Feed, continue-reading, recommendations, stats"),

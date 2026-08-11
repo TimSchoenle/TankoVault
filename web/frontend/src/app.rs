@@ -190,7 +190,11 @@ fn AppRoot(children: Element) -> Element {
     // Before the loop, so a client that has just replaced itself says so rather than reporting
     // "no check has run yet" about a version it acquired thirty seconds ago.
     use_hook(|| crate::update::adopt_applied(update, i18n));
-    use_future(move || crate::update::run(update, i18n));
+    // The `Api` handle rather than a fetched channel: a check asks the connected server which
+    // releases it supports at the moment it runs, so a deployment upgraded mid-session unblocks
+    // its readers without any of them restarting.
+    let api = crate::api::use_api();
+    use_future(move || crate::update::run(update, api, i18n));
 
     // Whether the close button ends the app or hides it. Provided here because two things read
     // it — the sheet that sets it and the `TrayHost` that makes it true — and neither owns the

@@ -382,7 +382,7 @@
         "prompt": "Ask me"
       },
       "quit": "Restart to finish",
-      "source": "A check asks github.com for the release list. Nothing else leaves this machine, and no account details are sent.",
+      "source": "A check asks your server which releases it supports, then asks github.com for the release list. Nothing else leaves this machine, and no account details are sent.",
       "state": {
         "applied": "Updated to version {version}.",
         "available": "Version {version} is available.",
@@ -391,6 +391,7 @@
         "downloading": "Downloading version… {percent}%",
         "idle": "No check has run yet.",
         "staged": "Version {version} is ready. It installs the next time {brand} starts, and {brand} reopens by itself once the installer has finished.",
+        "unsupported": "Version {version} is out, but the server you are connected to supports {brand} up to version {supported}. It will be offered once that server is updated.",
         "upToDate": "This is the newest release you can take."
       },
       "title": "Updates",

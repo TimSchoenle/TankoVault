@@ -384,8 +384,9 @@ fn UpdateSection() -> Element {
     let status = state.status();
     let busy = matches!(status, Status::Checking | Status::Downloading { .. });
 
+    let api = crate::api::use_api();
     let check = move |()| {
-        spawn(async move { update::check(state, i18n).await });
+        spawn(async move { update::check(state, api, i18n).await });
     };
 
     rsx! {
@@ -471,6 +472,7 @@ fn UpdateActions(
     on_check: EventHandler<()>,
 ) -> Element {
     let i18n = use_i18n();
+    let api = crate::api::use_api();
 
     rsx! {
         div { class: "ik-prefs-actions",
@@ -485,7 +487,7 @@ fn UpdateActions(
                         tone: Tone::Primary,
                         disabled: busy,
                         on_click: move |_| {
-                            spawn(async move { update::install_now(state, i18n).await });
+                            spawn(async move { update::install_now(state, api, i18n).await });
                         },
                         {i18n.t("settings.update.install")}
                     }
@@ -522,6 +524,7 @@ fn UpdateActions(
                 | Status::UpToDate
                 | Status::Downloading { .. }
                 | Status::Applied { .. }
+                | Status::Unsupported { .. }
                 | Status::Failed(_) => rsx! {},
             }
         }
@@ -557,6 +560,10 @@ fn state_text(status: &Status, i18n: crate::i18n::Translator) -> String {
         Status::Applied { version } => {
             i18n.args("settings.update.state.applied", &[("version", version)])
         }
+        Status::Unsupported { version, supported } => i18n.args(
+            "settings.update.state.unsupported",
+            &[("version", version), ("supported", supported)],
+        ),
         Status::Failed(key) => i18n.t(key),
     }
 }

@@ -12,6 +12,27 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [7.0.0](https://github.com/TimSchoenle/TankoVault/compare/v6.0.1...v7.0.0) (2026-08-11)
+
+
+### ⚠ BREAKING CHANGES
+
+* **api-client:** read the nullable schema fields the API actually sends ([#198](https://github.com/TimSchoenle/TankoVault/issues/198))
+
+### Features
+
+* **client:** let the server name the update channel it supports ([#199](https://github.com/TimSchoenle/TankoVault/issues/199)) ([8a1a104](https://github.com/TimSchoenle/TankoVault/commit/8a1a1048ec01f8b477565ee7430ab994a1d35720))
+
+
+### Bug Fixes
+
+* **api-client:** read the nullable schema fields the API actually sends ([#198](https://github.com/TimSchoenle/TankoVault/issues/198)) ([2a9c00f](https://github.com/TimSchoenle/TankoVault/commit/2a9c00f3dbfb54360193e001d7abeee50abb8926))
+
+
+### Performance Improvements
+
+* **dedupe:** batch the sweep's writes and split its cadence ([#201](https://github.com/TimSchoenle/TankoVault/issues/201)) ([a17b94a](https://github.com/TimSchoenle/TankoVault/commit/a17b94a1cab47aa1816fcebf7b06727828dcaa9e))
+
 ## [6.0.1](https://github.com/TimSchoenle/TankoVault/compare/v6.0.0...v6.0.1) (2026-08-11)
 
 

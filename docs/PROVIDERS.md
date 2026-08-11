@@ -85,7 +85,6 @@ are named per provider in the job's output.
 | Weeb Central | `weebcentral.com` | Bespoke (htmx) | **Config only** | generic selectors |
 | MangaPill | `mangapill.com` | Bespoke | **Config only** | generic, sitemap mode |
 | MangaDex | `mangadex.org` | JSON API | **Custom code** | `MangaDexAdapter` |
-| ComicK | `comick.dev` | JSON API | **Custom code** | `ComickAdapter` |
 | Omega Scans | `omegascans.org` | HeanCMS JSON | **Custom code** | `HeanCmsAdapter` |
 | Asura Scans | `asurascans.com` | Astro islands | **Custom code** | `AstroIslandAdapter` |
 | Hive Toons | `hivetoons.org` | Astro islands | **Custom code** | `AstroIslandAdapter` |

@@ -12,6 +12,13 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [7.1.3](https://github.com/TimSchoenle/TankoVault/compare/v7.1.2...v7.1.3) (2026-08-12)
+
+
+### Bug Fixes
+
+* **solver:** stop reading the cloudflare js-detections beacon as a challenge ([#213](https://github.com/TimSchoenle/TankoVault/issues/213)) ([9f82d23](https://github.com/TimSchoenle/TankoVault/commit/9f82d2318fa2d85065da99ef6560125aa62757a6))
+
 ## [7.1.2](https://github.com/TimSchoenle/TankoVault/compare/v7.1.1...v7.1.2) (2026-08-12)
 
 

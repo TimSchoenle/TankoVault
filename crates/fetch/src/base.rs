@@ -193,7 +193,9 @@ fn build_client(
     if let Some(emulation) = emulation {
         builder = builder.emulation(emulation);
     }
-    builder.build().map_err(|e| FetchError::Transport(e.to_string()))
+    builder
+        .build()
+        .map_err(|e| FetchError::Transport(e.to_string()))
 }
 
 /// `wreq`-backed base fetcher. One per provider (carries that provider's identity).

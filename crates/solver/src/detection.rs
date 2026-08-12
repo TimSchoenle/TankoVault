@@ -321,7 +321,7 @@ mod tests {
     /// The JS Detections beacon Cloudflare injects into **content** pages is not an interstitial.
     ///
     /// Matching `/cdn-cgi/challenge-platform` anywhere in a body classified every page served by
-    /// a zone with the feature on as a challenge. WeebCentral is such a zone, so its series pages
+    /// a zone with the feature on as a challenge. `WeebCentral` is such a zone, so its series pages
     /// failed twice over: the direct `200` — 59 KB of rendered content — bought a pointless solve,
     /// and the page the solver handed back was then rejected as "still challenged", reaching the
     /// caller as `unsolved challenge: CloudflareJs` for a document that had never been one.

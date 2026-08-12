@@ -26,10 +26,12 @@ that could silently return gets a test whose doc comment says what the bug was.
 W2, W3, W5 and W6's breaker are independent and can land in any order. W4 and W6's classification
 both change the `/v1/solve` wire and share a deployment-ordering constraint (§4.4).
 
-**If you only do one after W1, do W5.** The scanner and the solver do not share a TLS fingerprint
-today, and a clearance cookie is bound to the one that earned it — so the session cache, which is
-the entire reason a solve is affordable, may already be failing on every replay while every metric
-we have stays green. W3 is how you *confirm* that, not a prerequisite for fixing it.
+**If you only do one after W1, do W5.** The solver drives Camoufox — a Firefox — while every
+provider defaults to a Chrome emulation profile, so a replayed session presents a Firefox
+user-agent over a Chrome handshake with client hints Firefox does not send. The session cache is
+the entire reason a 30–60 s solve is affordable, and it is very likely failing on every replay
+while every metric we have stays green. W3 is how you *confirm* that, not a prerequisite for
+fixing it.
 
 ---
 
@@ -293,28 +295,106 @@ navigation rather than trusting the clearance cookie, no HTTP client can ever sa
 correct answer there is not a better profile — it is to fetch that provider through the browser and
 pay for it, which is what `SolveOutcome.html` already allows.
 
-**Plan.**
+#### The two identities are not the same browser *family*
 
-1. **Derive the profile, do not pin it.** The solver already reports the browser it used. Parse the
-   Chrome major **and the platform** from `SolveOutcome.user_agent` and select the matching
-   `wreq_util::Profile`/`Platform` pair for the client that replays that session. When no profile
-   matches, **decline to replay** — use the returned HTML for that fetch and let the next request
-   solve again — rather than send a pair that contradicts itself. A version pin between the image
-   and `profile_for` is then a backstop that makes the common case cheap, not the mechanism that
-   makes it correct.
-   Cost to account for: `BaseHttpFetcher` builds its client once per provider, so a per-session
-   profile means a small client cache keyed by profile, not a rebuild per request.
-2. **Do not cache a proxy-tier session.** Decode `tier` from TRAWL's response, surface it on
-   `SolveOutcome`, skip the store when the winning tier was the proxy. Cheap, and it removes a class
-   of session that is guaranteed stale.
-3. **Verify empirically, because inspection cannot.** Fetch a fingerprint echo (`tls.peet.ws`,
-   `browserleaks`) through both paths and compare **JA4 and the HTTP/2 settings fingerprint** —
-   never raw JA3, which Chrome varies per connection by permuting ClientHello extension order, while
-   JA4 sorts them and stays stable. This wants to be an `xtask` subcommand run by hand when either
-   version moves, not a CI gate: it needs public egress, and a third-party echo service is not
-   something CI should depend on.
-4. **Then read W3's `challenge_session_replays_total`** to confirm the change did what it claims.
-   The metric is the check on the work, not the trigger for it.
+[`deploy/docker-compose.yml`](../deploy/docker-compose.yml) says what TRAWL actually drives:
+
+```yaml
+# One warm Camoufox instance, not the image's default of 3: each is a full Firefox
+```
+
+Camoufox is a hardened **Firefox**. Its TLS stack is NSS and its HTTP/2 settings are Firefox's, no
+matter what user-agent it is configured to present. Meanwhile every provider defaults to
+`BrowserEmulation::Chrome` — an absent `emulation` key reads as Chrome
+([`politeness.rs:111`](../crates/domain/src/politeness.rs:111)), and that is the stored default for
+the whole catalogue.
+
+So a replayed session sends a **Firefox user-agent over a Chrome ClientHello, with `sec-ch-ua`
+client hints that Firefox does not implement and never sends**. This is not a version to tune
+closer; it is the wrong browser, contradicted on three axes at once, and it is the default state of
+every Cloudflare-gated provider in the deployment. If any of these sessions have ever been accepted
+on replay, that is the surprise — not the reverse.
+
+Nothing in the workspace could have reported it: the image digest and the profile constant are in
+different files, in different languages, with no gate relating them.
+
+#### Plan — synchronise by construction, then prove it
+
+**S0 — Establish what the solver is, before changing anything.** One solve against any provider
+returns `SolveOutcome.user_agent`. Record the family, major and platform it actually reports; that
+value, not the image tag and not `profile_for`, is ground truth. Everything below assumes the
+answer is "Firefox on some platform"; if Camoufox is configured to present a Chrome UA, the finding
+gets *worse*, not better — a Chrome UA over an NSS handshake — and the plan is unchanged.
+
+**S1 — One declared identity, in one place, with a gate.** Today the identity is spread across three
+files that no rule relates: the TRAWL image digest in `docker-compose.yml`, `profile_for` in
+[`base.rs:46`](../crates/fetch/src/base.rs:46), and the `wreq-util` version in the root
+`Cargo.toml`. Collapse it to one table — solver back-end → browser family, major, platform → the
+`wreq_util::Profile`/`Platform` pair that reproduces it — and add a `repo-lint` rule
+(`xtask/src/repo_lint/`, alongside `deploy.rs` and `tls.rs`, which exist for exactly this class of
+cross-file invariant) asserting that the compose image and every arm of `profile_for` appear in it.
+A Renovate bump of the image or of `wreq-util` then fails a gate instead of silently drifting.
+
+**S2 — Negotiate at runtime; the constant is only a backstop.** Add `GET /v1/solver-identity` to the
+shared router in [`crates/solver/src/http.rs`](../crates/solver/src/http.rs) — one place, so
+`challenge-solver` and `render` cannot answer differently — returning the back-end's browser family,
+major, platform and user-agent, with an `InternalRoute` entry beside `solve_route`. The worker reads
+it at boot, compares it against the compiled identity, and refuses to replay sessions it cannot
+match. Per session, `SolveOutcome.user_agent` stays authoritative. Emit
+`solver_identity_match{backend}` as a 0/1 gauge and log the mismatch with both sides named, so this
+class of drift can never again be silent (catalogue duty per W3).
+
+**S3 — Prove equality; do not assert it.** Stand a fingerprint echo up *inside* the compose network
+— not `tls.peet.ws`, not `browserleaks`; CI must not depend on a third party for a gate — and drive
+it from both clients: once through the worker's `BaseHttpFetcher`, once through a TRAWL solve
+pointed at it. Compare:
+
+- the **normalised ClientHello**: GREASE values stripped and extension IDs sorted, because Chrome
+  permutes extension order per connection while Firefox does not — raw-byte equality would fail on
+  Chrome for a reason that means nothing;
+- the **HTTP/2 opening state**: `SETTINGS` values, initial window, priority frames and
+  pseudo-header order.
+
+The assertion is **equality between the two, not correctness of either**. That is what makes this
+implementable without a JA4 library — parse the ClientHello, normalise, hash, compare — and what
+makes it fail on any future drift from either side. Docker-gated, so it runs with the integration
+suites rather than on every `cargo check`.
+
+**S4 — Where equality is unreachable, stop pretending.** Two honest endings, in order of cost:
+
+1. **Match the family.** Point the scanner at `BrowserEmulation::Firefox` for providers whose
+   sessions come from a Firefox solver — `wreq-util` ships `Profile::Firefox151`. Note this is a
+   *data* change as much as a code one: `emulation` lives in each provider's stored `Politeness`
+   JSONB, so changing a preset default does not touch existing rows. Plan the backfill, or the fix
+   applies only to providers registered afterwards.
+2. **Make it one client.** For a provider that still challenges after S1–S3, fetch through the
+   solved browser itself rather than replaying its cookies into a different stack. The fingerprint
+   is then identical by construction, because it is the same client. `SolveOutcome.html` is already
+   the single-request form of this; the general form is a browser-backed fetcher used until the
+   provider stops challenging. Expensive per request, and correct — which is the right trade for a
+   provider that would otherwise be dark.
+
+**S5 — Keep them synchronised over time.** Synchronisation is a state, not an event:
+
+- Group the TRAWL image and the `wreq`/`wreq-util` bumps into one Renovate PR
+  ([`renovate.json`](../renovate.json)) so they can never move independently.
+- The S1 lint is the backstop when they do anyway.
+- The S3 equality test is the proof, run by the Docker-gated suite.
+- Synchronise **time**, too: `session_ttl_secs` is this deployment's guess
+  ([`challenge-solver`'s config](../services/challenge-solver/src/main.rs)), not the cookie's real
+  lifetime. `__cf_bm` rotates roughly every 30 minutes and `cf_clearance` is zone-configured; a TTL
+  longer than either means replaying dead cookies until it expires. Prefer the shortest
+  `Set-Cookie` expiry the solve actually returned, capped by config.
+
+Then read W3's `challenge_session_replays_total` to confirm the work did what it claims. The metric
+is the check on the change, not the trigger for it.
+
+**Do not cache a proxy-tier session** regardless of any of the above: decode `tier` from TRAWL's
+response, surface it on `SolveOutcome`, and skip the store when the proxy tier won — that session is
+bound to an address the worker does not have.
+
+Cost to account for throughout: `BaseHttpFetcher` builds its client once per provider, so a
+per-session profile means a small client cache keyed by profile, not a rebuild per request.
 
 ---
 
@@ -418,9 +498,13 @@ one release.
       logs.
 - [ ] A clearance cookie is never sent to a host outside the domain it was issued for, with a test
       that pins it.
-- [ ] A replayed session's handshake is the one that earned it: the emulation profile follows the
-      solver's reported browser, a session with no matching profile is not replayed at all, and JA4
-      plus the HTTP/2 settings fingerprint have been compared through both paths.
+- [ ] The scanner and the solver present the same browser **family**, not merely a similar one, and
+      a session with no matching profile is not replayed at all.
+- [ ] The identity is declared once, `repo-lint` fails when the image and the profile disagree, and
+      the two move in a single Renovate PR.
+- [ ] A Docker-gated test drives a fingerprint echo through both clients and asserts their
+      normalised ClientHello and HTTP/2 opening state are **equal**.
+- [ ] Session TTL follows the shortest expiry the solve actually returned, capped by config.
 - [ ] A session won on a proxy tier is not cached for direct replay.
 - [ ] A blocked provider stops paying full solve cost on every queued task, and the breaker is
       counted.

@@ -128,6 +128,13 @@ pub fn is_rate_limit_page(body: &str) -> bool {
 ///     Some(ChallengeKind::CloudflareJs),
 /// );
 ///
+/// // But `/cdn-cgi/challenge-platform` alone is *not* a challenge: the JS Detections beacon
+/// // rides on ordinary content pages, and reading it as one takes a whole provider dark.
+/// assert_eq!(
+///     detect_challenge_body(r#"<script src="/cdn-cgi/challenge-platform/scripts/jsd/main.js">"#),
+///     None,
+/// );
+///
 /// // `"Just a moment"` counts only as a <title>. As body text it is a chapter name, and this
 /// // is the case that looks like a missed detection: the broader classifier accepts the bare
 /// // phrase, but only because a 403/503 or a `server: cloudflare` header has already
@@ -153,13 +160,25 @@ pub fn detect_challenge_body(body: &str) -> Option<ChallengeKind> {
     if body.contains("challenges.cloudflare.com/turnstile") || body.contains("cf-turnstile") {
         return Some(ChallengeKind::Turnstile);
     }
-    if body.contains("/cdn-cgi/challenge-platform")
+    if loads_challenge_orchestration(body)
         || body.contains("cf_chl_opt")
         || body.contains("<title>Just a moment")
     {
         return Some(ChallengeKind::CloudflareJs);
     }
     None
+}
+
+/// Whether the body loads the interstitial's **orchestration** script.
+///
+/// `/cdn-cgi/challenge-platform` on its own is not a challenge marker and must never be treated
+/// as one: Cloudflare's JS Detections beacon
+/// (`/cdn-cgi/challenge-platform/scripts/jsd/main.js`) is injected into ordinary content pages on
+/// every zone that has the feature enabled. Only the orchestration entry point — `…/orchestrate/`,
+/// or its `chl_page` variant — belongs to the interstitial itself.
+fn loads_challenge_orchestration(body: &str) -> bool {
+    body.contains("/cdn-cgi/challenge-platform")
+        && (body.contains("/orchestrate/") || body.contains("chl_page"))
 }
 
 #[cfg(test)]
@@ -248,7 +267,10 @@ mod tests {
             Some(ChallengeKind::Turnstile)
         );
         assert_eq!(
-            detect_challenge_body("<script src=\"/cdn-cgi/challenge-platform/h/b/x\"></script>"),
+            detect_challenge_body(
+                "<script src=\"/cdn-cgi/challenge-platform/h/b/orchestrate/chl_page/v1?ray=x\">\
+                 </script>"
+            ),
             Some(ChallengeKind::CloudflareJs)
         );
         assert_eq!(
@@ -294,6 +316,28 @@ mod tests {
             None
         );
         assert_eq!(detect_challenge_body("{\"data\":{\"chapters\":[]}}"), None);
+    }
+
+    /// The JS Detections beacon Cloudflare injects into **content** pages is not an interstitial.
+    ///
+    /// Matching `/cdn-cgi/challenge-platform` anywhere in a body classified every page served by
+    /// a zone with the feature on as a challenge. `WeebCentral` is such a zone, so its series pages
+    /// failed twice over: the direct `200` — 59 KB of rendered content — bought a pointless solve,
+    /// and the page the solver handed back was then rejected as "still challenged", reaching the
+    /// caller as `unsolved challenge: CloudflareJs` for a document that had never been one.
+    #[test]
+    fn the_js_detections_beacon_is_not_a_challenge() {
+        // Verbatim from a WeebCentral series page, which returns 200 with the full document.
+        let page = "<html><head><script>window.__CF$cv$params={r:'a2a0914e',t:'MTc4Ng=='};\
+                    var a=document.createElement('script');\
+                    a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';</script></head>\
+                    <body><h1>Atsu Atsu Trattoria</h1></body></html>";
+        assert_eq!(detect_challenge_body(page), None);
+
+        // And in band, where the `server: cloudflare` header keeps the body scan from being
+        // skipped — the path a real fetch of that page takes.
+        let r = resp(200, &[("server", "cloudflare")], page);
+        assert_eq!(detect_challenge(&r), None);
     }
 
     #[test]

@@ -31,6 +31,25 @@ impl SolvedSession {
         self.expires_at > OffsetDateTime::now_utc()
     }
 
+    /// Whether replaying this session can achieve anything.
+    ///
+    /// Two ways it cannot, and both were replayed anyway:
+    ///
+    /// A session with **no cookies** carries only the solver's user-agent. Applying it swaps this
+    /// provider's browser identity for the solver's on every subsequent request and gains nothing
+    /// in return — there is no clearance to preserve. Solvers return one routinely: a tier that
+    /// fetched the page without a browser has no cookie jar to report, which is exactly what the
+    /// provider behind this module's own regression tests does.
+    ///
+    /// A session whose **browser has no emulation profile** cannot be presented coherently. The
+    /// clearance is bound to the handshake as much as to the user-agent, so the fetch layer drops
+    /// a user-agent it cannot match (`base::can_reproduce`) — and cookies bound to a user-agent
+    /// that is no longer sent will not be honoured. Caching that session only stops us re-solving
+    /// for the rest of its TTL.
+    fn is_replayable(&self) -> bool {
+        !self.cookies.is_empty() && crate::base::can_reproduce(&self.user_agent)
+    }
+
     /// Render the `Cookie` header value.
     fn cookie_header(&self) -> String {
         self.cookies
@@ -158,7 +177,17 @@ impl<F: Fetcher> Fetcher for SolvingFetcher<F> {
             expires_at: OffsetDateTime::now_utc()
                 + Duration::seconds(i64::try_from(outcome.ttl_secs).unwrap_or(i64::MAX)),
         };
-        self.store.put(&req.provider_slug, session.clone()).await;
+        let replayable = session.is_replayable();
+        if replayable {
+            self.store.put(&req.provider_slug, session.clone()).await;
+        } else {
+            tracing::debug!(
+                provider = %req.provider_slug,
+                cookies = session.cookies.len(),
+                user_agent = %session.user_agent,
+                "solved session is not replayable; not caching it"
+            );
+        }
 
         // Use the solver's fetched page directly, but only once it's confirmed to be the
         // *page* and not the interstitial again — a solver that timed out mid-challenge still
@@ -190,8 +219,13 @@ impl<F: Fetcher> Fetcher for SolvingFetcher<F> {
             });
         }
 
-        // Otherwise replay the original request with the fresh session.
-        let replay = apply_session(req, &session);
+        // Otherwise replay the original request — with the fresh session when it can carry
+        // anything, and as it stands when it cannot.
+        let replay = if replayable {
+            apply_session(req, &session)
+        } else {
+            req
+        };
         let resp2 = self.inner.get(replay).await?;
         if detect_challenge(&resp2).is_some() {
             return Err(FetchError::Challenge(kind));
@@ -250,6 +284,74 @@ mod tests {
 
     fn req() -> FetchRequest {
         FetchRequest::new("https://example.test/api/items", "example")
+    }
+
+    /// A user-agent the deployed solver actually returns, so a session built with it is one the
+    /// fetch layer can present.
+    const SOLVER_UA: &str =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:150.0) Gecko/20100101 Firefox/150.0";
+
+    /// A solving stack whose solver reports `cookies` and `user_agent`, plus the store it writes
+    /// to, so a test can ask what was cached.
+    fn solving_session(
+        cookies: Vec<(String, String)>,
+        user_agent: &str,
+    ) -> (SolvingFetcher<Challenged>, Arc<InMemorySessionStore>) {
+        let store = Arc::new(InMemorySessionStore::default());
+        let solver = StaticSolver::new(SolveOutcome {
+            cookies,
+            user_agent: user_agent.to_owned(),
+            html: Some("<html><body><h1>Chapter 12</h1></body></html>".to_owned()),
+            status: Some(200),
+            headers: Vec::new(),
+            ttl_secs: 900,
+        });
+        (
+            SolvingFetcher::new(Challenged, Arc::new(solver), store.clone()),
+            store,
+        )
+    }
+
+    fn clearance() -> Vec<(String, String)> {
+        vec![("cf_clearance".to_owned(), "abc".to_owned())]
+    }
+
+    /// A session that can be presented is cached, so one solve amortises over later fetches.
+    #[tokio::test]
+    async fn a_replayable_session_is_cached() {
+        let (fetcher, store) = solving_session(clearance(), SOLVER_UA);
+        fetcher.get(req()).await.expect("the page is returned");
+        assert!(store.get("example").await.is_some());
+    }
+
+    /// A solve that returned **no cookies** must not be cached.
+    ///
+    /// It carries nothing but the solver's user-agent, so caching it swapped this provider's
+    /// browser identity for the solver's on every later request while preserving no clearance at
+    /// all — pure incoherence for no benefit. Solvers return one routinely: a tier that fetched the
+    /// page without a browser has no cookie jar to report, which is what the provider that prompted
+    /// this work does.
+    #[tokio::test]
+    async fn a_cookieless_session_is_not_cached() {
+        let (fetcher, store) = solving_session(Vec::new(), SOLVER_UA);
+        fetcher.get(req()).await.expect("the page is returned");
+        assert!(
+            store.get("example").await.is_none(),
+            "a session with no cookies was cached"
+        );
+    }
+
+    /// A session whose browser has no emulation profile must not be cached either: the fetch layer
+    /// drops a user-agent it cannot match to a handshake, and cookies bound to a user-agent that is
+    /// no longer sent will not be honoured. Caching it only suppresses the next solve.
+    #[tokio::test]
+    async fn a_session_whose_browser_cannot_be_reproduced_is_not_cached() {
+        let (fetcher, store) = solving_session(clearance(), "SolverUA/2.0");
+        fetcher.get(req()).await.expect("the page is returned");
+        assert!(
+            store.get("example").await.is_none(),
+            "a session we cannot present was cached"
+        );
     }
 
     #[tokio::test]

@@ -12,6 +12,7 @@ mod base;
 mod builder;
 mod error;
 mod fetcher;
+mod identity;
 mod jitter;
 mod ratelimit;
 mod retry;

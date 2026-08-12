@@ -636,7 +636,9 @@ pub fn detect_challenge(resp: &FetchResponse) -> Option<ChallengeKind> {
     // Fast checks, cheapest first — status, then headers, then a bounded body scan:
     //   * HTTP 403/429/503 with `server: cloudflare` + `cf-mitigated: challenge`
     //   * `Set-Cookie: cf_clearance` / `__cf_bm` absence + interstitial markers
-    //   * body markers: "Just a moment...", "cf-challenge", Turnstile widget, `/cdn-cgi/challenge`
+    //   * body markers: "Just a moment...", `cf_chl_opt`, Turnstile widget, and the
+    //     `/cdn-cgi/challenge-platform` *orchestration* script — never the path prefix alone,
+    //     which the JS Detections beacon on ordinary content pages shares
     //   * generic JS-interstitial heuristics for non-Cloudflare WAFs
     // Returns None on a normal page so the hot path stays a single branch.
 }

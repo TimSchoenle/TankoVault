@@ -51,7 +51,10 @@ fn marker_body() -> impl Strategy<Value = String> {
     let fragment = prop::sample::select(vec![
         "cf-turnstile",
         "challenges.cloudflare.com/turnstile",
-        "/cdn-cgi/challenge-platform",
+        "/cdn-cgi/challenge-platform/h/b/orchestrate/chl_page/v1?ray=x",
+        // The JS Detections beacon, which rides on ordinary content pages: it shares the
+        // interstitial's path prefix and must not decide the outcome on its own.
+        "/cdn-cgi/challenge-platform/scripts/jsd/main.js",
         "cf_chl_opt",
         "<title>Just a moment",
         "Just a moment",

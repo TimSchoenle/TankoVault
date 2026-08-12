@@ -61,6 +61,17 @@ fn clean_description(root: ElementRef<'_>) -> Option<String> {
     (!body.is_empty()).then(|| body.to_owned())
 }
 
+/// Whether a feed link points at a comic rather than one of the site's text novels.
+///
+/// The catalogue (`/advanced.php`) yields `/manga/` and nothing else, but the home page's
+/// updates strip also lists prose at `/novel/<slug>` — pages the site does not actually serve.
+/// Ingested, each became a series whose every rescan spent its whole retry budget on a 404;
+/// four of them accounted for over a thousand recorded failures. Matching the catalogue's own
+/// prefix keeps the two entry points agreeing on what this provider carries.
+fn is_comic(path: &str) -> bool {
+    path.starts_with("/manga/")
+}
+
 #[async_trait]
 impl SourceAdapter for DemonicScansAdapter {
     async fn list_catalog(&self, ctx: &Ctx, page: u32) -> Result<CatalogPage, AdapterError> {
@@ -117,6 +128,10 @@ impl SourceAdapter for DemonicScansAdapter {
                 let Some(href) = anchor.value().attr("href") else {
                     continue;
                 };
+                let path = relativize(&resp.url, href);
+                if !is_comic(&path) {
+                    continue;
+                }
                 let title = el
                     .select(&title_sel)
                     .next()
@@ -128,7 +143,7 @@ impl SourceAdapter for DemonicScansAdapter {
                     .and_then(|c| parse_chapter_number(&text_of(c)))
                     .unwrap_or(0.0);
                 updates.push(LatestUpdate {
-                    path: relativize(&resp.url, href),
+                    path,
                     title,
                     latest_chapter,
                 });

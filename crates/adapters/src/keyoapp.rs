@@ -9,7 +9,9 @@ use serde_json::{Value, json};
 
 /// The default selector set for a Keyoapp-hosted provider.
 ///
-/// Derived from live markup (`asmotoon.com`) and pinned by `tests/family_presets_fixture.rs`.
+/// Pinned by `tests/family_presets_fixture.rs`. The `latest` block was verified against nine
+/// live installs rather than the one it was first derived from — deriving it from `asmotoon`
+/// alone is what shipped a feed path the other eight answer with a 404.
 #[must_use]
 pub fn keyoapp_default_config() -> Value {
     json!({
@@ -29,10 +31,22 @@ pub fn keyoapp_default_config() -> Value {
             "next": null
         },
         "latest": {
-            "path": "/latest/",
-            "item": "div.latest-poster",
+            // The home page's "Latest Updates" strip, not `/latest/`. That route renders the
+            // *entire* catalogue re-sorted by update time — 729 cards and ~3 MB on the largest
+            // install — so a fast scan read it every cycle and fanned out a child task per
+            // series, which is a full scan wearing a fast scan's name. It is also the route
+            // production sees answered with an origin `404` on eight of the nine installs while
+            // `/series/` on the same host succeeds. `/` cannot 404, costs one small document,
+            // and names only what actually changed.
+            "path": "/",
+            // Scoped to the `#latest` container: `div.latest-poster` alone also matches the
+            // Trending, Pinned and Recently Added strips on the same page, and none of those is
+            // an update. The id is the theme's, not a stylesheet's.
+            "item": "#latest div.latest-poster",
             "link": "a[href*=\"/series/\"]",
-            "title": "h3",
+            // The anchor's `title`, not the card's `h3`: several installs render the name in a
+            // plain `span` instead, and every install puts it on the anchor.
+            "title": "a[href*=\"/series/\"]@title",
             "chapter": "a[href*=\"/chapter/\"]@title"
         },
         "series": {

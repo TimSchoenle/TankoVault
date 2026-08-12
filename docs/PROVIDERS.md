@@ -152,8 +152,45 @@ the reader opts that provider in at `PUT /v1/me/source-preferences`
 nothing about any other. A locked chapter with **no** announced unlock time stays locked: a
 missing date is not a date in the past.
 
+A locked chapter is also not *offered*, anywhere. The rule — free, or the stated unlock time has
+passed, or the reader opted this provider in — is applied by every surface that can put a chapter
+in front of someone:
+
+| Surface | What it would otherwise do |
+|---|---|
+| unread counts, release feed, continue-reading card | count and offer a chapter that answers with a paywall |
+| the series screen's chapter list | list it, and put the "next up" marker on it — the list is scoped to the viewer, so an anonymous caller sees what an anonymous visitor sees on the provider's site |
+| watchlist card figures (`latest_chapter_number`, `total_chapters`, `latest_chapter_at`) | advertise it as the series' newest chapter and newest activity — which also orders the `released` sort and fills the "today" bucket |
+| continue-reading's ordering | rank a series by a release the reader cannot open |
+| `services/notifier` | announce it to every watcher, and post it to the external broadcast channels, which have no reader behind them to check |
+| "Mark group read" | swallow it into the frontier, so it never appears as unread once its timer expires |
+
+`ChapterDiscovered` carries `access`/`unlocks_at` for the notifier's decision; a consumer that
+ignored them would send a reader to a paywall for a chapter their own unread count refuses to
+show.
+
+Unlocking is deliberately not a second announcement. The stated unlock time is compared against
+`now()` by the read paths, so a chapter opens in the reader's counts the moment it opens — with
+no rescan, and without a notification that would arrive days after the row was stored.
+
 `crates/db/tests/repo_tracking.rs` pins all of that, including the two ways it opens and the
 per-provider scoping of the opt-in.
+
+## Novels are not comics
+
+Several platforms sell prose novels from the same catalogue, under the same URL prefix, as their
+comics — a "chapter" of one is text, so there are no pages to read and nothing to track. Each
+adapter drops them at the source, where the medium is still stated:
+
+| Provider | Signal |
+|---|---|
+| Iken sites | `isNovel`, or `seriesType == "NOVEL"` on rows that predate the flag |
+| Hive Toons | `seriesType == "NOVEL"` in the catalogue island |
+| Demonic Scans | the link prefix: the feed lists novels at `/novel/`, which the catalogue never yields and the site answers with a 404 |
+
+Dropping them at the adapter rather than at ingest matters for the walk: a catalogue's `has_next`
+is decided against the site's own collection total, and that total counts the novels. Paging on
+the *filtered* row count under-counts what each page consumed and walks past the end.
 
 ## Deriving a family's defaults
 
@@ -166,6 +203,16 @@ cleanly, returned nothing, reported no error.
 | Madara `catalog.next: a.nextpostslink` | nothing checked | every install checked | cleared: a populated page chains the next one, and `mangaread` went from 12 series to ~3 200 |
 | MangaThemesia `latest` = the home page's `div.utao` slider | `rizzfables` | every other install, which drops that widget | the catalogue listing re-sorted (`?order=update`), so a working catalogue implies a working feed |
 | MangaThemesia `chapters.link: div.eph-num a` | `rizzfables` | forks that wrap the row in the anchor instead | the row's first anchor, which both shapes place first |
+| Keyoapp `latest.path: /latest/` | `asmotoon` | eight of the nine installs, in production only | the home page's `#latest` strip |
+
+The Keyoapp one is worth reading twice, because it hid behind an environment. `/latest/` answers
+`200` from a developer's network on every install and `404` from the production host on eight of
+them, so no probe run from a workstation reproduces it — the console's grouped error feed is what
+surfaced it, at 123 occurrences per provider. What the probe *did* show is that the route was
+wrong on its own merits: `/latest/` renders the **entire** catalogue re-sorted by update time
+(729 cards and about 3 MB on the largest install), so the fast scan enumerated the whole
+catalogue and fanned out a child task per series on every cycle. The replacement is a dozen
+cards, and `/` is the one path a site cannot answer with a 404.
 
 A fourth, found by walking catalogues rather than sampling one page: **a host that answers its
 404s with a challenge cannot use the yielded-items fallback at all.** `yakshacomics` enumerated
@@ -331,7 +378,9 @@ so it ships [`DemonicScansAdapter`](../crates/adapters/src/demonicscans.rs):
   is the item anchor, and its full title is the anchor's `title` attribute (the visible
   `<h1>` is ellipsis-truncated). Next page = an explicit anchor whose text is "Next".
 - **Latest feed:** the home page (`/`); items `div.updates-element`; title from `h2 a`;
-  newest chapter from the first `a.chplinks`.
+  newest chapter from the first `a.chplinks`. Links outside `/manga/` are dropped: the feed also
+  lists the site's text novels, which the catalogue never yields and the site itself answers
+  with a 404.
 - **Series:** title `h1.big-fat-titles`; cover `#manga-page img.border-box@src`; genres
   `div.genres-list li`. **Description** comes from `div.white-font` with the SEO boilerplate
   before the `"The Summary is"` marker stripped. **Status/Alternatives** are read from the

@@ -130,7 +130,12 @@ pub(super) async fn fetch_counts(
          ) ch \
          CROSS JOIN LATERAL ( \
            SELECT max((SELECT max(c.discovered_at) FROM chapters c \
-                       WHERE c.series_source_id = ss.id)) AS latest_chapter_at \
+                       WHERE c.series_source_id = ss.id \
+                         AND (c.access = 'free' OR c.unlocks_at <= now() \
+                              OR EXISTS (SELECT 1 FROM user_provider_early_access e \
+                                          WHERE e.user_id = w.user_id \
+                                            AND e.provider_id = ss.provider_id)))) \
+                    AS latest_chapter_at \
            FROM series_sources ss WHERE ss.series_id = w.series_id \
          ) la \
          CROSS JOIN LATERAL ( \
@@ -219,7 +224,12 @@ pub(super) async fn fetch_groups(
          ) ch \
          CROSS JOIN LATERAL ( \
            SELECT max((SELECT max(c.discovered_at) FROM chapters c \
-                       WHERE c.series_source_id = ss.id)) AS latest_chapter_at \
+                       WHERE c.series_source_id = ss.id \
+                         AND (c.access = 'free' OR c.unlocks_at <= now() \
+                              OR EXISTS (SELECT 1 FROM user_provider_early_access e \
+                                          WHERE e.user_id = w.user_id \
+                                            AND e.provider_id = ss.provider_id)))) \
+                    AS latest_chapter_at \
            FROM series_sources ss WHERE ss.series_id = w.series_id \
          ) la \
          CROSS JOIN LATERAL ( \

@@ -184,7 +184,12 @@ pub async fn continue_reading<'e, E: PgExecutor<'e>>(
          ) agg \
          CROSS JOIN LATERAL ( \
            SELECT max((SELECT max(c2.discovered_at) FROM chapters c2 \
-                       WHERE c2.series_source_id = ss2.id)) AS last_activity \
+                       WHERE c2.series_source_id = ss2.id \
+                         AND (c2.access = 'free' OR c2.unlocks_at <= now() \
+                              OR EXISTS (SELECT 1 FROM user_provider_early_access e \
+                                          WHERE e.user_id = w.user_id \
+                                            AND e.provider_id = ss2.provider_id)))) \
+                    AS last_activity \
            FROM series_sources ss2 WHERE ss2.series_id = w.series_id \
          ) act \
          WHERE w.user_id = $1 AND w.status IN ('reading','planned','paused') \

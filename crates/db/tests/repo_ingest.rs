@@ -271,3 +271,136 @@ async fn an_empty_chapter_list_is_a_no_op() {
         .expect("the batch helper short-circuits");
     assert!(direct.is_empty());
 }
+
+/// A chapter whose paywall lifts must lose its unlock time in the same write.
+///
+/// `chapters_unlocks_at_requires_early_access` (migration `0047`) rejects a free row carrying an
+/// `unlocks_at`, and the whole chapter batch is one statement — so a re-scan that freed a chapter
+/// while leaving the stale date behind would not store a slightly-wrong row, it would abort the
+/// ingest of every chapter of that series. The upsert overwrites both columns rather than
+/// coalescing them, which is what makes the transition safe; this pins that, in both directions.
+#[tokio::test]
+async fn freeing_a_locked_chapter_clears_the_unlock_time_it_carried() {
+    let db = TestDb::spawn().await;
+    let provider = seed::provider(&db, "paywalled").create().await;
+    let outcome = ingest_series(
+        &db.pool,
+        &scanned(provider, vec![chapter(1.0, None, "/c/1")]),
+        &MatchingConfig::default(),
+        &MetadataPriority::default(),
+        &tankovault_domain::TagBlocklist::default(),
+        &tankovault_domain::AdultTagSet::defaults(),
+    )
+    .await
+    .expect("first ingest");
+
+    let locked = ChapterUpsert {
+        access: tankovault_domain::ChapterAccess::EarlyAccess,
+        unlocks_at: Some(time::OffsetDateTime::now_utc() + time::Duration::days(7)),
+        ..chapter(1.0, None, "/c/1")
+    };
+    upsert_chapters(&db.pool, outcome.source_id, &[locked])
+        .await
+        .expect("the chapter goes behind the paywall");
+    let (access, unlocks): (
+        tankovault_domain::ChapterAccess,
+        Option<time::OffsetDateTime>,
+    ) = sqlx::query_as(
+        "SELECT access, unlocks_at FROM chapters WHERE series_source_id = $1 AND number = 1",
+    )
+    .bind(outcome.source_id.as_uuid())
+    .fetch_one(&db.pool)
+    .await
+    .expect("read back");
+    assert_eq!(access, tankovault_domain::ChapterAccess::EarlyAccess);
+    assert!(unlocks.is_some(), "the stated unlock time is stored");
+
+    // The timer expires and the next scan reports it free. Coalescing here would leave the date
+    // behind and the CHECK constraint would take the whole batch down with it.
+    upsert_chapters(&db.pool, outcome.source_id, &[chapter(1.0, None, "/c/1")])
+        .await
+        .expect("freeing the chapter must not violate the access CHECK");
+    let (access, unlocks): (
+        tankovault_domain::ChapterAccess,
+        Option<time::OffsetDateTime>,
+    ) = sqlx::query_as(
+        "SELECT access, unlocks_at FROM chapters WHERE series_source_id = $1 AND number = 1",
+    )
+    .bind(outcome.source_id.as_uuid())
+    .fetch_one(&db.pool)
+    .await
+    .expect("read back");
+    assert_eq!(access, tankovault_domain::ChapterAccess::Free);
+    assert!(
+        unlocks.is_none(),
+        "a free chapter cannot carry an unlock time"
+    );
+}
+
+/// The series screen's chapter list is scoped to the reader asking for it.
+///
+/// Everything that screen shows is derived from this one list — the totals, the read/unread
+/// split, and the "next up" marker — so a paywalled chapter left in it put a link to a paywall
+/// under "next up" and made the counts disagree with every other surface. An anonymous visitor
+/// sees what an anonymous visitor sees on the provider's own site: the free chapters.
+#[tokio::test]
+async fn the_chapter_list_hides_paid_chapters_from_readers_who_have_not_bought_them() {
+    use tankovault_db::repo::catalog::list_chapters_across;
+
+    let db = TestDb::spawn().await;
+    let provider = seed::provider(&db, "paywalled").create().await;
+    let reader = seed::user(&db, "reader").create().await;
+    let subscriber = seed::user(&db, "subscriber").create().await;
+    let outcome = ingest_series(
+        &db.pool,
+        &scanned(
+            provider,
+            vec![
+                chapter(1.0, None, "/c/1"),
+                chapter(2.0, None, "/c/2"),
+                chapter(3.0, None, "/c/3"),
+            ],
+        ),
+        &MatchingConfig::default(),
+        &MetadataPriority::default(),
+        &tankovault_domain::TagBlocklist::default(),
+        &tankovault_domain::AdultTagSet::defaults(),
+    )
+    .await
+    .expect("ingest");
+    sqlx::query(
+        "UPDATE chapters SET access = 'early_access', unlocks_at = now() + interval '7 days' \
+         WHERE number = 3",
+    )
+    .execute(&db.pool)
+    .await
+    .expect("lock chapter 3");
+    tankovault_db::repo::users::set_early_access_providers(&db.pool, subscriber, &[provider])
+        .await
+        .expect("opt in");
+
+    let numbers = async |viewer| {
+        list_chapters_across(&db.pool, &[outcome.source_id], viewer)
+            .await
+            .expect("list")
+            .into_iter()
+            .map(|c| c.number)
+            .collect::<Vec<_>>()
+    };
+
+    assert_eq!(numbers(None).await, vec![2.0, 1.0], "anonymous");
+    assert_eq!(numbers(Some(reader)).await, vec![2.0, 1.0], "not opted in");
+    assert_eq!(
+        numbers(Some(subscriber)).await,
+        vec![3.0, 2.0, 1.0],
+        "the reader who bought this provider's early access sees it"
+    );
+
+    // A stated unlock time that has passed frees the chapter for everyone, with no rescan — the
+    // same rule the unread predicate applies, and the reason `unlocks_at` is stored at all.
+    sqlx::query("UPDATE chapters SET unlocks_at = now() - interval '1 minute' WHERE number = 3")
+        .execute(&db.pool)
+        .await
+        .expect("expire the timer");
+    assert_eq!(numbers(None).await, vec![3.0, 2.0, 1.0]);
+}

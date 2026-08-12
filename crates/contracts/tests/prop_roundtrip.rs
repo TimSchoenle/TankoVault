@@ -21,8 +21,8 @@ use tankovault_contracts::subjects::{
 };
 use tankovault_contracts::sync;
 use tankovault_domain::{
-    ProviderId, ProviderState, RunState, ScanMode, ScanRunId, ScanTaskId, SeriesId, SeriesSourceId,
-    UserId,
+    ChapterAccess, ProviderId, ProviderState, RunState, ScanMode, ScanRunId, ScanTaskId, SeriesId,
+    SeriesSourceId, UserId,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -140,8 +140,11 @@ proptest! {
         chapter_title in prop::option::of(".{0,40}"),
         chapter_path in "/[a-z0-9/_-]{0,40}",
         published_at in prop::option::of(timestamp()),
+        locked in any::<bool>(),
+        unlocks_at in prop::option::of(timestamp()),
         discovered_at in timestamp(),
     ) {
+        let access = if locked { ChapterAccess::EarlyAccess } else { ChapterAccess::Free };
         survives_the_wire(&ChapterDiscovered {
             series_id: SeriesId::new(),
             series_source_id: SeriesSourceId::new(),
@@ -151,8 +154,36 @@ proptest! {
             chapter_title,
             chapter_path,
             published_at,
+            access,
+            // Only meaningful on a locked chapter, but the wire has to carry either shape:
+            // the notifier reads `access` and a stray date on a free row must not decide.
+            unlocks_at: if locked { unlocks_at } else { None },
             discovered_at,
         })?;
+    }
+
+    /// A `chapter.discovered` published by a worker that predates the paywall fields must still
+    /// decode — the two services deploy separately, and an event stuck mid-flight across the
+    /// upgrade would otherwise poison the consumer. Absent means `free`, which is what every
+    /// message written before the fields existed meant.
+    #[test]
+    fn a_chapter_discovered_event_without_the_access_fields_decodes_as_free(
+        provider_slug in provider_slug(),
+        chapter_number in prop::num::f64::NORMAL | prop::num::f64::ZERO,
+    ) {
+        let legacy = serde_json::json!({
+            "series_id": SeriesId::new(),
+            "series_source_id": SeriesSourceId::new(),
+            "provider_id": ProviderId::new(),
+            "provider_slug": provider_slug,
+            "chapter_number": chapter_number,
+            "chapter_title": null,
+            "chapter_path": "/series/x/1",
+            "discovered_at": "2026-08-12T00:00:00Z",
+        });
+        let decoded: ChapterDiscovered = serde_json::from_value(legacy)?;
+        prop_assert_eq!(decoded.access, ChapterAccess::Free);
+        prop_assert!(decoded.unlocks_at.is_none());
     }
 
     #[test]

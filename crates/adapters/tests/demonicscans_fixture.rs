@@ -62,11 +62,20 @@ async fn parses_catalog_with_next_marker() {
     assert!(page.items.iter().any(|i| i.path == "/manga/Shibuya-Noir"));
 }
 
+/// Regression: the home feed lists the site's text novels alongside its comics, at `/novel/`.
+/// The catalogue never yields that prefix and the site answers those pages with a 404, so every
+/// one ingested became a series whose every rescan spent its retry budget failing — four of them
+/// accounted for more than a thousand recorded failures before anyone looked.
 #[tokio::test]
 async fn parses_latest_feed() {
     let updates = adapter().list_latest(&ctx()).await.expect("latest parses");
 
-    assert_eq!(updates.len(), 2);
+    assert_eq!(updates.len(), 2, "the novel card is not a series");
+    assert!(
+        updates.iter().all(|u| u.path.starts_with("/manga/")),
+        "{:?}",
+        updates.iter().map(|u| &u.path).collect::<Vec<_>>()
+    );
     assert_eq!(updates[0].title, "Welcome to Dungeon Hotel");
     assert_eq!(updates[0].path, "/manga/Welcome-to-Dungeon-Hotel");
     // Newest chapter number read from the first chapter link.

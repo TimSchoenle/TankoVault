@@ -20,8 +20,14 @@ struct SiteFetcher {
     series: &'static str,
     /// Body for the Manganato family's JSON chapter endpoint (`/api/manga/{slug}/chapters`).
     chapters_api: &'static str,
-    /// Body for a feed served from a URL of its own, as Keyoapp's `/latest/` is.
+    /// Body for a feed served from a URL of its own — for Keyoapp that is the site root.
     latest: &'static str,
+}
+
+/// Whether `url` addresses the site root itself (`https://host` or `https://host/`).
+fn is_site_root(url: &str) -> bool {
+    url.split_once("://")
+        .is_some_and(|(_, rest)| !rest.trim_end_matches('/').contains('/'))
 }
 
 #[async_trait]
@@ -39,7 +45,9 @@ impl Fetcher for SiteFetcher {
         }
         let body = if req.url.contains("/api/manga/") {
             self.chapters_api
-        } else if req.url.contains("/latest/") {
+        } else if req.url.contains("/latest/") || is_site_root(&req.url) {
+            // Keyoapp's feed is the home page, so "the request is for the origin and nothing
+            // else" is what identifies it. Matching on a bare "/" would match every path.
             self.latest
         } else if req.url.ends_with("/series/") {
             // Keyoapp's whole catalogue is this one document; a *series* page is one segment
@@ -536,8 +544,16 @@ async fn keyoapp_catalogue_is_one_page_and_says_so() {
     );
 }
 
+/// Regression: the feed read `/latest/`, which every install answers with its **entire**
+/// catalogue re-sorted by update time — 729 cards on the largest — so a fast scan fanned out a
+/// child task per series in the catalogue, every cycle. Production also saw eight of the nine
+/// installs answer that route with an origin `404` while `/series/` on the same host succeeded.
+/// The home page's `#latest` strip is a dozen cards and cannot 404.
+///
+/// The scoping is the load-bearing part: `div.latest-poster` is the card class for Trending,
+/// Pinned and Recently Added as well, and none of those is an update.
 #[tokio::test]
-async fn keyoapp_latest_feed_reads_series_links_not_chapter_links() {
+async fn keyoapp_latest_feed_is_the_home_pages_latest_strip_only() {
     let (adapter, ctx) = preset_adapter(
         "asmotoon",
         SiteFetcher {
@@ -547,7 +563,14 @@ async fn keyoapp_latest_feed_reads_series_links_not_chapter_links() {
     );
     let updates = adapter.list_latest(&ctx).await.expect("feed parses");
 
-    assert_eq!(updates.len(), 2);
+    assert_eq!(updates.len(), 2, "only the two cards inside `#latest`");
+    assert!(
+        !updates
+            .iter()
+            .any(|u| u.path.contains("vengeful-villain-slayer")),
+        "the Trending card sits outside `#latest` and is not an update: {:?}",
+        updates.iter().map(|u| &u.path).collect::<Vec<_>>()
+    );
     // Each card links to both the series and its newest chapters. A feed that registered the
     // chapter link as a series path would store series that can never have chapters, since a
     // chapter page carries no chapter list.
@@ -556,6 +579,8 @@ async fn keyoapp_latest_feed_reads_series_links_not_chapter_links() {
         "{:?}",
         updates.iter().map(|u| &u.path).collect::<Vec<_>>()
     );
+    // Read off the anchor's `title`, not an `h3`: several installs render the name in a plain
+    // `span` and the card then had no title at all.
     assert!(updates.iter().all(|u| !u.title.is_empty()));
     assert!(
         updates.iter().all(|u| u.latest_chapter > 0.0),

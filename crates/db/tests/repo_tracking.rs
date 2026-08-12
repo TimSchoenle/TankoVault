@@ -49,10 +49,10 @@
 #![cfg(feature = "integration")]
 
 use tankovault_db::repo::tracking::{
-    PinOutcome, ReadProgress, WatchlistFilter, WatchlistPage, continue_reading, feed,
-    is_sync_excluded, me_stats, progress_get_full, progress_mark_read, progress_mark_unread,
-    progress_set, set_sync_excluded, watchers_for_series, watchlist_card, watchlist_page,
-    watchlist_set_pinned_source, watchlist_upsert,
+    PinOutcome, ReadProgress, WatchlistFilter, WatchlistPage, continue_reading,
+    early_access_opted_in, feed, is_sync_excluded, me_stats, progress_get_full, progress_mark_read,
+    progress_mark_unread, progress_set, set_sync_excluded, watchers_for_series, watchlist_card,
+    watchlist_page, watchlist_set_pinned_source, watchlist_upsert,
 };
 use tankovault_db::repo::users::set_notification_prefs;
 use tankovault_domain::{
@@ -1501,5 +1501,160 @@ async fn an_early_access_chapter_counts_only_once_the_reader_can_read_it() {
         unread_now(&db, user, series).await,
         2,
         "no announced unlock time must read as still locked, never as already unlocked"
+    );
+}
+
+/// The lookup the notifier's fan-out narrows a paywalled chapter's recipients with.
+///
+/// It is the same reader-level question the unread predicate answers inline, asked in the one
+/// place that cannot ask it in SQL: the notifier already holds the claimed watcher list in
+/// memory. It is separately pinned because the notifier consumes it as a *whitelist* — an empty
+/// result means "announce to nobody", and a version that returned every user on no match, or
+/// ignored the provider, would silently restore the bug it exists to close.
+#[tokio::test]
+async fn the_early_access_opt_in_lookup_is_scoped_to_one_provider() {
+    let db = TestDb::spawn().await;
+    let paid = seed::user(&db, "paid").create().await;
+    let unpaid = seed::user(&db, "unpaid").create().await;
+    let provider = seed::provider(&db, "paywalled").create().await;
+    let other = seed::provider(&db, "elsewhere").create().await;
+
+    tankovault_db::repo::users::set_early_access_providers(&db.pool, paid, &[provider])
+        .await
+        .expect("opt in");
+
+    let opted = early_access_opted_in(&db.pool, &[paid, unpaid], provider)
+        .await
+        .expect("lookup");
+    assert_eq!(opted, vec![paid], "only the reader who opted in");
+
+    // Paying one scanlator says nothing about any other.
+    assert!(
+        early_access_opted_in(&db.pool, &[paid, unpaid], other)
+            .await
+            .expect("lookup")
+            .is_empty(),
+        "the opt-in must not carry across providers"
+    );
+
+    // Never widened to "everyone" by an empty candidate set.
+    assert!(
+        early_access_opted_in(&db.pool, &[], provider)
+            .await
+            .expect("lookup")
+            .is_empty()
+    );
+}
+
+/// Every figure a watchlist card shows must describe the chapters this reader can actually open.
+///
+/// The unread count was gated by migration `0047`; the card's other numbers were not, so a
+/// paywalled chapter still raised `latest_chapter_number` and `total_chapters`, and its
+/// `discovered_at` still set `latest_chapter_at` — which is what the `released` sort orders by,
+/// what the "updated since" filter compares, and what buckets a series into "today". The card
+/// therefore announced a release the reader could not open, at the top of their list, next to an
+/// unread count of zero.
+#[tokio::test]
+async fn a_watchlist_card_counts_only_chapters_the_reader_can_open() {
+    let db = TestDb::spawn().await;
+    let user = seed::user(&db, "reader").create().await;
+    let provider = seed::provider(&db, "paywalled").create().await;
+    let series = a_series(&db, provider, "Gated", &[1.0, 2.0, 3.0]).await;
+    watchlist_upsert(&db.pool, user, series, WatchStatus::Reading, true)
+        .await
+        .expect("watchlist");
+
+    // Chapters 1 and 2 are a week old; 3 is today, so "latest activity" is unambiguous.
+    sqlx::query("UPDATE chapters SET discovered_at = now() - interval '7 days' WHERE number < 3")
+        .execute(&db.pool)
+        .await
+        .expect("age the free chapters");
+
+    let before = watchlist_card(&db.pool, user, series)
+        .await
+        .expect("card")
+        .expect("entry");
+    assert_eq!(before.total_chapters, 3, "premise: three free chapters");
+    assert_eq!(before.latest_chapter_number, Some(3.0));
+
+    // Chapter 3 goes behind the paywall, and is the newest thing the series has.
+    sqlx::query(
+        "UPDATE chapters SET access = 'early_access', unlocks_at = now() + interval '7 days', \
+                discovered_at = now() WHERE number = 3",
+    )
+    .execute(&db.pool)
+    .await
+    .expect("lock chapter 3");
+
+    let locked = watchlist_card(&db.pool, user, series)
+        .await
+        .expect("card")
+        .expect("entry");
+    assert_eq!(
+        locked.latest_chapter_number,
+        Some(2.0),
+        "the card must not advertise a chapter that answers with a paywall"
+    );
+    assert_eq!(locked.total_chapters, 2, "nor count it toward the total");
+    let a_day_ago = time::OffsetDateTime::now_utc() - time::Duration::days(1);
+    assert!(
+        locked.latest_chapter_at.is_some_and(|at| at < a_day_ago),
+        "a locked release must not register as this series' latest activity: {:?}",
+        locked.latest_chapter_at
+    );
+
+    // Paying for it restores every figure at once — one predicate, one opt-in.
+    tankovault_db::repo::users::set_early_access_providers(&db.pool, user, &[provider])
+        .await
+        .expect("opt in");
+    let paid = watchlist_card(&db.pool, user, series)
+        .await
+        .expect("card")
+        .expect("entry");
+    assert_eq!(paid.latest_chapter_number, Some(3.0));
+    assert_eq!(paid.total_chapters, 3);
+}
+
+/// "Mark group read" must not swallow a chapter the reader cannot open.
+///
+/// The frontier only ever moves forward, so a locked chapter folded into it is gone: when its
+/// timer expires it is already behind the frontier and never appears as unread. The reader loses
+/// exactly the chapter they were waiting for, and no rescan can bring it back.
+#[tokio::test]
+async fn marking_a_group_read_stops_at_the_last_chapter_the_reader_can_open() {
+    let db = TestDb::spawn().await;
+    let user = seed::user(&db, "reader").create().await;
+    let provider = seed::provider(&db, "paywalled").create().await;
+    let series = a_series(&db, provider, "Gated", &[1.0, 2.0, 3.0]).await;
+    watchlist_upsert(&db.pool, user, series, WatchStatus::Reading, true)
+        .await
+        .expect("watchlist");
+    sqlx::query(
+        "UPDATE chapters SET access = 'early_access', unlocks_at = now() + interval '7 days' \
+         WHERE number = 3",
+    )
+    .execute(&db.pool)
+    .await
+    .expect("lock chapter 3");
+
+    tankovault_db::repo::tracking::progress_bulk_mark_all_read(&db.pool, user, &[series.as_uuid()])
+        .await
+        .expect("mark group read");
+
+    let (whole, _) = frontiers(&db, user, series).await;
+    assert!(
+        (whole - 2.0).abs() < f64::EPSILON,
+        "the frontier stops at 2, not 3: {whole}"
+    );
+
+    // And when the timer expires, the chapter is there waiting rather than already consumed.
+    sqlx::query("UPDATE chapters SET unlocks_at = now() - interval '1 minute' WHERE number = 3")
+        .execute(&db.pool)
+        .await
+        .expect("expire the timer");
+    assert_eq!(
+        unread_now(&db, user, series).await,
+        1,
+        "the chapter the reader waited for is unread, not swallowed"
     );
 }

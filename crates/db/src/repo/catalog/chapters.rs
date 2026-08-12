@@ -319,9 +319,9 @@ pub async fn list_chapters_across<'e, E: PgExecutor<'e>>(
          FROM chapters c JOIN series_sources ss ON ss.id = c.series_source_id \
          WHERE c.series_source_id = ANY($1) \
            AND (c.access = 'free' OR c.unlocks_at <= now() \
-                OR EXISTS (SELECT 1 FROM user_provider_early_access e \
-                            WHERE e.user_id = $2::uuid \
-                              AND e.provider_id = ss.provider_id)) \
+                OR ss.provider_id = ANY(ARRAY( \
+                     SELECT e.provider_id FROM user_provider_early_access e \
+                     WHERE e.user_id = $2::uuid))) \
          ORDER BY c.number DESC, c.discovered_at ASC",
         &ids,
         viewer.map(UserId::as_uuid) as Option<Uuid>,

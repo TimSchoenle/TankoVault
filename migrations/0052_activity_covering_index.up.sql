@@ -1,0 +1,58 @@
+-- The half of `0047_chapter_early_access` that was missed: the activity index.
+--
+-- ---------------------------------------------------------------------------------------
+-- What was wrong
+-- ---------------------------------------------------------------------------------------
+-- 0047 put `access`/`unlocks_at` into every copy of the unread predicate and, knowing exactly
+-- what that costs, gave `chapters_source_floor_num_access_idx` an `INCLUDE (access, unlocks_at)`
+-- payload so the predicate stayed answerable from the index alone.
+--
+-- The same commit put the same two columns into a *second* per-source chapter scan, and that one
+-- reads a different index. Every reading surface orders by the newest chapter of a series and
+-- asks for it one source at a time:
+--
+--   max((SELECT max(c.discovered_at) FROM chapters c WHERE c.series_source_id = ss.id AND …))
+--
+-- The scalar form is deliberate — it is what lets Postgres apply the MIN/MAX optimisation and
+-- plan the inner query as `Limit -> Index Only Scan Backward` on `chapters_source_disc_idx`,
+-- one row per source instead of the source's whole chapter list. A filter on columns that index
+-- does not carry does not stop the optimisation; it stops the scan being *index-only*. The plan
+-- degrades to a plain `Index Scan` that goes to the heap for every row it inspects — and it
+-- inspects each locked chapter at the head of the source before it reaches a free one, which is
+-- precisely where early-access chapters sit, since they are the newest.
+--
+-- That is the failure `0026_unread_covering_index` documents, reintroduced in the one index 0047
+-- did not widen. Measured on the production catalogue (53 872 series, 2.84 M chapters, a reader
+-- with 859 watchlist entries, the newest two chapters of one provider's sources locked), on
+-- `continue_reading`:
+--
+--            index        | plan for the activity scan  | first call | warm
+--   ----------------------+-----------------------------+------------+-------
+--    disc_idx (0020)      | Index Scan, heap per row    |    608 ms  | 67 ms
+--    disc_access_idx      | Index Only, Heap Fetches: 0 |    279 ms  | 49 ms
+--
+-- The warm gap is small and the cold one is not, which is the whole point: the deployment runs
+-- Postgres in a 1 GB container against a 1.5 GB database with a continuously ingesting worker
+-- churning the cache, so the first-call figure is the one readers get.
+--
+-- `access`/`unlocks_at` ride along as `INCLUDE` payload rather than key columns for the reason
+-- 0047 gives: nothing orders or ranges by them, they are only ever read as a filter on a row the
+-- key columns already found. The superseded index has the same key columns, so every plan that
+-- used it uses this one.
+--
+-- ---------------------------------------------------------------------------------------
+-- Why this is NOT `CREATE INDEX CONCURRENTLY`
+-- ---------------------------------------------------------------------------------------
+-- Same reason as `0020_performance_indexes`: sqlx sends the file as one simple-query string and
+-- Postgres wraps that in an implicit transaction. On a database whose `chapters` table is
+-- already large, run this by hand first — the statements below are `IF NOT EXISTS`/`IF EXISTS`,
+-- so the migration then finds the work done:
+--
+--   CREATE INDEX CONCURRENTLY IF NOT EXISTS chapters_source_disc_access_idx
+--       ON chapters (series_source_id, discovered_at DESC) INCLUDE (access, unlocks_at);
+--   DROP INDEX CONCURRENTLY IF EXISTS chapters_source_disc_idx;
+
+CREATE INDEX IF NOT EXISTS chapters_source_disc_access_idx
+    ON chapters (series_source_id, discovered_at DESC) INCLUDE (access, unlocks_at);
+
+DROP INDEX IF EXISTS chapters_source_disc_idx;

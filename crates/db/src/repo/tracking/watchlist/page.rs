@@ -194,9 +194,12 @@ async fn attach_sources(pool: &PgPool, rows: Vec<CardRow>) -> DbResult<Vec<Watch
 ///
 /// What that leaves in the CTE is deliberately cheap: `unread` takes the unread predicate in
 /// its `WHERE`, so `floor(number) >` becomes an **index cond** on
-/// `chapters_source_floor_num_idx` and the scan stays index-only over the unread tail;
+/// `chapters_source_floor_num_access_idx` and the scan stays index-only over the unread tail;
 /// `latest_chapter_at` is a scalar `max()` per source, the form that lets Postgres apply the
-/// MIN/MAX index optimisation on `chapters_source_disc_idx`. The `progress` sort is the one
+/// MIN/MAX index optimisation on `chapters_source_disc_access_idx`. Both indexes carry the
+/// early-access columns as `INCLUDE` payload so those scans stay index-only — see
+/// `0052_activity_covering_index` for what a predicate column outside the index costs. The
+/// `progress` sort is the one
 /// key that genuinely needs `total_chapters` before the `LIMIT`, so it is a subquery inside the
 /// sort-key `CASE` — an untaken `CASE` arm never executes its subplan, so the other four sorts
 /// do not pay for it.
@@ -248,9 +251,9 @@ async fn fetch_page(
                         FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
                         WHERE ss.series_id = w.series_id \
                           AND (c.access = 'free' OR c.unlocks_at <= now() \
-                               OR EXISTS (SELECT 1 FROM user_provider_early_access e \
-                                           WHERE e.user_id = w.user_id \
-                                             AND e.provider_id = ss.provider_id))) \
+                               OR ss.provider_id = ANY(ARRAY( \
+                                    SELECT e.provider_id FROM user_provider_early_access e \
+                                    WHERE e.user_id = $1)))) \
                     END AS sort_num, \
                     CASE WHEN $7 = 'title' THEN s.canonical_title END AS sort_text \
              FROM watchlist_entries w \
@@ -265,17 +268,17 @@ async fn fetch_page(
                           AND rp.last_read_part_number IS NOT NULL \
                           AND c.number <= rp.last_read_part_number) \
                  AND (c.access = 'free' OR c.unlocks_at <= now() \
-                      OR EXISTS (SELECT 1 FROM user_provider_early_access e \
-                                  WHERE e.user_id = w.user_id \
-                                    AND e.provider_id = ss.provider_id)) \
+                      OR ss.provider_id = ANY(ARRAY( \
+                           SELECT e.provider_id FROM user_provider_early_access e \
+                           WHERE e.user_id = $1))) \
              ) unr \
              CROSS JOIN LATERAL ( \
                SELECT max((SELECT max(c.discovered_at) FROM chapters c \
                            WHERE c.series_source_id = ss.id \
                              AND (c.access = 'free' OR c.unlocks_at <= now() \
-                                  OR EXISTS (SELECT 1 FROM user_provider_early_access e \
-                                              WHERE e.user_id = w.user_id \
-                                                AND e.provider_id = ss.provider_id)))) \
+                                  OR ss.provider_id = ANY(ARRAY( \
+                                       SELECT e.provider_id FROM user_provider_early_access e \
+                                       WHERE e.user_id = $1))))) \
                         AS latest_chapter_at \
                FROM series_sources ss WHERE ss.series_id = w.series_id \
              ) la \
@@ -355,9 +358,9 @@ async fn fetch_page(
            FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
            WHERE ss.series_id = p.series_id \
              AND (c.access = 'free' OR c.unlocks_at <= now() \
-                  OR EXISTS (SELECT 1 FROM user_provider_early_access e \
-                              WHERE e.user_id = $1 \
-                                AND e.provider_id = ss.provider_id)) \
+                  OR ss.provider_id = ANY(ARRAY( \
+                       SELECT e.provider_id FROM user_provider_early_access e \
+                       WHERE e.user_id = $1))) \
          ) ch \
          LEFT JOIN LATERAL ( \
            SELECT c.number::float8 AS number, c.title, c.discovered_at \
@@ -368,9 +371,9 @@ async fn fetch_page(
                       AND p.last_read_part_number IS NOT NULL \
                       AND c.number <= p.last_read_part_number) \
              AND (c.access = 'free' OR c.unlocks_at <= now() \
-                  OR EXISTS (SELECT 1 FROM user_provider_early_access e \
-                              WHERE e.user_id = $1 \
-                                AND e.provider_id = ss.provider_id)) \
+                  OR ss.provider_id = ANY(ARRAY( \
+                       SELECT e.provider_id FROM user_provider_early_access e \
+                       WHERE e.user_id = $1))) \
            ORDER BY c.number, c.discovered_at, c.id \
            LIMIT 1 \
          ) nu ON true \

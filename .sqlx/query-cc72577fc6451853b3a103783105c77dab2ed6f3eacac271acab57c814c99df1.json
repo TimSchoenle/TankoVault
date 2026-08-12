@@ -1,0 +1,51 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH watched AS ( SELECT count(*) AS tracking, count(*) FILTER (WHERE status = 'reading') AS reading, count(*) FILTER (WHERE status = 'completed') AS completed FROM watchlist_entries WHERE user_id = $1 ) SELECT (SELECT tracking FROM watched) AS \"tracking!\", (SELECT reading FROM watched) AS \"reading!\", (SELECT completed FROM watched) AS \"completed!\", (SELECT COALESCE(sum(floor(last_read_whole_number)),0)::int8 FROM read_progress WHERE user_id = $1) AS \"chapters_read!\", (SELECT COALESCE(sum(agg.unread),0)::int8 FROM watchlist_entries w LEFT JOIN read_progress rp ON rp.user_id = w.user_id AND rp.series_id = w.series_id CROSS JOIN LATERAL ( SELECT count(DISTINCT floor(c.number)) AS unread FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id WHERE ss.series_id = w.series_id AND floor(c.number) > COALESCE(rp.last_read_whole_number, 0) AND NOT (c.number <> floor(c.number) AND rp.last_read_part_number IS NOT NULL AND c.number <= rp.last_read_part_number) AND (c.access = 'free' OR c.unlocks_at <= now() OR ss.provider_id = ANY(ARRAY( SELECT e.provider_id FROM user_provider_early_access e WHERE e.user_id = $1))) ) agg WHERE w.user_id = $1) AS \"unread!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "tracking!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "reading!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "completed!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "chapters_read!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "unread!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "cc72577fc6451853b3a103783105c77dab2ed6f3eacac271acab57c814c99df1"
+}

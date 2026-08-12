@@ -19,7 +19,7 @@ that could silently return gets a test whose doc comment says what the bug was.
 | W2 | Session lifecycle: cache after validation, evict on failure | open | no |
 | W3 | Observability: make a dark provider visible | open | no |
 | W4 | Cookie scoping: a clearance cookie must not leave its host | open | wire change |
-| W5 | Fingerprint coherence between the solver browser and `wreq` | open | no |
+| W5 | Fingerprint coherence between the solver browser and `wreq` | **S0 done, S1/S1b landed**; lint, `/v1/solver-identity`, equality gate open | no |
 | W6 | A WAF deny is not a solvable challenge; per-provider breaker | open | wire tolerance first |
 | W7 | Shared session store across worker replicas | open | only with replicas > 1 |
 
@@ -320,20 +320,42 @@ different files, in different languages, with no gate relating them.
 
 #### Plan — synchronise by construction, then prove it
 
-**S0 — Establish what the solver is, before changing anything.** One solve against any provider
-returns `SolveOutcome.user_agent`. Record the family, major and platform it actually reports; that
-value, not the image tag and not `profile_for`, is ground truth. Everything below assumes the
-answer is "Firefox on some platform"; if Camoufox is configured to present a Chrome UA, the finding
-gets *worse*, not better — a Chrome UA over an NSS handshake — and the plan is unchanged.
+**S0 — Establish what the solver is, before changing anything. — done, 2026-08-12.** The pinned
+image was run and asked to solve; these are its own answers, not inferences:
 
-**S1 — One declared identity, in one place, with a gate.** Today the identity is spread across three
-files that no rule relates: the TRAWL image digest in `docker-compose.yml`, `profile_for` in
-[`base.rs:46`](../crates/fetch/src/base.rs:46), and the `wreq-util` version in the root
-`Cargo.toml`. Collapse it to one table — solver back-end → browser family, major, platform → the
-`wreq_util::Profile`/`Platform` pair that reproduces it — and add a `repo-lint` rule
-(`xtask/src/repo_lint/`, alongside `deploy.rs` and `tls.rs`, which exist for exactly this class of
-cross-file invariant) asserting that the compose image and every arm of `profile_for` appear in it.
-A Renovate bump of the image or of `wreq-util` then fails a gate instead of silently drifting.
+| Probe | Result |
+|---|---|
+| `userAgent`, four consecutive solves | `…(Windows NT 10.0; Win64; x64; rv:150.0)…Firefox/150.0` ×3, `…(Macintosh; Intel Mac OS X 10.15; rv:150.0)…Firefox/150.0` ×1 |
+| the failing WeebCentral series URL | `tier: 1`, `proxyUsed: false`, `statusCode: 200`, 59 339 bytes, title `Atsu Atsu Trattoria \| Weeb Central`, **`cookies: []`** |
+
+Three facts follow, and each changes the design:
+
+1. The solver is a **Firefox 150** while the scanner default is Chrome — confirmed, not inferred.
+2. **The platform rotates per solve.** Camoufox randomises the OS it presents, so no static pin can
+   ever match; the profile has to be resolved per session, from that session's own user-agent.
+   S1's declared identity is therefore a *backstop and a lint*, never the mechanism.
+3. The solver's plain-fetch tier answers this provider with the real page and **no cookies at all**.
+   A cookie-less session was still being cached and replayed — swapping the provider's browser
+   identity for the solver's on every later request while preserving no clearance whatsoever.
+
+**S1 — One declared identity, in one place, with a gate. — table landed, lint outstanding.**
+`PROFILES` in [`base.rs`](../crates/fetch/src/base.rs) is now the single table relating a browser
+family, major and platform to the `wreq_util::Profile`/`Platform` pair that reproduces it, and
+`BrowserIdentity` ([`crates/fetch/src/identity.rs`](../crates/fetch/src/identity.rs))
+is what a user-agent parses into. Matching is on the **exact** major: an unmatched build declines
+rather than approximating, so a Camoufox bump ahead of `wreq-util` degrades to a solve per fetch
+instead of announcing a mismatch.
+
+Still to do: the `repo-lint` rule (`xtask/src/repo_lint/`, alongside `deploy.rs` and `tls.rs`, which
+exist for exactly this class of cross-file invariant) asserting that the TRAWL image digest in
+`docker-compose.yml` and every family in `PROFILES` agree, so a Renovate bump of the image or of
+`wreq-util` fails a gate instead of silently narrowing what can be replayed.
+
+**S1b — Use the identity per request. — landed.** `BaseHttpFetcher` keeps a cache of clients keyed
+by `BrowserIdentity` and chooses the client and the user-agent *together*, so the handshake and the
+identity header can never describe different browsers. An identity with no profile has its
+user-agent dropped rather than sent over a contradicting handshake, and `SolvingFetcher` refuses to
+cache a session that cannot be replayed at all — no cookies, or a browser we cannot present.
 
 **S2 — Negotiate at runtime; the constant is only a backstop.** Add `GET /v1/solver-identity` to the
 shared router in [`crates/solver/src/http.rs`](../crates/solver/src/http.rs) — one place, so

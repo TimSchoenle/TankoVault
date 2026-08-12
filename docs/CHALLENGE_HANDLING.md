@@ -101,7 +101,24 @@ Options, best first:
 1. **Repair the toolchain.** Install the current MSVC build tools and confirm
    `cargo check -p tankovault-solver` completes. This is the only way to run the real suites
    locally, and W2/W4/W5 all need `tankovault-fetch` to compile.
-2. **Verify in Docker**, using the deploy image build, which is where BoringSSL builds today.
+2. **Verify in Docker**, in the repo's own builder image. This works today and is what the fetch
+   changes on this branch were gated with — a real compile of the real crates, not a harness:
+
+   ```bash
+   docker run --rm -v "$PWD:/src:ro" -v tv-target:/target -v tv-cargo:/cargo \
+     -e CARGO_TARGET_DIR=/target -e CARGO_HOME=/cargo -e LIBCLANG_PATH=/usr/lib \
+     -e SQLX_OFFLINE=true -e RUSTFLAGS="-C target-feature=-crt-static" -w /src \
+     lukemathwalker/cargo-chef:latest-rust-1.94.0-alpine \
+     sh -c "apk add --no-cache musl-dev g++ cmake make nasm perl git clang-dev && \
+            cargo test -p tankovault-fetch -p tankovault-solver --locked"
+   ```
+
+   Three details are load-bearing. `RUSTFLAGS=-C target-feature=-crt-static` is what lets bindgen
+   `dlopen` libclang — musl's default static CRT forbids it, and this is the same reason
+   `deploy/docker/Dockerfile` builds natively rather than with `--target`. The named volumes keep
+   the target directory off the bind mount, where a cold BoringSSL build is minutes slower. And on
+   Git Bash, prefix the command with `MSYS_NO_PATHCONV=1` or `-w /src` is rewritten to a Windows
+   path. First run ≈ 15 minutes for BoringSSL and the dependency graph; afterwards seconds.
 3. **Isolated harness** for a pure-logic module, as a last resort. `detection.rs` imports one type;
    copying it into a scratch crate beside a stub `ChallengeKind` compiles in seconds and runs the
    real unit tests, doctests and property tests. This is how W1 was verified. It proves the module,

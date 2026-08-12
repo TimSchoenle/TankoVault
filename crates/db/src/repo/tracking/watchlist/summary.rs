@@ -3,10 +3,12 @@
 //! Every statement here aggregates over the user's whole watchlist, so the shape of the two
 //! per-series laterals decides what they cost. The unread predicate sits in the lateral's
 //! `WHERE` rather than in a `FILTER` over the series' full chapter list — the same rows, but
-//! `floor(number) >` becomes an index cond on `chapters_source_floor_num_idx` and the scan stays
+//! `floor(number) >` becomes an index cond on `chapters_source_floor_num_access_idx` and the scan stays
 //! index-only over the unread tail. `latest_chapter_at` is a scalar `max()` per source for the
-//! same reason: that is the form the MIN/MAX index optimisation fires on. Together they are what
-//! keeps these off the 570 ms shape [`fetch_page`](super::page) documents.
+//! same reason: that is the form the MIN/MAX index optimisation fires on, over
+//! `chapters_source_disc_access_idx`. Together they are what keeps these off the 570 ms shape
+//! [`fetch_page`](super::page) documents; both indexes carry the early-access columns as
+//! `INCLUDE` payload, which is what keeps either scan index-only.
 
 use crate::error::DbResult;
 use sqlx::{FromRow, PgExecutor, PgPool};
@@ -63,9 +65,9 @@ pub async fn watchlist_summary<'e, E: PgExecutor<'e>>(
                       AND rp.last_read_part_number IS NOT NULL \
                       AND c.number <= rp.last_read_part_number) \
              AND (c.access = 'free' OR c.unlocks_at <= now() \
-                  OR EXISTS (SELECT 1 FROM user_provider_early_access e \
-                              WHERE e.user_id = w.user_id \
-                                AND e.provider_id = ss.provider_id)) \
+                  OR ss.provider_id = ANY(ARRAY( \
+                       SELECT e.provider_id FROM user_provider_early_access e \
+                       WHERE e.user_id = $1))) \
          ) ch \
          CROSS JOIN LATERAL ( \
            SELECT COALESCE((array_agg(ss.state <> 'active' OR p.state <> 'active' \
@@ -124,17 +126,17 @@ pub(super) async fn fetch_counts(
                       AND rp.last_read_part_number IS NOT NULL \
                       AND c.number <= rp.last_read_part_number) \
              AND (c.access = 'free' OR c.unlocks_at <= now() \
-                  OR EXISTS (SELECT 1 FROM user_provider_early_access e \
-                              WHERE e.user_id = w.user_id \
-                                AND e.provider_id = ss.provider_id)) \
+                  OR ss.provider_id = ANY(ARRAY( \
+                       SELECT e.provider_id FROM user_provider_early_access e \
+                       WHERE e.user_id = $1))) \
          ) ch \
          CROSS JOIN LATERAL ( \
            SELECT max((SELECT max(c.discovered_at) FROM chapters c \
                        WHERE c.series_source_id = ss.id \
                          AND (c.access = 'free' OR c.unlocks_at <= now() \
-                              OR EXISTS (SELECT 1 FROM user_provider_early_access e \
-                                          WHERE e.user_id = w.user_id \
-                                            AND e.provider_id = ss.provider_id)))) \
+                              OR ss.provider_id = ANY(ARRAY( \
+                                   SELECT e.provider_id FROM user_provider_early_access e \
+                                   WHERE e.user_id = $1))))) \
                     AS latest_chapter_at \
            FROM series_sources ss WHERE ss.series_id = w.series_id \
          ) la \
@@ -218,17 +220,17 @@ pub(super) async fn fetch_groups(
                       AND rp.last_read_part_number IS NOT NULL \
                       AND c.number <= rp.last_read_part_number) \
              AND (c.access = 'free' OR c.unlocks_at <= now() \
-                  OR EXISTS (SELECT 1 FROM user_provider_early_access e \
-                              WHERE e.user_id = w.user_id \
-                                AND e.provider_id = ss.provider_id)) \
+                  OR ss.provider_id = ANY(ARRAY( \
+                       SELECT e.provider_id FROM user_provider_early_access e \
+                       WHERE e.user_id = $1))) \
          ) ch \
          CROSS JOIN LATERAL ( \
            SELECT max((SELECT max(c.discovered_at) FROM chapters c \
                        WHERE c.series_source_id = ss.id \
                          AND (c.access = 'free' OR c.unlocks_at <= now() \
-                              OR EXISTS (SELECT 1 FROM user_provider_early_access e \
-                                          WHERE e.user_id = w.user_id \
-                                            AND e.provider_id = ss.provider_id)))) \
+                              OR ss.provider_id = ANY(ARRAY( \
+                                   SELECT e.provider_id FROM user_provider_early_access e \
+                                   WHERE e.user_id = $1))))) \
                     AS latest_chapter_at \
            FROM series_sources ss WHERE ss.series_id = w.series_id \
          ) la \

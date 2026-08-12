@@ -33,14 +33,16 @@
 //!   *used*, which a too-small fixture cannot satisfy — which is the safe direction, but the
 //!   failure would be confusing, hence this note.
 //!
-//! # Two tests, two lenses
+//! # One sweep, two targeted tests
 //!
 //! `every_query_plan_passes_the_audit` sweeps **every** statement in the offline cache under
 //! `EXPLAIN (GENERIC_PLAN)`, which needs no parameter values and so scales to all of them, and
 //! applies the rules in [`audit`] to each. `trigram_searches_reach_their_indexes` binds real
 //! values for the four the slow-statement log named and asserts the sharper property that the
-//! specific indexes are used. The sweep finds the bug class anywhere it appears, and anything
-//! else expensive; the targeted test pins the fix that was made.
+//! specific indexes are used; `the_reading_surfaces_stay_in_the_chapter_indexes` does the same
+//! for the Home queries, against a different pathology the sweep cannot see at fixture scale.
+//! The sweep finds the bug class anywhere it appears, and anything else expensive; the targeted
+//! tests pin the fixes that were made.
 //!
 //! Opt-in: gated behind the `integration` feature because it requires Docker.
 #![cfg(feature = "integration")]
@@ -501,5 +503,146 @@ async fn trigram_searches_reach_their_indexes() {
     ] {
         let plan = plan_of(&db.pool, query).await;
         assert_index_driven(&plan, label);
+    }
+}
+
+/// `EXPLAIN` a reading-surface statement with a reader the fixture actually gave a watchlist.
+///
+/// [`plan_of`] cannot serve these: its probe is a title and they take a `uuid`. Binding a reader
+/// with rows matters for the same reason the title does — against an id nothing references, the
+/// planner reasons from an empty watchlist and the chapter scans this asserts on vanish.
+async fn plan_for_reader(pool: &PgPool, query: &CachedQuery) -> Value {
+    let reader: uuid::Uuid = sqlx::query_scalar(
+        "SELECT user_id FROM watchlist_entries GROUP BY user_id ORDER BY count(*) DESC LIMIT 1",
+    )
+    .fetch_one(pool)
+    .await
+    .expect("read a reader with a watchlist from the catalogue fixture");
+
+    // The committed cache's own text with a fixed prefix; no caller input anywhere in it.
+    let sql = sqlx::AssertSqlSafe(format!("EXPLAIN (FORMAT JSON) {}", query.sql));
+    let mut explain = sqlx::query_scalar::<_, Value>(sql);
+    for param in &query.params {
+        explain = match param.as_str() {
+            "Uuid" => explain.bind(reader),
+            "Int8" => explain.bind(20_i64),
+            other => panic!("no probe value for parameter type {other}"),
+        };
+    }
+    explain
+        .fetch_one(pool)
+        .await
+        .expect("EXPLAIN the cached statement")
+}
+
+/// Assert every `chapters` scan in the plan is answered by the index alone.
+///
+/// Only meaningful where the statement reads nothing off a chapter row but the columns its index
+/// carries — the counting and `max()` surfaces. `repo::tracking::feed` returns a chapter's title
+/// and path, so its scan goes to the heap by construction.
+fn assert_chapter_scans_are_index_only(plan: &Value, label: &str) {
+    let mut chapter_scans: Vec<String> = Vec::new();
+    walk(&plan[0]["Plan"], &mut |node| {
+        if node["Relation Name"].as_str() == Some("chapters") {
+            chapter_scans.push(node["Node Type"].as_str().unwrap_or_default().to_owned());
+        }
+    });
+
+    let pretty = serde_json::to_string_pretty(plan).unwrap_or_default();
+    assert!(
+        !chapter_scans.is_empty(),
+        "{label} never reads `chapters`; the probe bound a reader with no watchlist, or the \
+         statement was rewritten out from under this test. Plan:\n{pretty}"
+    );
+    assert!(
+        chapter_scans.iter().all(|scan| scan == "Index Only Scan"),
+        "{label} reaches `chapters` as {chapter_scans:?}, not index-only. A predicate column the \
+         index does not carry is the usual cause: `access`/`unlocks_at` ride as `INCLUDE` payload \
+         on both chapter indexes precisely so these scans need not touch the heap. Plan:\n{pretty}"
+    );
+}
+
+/// Assert the reader's early-access opt-in set is resolved once per execution.
+///
+/// `InitPlan` is what an uncorrelated sublink plans as, and it is the whole difference: a lookup
+/// correlated to the outer row is a `SubPlan` the planner charges — and executes — per candidate
+/// chapter row.
+fn assert_opt_in_is_resolved_once(plan: &Value, label: &str) {
+    let mut lookups: Vec<String> = Vec::new();
+    walk(&plan[0]["Plan"], &mut |node| {
+        if node["Relation Name"].as_str() == Some("user_provider_early_access") {
+            lookups.push(
+                node["Parent Relationship"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_owned(),
+            );
+        }
+    });
+
+    let pretty = serde_json::to_string_pretty(plan).unwrap_or_default();
+    assert!(
+        !lookups.is_empty(),
+        "{label} does not consult the early-access opt-in at all; the gate has been dropped from \
+         the predicate. Plan:\n{pretty}"
+    );
+    assert!(
+        lookups.iter().all(|parent| parent == "InitPlan"),
+        "{label} resolves the early-access opt-in as {lookups:?}; every one must be an InitPlan. \
+         Correlating the lookup to the outer row (`e.user_id = w.user_id` rather than the bind) is \
+         what turns it into a per-row SubPlan. Plan:\n{pretty}"
+    );
+}
+
+/// The Home surfaces must read `chapters` from the index and resolve the opt-in set once.
+///
+/// # The bug this exists to stop
+///
+/// `0047_chapter_early_access` added a third clause to the unread predicate — is this chapter
+/// free, unlocked, or one the reader pays for — and it cost the continue-reading rail five
+/// seconds in production. Two independent causes, both invisible in the SQL:
+///
+/// - The clause reads `access` and `unlocks_at`. 0047 added them as `INCLUDE` payload to the
+///   unread index and not to `chapters_source_disc_idx`, which is what answers the
+///   `max(discovered_at)` every one of these surfaces orders by. That scan stopped being
+///   index-only and went to the heap for every row it inspected — and the rows it inspects first
+///   are the locked ones, because early-access chapters are the newest.
+///   `0052_activity_covering_index` widened it.
+/// - The clause was an `EXISTS` correlated to `w.user_id`, so the planner charged it against
+///   every candidate chapter row: `continue_reading`'s estimate went from 14 762 to 177 925, past
+///   `jit_above_cost`, and every request paid to compile 59 JIT functions it had no use for.
+///   `w.user_id` is the bind, and written as the bind the sublink is uncorrelated.
+///
+/// Neither shows up as a wrong answer, and the sweep above did not catch either: the fixture is
+/// production divided by six, so the inflated estimate lands under the cost ceiling. The plan
+/// shape is the invariant that holds at both scales.
+#[tokio::test]
+async fn the_reading_surfaces_stay_in_the_chapter_indexes() {
+    let db = TestDb::spawn_with_catalogue().await;
+    let queries = cached_queries();
+
+    // Identified by returned columns, so a rewrite of the SQL does not silently unhook the test.
+    let continue_reading = find(&queries, "dashboard::continue_reading", |q| {
+        has_column(q, "last_read_number!") && has_column(q, "unread!")
+    });
+    let me_stats = find(&queries, "dashboard::me_stats", |q| {
+        has_column(q, "chapters_read!") && has_column(q, "tracking!")
+    });
+    let feed = find(&queries, "dashboard::feed", |q| {
+        has_column(q, "chapter_number!") && has_column(q, "provider_slug")
+    });
+
+    for (label, query) in [
+        ("dashboard::continue_reading", continue_reading),
+        ("dashboard::me_stats", me_stats),
+        ("dashboard::feed", feed),
+    ] {
+        let plan = plan_for_reader(&db.pool, query).await;
+        assert_opt_in_is_resolved_once(&plan, label);
+        // `feed` is deliberately absent: it returns a chapter's title and path, which no index
+        // carries, so its scan is not index-only and never was.
+        if label != "dashboard::feed" {
+            assert_chapter_scans_are_index_only(&plan, label);
+        }
     }
 }

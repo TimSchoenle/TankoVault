@@ -326,9 +326,9 @@ pub async fn progress_bulk_mark_all_read<'e, E: PgExecutor<'e>>(
              FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
              WHERE ss.series_id = w.series_id \
                AND (c.access = 'free' OR c.unlocks_at <= now() \
-                    OR EXISTS (SELECT 1 FROM user_provider_early_access e \
-                                WHERE e.user_id = $1 \
-                                  AND e.provider_id = ss.provider_id)) \
+                    OR ss.provider_id = ANY(ARRAY( \
+                         SELECT e.provider_id FROM user_provider_early_access e \
+                         WHERE e.user_id = $1))) \
            ) latest \
            WHERE w.user_id = $1 AND w.series_id = ANY($2) \
          ), written AS ( \

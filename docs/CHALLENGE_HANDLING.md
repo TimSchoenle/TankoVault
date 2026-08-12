@@ -255,14 +255,53 @@ The IP third has one case that no fingerprint work can fix: TRAWL's tier ladder 
 guarantees a replay failure. `ScrapeResult` currently discards the `tier` field that would say so
 ([`trawl.rs:60`](../crates/solver/src/trawl.rs:60)).
 
+#### What a profile covers, and what it cannot
+
+A `wreq` profile is a **network-layer** disguise. Knowing its boundary is what keeps this work from
+chasing signals that are not in play:
+
+| Signal | Owned by the profile | Re-sampled on a replayed request |
+|---|---|---|
+| TLS ClientHello → JA3/JA4 | yes | yes |
+| HTTP/2 `SETTINGS`, window, priority, pseudo-header order | yes | yes |
+| Header set, order, and UA-CH (`sec-ch-ua`, `sec-ch-ua-platform`, `sec-ch-ua-mobile`) | yes | yes |
+| `screen.width`, `devicePixelRatio`, timezone, WebGL/canvas, `hardwareConcurrency`, `navigator.webdriver` | **no** | **no** |
+
+The bottom row is what `/cdn-cgi/challenge-platform/scripts/jsd/main.js` collects — the beacon this
+document opens with. It is JavaScript, it runs in TRAWL's browser during the solve, and our replayed
+requests execute none of it. There is no screen resolution to match and nothing to compare it
+against; the cookie is the evidence that the check already passed. Do not attempt to synthesise
+those values, and do not treat their absence as the reason a replay failed.
+
+So the two sides do not need *identical* fingerprints. They need **non-contradictory** ones on the
+axes a JS-free request still exposes — and there is a contradiction in the code today:
+
+```rust
+BrowserEmulation::Chrome => (Profile::Chrome149, Platform::Windows),
+```
+
+`Platform::Windows` drives `sec-ch-ua-platform: "Windows"` and a Windows handshake, while TRAWL runs
+Chromium in a Linux container and its user-agent — the one we replay verbatim — is very likely
+`(X11; Linux x86_64)`. Every replayed request would then announce a Linux browser alongside Windows
+client hints: a self-contradiction visible without a line of JavaScript, and a stronger signal than
+either half alone. **Check it first** — one solve's `SolveOutcome.user_agent` settles whether TRAWL
+overrides its UA — and derive `Platform` from the answer along with the version. Matching the Chrome
+major while leaving the platform wrong fixes nothing.
+
+The residual limit is worth stating plainly: if a zone re-runs its JS device check on every
+navigation rather than trusting the clearance cookie, no HTTP client can ever satisfy it. The
+correct answer there is not a better profile — it is to fetch that provider through the browser and
+pay for it, which is what `SolveOutcome.html` already allows.
+
 **Plan.**
 
 1. **Derive the profile, do not pin it.** The solver already reports the browser it used. Parse the
-   Chrome major from `SolveOutcome.user_agent` and select the matching `wreq_util::Profile` for the
-   client that replays that session. When no profile matches, **decline to replay** — use the
-   returned HTML for that fetch and let the next request solve again — rather than send a pair that
-   contradicts itself. A version pin between the image and `profile_for` is then a backstop that
-   makes the common case cheap, not the mechanism that makes it correct.
+   Chrome major **and the platform** from `SolveOutcome.user_agent` and select the matching
+   `wreq_util::Profile`/`Platform` pair for the client that replays that session. When no profile
+   matches, **decline to replay** — use the returned HTML for that fetch and let the next request
+   solve again — rather than send a pair that contradicts itself. A version pin between the image
+   and `profile_for` is then a backstop that makes the common case cheap, not the mechanism that
+   makes it correct.
    Cost to account for: `BaseHttpFetcher` builds its client once per provider, so a per-session
    profile means a small client cache keyed by profile, not a rebuild per request.
 2. **Do not cache a proxy-tier session.** Decode `tier` from TRAWL's response, surface it on

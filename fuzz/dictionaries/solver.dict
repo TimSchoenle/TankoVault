@@ -11,8 +11,13 @@
 turnstile_class="cf-turnstile"
 turnstile_host="challenges.cloudflare.com/turnstile"
 
-# Classic JS challenge.
+# Classic JS challenge. The path prefix is a *prerequisite*, not a marker: it is also the
+# JS Detections beacon's, which Cloudflare injects into ordinary content pages. Only the
+# orchestration entry point beside it decides.
 chl_platform="/cdn-cgi/challenge-platform"
+chl_orchestrate="/orchestrate/"
+chl_page="chl_page"
+chl_jsd="/cdn-cgi/challenge-platform/scripts/jsd/main.js"
 chl_opt="cf_chl_opt"
 chl_title="<title>Just a moment"
 

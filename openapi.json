@@ -6860,7 +6860,7 @@
       "name": ""
     },
     "title": "tankovault-api",
-    "version": "7.1.1"
+    "version": "7.1.2"
   },
   "openapi": "3.1.0",
   "paths": {

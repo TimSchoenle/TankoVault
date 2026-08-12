@@ -115,6 +115,8 @@ impl Engine {
                         chapter_title: ch.title.clone(),
                         chapter_path: ch.path.clone(),
                         published_at: ch.published_at,
+                        access: ch.access,
+                        unlocks_at: ch.unlocks_at,
                         discovered_at: OffsetDateTime::now_utc(),
                     };
                     if let Err(e) = bus.publish_chapter(&event).await {

@@ -9,7 +9,7 @@ use crate::error::DbResult;
 use serde_json::Value as Json;
 use sqlx::{FromRow, PgExecutor};
 use tankovault_domain::{
-    Notification, NotificationId, NotificationPrefs, SeriesId, UserId, WatchStatus,
+    Notification, NotificationId, NotificationPrefs, ProviderId, SeriesId, UserId, WatchStatus,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -369,6 +369,35 @@ pub async fn watchers_for_series<'e, E: PgExecutor<'e>>(
             }),
         })
         .collect())
+}
+
+/// Which of `user_ids` have opted into this provider's early-access chapters.
+///
+/// One statement over the whole candidate set rather than an `EXISTS` per watcher: a popular
+/// series has thousands of watchers and every one of them would otherwise cost a round trip to
+/// answer a question about a table with at most a handful of rows per reader.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only; nobody opted in is an empty `Vec`, which is the common case
+/// and means "announce this to no one" — never "announce to everyone".
+pub async fn early_access_opted_in<'e, E: PgExecutor<'e>>(
+    exec: E,
+    user_ids: &[UserId],
+    provider_id: ProviderId,
+) -> DbResult<Vec<UserId>> {
+    if user_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let ids: Vec<Uuid> = user_ids.iter().map(|u| u.as_uuid()).collect();
+    let rows = sqlx::query_scalar!(
+        "SELECT user_id FROM user_provider_early_access \
+         WHERE provider_id = $1 AND user_id = ANY($2::uuid[])",
+        provider_id.as_uuid(),
+        &ids,
+    )
+    .fetch_all(exec)
+    .await?;
+    Ok(rows.into_iter().map(UserId::from_uuid).collect())
 }
 
 /// Claim the `(user, series, chapter)` dedup slot for every user in `user_ids` at once,

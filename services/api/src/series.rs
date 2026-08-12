@@ -608,8 +608,6 @@ pub async fn chapters(
     // All members share the provider, so one base_url resolves every chapter's relative path.
     let (_, base_url) =
         tankovault_db::repo::catalog::source_provider_base_url(&state.pool, target_id).await?;
-    let chapters =
-        tankovault_db::repo::catalog::list_chapters_across(&state.pool, &member_ids).await?;
 
     // Read-state is opt-in: only a valid token gets it; no progress row yet still yields
     // `Some(false)`, not `None` (which means anonymous).
@@ -623,6 +621,13 @@ pub async fn chapters(
         }
         None => None,
     };
+
+    // The same identity decides which chapters exist at all: a provider's paid early-access rows
+    // are listed only to a reader who has opted that provider in. Everything downstream — the
+    // counts on this screen, the "next up" marker, the merged open control — is derived from
+    // this list, so filtering here is what keeps all of them from offering a paywall.
+    let chapters =
+        tankovault_db::repo::catalog::list_chapters_across(&state.pool, &member_ids, user).await?;
 
     let out = chapters
         .into_iter()

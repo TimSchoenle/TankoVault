@@ -246,7 +246,11 @@ async fn fetch_page(
                                     THEN COALESCE(rp.last_read_whole_number, 0)::float8 \
                                          / count(DISTINCT floor(c.number)) END \
                         FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
-                        WHERE ss.series_id = w.series_id) \
+                        WHERE ss.series_id = w.series_id \
+                          AND (c.access = 'free' OR c.unlocks_at <= now() \
+                               OR EXISTS (SELECT 1 FROM user_provider_early_access e \
+                                           WHERE e.user_id = w.user_id \
+                                             AND e.provider_id = ss.provider_id))) \
                     END AS sort_num, \
                     CASE WHEN $7 = 'title' THEN s.canonical_title END AS sort_text \
              FROM watchlist_entries w \
@@ -267,7 +271,12 @@ async fn fetch_page(
              ) unr \
              CROSS JOIN LATERAL ( \
                SELECT max((SELECT max(c.discovered_at) FROM chapters c \
-                           WHERE c.series_source_id = ss.id)) AS latest_chapter_at \
+                           WHERE c.series_source_id = ss.id \
+                             AND (c.access = 'free' OR c.unlocks_at <= now() \
+                                  OR EXISTS (SELECT 1 FROM user_provider_early_access e \
+                                              WHERE e.user_id = w.user_id \
+                                                AND e.provider_id = ss.provider_id)))) \
+                        AS latest_chapter_at \
                FROM series_sources ss WHERE ss.series_id = w.series_id \
              ) la \
              CROSS JOIN LATERAL ( \
@@ -345,6 +354,10 @@ async fn fetch_page(
                   max(c.number)::float8 AS latest_chapter_number \
            FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
            WHERE ss.series_id = p.series_id \
+             AND (c.access = 'free' OR c.unlocks_at <= now() \
+                  OR EXISTS (SELECT 1 FROM user_provider_early_access e \
+                              WHERE e.user_id = $1 \
+                                AND e.provider_id = ss.provider_id)) \
          ) ch \
          LEFT JOIN LATERAL ( \
            SELECT c.number::float8 AS number, c.title, c.discovered_at \

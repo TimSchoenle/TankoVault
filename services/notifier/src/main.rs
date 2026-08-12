@@ -242,13 +242,33 @@ async fn fan_out(
     .await?;
     let notified_any = !claimed.is_empty();
 
+    // A paywalled chapter is announced only to the readers who bought that provider's early
+    // access. To everyone else it is not news: the page answers with a paywall, and the unread
+    // predicate already refuses to count it. Announcing it anyway is the exact failure migration
+    // 0047 exists to prevent, and it survived that migration because nothing on this path
+    // looked at `access`.
+    //
+    // Announcing on unlock is deliberately *not* a second event. The stated unlock time is
+    // compared against `now()` by the read paths, so a chapter opens in the reader's unread
+    // counts the moment it opens, with no rescan and no notification round trip.
+    let opted_in = if event.access == tankovault_domain::ChapterAccess::Free {
+        // No lookup for the common case: a free chapter is announced to everyone, so the answer
+        // cannot change what happens next.
+        Vec::new()
+    } else {
+        tankovault_db::repo::tracking::early_access_opted_in(pool, &claimed, event.provider_id)
+            .await?
+    };
+
     // Preferences are applied *after* the claim, for the same reason the in-app flag is: the
     // claim is the announcement record. Filtering before it would leave the slot unclaimed, so
     // re-enabling a muted watchlist status later would replay every chapter released while it
-    // was off as a fresh flood.
+    // was off as a fresh flood. The early-access gate sits here for the same reason — opting a
+    // provider in should not replay every locked chapter released before it.
     let recipients: Vec<tankovault_domain::UserId> = watchers
         .iter()
         .filter(|w| claimed.contains(&w.user_id))
+        .filter(|w| announceable(event.access, &opted_in, w.user_id))
         .filter(|w| {
             w.prefs
                 .allows(tankovault_domain::NotificationKind::NewChapter, w.status)
@@ -295,7 +315,11 @@ async fn fan_out(
 
     // Fire external channels once per genuinely-new chapter (i.e. when at least one
     // watcher got a fresh in-app notification), so rescans never re-alert operators.
-    if notified_any && !channels.is_empty() {
+    //
+    // A locked chapter never reaches them. These channels are broadcasts — one webhook, one
+    // room, no per-reader opt-in to consult — so "chapter N is out" would be posted to an
+    // audience for whom it is not.
+    if notified_any && broadcastable(event.access) && !channels.is_empty() {
         let alert = Alert {
             series_id: event.series_id,
             chapter_number: event.chapter_number,
@@ -306,6 +330,28 @@ async fn fan_out(
         dispatch_external(channels, features, &alert).await;
     }
     Ok(())
+}
+
+/// Whether this chapter is news to `user`.
+///
+/// A free chapter is news to every watcher. A paywalled one is news only to the readers who
+/// bought that provider's early access: to anyone else the link answers with a paywall, and the
+/// unread predicate already refuses to count it, so announcing it contradicts every other
+/// surface at once.
+fn announceable(
+    access: tankovault_domain::ChapterAccess,
+    opted_in: &[tankovault_domain::UserId],
+    user: tankovault_domain::UserId,
+) -> bool {
+    access == tankovault_domain::ChapterAccess::Free || opted_in.contains(&user)
+}
+
+/// Whether this chapter may go to the external broadcast channels.
+///
+/// They have no per-reader opt-in to consult — one webhook, one room — so a locked chapter would
+/// be posted as "chapter N is out" to an audience for whom it is not.
+fn broadcastable(access: tankovault_domain::ChapterAccess) -> bool {
+    access == tankovault_domain::ChapterAccess::Free
 }
 
 /// The coalescing key: one open row per watched series, per reader.
@@ -431,4 +477,35 @@ fn delivered(channel: &'static str, result: &'static str) {
         "result" => result,
     )
     .increment(1);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{announceable, broadcastable};
+    use tankovault_domain::{ChapterAccess, UserId};
+
+    /// Regression: the fan-out never looked at `access`, so a chapter the provider had published
+    /// behind a paywall fired a "new chapter" notification at every watcher — the exact failure
+    /// migration `0047` was written to prevent, on the one surface that migration did not reach.
+    /// A reader with no early-access opt-in for the provider was sent to a page that answers with
+    /// a paywall, for a chapter their unread count correctly refused to show.
+    #[test]
+    fn a_paywalled_chapter_is_announced_only_to_the_readers_who_bought_it() {
+        let paid = UserId::new();
+        let unpaid = UserId::new();
+        let opted_in = [paid];
+
+        assert!(announceable(ChapterAccess::EarlyAccess, &opted_in, paid));
+        assert!(!announceable(ChapterAccess::EarlyAccess, &opted_in, unpaid));
+        // A free chapter needs no opt-in and does not consult the list.
+        assert!(announceable(ChapterAccess::Free, &[], unpaid));
+    }
+
+    /// The external channels are broadcasts with no reader behind them to check, so a locked
+    /// chapter must not reach them at all — there is no "only the payers" to narrow to.
+    #[test]
+    fn a_paywalled_chapter_never_reaches_a_broadcast_channel() {
+        assert!(broadcastable(ChapterAccess::Free));
+        assert!(!broadcastable(ChapterAccess::EarlyAccess));
+    }
 }

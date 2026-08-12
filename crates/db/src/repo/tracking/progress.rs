@@ -278,6 +278,13 @@ pub async fn progress_mark_unread(
 /// Advance many series' progress to "everything read", returning the ids that were on the
 /// user's watchlist and therefore acted on. Backs the Watchlist's `Mark group read`.
 ///
+/// # Why the frontier stops at what the reader can open
+///
+/// The maximum is taken over the chapters this reader may read, not every chapter stored. A
+/// paywalled chapter they have not bought is not something "Mark group read" can have read, and
+/// swallowing it into the frontier would mean it never appears as unread once its timer expires
+/// — the reader would silently lose the chapter they were waiting for.
+///
 /// # Why the part frontier is cleared rather than advanced
 ///
 /// The whole frontier is set to `max(floor(number))` across every source, and
@@ -318,6 +325,10 @@ pub async fn progress_bulk_mark_all_read<'e, E: PgExecutor<'e>>(
              SELECT max(floor(c.number)) AS n \
              FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
              WHERE ss.series_id = w.series_id \
+               AND (c.access = 'free' OR c.unlocks_at <= now() \
+                    OR EXISTS (SELECT 1 FROM user_provider_early_access e \
+                                WHERE e.user_id = $1 \
+                                  AND e.provider_id = ss.provider_id)) \
            ) latest \
            WHERE w.user_id = $1 AND w.series_id = ANY($2) \
          ), written AS ( \

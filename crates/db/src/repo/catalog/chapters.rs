@@ -3,7 +3,9 @@
 
 use crate::error::DbResult;
 use sqlx::{FromRow, PgExecutor};
-use tankovault_domain::{Chapter, ChapterAccess, ChapterId, ProviderId, SeriesId, SeriesSourceId};
+use tankovault_domain::{
+    Chapter, ChapterAccess, ChapterId, ProviderId, SeriesId, SeriesSourceId, UserId,
+};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -292,20 +294,37 @@ pub async fn count_full_chapters_across<'e, E: PgExecutor<'e>>(
 /// [`list_chapters`]. Caller must ensure all sources share one provider; not checked here, and
 /// mixed providers produce links resolved against the wrong `base_url`.
 ///
+/// `viewer` is who is asking, and it decides whether the provider's paid early-access chapters
+/// are in the list at all. They are omitted unless that reader has opted the provider in — a row
+/// nobody can open is a link to a paywall, and listing it next to readable ones is what put a
+/// locked chapter under the series screen's "next up" marker. `None` (an anonymous request) sees
+/// only what is free, which is also what an anonymous visitor sees on the provider's own site.
+///
+/// A chapter whose stated unlock time has passed is free to everyone without a rescan, the same
+/// rule the unread predicate applies; a locked one with no stated time stays hidden, because a
+/// missing date is not a date in the past.
+///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; empty or unknown ids are the same empty `Vec`.
 pub async fn list_chapters_across<'e, E: PgExecutor<'e>>(
     exec: E,
     source_ids: &[SeriesSourceId],
+    viewer: Option<UserId>,
 ) -> DbResult<Vec<Chapter>> {
     let ids: Vec<Uuid> = source_ids.iter().map(|s| s.as_uuid()).collect();
     let rows = sqlx::query_as!(
         ChapterRow,
-        "SELECT DISTINCT ON (number) id, series_source_id, number::float8 AS \"number!\", \
-         volume, title, path, published_at, discovered_at FROM chapters \
-         WHERE series_source_id = ANY($1) \
-         ORDER BY number DESC, discovered_at ASC",
+        "SELECT DISTINCT ON (c.number) c.id, c.series_source_id, c.number::float8 AS \"number!\", \
+         c.volume, c.title, c.path, c.published_at, c.discovered_at \
+         FROM chapters c JOIN series_sources ss ON ss.id = c.series_source_id \
+         WHERE c.series_source_id = ANY($1) \
+           AND (c.access = 'free' OR c.unlocks_at <= now() \
+                OR EXISTS (SELECT 1 FROM user_provider_early_access e \
+                            WHERE e.user_id = $2::uuid \
+                              AND e.provider_id = ss.provider_id)) \
+         ORDER BY c.number DESC, c.discovered_at ASC",
         &ids,
+        viewer.map(UserId::as_uuid) as Option<Uuid>,
     )
     .fetch_all(exec)
     .await?;

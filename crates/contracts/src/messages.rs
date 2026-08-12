@@ -5,8 +5,8 @@
 
 use serde::{Deserialize, Serialize};
 use tankovault_domain::{
-    ProviderId, ProviderState, RunState, ScanMode, ScanRunId, ScanTaskId, SeriesId, SeriesSourceId,
-    UserId,
+    ChapterAccess, ProviderId, ProviderState, RunState, ScanMode, ScanRunId, ScanTaskId, SeriesId,
+    SeriesSourceId, UserId,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -93,6 +93,18 @@ pub struct ChapterDiscovered {
     pub chapter_path: String,
     #[serde(default, with = "time::serde::rfc3339::option")]
     pub published_at: Option<OffsetDateTime>,
+    /// What the provider said this chapter costs, as the ingest stored it.
+    ///
+    /// Carried on the event rather than looked up by the consumer: the notifier decides whether
+    /// to announce, and a paywalled chapter announced to a reader who has not paid sends them to
+    /// a page that answers with a paywall. Defaulted, so a message published by an older worker
+    /// still deserializes — as `free`, which is what every message before this field meant.
+    #[serde(default)]
+    pub access: ChapterAccess,
+    /// When the provider said the paywall lifts, where it stated one. Always `None` on a free
+    /// chapter, and `None` on a locked one means no date was announced — never "already open".
+    #[serde(default, with = "time::serde::rfc3339::option")]
+    pub unlocks_at: Option<OffsetDateTime>,
     #[serde(with = "time::serde::rfc3339")]
     pub discovered_at: OffsetDateTime,
 }

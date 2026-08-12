@@ -164,6 +164,20 @@ fn status_of(value: &Value) -> SeriesStatus {
         .map_or(SeriesStatus::Unknown, crate::html::map_status)
 }
 
+/// Whether a catalogue row is a text novel rather than a comic.
+///
+/// `HiveToons` sells both under one catalogue and one URL prefix, and a novel's "chapter" is
+/// prose — there are no pages to read and nothing this application can track. Six of the first
+/// 126 rows are novels, and they were being ingested as ordinary series.
+///
+/// The medium is what decides, not the URL: the platform stores prose at `/series/<slug>` like
+/// everything else.
+fn is_prose(row: &Value) -> bool {
+    first_str(row, &["type", "postType", "seriesType"])
+        .is_some_and(|t| t.eq_ignore_ascii_case("novel") || t.eq_ignore_ascii_case("light_novel"))
+        || row.get("isNovel").and_then(Value::as_bool) == Some(true)
+}
+
 /// Map either site's medium vocabulary onto the domain's.
 fn content_type_of(value: &Value) -> ContentType {
     match first_str(value, &["type", "postType", "seriesType"])
@@ -194,25 +208,30 @@ impl AstroIslandAdapter {
             .ok_or_else(|| AdapterError::UnknownCustom(slug.to_owned()))
     }
 
-    /// Series entries out of a catalogue island.
-    fn catalog_items(flavour: AstroFlavour, island: &Value) -> Vec<CatalogItem> {
+    /// Series entries out of a catalogue island, and how many rows the island actually held.
+    ///
+    /// The two numbers differ because prose is dropped here (see [`is_prose`]), and the caller
+    /// needs the *unfiltered* count: `has_next` is decided against the site's own collection
+    /// total, so paging on the filtered length would walk past the end of a catalogue whose
+    /// pages contain novels.
+    fn catalog_items(flavour: AstroFlavour, island: &Value) -> (Vec<CatalogItem>, usize) {
         let (list_key, _) = flavour.catalog_keys();
-        island
-            .get(list_key)
-            .and_then(Value::as_array)
-            .map(|rows| {
-                rows.iter()
-                    .filter_map(|row| {
-                        let slug = first_str(row, &["slug", "series_slug", "seriesSlug"])?;
-                        Some(CatalogItem {
-                            path: format!("{}/{slug}", flavour.series_prefix()),
-                            title: first_str(row, &["title", "postTitle", "name"])
-                                .unwrap_or_else(|| slug.clone()),
-                        })
-                    })
-                    .collect()
+        let Some(rows) = island.get(list_key).and_then(Value::as_array) else {
+            return (Vec::new(), 0);
+        };
+        let items = rows
+            .iter()
+            .filter(|row| !is_prose(row))
+            .filter_map(|row| {
+                let slug = first_str(row, &["slug", "series_slug", "seriesSlug"])?;
+                Some(CatalogItem {
+                    path: format!("{}/{slug}", flavour.series_prefix()),
+                    title: first_str(row, &["title", "postTitle", "name"])
+                        .unwrap_or_else(|| slug.clone()),
+                })
             })
-            .unwrap_or_default()
+            .collect();
+        (items, rows.len())
     }
 }
 
@@ -230,13 +249,17 @@ impl SourceAdapter for AstroIslandAdapter {
             let island = island_with(root, list_key).ok_or_else(|| {
                 AdapterError::missing(&format!("astro island carrying `{list_key}`"), resp)
             })?;
-            let items = AstroIslandAdapter::catalog_items(flavour, &island);
+            let (items, rows) = AstroIslandAdapter::catalog_items(flavour, &island);
             // The island states the collection total, so the walk ends on the site's own count
             // rather than on "this page had rows" — which never goes false on either site,
             // because both re-serve the last page for any page number past the end.
+            //
+            // `rows`, not `items.len()`: the total counts novels, so a page whose prose rows
+            // were dropped still consumed a full page of it. Paging on the filtered length
+            // under-counts and walks past the end.
             let total = island.get(total_key).and_then(Value::as_u64).unwrap_or(0);
-            let seen = u64::from(page) * items.len() as u64;
-            let has_next = !items.is_empty() && seen < total;
+            let seen = u64::from(page) * rows as u64;
+            let has_next = rows > 0 && seen < total;
             Ok(CatalogPage { items, has_next })
         })
         .await
@@ -253,7 +276,7 @@ impl SourceAdapter for AstroIslandAdapter {
         parse_blocking(resp, move |root, _| {
             let (list_key, _) = flavour.catalog_keys();
             Ok(island_with(root, list_key)
-                .map(|island| AstroIslandAdapter::catalog_items(flavour, &island))
+                .map(|island| AstroIslandAdapter::catalog_items(flavour, &island).0)
                 .unwrap_or_default()
                 .into_iter()
                 .map(|item| LatestUpdate {
@@ -319,7 +342,12 @@ impl SourceAdapter for AstroIslandAdapter {
             Ok(SeriesMeta {
                 title,
                 alt_titles,
-                description: first_str(&island, &["description", "postContent"]),
+                // `HiveToons` stores the synopsis as the HTML the editor typed, so it reaches
+                // the reader as literal `<p>` tags unless it is flattened here. Asura's is
+                // already plain text, and text through a fragment parse is itself.
+                description: first_str(&island, &["description", "postContent"])
+                    .map(|d| crate::html::text_from_fragment(&d))
+                    .filter(|d| !d.is_empty()),
                 cover_url: first_str(&island, &["coverUrl", "featuredImage"]),
                 tags,
                 authors,
@@ -393,7 +421,10 @@ fn trim_number(number: f64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{AstroFlavour, access_of, chapter_number, trim_number, unwrap_astro};
+    use super::{
+        AstroFlavour, AstroIslandAdapter, access_of, chapter_number, is_prose, trim_number,
+        unwrap_astro,
+    };
     use crate::types::ChapterAccess;
     use serde_json::json;
     use time::macros::datetime;
@@ -438,6 +469,41 @@ mod tests {
             access_of(&row),
             ChapterAccess::EarlyAccess { unlocks_at: None }
         );
+    }
+
+    /// Regression: `HiveToons` sells prose novels from the same catalogue, under the same
+    /// `/series/<slug>` prefix, and they were ingested as ordinary comics — a "chapter" of one
+    /// is text, so there is nothing to read and nothing to track. The catalogue row says which
+    /// it is; nothing was reading it.
+    #[test]
+    fn a_novel_row_is_prose_and_a_comic_row_is_not() {
+        assert!(is_prose(&json!({"seriesType": "NOVEL"})));
+        assert!(is_prose(&json!({"seriesType": "novel"})));
+        assert!(is_prose(&json!({"isNovel": true})));
+        assert!(!is_prose(&json!({"seriesType": "MANHWA"})));
+        assert!(!is_prose(&json!({"seriesType": "MANGA"})));
+        // No medium stated is not prose: the catalogue is comics by default, and dropping an
+        // unlabelled row would silently shrink every provider that omits the field.
+        assert!(!is_prose(&json!({"slug": "x"})));
+    }
+
+    /// The walk ends on the site's own collection total, so paging has to count the rows the
+    /// page *held*, not the ones that survived the filter — otherwise a catalogue containing
+    /// novels never reaches its own end and the walk runs to the planner's cap.
+    #[test]
+    fn dropping_a_novel_does_not_shorten_the_page_the_walk_counts() {
+        let island = json!({
+            "initialPosts": [
+                {"slug": "a", "postTitle": "A", "seriesType": "MANHWA"},
+                {"slug": "b", "postTitle": "B", "seriesType": "NOVEL"},
+                {"slug": "c", "postTitle": "C", "seriesType": "MANHUA"},
+            ]
+        });
+        let (items, rows) = AstroIslandAdapter::catalog_items(AstroFlavour::HiveToons, &island);
+        assert_eq!(rows, 3, "the page held three rows");
+        assert_eq!(items.len(), 2, "one of them was prose");
+        assert!(items.iter().all(|i| i.path.starts_with("/series/")));
+        assert!(!items.iter().any(|i| i.path.ends_with("/b")));
     }
 
     #[test]

@@ -7,12 +7,11 @@ use std::time::Duration;
 
 /// The embedded migration set (compiled from `migrations/`, validated at build time).
 ///
-/// **Adding a file to `migrations/` does not rebuild this.** `sqlx::migrate!` registers no
-/// dependency on the directory, so cargo sees nothing changed and the compiled set stays at the
-/// previous migration — while `migrations/` on disk says otherwise. The failure is silent and
-/// lands somewhere else entirely: the test harness clones a template database that never got the
-/// new tables, and the first query against one fails with `relation does not exist`. Touch this
-/// file when adding a migration.
+/// Adding a file to `migrations/` does not rebuild this on its own — `sqlx::migrate!` registers
+/// no dependency on the directory — so `build.rs` declares one. Without it the compiled set stays
+/// at the previous migration while `migrations/` on disk says otherwise, and the failure is
+/// silent: `migrate` reports success having applied nothing, and the first query against the
+/// missing table is where it lands.
 pub static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("../../migrations");
 
 /// Build a Postgres connection pool.

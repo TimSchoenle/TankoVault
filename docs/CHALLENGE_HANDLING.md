@@ -19,14 +19,17 @@ that could silently return gets a test whose doc comment says what the bug was.
 | W2 | Session lifecycle: cache after validation, evict on failure | open | no |
 | W3 | Observability: make a dark provider visible | open | no |
 | W4 | Cookie scoping: a clearance cookie must not leave its host | open | wire change |
-| W5 | Fingerprint coherence between the solver browser and `wreq` | open | needs W3's evidence |
+| W5 | Fingerprint coherence between the solver browser and `wreq` | open | no |
 | W6 | A WAF deny is not a solvable challenge; per-provider breaker | open | wire tolerance first |
 | W7 | Shared session store across worker replicas | open | only with replicas > 1 |
 
-W2, W3 and W6's breaker are independent and can land in any order. W4 and W6's classification both
-change the `/v1/solve` wire and share a deployment-ordering constraint (§4.4). W5 should not be
-attempted before W3 is deployed — it is a fingerprint-matching change justified only by numbers
-nothing currently measures.
+W2, W3, W5 and W6's breaker are independent and can land in any order. W4 and W6's classification
+both change the `/v1/solve` wire and share a deployment-ordering constraint (§4.4).
+
+**If you only do one after W1, do W5.** The scanner and the solver do not share a TLS fingerprint
+today, and a clearance cookie is bound to the one that earned it — so the session cache, which is
+the entire reason a solve is affordable, may already be failing on every replay while every metric
+we have stays green. W3 is how you *confirm* that, not a prerequisite for fixing it.
 
 ---
 
@@ -224,32 +227,55 @@ only exists between two running versions.
 
 ---
 
-### W5 — The replayed session may not be usable by the client replaying it
+### W5 — The scanner and the solver must present the same fingerprint
 
-**Problem.** `cf_clearance` is bound to the user-agent, the TLS/HTTP2 fingerprint **and** the egress
-IP of the browser that earned it. We replay the solver's user-agent
-([`base.rs:167`](../crates/fetch/src/base.rs:167)) over `wreq`'s fixed `Profile::Chrome149`
-handshake ([`base.rs:48`](../crates/fetch/src/base.rs:48)). If TRAWL's bundled Chrome drifts from
-that profile family, every session is rejected on first replay and each fetch silently pays a fresh
-solve — and, as this module's own doc comment says, a browser UA over a non-matching handshake is a
-*stronger* bot signal than no disguise.
+**This is what makes the session cache work at all, not a refinement of it.** Cloudflare issues
+`cf_clearance` against a triple — the egress IP, the `User-Agent` string, and the TLS/HTTP2
+fingerprint of the connection that earned it. We reproduce exactly one third of that faithfully.
 
-Worse, TRAWL's tier ladder ends in a **residential proxy**. A session won there is bound to the
-proxy's IP and can never work from the worker's egress, so caching it guarantees a replay failure.
-`ScrapeResult` currently ignores the `tier` field that would say so
+| Component | Solver side | Scanner side | Shared? |
+|---|---|---|---|
+| User-agent | the browser's own, returned as `SolveOutcome.user_agent` | replayed verbatim ([`base.rs:167`](../crates/fetch/src/base.rs:167)) | yes |
+| TLS ClientHello + HTTP/2 settings | whatever Chromium `ghcr.io/germondai/trawl` bundles | `Profile::Chrome149`, fixed at build time ([`base.rs:48`](../crates/fetch/src/base.rs:48)) | **no — by luck only** |
+| Egress IP | the container's, unless a proxy tier won | the worker container's | usually, see below |
+
+Nothing in the repository relates the TRAWL image digest in
+[`deploy/docker-compose.yml`](../deploy/docker-compose.yml) to the profile constant in `base.rs`.
+They agree, if they agree, by coincidence, and drift silently the next time either is bumped —
+the same shape of invisible coupling that produced the beacon defect this document opens with.
+
+When they disagree, the clearance cookie is rejected on first replay and the caching tier collapses
+into one 30–60 s solve *per fetch* instead of one amortised over hundreds. The failure is silent:
+the solve keeps succeeding, so `solve_attempts_total` stays green while throughput dies. And the
+mismatched pair is actively worse than no disguise — a browser UA over a handshake that is not that
+browser's is a stronger bot signal than an honest one, as `base.rs`'s own module doc says.
+
+The IP third has one case that no fingerprint work can fix: TRAWL's tier ladder ends in a
+**residential proxy**, and a session won there is bound to the proxy's address. Caching it
+guarantees a replay failure. `ScrapeResult` currently discards the `tier` field that would say so
 ([`trawl.rs:60`](../crates/solver/src/trawl.rs:60)).
 
-**Plan, evidence first.**
+**Plan.**
 
-1. Ship W3's `challenge_session_replays_total` and read it for a week.
-2. Decode `tier` from TRAWL's response and surface it on `SolveOutcome`. Do not cache a session
-   whose winning tier was the proxy — use the returned HTML for that one fetch and let the next
-   request solve again. Cheap, and it removes a guaranteed-stale class of session.
-3. Only if the numbers still justify it: derive the emulation profile from the solved user-agent
-   (parse the Chrome major, pick the nearest `wreq_util::Profile`) and, when no profile matches,
-   decline to replay rather than send a mismatched pair. Note the cost — `BaseHttpFetcher` builds
-   its client once per provider, so a per-session profile means a small client cache keyed by
-   profile, not a rebuild per request.
+1. **Derive the profile, do not pin it.** The solver already reports the browser it used. Parse the
+   Chrome major from `SolveOutcome.user_agent` and select the matching `wreq_util::Profile` for the
+   client that replays that session. When no profile matches, **decline to replay** — use the
+   returned HTML for that fetch and let the next request solve again — rather than send a pair that
+   contradicts itself. A version pin between the image and `profile_for` is then a backstop that
+   makes the common case cheap, not the mechanism that makes it correct.
+   Cost to account for: `BaseHttpFetcher` builds its client once per provider, so a per-session
+   profile means a small client cache keyed by profile, not a rebuild per request.
+2. **Do not cache a proxy-tier session.** Decode `tier` from TRAWL's response, surface it on
+   `SolveOutcome`, skip the store when the winning tier was the proxy. Cheap, and it removes a class
+   of session that is guaranteed stale.
+3. **Verify empirically, because inspection cannot.** Fetch a fingerprint echo (`tls.peet.ws`,
+   `browserleaks`) through both paths and compare **JA4 and the HTTP/2 settings fingerprint** —
+   never raw JA3, which Chrome varies per connection by permuting ClientHello extension order, while
+   JA4 sorts them and stays stable. This wants to be an `xtask` subcommand run by hand when either
+   version moves, not a CI gate: it needs public egress, and a third-party echo service is not
+   something CI should depend on.
+4. **Then read W3's `challenge_session_replays_total`** to confirm the change did what it claims.
+   The metric is the check on the work, not the trigger for it.
 
 ---
 
@@ -353,6 +379,9 @@ one release.
       logs.
 - [ ] A clearance cookie is never sent to a host outside the domain it was issued for, with a test
       that pins it.
+- [ ] A replayed session's handshake is the one that earned it: the emulation profile follows the
+      solver's reported browser, a session with no matching profile is not replayed at all, and JA4
+      plus the HTTP/2 settings fingerprint have been compared through both paths.
 - [ ] A session won on a proxy tier is not cached for direct replay.
 - [ ] A blocked provider stops paying full solve cost on every queued task, and the breaker is
       counted.

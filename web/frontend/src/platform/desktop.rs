@@ -848,15 +848,26 @@ impl Tray {
     pub(crate) fn install(open: &str, quit: &str) -> Option<Self> {
         tray::install(open, quit)
     }
+}
 
-    /// Everything the reader has done to the tray since the last call.
-    ///
-    /// Polled rather than delivered through `set_event_handler`: that takes a
-    /// `Fn + Send + Sync` closure called from the OS's own thread, and everything it would need
-    /// to act on — the window — is neither `Send` nor reachable outside a component's scope.
-    pub(crate) fn drain(&self) -> Vec<TrayCommand> {
-        tray::drain(&self.open, &self.quit)
-    }
+/// Call `on_command` whenever the reader uses whichever icon `tray` currently holds.
+///
+/// A hook, so it is registered once by a component that outlives every icon the settings switch
+/// installs — hence the signal rather than a borrowed [`Tray`]: the subscription stays put while
+/// the icon under it comes and goes.
+///
+/// **The events are taken from the event loop, never from `MenuEvent::receiver()`.**
+/// `dioxus-desktop` claims muda's and tray-icon's process-global queues with `set_event_handler`
+/// while it builds the app, and both crates keep that handler in a `OnceCell` and send to it
+/// *instead of* the channel — first writer wins, and it is never us. A receiver of our own is
+/// therefore not a slower route to the same events, it is an empty queue for the life of the
+/// process, which is how every tray menu entry came to do nothing at all. Banned in
+/// `web/frontend/clippy.toml` so it cannot be reintroduced quietly.
+pub(crate) fn use_tray_commands(
+    tray: Signal<Option<Tray>>,
+    on_command: impl FnMut(TrayCommand) + 'static,
+) {
+    tray::use_commands(tray, on_command);
 }
 
 /// Bring the window back from the tray: visible, un-minimised and focused.
@@ -893,9 +904,15 @@ pub(crate) fn set_window_hides_on_close(window: &dioxus::desktop::DesktopContext
 /// The tray icon itself, per platform.
 #[cfg(any(windows, all(unix, not(target_vendor = "apple"))))]
 mod tray {
-    use dioxus::desktop::trayicon::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
+    use dioxus::desktop::trayicon::menu::{Menu, MenuItem, PredefinedMenuItem};
     use dioxus::desktop::trayicon::{MouseButton, TrayIconBuilder, TrayIconEvent};
-    use dioxus::desktop::{icon_from_memory, trayicon::DioxusTrayIcon};
+    use dioxus::desktop::{
+        icon_from_memory, trayicon::DioxusTrayIcon, use_tray_icon_event_handler,
+        use_tray_menu_event_handler,
+    };
+    use dioxus::prelude::{ReadableExt as _, Signal};
+    use std::cell::RefCell;
+    use std::rc::Rc;
 
     pub(super) use dioxus::desktop::trayicon::menu::MenuId;
     pub(super) type Handle = dioxus::desktop::trayicon::TrayIcon;
@@ -939,19 +956,27 @@ mod tray {
         })
     }
 
-    pub(super) fn drain(open: &MenuId, quit: &MenuId) -> Vec<super::TrayCommand> {
-        let mut commands = Vec::new();
-        // Both channels are global to the process, so they are drained rather than read once: a
-        // reader who clicks twice while the poll interval elapses must not have one click
-        // stranded in the queue until the next event.
-        while let Ok(event) = MenuEvent::receiver().try_recv() {
-            if event.id == *open {
-                commands.push(super::TrayCommand::Open);
-            } else if event.id == *quit {
-                commands.push(super::TrayCommand::Quit);
-            }
-        }
-        while let Ok(event) = TrayIconEvent::receiver().try_recv() {
+    pub(super) fn use_commands(
+        tray: Signal<Option<super::Tray>>,
+        on_command: impl FnMut(super::TrayCommand) + 'static,
+    ) {
+        // One `FnMut` behind two subscriptions. Both are called from the event loop's own
+        // thread, one event at a time, so the borrows cannot overlap.
+        let on_command = Rc::new(RefCell::new(on_command));
+
+        let from_menu = Rc::clone(&on_command);
+        use_tray_menu_event_handler(move |event| {
+            // The queues are global to the process, so an event that belongs to no icon of ours
+            // — or to the icon the settings switch has just dropped — is not ours to act on.
+            let command = match tray.peek().as_ref() {
+                Some(tray) if event.id == tray.open => super::TrayCommand::Open,
+                Some(tray) if event.id == tray.quit => super::TrayCommand::Quit,
+                _ => return,
+            };
+            from_menu.borrow_mut()(command);
+        });
+
+        use_tray_icon_event_handler(move |event| {
             // Windows only — the GTK backend reports no clicks at all, which is why the menu
             // carries an Open entry rather than relying on this.
             if let TrayIconEvent::DoubleClick {
@@ -959,10 +984,9 @@ mod tray {
                 ..
             } = event
             {
-                commands.push(super::TrayCommand::Open);
+                on_command.borrow_mut()(super::TrayCommand::Open);
             }
-        }
-        commands
+        });
     }
 
     #[cfg(windows)]
@@ -1027,8 +1051,10 @@ mod tray {
         None
     }
 
-    pub(super) fn drain(_open: &MenuId, _quit: &MenuId) -> Vec<super::TrayCommand> {
-        Vec::new()
+    pub(super) fn use_commands(
+        _tray: dioxus::prelude::Signal<Option<super::Tray>>,
+        _on_command: impl FnMut(super::TrayCommand) + 'static,
+    ) {
     }
 }
 

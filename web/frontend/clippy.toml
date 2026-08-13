@@ -51,6 +51,22 @@ disallowed-methods = [
     { path = "web_sys::Element::set_inner_html", reason = "parses attacker-controlled text as markup. Render through `rsx!`, which escapes; if you genuinely need markup, sanitise it first and say why in an `#[expect]`" },
 
     # ------------------------------------------------------------------------------------
+    # The tray's event queues are not ours (desktop build)
+    # ------------------------------------------------------------------------------------
+    # `dioxus-desktop` calls `set_event_handler` on muda's and tray-icon's process-global queues
+    # while it constructs the app, and both crates keep that handler in a `OnceCell`: once set,
+    # every event goes to the handler *instead of* the channel, and a later `set` is discarded.
+    # First writer wins and it is never us. So `receiver()` here is not a slower route to the
+    # same events — it is a queue that stays empty for the life of the process, and the tray's
+    # Open and Quit entries silently did nothing until this was found. Nothing warns: the code
+    # compiles, the icon appears and the menu opens.
+    #
+    # Subscribe through `platform::use_tray_commands`, which reads the events back out of the
+    # event loop where `dioxus-desktop` forwards them.
+    { path = "muda::MenuEvent::receiver", reason = "`dioxus-desktop` owns this queue via `set_event_handler`, so it never yields an event. Use `crate::platform::use_tray_commands`" },
+    { path = "tray_icon::TrayIconEvent::receiver", reason = "`dioxus-desktop` owns this queue via `set_event_handler`, so it never yields an event. Use `crate::platform::use_tray_commands`" },
+
+    # ------------------------------------------------------------------------------------
     # The single-threaded runtime
     # ------------------------------------------------------------------------------------
     # WASM in the main thread has no second thread to yield to: a blocking sleep freezes the

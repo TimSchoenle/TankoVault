@@ -13,15 +13,6 @@ use crate::i18n::use_i18n;
 use crate::platform::{self, Tray, TrayCommand};
 use dioxus::prelude::*;
 
-/// How often the tray's own event queues are drained. See [`Tray::drain`] for why they are
-/// polled at all; a quarter of a second is under the threshold at which a menu click reads as
-/// ignored, and the poll itself is two non-blocking channel reads.
-const POLL_MS: u32 = 250;
-
-/// How long the loop waits when there is no tray at all — the common case, since the switch is
-/// off by default. Nothing can arrive on the queues, so this is a heartbeat and not a poll.
-const IDLE_POLL_MS: u32 = 2_000;
-
 /// The reader's close-to-tray choice: written by the settings sheet, acted on by [`TrayHost`].
 ///
 /// A context rather than a read of the settings file on both sides, because the two have to move
@@ -41,8 +32,8 @@ impl CloseToTray {
 pub(crate) fn TrayHost() -> Element {
     let i18n = use_i18n();
     let enabled = use_context::<CloseToTray>().0;
-    // Captured once, at mount: `platform::window` reads a context, and the poll loop below runs
-    // in a task where that lookup would answer `None`.
+    // Captured once, at mount: `platform::window` reads a context, and the subscription below
+    // fires from the event loop, where that lookup would answer `None`.
     let window = crate::platform::window();
     let mut tray = use_signal(|| Option::<Tray>::None);
 
@@ -67,25 +58,13 @@ pub(crate) fn TrayHost() -> Element {
         platform::set_window_hides_on_close(window, tray.peek().is_some());
     });
 
-    use_future(move || {
-        let window = window.clone();
-        async move {
-            loop {
-                let Some(commands) = tray.peek().as_ref().map(Tray::drain) else {
-                    platform::sleep_ms(IDLE_POLL_MS).await;
-                    continue;
-                };
-                for command in commands {
-                    let Some(window) = window.as_ref() else {
-                        continue;
-                    };
-                    match command {
-                        TrayCommand::Open => platform::show_window(window),
-                        TrayCommand::Quit => platform::quit_app(window),
-                    }
-                }
-                platform::sleep_ms(POLL_MS).await;
-            }
+    platform::use_tray_commands(tray, move |command| {
+        let Some(window) = window.as_ref() else {
+            return;
+        };
+        match command {
+            TrayCommand::Open => platform::show_window(window),
+            TrayCommand::Quit => platform::quit_app(window),
         }
     });
 

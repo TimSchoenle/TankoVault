@@ -69,8 +69,8 @@ pub(crate) use desktop::{
     credential_get, credential_set, fit_window_to_display, notifications_enabled, notify,
     notify_now, quit_app, server_origin, set_autostart, set_close_to_tray,
     set_notifications_enabled, set_server_origin, set_window_heading, set_window_hides_on_close,
-    settings_path, show_window, tray_supported, window, Tray, TrayCommand, ROOT_ATTRIBUTES,
-    STARTUP_INNER_SIZE, WINDOW_HEADING,
+    settings_path, show_window, tray_supported, use_tray_commands, window, Tray, TrayCommand,
+    ROOT_ATTRIBUTES, STARTUP_INNER_SIZE, WINDOW_HEADING,
 };
 
 /// Web-only surface: the router's history provider, handed to the renderer in `main`.

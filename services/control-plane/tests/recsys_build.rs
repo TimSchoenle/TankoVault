@@ -16,8 +16,9 @@ use tankovault_control_plane::recsys::{BuildTuning, build};
 use tankovault_db::repo::catalog::{ChapterUpsert, ScannedSeries, SeriesUpsert, ingest_series};
 use tankovault_db::repo::matching::merge_series;
 use tankovault_db::repo::recsys;
+use tankovault_db::repo::tracking::watchlist_upsert;
 use tankovault_domain::{
-    ContentType, MetadataPriority, ProviderId, SeriesId, SeriesStatus, normalize_title,
+    ContentType, MetadataPriority, ProviderId, SeriesId, SeriesStatus, WatchStatus, normalize_title,
 };
 use tankovault_test_support::{TestDb, seed};
 
@@ -403,6 +404,62 @@ async fn an_incremental_build_drains_the_repair_queue() {
             .await
             .expect("embedding")
             .is_some()
+    );
+}
+
+/// **A re-extracted series must invalidate the taste profiles built from it.**
+///
+/// The bug this pins: the incremental pass rewrote a series' feature vector and marked nobody
+/// stale. `mark_profiles_stale_for_series` existed for exactly this and had no caller at all, so
+/// every reader tracking that series kept a profile weighted against feature ids the series no
+/// longer carried — `ensure_profile` rebuilds only on `stale`, and the watchlist and progress
+/// writes that set it are untouched by a build. The one case anyone noticed (a blocked term
+/// removed from a series' credits) had to be repaired by marking profiles stale from a migration.
+///
+/// The bystander is the other half: the mark is scoped to the set the pass actually touched, not
+/// a blanket invalidation, and a reader who tracks none of it must keep their shelf.
+#[tokio::test]
+async fn an_incremental_build_invalidates_the_profiles_of_what_it_re_extracted() {
+    let db = TestDb::spawn().await;
+    let (dungeon, romance) = catalogue(&db).await;
+    build(&db.pool, budget(), true).await.expect("full build");
+
+    let reader = seed::user(&db, "reader").create().await;
+    let bystander = seed::user(&db, "bystander").create().await;
+    for (user, series) in [(reader, dungeon[0]), (bystander, romance[0])] {
+        watchlist_upsert(&db.pool, user, series, WatchStatus::Reading, false)
+            .await
+            .expect("track a series");
+        // A profile is only ever written fresh, so this is the state a reader who has loaded
+        // their shelf is left in.
+        recsys::write_profile(&db.pool, user, &[1], &[1.0], &[], &[], &[series], None)
+            .await
+            .expect("write profile");
+    }
+
+    recsys::enqueue_repair(&db.pool, dungeon[0], "features_changed")
+        .await
+        .expect("enqueue");
+    build(&db.pool, budget(), false)
+        .await
+        .expect("incremental build")
+        .expect("not claimed elsewhere");
+
+    let touched = recsys::read_profile(&db.pool, reader)
+        .await
+        .expect("read profile")
+        .expect("the profile was written above");
+    let untouched = recsys::read_profile(&db.pool, bystander)
+        .await
+        .expect("read profile")
+        .expect("the profile was written above");
+    assert!(
+        touched.stale,
+        "a reader tracking a re-extracted series must have their profile invalidated"
+    );
+    assert!(
+        !untouched.stale,
+        "a reader tracking nothing the pass touched must keep their profile"
     );
 }
 

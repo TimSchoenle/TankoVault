@@ -9,27 +9,21 @@
 //! Either one alone is a defect — a hidden window with no tray entry is an app that has to be
 //! killed from the task manager — so both are decided here, from one signal.
 //!
-//! The loop below carries one thing that is not the tray's: a launch refused by the
-//! single-instance lock leaves an activation request behind, and this is where it is answered.
-//! It lives here because raising the window needs the `DesktopContext` captured at mount, which
-//! this component already holds for the tray's own Open entry — a second loop would exist only to
-//! capture the same handle again.
+//! The loop below is not the tray's at all: a launch refused by the single-instance lock leaves
+//! an activation request behind, and this is where it is answered. It lives here because raising
+//! the window needs the `DesktopContext` captured at mount, which this component already holds
+//! for the tray's own Open entry — a second component would exist only to capture the same
+//! handle again.
 
 use crate::i18n::use_i18n;
 use crate::platform::{self, Tray, TrayCommand};
 use dioxus::prelude::*;
 
-/// How often the tray's own event queues are drained. See [`Tray::drain`] for why they are
-/// polled at all; a quarter of a second is under the threshold at which a menu click reads as
-/// ignored, and the poll itself is two non-blocking channel reads.
-const POLL_MS: u32 = 250;
-
-/// How long the loop waits when there is no tray at all — the common case, since the switch is
-/// off by default. Nothing can arrive on the tray's queues then, but the activation request can,
-/// so this is the delay a reader waits between launching the app a second time and their existing
-/// window coming forward. Half a second reads as "it opened", and the poll it paces is one
-/// `remove_file` on a path that is almost always absent.
-const IDLE_POLL_MS: u32 = 500;
+/// How long the activation loop waits between checks. This is the delay a reader waits between
+/// launching the app a second time and their existing window coming forward. Half a second reads
+/// as "it opened", and the poll it paces is one `remove_file` on a path that is almost always
+/// absent.
+const ACTIVATION_POLL_MS: u32 = 500;
 
 /// The reader's close-to-tray choice: written by the settings sheet, acted on by [`TrayHost`].
 ///
@@ -50,8 +44,8 @@ impl CloseToTray {
 pub(crate) fn TrayHost() -> Element {
     let i18n = use_i18n();
     let enabled = use_context::<CloseToTray>().0;
-    // Captured once, at mount: `platform::window` reads a context, and the poll loop below runs
-    // in a task where that lookup would answer `None`.
+    // Captured once, at mount: `platform::window` reads a context, and the tray subscription and
+    // the task below both run where that lookup would answer `None`.
     let window = crate::platform::window();
     let mut tray = use_signal(|| Option::<Tray>::None);
 
@@ -76,31 +70,29 @@ pub(crate) fn TrayHost() -> Element {
         platform::set_window_hides_on_close(window, tray.peek().is_some());
     });
 
+    let held = window.clone();
+    platform::use_tray_commands(tray, move |command| {
+        let Some(window) = held.as_ref() else {
+            return;
+        };
+        match command {
+            TrayCommand::Open => platform::show_window(window),
+            TrayCommand::Quit => platform::quit_app(window),
+        }
+    });
+
     use_future(move || {
         let window = window.clone();
         async move {
             loop {
-                // Checked before the tray, and on the branch that has no tray as well: a
-                // duplicate launch is answered whether or not the reader turned the icon on.
+                // Answered whether or not the reader turned the icon on: the lock refuses a
+                // duplicate launch either way.
                 if platform::take_activation_request() {
                     if let Some(window) = window.as_ref() {
                         platform::show_window(window);
                     }
                 }
-                let Some(commands) = tray.peek().as_ref().map(Tray::drain) else {
-                    platform::sleep_ms(IDLE_POLL_MS).await;
-                    continue;
-                };
-                for command in commands {
-                    let Some(window) = window.as_ref() else {
-                        continue;
-                    };
-                    match command {
-                        TrayCommand::Open => platform::show_window(window),
-                        TrayCommand::Quit => platform::quit_app(window),
-                    }
-                }
-                platform::sleep_ms(POLL_MS).await;
+                platform::sleep_ms(ACTIVATION_POLL_MS).await;
             }
         }
     });

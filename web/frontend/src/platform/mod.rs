@@ -48,8 +48,8 @@ pub(crate) use desktop::{
     credential_get, credential_set, fit_window_to_display, notifications_enabled, notify,
     notify_now, quit_app, server_origin, set_autostart, set_close_to_tray,
     set_notifications_enabled, set_server_origin, set_window_heading, set_window_hides_on_close,
-    settings_path, show_window, tray_supported, window, Tray, TrayCommand, ROOT_ATTRIBUTES,
-    STARTUP_INNER_SIZE, WINDOW_HEADING,
+    settings_path, show_window, tray_supported, use_tray_commands, window, Tray, TrayCommand,
+    ROOT_ATTRIBUTES, STARTUP_INNER_SIZE, WINDOW_HEADING,
 };
 /// Desktop-only surface: there is no browser equivalent to reach for, so these have no
 /// counterpart on the other side and their callers are `#[cfg]`-gated too.

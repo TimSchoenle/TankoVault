@@ -485,7 +485,7 @@ jobs:
       #
       # No `if:` guard: the action detects an unchanged tree itself and commits nothing.
       - name: Commit the fixes
-        uses: TimSchoenle/actions/actions/common/commit-changes@e8af15f00459da30900d926bf8fbb9dea5a56495 # tag=actions-common-commit-changes-v1.3.0
+        uses: TimSchoenle/actions/actions/common/commit-changes@0a6ad3014d13b1baa2e6ab1966603fe88ed5887b # tag=actions-common-commit-changes-v1.3.1
         with:
           commit_message: "style: apply the mechanical fixes (lockfiles, clippy --fix, fmt, regenerated artefacts)"
           token: ${{ steps.generate_token.outputs.token }}

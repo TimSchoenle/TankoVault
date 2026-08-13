@@ -12,6 +12,26 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [7.2.0](https://github.com/TimSchoenle/TankoVault/compare/v7.1.3...v7.2.0) (2026-08-13)
+
+
+### Features
+
+* **scan:** tell a provider's refusal from its answer, and stop re-asking a broken one ([#219](https://github.com/TimSchoenle/TankoVault/issues/219)) ([d57a68d](https://github.com/TimSchoenle/TankoVault/commit/d57a68d8a3742cbdd154bcc1186cb6eaad6acee3))
+
+
+### Bug Fixes
+
+* **control-plane:** invalidate taste profiles for what an incremental build re-extracts ([#220](https://github.com/TimSchoenle/TankoVault/issues/220)) ([d6184b0](https://github.com/TimSchoenle/TankoVault/commit/d6184b0ee4e1c9b1aef14d55f5913ca75d9d151f))
+* **db:** refuse blocked terms as credits, not only as tags ([#217](https://github.com/TimSchoenle/TankoVault/issues/217)) ([bcce6fe](https://github.com/TimSchoenle/TankoVault/commit/bcce6fe25e117f3088418826ed9c1b63d57eb96c))
+* **frontend:** hold a single desktop instance so a duplicate launch cannot sign the reader out ([#215](https://github.com/TimSchoenle/TankoVault/issues/215)) ([45d6f46](https://github.com/TimSchoenle/TankoVault/commit/45d6f469686ead47ae1969af84fc1f097aaf2c6d))
+* **frontend:** take the tray's events from the event loop, not its channels ([#221](https://github.com/TimSchoenle/TankoVault/issues/221)) ([a5ac916](https://github.com/TimSchoenle/TankoVault/commit/a5ac91604c95ded3d8d4622b0c3f8a9eab6174c1))
+
+
+### Miscellaneous
+
+* **deps:** update timschoenle/actions/actions/common/commit-changes to vactions-common-commit-changes-v1.3.1 ([#218](https://github.com/TimSchoenle/TankoVault/issues/218)) ([c033a86](https://github.com/TimSchoenle/TankoVault/commit/c033a868af42e5bd18664f5bfe9e29eab79228a2))
+
 ## [7.1.3](https://github.com/TimSchoenle/TankoVault/compare/v7.1.2...v7.1.3) (2026-08-12)
 
 

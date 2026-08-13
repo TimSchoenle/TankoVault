@@ -12,7 +12,7 @@ use tankovault_bus::Bus;
 use tankovault_config::MatchingConfig;
 use tankovault_db::PgPool;
 use tankovault_domain::chapter_outliers::{OutlierPolicy, implausible_indices};
-use tankovault_domain::{AdultTagSet, MetadataPriority, Provider, ProviderId, TagBlocklist};
+use tankovault_domain::{AdultTagSet, MetadataPriority, Provider, ProviderId, TermBlocklist};
 use tankovault_fetch::{Fetcher, ProviderFetchConfig, SessionStore, build_provider_fetcher};
 use tankovault_solver::ChallengeSolver;
 
@@ -55,7 +55,7 @@ pub(crate) struct Engine {
     /// Which scraped "genres" are not tags at all. Held here for the same reason as
     /// [`Self::metadata_priority`]: sync's enrichment writer interns into the same `tags`
     /// vocabulary, and a guard only one writer applies is not a guard.
-    pub(crate) tag_blocklist: TagBlocklist,
+    pub(crate) term_blocklist: TermBlocklist,
     /// Which scraped "genres" classify a series as adult, for the series `AniList` never matches.
     pub(crate) adult_tags: AdultTagSet,
     /// Which scraped chapter numbers the source cannot plausibly have released.
@@ -133,7 +133,7 @@ pub(crate) struct EngineSettings {
     pub(crate) max_catalog_pages: u32,
     pub(crate) matching: MatchingConfig,
     pub(crate) metadata_priority: MetadataPriority,
-    pub(crate) tag_blocklist: TagBlocklist,
+    pub(crate) term_blocklist: TermBlocklist,
     pub(crate) adult_tags: AdultTagSet,
     pub(crate) outliers: OutlierPolicy,
     pub(crate) bot_user_agent: Option<String>,
@@ -161,7 +161,7 @@ impl Engine {
             max_catalog_pages: settings.max_catalog_pages,
             matching: settings.matching,
             metadata_priority: settings.metadata_priority,
-            tag_blocklist: settings.tag_blocklist,
+            term_blocklist: settings.term_blocklist,
             adult_tags: settings.adult_tags,
             outliers: settings.outliers,
             bot_user_agent: settings.bot_user_agent,

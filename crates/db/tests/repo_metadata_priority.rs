@@ -100,7 +100,7 @@ async fn an_adapter_rescan_does_not_overwrite_enriched_metadata() {
         &scan(provider, ADAPTER_TITLE, ADAPTER_BLURB),
         &MatchingConfig::default(),
         &priority,
-        &tankovault_domain::TagBlocklist::default(),
+        &tankovault_domain::TermBlocklist::default(),
         &tankovault_domain::AdultTagSet::defaults(),
     )
     .await
@@ -112,7 +112,7 @@ async fn an_adapter_rescan_does_not_overwrite_enriched_metadata() {
         series,
         &enrichment(ADAPTER_TITLE, ANILIST_BLURB),
         &priority,
-        &tankovault_domain::TagBlocklist::default(),
+        &tankovault_domain::TermBlocklist::default(),
     )
     .await
     .expect("enrich");
@@ -122,7 +122,7 @@ async fn an_adapter_rescan_does_not_overwrite_enriched_metadata() {
         &scan(provider, ADAPTER_TITLE, ADAPTER_BLURB),
         &MatchingConfig::default(),
         &priority,
-        &tankovault_domain::TagBlocklist::default(),
+        &tankovault_domain::TermBlocklist::default(),
         &tankovault_domain::AdultTagSet::defaults(),
     )
     .await
@@ -164,7 +164,7 @@ async fn an_adapter_first_order_lets_the_scan_win() {
         &scan(provider, ADAPTER_TITLE, ADAPTER_BLURB),
         &MatchingConfig::default(),
         &priority,
-        &tankovault_domain::TagBlocklist::default(),
+        &tankovault_domain::TermBlocklist::default(),
         &tankovault_domain::AdultTagSet::defaults(),
     )
     .await
@@ -176,7 +176,7 @@ async fn an_adapter_first_order_lets_the_scan_win() {
         series,
         &enrichment(ADAPTER_TITLE, ANILIST_BLURB),
         &priority,
-        &tankovault_domain::TagBlocklist::default(),
+        &tankovault_domain::TermBlocklist::default(),
     )
     .await
     .expect("enrich");
@@ -210,7 +210,7 @@ async fn a_losing_title_is_kept_as_an_alternative() {
         &scan(provider, ADAPTER_TITLE, ADAPTER_BLURB),
         &MatchingConfig::default(),
         &priority,
-        &tankovault_domain::TagBlocklist::default(),
+        &tankovault_domain::TermBlocklist::default(),
         &tankovault_domain::AdultTagSet::defaults(),
     )
     .await
@@ -222,7 +222,7 @@ async fn a_losing_title_is_kept_as_an_alternative() {
         series,
         &enrichment(romaji, ANILIST_BLURB),
         &priority,
-        &tankovault_domain::TagBlocklist::default(),
+        &tankovault_domain::TermBlocklist::default(),
     )
     .await
     .expect("enrich");

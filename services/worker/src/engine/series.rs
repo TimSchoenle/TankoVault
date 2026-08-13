@@ -89,7 +89,7 @@ impl Engine {
             &scanned,
             &self.matching,
             &self.metadata_priority,
-            &self.tag_blocklist,
+            &self.term_blocklist,
             &self.adult_tags,
         )
         .await?;

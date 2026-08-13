@@ -19,7 +19,7 @@ pub mod permissions;
 pub mod politeness;
 pub mod scan_stage;
 pub mod ssrf;
-pub mod tag_filter;
+pub mod term_filter;
 pub mod tunables;
 
 pub use adult::{AdultTagSet, DEFAULT_ADULT_TAGS};
@@ -50,5 +50,5 @@ pub use permissions::{
 };
 pub use politeness::{BrowserEmulation, MIN_RPS, Politeness, PolitenessInput};
 pub use scan_stage::{ParseStageError, ScanStage, StageTimings};
-pub use tag_filter::{DEFAULT_BLOCKED_TAGS, TagBlocklist, slugify};
+pub use term_filter::{DEFAULT_BLOCKED_TERMS, TermBlocklist, slugify};
 pub use tunables::{Applies, ParseTunableError, Tunable, TunableGroup, TunableKind, TunableSpec};

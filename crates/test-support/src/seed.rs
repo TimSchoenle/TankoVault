@@ -341,8 +341,8 @@ impl<'a> SeriesBuilder<'a> {
             &MetadataPriority::default(),
             // Empty, not the shipped defaults: a fixture that asks for the tag `Manga` must get
             // it, or a test would be silently exercising the intake guard instead of the thing
-            // it names. `tag_filter`'s own tests cover the guard.
-            &tankovault_domain::TagBlocklist::default(),
+            // it names. `term_filter`'s own tests cover the guard.
+            &tankovault_domain::TermBlocklist::default(),
             // The shipped set, unlike the blocklist above: a fixture that seeds an adult genre
             // is asking for a gated series, and giving it an empty classifier would make every
             // test of the gate seed a series the gate does not apply to.

@@ -4,10 +4,10 @@
 use super::metadata::{MetadataCandidate, merge_metadata};
 use crate::error::DbResult;
 use sqlx::{FromRow, PgExecutor};
-// `slugify` is the domain's, not a local copy: `TagBlocklist` compares against exactly the key
+// `slugify` is the domain's, not a local copy: `TermBlocklist` compares against exactly the key
 // this module writes into `tags.slug`, and a second implementation here is the drift that would
 // make the intake guard fail open.
-use tankovault_domain::{MetadataPriority, MetadataSource, SeriesId, TagBlocklist, slugify};
+use tankovault_domain::{MetadataPriority, MetadataSource, SeriesId, TermBlocklist, slugify};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -300,7 +300,7 @@ pub async fn apply_enrichment(
     series_id: SeriesId,
     enrichment: &MetadataEnrichment<'_>,
     priority: &MetadataPriority,
-    blocked: &TagBlocklist,
+    blocked: &TermBlocklist,
 ) -> DbResult<()> {
     let mut tx = pool.begin().await?;
     merge_metadata(
@@ -335,7 +335,7 @@ pub async fn apply_enrichment(
         add_series_tags(&mut tx, series_id, enrichment.tags, blocked).await?;
     }
     if !enrichment.authors.is_empty() {
-        add_series_authors(&mut tx, series_id, enrichment.authors).await?;
+        add_series_authors(&mut tx, series_id, enrichment.authors, blocked).await?;
     }
     tx.commit().await?;
     Ok(())
@@ -470,7 +470,7 @@ pub async fn add_series_tags(
     conn: &mut sqlx::PgConnection,
     series_id: SeriesId,
     tags: &[TagLink<'_>],
-    blocked: &TagBlocklist,
+    blocked: &TermBlocklist,
 ) -> DbResult<()> {
     let mut seen = std::collections::HashSet::new();
     let mut slugs = Vec::with_capacity(tags.len());
@@ -533,7 +533,12 @@ pub async fn add_series_tags(
 }
 
 /// Add author/artist credits to a series (idempotent, additive-only — mirrors
-/// [`add_series_tags`]).
+/// [`add_series_tags`]). Empty/unslugifiable names are skipped, as are terms `blocked` refuses.
+///
+/// The guard is the same one the tag writer applies, and for the same reason: a template that
+/// renders `Genres: Updating` renders `Author: Updating` from the row below it, and a credit is
+/// the recommender's strongest feature axis, so guarding only tags left the placeholder as a
+/// first-class term.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; identical to [`add_series_tags`].
@@ -541,8 +546,9 @@ pub async fn add_series_authors(
     conn: &mut sqlx::PgConnection,
     series_id: SeriesId,
     authors: &[String],
+    blocked: &TermBlocklist,
 ) -> DbResult<()> {
-    let (slugs, names) = dedup_by_slug(authors);
+    let (slugs, names) = dedup_by_slug(authors, blocked);
     if slugs.is_empty() {
         return Ok(());
     }
@@ -569,18 +575,18 @@ pub async fn add_series_authors(
     Ok(())
 }
 
-/// Slugify a list of display names, dropping empties and keeping the first spelling of each
-/// slug.
+/// Slugify a list of display names, dropping empties, refused terms and repeats of a slug
+/// already kept.
 ///
 /// De-duplication is required: a slug bound twice in one `UNNEST` insert is harmless, but the
 /// link statement would then attach the same `(series_id, author_id)` pair twice.
-fn dedup_by_slug(names: &[String]) -> (Vec<String>, Vec<&str>) {
+fn dedup_by_slug<'a>(names: &'a [String], blocked: &TermBlocklist) -> (Vec<String>, Vec<&'a str>) {
     let mut seen = std::collections::HashSet::new();
     let mut slugs = Vec::with_capacity(names.len());
     let mut display = Vec::with_capacity(names.len());
     for name in names {
         let slug = slugify(name);
-        if slug.is_empty() || !seen.insert(slug.clone()) {
+        if slug.is_empty() || blocked.blocks(name) || !seen.insert(slug.clone()) {
             continue;
         }
         slugs.push(slug);

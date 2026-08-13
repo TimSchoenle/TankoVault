@@ -60,7 +60,7 @@ async fn ingest(app: &TestApp, provider: ProviderId, title: &str, tags: &[&str])
         },
         &MatchingConfig::default(),
         &MetadataPriority::default(),
-        &tankovault_domain::TagBlocklist::default(),
+        &tankovault_domain::TermBlocklist::default(),
         &tankovault_domain::AdultTagSet::defaults(),
     )
     .await

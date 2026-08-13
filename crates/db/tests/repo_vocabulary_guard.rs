@@ -114,7 +114,9 @@ async fn a_refused_term_becomes_neither_a_tag_nor_a_credit_on_a_scan() {
 #[tokio::test]
 async fn a_refused_term_becomes_neither_a_tag_nor_a_credit_on_an_enrichment() {
     let db = TestDb::spawn().await;
-    let provider = seed::provider(&db, "vocabulary-guard-enrich").create().await;
+    let provider = seed::provider(&db, "vocabulary-guard-enrich")
+        .create()
+        .await;
 
     let mut clean = scan(provider);
     clean.tags.clear();

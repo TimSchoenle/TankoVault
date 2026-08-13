@@ -329,6 +329,19 @@ async fn run_stages(
                 &vocabulary,
             )
             .await?;
+            // A taste profile stores feature *ids*, so re-extracting a series leaves every
+            // reader who tracks it holding weights for features it may no longer carry.
+            // Nothing else notices: `ensure_profile` rebuilds only on `stale`, and the
+            // watchlist and progress writes that set it are untouched by a build.
+            //
+            // **After the write, never before.** A reader who rebuilt in the gap would rebuild
+            // from the vectors this pass is replacing and clear the flag on the way out,
+            // leaving a stale profile marked fresh until they next touch their watchlist.
+            //
+            // Incremental only. A full build re-extracts the whole catalogue, so the same call
+            // there would mark every profile stale on every run — a rebuild and a discarded
+            // shelf for every reader — whether or not anything they track actually moved.
+            recsys::mark_profiles_stale_for_series(pool, &touched).await?;
             prior_pass(pool, tuning, claim, Some(&touched), report.series_built).await?;
         }
         // Cheap and idempotent: a deployment whose index build was interrupted gets it back on

@@ -13,10 +13,40 @@ use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tankovault_solver::{
-    ChallengeSolver, SolveRequest, detect_challenge, detect_challenge_body, is_rate_limit_page,
+    ChallengeSolver, SolveRequest, default_error_page_server, detect_challenge,
+    detect_challenge_body, is_rate_limit_page,
 };
 use time::{Duration, OffsetDateTime};
 use tokio::sync::RwLock;
+
+/// Ceiling on the rendered `Cookie` header, in bytes.
+///
+/// Origins reject an oversized header block outright — nginx answers `400 Request Header Or
+/// Cookie Too Large` from its own error page, which is indistinguishable from a bad request
+/// unless something knows to look. The jar a solver hands back is a *browser's*: on a site with
+/// an analytics and ad stack it accumulates cookies that have nothing to do with clearance, and
+/// replaying all of them is what pushes the header past the origin's buffer.
+///
+/// Half of nginx's stock 8 KiB buffer, leaving room for the rest of the header block (an
+/// emulation profile sends a dozen headers of its own).
+const MAX_COOKIE_HEADER_BYTES: usize = 4096;
+
+/// Cookie names carrying bot-management clearance or a server session, in the order they are
+/// preferred when the jar does not fit.
+///
+/// Matched as a case-insensitive prefix, because every one of these is versioned or suffixed in
+/// practice (`wordpress_logged_in_<hash>`, `__cf_bm`). Dropping any of them costs the session;
+/// dropping an analytics cookie costs nothing, so when something has to go it must not be these.
+const ESSENTIAL_COOKIE_PREFIXES: [&str; 8] = [
+    "cf_clearance",
+    "__cf",
+    "_cf",
+    "phpsessid",
+    "laravel_session",
+    "xsrf-token",
+    "wordpress_",
+    "session",
+];
 
 /// A cached solved session (cookies + UA + expiry).
 #[derive(Debug, Clone)]
@@ -50,14 +80,57 @@ impl SolvedSession {
         !self.cookies.is_empty() && crate::base::can_reproduce(&self.user_agent)
     }
 
-    /// Render the `Cookie` header value.
+    /// Render the `Cookie` header value, bounded by [`MAX_COOKIE_HEADER_BYTES`].
+    ///
+    /// Truncation is a last resort and is reported, but it beats the alternative: a header the
+    /// origin refuses fails *every* request for as long as the session is cached, whereas a jar
+    /// missing an analytics cookie is a jar the site never reads.
     fn cookie_header(&self) -> String {
-        self.cookies
+        let rendered = render_cookies(self.cookies.iter());
+        if rendered.len() <= MAX_COOKIE_HEADER_BYTES {
+            return rendered;
+        }
+
+        // Essentials first, then the rest in the order the solver reported them, stopping at the
+        // cap. Stable and explainable — no cookie is dropped while a less important one is kept.
+        let (essential, rest): (Vec<_>, Vec<_>) = self
+            .cookies
             .iter()
-            .map(|(k, v)| format!("{k}={v}"))
-            .collect::<Vec<_>>()
-            .join("; ")
+            .partition(|(name, _)| is_essential(name));
+        let mut kept: Vec<&(String, String)> = Vec::with_capacity(self.cookies.len());
+        let mut budget = MAX_COOKIE_HEADER_BYTES;
+        for cookie in essential.into_iter().chain(rest) {
+            // `name=value` plus the "; " separator every cookie after the first costs.
+            let cost = cookie.0.len() + 1 + cookie.1.len() + usize::from(!kept.is_empty()) * 2;
+            if cost > budget {
+                continue;
+            }
+            budget -= cost;
+            kept.push(cookie);
+        }
+        tracing::warn!(
+            rendered_bytes = rendered.len(),
+            cap = MAX_COOKIE_HEADER_BYTES,
+            cookies = self.cookies.len(),
+            kept = kept.len(),
+            "solved session cookie jar exceeds the header cap; replaying the essential cookies only"
+        );
+        render_cookies(kept.into_iter())
     }
+}
+
+fn render_cookies<'a, I: Iterator<Item = &'a (String, String)>>(cookies: I) -> String {
+    cookies
+        .map(|(k, v)| format!("{k}={v}"))
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+fn is_essential(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    ESSENTIAL_COOKIE_PREFIXES
+        .iter()
+        .any(|prefix| lower.starts_with(prefix))
 }
 
 /// Storage for solved sessions, keyed by provider slug.
@@ -67,6 +140,12 @@ pub trait SessionStore: Send + Sync {
     async fn get(&self, provider: &str) -> Option<SolvedSession>;
     /// Store (or replace) the session for `provider`.
     async fn put(&self, provider: &str, session: SolvedSession);
+    /// Discard `provider`'s session before it expires.
+    ///
+    /// A cached session is replayed on every request until its TTL lapses, so one the origin has
+    /// started refusing fails *every* fetch for that provider until then. Expiry alone cannot
+    /// recover from that; this is what lets the stack drop a session and start over.
+    async fn invalidate(&self, provider: &str);
 }
 
 /// Process-local session store (default; suitable for a single replica or tests).
@@ -83,6 +162,9 @@ impl SessionStore for InMemorySessionStore {
     }
     async fn put(&self, provider: &str, session: SolvedSession) {
         self.map.write().await.insert(provider.to_owned(), session);
+    }
+    async fn invalidate(&self, provider: &str) {
+        self.map.write().await.remove(provider);
     }
 }
 
@@ -143,15 +225,62 @@ fn apply_session(mut req: FetchRequest, session: &SolvedSession) -> FetchRequest
     req
 }
 
+/// Whether the origin refused the request because of its *headers* rather than its target.
+///
+/// `431` says so by status. nginx says it with a `400` and its own error page, whose title names
+/// the reason — indistinguishable from an ordinary bad request without reading it, which is how a
+/// provider spent a day failing every fetch behind a session it had grown too large to send.
+fn refuses_our_headers(resp: &FetchResponse) -> bool {
+    const REASONS: [&str; 2] = ["header or cookie too large", "header fields too large"];
+
+    if resp.status == 431 {
+        return true;
+    }
+    if resp.status != 400 || default_error_page_server(&resp.body).is_none() {
+        return false;
+    }
+    // Bounded by the size cap `default_error_page_server` has already applied.
+    let body = resp.body.to_ascii_lowercase();
+    REASONS.iter().any(|reason| body.contains(reason))
+}
+
 #[async_trait]
 impl<F: Fetcher> Fetcher for SolvingFetcher<F> {
-    async fn get(&self, mut req: FetchRequest) -> Result<FetchResponse, FetchError> {
-        // Replay a cached session if we have one.
-        if let Some(session) = self.store.get(&req.provider_slug).await {
-            req = apply_session(req, &session);
+    async fn get(&self, req: FetchRequest) -> Result<FetchResponse, FetchError> {
+        // Replay a cached session if we have one, keeping the request as it arrived so the
+        // recovery below can re-issue it without one.
+        let (prepared, replayed) = match self.store.get(&req.provider_slug).await {
+            Some(session) => (apply_session(req.clone(), &session), true),
+            None => (req.clone(), false),
+        };
+
+        let resp = self.inner.get(prepared.clone()).await?;
+
+        if replayed && refuses_our_headers(&resp) {
+            tracing::warn!(
+                provider = %req.provider_slug,
+                status = resp.status,
+                url = %resp.url,
+                "origin refused the replayed session's headers; dropping the session and \
+                 retrying without it"
+            );
+            self.store.invalidate(&req.provider_slug).await;
+            let clean = self.inner.get(req.clone()).await?;
+            return self.solve_if_challenged(req, clean).await;
         }
 
-        let resp = self.inner.get(req.clone()).await?;
+        self.solve_if_challenged(prepared, resp).await
+    }
+}
+
+impl<F: Fetcher> SolvingFetcher<F> {
+    /// Pass `resp` through unless it is a challenge, in which case solve it and answer with the
+    /// solved page (or a replay of `req` under the fresh session).
+    async fn solve_if_challenged(
+        &self,
+        req: FetchRequest,
+        resp: FetchResponse,
+    ) -> Result<FetchResponse, FetchError> {
         let Some(kind) = detect_challenge(&resp) else {
             return Ok(resp);
         };
@@ -169,7 +298,13 @@ impl<F: Fetcher> Fetcher for SolvingFetcher<F> {
         // Recorded before the `?`: a solve that failed still cost the seconds it took, and
         // attributing them is the point of the breakdown.
         crate::accounting::record(crate::accounting::Metered::Solve(solve_started.elapsed()));
-        let outcome = solved.map_err(|e| FetchError::Solver(e.to_string()))?;
+        let outcome = solved.map_err(|e| {
+            if e.is_transient() {
+                FetchError::SolverUnavailable(e.to_string())
+            } else {
+                FetchError::Solver(e.to_string())
+            }
+        })?;
 
         let session = SolvedSession {
             cookies: outcome.cookies.clone(),
@@ -437,6 +572,154 @@ mod tests {
             .await
             .expect("solved page is returned");
         assert_eq!(resp.status, 200);
+    }
+
+    /// A jar too large to send costs the provider *every* fetch until the session's TTL lapses,
+    /// which is how one provider spent a day answering `400 Request Header Or Cookie Too Large`.
+    /// The essentials are what a site actually reads; the rest is a browser's accumulated
+    /// analytics, and dropping those is strictly better than sending a header nobody accepts.
+    #[test]
+    fn an_oversized_cookie_jar_keeps_the_cookies_that_carry_the_session() {
+        let mut cookies = vec![("cf_clearance".to_owned(), "x".repeat(600))];
+        // Enough analytics cookies to blow the cap several times over.
+        for i in 0..40 {
+            cookies.push((format!("_ga_tracker_{i}"), "v".repeat(300)));
+        }
+        let session = SolvedSession {
+            cookies,
+            user_agent: "UA/1.0".to_owned(),
+            expires_at: OffsetDateTime::now_utc() + Duration::seconds(600),
+        };
+
+        let header = session.cookie_header();
+        assert!(
+            header.len() <= MAX_COOKIE_HEADER_BYTES,
+            "header is {} bytes",
+            header.len()
+        );
+        assert!(
+            header.starts_with("cf_clearance="),
+            "clearance must survive the truncation: {}",
+            &header[..40.min(header.len())]
+        );
+    }
+
+    /// The cap is a ceiling, not a filter: an ordinary jar has to travel intact and in the
+    /// solver's own order, because a site is free to care about a cookie this crate has never
+    /// heard of.
+    #[test]
+    fn a_jar_within_the_cap_is_replayed_verbatim() {
+        let session = SolvedSession {
+            cookies: vec![
+                ("_ga".to_owned(), "1".to_owned()),
+                ("cf_clearance".to_owned(), "abc".to_owned()),
+            ],
+            user_agent: "UA/1.0".to_owned(),
+            expires_at: OffsetDateTime::now_utc() + Duration::seconds(600),
+        };
+        assert_eq!(session.cookie_header(), "_ga=1; cf_clearance=abc");
+    }
+
+    /// Only the origin refusing our *headers* may discard a session — a `400` on its own is an
+    /// ordinary bad request, and dropping the session for one would re-solve the challenge on
+    /// every malformed URL a provider has.
+    #[test]
+    fn only_a_header_size_refusal_counts_as_one() {
+        let nginx = |status: u16, reason: &str| FetchResponse {
+            status,
+            url: "https://example.test/x".to_owned(),
+            headers: Vec::new(),
+            body: format!(
+                "<html><head><title>{status} {reason}</title></head><body>\
+                 <center><h1>{status} Bad Request</h1></center><center>{reason}</center>\
+                 <hr><center>nginx/1.18.0 (Ubuntu)</center></body></html>"
+            ),
+            from_cache: false,
+        };
+
+        assert!(refuses_our_headers(&nginx(
+            400,
+            "Request Header Or Cookie Too Large"
+        )));
+        assert!(!refuses_our_headers(&nginx(400, "Bad Request")));
+        assert!(!refuses_our_headers(&nginx(404, "Not Found")));
+
+        // The standard status says it without a body to read.
+        assert!(refuses_our_headers(&FetchResponse {
+            status: 431,
+            url: "https://example.test/x".to_owned(),
+            headers: Vec::new(),
+            body: String::new(),
+            from_cache: false,
+        }));
+    }
+
+    /// Refuses any request carrying a `Cookie`, exactly as an origin whose header buffer the jar
+    /// has outgrown does, and serves content to one without.
+    struct RefusesCookies;
+
+    #[async_trait]
+    impl Fetcher for RefusesCookies {
+        async fn get(&self, req: FetchRequest) -> Result<FetchResponse, FetchError> {
+            let cookied = req
+                .headers
+                .iter()
+                .any(|(k, _)| k.eq_ignore_ascii_case("cookie"));
+            Ok(FetchResponse {
+                status: if cookied { 400 } else { 200 },
+                url: req.url.clone(),
+                headers: Vec::new(),
+                body: if cookied {
+                    "<html><head><title>400 Request Header Or Cookie Too Large</title></head>\
+                     <body><center><h1>400 Bad Request</h1></center>\
+                     <center>Request Header Or Cookie Too Large</center>\
+                     <hr><center>nginx/1.18.0 (Ubuntu)</center></body></html>"
+                        .to_owned()
+                } else {
+                    "<html><body><h1>Chapter 12</h1></body></html>".to_owned()
+                },
+                from_cache: false,
+            })
+        }
+    }
+
+    /// The self-healing half. Without it the refused session is replayed on every request until
+    /// its TTL lapses, so one oversized jar costs the provider every fetch for the whole window —
+    /// and nothing in the failure feed says the session is the reason.
+    #[tokio::test]
+    async fn a_session_the_origin_refuses_is_dropped_and_the_request_retried_without_it() {
+        let store: Arc<dyn SessionStore> = Arc::new(InMemorySessionStore::default());
+        store
+            .put(
+                "example",
+                SolvedSession {
+                    cookies: vec![("cf_clearance".to_owned(), "x".to_owned())],
+                    user_agent: "UA/1.0".to_owned(),
+                    expires_at: OffsetDateTime::now_utc() + Duration::seconds(600),
+                },
+            )
+            .await;
+
+        let fetcher = SolvingFetcher::new(
+            RefusesCookies,
+            Arc::new(StaticSolver::new(SolveOutcome {
+                cookies: Vec::new(),
+                user_agent: "UA/1.0".to_owned(),
+                html: None,
+                status: None,
+                headers: Vec::new(),
+                ttl_secs: 900,
+            })),
+            Arc::clone(&store),
+        );
+
+        let resp = fetcher.get(req()).await.expect("the clean retry succeeds");
+        assert_eq!(resp.status, 200);
+        assert!(resp.body.contains("Chapter 12"));
+        assert!(
+            store.get("example").await.is_none(),
+            "the refused session must not survive to be replayed again"
+        );
     }
 
     #[tokio::test]

@@ -101,6 +101,76 @@ pub fn is_rate_limit_page(body: &str) -> bool {
         || head.contains("<title>Rate limit exceeded")
 }
 
+/// The web servers whose built-in error document is recognised, and the marker identifying each.
+///
+/// Every marker appears in the server's *compiled-in* error page and in no site-authored
+/// markup: nginx and its forks close theirs with `<hr><center>NAME</center>` (optionally
+/// carrying a version), Apache and lighttpd with a signature `<address>` block.
+const DEFAULT_ERROR_PAGE_MARKERS: [(&str, &str); 4] = [
+    ("nginx", "<center>nginx"),
+    ("openresty", "<center>openresty"),
+    ("apache", "<address>Apache"),
+    ("lighttpd", "<address>lighttpd"),
+];
+
+/// How large a body may be and still be a server's own error document.
+///
+/// The real ones are hundreds of bytes (497 measured on a live origin, 907 where Cloudflare
+/// injects its beacon script). A site's *own* 404 renders the site — navigation, stylesheet
+/// links, a footer — and runs to tens of kilobytes. The cap is what keeps a themed page that
+/// happens to contain a marker from being read as an infrastructure failure.
+const DEFAULT_ERROR_PAGE_MAX_BYTES: usize = 4096;
+
+/// Which web server answered with its own built-in error document, if any.
+///
+/// A positive means **the request never reached the site's application**. The origin's web
+/// server — or a proxy in front of it — answered from its compiled-in error page instead of
+/// routing to the app, so the status describes the infrastructure rather than the resource.
+/// That is a different fact from the status alone, and it is the one that matters: a `404`
+/// rendered by the site says a page moved, while a `404` from bare nginx says the site is not
+/// being served to us at all, and re-requesting the path cannot change it.
+///
+/// The distinction is the contract, so it is what the examples pin:
+///
+/// ```
+/// use tankovault_solver::default_error_page_server;
+///
+/// // What a dead origin behind Cloudflare actually returns.
+/// let bare = "<html>\n<head><title>404 Not Found</title></head>\n<body>\n\
+///             <center><h1>404 Not Found</h1></center>\n<hr><center>nginx</center>\n\
+///             </body>\n</html>";
+/// assert_eq!(default_error_page_server(bare), Some("nginx"));
+///
+/// // A version and platform in the signature is the same page.
+/// assert_eq!(
+///     default_error_page_server(
+///         "<html><head><title>400 Request Header Or Cookie Too Large</title></head><body>\
+///          <center><h1>400 Bad Request</h1></center><hr><center>nginx/1.18.0 (Ubuntu)</center>\
+///          </body></html>"
+///     ),
+///     Some("nginx"),
+/// );
+///
+/// // A site's own "this series is gone" page is not this, however it is styled — it came from
+/// // the application, which is the whole distinction being drawn.
+/// let themed = format!(
+///     "<!DOCTYPE html><html><head><title>Not found</title><link rel=stylesheet href=/a.css>\
+///      </head><body><nav>{}</nav><h1>Nothing here</h1></body></html>",
+///     "<a href=/x>link</a>".repeat(300),
+/// );
+/// assert_eq!(default_error_page_server(&themed), None);
+/// ```
+#[must_use]
+pub fn default_error_page_server(body: &str) -> Option<&'static str> {
+    if body.len() > DEFAULT_ERROR_PAGE_MAX_BYTES {
+        return None;
+    }
+    DEFAULT_ERROR_PAGE_MARKERS
+        .iter()
+        .find(|(_, marker)| body.contains(marker))
+        .map(|(name, _)| *name)
+}
+
 /// Classify a **body alone** as a bot-management interstitial.
 ///
 /// Used where there is no status/header envelope to corroborate the markers — chiefly the
@@ -338,6 +408,74 @@ mod tests {
         // skipped — the path a real fetch of that page takes.
         let r = resp(200, &[("server", "cloudflare")], page);
         assert_eq!(detect_challenge(&r), None);
+    }
+
+    /// The three bodies this classifier exists for, byte-for-byte as live origins served them
+    /// on 2026-08-13: nine Keyoapp installs answered every route — including `/`, which cannot
+    /// legitimately 404 — with bare nginx, and ragescans' origin refused an oversized header
+    /// the same way. Read as ordinary statuses, all of them say "the page is gone".
+    #[test]
+    fn a_bare_server_error_document_is_recognised_as_infrastructure() {
+        assert_eq!(
+            default_error_page_server(
+                "<html>\n<head><title>404 Not Found</title></head>\n<body>\n\
+                 <center><h1>404 Not Found</h1></center>\n<hr><center>nginx</center>\n\
+                 </body>\n</html>\n\
+                 <!-- a padding to disable MSIE and Chrome friendly error page -->"
+            ),
+            Some("nginx")
+        );
+        assert_eq!(
+            default_error_page_server(
+                "<html>\n<head><title>404 Not Found</title></head>\n<body>\n\
+                 <center><h1>404 Not Found</h1></center>\n<hr><center>nginx</center>\n\
+                 <script type=\"module\" src=\"https://static.cloudflareinsights.com/beacon.min.js\
+                 \" data-cf-beacon='{\"version\":\"2024.11.0\"}'></script>\n</body>\n</html>"
+            ),
+            Some("nginx"),
+            "a Cloudflare beacon injected into the page does not make it the site's own"
+        );
+        assert_eq!(
+            default_error_page_server(
+                "<html> <head><title>400 Request Header Or Cookie Too Large</title></head> \
+                 <body> <center><h1>400 Bad Request</h1></center> \
+                 <center>Request Header Or Cookie Too Large</center> \
+                 <hr><center>nginx/1.18.0 (Ubuntu)</center> </body> </html>"
+            ),
+            Some("nginx")
+        );
+    }
+
+    /// The false positive that would matter most: a provider's genuinely-removed series. The
+    /// site renders its own 404 through its theme, which is both large and free of any server
+    /// signature — and it *should* stay a permanent `404`, because the path really is gone.
+    #[test]
+    fn a_sites_own_error_page_is_not_an_infrastructure_failure() {
+        let themed = format!(
+            "<!DOCTYPE html> <html lang=\"en\"><head><title>Page not found</title>\
+             <link rel=\"stylesheet\" href=\"/style.css\"></head><body><header>{}</header>\
+             <main><h1>We couldn't find that series</h1></main></body></html>",
+            "<a href=\"/manga/x\">Some Series</a>".repeat(400),
+        );
+        assert!(themed.len() > DEFAULT_ERROR_PAGE_MAX_BYTES);
+        assert_eq!(default_error_page_server(&themed), None);
+
+        // And the same holds for a short page that simply has no server signature.
+        assert_eq!(
+            default_error_page_server("<html><body><h1>404</h1><p>Gone.</p></body></html>"),
+            None
+        );
+    }
+
+    /// A page under the cap that merely mentions a server name is not its error document. The
+    /// markers are the compiled-in markup, not the word.
+    #[test]
+    fn naming_a_server_is_not_the_same_as_being_its_error_page() {
+        assert_eq!(
+            default_error_page_server("<p>We run nginx and Apache. Just a moment.</p>"),
+            None
+        );
+        assert_eq!(default_error_page_server("{\"error\":\"nginx\"}"), None);
     }
 
     #[test]

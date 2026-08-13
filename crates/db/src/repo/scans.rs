@@ -295,6 +295,70 @@ pub async fn list_runs_filtered<'e, E: PgExecutor<'e>>(
     Ok(RunPage { items, total })
 }
 
+/// How many runs of one provider and mode have failed in a row, and when the last of them
+/// finished.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FailureStreak {
+    /// Consecutive failed runs, most recent first, stopping at the first that was not failed.
+    /// Saturates at the window [`failure_streak`] reads.
+    pub failures: i64,
+    /// When the most recent of them finished. `None` exactly when `failures` is 0.
+    pub last_failed_at: Option<OffsetDateTime>,
+}
+
+/// How many finished runs are examined for a streak.
+///
+/// The streak only ever drives a capped backoff, so a longer window buys nothing: any count past
+/// the cap produces the same wait. Bounding it is what keeps the read a short index scan on a
+/// table that grows by a run per provider per sweep.
+const FAILURE_STREAK_WINDOW: i64 = 32;
+
+/// The provider's current run of consecutive failures in `mode`.
+///
+/// Derived from `scan_runs` rather than tracked in a column of its own, deliberately: the runs
+/// *are* the record of what happened, and a second copy of it would be one more thing to keep
+/// true. A provider that has never finished a run of this mode has no streak.
+///
+/// Only finished runs count. One in flight is not evidence of anything yet, and letting it end
+/// the streak would clear the backoff every time a run was queued — which is every sweep.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only. A provider with no history is a zero streak, not
+/// [`crate::DbError::NotFound`]: "nothing has failed" is the ordinary answer.
+pub async fn failure_streak<'e, E: PgExecutor<'e>>(
+    exec: E,
+    provider_id: ProviderId,
+    mode: ScanMode,
+) -> DbResult<FailureStreak> {
+    // `rn` numbers the finished runs newest-first; the streak is every row ahead of the first
+    // one that did not fail. With no such row (everything in the window failed) the bound is the
+    // window itself, so the count saturates instead of ending.
+    let row = sqlx::query!(
+        "WITH recent AS ( \
+             SELECT state, finished_at, \
+                    row_number() OVER (ORDER BY created_at DESC) AS rn \
+             FROM scan_runs \
+             WHERE provider_id = $1 AND mode = $2::scan_mode \
+               AND state IN ('completed','failed') \
+             ORDER BY created_at DESC \
+             LIMIT $3 \
+         ) \
+         SELECT count(*) AS \"failures!\", max(finished_at) AS \"last_failed_at?\" \
+         FROM recent \
+         WHERE rn < COALESCE((SELECT min(rn) FROM recent WHERE state <> 'failed'), $3 + 1)",
+        provider_id.as_uuid(),
+        mode as ScanMode,
+        FAILURE_STREAK_WINDOW,
+    )
+    .fetch_one(exec)
+    .await?;
+
+    Ok(FailureStreak {
+        failures: row.failures,
+        last_failed_at: row.last_failed_at,
+    })
+}
+
 /// The newest run of `mode` this provider still has in flight, if any — the planner's guard
 /// against queueing a second one behind it.
 ///

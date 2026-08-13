@@ -72,11 +72,40 @@ async fn solve(
             (StatusCode::OK, Json(outcome)).into_response()
         }
         Err(e) => {
-            metrics::counter!("solve_attempts_total", "result" => "error").increment(1);
-            tracing::warn!(%provider, error = %e, "solve failed");
+            let transient = e.is_transient();
+            metrics::counter!(
+                "solve_attempts_total",
+                "result" => if transient { "unavailable" } else { "error" },
+            )
+            .increment(1);
+            tracing::warn!(%provider, error = %e, transient, "solve failed");
             // The cause is in the log; the caller gets the one RFC 9457 shape every service
             // emits, so `tankovault_fetch::HttpChallengeSolver` only ever parses one format.
-            Problem::bad_gateway().into_response()
+            //
+            // The *status* is the only part of that shape the caller can act on, so it has to
+            // carry the one distinction that changes what it does, and it has to survive an
+            // intermediary. `5xx` means this tier could not serve the solve and the same request
+            // is worth repeating; `4xx` means the exchange happened and produced no session,
+            // which repeating only pays for again. The unprocessable status is deliberate rather
+            // than `502`: a gateway in front of this service emits `502`/`504` of its own, and
+            // those are unavailability, so the terminal answer must not share their range.
+            // Answering `502` to both is what made a solver outage indistinguishable from nine
+            // providers turning hostile.
+            if transient {
+                Problem::new(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "solver_unavailable",
+                    "the challenge solver cannot serve requests right now; please try again",
+                )
+                .into_response()
+            } else {
+                Problem::new(
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "challenge_unsolved",
+                    "the challenge could not be solved for this target",
+                )
+                .into_response()
+            }
         }
     }
 }

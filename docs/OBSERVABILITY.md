@@ -108,7 +108,7 @@ status codes would be an unbounded label source for a distinction no panel makes
 
 | Metric | Type | Labels | Emitted by |
 |---|---|---|---|
-| `scan_runs_planned_total` | counter | `provider`, `scan`, `result` (`planned`/`duplicate`/`error`) | `control-plane` |
+| `scan_runs_planned_total` | counter | `provider`, `scan`, `result` (`planned`/`duplicate`/`coalesced`/`cooling_down`/`error`) | `control-plane` |
 | `scheduler_sweep_duration_seconds` | histogram | `scan` | `control-plane` |
 | `scheduler_leader` | gauge | — | `control-plane` |
 | `merge_sweep_actions_total` | counter | `action` | `control-plane` |
@@ -194,7 +194,8 @@ the cancellation note below.
 
 | Metric | Type | Labels | Emitted by |
 |---|---|---|---|
-| `solve_attempts_total` | counter | `result` (`ok`/`error`/`rejected`) | `challenge-solver` **and** `render` |
+| `solve_attempts_total` | counter | `result` (`ok`/`unavailable`/`error`/`rejected`) | `challenge-solver` **and** `render` |
+| `solve_retries_total` | counter | `provider` | `worker` (`crates/fetch`) |
 | `render_requests_total` | counter | `result` (`ok`/`error`/`rejected`) | `render` |
 
 ### AniList — `sync`
@@ -245,6 +246,13 @@ silently destroy every per-service rule.
 **`solve_attempts_total` comes from two services.** The `/v1/solve` contract is defined once, in
 `crates/solver/src/http.rs`, and both `challenge-solver` and `render` mount it — so every rule over
 that metric keeps a `job` dimension.
+
+**`result="unavailable"` is not `result="error"`.** They are the two halves of what used to be one
+label, and they lead opposite ways: `error` is a challenge the back-end ran and could not beat,
+which is the provider's answer; `unavailable` is the tier failing to run it at all — the browser
+pool full, a replica restarting — which says nothing about the provider and clears on its own.
+`solve_retries_total` counts the repeats `worker` makes for the second kind only; a sustained rate
+there is a solver tier that is too small for its load, not a provider getting harder.
 
 **`route` is the matched path, never the URI.** `/v1/series/{id}`, not `/v1/series/9f3c…`, so
 cardinality is bounded by the route table. Anything that matched no route folds into a single

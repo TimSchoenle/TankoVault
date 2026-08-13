@@ -181,7 +181,7 @@ impl Fixture {
             },
             &MatchingConfig::default(),
             &MetadataPriority::default(),
-            &tankovault_domain::TagBlocklist::default(),
+            &tankovault_domain::TermBlocklist::default(),
             &tankovault_domain::AdultTagSet::defaults(),
         )
         .await
@@ -200,7 +200,7 @@ impl Fixture {
                 .expect("default metadata priority"),
             // Empty: these tests assert what reconciliation writes, and a shipped blocklist term
             // appearing in a fixture would silently change that answer.
-            tankovault_domain::TagBlocklist::default(),
+            tankovault_domain::TermBlocklist::default(),
             &MatchingConfig::default(),
             providers_map,
         );
@@ -252,7 +252,7 @@ impl Fixture {
             },
             &MatchingConfig::default(),
             &MetadataPriority::default(),
-            &tankovault_domain::TagBlocklist::default(),
+            &tankovault_domain::TermBlocklist::default(),
             &tankovault_domain::AdultTagSet::defaults(),
         )
         .await

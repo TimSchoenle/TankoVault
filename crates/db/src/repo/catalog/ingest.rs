@@ -12,7 +12,7 @@ use crate::error::DbResult;
 use tankovault_domain::matching::Canonicaliser;
 use tankovault_domain::{
     AdultTagSet, MetadataPriority, MetadataSource, ProviderId, SeriesId, SeriesSourceId,
-    TagBlocklist,
+    TermBlocklist,
 };
 
 /// A fully-scanned series ready to persist: canonical metadata, alternative titles,
@@ -42,7 +42,7 @@ pub struct IngestOutcome {
 ///
 /// `canonicaliser` decides which series the scan belongs to; `priority` decides which of the
 /// scan's values are allowed to replace what another source already wrote; `blocked` decides
-/// which scraped "genres" are not tags at all; `adult` decides which of them classify the
+/// which scraped terms are neither tags nor credits; `adult` decides which of them classify the
 /// series as adult. This function only writes.
 ///
 /// # Errors
@@ -55,7 +55,7 @@ pub async fn ingest_series(
     scanned: &ScannedSeries,
     canonicaliser: &dyn Canonicaliser,
     priority: &MetadataPriority,
-    blocked: &TagBlocklist,
+    blocked: &TermBlocklist,
     adult: &AdultTagSet,
 ) -> DbResult<IngestOutcome> {
     let mut tx = pool.begin().await?;
@@ -84,7 +84,7 @@ pub async fn ingest_series(
         add_series_tags(&mut tx, series_id, &links, blocked).await?;
     }
     if !scanned.authors.is_empty() {
-        add_series_authors(&mut tx, series_id, &scanned.authors).await?;
+        add_series_authors(&mut tx, series_id, &scanned.authors, blocked).await?;
     }
 
     let source_id = upsert_source(

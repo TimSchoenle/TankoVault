@@ -141,7 +141,7 @@ async fn ingest(db: &TestDb, provider: ProviderId, fixture: &Fixture) -> SeriesI
         },
         &MatchingConfig::default(),
         &MetadataPriority::default(),
-        &tankovault_domain::TagBlocklist::default(),
+        &tankovault_domain::TermBlocklist::default(),
         &tankovault_domain::AdultTagSet::defaults(),
     )
     .await

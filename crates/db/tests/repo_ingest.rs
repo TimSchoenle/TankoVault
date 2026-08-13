@@ -70,7 +70,7 @@ async fn a_rescan_of_an_unchanged_listing_discovers_nothing() {
         &scanned(provider, listing()),
         &MatchingConfig::default(),
         &MetadataPriority::default(),
-        &tankovault_domain::TagBlocklist::default(),
+        &tankovault_domain::TermBlocklist::default(),
         &tankovault_domain::AdultTagSet::defaults(),
     )
     .await
@@ -86,7 +86,7 @@ async fn a_rescan_of_an_unchanged_listing_discovers_nothing() {
         &scanned(provider, listing()),
         &MatchingConfig::default(),
         &MetadataPriority::default(),
-        &tankovault_domain::TagBlocklist::default(),
+        &tankovault_domain::TermBlocklist::default(),
         &tankovault_domain::AdultTagSet::defaults(),
     )
     .await
@@ -112,7 +112,7 @@ async fn only_added_chapters_are_reported_and_edits_are_applied_quietly() {
         &scanned(provider, vec![chapter(1.0, Some("Old title"), "/c/1")]),
         &MatchingConfig::default(),
         &MetadataPriority::default(),
-        &tankovault_domain::TagBlocklist::default(),
+        &tankovault_domain::TermBlocklist::default(),
         &tankovault_domain::AdultTagSet::defaults(),
     )
     .await
@@ -129,7 +129,7 @@ async fn only_added_chapters_are_reported_and_edits_are_applied_quietly() {
         ),
         &MatchingConfig::default(),
         &MetadataPriority::default(),
-        &tankovault_domain::TagBlocklist::default(),
+        &tankovault_domain::TermBlocklist::default(),
         &tankovault_domain::AdultTagSet::defaults(),
     )
     .await
@@ -173,7 +173,7 @@ async fn a_listing_that_repeats_a_chapter_number_does_not_abort_the_batch() {
         ),
         &MatchingConfig::default(),
         &MetadataPriority::default(),
-        &tankovault_domain::TagBlocklist::default(),
+        &tankovault_domain::TermBlocklist::default(),
         &tankovault_domain::AdultTagSet::defaults(),
     )
     .await
@@ -225,7 +225,7 @@ async fn chapter_numbers_that_round_to_one_value_do_not_abort_the_batch() {
         ),
         &MatchingConfig::default(),
         &MetadataPriority::default(),
-        &tankovault_domain::TagBlocklist::default(),
+        &tankovault_domain::TermBlocklist::default(),
         &tankovault_domain::AdultTagSet::defaults(),
     )
     .await
@@ -259,7 +259,7 @@ async fn an_empty_chapter_list_is_a_no_op() {
         &scanned(provider, Vec::new()),
         &MatchingConfig::default(),
         &MetadataPriority::default(),
-        &tankovault_domain::TagBlocklist::default(),
+        &tankovault_domain::TermBlocklist::default(),
         &tankovault_domain::AdultTagSet::defaults(),
     )
     .await
@@ -288,7 +288,7 @@ async fn freeing_a_locked_chapter_clears_the_unlock_time_it_carried() {
         &scanned(provider, vec![chapter(1.0, None, "/c/1")]),
         &MatchingConfig::default(),
         &MetadataPriority::default(),
-        &tankovault_domain::TagBlocklist::default(),
+        &tankovault_domain::TermBlocklist::default(),
         &tankovault_domain::AdultTagSet::defaults(),
     )
     .await
@@ -363,7 +363,7 @@ async fn the_chapter_list_hides_paid_chapters_from_readers_who_have_not_bought_t
         ),
         &MatchingConfig::default(),
         &MetadataPriority::default(),
-        &tankovault_domain::TagBlocklist::default(),
+        &tankovault_domain::TermBlocklist::default(),
         &tankovault_domain::AdultTagSet::defaults(),
     )
     .await

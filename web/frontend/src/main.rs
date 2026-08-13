@@ -52,6 +52,16 @@ fn main() {
         return;
     }
 
+    // Before the staged update below and before anything touches the reader's session: a second
+    // copy of this app would rotate the *same* refresh-token family as the first, until the API's
+    // reuse detection revoked it and signed both of them out. The lock is held for the lifetime
+    // of this binding — see `platform::instance`, which also explains why a refused launch leaves
+    // a request behind rather than exiting silently.
+    let Some(_instance) = platform::acquire_instance_lock() else {
+        platform::request_activation();
+        return;
+    };
+
     // Before the window, and before anything else reads the settings file: a staged update is
     // applied by *starting* the app, so this either hands off to the installer and never returns or
     // falls through having cleared whatever it could not use. Doing it here rather than on window

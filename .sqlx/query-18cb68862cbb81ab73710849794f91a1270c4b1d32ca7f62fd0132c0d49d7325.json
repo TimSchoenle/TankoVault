@@ -1,0 +1,42 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH recent AS ( SELECT state, finished_at, row_number() OVER (ORDER BY created_at DESC) AS rn FROM scan_runs WHERE provider_id = $1 AND mode = $2::scan_mode AND state IN ('completed','failed') ORDER BY created_at DESC LIMIT $3 ) SELECT count(*) AS \"failures!\", max(finished_at) AS \"last_failed_at?\" FROM recent WHERE rn < COALESCE((SELECT min(rn) FROM recent WHERE state <> 'failed'), $3 + 1)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "failures!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "last_failed_at?",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        {
+          "Custom": {
+            "name": "scan_mode",
+            "kind": {
+              "Enum": [
+                "full",
+                "fast"
+              ]
+            }
+          }
+        },
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "18cb68862cbb81ab73710849794f91a1270c4b1d32ca7f62fd0132c0d49d7325"
+}

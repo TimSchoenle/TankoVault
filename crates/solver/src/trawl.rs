@@ -122,10 +122,7 @@ impl ChallengeSolver for TrawlSolver {
             .map_err(|e| SolveError::Malformed(e.to_string()))?;
 
         if !status.is_success() {
-            return Err(SolveError::Unsolved(describe_failure(
-                status.as_u16(),
-                &body,
-            )));
+            return Err(classify_failure(status.as_u16(), &body));
         }
 
         let parsed: ScrapeResult =
@@ -154,6 +151,23 @@ impl ChallengeSolver for TrawlSolver {
     }
 }
 
+/// Turn a non-success answer from TRAWL into the failure it actually describes.
+///
+/// The split cannot be made on "is this a 5xx", because TRAWL reports its *most ordinary*
+/// outcome — the tier ladder ran and the challenge held — as a `500` carrying
+/// `{"error": "All tiers exhausted…"}`. Only two shapes mean the tier itself could not serve
+/// the request: `429`, which is pool saturation (documented in
+/// [`describe_failure`]'s `FlareSolverr`-envelope note), and the gateway statuses, which are an
+/// intermediary or a service that is not up. Both clear on their own; everything else is the
+/// provider's answer.
+fn classify_failure(status: u16, body: &str) -> SolveError {
+    let described = describe_failure(status, body);
+    match status {
+        429 | 502..=504 => SolveError::Unavailable(described),
+        _ => SolveError::Unsolved(described),
+    }
+}
+
 /// The back-end's own description of a failed solve, falling back to the status line when the
 /// body is neither of TRAWL's error shapes — an intermediary's error page is the usual source.
 fn describe_failure(status: u16, body: &str) -> String {
@@ -168,7 +182,7 @@ fn describe_failure(status: u16, body: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::TrawlSolver;
+    use super::{TrawlSolver, classify_failure};
     use crate::types::{ChallengeKind, ChallengeSolver as _, SolveError, SolveRequest};
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -352,6 +366,11 @@ mod tests {
     /// `FlareSolverr` v2 envelope, whose text is in `message` and not `error`. Decoding only the
     /// native shape would turn the most operationally interesting failure there is — "every
     /// browser is busy" — into an anonymous status line.
+    ///
+    /// It is also [`SolveError::Unavailable`], not `Unsolved`: every browser being busy is a
+    /// statement about this deployment, not about the provider, and it clears by itself. Filed
+    /// as `Unsolved` it was neither retried nor distinguishable, in the console, from a provider
+    /// whose challenge we cannot beat.
     #[tokio::test]
     async fn a_saturated_pool_is_reported_with_its_envelope_message() {
         let server = MockServer::start().await;
@@ -372,15 +391,22 @@ mod tests {
             .await
             .expect_err("a saturated pool is a failed solve");
         match err {
-            SolveError::Unsolved(message) => {
+            SolveError::Unavailable(message) => {
                 assert_eq!(message, "Browser pool saturated, retry shortly");
             }
-            other => panic!("expected Unsolved, got {other:?}"),
+            other => panic!("expected Unavailable, got {other:?}"),
         }
+        assert!(
+            SolveError::Unavailable(String::new()).is_transient(),
+            "a busy pool is exactly the failure another attempt clears"
+        );
     }
 
     /// A failure body that is neither TRAWL error shape — an intermediary's HTML error page is
     /// the usual source — still has to name the status, or the log line says nothing at all.
+    ///
+    /// A gateway status is also the intermediary's failure, never the provider's: whatever sits
+    /// between the worker and the browser could not deliver the request at all.
     #[tokio::test]
     async fn an_unrecognised_failure_body_falls_back_to_the_status() {
         let server = MockServer::start().await;
@@ -395,10 +421,35 @@ mod tests {
             .await
             .expect_err("a bad gateway is a failed solve");
         match err {
-            SolveError::Unsolved(message) => {
+            SolveError::Unavailable(message) => {
                 assert!(message.contains("502"), "no status in: {message}");
             }
-            other => panic!("expected Unsolved, got {other:?}"),
+            other => panic!("expected Unavailable, got {other:?}"),
+        }
+    }
+
+    /// The line the split turns on, and the one a status-class rule would get backwards: TRAWL
+    /// answers its most ordinary failure — the ladder ran and the challenge held — with a `500`.
+    /// Reading 5xx as "the tier is down" would make every unbeatable challenge look like an
+    /// outage and buy it retries that re-run a full browser solve for the same verdict.
+    #[test]
+    fn an_exhausted_tier_ladder_is_the_providers_answer_however_it_is_statused() {
+        assert!(matches!(
+            classify_failure(
+                500,
+                "{\"error\":\"All tiers exhausted. Last failure: http-403\"}"
+            ),
+            SolveError::Unsolved(_)
+        ));
+        assert!(matches!(
+            classify_failure(429, "{\"message\":\"Browser pool saturated\"}"),
+            SolveError::Unavailable(_)
+        ));
+        for gateway in [502, 503, 504] {
+            assert!(
+                matches!(classify_failure(gateway, ""), SolveError::Unavailable(_)),
+                "{gateway} is an intermediary failing, not a provider answering"
+            );
         }
     }
 

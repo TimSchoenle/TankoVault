@@ -886,6 +886,107 @@ async fn a_finished_run_does_not_suppress_the_next_one() {
     }
 }
 
+/// Finish a run for `provider` in `state`, created `minutes_ago`.
+async fn a_finished_run(
+    db: &TestDb,
+    provider: ProviderId,
+    mode: ScanMode,
+    state: RunState,
+    minutes_ago: i64,
+) -> ScanRunId {
+    let run = a_run_in_flight(db, provider, mode).await;
+    scans::finish_run(&db.pool, run, state)
+        .await
+        .expect("finish run");
+    // Both the ordering and the "how long ago" half of the answer read `created_at`/`finished_at`,
+    // and rows written microseconds apart have no guaranteed order without this.
+    let at = time::OffsetDateTime::now_utc() - time::Duration::minutes(minutes_ago);
+    sqlx::query("UPDATE scan_runs SET created_at = $2, finished_at = $2 WHERE id = $1")
+        .bind(run.as_uuid())
+        .bind(at)
+        .execute(&db.pool)
+        .await
+        .expect("backdate run");
+    run
+}
+
+/// **The provider that is never left alone.** The sweep asks every active provider on every tick,
+/// so a provider whose feed has been failing for a day was still asked for it 288 times a day —
+/// at an origin answering none of them, and where the host is refusing rather than broken, those
+/// requests are the reason it keeps refusing. The scheduler's cooldown is driven entirely by this
+/// count, so each of these cases is a way the backoff silently stops working.
+#[tokio::test]
+async fn the_failure_streak_stops_at_the_last_run_that_did_not_fail() {
+    let db = TestDb::spawn().await;
+    let provider = seed::provider(&db, "alpha").create().await;
+
+    let none = scans::failure_streak(&db.pool, provider, ScanMode::Fast)
+        .await
+        .expect("query");
+    assert_eq!(none.failures, 0, "a provider with no history has no streak");
+    assert_eq!(none.last_failed_at, None);
+
+    a_finished_run(&db, provider, ScanMode::Fast, RunState::Completed, 90).await;
+    for ago in [80, 70, 60] {
+        a_finished_run(&db, provider, ScanMode::Fast, RunState::Failed, ago).await;
+    }
+    let streak = scans::failure_streak(&db.pool, provider, ScanMode::Fast)
+        .await
+        .expect("query");
+    assert_eq!(streak.failures, 3, "the run before them succeeded");
+    let last = streak.last_failed_at.expect("a failure has an instant");
+    assert!(
+        (time::OffsetDateTime::now_utc() - last) < time::Duration::minutes(61),
+        "the streak reports its *most recent* failure, which is what the cooldown counts from"
+    );
+
+    // One success ends it outright — otherwise a provider that recovered would keep serving out
+    // the cooldown its outage earned.
+    a_finished_run(&db, provider, ScanMode::Fast, RunState::Completed, 50).await;
+    assert_eq!(
+        scans::failure_streak(&db.pool, provider, ScanMode::Fast)
+            .await
+            .expect("query")
+            .failures,
+        0
+    );
+}
+
+/// The three ways a run can be present without being evidence, each of which would clear the
+/// backoff for a provider that is still failing.
+#[tokio::test]
+async fn only_this_providers_finished_runs_of_this_mode_count_toward_its_streak() {
+    let db = TestDb::spawn().await;
+    let provider = seed::provider(&db, "alpha").create().await;
+    let other = seed::provider(&db, "beta").create().await;
+
+    for ago in [40, 30] {
+        a_finished_run(&db, provider, ScanMode::Fast, RunState::Failed, ago).await;
+    }
+
+    // A run still in flight is not evidence of anything yet — and one is queued on every sweep,
+    // so counting it would clear the streak every tick and the backoff would never engage.
+    a_run_in_flight(&db, provider, ScanMode::Fast).await;
+    // The other mode, and another provider, are separate histories.
+    a_finished_run(&db, provider, ScanMode::Full, RunState::Completed, 10).await;
+    a_finished_run(&db, other, ScanMode::Fast, RunState::Completed, 10).await;
+
+    assert_eq!(
+        scans::failure_streak(&db.pool, provider, ScanMode::Fast)
+            .await
+            .expect("query")
+            .failures,
+        2
+    );
+    assert_eq!(
+        scans::failure_streak(&db.pool, other, ScanMode::Fast)
+            .await
+            .expect("query")
+            .failures,
+        0
+    );
+}
+
 // ---------------------------------------------------------------------------
 // SCAN-2 — cancellation, and the stage telemetry that explains a slow run
 // ---------------------------------------------------------------------------

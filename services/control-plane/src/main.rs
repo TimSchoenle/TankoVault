@@ -3,6 +3,7 @@
 //! full scans of active providers.
 
 mod aggregator;
+mod cooldown;
 mod dedupe;
 mod leader;
 mod reconcile;
@@ -169,6 +170,15 @@ struct SchedulerConfig {
     /// published — and a provider that is never scanned again.
     #[serde(default = "default_run_stale_after")]
     run_stale_after_secs: u64,
+    /// Ceiling on how long a provider whose runs keep failing is skipped by the sweeps. 0
+    /// disables the backoff entirely, restoring the unconditional sweep.
+    ///
+    /// Six hours by default. The sweep is what turns one broken provider into a steady stream of
+    /// requests at a site that is answering none of them, and the cooldown is the only thing that
+    /// stops it; the cost of the ceiling being *too high* is that a provider which recovered
+    /// waits up to this long to be noticed, which is why it is hours and not days.
+    #[serde(default = "default_failure_backoff_max")]
+    failure_backoff_max_secs: u64,
     /// Seconds between passes that reconcile `JetStream` against `scan_tasks`. 0 disables.
     ///
     /// This is a repair, not a schedule: it exists because dispatch and the task table can come
@@ -191,6 +201,7 @@ impl Default for SchedulerConfig {
             merge_sweep_recheck: default_merge_sweep_recheck(),
             merge_sweep_max_auto_merges: default_merge_sweep_max_auto_merges(),
             run_stale_after_secs: default_run_stale_after(),
+            failure_backoff_max_secs: default_failure_backoff_max(),
             reconcile_interval_secs: default_reconcile_interval(),
             recsys_incremental_interval_secs: default_recsys_incremental_interval(),
             recsys_full_interval_secs: default_recsys_full_interval(),
@@ -201,6 +212,22 @@ impl Default for SchedulerConfig {
 }
 
 impl SchedulerConfig {
+    /// The failure backoff for one scan mode.
+    ///
+    /// The mode's own sweep interval is the unit, so the first step is "skip one sweep" and a
+    /// deployment that sweeps hourly backs off in hours. A disabled cadence (`0`) has no sweep to
+    /// skip, so the policy is inert there whatever the ceiling says.
+    fn backoff(&self, mode: ScanMode) -> cooldown::ScanBackoff {
+        let interval = match mode {
+            ScanMode::Fast => self.fast_interval_secs,
+            ScanMode::Full => self.full_interval_secs,
+        };
+        cooldown::ScanBackoff {
+            interval: Duration::from_secs(interval),
+            max: Duration::from_secs(self.failure_backoff_max_secs),
+        }
+    }
+
     const fn merge_budget(&self) -> dedupe::SweepBudget {
         dedupe::SweepBudget {
             pairs: self.merge_sweep_pairs,
@@ -261,6 +288,12 @@ const fn default_run_stale_after() -> u64 {
     3600
 }
 
+/// Six hours: four attempts a day at a provider that is down, against 288 at the default fast
+/// cadence, while still finding it within a working day of it coming back.
+const fn default_failure_backoff_max() -> u64 {
+    21_600
+}
+
 /// Five minutes: frequent enough that a lost message costs one scan cycle rather than the hour
 /// `run_stale_after_secs` would otherwise take to release the provider, and rare enough that the
 /// pass — one broker call per lane with open work, and nothing at all when there is none — is
@@ -309,6 +342,19 @@ struct AppState {
     rotation_budget: dedupe::SweepBudget,
     /// How long an unfinished run suppresses another for the same provider and mode.
     run_stale_after: Duration,
+    /// How a provider that keeps failing is backed off, per scan mode.
+    fast_backoff: cooldown::ScanBackoff,
+    full_backoff: cooldown::ScanBackoff,
+}
+
+impl AppState {
+    /// The backoff policy for `mode`.
+    const fn backoff(&self, mode: ScanMode) -> cooldown::ScanBackoff {
+        match mode {
+            ScanMode::Fast => self.fast_backoff,
+            ScanMode::Full => self.full_backoff,
+        }
+    }
 }
 
 #[tokio::main]
@@ -389,6 +435,8 @@ async fn serve_once(
         merge_budget: cfg.scheduler.merge_budget(),
         rotation_budget: cfg.scheduler.rotation_budget(),
         run_stale_after: Duration::from_secs(cfg.scheduler.run_stale_after_secs),
+        fast_backoff: cfg.scheduler.backoff(ScanMode::Fast),
+        full_backoff: cfg.scheduler.backoff(ScanMode::Full),
         recsys_batch: cfg.scheduler.recsys_batch,
         recsys_incremental_max: cfg.scheduler.recsys_incremental_max,
     };
@@ -739,9 +787,11 @@ async fn dispatch_run(
 /// but planning nothing — a lost leader, a flag left off — is otherwise indistinguishable
 /// from an idle deployment.
 ///
-/// `result` is one of `planned`, `duplicate`, `coalesced` or `error`. A provider scanning more
-/// slowly than it is swept shows up as a steady stream of `coalesced` and no `planned`, which is
-/// the signal to look at its crawl budget or its feed size rather than at the scheduler.
+/// `result` is one of `planned`, `duplicate`, `coalesced`, `cooling_down` or `error`. A provider
+/// scanning more slowly than it is swept shows up as a steady stream of `coalesced` and no
+/// `planned`, which is the signal to look at its crawl budget or its feed size rather than at the
+/// scheduler. A steady stream of `cooling_down` is the other shape worth a panel: that provider
+/// is not being scanned at all, and the reason is its own failure streak.
 fn planned(provider_slug: &str, mode: ScanMode, result: &'static str) {
     metrics::counter!(
         "scan_runs_planned_total",
@@ -981,6 +1031,38 @@ async fn maybe_sweep(state: &AppState, leadership: &leader::Leadership, mode: Sc
     }
 }
 
+/// Whether `provider` is still serving out a cooldown earned by consecutive failed runs.
+///
+/// Only the **sweep** consults this. An operator pressing "Scan now" is asking a question the
+/// backoff exists to stop *us* asking, and the answer they want is the current one — so
+/// [`trigger_scan`] goes straight to [`plan_run`] and a manual run also ends the streak the
+/// moment it succeeds.
+async fn cooling_down(
+    state: &AppState,
+    provider: &Provider,
+    mode: ScanMode,
+) -> anyhow::Result<bool> {
+    let streak = tankovault_db::repo::scans::failure_streak(&state.pool, provider.id, mode).await?;
+    let Some(remaining) = state
+        .backoff(mode)
+        .remaining(streak, time::OffsetDateTime::now_utc())
+    else {
+        return Ok(false);
+    };
+
+    // At `debug`, not `warn`: once a provider is down this fires every tick, and the failure it
+    // reports is already in the triage feed. The counter below is what carries it to a panel.
+    tracing::debug!(
+        provider = %provider.slug,
+        ?mode,
+        failures = streak.failures,
+        remaining_secs = remaining.as_secs(),
+        "skipping the sweep; provider is backing off after consecutive failed runs"
+    );
+    planned(&provider.slug, mode, "cooling_down");
+    Ok(true)
+}
+
 async fn sweep(state: &AppState, mode: ScanMode) {
     let started = std::time::Instant::now();
     let providers = match tankovault_db::repo::providers::list(&state.pool).await {
@@ -994,6 +1076,20 @@ async fn sweep(state: &AppState, mode: ScanMode) {
         .iter()
         .filter(|p| p.state == tankovault_domain::ProviderState::Active)
     {
+        match cooling_down(state, provider, mode).await {
+            Ok(false) => {}
+            Ok(true) => continue,
+            Err(e) => {
+                // The streak is an optimisation on politeness, not a precondition for scanning:
+                // a provider must not stop being scanned because one read failed.
+                tracing::warn!(
+                    provider = %provider.slug,
+                    error = %e,
+                    next = "planning the run anyway; the backoff resumes on the next sweep",
+                    "scheduler: could not read the provider's failure streak"
+                );
+            }
+        }
         if let Err(e) = plan_run(state, provider, mode).await {
             tracing::warn!(provider = %provider.slug, error = %e, "scheduler: plan failed");
             planned(&provider.slug, mode, "error");

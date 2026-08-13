@@ -404,6 +404,41 @@ The worker acts on that split:
   whatever the first attempt did manage.
 - **Permanent** — the task is failed with its error recorded, exactly as before.
 
+### Three refusals that look like ordinary answers
+
+Each of these arrives wearing a status that means something else, and each was diagnosed as the
+wrong problem until it was classified on its own terms.
+
+- **The site is not being served at all.** An origin whose application is down answers from its
+  web server's *built-in* error document — a few hundred bytes of bare nginx or Apache — and it
+  does so for every route, `/` included. Read as the `404` it wears, that says "the feed moved",
+  which is why the first investigation went looking for a renamed route.
+  [`default_error_page_server`](../crates/solver/src/detection.rs) recognises the compiled-in
+  markup under a size cap, and `AdapterError::Unserved` says what it means. A site's *own* 404 —
+  its theme, its navigation, tens of kilobytes — is untouched by this and stays a plain `404`,
+  because there the path really is gone.
+
+  It is deliberately **not** transient. A dead origin does recover, but not within a run and not
+  on the delivery ladder's timescale, so three deliveries only triple the requests it is already
+  ignoring. Coming back later is the scheduler's decision, taken per provider with a growing
+  cooldown (docs/OPERATIONS.md §7).
+- **Our own solver was not there.** A saturated browser pool or a restarting solver replica is
+  this deployment's transient, not the provider's answer — but both used to arrive as
+  `SolveError::Unsolved`, whose message reads *"solver could not bypass the challenge"*. Two
+  providers spent a day reported as hostile while their APIs answered `200` to a plain request.
+  `SolveError::Unavailable` is now separate, the `/v1/solve` contract carries the distinction in
+  its status (`5xx` unavailable, `4xx` unsolved, so a gateway's own `502` cannot be mistaken for
+  a verdict), and `RetryingSolver` repeats a solve the tier could not serve — never one the
+  provider defeated, which would re-run a full browser solve for the same result.
+- **The origin refused our headers.** A solver hands back a *browser's* cookie jar, which on a
+  site with an analytics stack accumulates cookies the site never reads. Replayed in full it can
+  outgrow the origin's header buffer, and nginx answers `400 Request Header Or Cookie Too Large`
+  — from its own error page, so it is invisible unless something reads it. The replayed `Cookie`
+  header is now capped, keeping the clearance and session cookies when something has to go, and a
+  session the origin refuses on those grounds is dropped and the request retried without it.
+  Expiry alone could not recover: the refused session is replayed on every request until its TTL
+  lapses.
+
 ### A failure has to be readable from the console
 
 A scan is watched from a log, so a failure answers three questions on one line: what was

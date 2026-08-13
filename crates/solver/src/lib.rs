@@ -13,7 +13,10 @@ pub mod http;
 mod trawl;
 mod types;
 
-pub use detection::{ResponseView, detect_challenge, detect_challenge_body, is_rate_limit_page};
+pub use detection::{
+    ResponseView, default_error_page_server, detect_challenge, detect_challenge_body,
+    is_rate_limit_page,
+};
 pub use fake::StaticSolver;
 pub use trawl::TrawlSolver;
 pub use types::{ChallengeKind, ChallengeSolver, SolveError, SolveOutcome, SolveRequest};

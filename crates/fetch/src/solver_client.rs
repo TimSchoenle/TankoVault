@@ -113,11 +113,20 @@ impl ChallengeSolver for HttpChallengeSolver {
             }
         })?;
 
-        if !resp.status().is_success() {
-            return Err(SolveError::Unsolved(format!(
-                "challenge-solver returned {}",
-                resp.status()
-            )));
+        let status = resp.status();
+        if !status.is_success() {
+            let described = format!("challenge-solver returned {status}");
+            // The service answers `5xx` (and a saturated gateway's `429`) when the tier could not
+            // serve the solve, and `4xx` when it served it and the challenge held —
+            // `tankovault_solver::http` owns that mapping and documents why the two ranges are
+            // kept apart. Reading every non-success as `Unsolved` is what reported a solver
+            // outage as "solver could not bypass the challenge" against providers that were, at
+            // that moment, answering `200` to a plain request.
+            return Err(if status.is_server_error() || status.as_u16() == 429 {
+                SolveError::Unavailable(described)
+            } else {
+                SolveError::Unsolved(described)
+            });
         }
         resp.json::<SolveOutcome>()
             .await

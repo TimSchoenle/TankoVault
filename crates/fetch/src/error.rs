@@ -15,9 +15,17 @@ pub enum FetchError {
     /// A challenge was detected and could not be solved within budget.
     #[error("unsolved challenge: {0:?}")]
     Challenge(ChallengeKind),
-    /// The solver back-end errored.
+    /// The solver ran and the challenge held.
     #[error("solver error: {0}")]
     Solver(String),
+    /// The solver tier could not serve the solve at all — the service is down, its browser pool
+    /// is saturated, or it is shedding load.
+    ///
+    /// Separate from [`Self::Solver`] because the two say opposite things about the provider.
+    /// This one says nothing about it: the request never reached a browser. Reported as one
+    /// failure, a solver outage read as every gated provider having turned hostile at once.
+    #[error("solver unavailable: {0}")]
+    SolverUnavailable(String),
     /// The request timed out.
     #[error("request timed out")]
     Timeout,
@@ -37,6 +45,12 @@ pub enum FetchError {
 
 impl FetchError {
     /// Whether a retry could plausibly succeed (timeouts, transport blips, 5xx).
+    ///
+    /// Scoped to what [`crate::RetryingFetcher`] can act on, which is the innermost layer — below
+    /// the solver. [`Self::SolverUnavailable`] is therefore deliberately absent even though it is
+    /// transient in the ordinary sense: it is raised *above* the retrying layer, and repeating it
+    /// is [`crate::RetryingSolver`]'s job in-stack and `AdapterError::is_transient`'s across task
+    /// deliveries. Listing it here would read as a policy nothing implements.
     #[must_use]
     pub fn is_transient(&self) -> bool {
         matches!(

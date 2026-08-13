@@ -22,7 +22,7 @@ use tankovault_config::MatchingConfig;
 use tankovault_contracts::sync::{AccountSettings, AccountStatus, ProviderInfo};
 use tankovault_db::PgPool;
 use tankovault_db::repo::sync;
-use tankovault_domain::{MetadataPriority, SeriesId, TagBlocklist, UserId};
+use tankovault_domain::{MetadataPriority, SeriesId, TermBlocklist, UserId};
 
 use crate::mapping::ConflictPolicy;
 use crate::provider::ExternalProvider;
@@ -64,7 +64,7 @@ impl SyncEngine {
         secret: Sealer,
         default_policy: ConflictPolicy,
         metadata_priority: MetadataPriority,
-        tag_blocklist: TagBlocklist,
+        term_blocklist: TermBlocklist,
         matching: &MatchingConfig,
         providers: HashMap<&'static str, Box<dyn ExternalProvider>>,
     ) -> Self {
@@ -87,7 +87,7 @@ impl SyncEngine {
         let metadata = Arc::new(MetadataWriter::new(
             pool.clone(),
             metadata_priority,
-            tag_blocklist,
+            term_blocklist,
         ));
 
         Self {

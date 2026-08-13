@@ -8,7 +8,7 @@
 //! The two never share a column: see migration 0040 for why an `AniList` refresh must not be able
 //! to clear a verdict this made, and why this may only ever answer "yes".
 
-use crate::tag_filter::slugify;
+use crate::term_filter::slugify;
 use std::collections::HashSet;
 
 /// Genre chips that classify a work as adult, as slugs.
@@ -45,7 +45,7 @@ pub const DEFAULT_ADULT_TAGS: &[&str] = &[
 
 /// The terms whose presence on a scanned series marks it adult.
 ///
-/// Never empty: unlike [`crate::TagBlocklist`], there is no configuration that switches this
+/// Never empty: unlike [`crate::TermBlocklist`], there is no configuration that switches this
 /// off. An operator who wants adult series visible turns on the deployment flag or leaves the
 /// reader's opt-in available — both of which are decisions recorded somewhere a person can
 /// audit, where an emptied classifier would just silently stop classifying.
@@ -124,7 +124,7 @@ impl AdultTagSet {
 #[cfg(test)]
 mod tests {
     use super::{AdultTagSet, DEFAULT_ADULT_TAGS};
-    use crate::tag_filter::slugify;
+    use crate::term_filter::slugify;
 
     #[test]
     fn shipped_terms_are_already_slugs() {

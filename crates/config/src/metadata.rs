@@ -1,11 +1,11 @@
 //! The `metadata` section as far as every writer of series metadata cares: who owns each field,
-//! and which scraped terms are not tags at all.
+//! and which scraped terms are not the thing they were scraped as.
 
 use serde::Deserialize;
-use tankovault_domain::{MetadataPriority, TagBlocklist};
+use tankovault_domain::{MetadataPriority, TermBlocklist};
 
-/// Per-field source authority and the intake tag guard, read by **both** the worker's ingest
-/// path and external sync's enrichment writer.
+/// Per-field source authority and the intake vocabulary guard, read by **both** the worker's
+/// ingest path and external sync's enrichment writer.
 ///
 /// Shared deliberately, for the same reason as [`crate::MatchingConfig`]: the two paths write
 /// the same columns, and a rule only one of them consults is not a rule. The sync service
@@ -16,15 +16,15 @@ use tankovault_domain::{MetadataPriority, TagBlocklist};
 ///
 /// // Shipped defaults refuse the placeholder a scrape template leaves behind.
 /// let config = MetadataPriorityConfig::default();
-/// assert!(config.tag_blocklist().blocks("Updating"));
-/// assert!(!config.tag_blocklist().blocks("Romance"));
+/// assert!(config.term_blocklist().blocks("Updating"));
+/// assert!(!config.term_blocklist().blocks("Romance"));
 /// ```
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct MetadataPriorityConfig {
     /// Per-field source authority order (default: `AniList` before the adapters).
     #[serde(default)]
     pub priority: MetadataPriority,
-    /// Tag guard: which scraped terms intake refuses.
+    /// Vocabulary guard: which scraped terms intake refuses, as tags and as credits alike.
     #[serde(default)]
     pub tags: TagIntakeConfig,
 }
@@ -35,7 +35,7 @@ impl MetadataPriorityConfig {
     /// Built per call rather than cached: intake reads it once per scan, not per tag, and a
     /// stored copy is one more thing a config reload has to remember to replace.
     #[must_use]
-    pub fn tag_blocklist(&self) -> TagBlocklist {
+    pub fn term_blocklist(&self) -> TermBlocklist {
         self.tags.blocklist()
     }
 }
@@ -49,11 +49,11 @@ impl MetadataPriorityConfig {
 /// single term silently loses the rest.
 #[derive(Debug, Clone, Deserialize)]
 pub struct TagIntakeConfig {
-    /// Whether the shipped [`tankovault_domain::DEFAULT_BLOCKED_TAGS`] apply.
+    /// Whether the shipped [`tankovault_domain::DEFAULT_BLOCKED_TERMS`] apply.
     ///
     /// An escape hatch for a deployment whose catalogue genuinely uses one of them as a genre.
-    /// Turning it off does not remove tags already stored — nothing retracts a tag link — but
-    /// stops it being refused from the next scan onwards.
+    /// Turning it off does not remove what is already stored — nothing in the normal path
+    /// retracts a tag or a credit — but stops it being refused from the next scan onwards.
     #[serde(default = "crate::default_true")]
     pub use_defaults: bool,
     /// Additional refused terms, matched on their slug: `N/A`, `n/a` and `n-a` are one entry.
@@ -82,13 +82,13 @@ impl Default for TagIntakeConfig {
 impl TagIntakeConfig {
     /// Resolve the two lists into the guard intake applies.
     #[must_use]
-    pub fn blocklist(&self) -> TagBlocklist {
+    pub fn blocklist(&self) -> TermBlocklist {
         let defaults = if self.use_defaults {
-            tankovault_domain::DEFAULT_BLOCKED_TAGS
+            tankovault_domain::DEFAULT_BLOCKED_TERMS
         } else {
             &[]
         };
-        TagBlocklist::new(
+        TermBlocklist::new(
             defaults
                 .iter()
                 .map(|term| (*term).to_owned())
@@ -148,7 +148,7 @@ mod tests {
     fn an_absent_section_still_guards() {
         assert!(
             MetadataPriorityConfig::default()
-                .tag_blocklist()
+                .term_blocklist()
                 .blocks("Status")
         );
     }

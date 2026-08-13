@@ -112,7 +112,7 @@ async fn ingest(db: &TestDb, provider_id: ProviderId, seed: &Seed, chapters: &[f
         },
         &MatchingConfig::default(),
         &MetadataPriority::default(),
-        &tankovault_domain::TagBlocklist::default(),
+        &tankovault_domain::TermBlocklist::default(),
         &tankovault_domain::AdultTagSet::defaults(),
     )
     .await

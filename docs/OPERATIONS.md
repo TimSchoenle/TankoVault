@@ -663,6 +663,41 @@ The reconciler is **not** gated on the `scanning.scheduler` feature flag. That f
 scans being planned; it is what an operator reaches for during an incident, which is exactly when
 the runs already in flight most need to be able to finish. A repair creates no new work.
 
+### A provider that keeps failing is asked less often
+
+The sweep is otherwise unconditional — every active provider, every tick — which is right while
+providers work and wrong the moment one stops, because nothing else in the pipeline slows down. A
+platform whose nine installs went down together was still being asked for its feed 288 times a
+day each, at origins answering an infrastructure error page to every request. Those requests
+cannot succeed; they bury the rest of the failure feed under one repeated row; and where the host
+is *refusing* rather than broken, they are the reason it keeps refusing.
+
+So the sweep now consults the provider's own recent history first, per scan mode:
+
+- **Two** consecutive failed runs are tolerated at the normal cadence. One failure is noise, and
+  backing off on it would slow the scanner exactly when it needs to find out whether the failure
+  repeats.
+- Past that, each further consecutive failure doubles the wait, starting from that mode's sweep
+  interval and stopping at `scheduler.failure_backoff_max_secs` (default six hours; `0` disables
+  the policy entirely). At the defaults a provider that is simply down settles at four attempts a
+  day rather than 288.
+- The wait is measured **from the last failure**, so serving it out is what releases the
+  provider. One successful run ends the streak outright.
+
+The streak is derived from `scan_runs` — the runs are the record, and a second copy of it would
+be one more thing to keep true. Runs still in flight do not count, or a queued run would clear
+the backoff on every sweep.
+
+**"Scan now" is never held back.** An operator asking for a run is asking the question the
+backoff exists to stop *us* asking, and they want the current answer; the manual path plans
+unconditionally, and its success ends the streak like any other.
+
+**What to watch.** `scan_runs_planned_total{provider,scan,result="cooling_down"}` counts the
+skips. A provider producing a steady stream of them is not being scanned at all, and the reason
+is its own failure streak — the triage feed says what the failures were. The skip itself logs at
+`DEBUG`, deliberately: once a provider is down it happens every tick, and the failure is already
+recorded elsewhere.
+
 ---
 
 ## 8. Legal documents

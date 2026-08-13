@@ -149,6 +149,8 @@ pub mod names {
 
     /// Challenge solve attempts, by result. Emitted by `crates/solver`.
     pub const SOLVE_ATTEMPTS: &str = "solve_attempts_total";
+    /// Solves repeated because the solver tier could not serve them. Emitted by `crates/fetch`.
+    pub const SOLVE_RETRIES: &str = "solve_retries_total";
     /// Headless render requests, by result. Emitted by `services/render`.
     pub const RENDER_REQUESTS: &str = "render_requests_total";
 }
@@ -527,7 +529,14 @@ pub const CATALOGUE: &[Metric] = &[
         kind: Kind::Counter,
         unit: Unit::Count,
         emitted_by: "challenge-solver, render",
-        help: "Challenge solve attempts by result (ok, error, rejected). rejected is an SSRF refusal, not a failure to solve.",
+        help: "Challenge solve attempts by result (ok, unavailable, error, rejected). unavailable is the tier failing to run the solve; error is a challenge it ran and could not beat; rejected is an SSRF refusal.",
+    },
+    Metric {
+        name: names::SOLVE_RETRIES,
+        kind: Kind::Counter,
+        unit: Unit::Count,
+        emitted_by: "worker",
+        help: "Solves repeated because the solver tier was unavailable, by provider. A sustained rate is a solver tier too small for its load, not a provider getting harder.",
     },
     Metric {
         name: names::RENDER_REQUESTS,

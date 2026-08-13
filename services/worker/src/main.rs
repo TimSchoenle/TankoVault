@@ -232,7 +232,7 @@ async fn build(cfg: &Config) -> anyhow::Result<Built> {
 
     // The worker's *outbound* credential, distinct from what it accepts inbound: the solver
     // recognises `worker` by this and nothing else in the tier presents it.
-    let solver: Arc<dyn ChallengeSolver> = Arc::new(match internal_auth.tls.as_ref() {
+    let endpoint: Arc<dyn ChallengeSolver> = Arc::new(match internal_auth.tls.as_ref() {
         Some(paths) => HttpChallengeSolver::with_mtls(
             cfg.worker.challenge_solver_endpoint.clone(),
             Duration::from_secs(90),
@@ -244,6 +244,13 @@ async fn build(cfg: &Config) -> anyhow::Result<Built> {
             internal_auth.caller.as_ref().and_then(|c| c.token.clone()),
         ),
     });
+    // Wrapped here rather than inside the client: what is being repeated is *the solve*, and the
+    // policy has to hold for whichever back-end a deployment mounts. A solver replica restarting
+    // or a browser pool briefly full is this deployment's transient, not the provider's answer,
+    // and it used to cost the fetch outright.
+    let solver: Arc<dyn ChallengeSolver> = Arc::new(
+        tankovault_fetch::RetryingSolver::with_default_budget(endpoint),
+    );
     let session_store: Arc<dyn SessionStore> = Arc::new(InMemorySessionStore::default());
 
     let engine = Engine::new(
@@ -256,7 +263,7 @@ async fn build(cfg: &Config) -> anyhow::Result<Built> {
             max_catalog_pages: cfg.worker.max_catalog_pages,
             matching: cfg.matching.clone(),
             metadata_priority: cfg.metadata.priority.clone(),
-            tag_blocklist: cfg.metadata.tag_blocklist(),
+            term_blocklist: cfg.metadata.term_blocklist(),
             adult_tags: cfg.metadata.tags.adult_tags(),
             outliers: cfg.chapter_outliers.policy(),
             bot_user_agent: cfg.branding.bot_user_agent.clone(),

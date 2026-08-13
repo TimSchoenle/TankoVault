@@ -290,10 +290,14 @@ pub async fn mark_profile_stale<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId)
     Ok(())
 }
 
-/// Mark every profile that tracks either series as stale.
+/// Mark every profile that tracks any of these series as stale.
 ///
-/// Used by the merge path: both sides' readers now have a profile built from a series that no
-/// longer exists, or from one whose features just changed.
+/// Called by the incremental build once it has re-extracted a set: those readers' profiles are
+/// weighted against feature ids the series may no longer carry. The merge and undo paths do the
+/// same thing inline instead, because they must do it inside their own transaction and key it on
+/// `user_series_affinity` rather than the watchlist — the loser's watchlist rows have already
+/// been folded into the survivor's by the time they get there, while the affinity rows naming it
+/// have not.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.

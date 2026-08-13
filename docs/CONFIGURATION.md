@@ -378,32 +378,39 @@ lets a later write honour the order at all. Values written before that migration
 Only `anilist` and `adapter` are accepted; anything else is a startup error rather than a
 silently ignored entry, so a typo cannot read as deliberate de-prioritisation.
 
-### `metadata.tags` — which scraped "genres" are refused
+### `metadata.tags` — which scraped terms are refused
 
-Aggregator templates put a work's genre chips next to its status, its type and the labels of the
-summary block itself, and an adapter that scrapes the block scrapes all of it. What reached the
-catalogue was a tag called `Updating`, one called `Status`, one called `Manga`. They are not
-merely useless: each becomes a facet chip in Discover, a term in the recommender's vocabulary,
-and — because a term shared by half the catalogue looks like strong evidence to a similarity
-model — a feature that makes unrelated series look alike. This is the same defect migration
-`0025` repaired for `series_titles`, where the same labels had leaked in as alternative titles.
+Aggregator templates put a work's genre chips next to its status, its type, its credits and the
+labels of the summary block itself, and an adapter that scrapes the block scrapes all of it. What
+reached the catalogue was a tag called `Updating`, one called `Status`, one called `Manga` — and,
+from the row directly below, an *author* called `Updating`. They are not merely useless: each
+becomes a facet chip in Discover, a credit on a series page, a term in the recommender's
+vocabulary, and — because a term shared by half the catalogue looks like strong evidence to a
+similarity model — a feature that makes unrelated series look alike. This is the same defect
+migration `0025` repaired for `series_titles`, where the same labels had leaked in as alternative
+titles.
 
-Both writers apply the guard: the worker's catalogue scan and external sync's enrichment pass
-intern into one shared `tags` vocabulary, so a guard only one of them consulted would not be one.
-It is applied at the statement that creates the tag, so a refused term never reaches the table.
+The guard covers both shared vocabularies, tags and author/artist credits, and both writers apply
+it: the worker's catalogue scan and external sync's enrichment pass intern into the same tables,
+so a guard only one of them consulted would not be one. It is applied at the statement that
+creates the row, so a refused term never reaches either table. Credits were guarded from
+migration `0053` onwards, which also prunes what the unguarded writer had already stored — until
+then a placeholder credit was the recommender's *strongest* feature, since author is its heaviest
+axis and its one exact-match retrieval path.
 
 Terms are matched on their **slug**, so `N/A`, `n/a` and `n-a` are one entry. The two lists add
 rather than replace: `BLOCKLIST` is what *this* deployment's providers turn out to emit on top of
 the shipped set, so adding one term does not silently drop the rest. The shipped defaults are
 three kinds and nothing arguable — placeholders (`updating`, `unknown`, `n-a`), scrape-template
 field labels (`status`, `genres`, `alternative`, `author`) and medium words that describe the
-format rather than the work (`manga`, `webtoon`); see `tankovault_domain::DEFAULT_BLOCKED_TAGS`
+format rather than the work (`manga`, `webtoon`); see `tankovault_domain::DEFAULT_BLOCKED_TERMS`
 for the list. Publication status (`completed`, `ongoing`) is deliberately **not** refused: it is
 a column rather than a tag, but some catalogues do publish it as a browsable facet.
 
-The guard runs at intake only. Tags already linked stay linked — nothing in the normal path
-retracts a tag — so switching a term on refuses it from the next scan onwards rather than
-cleaning up after the last one.
+The guard runs at intake only. Tags and credits already linked stay linked — nothing in the
+normal path retracts either — so switching a term on refuses it from the next scan onwards rather
+than cleaning up after the last one. Migration `0053` is the one exception, and only for the
+shipped defaults.
 
 | Key | Default | Services | Notes |
 |---|---|---|---|
@@ -584,6 +591,7 @@ that can disagree.
 | `TANKOVAULT_SCHEDULER__FAST_INTERVAL_SECS` | `300` | Seconds between fast-scan sweeps of every active provider. `0` disables. |
 | `TANKOVAULT_SCHEDULER__FULL_INTERVAL_SECS` | `0` (disabled) | Full scans are normally on demand. |
 | `TANKOVAULT_SCHEDULER__RUN_STALE_AFTER_SECS` | `3600` | How long an unfinished run keeps the planner from starting another for the same provider and mode — including from `POST /internal/scans`, which answers with the in-flight run's id rather than queueing a second one. Coalescing is what stops a provider whose scan outlasts the sweep interval from accruing one identical queued run per tick; this value only bounds it, because a run that can never settle (a task persisted but never published) would otherwise suppress that provider's scans permanently. Raise it above the longest scan you expect a single provider to take — past it a *healthy* long run stops suppressing, and the duplicates come back. |
+| `TANKOVAULT_SCHEDULER__FAILURE_BACKOFF_MAX_SECS` | `21600` (6 h) | Ceiling on how long the sweeps skip a provider whose runs keep failing. `0` restores the unconditional sweep. The sweep asks every active provider on every tick, which is right while they work and wrong the moment one stops: a provider whose feed has been answering an infrastructure error page for a day was still asked for it 288 times a day, at a site serving none of them — and against a host that is *refusing* rather than broken, those requests are the reason it keeps refusing. The cooldown starts after **two** consecutive failed runs of that mode (one is noise) and doubles per further failure from the mode's own sweep interval up to this ceiling, measured from the last failure. Only the scheduled sweep consults it: "Scan now" always plans, and one successful run ends the streak. The cost of setting it too high is that a provider which recovered waits up to this long to be noticed, which is why the default is hours rather than days. Watch `scan_runs_planned_total{result="cooling_down"}`. |
 | `TANKOVAULT_SCHEDULER__RECONCILE_INTERVAL_SECS` | `300` | Seconds between passes that reconcile the broker's task queues against the `scan_tasks` table. `0` disables. This is a repair, not a schedule: JetStream is the truth for dispatch and the table is the truth for progress, and they can come apart with no failure visible on either side — a publish that never landed, a stream purged or recreated, a worker that acked and then died. Each pass compares a provider lane's open rows against the message count the broker actually holds for it and republishes only the difference, then closes runs whose tasks have all settled and fails runs that never planned one. Republishing is safe when it is unnecessary: the second delivery finds the task claimed or settled and is declined. Turning it off means a lost message costs the run, and the provider's next run of that mode until `RUN_STALE_AFTER_SECS`. |
 | `TANKOVAULT_SCHEDULER__MERGE_SWEEP_INTERVAL_SECS` | `3600` | Seconds between **full** duplicate-reconciliation sweeps. `0` disables. This is the cadence of *discovery* — blocking the whole catalogue on the compact title key, which costs the same whether anything changed or not. Hourly rather than per-scan because what discovery is waiting for, enrichment giving a series its authors, year and alternative titles, happens on the order of hours. Also gated by the `scanning.auto_merge` feature flag. |
 | `TANKOVAULT_SCHEDULER__MERGE_SWEEP_ROTATION_INTERVAL_SECS` | `900` | Seconds between **rotation-only** sweeps — the requeue and recheck budgets below, with no discovery. `0` disables. Both are index scans bounded by their own budgets, so they are cheap enough to run between full sweeps, and re-scoring is the mechanism by which a pair that was genuinely ambiguous becomes an automatic merge once enrichment has filled both sides in. Tied to the discovery cadence, a queue of a few thousand rows took most of a day to turn over once. The automatic-merge ceiling below is scaled by `ROTATION_INTERVAL / INTERVAL` for these passes, so running them more often does not raise how many series the sweeps may delete per hour. |

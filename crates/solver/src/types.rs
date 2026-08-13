@@ -83,14 +83,45 @@ pub enum SolveError {
     #[error("solver transport error: {0}")]
     Transport(String),
     /// The back-end ran but could not defeat the challenge.
+    ///
+    /// A statement about the *provider*: it is challenging us and the challenge held. Reserve it
+    /// for that — see [`Self::Unavailable`] for the failure that looks identical from a call site
+    /// and means the opposite.
     #[error("solver could not bypass the challenge: {0}")]
     Unsolved(String),
+    /// The solver tier itself is not able to serve solves right now — the service is down, its
+    /// browser pool is exhausted, or it is shedding load.
+    ///
+    /// Distinct from [`Self::Unsolved`] because the two lead to opposite conclusions and used to
+    /// be reported identically. A challenge that cannot be beaten is the provider's answer, and
+    /// re-asking is pointless; a solver that is not there says nothing about the provider at all,
+    /// and the same request will very likely succeed once it is back. Collapsing them made a
+    /// solver outage read, in the operator's failure feed, as nine providers having turned
+    /// hostile — and, because it is not transient, cost every affected fetch its retries.
+    #[error("solver back-end unavailable: {0}")]
+    Unavailable(String),
     /// The back-end exceeded its time budget.
     #[error("solver timed out")]
     Timeout,
     /// The back-end response could not be parsed.
     #[error("malformed solver response: {0}")]
     Malformed(String),
+}
+
+impl SolveError {
+    /// Whether another attempt could plausibly succeed without anything changing at the provider.
+    ///
+    /// Only failures of *our* tier qualify. [`Self::Unsolved`] does not: the back-end ran, the
+    /// provider answered, and repeating that exchange re-runs an expensive browser solve for the
+    /// same verdict. [`Self::Malformed`] does not either — a back-end whose response cannot be
+    /// decoded is a broken contract, which a retry reproduces exactly.
+    #[must_use]
+    pub const fn is_transient(&self) -> bool {
+        matches!(
+            self,
+            Self::Transport(_) | Self::Unavailable(_) | Self::Timeout
+        )
+    }
 }
 
 /// The pluggable bypass contract. Implementations: [`super::TrawlSolver`]

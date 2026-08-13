@@ -29,6 +29,8 @@ compile_error!("exactly one of the `web` or `desktop` features must be enabled")
 
 #[cfg(feature = "desktop")]
 mod desktop;
+#[cfg(feature = "desktop")]
+mod instance;
 #[cfg(feature = "web")]
 mod web;
 
@@ -40,6 +42,15 @@ use web as imp;
 /// A live server-sent-event subscription. See [`subscribe`].
 pub(crate) use imp::EventStream;
 
+#[cfg(feature = "desktop")]
+pub(crate) use desktop::{
+    autostart_enabled, autostart_supported, close_to_tray_enabled, credential_delete,
+    credential_get, credential_set, fit_window_to_display, notifications_enabled, notify,
+    notify_now, quit_app, server_origin, set_autostart, set_close_to_tray,
+    set_notifications_enabled, set_server_origin, set_window_heading, set_window_hides_on_close,
+    settings_path, show_window, tray_supported, use_tray_commands, window, Tray, TrayCommand,
+    ROOT_ATTRIBUTES, STARTUP_INNER_SIZE, WINDOW_HEADING,
+};
 /// Desktop-only surface: there is no browser equivalent to reach for, so these have no
 /// counterpart on the other side and their callers are `#[cfg]`-gated too.
 ///
@@ -63,15 +74,12 @@ pub(crate) use imp::EventStream;
 /// `settings.json` would be a bearer credential readable by every process running as the reader.
 /// Never for the access token, which stays in memory on both sides. See
 /// [`crate::api::session_store`].
+///
+/// The instance lock is the same story a third time: a browser tab may be opened twice and a
+/// desktop app may not, because the second copy shares the first one's credential entry and the
+/// rotation family behind it. `instance` says what that costs and why the lock is an OS handle.
 #[cfg(feature = "desktop")]
-pub(crate) use desktop::{
-    autostart_enabled, autostart_supported, close_to_tray_enabled, credential_delete,
-    credential_get, credential_set, fit_window_to_display, notifications_enabled, notify,
-    notify_now, quit_app, server_origin, set_autostart, set_close_to_tray,
-    set_notifications_enabled, set_server_origin, set_window_heading, set_window_hides_on_close,
-    settings_path, show_window, tray_supported, use_tray_commands, window, Tray, TrayCommand,
-    ROOT_ATTRIBUTES, STARTUP_INNER_SIZE, WINDOW_HEADING,
-};
+pub(crate) use instance::{acquire_instance_lock, request_activation, take_activation_request};
 
 /// Web-only surface: the router's history provider, handed to the renderer in `main`.
 ///

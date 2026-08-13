@@ -59,6 +59,15 @@ struct Settings {
     values: BTreeMap<String, String>,
 }
 
+/// This app's config directory, or `None` where the platform exposes none.
+///
+/// The one place the directory is named, because two things live in it that must agree on where
+/// it is: the settings document, and the single-instance lock in [`super::instance`].
+pub(super) fn config_dir() -> Option<PathBuf> {
+    directories::ProjectDirs::from("dev", "", "TankoVault")
+        .map(|dirs| dirs.config_dir().to_path_buf())
+}
+
 fn settings() -> &'static RwLock<Settings> {
     static SETTINGS: OnceLock<RwLock<Settings>> = OnceLock::new();
     SETTINGS.get_or_init(|| RwLock::new(Settings::load()))
@@ -67,8 +76,7 @@ fn settings() -> &'static RwLock<Settings> {
 impl Settings {
     /// Read the settings document once, tolerating every way it can be absent or unreadable.
     fn load() -> Self {
-        let path = directories::ProjectDirs::from("dev", "", "TankoVault")
-            .map(|dirs| dirs.config_dir().join(SETTINGS_FILE_NAME));
+        let path = config_dir().map(|dir| dir.join(SETTINGS_FILE_NAME));
         let values = path
             .as_ref()
             .and_then(|path| std::fs::read_to_string(path).ok())

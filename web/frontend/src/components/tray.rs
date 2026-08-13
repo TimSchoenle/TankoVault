@@ -8,6 +8,12 @@
 //! the window hides instead of closing **and** there is something in the tray to bring it back.
 //! Either one alone is a defect — a hidden window with no tray entry is an app that has to be
 //! killed from the task manager — so both are decided here, from one signal.
+//!
+//! The loop below carries one thing that is not the tray's: a launch refused by the
+//! single-instance lock leaves an activation request behind, and this is where it is answered.
+//! It lives here because raising the window needs the `DesktopContext` captured at mount, which
+//! this component already holds for the tray's own Open entry — a second loop would exist only to
+//! capture the same handle again.
 
 use crate::i18n::use_i18n;
 use crate::platform::{self, Tray, TrayCommand};
@@ -19,8 +25,11 @@ use dioxus::prelude::*;
 const POLL_MS: u32 = 250;
 
 /// How long the loop waits when there is no tray at all — the common case, since the switch is
-/// off by default. Nothing can arrive on the queues, so this is a heartbeat and not a poll.
-const IDLE_POLL_MS: u32 = 2_000;
+/// off by default. Nothing can arrive on the tray's queues then, but the activation request can,
+/// so this is the delay a reader waits between launching the app a second time and their existing
+/// window coming forward. Half a second reads as "it opened", and the poll it paces is one
+/// `remove_file` on a path that is almost always absent.
+const IDLE_POLL_MS: u32 = 500;
 
 /// The reader's close-to-tray choice: written by the settings sheet, acted on by [`TrayHost`].
 ///
@@ -71,6 +80,13 @@ pub(crate) fn TrayHost() -> Element {
         let window = window.clone();
         async move {
             loop {
+                // Checked before the tray, and on the branch that has no tray as well: a
+                // duplicate launch is answered whether or not the reader turned the icon on.
+                if platform::take_activation_request() {
+                    if let Some(window) = window.as_ref() {
+                        platform::show_window(window);
+                    }
+                }
                 let Some(commands) = tray.peek().as_ref().map(Tray::drain) else {
                     platform::sleep_ms(IDLE_POLL_MS).await;
                     continue;

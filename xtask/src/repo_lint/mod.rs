@@ -46,6 +46,7 @@ pub(crate) fn run(root: &Path) -> anyhow::Result<()> {
     findings.extend(frontend::autostart_entry_agrees(root)?);
     findings.extend(frontend::the_window_ceiling_matches_the_layout(root)?);
     findings.extend(frontend::resize_probes_are_siblings(root)?);
+    findings.extend(frontend::elevated_calls_carry_the_elevation(root)?);
     findings.extend(secrets::published_secrets_are_refused(root)?);
     findings.extend(deploy::dockerfile_ships_every_workspace_binary(root)?);
     findings.extend(deploy::deploy_blacklist_is_honoured(root)?);
@@ -68,7 +69,7 @@ pub(crate) fn run(root: &Path) -> anyhow::Result<()> {
     findings.extend(tls::every_service_installs_a_crypto_provider(root)?);
 
     if findings.is_empty() {
-        println!("repo-lint: 23 rules, no violations");
+        println!("repo-lint: 24 rules, no violations");
         return Ok(());
     }
 

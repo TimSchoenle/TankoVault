@@ -753,6 +753,7 @@ fn UserEditor(
                             user_id: id_sync.clone(),
                             username: user.username.clone(),
                             editable: can_sync,
+                            gate,
                         }
                     }
                 }

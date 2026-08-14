@@ -12,7 +12,7 @@
 //!   TODO(api): needs per-kind notification opt-ins on the watchlist entry.
 
 use crate::api;
-use crate::components::{async_view, SkeletonBlock};
+use crate::components::{async_view, use_step_up_gate, SkeletonBlock, StepUpGate, StepUpGuard};
 use crate::hooks::{use_busy, use_outcome, use_reload, Reload};
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
@@ -53,6 +53,9 @@ pub(super) fn TrackingCard(
     let api = api::use_api();
     let i18n = use_i18n();
     let reload_sync = use_reload();
+    // One gate for the card: linking and unlinking a tracker are both elevated, and this is the
+    // only screen they can be reached from besides Account → Sync.
+    let gate = use_step_up_gate();
 
     // Tracks the shared read-state signal so the frontier refetches after a chapter-list
     // toggle too, not just the stepper's own write.
@@ -210,7 +213,7 @@ pub(super) fn TrackingCard(
                 } else {
                     div { class: "ik-listbox",
                         for tracker in tracker_rows {
-                            TrackerRow { key: "{tracker.slug}", tracker, reload_sync }
+                            TrackerRow { key: "{tracker.slug}", tracker, reload_sync, gate }
                         }
                         if let Some(entry) = entry.clone() {
                             SyncOptOut { entry, reload_wl }
@@ -259,6 +262,7 @@ pub(super) fn TrackingCard(
                 }
             }
         }
+        StepUpGuard { gate }
     }
 }
 
@@ -530,10 +534,11 @@ fn ProgressEditor(
 
 /// One external tracker: its link state, when it last synced, and the link/unlink action.
 #[component]
-fn TrackerRow(tracker: Tracker, reload_sync: Reload) -> Element {
+fn TrackerRow(tracker: Tracker, reload_sync: Reload, gate: StepUpGate) -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
     let busy = use_busy();
+    let mut error = use_signal(|| Option::<String>::None);
     let linked = tracker.status.linked;
     let tile = monogram(&tracker.name);
 
@@ -550,22 +555,44 @@ fn TrackerRow(tracker: Tracker, reload_sync: Reload) -> Element {
     let toggle = {
         let slug = tracker.slug.clone();
         move |_| {
-            if !busy.claim() {
-                return;
-            }
             let slug = slug.clone();
-            let client = api.client();
-            spawn(async move {
-                if linked {
-                    let _ = client.sync_disconnect().provider(slug).send().await;
-                    reload_sync.bump();
-                } else if let Ok(response) = client.sync_authorize_url().provider(slug).send().await
-                {
-                    // A full-page navigation, not a router push: the consent screen lives on
-                    // the provider's origin.
-                    crate::platform::navigate_to(&response.into_inner().url);
+            // Both halves are elevated: unlinking is an account change, and the consent screen
+            // linking leads to grants a standing OAuth token. The API answers `403` until a second
+            // factor has been presented, so both go through the gate.
+            gate.attempt(move || {
+                if !busy.claim() {
+                    return;
                 }
-                busy.release();
+                error.set(None);
+                let slug = slug.clone();
+                let client = gate.client(api);
+                spawn(async move {
+                    let failure = if linked {
+                        match client.sync_disconnect().provider(slug).send().await {
+                            Ok(_) => {
+                                reload_sync.bump();
+                                None
+                            }
+                            Err(e) => Some(e),
+                        }
+                    } else {
+                        match client.sync_authorize_url().provider(slug).send().await {
+                            Ok(response) => {
+                                // A full-page navigation, not a router push: the consent screen
+                                // lives on the provider's origin.
+                                crate::platform::navigate_to(&response.into_inner().url);
+                                None
+                            }
+                            Err(e) => Some(e),
+                        }
+                    };
+                    if let Some(e) = failure {
+                        if !gate.refused(api::Refusal::of(&e)) {
+                            error.set(Some(api::friendly_error(i18n, e)));
+                        }
+                    }
+                    busy.release();
+                });
             });
         }
     };
@@ -577,6 +604,9 @@ fn TrackerRow(tracker: Tracker, reload_sync: Reload) -> Element {
                 div { style: "font-weight:600;font-size:13px;", "{tracker.name}" }
                 div { class: "ik-mono", style: "font-size:10.5px;color:var(--muted);margin-top:1px;",
                     "{sub}"
+                }
+                if let Some(message) = error.read().clone() {
+                    crate::components::ErrorLine { message }
                 }
             }
             ToggleButton {

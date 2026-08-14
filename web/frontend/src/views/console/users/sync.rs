@@ -1,7 +1,7 @@
 //! This account's linked external trackers, and the two admin-side actions the API supports.
 
 use crate::api;
-use crate::components::{async_view, ErrorLine, InlineConfirm, Section, SkeletonBlock};
+use crate::components::{async_view, ErrorLine, InlineConfirm, Section, SkeletonBlock, StepUpGate};
 use crate::hooks::{use_busy, use_reload, Reload};
 use crate::i18n::use_i18n;
 use crate::models::AdminSyncAccount;
@@ -12,7 +12,13 @@ use inkstone_ui::{Button, Size, Tone};
 use progenitor_client::ResponseValue;
 /// This account's linked external trackers, with the two admin-side actions the API supports.
 #[component]
-pub(super) fn ExternalSync(user_id: String, username: String, editable: bool) -> Element {
+pub(super) fn ExternalSync(
+    user_id: String,
+    username: String,
+    editable: bool,
+    /// The editor's gate — both actions below are elevated, and the prompt is mounted there.
+    gate: StepUpGate,
+) -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
     let reload = use_reload();
@@ -62,6 +68,7 @@ pub(super) fn ExternalSync(user_id: String, username: String, editable: bool) ->
                                         username: username.clone(),
                                         editable,
                                         reload,
+                                        gate,
                                     }
                                 }
                             }
@@ -81,6 +88,7 @@ pub(super) fn SyncLinkRow(
     username: String,
     editable: bool,
     reload: Reload,
+    gate: StepUpGate,
 ) -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
@@ -100,18 +108,23 @@ pub(super) fn SyncLinkRow(
     let pull = {
         let target = target.clone();
         move |_| {
-            if !busy.claim() {
-                return;
-            }
-            error.set(None);
             let target = target.clone();
-            let client = api.client();
-            spawn(async move {
-                if let Err(e) = client.admin_sync_pull().body(target).send().await {
-                    error.set(Some(api::friendly_error(i18n, e)));
+            gate.attempt(move || {
+                if !busy.claim() {
+                    return;
                 }
-                reload.bump();
-                busy.release();
+                error.set(None);
+                let target = target.clone();
+                let client = gate.client(api);
+                spawn(async move {
+                    if let Err(e) = client.admin_sync_pull().body(target).send().await {
+                        if !gate.refused(api::Refusal::of(&e)) {
+                            error.set(Some(api::guarded_error(i18n, e)));
+                        }
+                    }
+                    reload.bump();
+                    busy.release();
+                });
             });
         }
     };
@@ -119,21 +132,28 @@ pub(super) fn SyncLinkRow(
     let unlink = {
         let target = target.clone();
         move |()| {
-            if !busy.claim() {
-                return;
-            }
-            error.set(None);
             let target = target.clone();
-            let client = api.client();
-            spawn(async move {
-                match client.admin_sync_unlink().body(target).send().await {
-                    Ok(_) => {
-                        confirming.set(false);
-                        reload.bump();
-                    }
-                    Err(e) => error.set(Some(api::friendly_error(i18n, e))),
+            gate.attempt(move || {
+                if !busy.claim() {
+                    return;
                 }
-                busy.release();
+                error.set(None);
+                let target = target.clone();
+                let client = gate.client(api);
+                spawn(async move {
+                    match client.admin_sync_unlink().body(target).send().await {
+                        Ok(_) => {
+                            confirming.set(false);
+                            reload.bump();
+                        }
+                        Err(e) => {
+                            if !gate.refused(api::Refusal::of(&e)) {
+                                error.set(Some(api::guarded_error(i18n, e)));
+                            }
+                        }
+                    }
+                    busy.release();
+                });
             });
         }
     };

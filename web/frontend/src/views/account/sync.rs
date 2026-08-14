@@ -176,16 +176,27 @@ fn ProviderSyncCard(slug: String, name: String) -> Element {
         let slug = slug.clone();
         move |_| {
             let slug = slug.clone();
-            let client = api.client();
-            spawn(async move {
-                match client.sync_authorize_url().provider(slug).send().await {
-                    Ok(response) => {
-                        // A full-page navigation, not a router push: the consent screen lives
-                        // on the provider's origin.
-                        crate::platform::navigate_to(&response.into_inner().url);
+            gate.attempt(move || {
+                outcome.set(None);
+                let slug = slug.clone();
+                // Elevated, exactly like the unlink below: following the URL this returns grants
+                // a third party a standing OAuth token against the caller's account there, so the
+                // API answers `403` until a second factor has been presented.
+                let client = gate.client(api);
+                spawn(async move {
+                    match client.sync_authorize_url().provider(slug).send().await {
+                        Ok(response) => {
+                            // A full-page navigation, not a router push: the consent screen lives
+                            // on the provider's origin.
+                            crate::platform::navigate_to(&response.into_inner().url);
+                        }
+                        Err(e) => {
+                            if !gate.refused(api::Refusal::of(&e)) {
+                                outcome.set(Some(Err(api::friendly_error(i18n, e))));
+                            }
+                        }
                     }
-                    Err(e) => outcome.set(Some(Err(api::friendly_error(i18n, e)))),
-                }
+                });
             });
         }
     };

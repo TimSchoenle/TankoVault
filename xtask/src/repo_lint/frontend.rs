@@ -275,6 +275,128 @@ fn resize_handler_depths(source: &str) -> Vec<(usize, i32)> {
     depths
 }
 
+/// **Every step-up-guarded call in the SPA is made on a client that carries the elevation.**
+///
+/// A route behind `Elevated` answers `403` until the caller presents a second factor, and the SPA
+/// has exactly one mechanism for that: `StepUpGate`, whose `client(api)` attaches the grant and
+/// whose `refused(…)` turns the refusal into the prompt. The same call made on the plain
+/// `api.client()` compiles, gets the `403`, and has no way to answer it — `friendly_error` words
+/// it as "you don't have permission to do that", which is the one sentence a reader cannot act on
+/// for a permission they hold.
+///
+/// The defect this closes: Account → Sync's "Connect `AniList`" button fetched the consent URL on
+/// the plain client, so an owner account — entitled to link a tracker, and holding the factor to
+/// prove it — was refused with no prompt to clear. The series sidebar's link/unlink and the user
+/// inspector's force-pull/unlink were the same shape and reported nothing at all.
+///
+/// Nothing else can see this. `web/frontend` is a separate workspace, `openapi.json` is the only
+/// artefact relating a generated method to the route behind it, and both spellings of the call
+/// type-check. The document is therefore the authority for which operations are guarded: a route
+/// that gains or loses its elevation says so there, and this rule follows it.
+pub(super) fn elevated_calls_carry_the_elevation(root: &Path) -> anyhow::Result<Vec<Finding>> {
+    /// How far back to look for the `let client = …` a call is made on. Every call site binds it
+    /// immediately above its `spawn`; the widest gap in the tree is 35 lines, so this is headroom
+    /// rather than a guess, and a site that outgrows it is reported rather than skipped.
+    const WINDOW: usize = 60;
+
+    let spec = root.join("openapi.json");
+    let Ok(document) = std::fs::read_to_string(&spec) else {
+        anyhow::bail!(
+            "repo-lint: cannot read {} — it is not optional",
+            spec.display()
+        );
+    };
+    let guarded = step_up_operations(&serde_json::from_str(&document)?);
+    if guarded.is_empty() {
+        anyhow::bail!(
+            "repo-lint: no operation in {} declares a step-up demand. Either the document changed \
+             shape or every guarded route lost its guard — both leave this rule vacuous",
+            spec.display()
+        );
+    }
+    let needles: Vec<String> = guarded.iter().map(|id| format!(".{id}()")).collect();
+
+    let mut findings = Vec::new();
+    for path in walk(&root.join("web/frontend/src"), &["rs"], &["target"]) {
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let lines: Vec<&str> = text.lines().collect();
+        for (index, line) in lines.iter().enumerate() {
+            if is_comment(line) {
+                continue;
+            }
+            for (needle, operation) in needles.iter().zip(&guarded) {
+                if !line.contains(needle.as_str()) {
+                    continue;
+                }
+                let detail = match client_binding(&lines, index, WINDOW) {
+                    Some(binding) if binding.contains("gate.client(") => continue,
+                    Some(_) => format!(
+                        "`{operation}` is behind a step-up, but this call is made on a client \
+                         carrying no elevation: the API answers `403` and the reader is told they \
+                         lack a permission they hold. Bind `let client = gate.client(api);` and \
+                         route the failure through `gate.refused(api::Refusal::of(&e))`"
+                    ),
+                    None => format!(
+                        "`{operation}` is behind a step-up and this call binds no `let client` \
+                         within {WINDOW} lines for the rule to read. If the call sites changed \
+                         shape, teach this rule the new one — it is the only thing holding the \
+                         elevation on"
+                    ),
+                };
+                findings.push(Finding {
+                    rule: "elevated-calls-carry-the-elevation",
+                    file: path.clone(),
+                    line: index + 1,
+                    detail,
+                });
+            }
+        }
+    }
+    Ok(findings)
+}
+
+/// The operation ids `openapi.json` marks as step-up guarded.
+///
+/// Read off the `403` description: `Elevated` is an extractor and leaves no other trace in the
+/// document, so the sentence the handlers publish beside the status is what identifies them.
+fn step_up_operations(spec: &serde_json::Value) -> Vec<String> {
+    /// The phrase every guarded route's `403` carries, written in its `#[utoipa::path]`
+    /// responses. A route that stops carrying it stops being covered here.
+    const DEMAND: &str = "a step-up is required";
+
+    let mut operations = Vec::new();
+    let Some(paths) = spec["paths"].as_object() else {
+        return operations;
+    };
+    for item in paths.values() {
+        let Some(methods) = item.as_object() else {
+            continue;
+        };
+        for operation in methods.values() {
+            let demanded = operation["responses"]["403"]["description"]
+                .as_str()
+                .is_some_and(|description| description.contains(DEMAND));
+            if let (true, Some(id)) = (demanded, operation["operationId"].as_str()) {
+                operations.push(id.to_owned());
+            }
+        }
+    }
+    operations.sort();
+    operations.dedup();
+    operations
+}
+
+/// The nearest `let client = …` at or above `index`, searching back at most `window` lines.
+fn client_binding<'a>(lines: &[&'a str], index: usize, window: usize) -> Option<&'a str> {
+    lines[index.saturating_sub(window)..=index]
+        .iter()
+        .rev()
+        .find(|line| line.contains("let client"))
+        .copied()
+}
+
 pub(super) fn the_window_ceiling_matches_the_layout(root: &Path) -> anyhow::Result<Vec<Finding>> {
     let css = root.join("web/frontend/input.css");
     let shell = root.join("web/frontend/src/components/shell.rs");
@@ -465,6 +587,81 @@ mod tests {
                       }\n}\n";
         assert_eq!(widest_measure(routes), Some(1760.0));
         assert_eq!(widest_measure("nothing here"), None);
+    }
+
+    /// The step-up rule is only as good as the set it starts from: a reader that returned nothing
+    /// would clear every call site in the SPA. `403` is three different refusals on the guarded
+    /// surfaces, and only the one naming the demand is a route this rule is about.
+    #[test]
+    fn the_step_up_reader_takes_the_demand_and_not_every_403() {
+        let spec = serde_json::json!({
+            "paths": {
+                "/v1/me/sync/{provider}/authorize": {
+                    "get": {
+                        "operationId": "sync_authorize_url",
+                        "responses": { "403": { "description": "a step-up is required" } }
+                    }
+                },
+                "/v1/admin/users/{id}": {
+                    "delete": {
+                        "operationId": "delete_user",
+                        "responses": {
+                            "403": {
+                                "description": "no second factor is enrolled, a step-up is \
+                                                required, or the caller does not hold the \
+                                                required permission"
+                            }
+                        }
+                    },
+                    // A path-level `parameters` array sits beside the methods and is not an
+                    // operation; indexing it as one must not panic.
+                    "parameters": [{ "name": "id", "in": "path" }]
+                },
+                "/v1/admin/stream": {
+                    "get": {
+                        "operationId": "admin_stream",
+                        "responses": {
+                            "403": { "description": "the caller holds none of the permissions" }
+                        }
+                    }
+                },
+                "/v1/series": { "get": { "operationId": "list_series", "responses": {} } }
+            }
+        });
+        assert_eq!(
+            step_up_operations(&spec),
+            ["delete_user", "sync_authorize_url"]
+        );
+        assert!(step_up_operations(&serde_json::json!({})).is_empty());
+    }
+
+    /// The binding has to be the nearest one above the call — a closure two actions up binds its
+    /// own client, and reading *that* would clear an ungated call sitting under it.
+    #[test]
+    fn the_binding_reader_takes_the_nearest_one_inside_the_window() {
+        let lines = [
+            "let client = gate.client(api);",
+            "spawn(async move {",
+            "    let client = api.client();",
+            "    client.delete_user().id(id).send().await",
+            "});",
+        ];
+        assert_eq!(
+            client_binding(&lines, 3, 60),
+            Some("    let client = api.client();")
+        );
+        assert_eq!(client_binding(&lines, 1, 60), Some(lines[0]));
+
+        // A binding beyond the window is out of reach, which is not the same as ungated: the
+        // rule reports it so a call site that changed shape is looked at rather than cleared.
+        let far = [
+            "let client = gate.client(api);",
+            "// …",
+            "// …",
+            "client.delete_user().send()",
+        ];
+        assert_eq!(client_binding(&far, 3, 2), None);
+        assert_eq!(client_binding(&far, 3, 3), Some(far[0]));
     }
 
     /// Same reasoning as above: the autostart rule reads a value out of an NSIS `!define`, and a

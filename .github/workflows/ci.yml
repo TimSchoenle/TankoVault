@@ -896,7 +896,7 @@ jobs:
           shared-key: coverage
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-on-failure: true
-      - uses: taiki-e/install-action@7f4eb899022d8fe70b20c4f3de697aa85c309026 # v2.85.11
+      - uses: taiki-e/install-action@b20dedce73af6905cdc30d6611090c9b67557c8d # v2.85.12
         with:
           tool: cargo-llvm-cov
 
@@ -973,7 +973,7 @@ jobs:
           shared-key: coverage-integration
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-on-failure: true
-      - uses: taiki-e/install-action@7f4eb899022d8fe70b20c4f3de697aa85c309026 # v2.85.11
+      - uses: taiki-e/install-action@b20dedce73af6905cdc30d6611090c9b67557c8d # v2.85.12
         with:
           tool: cargo-llvm-cov
 
@@ -1045,7 +1045,7 @@ jobs:
         with:
           shared-key: test
           save-if: false
-      - uses: taiki-e/install-action@7f4eb899022d8fe70b20c4f3de697aa85c309026 # v2.85.11
+      - uses: taiki-e/install-action@b20dedce73af6905cdc30d6611090c9b67557c8d # v2.85.12
         with:
           tool: cargo-mutants
 
@@ -1133,7 +1133,7 @@ jobs:
           shared-key: notices
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-on-failure: true
-      - uses: taiki-e/install-action@7f4eb899022d8fe70b20c4f3de697aa85c309026 # v2.85.11
+      - uses: taiki-e/install-action@b20dedce73af6905cdc30d6611090c9b67557c8d # v2.85.12
         with:
           tool: cargo-about
 

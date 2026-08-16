@@ -1,0 +1,4 @@
+-- The sponsored sources are not restored. They were an advertisement parsed as a series, and
+-- nothing that reads the catalogue can tell the difference once the row exists — which is the
+-- whole reason they had to go. A scan running without `generic::is_series_link` writes them
+-- again by itself.

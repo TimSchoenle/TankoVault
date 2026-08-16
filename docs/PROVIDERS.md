@@ -232,6 +232,26 @@ walk that terminates from one that re-serves page 1 forever, and from one that s
 because its path template only works there. Neither is visible in a single-page sample, and
 neither reports an error.
 
+## A listing row is not always a series
+
+The three Manganato domains render a **sponsored card in the same container as every real row**
+(`div.list-comic-item-wrap`), first on both the catalogue and the latest-updates feed. Its link is
+a rotating `bit.ly` short URL, and
+[`html::relativize`](../crates/adapters/src/html.rs) flattens a foreign host to its path on
+purpose — a provider that changes domain must not need a data migration — so
+`https://bit.ly/scrailadi` arrived as `/scrailadi`, which reads exactly like a series slug. Every
+scan registered it: a series row named after the campaign, a source row under it, and a fetch that
+404s on every fast scan afterwards. The rotation whose `href` the banner script had not rewritten
+yet resolved to the *listing page itself*, which answers `200` and fails on the missing series
+title instead — two error texts, one card.
+
+`generic::is_series_link` now drops a listing row whose link points at another host (ignoring a
+leading `www.`, and comparing against the URL *after* redirects) or back at the page it was found
+on. Neither is something a real card does, and both are conditions no selector can express:
+tightening the item selector would only work until the ad network rotates its class names, which
+on these sites are hashed and rotate already. Migration `0054` removes what the scans before it
+wrote.
+
 ## A limitation worth stating: Madara's AJAX chapter list
 
 Most live Madara installs no longer render `li.wp-manga-chapter` on the series page at all; the

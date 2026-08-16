@@ -16,6 +16,7 @@ use async_trait::async_trait;
 use scraper::ElementRef;
 use tankovault_domain::{ContentType, SeriesStatus};
 use time::OffsetDateTime;
+use url::Url;
 
 /// A generic adapter parameterised entirely by selectors from `providers.config`.
 pub struct GenericConfigAdapter {
@@ -217,25 +218,55 @@ fn merge_unique(mut base: Vec<String>, extra: Vec<String>) -> Vec<String> {
 
 /// Extract the first link href under `root` matching `spec` (`@attr` defaults to `href`),
 /// relativised against `page_url`. `spec` of [`SELF_SPEC`] reads `root`'s own attribute.
-fn extract_href(
+///
+/// A link [`is_series_link`] rejects yields `None`, so its row is skipped like a row with no
+/// link at all.
+fn extract_series_href(
     root: ElementRef<'_>,
     spec: &str,
     page_url: &str,
 ) -> Result<Option<String>, AdapterError> {
     let (sel_str, attr) = split_attr(spec);
     let attr = attr.unwrap_or("href");
-    if sel_str == SELF_SPEC {
-        return Ok(root
-            .value()
-            .attr(attr)
-            .map(|href| relativize(page_url, href)));
-    }
-    let sel = parse_selector(sel_str)?;
-    Ok(root
-        .select(&sel)
-        .next()
-        .and_then(|el| el.value().attr(attr))
+    let href = if sel_str == SELF_SPEC {
+        root.value().attr(attr)
+    } else {
+        let sel = parse_selector(sel_str)?;
+        root.select(&sel)
+            .next()
+            .and_then(|el| el.value().attr(attr))
+    };
+    Ok(href
+        .filter(|href| is_series_link(page_url, href))
         .map(|href| relativize(page_url, href)))
+}
+
+/// Whether `href`, resolved against the listing page at `page_url`, can be a series on the
+/// provider serving that page.
+///
+/// Rejects another host and the listing page itself. Listing markup carries sponsored cards in
+/// the same container as the real rows — the Manganato family's advertisement is a
+/// `div.list-comic-item-wrap` like every other card — and [`relativize`] deliberately flattens a
+/// foreign host to its path, so `https://bit.ly/scrailadi` arrives as `/scrailadi` and reads as
+/// an ordinary series slug. Registered once, it 404s on every scan for as long as the row
+/// survives; the same card with an unresolved `href` of `#` registers the listing page itself,
+/// which answers 200 and fails on the series title instead.
+///
+/// A leading `www.` is ignored on both sides, since a site reachable under either spelling
+/// redirects to one of them and the page URL is the one after redirects.
+fn is_series_link(page_url: &str, href: &str) -> bool {
+    let Ok(base) = Url::parse(page_url) else {
+        // Nothing to compare against — leave the judgement to `relativize`'s own fallback.
+        return true;
+    };
+    let Ok(joined) = base.join(href.trim()) else {
+        return true;
+    };
+    let host = |url: &Url| {
+        url.host_str()
+            .map(|host| host.trim_start_matches("www.").to_owned())
+    };
+    host(&joined) == host(&base) && (joined.path() != base.path() || joined.query() != base.query())
 }
 
 /// Resolve a [`TextSource`] against a parsed page.
@@ -314,7 +345,7 @@ impl SourceAdapter for GenericConfigAdapter {
             let elements: Vec<_> = root.select(&item_sel).collect();
             let mut items = Vec::with_capacity(elements.len());
             for el in elements {
-                let Some(path) = extract_href(el, &cfg.link, page_url)? else {
+                let Some(path) = extract_series_href(el, &cfg.link, page_url)? else {
                     continue;
                 };
                 let title = extract_first(el, &cfg.title)?.unwrap_or_default();
@@ -350,7 +381,7 @@ impl SourceAdapter for GenericConfigAdapter {
             let elements: Vec<_> = root.select(&item_sel).collect();
             let mut updates = Vec::with_capacity(elements.len());
             for el in elements {
-                let Some(path) = extract_href(el, link_spec, page_url)? else {
+                let Some(path) = extract_series_href(el, link_spec, page_url)? else {
                     continue;
                 };
                 let title = match &cfg.title {
@@ -522,7 +553,7 @@ impl SourceAdapter for GenericConfigAdapter {
 
 #[cfg(test)]
 mod tests {
-    use super::merge_unique;
+    use super::{is_series_link, merge_unique};
 
     #[test]
     fn merges_artist_into_author_list() {
@@ -548,6 +579,36 @@ mod tests {
     fn empty_artist_list_leaves_authors_untouched() {
         let authors = vec!["Chugong".to_owned()];
         assert_eq!(merge_unique(authors.clone(), Vec::new()), authors);
+    }
+
+    /// The Manganato family's listing pages carry a sponsored card in the same
+    /// `div.list-comic-item-wrap` container as every real row. Its link is a rotating `bit.ly`
+    /// short URL, which `relativize` flattened to `/scrailadi` — a plausible series slug that
+    /// production registered and then re-fetched into a 404 on every scan; the rotation whose
+    /// href had not been rewritten yet registered the listing page itself, which answers 200 and
+    /// fails on the missing series title.
+    #[test]
+    fn a_sponsored_card_linking_off_site_or_to_the_page_itself_is_not_a_series() {
+        const PAGE: &str = "https://www.mangakakalot.gg/manga-list/latest-manga";
+
+        assert!(!is_series_link(PAGE, "https://bit.ly/scrailadi"));
+        assert!(!is_series_link(PAGE, "#"));
+        assert!(!is_series_link(PAGE, ""));
+        assert!(!is_series_link(PAGE, "/manga-list/latest-manga"));
+
+        assert!(is_series_link(
+            PAGE,
+            "https://www.mangakakalot.gg/manga/not-that-villainess"
+        ));
+        assert!(is_series_link(PAGE, "/manga/not-that-villainess"));
+        // The same site reached without the `www.` is the same site.
+        assert!(is_series_link(
+            PAGE,
+            "https://mangakakalot.gg/manga/not-that-villainess"
+        ));
+        // Another page of the same listing is a paginator link, not an item link: `next` is a
+        // selector of its own, so this only has to stay resolvable.
+        assert!(is_series_link(PAGE, "?page=2"));
     }
 }
 

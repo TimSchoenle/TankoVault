@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<!-- Trimmed from https://mgread.io/manga/a-siblings-pov/ (plain fetch). The review widget,
+     share controls, sidebar and all but two chapter rows are dropped; everything a selector
+     touches is verbatim.
+
+     Three things here are load-bearing and easy to trim away by accident:
+
+     * `data-id` on the `h1` is the only unambiguous statement of the post id the chapter
+       endpoint is keyed by — the page also carries `data-id` on the follow button and on every
+       chapter row, and an unrelated id in `wp-json/wp/v2/manga/…`.
+     * the last pill in `#genre-tags` is the theme's estimated reading time, an `href="#"` button
+       wearing the genres' classes. It is here so the fixture proves the selector excludes it.
+     * the chapter rows carry the site's UTC offset (`+07:00`), which is the only place it is
+       stated: the chapter endpoint serves WordPress's stored local time with no offset at all. -->
+<html lang=en-US ><head><meta charset="UTF-8"><title>A Sibling&#8217;s POV – Mgread.io</title><link
+rel=canonical href=https://mgread.io/manga/a-siblings-pov/ ></head>
+<body>
+<div class="uk-grid-medium uk-margin-top" uk-grid><div
+class=uk-width-1-3@s><div
+id=view-comic class="manga-block uk-panel uk-padding uk-position-relative uk-overflow-hidden"><div
+class="cover-background uk-position-cover uk-background-cover" data-src=https://mgread.io/wp-content/uploads/2026/05/i523790.webp uk-img="loading: eager"></div><div
+class="story-cover-wrap uk-border-rounded uk-overflow-hidden uk-text-center" uk-lightbox>
+<a
+class="story-cover " href=https://mgread.io/wp-content/uploads/2026/05/i523790.webp role=button>
+<img
+class="image-3-4 "
+src=https://mgread.io/wp-content/uploads/2026/05/i523790.webp
+width=300 height=400
+alt="Cover image of A Sibling&#8217;s POV"
+fetchpriority=high>
+</a></div></div></div><div
+class="uk-margin-top uk-width-expand uk-position-relative"><h1 id="manga-title"
+class="uk-margin-remove-bottom uk-h3 uk-text-bold uk-text-capitalize uk-visible-toggle"
+data-id="239587">
+A Sibling&#8217;s POV</h1><div
+class="manga-info-details uk-margin-small-top">
+Alternate Title: <span
+id=comic-othername class=uk-text-capitalize>First-Person Blood-Relative Perspective; 1인칭 혈육시점; A Sibling&#039;s Point Of View</span><br></div></div></div>
+<div id=tab-overview><div
+class="manga-block uk-margin-medium-top"><h2 class="uk-h5 uk-text-bold uk-text-muted uk-text-uppercase">
+Summary</h2><div
+id=manga-description class="max-3-line uk-position-relative uk-text-justify uk-margin"><p>Cha Kang-hyun, the sibling and sworn enemy who&#8217;s been sabotaging Ga-young&#8217;s love life since they were kids.</p></div><div
+class=uk-margin-top>
+<span
+uk-icon="icon: calendar"></span>
+<span
+class=uk-margin-small-right>04/05/2026</span>
+<span
+uk-icon="icon: file-edit"></span>
+<span
+id=manga-status>Ongoing</span></div></div>
+<div class="manga-block uk-margin-medium-top"><h2 class="uk-h5 uk-text-bold uk-text-muted uk-text-uppercase">
+Genre</h2><div
+id=genre-tags>
+<a
+class="uk-button uk-button-default uk-border-pill uk-button-small uk-text-capitalize"
+href=https://mgread.io/genre/comedy/
+>
+<span
+uk-icon="icon: hashtag"></span> Comedy </a>
+<a
+class="uk-button uk-button-default uk-border-pill uk-button-small uk-text-capitalize"
+href=https://mgread.io/genre/supernatural/
+>
+<span
+uk-icon="icon: hashtag"></span> Supernatural </a>
+<a
+class="uk-button uk-button-default uk-border-pill uk-button-small uk-text-capitalize uk-disabled" href=#><span
+uk-icon="icon: reading"></span> 1h 12m to finish</a></div></div>
+<div
+id=chapter-list class="manga-block uk-margin-medium-top"><h2 class="uk-h5 uk-text-bold uk-text-muted uk-text-uppercase">
+Chapters</h2><div
+class="chapter-list uk-grid-small uk-child-width-1-1" uk-grid><div
+class=chapter-item>
+<a
+class=uk-link-toggle
+href=https://mgread.io/manga/a-siblings-pov/chapter-18/ ><div
+class=uk-grid-small uk-grid><div
+class=uk-width-1-1><h3 class="uk-link-heading uk-h5 uk-text-capitalize max-2-line">
+A Sibling&#8217;s POV [&#8230;] &#8211; Chapter 18</h3><div
+class="uk-article-meta uk-text-truncate">
+<span
+uk-icon="icon: calendar"
+uk-tooltip="title: August 9, 2026 7:12 am; pos: top"></span>
+<time
+class=uk-margin-small-right datetime=2026-08-09T07:12:06+07:00>
+1 week </time></div></div></div><hr>
+</a></div><div
+class=chapter-item>
+<a
+class=uk-link-toggle
+href=https://mgread.io/manga/a-siblings-pov/chapter-17/ ><div
+class=uk-grid-small uk-grid><div
+class=uk-width-1-1><h3 class="uk-link-heading uk-h5 uk-text-capitalize max-2-line">
+A Sibling&#8217;s POV [&#8230;] &#8211; Chapter 17</h3><div
+class="uk-article-meta uk-text-truncate">
+<time
+class=uk-margin-small-right datetime=2026-08-02T03:33:22+07:00>
+2 weeks </time></div></div></div><hr>
+</a></div></div></div></div>
+</body></html>

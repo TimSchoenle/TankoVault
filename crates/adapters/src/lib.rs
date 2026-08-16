@@ -19,6 +19,7 @@ mod madara;
 mod mangadex;
 mod manganato;
 mod mangathemesia;
+mod mgread;
 pub mod presets;
 mod types;
 mod webtoons;
@@ -38,6 +39,7 @@ pub use madara::madara_default_config;
 pub use mangadex::MangaDexAdapter;
 pub use manganato::{ManganatoAdapter, manganato_default_config};
 pub use mangathemesia::mangathemesia_default_config;
+pub use mgread::{MgreadAdapter, mgread_default_config};
 pub use presets::{BuiltinPreset, builtin as builtin_presets};
 pub use types::{
     CatalogItem, CatalogPage, ChapterAccess, ChapterMeta, Ctx, LatestUpdate, SeriesMeta,

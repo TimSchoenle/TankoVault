@@ -14,6 +14,7 @@ use crate::madara::madara_default_config;
 use crate::mangadex::MangaDexAdapter;
 use crate::manganato::{ManganatoAdapter, manganato_default_config};
 use crate::mangathemesia::mangathemesia_default_config;
+use crate::mgread::{MgreadAdapter, mgread_default_config};
 use crate::types::SourceAdapter;
 use crate::webtoons::WebtoonsAdapter;
 use serde_json::Value;
@@ -84,6 +85,11 @@ pub fn build_adapter(
             | "renascans" | "kaynscans" | "hijalascans" => Ok(Box::new(IkenAdapter::new(config)?)),
             // Astro islands: the chapter list, with its lock flags, is the island's props.
             "asura" | "hivetoons" => Ok(Box::new(AstroIslandAdapter::new(slug)?)),
+            // The Init Manga theme, whose series page renders only its newest 24 chapter rows.
+            "mgread" => Ok(Box::new(MgreadAdapter::new(family_config(
+                mgread_default_config(),
+                config,
+            )?))),
             "flamecomics" => Ok(Box::new(FlameComicsAdapter::new())),
             "webtoons" => Ok(Box::new(WebtoonsAdapter::new())),
             other => Err(AdapterError::UnknownCustom(other.to_owned())),

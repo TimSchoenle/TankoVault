@@ -295,9 +295,17 @@ services:
       # The samples say so in their first line. Replace them before anyone else uses the
       # instance: no legal copy in this repository is legal advice or fit for a deployment.
       TANKOVAULT_LEGAL__DIR: /etc/tankovault/legal
-      TANKOVAULT_LEGAL__DOCUMENTS: >-
-        {"terms":{"updated":"2026-08-04","sources":{"en":"terms.en.md","de":"terms.de.md"}},
-         "privacy":{"updated":"2026-08-04","sources":{"en":"privacy.en.md","de":"privacy.de.md"}}}
+      # One variable per leaf, because that is the only shape the environment layer builds a map
+      # from: it is `figment`'s `Env` provider split on `__`, so a JSON document in a single
+      # variable arrives as a *string* and the API exits at boot with "expected a map for key
+      # LEGAL.DOCUMENTS". A TOML file (TANKOVAULT_CONFIG) is where a document set with many
+      # locales belongs; this is the two the repository ships.
+      TANKOVAULT_LEGAL__DOCUMENTS__TERMS__UPDATED: "2026-08-04"
+      TANKOVAULT_LEGAL__DOCUMENTS__TERMS__SOURCES__EN: terms.en.md
+      TANKOVAULT_LEGAL__DOCUMENTS__TERMS__SOURCES__DE: terms.de.md
+      TANKOVAULT_LEGAL__DOCUMENTS__PRIVACY__UPDATED: "2026-08-04"
+      TANKOVAULT_LEGAL__DOCUMENTS__PRIVACY__SOURCES__EN: privacy.en.md
+      TANKOVAULT_LEGAL__DOCUMENTS__PRIVACY__SOURCES__DE: privacy.de.md
     volumes:
       # Read-only: the API serves these, it never writes them.
       - ./legal:/etc/tankovault/legal:ro

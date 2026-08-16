@@ -1,0 +1,8 @@
+{
+  "items": [
+    {"id": 476933, "ghost_chapter_id": 490103, "manga_id": 239587, "title": "", "number": null, "slug": "chapter-46-1", "schedule": "", "created_at": "2026-07-26 14:27:17", "lock_type": "none", "lock_value": 0, "is_purchased": false},
+    {"id": 455121, "ghost_chapter_id": 468220, "manga_id": 239587, "title": "", "number": null, "slug": "prologue", "schedule": "", "created_at": "2026-07-19 09:02:11", "lock_type": "none", "lock_value": 0, "is_purchased": false}
+  ],
+  "total_pages": 2,
+  "current_page": 2
+}

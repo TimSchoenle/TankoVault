@@ -64,6 +64,18 @@ impl Fetcher for SiteFetcher {
     }
 }
 
+/// The same trimmed markup as it would arrive from another install of the theme.
+///
+/// The fixtures carry the absolute links their source site renders, and a listing row whose
+/// link points at a host the page did not come from is now dropped as sponsored content
+/// (`generic::is_series_link`). A fixture borrowed across presets — which is how the two
+/// pagination bugs below are pinned, since the bug is in the shared family default and not in
+/// anyone's markup — therefore has to move hosts with it.
+fn served_by(fixture: &str, from: &str, to: &str) -> &'static str {
+    // Leaked because `SiteFetcher` holds `&'static str`; one small allocation per test process.
+    Box::leak(fixture.replace(from, to).into_boxed_str())
+}
+
 /// Build the live adapter for a shipped preset, paired with a fixture-serving context.
 fn preset_adapter(slug: &str, fetcher: SiteFetcher) -> (Box<dyn SourceAdapter>, Ctx) {
     let preset = builtin_presets()
@@ -89,6 +101,10 @@ const KUNMANGA_CHAPTERS_API: &str = include_str!("../fixtures/kunmanga/chapters.
 const KUNMANGA_SITEMAP_INDEX: &str = include_str!("../fixtures/kunmanga/sitemap-index.xml");
 const KUNMANGA_SITEMAP_SHARD: &str = include_str!("../fixtures/kunmanga/sitemap-comic.xml");
 const KUNMANGA_HOME: &str = include_str!("../fixtures/kunmanga/home.html");
+
+/// Base URLs of the presets that borrow another install's markup; see [`served_by`].
+const MANGAREAD_BASE: &str = "https://www.mangaread.org";
+const YAKSHACOMICS_BASE: &str = "https://yakshacomics.com";
 
 /// The fixture set for kunmanga: every document any of its adapter calls can reach.
 fn kunmanga_fixtures() -> SiteFetcher {
@@ -318,7 +334,7 @@ async fn the_madara_family_does_not_inherit_a_paginator_nothing_renders() {
     let (adapter, ctx) = preset_adapter(
         "mangaread",
         SiteFetcher {
-            catalog: MANHUAUS_CATALOG,
+            catalog: served_by(MANHUAUS_CATALOG, "https://manhuaus.com", MANGAREAD_BASE),
             catalog_past_end: MANHUAUS_CATALOG_EMPTY,
             ..SiteFetcher::default()
         },
@@ -347,7 +363,7 @@ async fn yakshacomics_ends_its_walk_on_the_marker_not_on_an_empty_page() {
     let (adapter, ctx) = preset_adapter(
         "yakshacomics",
         SiteFetcher {
-            catalog: MANHUAUS_CATALOG,
+            catalog: served_by(MANHUAUS_CATALOG, "https://manhuaus.com", YAKSHACOMICS_BASE),
             ..SiteFetcher::default()
         },
     );

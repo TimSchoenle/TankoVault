@@ -634,6 +634,20 @@ fn custom_code() -> Vec<BuiltinPreset> {
             config: json!({}),
             politeness: Politeness::default(),
         },
+        // The Init Manga WordPress theme. Selectors would cover catalogue, feed and metadata,
+        // but its series page server-renders only the newest 24 chapter rows — the rest are a
+        // REST call keyed by the numeric post id, which only that page states.
+        BuiltinPreset {
+            slug: "mgread",
+            name: "Mgread",
+            base_url: "https://mgread.io",
+            adapter: AdapterKind::Custom,
+            config: json!({}),
+            // ~6 400 series over 266 catalogue pages, served straight from the origin with no
+            // bot management in front of it. The default budget walks that in one full scan
+            // without leaning on a host that is answering every request itself.
+            politeness: Politeness::default(),
+        },
         // The only licensed source here. Its `robots.txt` disallows `/*/search`, which is why
         // the adapter enumerates by genre.
         BuiltinPreset {

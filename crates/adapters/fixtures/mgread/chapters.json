@@ -1,0 +1,8 @@
+{
+  "items": [
+    {"id": 517243, "ghost_chapter_id": 531681, "manga_id": 239587, "title": "", "number": 18, "slug": "chapter-18", "schedule": "", "created_at": "2026-08-09 07:12:06", "lock_type": "none", "lock_value": 0, "is_purchased": false},
+    {"id": 498168, "ghost_chapter_id": 511939, "manga_id": 239587, "title": "", "number": 17, "slug": "chapter-17", "schedule": "", "created_at": "2026-08-02 03:33:22", "lock_type": "none", "lock_value": 0, "is_purchased": false}
+  ],
+  "total_pages": 2,
+  "current_page": 1
+}

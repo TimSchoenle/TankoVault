@@ -116,6 +116,7 @@ are named per provider in the job's output.
 | Hive Toons | `hivetoons.org` | Astro islands | **Custom code** | `AstroIslandAdapter` |
 | Flame Comics | `flamecomics.xyz` | Next.js | **Custom code** | `FlameComicsAdapter` |
 | WEBTOON | `www.webtoons.com` | Licensed, bespoke | **Custom code** | `WebtoonsAdapter` |
+| Mgread | `mgread.io` | Init Manga (WordPress) | **Config + code** | `MgreadAdapter` |
 | Vortex Scans | `vortexscans.org` | Iken JSON | **Custom code** | `IkenAdapter` |
 | Magus Manga | `magustoon.org` | Iken JSON | **Custom code** | `IkenAdapter` |
 | Nyx Scans | `nyxscans.com` | Iken JSON | **Custom code** | `IkenAdapter` |
@@ -231,6 +232,26 @@ series each one *adds*, and then probes a page far past the end — which is wha
 walk that terminates from one that re-serves page 1 forever, and from one that stops on page 1
 because its path template only works there. Neither is visible in a single-page sample, and
 neither reports an error.
+
+## A listing row is not always a series
+
+The three Manganato domains render a **sponsored card in the same container as every real row**
+(`div.list-comic-item-wrap`), first on both the catalogue and the latest-updates feed. Its link is
+a rotating `bit.ly` short URL, and
+[`html::relativize`](../crates/adapters/src/html.rs) flattens a foreign host to its path on
+purpose — a provider that changes domain must not need a data migration — so
+`https://bit.ly/scrailadi` arrived as `/scrailadi`, which reads exactly like a series slug. Every
+scan registered it: a series row named after the campaign, a source row under it, and a fetch that
+404s on every fast scan afterwards. The rotation whose `href` the banner script had not rewritten
+yet resolved to the *listing page itself*, which answers `200` and fails on the missing series
+title instead — two error texts, one card.
+
+`generic::is_series_link` now drops a listing row whose link points at another host (ignoring a
+leading `www.`, and comparing against the URL *after* redirects) or back at the page it was found
+on. Neither is something a real card does, and both are conditions no selector can express:
+tightening the item selector would only work until the ad network rotates its class names, which
+on these sites are hashed and rotate already. Migration `0054` removes what the scans before it
+wrote.
 
 ## A limitation worth stating: Madara's AJAX chapter list
 
@@ -368,6 +389,42 @@ installations and nothing else.
 > that embeds the document twice (~16 MB); that body arrives via the solver path, which the
 > cap does not apply to. `sitemap_locs` handles both shapes. Once a solved session is cached
 > and replayed, subsequent shard fetches are plain requests returning the small raw XML.
+
+## Mgread — custom adapter over the generic parser
+
+`mgread.io` runs the **Init Manga** WordPress theme. Catalogue, feed and metadata are ordinary
+markup and stay in the preset config; only the chapter list forces
+[`MgreadAdapter`](../crates/adapters/src/mgread.rs).
+
+**The series page renders only its newest 24 chapter rows.** The rest arrive from
+`GET /wp-json/initmanga/v1/chapters?manga_id={id}&per_page=50&paged={n}`, whose envelope carries
+`items` and `total_pages`. `per_page` is clamped at 50 server-side — asking for more returns 50
+and recomputes `total_pages` for 50, so overshooting reads as a *shorter* series rather than
+failing.
+
+That endpoint is keyed by the numeric post id, which the adapter resolves through the WordPress
+core route `GET /wp-json/wp/v2/manga?slug={slug}&_fields=id,date,date_gmt` — about a hundred
+bytes, and it carries the site's UTC offset as the gap between its two timestamps. The series
+page states both facts as well (`h1#manga-title[data-id]`, and any chapter row's `<time
+datetime>`), and the adapter falls back to it when the core route is locked down, as WordPress
+deployments commonly do; that path costs 130 KB per series on top of the copy `fetch_series` has
+already read, which is why it is the fallback and not the rule.
+
+Two things about the config are worth knowing before editing it:
+
+- **`catalog.next` is `link[rel=next]`,** not the visible paginator. The theme renders a "Next
+  page" control on the last listing as well, and the page after the last answers `404` — so the
+  yielded-items fallback would end every full scan on an error instead of on a signal.
+- **`series.tags` is anchored on the genre archive** (`a[href*="/genre/"]`). The last pill in
+  `#genre-tags` is the theme's estimated reading time (`4h 52m to finish`), an `href="#"` button
+  wearing the genres' classes; interned as a tag it becomes a Discover facet and a recommender
+  feature, one per distinct duration.
+
+**Dates.** The chapter endpoint serves WordPress's stored *site-local* time
+(`2026-08-15 14:44:29`) with no offset on it. Applying the site's own offset — from the pair
+above, or from a chapter row's RFC 3339 `datetime` on the fallback path — is what keeps releases
+where the site puts them: reading them as UTC would move every one of them seven hours on this
+site, and hard-coding `+07:00` would be wrong the day the operator moves it.
 
 ## Demonic Scans — custom adapter
 

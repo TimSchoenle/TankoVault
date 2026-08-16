@@ -12,6 +12,19 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [7.2.2](https://github.com/TimSchoenle/TankoVault/compare/v7.2.1...v7.2.2) (2026-08-16)
+
+
+### Miscellaneous
+
+* **deps:** update cargo non-major to v0.3.34 ([#224](https://github.com/TimSchoenle/TankoVault/issues/224)) ([7e2715e](https://github.com/TimSchoenle/TankoVault/commit/7e2715efbffdd3b1ece07f1f4029a54d156cb752))
+* **deps:** update docker/dockerfile:1 docker digest to ecfaec9 ([#229](https://github.com/TimSchoenle/TankoVault/issues/229)) ([ad117fb](https://github.com/TimSchoenle/TankoVault/commit/ad117fb619486877bc6b847859fb12a34e869480))
+* **deps:** update nats:2-alpine docker digest to d4ac358 ([#231](https://github.com/TimSchoenle/TankoVault/issues/231)) ([e1ba363](https://github.com/TimSchoenle/TankoVault/commit/e1ba363f2b5ab661517b78b07a24a90716948507))
+* **deps:** update taiki-e/install-action action to v2.85.12 ([#230](https://github.com/TimSchoenle/TankoVault/issues/230)) ([9f9ea99](https://github.com/TimSchoenle/TankoVault/commit/9f9ea99f039c984f27f276ab60160b1fdd7e1b5a))
+* **deps:** update timschoenle/actions/.github/workflows/maintenance-auto-approve-renovate.yaml to vworkflows-maintenance-auto-approve-renovate-v1.4.20 ([#226](https://github.com/TimSchoenle/TankoVault/issues/226)) ([ec8e271](https://github.com/TimSchoenle/TankoVault/commit/ec8e271e8b2b64a6af4eb425187b112f5adb6c6f))
+* **deps:** update timschoenle/actions/.github/workflows/maintenance-timed-auto-pr-approve.yaml to vworkflows-maintenance-timed-auto-pr-approve-v1.2.31 ([#228](https://github.com/TimSchoenle/TankoVault/issues/228)) ([1eb5c9a](https://github.com/TimSchoenle/TankoVault/commit/1eb5c9a1b121f13e89fc85dc3a5008c61201f1e4))
+* **deps:** update timschoenle/actions/actions/helm/update-chart-version to vactions-helm-update-chart-version-v1.6.2 ([#227](https://github.com/TimSchoenle/TankoVault/issues/227)) ([4816f65](https://github.com/TimSchoenle/TankoVault/commit/4816f651fa52b394511a1e17c8aadd7db0f4d2f3))
+
 ## [7.2.1](https://github.com/TimSchoenle/TankoVault/compare/v7.2.0...v7.2.1) (2026-08-14)
 
 

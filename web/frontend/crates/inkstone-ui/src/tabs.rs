@@ -59,9 +59,14 @@ pub fn TabBar<T: Clone + PartialEq + 'static>(
                 event.prevent_default();
                 on_select.call(keyed[next].value.clone());
             },
+            // Deliberately unkeyed. The strip is positional — a caller varies its *length*
+            // (Account drops the panels a reader has no capability for), never its order — so
+            // positional diffing is already correct. This keyed on `item.label` until a duplicate
+            // key elsewhere in the app aborted the desktop build inside `dioxus-core`'s keyed
+            // diff: a human-readable label is not an identity, and `T` carries no bound that
+            // would yield one, so the safe key is no key.
             for item in items {
                 button {
-                    key: "{item.label}",
                     class: skin.class(Part::Tab, &[Variant::flag(item.value == selected, Flag::Active)]),
                     r#type: "button",
                     role: "tab",

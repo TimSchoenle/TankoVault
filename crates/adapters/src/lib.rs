@@ -23,6 +23,7 @@ mod mgread;
 pub mod presets;
 mod types;
 mod webtoons;
+mod witchtoons;
 
 pub use astro::{AstroFlavour, AstroIslandAdapter};
 pub use config::AdapterConfig;
@@ -46,6 +47,7 @@ pub use types::{
     SourceAdapter,
 };
 pub use webtoons::WebtoonsAdapter;
+pub use witchtoons::WitchToonsAdapter;
 
 /// Seams for the out-of-workspace fuzz crate, which can only reach `pub` items.
 ///

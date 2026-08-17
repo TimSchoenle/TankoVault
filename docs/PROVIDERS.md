@@ -87,7 +87,6 @@ are named per provider in the job's output.
 | Arena Scans | `arenascan.com` | MangaThemesia | **Config only** | family defaults |
 | Rage Scans | `ragescans.com` | MangaThemesia | **Config only** | family defaults |
 | Rokari Comics | `rokaricomics.com` | MangaThemesia | **Config only** | family defaults |
-| Witch Scans | `witchscans.com` | MangaThemesia | **Config only** | family defaults |
 | King of Shojo | `kingofshojo.com` | MangaThemesia | **Config only** | family defaults |
 | Noxen Scans | `noxenscan.com` | MangaThemesia | **Config only** | family defaults |
 | Manga Trend | `mangatrend.org` | MangaThemesia | **Config only** | family defaults |
@@ -95,7 +94,6 @@ are named per provider in the job's output.
 | Thunder Scans | `en-thunderscans.com` | MangaThemesia | **Config only** | family + `/comics/` |
 | Razure | `razure.org` | MangaThemesia | **Config only** | family + `/series/` |
 | Asmodeus Scans | `asmotoon.com` | Keyoapp | **Config only** | family defaults |
-| Siren Scans | `sirenscans.com` | Keyoapp | **Config only** | family defaults |
 | Genz Toons | `genztoons.org` | Keyoapp | **Config only** | family defaults |
 | Timeless Toons | `timelesstoons.org` | Keyoapp | **Config only** | family defaults |
 | Mist Scans | `mistscans.com` | Keyoapp | **Config only** | family defaults |
@@ -115,6 +113,7 @@ are named per provider in the job's output.
 | Asura Scans | `asurascans.com` | Astro islands | **Custom code** | `AstroIslandAdapter` |
 | Hive Toons | `hivetoons.org` | Astro islands | **Custom code** | `AstroIslandAdapter` |
 | Flame Comics | `flamecomics.xyz` | Next.js | **Custom code** | `FlameComicsAdapter` |
+| WitchToons | `witchtoons.net` | Next.js App Router | **Custom code** | `WitchToonsAdapter` |
 | WEBTOON | `www.webtoons.com` | Licensed, bespoke | **Custom code** | `WebtoonsAdapter` |
 | Mgread | `mgread.io` | Init Manga (WordPress) | **Config + code** | `MgreadAdapter` |
 | Vortex Scans | `vortexscans.org` | Iken JSON | **Custom code** | `IkenAdapter` |
@@ -144,6 +143,7 @@ Where each provider publishes the fact:
 | Toonily and other Madara sites | `chapters.locked` selector in the provider config | `chapters.unlock`, where rendered |
 | Keyoapp sites | the coin-price badge on the chapter card (`img[alt="Coin"]`) | none — the platform states a price, never a date, so such a chapter stays locked |
 | Iken sites | `isLocked` in the chapter JSON | `unlockAt`, null on a permanently paid chapter |
+| WitchToons | `isLocked` in the flight payload's chapter row | `earlyAccessUntil` / `becomesFreeAt`; `becomesFreeOnNextRelease` is a rule, not a date, so it leaves the chapter locked |
 | WEBTOON | none: Fast Pass episodes are not rendered to an anonymous visitor at all | n/a |
 
 A locked chapter does **not** count as unread. It starts counting when either its stated unlock
@@ -232,6 +232,40 @@ series each one *adds*, and then probes a page far past the end — which is wha
 walk that terminates from one that re-serves page 1 forever, and from one that stops on page 1
 because its path template only works there. Neither is visible in a single-page sample, and
 neither reports an error.
+
+## An origin can answer differently per address family
+
+The Keyoapp `/latest/` note above says the failure "hid behind an environment". It is now clear
+what that environment was, and it is not the network the probe ran from — it is the **address
+family** the fetch used.
+
+Four of the Keyoapp origins (`asmotoon`, `kewnscans`, `writerscans`, `nyanukafe`) answer an IPv4
+client with a bare nginx `404` on **every** route, `/` included, and serve the same request
+normally over IPv6. It is reproducible, not a flap: same second, same Cloudflare colo, same
+headers, `curl -4` against three different edge addresses versus `curl -6`. A sibling install on
+the same platform answers both.
+
+That failure is unusually expensive to diagnose because a `404` is not a bot-management signal.
+Nothing escalates it to the solver, the circuit breaker does not read it as challenged, and it
+reads to a human as "the site removed that page" — which is what sent two investigations looking
+for a renamed route. `AdapterError::Unserved` exists for exactly this shape and names it, but it
+still cannot say *why*.
+
+Two things had to be true for the crawler to be pinned to IPv4, and both are fixed:
+
+- **The container had no IPv6 address.** `deploy/docker-compose.yml` now sets `enable_ipv6` on the
+  default network.
+- **The resolver handed back IPv4 first.** A container on Docker's NAT66 has a *unique-local*
+  source address, so RFC 6724's scope-match rule ranks a global IPv4 destination above a global
+  IPv6 one and both glibc and musl return IPv4 first — the connector took it and never tried the
+  rest. [`SsrfResolver`](../crates/fetch/src/ssrf.rs) now orders its filtered answer IPv6-first,
+  which is what a browser does. It is a preference, not a requirement: the connector falls back,
+  and a blackholed IPv6 route costs about 250 ms per connection.
+
+The diagnostic that generalises: when a provider fails on every route including `/`, **probe the
+same URL over each address family before concluding anything about the route.** A `curl -4` and a
+`curl -6` a second apart is the whole test, and it separates a dead origin from an unreachable one
+— which is how `sirenscans` was retired with confidence while its four siblings were kept.
 
 ## A listing row is not always a series
 

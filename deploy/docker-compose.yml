@@ -471,3 +471,18 @@ services:
 
 volumes:
   pgdata:
+
+networks:
+  # The implicit default network, configured rather than replaced — no service names a network.
+  #
+  # IPv6 is on because provider origins disagree about IPv4. Four of the Keyoapp installs answer
+  # an IPv4 client with a bare nginx `404` on every route, `/` included, while serving the same
+  # request normally over IPv6; a `404` is not a bot-management signal, so nothing escalates it and
+  # every scan of those providers failed completely. Without a v6 address on this network the
+  # worker cannot reach them at all, whatever the fetch stack prefers.
+  #
+  # Safe on a host with no IPv6 upstream: the resolver returns both families, the connector tries
+  # IPv6 first and falls back, and a blackholed v6 route costs ~250 ms per connection — measured,
+  # not assumed. Docker Engine 27+ is required for `enable_ipv6` to allocate a subnet on its own.
+  default:
+    enable_ipv6: true

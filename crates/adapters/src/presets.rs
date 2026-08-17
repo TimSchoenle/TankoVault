@@ -208,12 +208,6 @@ fn mangathemesia_family() -> Vec<BuiltinPreset> {
             THEMESIA,
         ),
         plain(
-            "witchscans",
-            "Witch Scans",
-            "https://witchscans.com",
-            THEMESIA,
-        ),
-        plain(
             "kingofshojo",
             "King of Shojo",
             "https://kingofshojo.com",
@@ -271,17 +265,17 @@ fn themesia_in(
 /// Providers on the Keyoapp platform: hosted, so every install is the stock layout and each
 /// site is identity alone.
 fn keyoapp_family() -> Vec<BuiltinPreset> {
+    // `sirenscans` was the tenth and is retired: its origin answers a bare nginx `404` on every
+    // route — `/` included — through a fully solved real browser, while a sibling install answers
+    // the same request from the same session normally. That is the origin being gone, not a block
+    // and not the flap the whole family is prone to. A preset kept for a dead host spends a crawl
+    // budget and fills the console's error feed every cycle; `retire_missing` drops the definition
+    // and deliberately leaves any installed provider row alone for the operator to pause.
     vec![
         plain(
             "asmotoon",
             "Asmodeus Scans",
             "https://asmotoon.com",
-            KEYOAPP,
-        ),
-        plain(
-            "sirenscans",
-            "Siren Scans",
-            "https://sirenscans.com",
             KEYOAPP,
         ),
         plain("genztoons", "Genz Toons", "https://genztoons.org", KEYOAPP),
@@ -646,6 +640,17 @@ fn custom_code() -> Vec<BuiltinPreset> {
             // ~6 400 series over 266 catalogue pages, served straight from the origin with no
             // bot management in front of it. The default budget walks that in one full scan
             // without leaning on a host that is answering every request itself.
+            politeness: Politeness::default(),
+        },
+        // Was a MangaThemesia row at `witchscans.com` until the group rebuilt on its own Next.js
+        // platform and moved to `witchtoons.net`. The slug stays: it keys the rate limit, the
+        // provider row and every stored source, and the site is the same publisher.
+        BuiltinPreset {
+            slug: "witchscans",
+            name: "WitchToons",
+            base_url: "https://witchtoons.net",
+            adapter: AdapterKind::Custom,
+            config: json!({}),
             politeness: Politeness::default(),
         },
         // The only licensed source here. Its `robots.txt` disallows `/*/search`, which is why

@@ -17,6 +17,7 @@ use crate::mangathemesia::mangathemesia_default_config;
 use crate::mgread::{MgreadAdapter, mgread_default_config};
 use crate::types::SourceAdapter;
 use crate::webtoons::WebtoonsAdapter;
+use crate::witchtoons::WitchToonsAdapter;
 use serde_json::Value;
 use tankovault_domain::AdapterKind;
 
@@ -92,6 +93,9 @@ pub fn build_adapter(
             )?))),
             "flamecomics" => Ok(Box::new(FlameComicsAdapter::new())),
             "webtoons" => Ok(Box::new(WebtoonsAdapter::new())),
+            // Next.js App Router: the chapter list is in the streamed flight payload, because the
+            // series page server-renders exactly one chapter link.
+            "witchscans" => Ok(Box::new(WitchToonsAdapter::new())),
             other => Err(AdapterError::UnknownCustom(other.to_owned())),
         },
     }

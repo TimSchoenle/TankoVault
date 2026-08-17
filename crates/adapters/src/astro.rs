@@ -137,23 +137,28 @@ fn chapter_number(value: &Value) -> Option<f64> {
         .filter(|n: &f64| n.is_finite())
 }
 
-/// The access state a chapter object advertises.
+/// The access state a chapter object advertises, as of `now`.
 ///
-/// Asura publishes both a flag and a date (`is_locked` + `unlock_time`/`early_access_until`).
+/// Asura marks the chapters it currently gates with `is_premium`, and stamps
+/// `early_access_until` on *every* chapter — expired windows included — so neither field alone
+/// is the answer: the flag misses a window whose flag has not been set yet, and the date alone
+/// would read the whole back catalogue as paid.
 /// `HiveToons` publishes flags only (`isLocked`, and `isPermanentlyLocked` for chapters that
 /// never open), so its locked chapters carry no unlock time — which the read paths treat as
 /// still locked, the conservative and correct reading.
-fn access_of(value: &Value) -> ChapterAccess {
-    let locked = ["is_locked", "isLocked"]
+fn access_of(value: &Value, now: OffsetDateTime) -> ChapterAccess {
+    let unlocks_at = first_str(value, &["unlock_time", "early_access_until", "freeAt"])
+        .and_then(|s| OffsetDateTime::parse(&s, &Rfc3339).ok());
+    let flagged = ["is_locked", "isLocked", "is_premium"]
         .iter()
         .any(|k| value.get(*k).and_then(Value::as_bool) == Some(true));
-    if !locked {
+    // An unexpired window gates the chapter whether or not a flag says so: the provider's own
+    // countdown is a statement that it does not open until then.
+    if !flagged && unlocks_at.is_none_or(|at| at <= now) {
         return ChapterAccess::Free;
     }
     // A permanent lock is not early access with an unknown date, but it is stored the same way:
     // both are "not readable, and no date says otherwise".
-    let unlocks_at = first_str(value, &["unlock_time", "early_access_until", "freeAt"])
-        .and_then(|s| OffsetDateTime::parse(&s, &Rfc3339).ok());
     ChapterAccess::EarlyAccess { unlocks_at }
 }
 
@@ -367,6 +372,9 @@ impl SourceAdapter for AstroIslandAdapter {
         let resp = ctx.fetch(path).await?;
         let flavour = self.flavour;
         let series_path = path.trim_end_matches('/').to_owned();
+        // Sampled once for the whole page so every early-access window on it is judged against
+        // the same instant.
+        let now = OffsetDateTime::now_utc();
         parse_blocking(resp, move |root, resp| {
             let key = flavour.chapters_key();
             let island = island_with(root, key)
@@ -400,7 +408,7 @@ impl SourceAdapter for AstroIslandAdapter {
                     path: chapter_path,
                     published_at: first_str(row, &["published_at", "createdAt", "created_at"])
                         .and_then(|s| OffsetDateTime::parse(&s, &Rfc3339).ok()),
-                    access: access_of(row),
+                    access: access_of(row, now),
                 });
             }
             Ok(chapters)
@@ -427,7 +435,11 @@ mod tests {
     };
     use crate::types::ChapterAccess;
     use serde_json::json;
+    use time::OffsetDateTime;
     use time::macros::datetime;
+
+    /// Every access assertion is judged against this instant.
+    const NOW: OffsetDateTime = datetime!(2026-08-17 08:00 UTC);
 
     /// Astro wraps every value as `[tag, value]`, including nested ones. Decoding only the top
     /// level leaves every field as a two-element array, which reads as "no such field".
@@ -443,19 +455,65 @@ mod tests {
 
     #[test]
     fn a_free_chapter_is_free_on_both_sites() {
-        assert_eq!(access_of(&json!({"is_locked": false})), ChapterAccess::Free);
-        assert_eq!(access_of(&json!({"isLocked": false})), ChapterAccess::Free);
+        assert_eq!(
+            access_of(&json!({"is_locked": false}), NOW),
+            ChapterAccess::Free
+        );
+        assert_eq!(
+            access_of(&json!({"isLocked": false}), NOW),
+            ChapterAccess::Free
+        );
         // No flag at all is also free: absence of a paywall marker is not a paywall.
-        assert_eq!(access_of(&json!({"number": 1})), ChapterAccess::Free);
+        assert_eq!(access_of(&json!({"number": 1}), NOW), ChapterAccess::Free);
     }
 
     #[test]
-    fn asura_locked_chapters_carry_their_unlock_time() {
+    fn a_lock_flag_with_a_date_carries_that_date() {
         let row = json!({"is_locked": true, "unlock_time": "2026-08-10T20:21:18Z"});
         assert_eq!(
-            access_of(&row),
+            access_of(&row, NOW),
             ChapterAccess::EarlyAccess {
                 unlocks_at: Some(datetime!(2026-08-10 20:21:18 UTC))
+            }
+        );
+    }
+
+    /// Regression: Asura gates a chapter with `is_premium` and never publishes `is_locked`, so
+    /// testing only the flags the adapter knew read the whole site as free — chapter 72 of
+    /// *The Youngest Son of the Eunhae Merchant Group* was offered as a free read six hours
+    /// before its window closed. Its `early_access_until` cannot be the test on its own either:
+    /// chapter 71 carries one too, from the window that has already expired.
+    #[test]
+    fn asura_gates_with_is_premium_and_stamps_expired_windows_too() {
+        let paid = json!({
+            "number": 72,
+            "is_premium": true,
+            "early_access_until": "2026-08-17T13:07:27.280683Z",
+        });
+        assert_eq!(
+            access_of(&paid, NOW),
+            ChapterAccess::EarlyAccess {
+                unlocks_at: Some(datetime!(2026-08-17 13:07:27.280683 UTC))
+            }
+        );
+
+        let expired = json!({
+            "number": 71,
+            "is_premium": false,
+            "early_access_until": "2026-08-10T14:11:36.937078Z",
+        });
+        assert_eq!(access_of(&expired, NOW), ChapterAccess::Free);
+    }
+
+    /// A window that has not closed yet is the provider saying the chapter does not open until
+    /// then, so it gates the chapter even before the flag catches up.
+    #[test]
+    fn an_unexpired_window_locks_without_a_flag() {
+        let row = json!({"early_access_until": "2026-08-17T13:07:27Z"});
+        assert_eq!(
+            access_of(&row, NOW),
+            ChapterAccess::EarlyAccess {
+                unlocks_at: Some(datetime!(2026-08-17 13:07:27 UTC))
             }
         );
     }
@@ -466,7 +524,7 @@ mod tests {
     fn hivetoons_locked_chapters_have_no_date_and_stay_locked() {
         let row = json!({"isLocked": true, "isTimeLocked": true, "price": 10});
         assert_eq!(
-            access_of(&row),
+            access_of(&row, NOW),
             ChapterAccess::EarlyAccess { unlocks_at: None }
         );
     }

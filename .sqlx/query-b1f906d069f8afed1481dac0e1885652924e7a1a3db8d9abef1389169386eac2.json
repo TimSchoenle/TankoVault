@@ -1,0 +1,60 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT w.status AS \"status!: WatchStatus\", count(*) AS \"n!\", count(*) FILTER (WHERE src.source_degraded) AS \"degraded!\" FROM watchlist_entries w JOIN series s ON s.id = w.series_id LEFT JOIN read_progress rp ON rp.user_id = w.user_id AND rp.series_id = w.series_id CROSS JOIN LATERAL ( SELECT COALESCE(count(DISTINCT c.number_milli / 10000), 0) AS unread FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id WHERE ss.series_id = w.series_id AND c.number_milli >= (floor(COALESCE(rp.last_read_whole_number, 0))::bigint + 1) * 10000 AND NOT (c.number_milli % 10000 <> 0 AND rp.last_read_part_number IS NOT NULL AND c.number_milli <= (rp.last_read_part_number * 10000)::bigint) AND (c.access = 'free' OR c.unlocks_at <= now() OR ss.provider_id = ANY(ARRAY( SELECT e.provider_id FROM user_provider_early_access e WHERE e.user_id = $1))) ) ch CROSS JOIN LATERAL ( SELECT max((SELECT max(c.discovered_at) FROM chapters c WHERE c.series_source_id = ss.id AND (c.access = 'free' OR c.unlocks_at <= now() OR ss.provider_id = ANY(ARRAY( SELECT e.provider_id FROM user_provider_early_access e WHERE e.user_id = $1))))) AS latest_chapter_at FROM series_sources ss WHERE ss.series_id = w.series_id ) la CROSS JOIN LATERAL ( SELECT COALESCE((array_agg(ss.state <> 'active' OR p.state <> 'active' ORDER BY ss.chapter_count DESC, ss.last_scanned_at DESC NULLS LAST, p.slug))[1], false) AS source_degraded FROM series_sources ss JOIN providers p ON p.id = ss.provider_id WHERE ss.series_id = w.series_id ) src WHERE w.user_id = $1 AND ($2::text IS NULL OR s.canonical_title ILIKE $2 OR EXISTS (SELECT 1 FROM series_titles st WHERE st.series_id = w.series_id AND st.title ILIKE $2) OR EXISTS (SELECT 1 FROM series_tags stg JOIN tags t ON t.id = stg.tag_id WHERE stg.series_id = w.series_id AND t.name ILIKE $2) OR EXISTS (SELECT 1 FROM series_authors sa JOIN authors a ON a.id = sa.author_id WHERE sa.series_id = w.series_id AND a.name ILIKE $2)) AND (NOT $3::boolean OR ch.unread > 0) AND ($4::timestamptz IS NULL OR la.latest_chapter_at >= $4) AND (NOT $5::boolean OR src.source_degraded) AND ($6::uuid IS NULL OR w.series_id = $6) GROUP BY w.status",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "status!: WatchStatus",
+        "type_info": {
+          "Custom": {
+            "name": "watch_status",
+            "kind": {
+              "Enum": [
+                "reading",
+                "planned",
+                "completed",
+                "dropped",
+                "paused"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "watchlist_entries",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "n!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "degraded!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Bool",
+        "Timestamptz",
+        "Bool",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "b1f906d069f8afed1481dac0e1885652924e7a1a3db8d9abef1389169386eac2"
+}

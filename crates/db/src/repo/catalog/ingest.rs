@@ -98,7 +98,11 @@ pub async fn ingest_series(
 
     // One statement, not a per-chapter loop: this transaction holds row locks on shared
     // `tags`/`authors` rows, so per-chapter round trips would stall other providers' ingests.
-    let mut new_chapters = upsert_chapters(&mut *tx, source_id, &scanned.chapters).await?;
+    //
+    // `source_path` goes down with it because `chapters.path` is stored relative to it (migration
+    // 0055) — the compression is the repo layer's business, so the scan hands over whole paths.
+    let mut new_chapters =
+        upsert_chapters(&mut *tx, source_id, &scanned.source_path, &scanned.chapters).await?;
     // `RETURNING` doesn't promise order; sort for a deterministic notification stream.
     new_chapters.sort_by(f64::total_cmp);
 

@@ -49,7 +49,6 @@ async fn ingest(app: &TestApp, provider: ProviderId, title: &str, tags: &[&str])
             authors: vec!["someone".to_owned()],
             chapters: vec![ChapterUpsert {
                 number: 1.0,
-                volume: None,
                 title: None,
                 path: "/c/1".to_owned(),
                 published_at: None,

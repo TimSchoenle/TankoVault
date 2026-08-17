@@ -165,6 +165,9 @@ pub async fn resolve_privacy_request(
         .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty());
+    if let Some(note) = note {
+        crate::auth::validate_free_text("note", note)?;
+    }
     if body.status == PrivacyRequestStatus::Rejected && note.is_none() {
         return Err(ApiError::BadRequest(
             "a rejection must state its reasons (GDPR Art. 12(4))".to_owned(),
@@ -246,6 +249,7 @@ pub async fn extend_privacy_request(
             "an extension must state its reasons (GDPR Art. 12(3))".to_owned(),
         ));
     }
+    crate::auth::validate_free_text("reason", reason)?;
 
     if !tankovault_db::repo::gdpr::extend_due(&state.pool, id, body.due_at).await? {
         let _ = tankovault_db::repo::gdpr::get_admin(&state.pool, id).await?;

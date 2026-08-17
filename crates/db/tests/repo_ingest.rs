@@ -14,7 +14,6 @@ use tankovault_test_support::{TestDb, seed};
 fn chapter(number: f64, title: Option<&str>, path: &str) -> ChapterUpsert {
     ChapterUpsert {
         number,
-        volume: None,
         title: title.map(str::to_owned),
         path: path.to_owned(),
         published_at: None,
@@ -144,7 +143,7 @@ async fn only_added_chapters_are_reported_and_edits_are_applied_quietly() {
     let (title, path): (Option<String>, String) = sqlx::query_as(
         "SELECT c.title, c.path FROM chapters c \
            JOIN series_sources ss ON ss.id = c.series_source_id \
-          WHERE ss.id = $1 AND c.number = 1",
+          WHERE ss.id = $1 AND c.number_milli = 10000",
     )
     .bind(grown.source_id.as_uuid())
     .fetch_one(&db.pool)
@@ -187,7 +186,7 @@ async fn a_listing_that_repeats_a_chapter_number_does_not_abort_the_batch() {
 
     let (title, count): (Option<String>, i64) = sqlx::query_as(
         "SELECT max(c.title), count(*) FROM chapters c \
-          WHERE c.series_source_id = $1 AND c.number = 7",
+          WHERE c.series_source_id = $1 AND c.number_milli = 70000",
     )
     .bind(outcome.source_id.as_uuid())
     .fetch_one(&db.pool)
@@ -233,7 +232,7 @@ async fn chapter_numbers_that_round_to_one_value_do_not_abort_the_batch() {
 
     let (title, count): (Option<String>, i64) = sqlx::query_as(
         "SELECT max(c.title), count(*) FROM chapters c \
-          WHERE c.series_source_id = $1 AND c.number = 1",
+          WHERE c.series_source_id = $1 AND c.number_milli = 10000",
     )
     .bind(outcome.source_id.as_uuid())
     .fetch_one(&db.pool)
@@ -266,7 +265,7 @@ async fn an_empty_chapter_list_is_a_no_op() {
     .expect("an empty listing still ingests the series itself");
     assert!(outcome.new_chapters.is_empty());
 
-    let direct = upsert_chapters(&db.pool, outcome.source_id, &[])
+    let direct = upsert_chapters(&db.pool, outcome.source_id, "/manga/solo-leveling", &[])
         .await
         .expect("the batch helper short-circuits");
     assert!(direct.is_empty());
@@ -299,14 +298,19 @@ async fn freeing_a_locked_chapter_clears_the_unlock_time_it_carried() {
         unlocks_at: Some(time::OffsetDateTime::now_utc() + time::Duration::days(7)),
         ..chapter(1.0, None, "/c/1")
     };
-    upsert_chapters(&db.pool, outcome.source_id, &[locked])
-        .await
-        .expect("the chapter goes behind the paywall");
+    upsert_chapters(
+        &db.pool,
+        outcome.source_id,
+        "/manga/solo-leveling",
+        &[locked],
+    )
+    .await
+    .expect("the chapter goes behind the paywall");
     let (access, unlocks): (
         tankovault_domain::ChapterAccess,
         Option<time::OffsetDateTime>,
     ) = sqlx::query_as(
-        "SELECT access, unlocks_at FROM chapters WHERE series_source_id = $1 AND number = 1",
+        "SELECT access, unlocks_at FROM chapters WHERE series_source_id = $1 AND number_milli = 10000",
     )
     .bind(outcome.source_id.as_uuid())
     .fetch_one(&db.pool)
@@ -317,14 +321,19 @@ async fn freeing_a_locked_chapter_clears_the_unlock_time_it_carried() {
 
     // The timer expires and the next scan reports it free. Coalescing here would leave the date
     // behind and the CHECK constraint would take the whole batch down with it.
-    upsert_chapters(&db.pool, outcome.source_id, &[chapter(1.0, None, "/c/1")])
-        .await
-        .expect("freeing the chapter must not violate the access CHECK");
+    upsert_chapters(
+        &db.pool,
+        outcome.source_id,
+        "/manga/solo-leveling",
+        &[chapter(1.0, None, "/c/1")],
+    )
+    .await
+    .expect("freeing the chapter must not violate the access CHECK");
     let (access, unlocks): (
         tankovault_domain::ChapterAccess,
         Option<time::OffsetDateTime>,
     ) = sqlx::query_as(
-        "SELECT access, unlocks_at FROM chapters WHERE series_source_id = $1 AND number = 1",
+        "SELECT access, unlocks_at FROM chapters WHERE series_source_id = $1 AND number_milli = 10000",
     )
     .bind(outcome.source_id.as_uuid())
     .fetch_one(&db.pool)
@@ -370,7 +379,7 @@ async fn the_chapter_list_hides_paid_chapters_from_readers_who_have_not_bought_t
     .expect("ingest");
     sqlx::query(
         "UPDATE chapters SET access = 'early_access', unlocks_at = now() + interval '7 days' \
-         WHERE number = 3",
+         WHERE number_milli = 30000",
     )
     .execute(&db.pool)
     .await
@@ -398,9 +407,11 @@ async fn the_chapter_list_hides_paid_chapters_from_readers_who_have_not_bought_t
 
     // A stated unlock time that has passed frees the chapter for everyone, with no rescan — the
     // same rule the unread predicate applies, and the reason `unlocks_at` is stored at all.
-    sqlx::query("UPDATE chapters SET unlocks_at = now() - interval '1 minute' WHERE number = 3")
-        .execute(&db.pool)
-        .await
-        .expect("expire the timer");
+    sqlx::query(
+        "UPDATE chapters SET unlocks_at = now() - interval '1 minute' WHERE number_milli = 30000",
+    )
+    .execute(&db.pool)
+    .await
+    .expect("expire the timer");
     assert_eq!(numbers(None).await, vec![3.0, 2.0, 1.0]);
 }

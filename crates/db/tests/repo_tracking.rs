@@ -1441,7 +1441,7 @@ async fn an_early_access_chapter_counts_only_once_the_reader_can_read_it() {
     // Chapter 3 goes behind the paywall, unlocking in a week.
     sqlx::query(
         "UPDATE chapters SET access = 'early_access', unlocks_at = now() + interval '7 days' \
-         WHERE number = 3",
+         WHERE number_milli = 30000",
     )
     .execute(&db.pool)
     .await
@@ -1482,10 +1482,12 @@ async fn an_early_access_chapter_counts_only_once_the_reader_can_read_it() {
 
     // Route two: the timer expires. No rescan is needed — the stored unlock time is what the
     // predicate compares against, so the chapter opens on its own.
-    sqlx::query("UPDATE chapters SET unlocks_at = now() - interval '1 minute' WHERE number = 3")
-        .execute(&db.pool)
-        .await
-        .expect("expire the timer");
+    sqlx::query(
+        "UPDATE chapters SET unlocks_at = now() - interval '1 minute' WHERE number_milli = 30000",
+    )
+    .execute(&db.pool)
+    .await
+    .expect("expire the timer");
     assert_eq!(
         unread_now(&db, user, series).await,
         3,
@@ -1493,7 +1495,7 @@ async fn an_early_access_chapter_counts_only_once_the_reader_can_read_it() {
     );
 
     // A locked chapter with no announced date must stay locked rather than defaulting to open.
-    sqlx::query("UPDATE chapters SET unlocks_at = NULL WHERE number = 3")
+    sqlx::query("UPDATE chapters SET unlocks_at = NULL WHERE number_milli = 30000")
         .execute(&db.pool)
         .await
         .expect("clear the date");
@@ -1565,10 +1567,12 @@ async fn a_watchlist_card_counts_only_chapters_the_reader_can_open() {
         .expect("watchlist");
 
     // Chapters 1 and 2 are a week old; 3 is today, so "latest activity" is unambiguous.
-    sqlx::query("UPDATE chapters SET discovered_at = now() - interval '7 days' WHERE number < 3")
-        .execute(&db.pool)
-        .await
-        .expect("age the free chapters");
+    sqlx::query(
+        "UPDATE chapters SET discovered_at = now() - interval '7 days' WHERE number_milli < 30000",
+    )
+    .execute(&db.pool)
+    .await
+    .expect("age the free chapters");
 
     let before = watchlist_card(&db.pool, user, series)
         .await
@@ -1580,7 +1584,7 @@ async fn a_watchlist_card_counts_only_chapters_the_reader_can_open() {
     // Chapter 3 goes behind the paywall, and is the newest thing the series has.
     sqlx::query(
         "UPDATE chapters SET access = 'early_access', unlocks_at = now() + interval '7 days', \
-                discovered_at = now() WHERE number = 3",
+                discovered_at = now() WHERE number_milli = 30000",
     )
     .execute(&db.pool)
     .await
@@ -1631,7 +1635,7 @@ async fn marking_a_group_read_stops_at_the_last_chapter_the_reader_can_open() {
         .expect("watchlist");
     sqlx::query(
         "UPDATE chapters SET access = 'early_access', unlocks_at = now() + interval '7 days' \
-         WHERE number = 3",
+         WHERE number_milli = 30000",
     )
     .execute(&db.pool)
     .await
@@ -1648,10 +1652,12 @@ async fn marking_a_group_read_stops_at_the_last_chapter_the_reader_can_open() {
     );
 
     // And when the timer expires, the chapter is there waiting rather than already consumed.
-    sqlx::query("UPDATE chapters SET unlocks_at = now() - interval '1 minute' WHERE number = 3")
-        .execute(&db.pool)
-        .await
-        .expect("expire the timer");
+    sqlx::query(
+        "UPDATE chapters SET unlocks_at = now() - interval '1 minute' WHERE number_milli = 30000",
+    )
+    .execute(&db.pool)
+    .await
+    .expect("expire the timer");
     assert_eq!(
         unread_now(&db, user, series).await,
         1,

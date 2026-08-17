@@ -7,8 +7,8 @@ use crate::enums::{
     TaskState, WatchStatus,
 };
 use crate::ids::{
-    AuthorId, ChapterId, NotificationId, ProviderId, ScanRunId, ScanTaskId, SeriesId,
-    SeriesSourceId, TagId, UserId,
+    AuthorId, NotificationId, ProviderId, ScanRunId, ScanTaskId, SeriesId, SeriesSourceId, TagId,
+    UserId,
 };
 use crate::politeness::Politeness;
 use serde::{Deserialize, Serialize};
@@ -148,12 +148,14 @@ pub struct SeriesSource {
 }
 
 /// A chapter link under a [`SeriesSource`]. Never image data.
+///
+/// Carries no id: `(series_source_id, number)` identifies a chapter, and migration 0055 made that
+/// the primary key. `path` is the **expanded** site-relative link — the repo layer undoes the
+/// prefix compression `chapters.path` is stored with, so nothing above it has to know about it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Chapter {
-    pub id: ChapterId,
     pub series_source_id: SeriesSourceId,
     pub number: f64,
-    pub volume: Option<i32>,
     pub title: Option<String>,
     /// RELATIVE link to the chapter page.
     pub path: String,

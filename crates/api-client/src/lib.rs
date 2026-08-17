@@ -1584,63 +1584,6 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "Identifies a [`crate::entities::Chapter`]."]
-    #[doc = r""]
-    #[doc = r" <details><summary>JSON schema</summary>"]
-    #[doc = r""]
-    #[doc = r" ```json"]
-    #[doc = "{"]
-    #[doc = "  \"description\": \"Identifies a [`crate::entities::Chapter`].\","]
-    #[doc = "  \"type\": \"string\","]
-    #[doc = "  \"format\": \"uuid\","]
-    #[doc = "  \"x-rust-type\": \"tankovault_domain::ChapterId\""]
-    #[doc = "}"]
-    #[doc = r" ```"]
-    #[doc = r" </details>"]
-    #[derive(
-        :: serde :: Deserialize, :: serde :: Serialize, Clone, Copy, Debug, Eq, Hash, PartialEq,
-    )]
-    #[serde(transparent)]
-    pub struct ChapterId(pub ::uuid::Uuid);
-    impl ::std::ops::Deref for ChapterId {
-        type Target = ::uuid::Uuid;
-        fn deref(&self) -> &::uuid::Uuid {
-            &self.0
-        }
-    }
-    impl ::std::convert::From<ChapterId> for ::uuid::Uuid {
-        fn from(value: ChapterId) -> Self {
-            value.0
-        }
-    }
-    impl ::std::convert::From<::uuid::Uuid> for ChapterId {
-        fn from(value: ::uuid::Uuid) -> Self {
-            Self(value)
-        }
-    }
-    impl ::std::str::FromStr for ChapterId {
-        type Err = <::uuid::Uuid as ::std::str::FromStr>::Err;
-        fn from_str(value: &str) -> ::std::result::Result<Self, Self::Err> {
-            Ok(Self(value.parse()?))
-        }
-    }
-    impl ::std::convert::TryFrom<&str> for ChapterId {
-        type Error = <::uuid::Uuid as ::std::str::FromStr>::Err;
-        fn try_from(value: &str) -> ::std::result::Result<Self, Self::Error> {
-            value.parse()
-        }
-    }
-    impl ::std::convert::TryFrom<String> for ChapterId {
-        type Error = <::uuid::Uuid as ::std::str::FromStr>::Err;
-        fn try_from(value: String) -> ::std::result::Result<Self, Self::Error> {
-            value.parse()
-        }
-    }
-    impl ::std::fmt::Display for ChapterId {
-        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            self.0.fmt(f)
-        }
-    }
     #[doc = "`ChapterRead`"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -43406,6 +43349,9 @@ pub mod builder {
             let response = result?;
             match response.status().as_u16() {
                 200u16 => ResponseValue::from_response(response).await,
+                400u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
                 401u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
@@ -43512,6 +43458,9 @@ pub mod builder {
             let response = result?;
             match response.status().as_u16() {
                 200u16 => ResponseValue::from_response(response).await,
+                400u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
                 401u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
@@ -43604,6 +43553,9 @@ pub mod builder {
             let response = result?;
             match response.status().as_u16() {
                 200u16 => ResponseValue::from_response(response).await,
+                400u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
                 401u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),

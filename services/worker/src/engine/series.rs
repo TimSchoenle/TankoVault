@@ -7,7 +7,7 @@ use tankovault_db::repo::catalog::{ChapterUpsert, ScannedSeries, SeriesUpsert};
 use tankovault_domain::{Provider, ScanStage, normalize_title};
 use time::OffsetDateTime;
 
-use super::{Engine, StageReporter, chapter_key, content_hash, drop_implausible};
+use super::{Engine, StageReporter, chapter_key, content_hash, drop_implausible, drop_unstorable};
 
 impl Engine {
     /// Fetch, parse, and idempotently ingest one series; emit `chapter.discovered` for
@@ -25,11 +25,16 @@ impl Engine {
         stage: &StageReporter,
     ) -> anyhow::Result<usize> {
         stage.enter(ScanStage::SeriesMetadata, Some(path)).await;
-        let meta = adapter.fetch_series(ctx, path).await?;
+        let mut meta = adapter.fetch_series(ctx, path).await?;
         stage.enter(ScanStage::SeriesChapters, Some(path)).await;
         let mut chapters = adapter.fetch_chapters(ctx, path).await?;
+        // Before the hash for the same reason the rejections are: a provider that keeps serving
+        // an over-long field must keep hashing the same way, or every rescan looks like a change.
+        super::bounds::bound_series(&mut meta);
+        super::bounds::bound_chapters(&mut chapters);
         // Before the hash, not after: a source that keeps serving the same junk then hashes as
         // unchanged, so re-scans stay no-ops instead of re-deciding every time.
+        drop_unstorable(provider, path, &mut chapters);
         drop_implausible(&self.outliers, provider, path, &mut chapters);
         let hash = content_hash(&meta, &chapters);
 
@@ -71,7 +76,6 @@ impl Engine {
                     let (access, unlocks_at) = c.access.to_columns();
                     ChapterUpsert {
                         number: c.number,
-                        volume: None,
                         title: c.title,
                         path: c.path,
                         published_at: c.published_at,

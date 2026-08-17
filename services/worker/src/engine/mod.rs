@@ -11,11 +11,13 @@ use tankovault_adapters::{ChapterMeta, Ctx, SeriesMeta, SourceAdapter, build_ada
 use tankovault_bus::Bus;
 use tankovault_config::MatchingConfig;
 use tankovault_db::PgPool;
+use tankovault_domain::chapter_number::is_storable;
 use tankovault_domain::chapter_outliers::{OutlierPolicy, implausible_indices};
 use tankovault_domain::{AdultTagSet, MetadataPriority, Provider, ProviderId, TermBlocklist};
 use tankovault_fetch::{Fetcher, ProviderFetchConfig, SessionStore, build_provider_fetcher};
 use tankovault_solver::ChallengeSolver;
 
+mod bounds;
 mod scans;
 mod series;
 mod stage;
@@ -246,6 +248,40 @@ pub(crate) struct ScanSummary {
     pub(crate) series_seen: usize,
     pub(crate) series_failed: usize,
     pub(crate) new_chapters: usize,
+}
+
+/// Drop chapter entries whose numbers no chapter-number column can hold.
+///
+/// Runs before [`drop_implausible`], which cannot be relied on to catch these: it needs
+/// `min_sample` entries before it judges anything, it never rejects more than
+/// `max_rejected_fraction` of a listing, and an operator can switch it off entirely. This one is
+/// not a heuristic and has no configuration — an unstorable number reaching ingest fails the
+/// `INSERT` with `numeric field overflow`, and ingest is one transaction per source, so it takes
+/// every other chapter of that series down with it on every rescan.
+fn drop_unstorable(provider: &Provider, path: &str, chapters: &mut Vec<ChapterMeta>) {
+    let rejected: Vec<f64> = chapters
+        .iter()
+        .map(|c| c.number)
+        .filter(|&n| !is_storable(n))
+        .collect();
+    if rejected.is_empty() {
+        return;
+    }
+
+    // Logged with the numbers for the same reason `drop_implausible` logs them: this is the only
+    // record that a chapter was skipped.
+    tracing::warn!(
+        provider = %provider.slug,
+        series_path = %path,
+        rejected = rejected.len(),
+        of = chapters.len(),
+        numbers = ?rejected,
+        "skipping chapter numbers outside the storable range"
+    );
+    metrics::counter!("chapters_rejected_total", "provider" => provider.slug.clone())
+        .increment(rejected.len() as u64);
+
+    chapters.retain(|c| is_storable(c.number));
 }
 
 /// Drop chapter entries whose numbers the source cannot plausibly have released.

@@ -1,0 +1,83 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT c.series_source_id, c.number_milli, c.title, chapter_url_path(ss.source_path, c.path) AS \"path!\", c.published_at, c.discovered_at FROM chapters c JOIN series_sources ss ON ss.id = c.series_source_id WHERE c.series_source_id = $1 ORDER BY c.number_milli DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "series_source_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "chapters",
+            "name": "series_source_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "number_milli",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "chapters",
+            "name": "number_milli"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "chapters",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "path!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "published_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "chapters",
+            "name": "published_at"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "discovered_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "chapters",
+            "name": "discovered_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      null,
+      true,
+      false
+    ]
+  },
+  "hash": "492d770c5a920551b686dc7e1000636325827d9dd4f97c317cbec7555df731cf"
+}

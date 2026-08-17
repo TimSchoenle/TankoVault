@@ -117,9 +117,9 @@ pub async fn provider_stats<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<Prov
             FROM series_sources GROUP BY provider_id \
          ), ch AS ( \
             SELECT ss.provider_id, \
-                   count(c.id) AS chapter_count, \
-                   count(c.id) FILTER (WHERE c.discovered_at > now() - interval '24 hours') AS chapters_24h, \
-                   count(c.id) FILTER (WHERE c.discovered_at > now() - interval '7 days') AS chapters_7d, \
+                   count(*) AS chapter_count, \
+                   count(*) FILTER (WHERE c.discovered_at > now() - interval '24 hours') AS chapters_24h, \
+                   count(*) FILTER (WHERE c.discovered_at > now() - interval '7 days') AS chapters_7d, \
                    max(c.discovered_at) AS last_chapter_at \
             FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
             GROUP BY ss.provider_id \

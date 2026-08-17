@@ -327,7 +327,6 @@ impl<'a> SeriesBuilder<'a> {
                     .iter()
                     .map(|n| ChapterUpsert {
                         number: *n,
-                        volume: None,
                         title: None,
                         path: format!("/c/{n}"),
                         published_at: None,

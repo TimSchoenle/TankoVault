@@ -130,7 +130,6 @@ async fn ingest(db: &TestDb, provider: ProviderId, fixture: &Fixture) -> SeriesI
             chapters: (1..=12)
                 .map(|n| ChapterUpsert {
                     number: f64::from(n),
-                    volume: None,
                     title: None,
                     path: format!("/c/{n}"),
                     published_at: None,

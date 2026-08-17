@@ -3,7 +3,7 @@
 //! Every statement here aggregates over the user's whole watchlist, so the shape of the two
 //! per-series laterals decides what they cost. The unread predicate sits in the lateral's
 //! `WHERE` rather than in a `FILTER` over the series' full chapter list — the same rows, but
-//! `floor(number) >` becomes an index cond on `chapters_source_floor_num_access_idx` and the scan stays
+//! `floor(number) >` becomes an index cond on `chapters_source_number_key` and the scan stays
 //! index-only over the unread tail. `latest_chapter_at` is a scalar `max()` per source for the
 //! same reason: that is the form the MIN/MAX index optimisation fires on, over
 //! `chapters_source_disc_access_idx`. Together they are what keeps these off the 570 ms shape
@@ -57,13 +57,13 @@ pub async fn watchlist_summary<'e, E: PgExecutor<'e>>(
          FROM watchlist_entries w \
          LEFT JOIN read_progress rp ON rp.user_id = w.user_id AND rp.series_id = w.series_id \
          CROSS JOIN LATERAL ( \
-           SELECT COALESCE(count(DISTINCT floor(c.number)), 0) AS unread \
+           SELECT COALESCE(count(DISTINCT c.number_milli / 10000), 0) AS unread \
            FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
            WHERE ss.series_id = w.series_id \
-             AND floor(c.number) > COALESCE(rp.last_read_whole_number, 0) \
-             AND NOT (c.number <> floor(c.number) \
+             AND c.number_milli >= (floor(COALESCE(rp.last_read_whole_number, 0))::bigint + 1) * 10000 \
+             AND NOT (c.number_milli % 10000 <> 0 \
                       AND rp.last_read_part_number IS NOT NULL \
-                      AND c.number <= rp.last_read_part_number) \
+                      AND c.number_milli <= (rp.last_read_part_number * 10000)::bigint) \
              AND (c.access = 'free' OR c.unlocks_at <= now() \
                   OR ss.provider_id = ANY(ARRAY( \
                        SELECT e.provider_id FROM user_provider_early_access e \
@@ -118,13 +118,13 @@ pub(super) async fn fetch_counts(
          JOIN series s ON s.id = w.series_id \
          LEFT JOIN read_progress rp ON rp.user_id = w.user_id AND rp.series_id = w.series_id \
          CROSS JOIN LATERAL ( \
-           SELECT COALESCE(count(DISTINCT floor(c.number)), 0) AS unread \
+           SELECT COALESCE(count(DISTINCT c.number_milli / 10000), 0) AS unread \
            FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
            WHERE ss.series_id = w.series_id \
-             AND floor(c.number) > COALESCE(rp.last_read_whole_number, 0) \
-             AND NOT (c.number <> floor(c.number) \
+             AND c.number_milli >= (floor(COALESCE(rp.last_read_whole_number, 0))::bigint + 1) * 10000 \
+             AND NOT (c.number_milli % 10000 <> 0 \
                       AND rp.last_read_part_number IS NOT NULL \
-                      AND c.number <= rp.last_read_part_number) \
+                      AND c.number_milli <= (rp.last_read_part_number * 10000)::bigint) \
              AND (c.access = 'free' OR c.unlocks_at <= now() \
                   OR ss.provider_id = ANY(ARRAY( \
                        SELECT e.provider_id FROM user_provider_early_access e \
@@ -212,13 +212,13 @@ pub(super) async fn fetch_groups(
          JOIN series s ON s.id = w.series_id \
          LEFT JOIN read_progress rp ON rp.user_id = w.user_id AND rp.series_id = w.series_id \
          CROSS JOIN LATERAL ( \
-           SELECT COALESCE(count(DISTINCT floor(c.number)), 0) AS unread \
+           SELECT COALESCE(count(DISTINCT c.number_milli / 10000), 0) AS unread \
            FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
            WHERE ss.series_id = w.series_id \
-             AND floor(c.number) > COALESCE(rp.last_read_whole_number, 0) \
-             AND NOT (c.number <> floor(c.number) \
+             AND c.number_milli >= (floor(COALESCE(rp.last_read_whole_number, 0))::bigint + 1) * 10000 \
+             AND NOT (c.number_milli % 10000 <> 0 \
                       AND rp.last_read_part_number IS NOT NULL \
-                      AND c.number <= rp.last_read_part_number) \
+                      AND c.number_milli <= (rp.last_read_part_number * 10000)::bigint) \
              AND (c.access = 'free' OR c.unlocks_at <= now() \
                   OR ss.provider_id = ANY(ARRAY( \
                        SELECT e.provider_id FROM user_provider_early_access e \

@@ -718,11 +718,6 @@
         ],
         "type": "object"
       },
-      "ChapterId": {
-        "description": "Identifies a [`crate::entities::Chapter`].",
-        "format": "uuid",
-        "type": "string"
-      },
       "ChapterRead": {
         "properties": {
           "read": {
@@ -15069,6 +15064,16 @@
             },
             "description": "Acknowledged"
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "the chapter number is not a storable value"
+          },
           "401": {
             "content": {
               "application/json": {
@@ -15138,6 +15143,16 @@
             },
             "description": "Acknowledged"
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "the chapter number is not a storable value"
+          },
           "401": {
             "content": {
               "application/json": {
@@ -15196,6 +15211,16 @@
               }
             },
             "description": "Acknowledged"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "the chapter number is not a storable value"
           },
           "401": {
             "content": {

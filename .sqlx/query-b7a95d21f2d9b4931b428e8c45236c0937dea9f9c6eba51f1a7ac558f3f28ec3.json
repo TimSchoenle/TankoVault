@@ -1,0 +1,99 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id AS \"id!\", COALESCE(w.n, 0) AS \"watchers!\", COALESCE(src.n, 0) AS \"sources!\", COALESCE(ch.n, 0) AS \"chapters!\", s.external_score, s.external_popularity, COALESCE(( SELECT count(*) FROM rec_features rf WHERE rf.id = ANY(f.feature_ids) AND rf.kind IN ('tag', 'author') ), 0) AS \"descriptive_features!\", s.adult_gated AS \"adult_gated!\", COALESCE(src.active, false) AS \"has_active_source!\" FROM series s LEFT JOIN series_features f ON f.series_id = s.id LEFT JOIN LATERAL ( SELECT count(*) AS n FROM watchlist_entries w WHERE w.series_id = s.id ) w ON true LEFT JOIN LATERAL ( SELECT count(*) AS n, bool_or(ss.state = 'active') AS active FROM series_sources ss WHERE ss.series_id = s.id ) src ON true LEFT JOIN LATERAL ( SELECT count(DISTINCT c.number_milli / 10000) AS n FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id WHERE ss.series_id = s.id ) ch ON true WHERE s.id = ANY($1)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "watchers!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "sources!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "chapters!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "external_score",
+        "type_info": "Float4",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "external_score"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "external_popularity",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "external_popularity"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "descriptive_features!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "adult_gated!",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "adult_gated"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "has_active_source!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      true,
+      null,
+      null,
+      null,
+      true,
+      true,
+      null,
+      true,
+      null
+    ]
+  },
+  "hash": "b7a95d21f2d9b4931b428e8c45236c0937dea9f9c6eba51f1a7ac558f3f28ec3"
+}

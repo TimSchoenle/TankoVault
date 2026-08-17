@@ -72,10 +72,10 @@ id_type!(
     /// Identifies a [`crate::entities::SeriesSource`].
     SeriesSourceId
 );
-id_type!(
-    /// Identifies a [`crate::entities::Chapter`].
-    ChapterId
-);
+// No `ChapterId`. Migration 0055 dropped `chapters.id`: nothing ever referenced it — no foreign
+// key, no `chapter_id` column, and no wire field — so it was 16 bytes of heap plus a
+// random-UUID index earning nothing. A chapter is identified by `(series_source_id, number_milli)`,
+// which is now the primary key. See `docs/CHAPTER_STORAGE.md`.
 id_type!(
     /// Identifies a user account.
     UserId

@@ -1,5 +1,6 @@
 //! Operator control over which scraped chapter numbers ingest refuses.
 
+use crate::ConfigError;
 use serde::Deserialize;
 use tankovault_domain::chapter_outliers::OutlierPolicy;
 
@@ -88,6 +89,47 @@ impl Default for ChapterOutlierConfig {
 }
 
 impl ChapterOutlierConfig {
+    /// Check that every threshold is a number the rule can actually be evaluated against.
+    ///
+    /// TOML spells `nan` and `inf` as ordinary float literals, and a non-finite factor does not
+    /// make the rule stricter or looser — it makes every comparison in
+    /// [`tankovault_domain::chapter_outliers`] false, so the guard silently stops rejecting
+    /// anything while still reporting itself as enabled. A `max_rejected_fraction` above 1 is
+    /// the opposite failure: it lifts the ceiling that stops a misread listing being deleted
+    /// wholesale. Both are caught at boot, where the operator is still watching, rather than as
+    /// a shape in the catalogue three weeks later.
+    ///
+    /// # Errors
+    /// [`ConfigError::Invalid`] naming the first key that is out of range.
+    pub fn validate(&self) -> Result<(), ConfigError> {
+        for (key, value) in [
+            ("min_gap", self.min_gap),
+            ("gap_factor", self.gap_factor),
+            ("sparse_factor", self.sparse_factor),
+        ] {
+            if !value.is_finite() || value <= 0.0 {
+                return Err(ConfigError::Invalid(format!(
+                    "chapter_outliers.{key} must be a finite number greater than zero, got \
+                     {value}"
+                )));
+            }
+        }
+        if !(0.0..=1.0).contains(&self.max_rejected_fraction) {
+            return Err(ConfigError::Invalid(format!(
+                "chapter_outliers.max_rejected_fraction must be between 0 and 1, got {}",
+                self.max_rejected_fraction
+            )));
+        }
+        if self.min_body > self.min_sample {
+            return Err(ConfigError::Invalid(format!(
+                "chapter_outliers.min_body ({}) must not exceed min_sample ({}) — a listing \
+                 large enough to judge would have less than the protected body",
+                self.min_body, self.min_sample
+            )));
+        }
+        Ok(())
+    }
+
     /// The configured policy, as the scan engine applies it.
     ///
     /// `enabled: false` is expressed as a policy that can never fire rather than as a branch at
@@ -143,6 +185,35 @@ mod tests {
             ..ChapterOutlierConfig::default()
         };
         assert!(implausible_indices(&listing_with_stray(), &off.policy()).is_empty());
+    }
+
+    /// The bug: TOML accepts `nan` as a float literal, and every comparison against `NaN` is
+    /// false — so a mistyped `sparse_factor` left the guard reporting itself as enabled while
+    /// rejecting nothing at all. Caught at boot instead.
+    #[test]
+    fn a_non_finite_threshold_is_refused() {
+        assert!(ChapterOutlierConfig::default().validate().is_ok());
+        for bad in [f64::NAN, f64::INFINITY, 0.0, -1.0] {
+            let cfg = ChapterOutlierConfig {
+                sparse_factor: bad,
+                ..ChapterOutlierConfig::default()
+            };
+            assert!(cfg.validate().is_err(), "accepted sparse_factor = {bad}");
+        }
+    }
+
+    #[test]
+    fn the_rejection_ceiling_stays_a_fraction() {
+        for bad in [-0.1, 1.1, f64::NAN] {
+            let cfg = ChapterOutlierConfig {
+                max_rejected_fraction: bad,
+                ..ChapterOutlierConfig::default()
+            };
+            assert!(
+                cfg.validate().is_err(),
+                "accepted max_rejected_fraction = {bad}"
+            );
+        }
     }
 
     /// A configured threshold actually moves the outcome — the knobs are not decorative.

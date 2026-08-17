@@ -29,6 +29,7 @@ pub struct ProgressUpdate {
     security(("bearer_auth" = [])),
     responses(
         (status = 200, description = "Acknowledged", body = serde_json::Value, example = json!({"ok": true})),
+        (status = 400, description = "the chapter number is not a storable value", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
     )
 )]
@@ -38,6 +39,7 @@ pub async fn put_progress(
     Path(series_id): Path<SeriesId>,
     Json(body): Json<ProgressUpdate>,
 ) -> ApiResult<Json<serde_json::Value>> {
+    crate::auth::validate_chapter_number(body.last_read_whole_number)?;
     tankovault_db::repo::tracking::progress_set(
         &state.pool,
         user.user_id,
@@ -105,6 +107,7 @@ pub struct ChapterRead {
     security(("bearer_auth" = [])),
     responses(
         (status = 200, description = "Acknowledged", body = serde_json::Value, example = json!({"ok": true})),
+        (status = 400, description = "the chapter number is not a storable value", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
     )
 )]
@@ -114,6 +117,8 @@ pub async fn put_chapter_progress(
     Path((series_id, number)): Path<(SeriesId, f64)>,
     Json(body): Json<ChapterRead>,
 ) -> ApiResult<Json<serde_json::Value>> {
+    // The number is a path *segment* here, and `f64::from_str` reads "NaN" and "inf".
+    crate::auth::validate_chapter_number(number)?;
     if body.read {
         tankovault_db::repo::tracking::progress_mark_read(
             &state.pool,
@@ -152,6 +157,7 @@ pub struct MarkReadTo {
     security(("bearer_auth" = [])),
     responses(
         (status = 200, description = "Acknowledged", body = serde_json::Value, example = json!({"ok": true})),
+        (status = 400, description = "the chapter number is not a storable value", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
     )
 )]
@@ -161,6 +167,7 @@ pub async fn mark_read_to(
     Path(series_id): Path<SeriesId>,
     Json(body): Json<MarkReadTo>,
 ) -> ApiResult<Json<serde_json::Value>> {
+    crate::auth::validate_chapter_number(body.number)?;
     tankovault_db::repo::tracking::progress_mark_read(
         &state.pool,
         user.user_id,

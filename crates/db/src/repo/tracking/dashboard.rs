@@ -9,15 +9,29 @@
 //! catches a copy drifting:
 //!
 //! ```text
-//! floor(c.number) > COALESCE(rp.last_read_whole_number, 0)
-//!   AND NOT (c.number <> floor(c.number)
+//! c.number_milli >= (floor(COALESCE(rp.last_read_whole_number, 0))::bigint + 1) * 10000
+//!   AND NOT (c.number_milli % 10000 <> 0
 //!            AND rp.last_read_part_number IS NOT NULL
-//!            AND c.number <= rp.last_read_part_number)
+//!            AND c.number_milli <= (rp.last_read_part_number * 10000)::bigint)
 //!   AND (c.access = 'free' OR c.unlocks_at <= now()
 //!        OR ss.provider_id = ANY(ARRAY(
 //!             SELECT e.provider_id FROM user_provider_early_access e
 //!             WHERE e.user_id = $1)))
 //! ```
+//!
+//! The first two clauses read oddly and are not free-hand: migration 0055 stores the number as
+//! `number_milli int` (the number × 10 000), and these are the mechanical translations of
+//! `floor(c.number) > w` and `c.number <= p`. `repo::catalog::chapters` holds the table of them.
+//! Two details that are load-bearing:
+//!
+//! - **`floor(…)` before the `::bigint`.** A `numeric::bigint` cast *rounds*, so
+//!   `last_read_whole_number = 5.5` would become 6 and hide chapter 6 as already read.
+//! - **`bigint`, not `int`.** Not for an in-range bound — `(200000 + 1) * 10000` fits `int`. For
+//!   a `read_progress` row written before the chapter ceiling existed, which was never
+//!   range-checked and can still hold a date-shaped value; that bound lands two orders of
+//!   magnitude past `i32::MAX`. Postgres has an `int4 >= int8` operator in the default btree
+//!   opfamily, so widening costs nothing: the comparison stays an *index cond* on
+//!   `chapters_source_number_key` rather than degrading to a filter.
 //!
 //! The third clause is the early-access gate. A chapter a provider has published behind a
 //! paywall is stored like any other — it has to be, or the row would be re-discovered and
@@ -38,6 +52,7 @@
 
 use crate::error::DbResult;
 use sqlx::{FromRow, PgExecutor};
+use tankovault_domain::chapter_number::from_milli;
 use tankovault_domain::{SeriesId, UserId};
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -70,7 +85,7 @@ pub async fn feed<'e, E: PgExecutor<'e>>(
     struct Row {
         series_id: Uuid,
         series_title: String,
-        chapter_number: f64,
+        chapter_number: i32,
         chapter_title: Option<String>,
         provider_slug: String,
         base_url: String,
@@ -80,9 +95,9 @@ pub async fn feed<'e, E: PgExecutor<'e>>(
     let rows = sqlx::query_as!(
         Row,
         "SELECT s.id AS series_id, s.canonical_title AS series_title, \
-                c.number::float8 AS \"chapter_number!\", c.title AS chapter_title, \
+                c.number_milli AS \"chapter_number!\", c.title AS chapter_title, \
                 p.slug AS provider_slug, p.base_url AS base_url, \
-                c.path AS chapter_path, c.discovered_at \
+                chapter_url_path(ss.source_path, c.path) AS \"chapter_path!\", c.discovered_at \
          FROM watchlist_entries w \
          JOIN series s ON s.id = w.series_id \
          JOIN series_sources ss ON ss.series_id = w.series_id \
@@ -90,10 +105,10 @@ pub async fn feed<'e, E: PgExecutor<'e>>(
          JOIN chapters c ON c.series_source_id = ss.id \
          LEFT JOIN read_progress rp ON rp.user_id = w.user_id AND rp.series_id = w.series_id \
          WHERE w.user_id = $1 \
-           AND floor(c.number) > COALESCE(rp.last_read_whole_number, 0) \
-           AND NOT (c.number <> floor(c.number) \
+           AND c.number_milli >= (floor(COALESCE(rp.last_read_whole_number, 0))::bigint + 1) * 10000 \
+           AND NOT (c.number_milli % 10000 <> 0 \
                     AND rp.last_read_part_number IS NOT NULL \
-                    AND c.number <= rp.last_read_part_number) \
+                    AND c.number_milli <= (rp.last_read_part_number * 10000)::bigint) \
            AND (c.access = 'free' OR c.unlocks_at <= now() \
                 OR ss.provider_id = ANY(ARRAY( \
                      SELECT e.provider_id FROM user_provider_early_access e \
@@ -110,7 +125,7 @@ pub async fn feed<'e, E: PgExecutor<'e>>(
         .map(|r| FeedItem {
             series_id: SeriesId::from_uuid(r.series_id),
             series_title: r.series_title,
-            chapter_number: r.chapter_number,
+            chapter_number: from_milli(r.chapter_number),
             chapter_title: r.chapter_title,
             provider_slug: r.provider_slug,
             base_url: r.base_url,
@@ -140,7 +155,7 @@ pub struct ContinueCard {
 /// alone leaves a card that can never be cleared (badge stuck on an already-read part).
 ///
 /// **Two laterals, and they must stay two.** `agg` carries the predicate in its `WHERE`, which
-/// is what lets `floor(number) > …` reach `chapters_source_floor_num_access_idx` as an index
+/// is what lets `floor(number) > …` reach `chapters_source_number_key` as an index
 /// condition and read only the unread tail. Folding `max(discovered_at)` back in would push the
 /// predicate into a `FILTER` and the scan back over every chapter of every watched series —
 /// 268 k rows, 280 ms, and an estimated cost high enough to buy 190 ms of JIT nothing needed.
@@ -166,27 +181,27 @@ pub async fn continue_reading<'e, E: PgExecutor<'e>>(
         series_title: String,
         cover_url: Option<String>,
         last_read_number: f64,
-        next_number: Option<f64>,
+        next_number: Option<i32>,
         unread: i64,
     }
     let rows = sqlx::query_as!(
         Row,
         "SELECT w.series_id, s.canonical_title AS series_title, s.cover_url, \
                 COALESCE(rp.last_read_whole_number, 0)::float8 AS \"last_read_number!\", \
-                agg.next_number::float8 AS next_number, \
+                agg.next_number AS next_number, \
                 agg.unread AS \"unread!\" \
          FROM watchlist_entries w \
          JOIN series s ON s.id = w.series_id \
          LEFT JOIN read_progress rp ON rp.user_id = w.user_id AND rp.series_id = w.series_id \
          CROSS JOIN LATERAL ( \
-           SELECT min(c.number) AS next_number, \
-                  count(DISTINCT floor(c.number)) AS unread \
+           SELECT min(c.number_milli) AS next_number, \
+                  count(DISTINCT c.number_milli / 10000) AS unread \
            FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
            WHERE ss.series_id = w.series_id \
-             AND floor(c.number) > COALESCE(rp.last_read_whole_number, 0) \
-             AND NOT (c.number <> floor(c.number) \
+             AND c.number_milli >= (floor(COALESCE(rp.last_read_whole_number, 0))::bigint + 1) * 10000 \
+             AND NOT (c.number_milli % 10000 <> 0 \
                       AND rp.last_read_part_number IS NOT NULL \
-                      AND c.number <= rp.last_read_part_number) \
+                      AND c.number_milli <= (rp.last_read_part_number * 10000)::bigint) \
              AND (c.access = 'free' OR c.unlocks_at <= now() \
                   OR ss.provider_id = ANY(ARRAY( \
                        SELECT e.provider_id FROM user_provider_early_access e \
@@ -216,7 +231,7 @@ pub async fn continue_reading<'e, E: PgExecutor<'e>>(
             series_title: r.series_title,
             cover_url: r.cover_url,
             last_read_number: r.last_read_number,
-            next_number: r.next_number,
+            next_number: r.next_number.map(from_milli),
             unread: r.unread,
         })
         .collect())
@@ -242,7 +257,7 @@ pub struct MeStats {
 ///
 /// `unread` sums a per-series lateral, the same shape as [`continue_reading`]'s: the predicate
 /// sits in the lateral's `WHERE`, so `floor(number) > …` becomes an index condition on
-/// `chapters_source_floor_num_access_idx` and the scan reads only unread rows. The global `DISTINCT`
+/// `chapters_source_number_key` and the scan reads only unread rows. The global `DISTINCT`
 /// this replaced could not — `last_read_whole_number` arrived from a join *above* the chapter
 /// scan, so every chapter of every watched series was read and then filtered (319 k rows for 851
 /// entries). Summing per series equals that `DISTINCT` only because `watchlist_entries` is keyed
@@ -269,13 +284,13 @@ pub async fn me_stats<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResu
               FROM watchlist_entries w \
               LEFT JOIN read_progress rp ON rp.user_id = w.user_id AND rp.series_id = w.series_id \
               CROSS JOIN LATERAL ( \
-                SELECT count(DISTINCT floor(c.number)) AS unread \
+                SELECT count(DISTINCT c.number_milli / 10000) AS unread \
                 FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
                 WHERE ss.series_id = w.series_id \
-                  AND floor(c.number) > COALESCE(rp.last_read_whole_number, 0) \
-                  AND NOT (c.number <> floor(c.number) \
+                  AND c.number_milli >= (floor(COALESCE(rp.last_read_whole_number, 0))::bigint + 1) * 10000 \
+                  AND NOT (c.number_milli % 10000 <> 0 \
                            AND rp.last_read_part_number IS NOT NULL \
-                           AND c.number <= rp.last_read_part_number) \
+                           AND c.number_milli <= (rp.last_read_part_number * 10000)::bigint) \
                   AND (c.access = 'free' OR c.unlocks_at <= now() \
                        OR ss.provider_id = ANY(ARRAY( \
                             SELECT e.provider_id FROM user_provider_early_access e \

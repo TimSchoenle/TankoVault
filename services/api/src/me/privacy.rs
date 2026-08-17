@@ -226,6 +226,9 @@ pub async fn create_privacy_request(
         .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty());
+    if let Some(detail) = detail {
+        crate::auth::validate_free_text("detail", detail)?;
+    }
 
     if body.kind == PrivacyRequestKind::Rectification && detail.is_none() {
         return Err(ApiError::BadRequest(

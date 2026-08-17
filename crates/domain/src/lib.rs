@@ -4,6 +4,7 @@
 //! [`implausible_indices`] guard against junk chapter numbers. No I/O, no async, no persistence.
 
 pub mod adult;
+pub mod chapter_number;
 pub mod chapter_outliers;
 pub mod entities;
 pub mod enums;
@@ -23,6 +24,9 @@ pub mod term_filter;
 pub mod tunables;
 
 pub use adult::{AdultTagSet, DEFAULT_ADULT_TAGS};
+pub use chapter_number::{
+    MAX_CHAPTER_NUMBER, MILLI_SCALE, from_milli, is_storable, to_milli, whole_of_milli,
+};
 pub use chapter_outliers::{OutlierPolicy, implausible_indices};
 pub use entities::{
     Author, Chapter, Notification, PresetDefinition, PresetLink, Provider, ReadProgress, ScanRun,
@@ -34,10 +38,10 @@ pub use enums::{
 };
 pub use features::{Feature, FeatureGroup, ParseFeatureError};
 pub use ids::{
-    AuthorId, ChapterId, NotificationId, ProviderId, ScanRunId, ScanTaskId, SeriesId,
-    SeriesSourceId, TagId, UserId,
+    AuthorId, NotificationId, ProviderId, ScanRunId, ScanTaskId, SeriesId, SeriesSourceId, TagId,
+    UserId,
 };
-pub use link::{ResolveError, resolve_link};
+pub use link::{ResolveError, compress_chapter_path, expand_chapter_path, resolve_link};
 pub use metadata_priority::{MetadataField, MetadataPriority, MetadataSource, MetadataValue};
 pub use normalize::{compact_key, normalize_title};
 pub use notifications::{

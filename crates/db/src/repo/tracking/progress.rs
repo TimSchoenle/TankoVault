@@ -5,6 +5,9 @@ use std::collections::{HashMap, HashSet};
 
 use crate::error::DbResult;
 use sqlx::{FromRow, PgExecutor};
+use tankovault_domain::chapter_number::{
+    from_milli, milli_ceil, milli_of_whole, whole_ceil, whole_floor,
+};
 use tankovault_domain::{SeriesId, UserId};
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -322,7 +325,7 @@ pub async fn progress_bulk_mark_all_read<'e, E: PgExecutor<'e>>(
            SELECT w.series_id, latest.n \
            FROM watchlist_entries w \
            CROSS JOIN LATERAL ( \
-             SELECT max(floor(c.number)) AS n \
+             SELECT max(c.number_milli / 10000) AS n \
              FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
              WHERE ss.series_id = w.series_id \
                AND (c.access = 'free' OR c.unlocks_at <= now() \
@@ -361,20 +364,23 @@ pub async fn progress_bulk_mark_all_read<'e, E: PgExecutor<'e>>(
 /// counts: reading past `46.1` credits chapter `45` even when the catalogue holds only
 /// `45.1`..`45.6`, which is right — every part of `45` that exists has been read.
 async fn prev_whole_below(pool: &sqlx::PgPool, series_id: SeriesId, number: f64) -> DbResult<f64> {
-    // The bound is cast to `numeric` rather than the column's `floor()` being cast to
-    // `float8`. Written the other way round, Postgres compares `(floor(number))::float8`,
-    // which is a *different* expression from the one `chapters_source_floor_idx
-    // (series_source_id, (floor(number)))` indexes, so the index can never match it.
+    // `floor(c.number) < number` in the stored domain. For any real `number`, an integer whole
+    // chapter `w` satisfies `w < number` exactly when `w <= ceil(number) - 1`, so the bound on the
+    // scaled column is `ceil(number) * 10000` with a strict `<`. Computed here rather than in SQL
+    // so the column itself stays untouched on the left of the comparison — an expression over
+    // `number_milli` would not match `chapters_source_number_key`, which is the mistake the old
+    // `::numeric`-vs-`::float8` comment beside this query was warning about.
+    let bound = milli_of_whole(whole_ceil(number));
     Ok(sqlx::query_scalar!(
-        "SELECT max(floor(c.number))::float8 \
+        "SELECT max(c.number_milli / 10000) \
            FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
-          WHERE ss.series_id = $1 AND floor(c.number) < ($2::float8)::numeric",
+          WHERE ss.series_id = $1 AND c.number_milli < $2::bigint",
         series_id.as_uuid(),
-        number,
+        bound,
     )
     .fetch_one(pool)
     .await?
-    .unwrap_or(0.0))
+    .map_or(0.0, f64::from))
 }
 
 /// The highest part release that exists for this series strictly below `number` and belonging to
@@ -392,18 +398,24 @@ async fn prev_part_below(
     number: f64,
     whole: f64,
 ) -> DbResult<Option<f64>> {
+    // Both bounds in the stored domain: `c.number < number` is `number_milli < ceil(number*10000)`
+    // (equal for a value that is exact at scale 4, and correct for one that is not), and
+    // `floor(c.number) > whole` is `number_milli >= (floor(whole) + 1) * 10000`.
+    let upper = milli_ceil(number);
+    let lower = milli_of_whole(whole_floor(whole) + 1);
     Ok(sqlx::query_scalar!(
-        "SELECT max(c.number)::float8 \
+        "SELECT max(c.number_milli) \
            FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
-          WHERE ss.series_id = $1 AND c.number < $2::float8 \
-            AND floor(c.number) > ($3::float8)::numeric \
-            AND c.number <> floor(c.number)",
+          WHERE ss.series_id = $1 AND c.number_milli < $2::bigint \
+            AND c.number_milli >= $3::bigint \
+            AND c.number_milli % 10000 <> 0",
         series_id.as_uuid(),
-        number,
-        whole,
+        upper,
+        lower,
     )
     .fetch_one(pool)
-    .await?)
+    .await?
+    .map(from_milli))
 }
 
 /// Set (or clear) the blanket per-series sync-exclusion flag on a watchlist entry. The entry

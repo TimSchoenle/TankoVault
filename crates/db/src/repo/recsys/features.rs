@@ -62,7 +62,7 @@ pub async fn list_series_facts<'e, E: PgExecutor<'e>>(
                 COALESCE(au.slugs, '{}') AS \"author_slugs!\" \
          FROM series s \
          LEFT JOIN LATERAL ( \
-           SELECT count(DISTINCT floor(c.number)) AS n \
+           SELECT count(DISTINCT c.number_milli / 10000) AS n \
            FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
            WHERE ss.series_id = s.id \
          ) ch ON true \

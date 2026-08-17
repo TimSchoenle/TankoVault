@@ -98,7 +98,6 @@ async fn ingest(app: &TestApp, provider: ProviderId, fixture: &Fixture) -> Serie
             chapters: (1..=12)
                 .map(|n| ChapterUpsert {
                     number: f64::from(n),
-                    volume: None,
                     title: None,
                     path: format!("/c/{n}"),
                     published_at: None,

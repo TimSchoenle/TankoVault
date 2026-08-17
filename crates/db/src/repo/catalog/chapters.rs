@@ -1,20 +1,47 @@
 //! Chapters: idempotent upserts that report which rows were genuinely new, plus the counts
 //! and listings the reading surfaces read back.
+//!
+//! # The storage form, and why the SQL here looks the way it does
+//!
+//! Migration 0055 stores the chapter number as `number_milli int` — the number scaled by
+//! [`tankovault_domain::chapter_number::MILLI_SCALE`] — and the path relative to the source's own
+//! path. Both are storage details that
+//! stop at this module's boundary: [`Chapter`] carries an `f64` number and an expanded path, and
+//! nothing above the repo layer knows otherwise.
+//!
+//! The translations, which every chapter query in the crate uses and none may spell differently:
+//!
+//! | Domain question | SQL |
+//! |---|---|
+//! | `floor(number)` | `number_milli / 10000` (integer division; exact only because the column is `CHECK (number_milli >= 0)`) |
+//! | `number` is a part release | `number_milli % 10000 <> 0` |
+//! | `floor(number) > w` | `number_milli >= (w + 1) * 10000`, computed in **bigint** |
+//! | `number <= p` | `number_milli <= (p * 10000)::bigint` |
+//! | the absolute path | `chapter_url_path(ss.source_path, c.path)` |
+//!
+//! The bigint on the third row is not decoration, though not for the obvious reason: an in-range
+//! bound, `(200000 + 1) * 10000`, fits `int` comfortably. `w` comes from
+//! `read_progress.last_read_whole_number`, which is still `numeric(10,4)` and was never
+//! range-checked before the chapter ceiling existed — a row holding a date-shaped value from that
+//! era yields a bound two orders of magnitude past `i32::MAX`, and that is an error raised on a
+//! read path rather than a wrong answer. Postgres has an `int4 >= int8` operator in the default
+//! btree opfamily, so widening the bound costs nothing: the comparison stays an **index cond**
+//! rather than a filter, which is the whole point of the storage change and is verified by
+//! `repo_query_plans`.
 
 use crate::error::DbResult;
 use sqlx::{FromRow, PgExecutor};
-use tankovault_domain::{
-    Chapter, ChapterAccess, ChapterId, ProviderId, SeriesId, SeriesSourceId, UserId,
-};
+use tankovault_domain::chapter_number::{from_milli, to_milli};
+use tankovault_domain::{Chapter, ChapterAccess, ProviderId, SeriesId, SeriesSourceId, UserId};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
 /// One chapter to upsert (from an adapter's `fetch_chapters`).
 pub struct ChapterUpsert {
     pub number: f64,
-    pub volume: Option<i32>,
     pub title: Option<String>,
-    /// RELATIVE link to the chapter page.
+    /// RELATIVE link to the chapter page, as the adapter emitted it — site-relative and whole.
+    /// [`upsert_chapters`] compresses it against the source path; callers do not.
     pub path: String,
     pub published_at: Option<OffsetDateTime>,
     /// What the provider says about reading it: free, or behind a paywall.
@@ -24,19 +51,10 @@ pub struct ChapterUpsert {
     pub unlocks_at: Option<OffsetDateTime>,
 }
 
-/// Outcome of a single chapter upsert.
-pub struct ChapterUpsertResult {
-    pub number: f64,
-    /// True when this row was newly inserted (a genuine discovery), false on update.
-    pub inserted: bool,
-}
-
 #[derive(FromRow)]
 struct ChapterRow {
-    id: Uuid,
     series_source_id: Uuid,
-    number: f64,
-    volume: Option<i32>,
+    number_milli: i32,
     title: Option<String>,
     path: String,
     published_at: Option<OffsetDateTime>,
@@ -46,10 +64,8 @@ struct ChapterRow {
 impl From<ChapterRow> for Chapter {
     fn from(r: ChapterRow) -> Self {
         Self {
-            id: ChapterId::from_uuid(r.id),
             series_source_id: SeriesSourceId::from_uuid(r.series_source_id),
-            number: r.number,
-            volume: r.volume,
+            number: from_milli(r.number_milli),
             title: r.title,
             path: r.path,
             published_at: r.published_at,
@@ -58,109 +74,99 @@ impl From<ChapterRow> for Chapter {
     }
 }
 
-/// Upsert one chapter and report whether it was newly discovered (`xmax = 0`).
-///
-/// # Errors
-/// [`crate::DbError::Sqlx`] only. A non-finite or out-of-precision `number` errors rather than
-/// rounding — a silently wrong number would misplace a reader's progress.
-pub async fn upsert_chapter<'e, E: PgExecutor<'e>>(
-    exec: E,
-    source_id: SeriesSourceId,
-    ch: &ChapterUpsert,
-) -> DbResult<ChapterUpsertResult> {
-    let inserted = sqlx::query_scalar!(
-        // `access`/`unlocks_at` are overwritten, not coalesced: they are the provider's current
-        // verdict, and the whole point is that a chapter which has since unlocked stops being
-        // reported as locked. Coalescing would freeze the first answer forever.
-        "INSERT INTO chapters (id, series_source_id, number, volume, title, path, published_at, \
-                               access, unlocks_at) \
-         VALUES ($1,$2,$3::float8::numeric(10,4),$4,$5,$6,$7,$8,$9) \
-         ON CONFLICT (series_source_id, number) DO UPDATE \
-            SET title = EXCLUDED.title, path = EXCLUDED.path, \
-                published_at = COALESCE(EXCLUDED.published_at, chapters.published_at), \
-                access = EXCLUDED.access, unlocks_at = EXCLUDED.unlocks_at \
-         RETURNING (xmax = 0) AS \"inserted!\"",
-        ChapterId::new().as_uuid(),
-        source_id.as_uuid(),
-        ch.number,
-        ch.volume,
-        ch.title.as_deref(),
-        &ch.path,
-        ch.published_at,
-        ch.access as ChapterAccess,
-        ch.unlocks_at,
-    )
-    .fetch_one(exec)
-    .await?;
-    Ok(ChapterUpsertResult {
-        number: ch.number,
-        inserted,
-    })
-}
-
 /// Upsert a whole chapter list in one statement, returning the numbers that were **new**.
 ///
-/// One statement, not a loop over [`upsert_chapter`] — the ingest transaction holds row locks
-/// on shared `tags`/`authors` rows, so per-chapter round trips there stall other ingests.
-/// `DISTINCT ON` avoids `ON CONFLICT DO UPDATE` aborting when a page lists one chapter number
-/// twice.
+/// One statement, not a per-chapter loop — the ingest transaction holds row locks on shared
+/// `tags`/`authors` rows, so per-chapter round trips there stall other ingests. `DISTINCT ON`
+/// avoids `ON CONFLICT DO UPDATE` aborting when a page lists one chapter number twice.
 ///
-/// **The `DISTINCT ON` key must stay the cast expression, not the raw `float8`.** The unique
-/// index is on `numeric(10,4)`, so two `float8` values that differ only past the fourth decimal
-/// are distinct to the dedup and identical to the constraint — both rows survive and the
-/// statement aborts with "ON CONFLICT DO UPDATE command cannot affect row a second time",
-/// failing the whole ingest batch. Same reason `ORDER BY` casts: `DISTINCT ON` requires its
-/// leading sort key to be the dedup expression, and `u.ord DESC` behind it is what makes the
-/// last listing of a repeated number win.
+/// `source_path` is the source's own path, which the stored `path` is compressed against.
+///
+/// A chapter whose number is outside the storable range is **skipped**, not an error: the worker
+/// already drops those (`drop_unstorable`), and a second one reaching here must not be able to
+/// fail the whole per-source transaction — which is the failure the range check exists to prevent.
+///
+/// # The `WHERE` on the `DO UPDATE`, which is not optional
+///
+/// Without it, a *converged* rescan — one where the provider published nothing and every value is
+/// byte-identical to what is stored — still writes a new version of every row, because an `UPDATE`
+/// that assigns the same value is still an `UPDATE`. Measured on 1.2 M rows: the relation went
+/// from 456 MB to **1046 MB after a single no-op rescan**, and to 1465 MB after three. With this
+/// clause, three converged rescans leave it at 456 MB.
+///
+/// The `published_at` arm has to mirror the `COALESCE` above it. Written as a plain
+/// `IS DISTINCT FROM`, a row whose stored `published_at` is set and whose incoming one is NULL
+/// would compare as differing forever and be rewritten on every scan — the same bug, quieter.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; one bad chapter fails the whole batch. An empty `Vec` means
-/// either no input or a fully-converged re-scan — only `Err` means nothing was written.
+/// no input, a fully-converged re-scan, or every row skipped — only `Err` means a write failed.
 pub async fn upsert_chapters<'e, E: PgExecutor<'e>>(
     exec: E,
     source_id: SeriesSourceId,
+    source_path: &str,
     chapters: &[ChapterUpsert],
 ) -> DbResult<Vec<f64>> {
     if chapters.is_empty() {
         return Ok(Vec::new());
     }
 
-    let ids: Vec<Uuid> = chapters
+    let storable: Vec<(&ChapterUpsert, i32)> = chapters
         .iter()
-        .map(|_| ChapterId::new().as_uuid())
+        .filter_map(|c| to_milli(c.number).map(|m| (c, m)))
         .collect();
-    let numbers: Vec<f64> = chapters.iter().map(|c| c.number).collect();
-    let volumes: Vec<Option<i32>> = chapters.iter().map(|c| c.volume).collect();
-    // Borrowed, not cloned: arrays live only for this statement.
-    let titles: Vec<Option<&str>> = chapters.iter().map(|c| c.title.as_deref()).collect();
-    let paths: Vec<&str> = chapters.iter().map(|c| c.path.as_str()).collect();
-    let published: Vec<Option<OffsetDateTime>> = chapters.iter().map(|c| c.published_at).collect();
-    let accesses: Vec<ChapterAccess> = chapters.iter().map(|c| c.access).collect();
-    let unlocks: Vec<Option<OffsetDateTime>> = chapters.iter().map(|c| c.unlocks_at).collect();
+    if storable.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let numbers: Vec<i32> = storable.iter().map(|(_, m)| *m).collect();
+    // Borrowed where the value is already owned by the caller; the compressed paths have to be
+    // built, so they are the one allocation per row this function makes.
+    let titles: Vec<Option<&str>> = storable.iter().map(|(c, _)| c.title.as_deref()).collect();
+    let paths: Vec<String> = storable
+        .iter()
+        .map(|(c, _)| tankovault_domain::compress_chapter_path(source_path, &c.path))
+        .collect();
+    let published: Vec<Option<OffsetDateTime>> =
+        storable.iter().map(|(c, _)| c.published_at).collect();
+    let accesses: Vec<ChapterAccess> = storable.iter().map(|(c, _)| c.access).collect();
+    let unlocks: Vec<Option<OffsetDateTime>> = storable.iter().map(|(c, _)| c.unlocks_at).collect();
 
     let rows = sqlx::query!(
-        // See `upsert_chapter` on why the access columns are overwritten rather than coalesced.
-        "INSERT INTO chapters (id, series_source_id, number, volume, title, path, published_at, \
+        // `access`/`unlocks_at` are overwritten, not coalesced: they are the provider's current
+        // verdict, and the whole point is that a chapter which has since unlocked stops being
+        // reported as locked. Coalescing would freeze the first answer forever.
+        //
+        // `DISTINCT ON (u.number_milli)` with `u.ord DESC` behind it makes the last listing of a
+        // repeated number win. It no longer needs a cast: the dedup key and the unique index are
+        // now the same `int`, where under `numeric(10,4)` they were two different types and two
+        // `float8` values differing past the fourth decimal deduped as distinct but collided in
+        // the constraint — aborting the batch with "ON CONFLICT DO UPDATE command cannot affect
+        // row a second time".
+        "INSERT INTO chapters (series_source_id, number_milli, title, path, published_at, \
                                access, unlocks_at) \
-         SELECT DISTINCT ON (u.number::float8::numeric(10,4)) \
-                u.id, $2, u.number::float8::numeric(10,4), u.volume, u.title, u.path, \
-                u.published_at, u.access, u.unlocks_at \
-           FROM UNNEST($1::uuid[], $3::float8[], $4::int[], $5::text[], $6::text[], \
-                       $7::timestamptz[], $8::chapter_access[], $9::timestamptz[]) \
-                WITH ORDINALITY AS u(id, number, volume, title, path, published_at, access, \
+         SELECT DISTINCT ON (u.number_milli) \
+                $1, u.number_milli, u.title, u.path, u.published_at, u.access, u.unlocks_at \
+           FROM UNNEST($2::int[], $3::text[], $4::text[], $5::timestamptz[], \
+                       $6::chapter_access[], $7::timestamptz[]) \
+                WITH ORDINALITY AS u(number_milli, title, path, published_at, access, \
                                      unlocks_at, ord) \
-          ORDER BY u.number::float8::numeric(10,4), u.ord DESC \
-         ON CONFLICT (series_source_id, number) DO UPDATE \
+          ORDER BY u.number_milli, u.ord DESC \
+         ON CONFLICT (series_source_id, number_milli) DO UPDATE \
             SET title = EXCLUDED.title, path = EXCLUDED.path, \
                 published_at = COALESCE(EXCLUDED.published_at, chapters.published_at), \
                 access = EXCLUDED.access, unlocks_at = EXCLUDED.unlocks_at \
-         RETURNING number::float8 AS \"number!\", (xmax = 0) AS \"inserted!\"",
-        &ids,
+          WHERE chapters.title      IS DISTINCT FROM EXCLUDED.title \
+             OR chapters.path       IS DISTINCT FROM EXCLUDED.path \
+             OR chapters.access     IS DISTINCT FROM EXCLUDED.access \
+             OR chapters.unlocks_at IS DISTINCT FROM EXCLUDED.unlocks_at \
+             OR (EXCLUDED.published_at IS NOT NULL \
+                 AND chapters.published_at IS DISTINCT FROM EXCLUDED.published_at) \
+         RETURNING number_milli AS \"number_milli!\", (xmax = 0) AS \"inserted!\"",
         source_id.as_uuid(),
         &numbers,
-        &volumes as &[Option<i32>],
         &titles as _,
-        &paths as _,
+        &paths,
         &published as &[Option<OffsetDateTime>],
         &accesses as &[ChapterAccess],
         &unlocks as &[Option<OffsetDateTime>],
@@ -171,7 +177,7 @@ pub async fn upsert_chapters<'e, E: PgExecutor<'e>>(
     Ok(rows
         .into_iter()
         .filter(|r| r.inserted)
-        .map(|r| r.number)
+        .map(|r| from_milli(r.number_milli))
         .collect())
 }
 
@@ -185,12 +191,12 @@ pub async fn max_chapter_number<'e, E: PgExecutor<'e>>(
     source_id: SeriesSourceId,
 ) -> DbResult<Option<f64>> {
     let max = sqlx::query_scalar!(
-        "SELECT MAX(number)::float8 AS \"max?\" FROM chapters WHERE series_source_id = $1",
+        "SELECT MAX(number_milli) AS \"max?\" FROM chapters WHERE series_source_id = $1",
         source_id.as_uuid(),
     )
     .fetch_one(exec)
     .await?;
-    Ok(max)
+    Ok(max.map(from_milli))
 }
 
 /// Distinct **whole** chapters a source has; part releases (`152.1`..`152.6`) collapse into
@@ -205,7 +211,7 @@ pub async fn count_full_chapters<'e, E: PgExecutor<'e>>(
     source_id: SeriesSourceId,
 ) -> DbResult<i32> {
     let count = sqlx::query_scalar!(
-        "SELECT count(DISTINCT floor(number)) AS \"count!\" FROM chapters \
+        "SELECT count(DISTINCT number_milli / 10000) AS \"count!\" FROM chapters \
          WHERE series_source_id = $1",
         source_id.as_uuid(),
     )
@@ -225,9 +231,12 @@ pub async fn list_chapters<'e, E: PgExecutor<'e>>(
 ) -> DbResult<Vec<Chapter>> {
     let rows = sqlx::query_as!(
         ChapterRow,
-        "SELECT id, series_source_id, number::float8 AS \"number!\", volume, title, path, \
-         published_at, discovered_at FROM chapters WHERE series_source_id = $1 \
-         ORDER BY number DESC",
+        "SELECT c.series_source_id, c.number_milli, c.title, \
+                chapter_url_path(ss.source_path, c.path) AS \"path!\", \
+                c.published_at, c.discovered_at \
+         FROM chapters c JOIN series_sources ss ON ss.id = c.series_source_id \
+         WHERE c.series_source_id = $1 \
+         ORDER BY c.number_milli DESC",
         source_id.as_uuid(),
     )
     .fetch_all(exec)
@@ -252,7 +261,10 @@ pub async fn count_full_chapters_by_provider<'e, E: PgExecutor<'e>>(
     }
     let rows = sqlx::query_as!(
         Row,
-        "SELECT ss.provider_id, count(DISTINCT floor(c.number)) AS \"count!\"          FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id          WHERE ss.series_id = $1          GROUP BY ss.provider_id",
+        "SELECT ss.provider_id, count(DISTINCT c.number_milli / 10000) AS \"count!\" \
+           FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
+          WHERE ss.series_id = $1 \
+          GROUP BY ss.provider_id",
         series_id.as_uuid(),
     )
     .fetch_all(exec)
@@ -280,7 +292,7 @@ pub async fn count_full_chapters_across<'e, E: PgExecutor<'e>>(
 ) -> DbResult<i32> {
     let ids: Vec<Uuid> = source_ids.iter().map(|s| s.as_uuid()).collect();
     let count = sqlx::query_scalar!(
-        "SELECT count(DISTINCT floor(number)) AS \"count!\" FROM chapters \
+        "SELECT count(DISTINCT number_milli / 10000) AS \"count!\" FROM chapters \
          WHERE series_source_id = ANY($1)",
         &ids,
     )
@@ -289,7 +301,7 @@ pub async fn count_full_chapters_across<'e, E: PgExecutor<'e>>(
     Ok(i32::try_from(count).unwrap_or(i32::MAX))
 }
 
-/// Chapters spanning a *set* of sources, de-duplicated (`DISTINCT ON (number)`,
+/// Chapters spanning a *set* of sources, de-duplicated (`DISTINCT ON (number_milli)`,
 /// earliest-discovered wins) and newest-first — the merge-aware counterpart to
 /// [`list_chapters`]. Caller must ensure all sources share one provider; not checked here, and
 /// mixed providers produce links resolved against the wrong `base_url`.
@@ -314,15 +326,16 @@ pub async fn list_chapters_across<'e, E: PgExecutor<'e>>(
     let ids: Vec<Uuid> = source_ids.iter().map(|s| s.as_uuid()).collect();
     let rows = sqlx::query_as!(
         ChapterRow,
-        "SELECT DISTINCT ON (c.number) c.id, c.series_source_id, c.number::float8 AS \"number!\", \
-         c.volume, c.title, c.path, c.published_at, c.discovered_at \
+        "SELECT DISTINCT ON (c.number_milli) c.series_source_id, c.number_milli, c.title, \
+                chapter_url_path(ss.source_path, c.path) AS \"path!\", \
+                c.published_at, c.discovered_at \
          FROM chapters c JOIN series_sources ss ON ss.id = c.series_source_id \
          WHERE c.series_source_id = ANY($1) \
            AND (c.access = 'free' OR c.unlocks_at <= now() \
                 OR ss.provider_id = ANY(ARRAY( \
                      SELECT e.provider_id FROM user_provider_early_access e \
                      WHERE e.user_id = $2::uuid))) \
-         ORDER BY c.number DESC, c.discovered_at ASC",
+         ORDER BY c.number_milli DESC, c.discovered_at ASC",
         &ids,
         viewer.map(UserId::as_uuid) as Option<Uuid>,
     )
@@ -359,14 +372,14 @@ pub async fn chapter_stats_for_series<'e, E: PgExecutor<'e>>(
     struct Row {
         series_id: Uuid,
         chapters: i64,
-        latest: Option<f64>,
+        latest: Option<i32>,
     }
     let ids: Vec<Uuid> = series_ids.iter().map(|s| s.as_uuid()).collect();
     let rows = sqlx::query_as!(
         Row,
         "SELECT ss.series_id, \
-                count(DISTINCT floor(c.number)) AS \"chapters!\", \
-                max(c.number)::float8 AS \"latest?\" \
+                count(DISTINCT c.number_milli / 10000) AS \"chapters!\", \
+                max(c.number_milli) AS \"latest?\" \
          FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
          WHERE ss.series_id = ANY($1) \
          GROUP BY ss.series_id",
@@ -381,9 +394,19 @@ pub async fn chapter_stats_for_series<'e, E: PgExecutor<'e>>(
                 SeriesId::from_uuid(r.series_id),
                 SeriesChapterStats {
                     chapter_count: r.chapters,
-                    latest_number: r.latest,
+                    latest_number: r.latest.map(from_milli),
                 },
             )
         })
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    /// The scale the SQL in this module hard-codes as `10000` has to be the domain's, or every
+    /// `floor` translation silently means something else.
+    #[test]
+    fn the_sql_scale_matches_the_domain_scale() {
+        assert!((tankovault_domain::chapter_number::MILLI_SCALE - 10_000.0).abs() < f64::EPSILON);
+    }
 }

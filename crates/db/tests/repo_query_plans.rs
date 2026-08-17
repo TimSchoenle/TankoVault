@@ -267,12 +267,52 @@ fn filters_on_similarity(plan: &Value) -> Option<String> {
             return;
         }
         if let Some(filter) = node["Filter"].as_str()
-            && filter.contains(" % ")
+            && has_similarity_operator(filter)
         {
             found = Some(filter.to_owned());
         }
     });
     found
+}
+
+/// Whether `filter` applies `pg_trgm`'s similarity operator, as opposed to integer modulo.
+///
+/// Postgres spells both `%`, and `EXPLAIN` renders both infix, so a bare `contains(" % ")` cannot
+/// tell them apart. It used to not matter — nothing in the workload did integer arithmetic in a
+/// filter. Migration 0055 changed that: the unread predicate's part-release test is now
+/// `number_milli % 10000 <> 0`, which made this rule fire on eight healthy queries at once.
+///
+/// The discriminator is the right operand. Similarity compares text, so its right side is a
+/// quoted literal or a column reference; modulo's is a bare integer literal. Reading only the
+/// right operand keeps this independent of what is on the left, which may be any expression.
+fn has_similarity_operator(filter: &str) -> bool {
+    filter.match_indices(" % ").any(|(at, _)| {
+        let rhs = filter[at + 3..].trim_start();
+        !rhs.chars().next().is_some_and(|c| c.is_ascii_digit())
+    })
+}
+
+/// The rule must still catch what it was written for, and must no longer catch integer modulo.
+///
+/// Pinned because the distinction is a text heuristic over `EXPLAIN` output: the original rule was
+/// `contains(" % ")`, and migration 0055's `number_milli % 10000 <> 0` made it report eight
+/// healthy queries as trigram pathologies.
+#[test]
+fn the_similarity_rule_tells_the_operator_from_integer_modulo() {
+    // The shape the rule exists to catch — the filtered browse, at an estimated 1.9M.
+    assert!(has_similarity_operator(
+        "((s.normalized_title % 'solo leveling'::text))"
+    ));
+    assert!(has_similarity_operator("(a.name % $1)"));
+    // The unread predicate's part-release test, which is not a trigram match at all.
+    assert!(!has_similarity_operator("((number_milli % 10000) <> 0)"));
+    assert!(!has_similarity_operator(
+        "(((c.number_milli % 10000) = 0) OR (rp.last_read_part_number IS NULL))"
+    ));
+    // A filter carrying both must still be reported.
+    assert!(has_similarity_operator(
+        "(((number_milli % 10000) = 0) AND (s.normalized_title % 'x'::text))"
+    ));
 }
 
 /// The estimated total cost above which a query is treated as a finding.

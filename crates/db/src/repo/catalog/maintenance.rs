@@ -305,7 +305,11 @@ pub async fn purge_chapters_batch(
     batch: i64,
 ) -> DbResult<(DeletionReport, i64)> {
     let deleted = sqlx::query!(
-        "DELETE FROM chapters WHERE id IN (SELECT id FROM chapters LIMIT $1)",
+        // `ctid`, not a key: migration 0055 dropped the surrogate `id`, and the primary key is now
+        // the two-column `(series_source_id, number_milli)`, which cannot be fed back through an
+        // `IN` as a single scalar. `ctid` is what this always wanted anyway — a physical-order
+        // batch, which is the cheapest thing to delete.
+        "DELETE FROM chapters WHERE ctid IN (SELECT ctid FROM chapters LIMIT $1)",
         batch.max(1)
     )
     .execute(&mut *conn)

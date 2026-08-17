@@ -4,6 +4,7 @@ use std::collections::HashMap;
 
 use crate::error::DbResult;
 use sqlx::{FromRow, PgPool};
+use tankovault_domain::chapter_number::from_milli;
 use tankovault_domain::{ProviderState, SeriesId, SeriesSourceId, UserId, WatchStatus};
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -27,9 +28,11 @@ struct CardRow {
     unread: i64,
     read_count: i64,
     total_chapters: i64,
-    latest_chapter_number: Option<f64>,
+    // Both are the stored `number_milli`; `from_milli` converts at the boundary, so the domain
+    // types above the repo layer keep seeing a chapter number and not a scaled integer.
+    latest_chapter_number: Option<i32>,
     latest_chapter_at: Option<OffsetDateTime>,
-    next_unread_number: Option<f64>,
+    next_unread_number: Option<i32>,
     next_unread_title: Option<String>,
     next_unread_at: Option<OffsetDateTime>,
     preferred_source_name: Option<String>,
@@ -72,12 +75,12 @@ impl From<CardRow> for WatchlistCard {
                 .next_unread_number
                 .zip(r.next_unread_at)
                 .map(|(number, released_at)| NextUnread {
-                    number,
+                    number: from_milli(number),
                     title: r.next_unread_title,
                     released_at,
                 }),
             total_chapters: r.total_chapters,
-            latest_chapter_number: r.latest_chapter_number,
+            latest_chapter_number: r.latest_chapter_number.map(from_milli),
             latest_chapter_at: r.latest_chapter_at,
             preferred_source_name: r.preferred_source_name,
             source_count: r.source_count,
@@ -194,7 +197,7 @@ async fn attach_sources(pool: &PgPool, rows: Vec<CardRow>) -> DbResult<Vec<Watch
 ///
 /// What that leaves in the CTE is deliberately cheap: `unread` takes the unread predicate in
 /// its `WHERE`, so `floor(number) >` becomes an **index cond** on
-/// `chapters_source_floor_num_access_idx` and the scan stays index-only over the unread tail;
+/// `chapters_source_number_key` and the scan stays index-only over the unread tail;
 /// `latest_chapter_at` is a scalar `max()` per source, the form that lets Postgres apply the
 /// MIN/MAX index optimisation on `chapters_source_disc_access_idx`. Both indexes carry the
 /// early-access columns as `INCLUDE` payload so those scans stay index-only — see
@@ -245,9 +248,9 @@ async fn fetch_page(
                       WHEN 'unread'   THEN unr.unread::float8 \
                       WHEN 'added'    THEN extract(epoch FROM w.added_at)::float8 \
                       WHEN 'progress' THEN ( \
-                        SELECT CASE WHEN count(DISTINCT floor(c.number)) > 0 \
+                        SELECT CASE WHEN count(DISTINCT c.number_milli / 10000) > 0 \
                                     THEN COALESCE(rp.last_read_whole_number, 0)::float8 \
-                                         / count(DISTINCT floor(c.number)) END \
+                                         / count(DISTINCT c.number_milli / 10000) END \
                         FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
                         WHERE ss.series_id = w.series_id \
                           AND (c.access = 'free' OR c.unlocks_at <= now() \
@@ -260,13 +263,13 @@ async fn fetch_page(
              JOIN series s ON s.id = w.series_id \
              LEFT JOIN read_progress rp ON rp.user_id = w.user_id AND rp.series_id = w.series_id \
              CROSS JOIN LATERAL ( \
-               SELECT COALESCE(count(DISTINCT floor(c.number)), 0) AS unread \
+               SELECT COALESCE(count(DISTINCT c.number_milli / 10000), 0) AS unread \
                FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
                WHERE ss.series_id = w.series_id \
-                 AND floor(c.number) > COALESCE(rp.last_read_whole_number, 0) \
-                 AND NOT (c.number <> floor(c.number) \
+                 AND c.number_milli >= (floor(COALESCE(rp.last_read_whole_number, 0))::bigint + 1) * 10000 \
+                 AND NOT (c.number_milli % 10000 <> 0 \
                           AND rp.last_read_part_number IS NOT NULL \
-                          AND c.number <= rp.last_read_part_number) \
+                          AND c.number_milli <= (rp.last_read_part_number * 10000)::bigint) \
                  AND (c.access = 'free' OR c.unlocks_at <= now() \
                       OR ss.provider_id = ANY(ARRAY( \
                            SELECT e.provider_id FROM user_provider_early_access e \
@@ -350,11 +353,12 @@ async fn fetch_page(
                 p.pinned_source_id, p.sort_num, p.sort_text \
          FROM page p \
          CROSS JOIN LATERAL ( \
-           SELECT COALESCE(count(DISTINCT floor(c.number)), 0) AS total_chapters, \
-                  COALESCE(count(DISTINCT floor(c.number)) FILTER ( \
-                    WHERE floor(c.number) <= COALESCE(p.last_read_whole_number, 0) \
+           SELECT COALESCE(count(DISTINCT c.number_milli / 10000), 0) AS total_chapters, \
+                  COALESCE(count(DISTINCT c.number_milli / 10000) FILTER ( \
+                    WHERE c.number_milli < (floor(COALESCE(p.last_read_whole_number, 0))::bigint \
+                                            + 1) * 10000 \
                   ), 0) AS read_count, \
-                  max(c.number)::float8 AS latest_chapter_number \
+                  max(c.number_milli) AS latest_chapter_number \
            FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
            WHERE ss.series_id = p.series_id \
              AND (c.access = 'free' OR c.unlocks_at <= now() \
@@ -363,18 +367,18 @@ async fn fetch_page(
                        WHERE e.user_id = $1))) \
          ) ch \
          LEFT JOIN LATERAL ( \
-           SELECT c.number::float8 AS number, c.title, c.discovered_at \
+           SELECT c.number_milli AS number, c.title, c.discovered_at \
            FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
            WHERE ss.series_id = p.series_id \
-             AND floor(c.number) > COALESCE(p.last_read_whole_number, 0) \
-             AND NOT (c.number <> floor(c.number) \
+             AND c.number_milli >= (floor(COALESCE(p.last_read_whole_number, 0))::bigint + 1) * 10000 \
+             AND NOT (c.number_milli % 10000 <> 0 \
                       AND p.last_read_part_number IS NOT NULL \
-                      AND c.number <= p.last_read_part_number) \
+                      AND c.number_milli <= (p.last_read_part_number * 10000)::bigint) \
              AND (c.access = 'free' OR c.unlocks_at <= now() \
                   OR ss.provider_id = ANY(ARRAY( \
                        SELECT e.provider_id FROM user_provider_early_access e \
                        WHERE e.user_id = $1))) \
-           ORDER BY c.number, c.discovered_at, c.id \
+           ORDER BY c.number_milli, c.discovered_at, c.series_source_id \
            LIMIT 1 \
          ) nu ON true \
          ORDER BY CASE WHEN $8 = 'asc'  THEN p.sort_num  END ASC  NULLS LAST, \

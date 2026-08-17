@@ -100,7 +100,6 @@ async fn ingest(db: &TestDb, provider_id: ProviderId, seed: &Seed, chapters: &[f
                 .iter()
                 .map(|n| ChapterUpsert {
                     number: *n,
-                    volume: None,
                     title: None,
                     path: format!("/c/{n}"),
                     published_at: None,

@@ -185,8 +185,11 @@ async fn seed_sources_and_chapters(pool: &PgPool) {
     // Chapter numbers ascend per source and `published_at` descends with them, so the ordering
     // the tracking queries page by is the ordering the data actually has.
     sqlx::query(
-        "INSERT INTO chapters (series_source_id, number, path, published_at, discovered_at) \
-         SELECT ss.id, g::numeric, 'chapter/' || g, \
+        // `path` is stored relative to the source's own path (migration 0055), so a value with no
+        // leading slash is the compressed form — which is what the ingest writes for a provider
+        // whose chapters nest under the series page.
+        "INSERT INTO chapters (series_source_id, number_milli, path, published_at, discovered_at) \
+         SELECT ss.id, g * 10000, 'chapter/' || g, \
                 now() - (g || ' hours')::interval, now() - (g || ' hours')::interval \
          FROM series_sources ss CROSS JOIN generate_series(1, $1) g",
     )

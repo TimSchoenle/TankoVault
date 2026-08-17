@@ -122,7 +122,7 @@ pub async fn prior_inputs_for<'e, E: PgExecutor<'e>>(
            FROM series_sources ss WHERE ss.series_id = s.id \
          ) src ON true \
          LEFT JOIN LATERAL ( \
-           SELECT count(DISTINCT floor(c.number)) AS n \
+           SELECT count(DISTINCT c.number_milli / 10000) AS n \
            FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
            WHERE ss.series_id = s.id \
          ) ch ON true \

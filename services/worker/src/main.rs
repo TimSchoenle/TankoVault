@@ -204,6 +204,9 @@ struct Built {
 /// Shared by the one-shot CLI path and the served path so the two cannot drift into scanning
 /// with differently configured engines.
 async fn build(cfg: &Config) -> anyhow::Result<Built> {
+    // Before anything connects: a threshold that cannot be compared against disables the guard
+    // silently, and the symptom is junk chapter numbers in the catalogue weeks later.
+    cfg.chapter_outliers.validate()?;
     let internal_auth = tankovault_service::internal_auth::resolve(&cfg.internal)?;
     tankovault_service::internal_auth::check_upstream_scheme(
         internal_auth.mode,

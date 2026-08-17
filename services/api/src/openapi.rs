@@ -116,7 +116,6 @@ impl Modify for SecurityAddon {
     tankovault_domain::Applies,
     // --- domain typed ids ---
     tankovault_domain::SeriesId,
-    tankovault_domain::ChapterId,
     tankovault_domain::ProviderId,
     tankovault_domain::ScanRunId,
     tankovault_domain::ScanTaskId,

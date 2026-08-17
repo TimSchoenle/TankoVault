@@ -138,7 +138,7 @@ Where each provider publishes the fact:
 | Provider | Signal | Unlock time |
 |---|---|---|
 | Omega Scans | `price > 0` in the chapter JSON | `free_at` |
-| Asura Scans | `is_locked` in the Astro island props | `unlock_time` / `early_access_until` |
+| Asura Scans | `is_premium` in the Astro island props, or an `early_access_until` still in the future — the site stamps that date on **every** chapter, expired windows included, so the date alone is not the signal | `unlock_time` / `early_access_until` |
 | Hive Toons | `isLocked` / `isTimeLocked` in the series island | `unlockAt`, on the **chapter** page — fetched per locked chapter, because the listing omits it and the window is per-chapter configurable |
 | Toonily and other Madara sites | `chapters.locked` selector in the provider config | `chapters.unlock`, where rendered |
 | Keyoapp sites | the coin-price badge on the chapter card (`img[alt="Coin"]`) | none — the platform states a price, never a date, so such a chapter stays locked |

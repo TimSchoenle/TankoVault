@@ -12,6 +12,30 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [7.3.0](https://github.com/TimSchoenle/TankoVault/compare/v7.2.2...v7.3.0) (2026-08-17)
+
+
+### Features
+
+* **desktop:** log to disk and write a crash report on panic ([#238](https://github.com/TimSchoenle/TankoVault/issues/238)) ([9953063](https://github.com/TimSchoenle/TankoVault/commit/9953063a17dc7f2eb6eee842d0717757d86cbb81))
+
+
+### Bug Fixes
+
+* **adapters:** read asura early access from is_premium and the window ([#239](https://github.com/TimSchoenle/TankoVault/issues/239)) ([826b4dd](https://github.com/TimSchoenle/TankoVault/commit/826b4ddc66880af9a320df6cb89918aba2a2928a))
+* **adapters:** unbreak witchscans and the keyoapp family ([#237](https://github.com/TimSchoenle/TankoVault/issues/237)) ([6bced46](https://github.com/TimSchoenle/TankoVault/commit/6bced46058845ccd9e43ff858870c4808d754d06))
+
+
+### Miscellaneous
+
+* **deps:** update taiki-e/install-action action to v2.85.13 ([#233](https://github.com/TimSchoenle/TankoVault/issues/233)) ([dc387cc](https://github.com/TimSchoenle/TankoVault/commit/dc387cc26ef43219209f3c82a86d7626a697b446))
+* **deps:** update timschoenle/actions/actions/helm/update-chart-version to vactions-helm-update-chart-version-v1.6.3 ([#236](https://github.com/TimSchoenle/TankoVault/issues/236)) ([dd8a3f3](https://github.com/TimSchoenle/TankoVault/commit/dd8a3f39dccb42144dbf55908e8e6295535fde2c))
+
+
+### Dependencies
+
+* **deps:** lock file maintenance ([#235](https://github.com/TimSchoenle/TankoVault/issues/235)) ([705abff](https://github.com/TimSchoenle/TankoVault/commit/705abffd4b2085e61d5ea86bcfe5c91bf8ba7b2f))
+
 ## [7.2.2](https://github.com/TimSchoenle/TankoVault/compare/v7.2.1...v7.2.2) (2026-08-16)
 
 

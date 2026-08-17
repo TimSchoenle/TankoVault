@@ -43,7 +43,7 @@ exclude = ["web/frontend", "fuzz"]
 xtask = "the repository's task runner, not a service: its commands (migrate, seed, reset, openapi) act on a developer's own checkout and database"
 
 [workspace.package]
-version = "7.2.2"
+version = "7.3.0"
 edition = "2024"
 authors = ["TankoVault contributors"]
 license = "PolyForm-Noncommercial-1.0.0"

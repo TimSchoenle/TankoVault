@@ -171,7 +171,7 @@ pub(crate) fn Home() -> Element {
                             div { class: "ik-dayhead", "{day}" }
                             for release in group_by_series(&entries) {
                                 FeedRow {
-                                    key: "{release.series_id}-{release.last}",
+                                    key: "{feed_row_key(&release)}",
                                     release,
                                     reload,
                                 }
@@ -302,6 +302,16 @@ pub(crate) struct Release {
     pub(crate) chapter_title: Option<String>,
     /// Where the newest chapter is.
     pub(crate) url: String,
+}
+
+/// The rsx key for one feed row, which must be exactly what [`group_by_series`] folds on.
+///
+/// Anything less is a duplicate key among siblings, and dioxus's keyed diff answers that by
+/// diffing one old node twice: the second pass reads a mount the first already took and panics
+/// `invalid key` inside `dioxus-core`, aborting the whole app rather than returning an error.
+/// See [`tests::two_sources_carrying_one_chapter_do_not_share_a_row_key`].
+fn feed_row_key(release: &Release) -> String {
+    format!("{}-{}", release.series_id, release.provider_slug)
 }
 
 /// Fold one day's entries into one row per series, newest chapter first.
@@ -440,7 +450,7 @@ fn group_by_day(items: &[FeedEntry]) -> Vec<(String, Vec<FeedEntry>)> {
               not against a computed value"
 )]
 mod tests {
-    use super::{group_by_series, FeedEntry};
+    use super::{feed_row_key, group_by_series, FeedEntry};
 
     fn entry(series: &str, provider: &str, number: f64) -> FeedEntry {
         FeedEntry {
@@ -484,6 +494,24 @@ mod tests {
         let id = "018f4c2a-0000-7000-8000-000000000001";
         let day = vec![entry(id, "kunmanga", 7.0), entry(id, "mangadex", 7.0)];
         assert_eq!(group_by_series(&day).len(), 2);
+    }
+
+    /// The bug that crashed the desktop app (7.3.0): the row key was
+    /// `"{series_id}-{last}"`, which is the grouping identity *minus the provider* — so the two
+    /// rows the test above insists on were siblings carrying one key. Dioxus's keyed diff maps
+    /// both new nodes onto the same old node, the second pass reads a mount the first already
+    /// took, and `dioxus-core` panics `invalid key`, aborting the process.
+    ///
+    /// The keys have to differ for the case that produces two rows, which is why this asserts
+    /// against `group_by_series` rather than against two hand-built `Release`s.
+    #[test]
+    fn two_sources_carrying_one_chapter_do_not_share_a_row_key() {
+        let id = "018f4c2a-0000-7000-8000-000000000001";
+        let day = vec![entry(id, "kunmanga", 7.0), entry(id, "mangadex", 7.0)];
+
+        let keys: Vec<String> = group_by_series(&day).iter().map(feed_row_key).collect();
+        let unique: std::collections::HashSet<&String> = keys.iter().collect();
+        assert_eq!(unique.len(), keys.len(), "sibling rows share a key: {keys:?}");
     }
 
     /// A single chapter must not start reading as a range.

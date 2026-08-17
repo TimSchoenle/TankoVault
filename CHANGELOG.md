@@ -12,6 +12,17 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [8.0.0](https://github.com/TimSchoenle/TankoVault/compare/v7.3.0...v8.0.0) (2026-08-17)
+
+
+### ⚠ BREAKING CHANGES
+
+* **db:** halve chapter storage and bound the unchecked inputs ([#240](https://github.com/TimSchoenle/TankoVault/issues/240))
+
+### Performance Improvements
+
+* **db:** halve chapter storage and bound the unchecked inputs ([#240](https://github.com/TimSchoenle/TankoVault/issues/240)) ([9efade0](https://github.com/TimSchoenle/TankoVault/commit/9efade0befacfe3a0191cebedd4e94118b8bae7d))
+
 ## [7.3.0](https://github.com/TimSchoenle/TankoVault/compare/v7.2.2...v7.3.0) (2026-08-17)
 
 

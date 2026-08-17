@@ -52,17 +52,19 @@ enum Outcome {
     Unavailable,
 }
 
-/// Become the one instance, or report that another one already is.
-///
-/// `None` means **and only means** "another live instance holds the lock"; the caller hands off
-/// with [`request_activation`] and exits. Every other failure answers `Some`, because refusing to
-/// start over a config directory that cannot be written would be a worse fault than the duplicate
-/// it is trying to prevent — and it is exactly the state a first run on a locked-down machine is
-/// in.
 pub(crate) fn acquire_instance_lock() -> Option<InstanceLock> {
     match lock_path().map_or(Outcome::Unavailable, |path| imp::acquire(&path)) {
         Outcome::Held(lock) => Some(InstanceLock(Some(lock))),
-        Outcome::Unavailable => Some(InstanceLock(None)),
+        Outcome::Unavailable => {
+            // Not fatal, but it is the state in which the guarantee above stops holding — so a
+            // "signed out again" report from a machine whose log says this is a different bug
+            // from one whose log does not.
+            tracing::warn!(
+                path = ?lock_path(),
+                "the single-instance lock could not be evaluated; starting without it"
+            );
+            Some(InstanceLock(None))
+        }
         Outcome::Contended => None,
     }
 }

@@ -12,6 +12,10 @@ mod api;
 mod app;
 mod build_info;
 mod components;
+/// The log, the crash reports and the unclean-shutdown marker. Desktop only: a browser tab that
+/// dies leaves a console entry behind, and a native window that dies leaves nothing.
+#[cfg(feature = "desktop")]
+mod diagnostics;
 mod hooks;
 mod i18n;
 mod icons;
@@ -43,7 +47,13 @@ fn main() {
 
 #[cfg(feature = "desktop")]
 fn main() {
+    use dioxus::desktop::tao::event::Event;
     use dioxus::desktop::{Config, LogicalSize, WindowBuilder};
+
+    // Ahead of everything, including the two early returns below: this crate builds with
+    // `panic = "abort"`, so a failure before this line is a window that never appears and a
+    // process that leaves nothing behind to say why.
+    diagnostics::install();
 
     // First of all, because this process may not be the app: an update hands off to a copy of
     // this binary whose only job is to outlive the installer and then start what it produced,
@@ -58,9 +68,15 @@ fn main() {
     // of this binding — see `platform::instance`, which also explains why a refused launch leaves
     // a request behind rather than exiting silently.
     let Some(_instance) = platform::acquire_instance_lock() else {
+        tracing::info!("another instance holds the lock; asking it to come forward instead");
         platform::request_activation();
         return;
     };
+
+    // Only now, because the two returns above are this same binary and neither is the running
+    // instance — a marker cleared by one of them would blame the OS for a session that is still
+    // very much alive. See `diagnostics::session`.
+    diagnostics::begin_session();
 
     // Before the window, and before anything else reads the settings file: a staged update is
     // applied by *starting* the app, so this either hands off to the installer and never returns or
@@ -71,6 +87,15 @@ fn main() {
     dioxus::LaunchBuilder::desktop()
         .with_cfg(
             Config::new()
+                // The one hook that fires on the way out. `tao`'s event loop never returns — it
+                // ends the process itself — so there is no code after `launch` to mark a clean
+                // shutdown from, and an unmarked shutdown is what the next start reports as a
+                // kill.
+                .with_custom_event_handler(|event, _| {
+                    if matches!(event, Event::LoopDestroyed) {
+                        diagnostics::end_session();
+                    }
+                })
                 // `tao` installs a default "Window / Edit" menu bar when none is given. It is
                 // the macOS convention leaking onto every platform, it acts on a text field
                 // this app has none of at the top level, and it puts a strip of chrome above

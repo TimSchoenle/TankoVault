@@ -313,6 +313,8 @@
   },
   "settings": {
     "about": {
+      "logsAt": "Logs and crash reports: {path}",
+      "openLogs": "Open log folder",
       "project": "Open the project page",
       "title": "This installation"
     },

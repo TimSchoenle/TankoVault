@@ -313,6 +313,8 @@
   },
   "settings": {
     "about": {
+      "logsAt": "Protokolle und Absturzberichte: {path}",
+      "openLogs": "Protokollordner öffnen",
       "project": "Projektseite öffnen",
       "title": "Diese Installation"
     },

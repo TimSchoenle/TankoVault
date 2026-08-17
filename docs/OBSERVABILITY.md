@@ -502,3 +502,46 @@ All of it is in [`TimSchoenle/helm-charts`](https://github.com/TimSchoenle/helm-
 | `templates/grafanadashboard.yaml` | Provisions the dashboard below. |
 | `dashboards/tankovault-overview.json` | The dashboard: fleet, request path, edge policy, scan pipeline, fetch tier. |
 | `tests/observability_test.yaml` | The gate over the rendered output. |
+
+---
+
+## 6. The desktop client
+
+Everything above is the fleet. The native client is scraped by nothing — it runs on a reader's
+machine, behind their firewall, and the only telemetry that reaches a maintainer is what the
+reader chooses to send. So it writes its own, on disk, and the settings sheet's About tab has a
+button that opens the folder.
+
+| Platform | Where |
+|---|---|
+| Windows | `%LOCALAPPDATA%\TankoVault\data\logs` |
+| Linux | `$XDG_DATA_HOME/TankoVault/logs`, else `~/.local/share/TankoVault/logs` |
+
+The *local* data directory, not the config directory beside `settings.json`: on a domain-joined
+Windows machine the latter is the roaming profile, copied over the network at every sign-in.
+
+| File | What it is |
+|---|---|
+| `tankovault.log` | The live log. Rolls at 2 MiB, keeping `.1`, `.2`, `.3`. |
+| `crash-<date>-<pid>.log` | One per panic — version, commit, platform, thread, source location, backtrace. Ten kept. |
+| `session.running` | Present only while the app runs. |
+
+`session.running` is the part that covers a Windows crash. A Rust panic runs a hook and writes a
+report; an access violation, a stack overflow or a `WebView2` host dying under the renderer runs
+**nothing** — there is no unwinding, no hook, and the frontend crate forbids the `unsafe` a
+structured-exception handler would need. So the marker is written at start and removed when the
+event loop is destroyed, and one found at the *next* start is logged as a kill. A report that says
+"the previous session ended without a clean shutdown and without a panic" means: stop looking for
+a panic.
+
+Frames in a crash report may be bare addresses — the shipped profile carries no debug info and
+strips symbols. Read the `location` line first; it comes from `Location` and is compiled in
+regardless.
+
+Default level is `info`. `TANKOVAULT_LOG` raises or narrows it in `RUST_LOG` syntax
+(`TANKOVAULT_LOG=debug,wry=trace`), and it is deliberately not `RUST_LOG` — turning this app up
+should not turn up every other Rust program in the same shell. Libraries log into the same
+subscriber, so `wry`, `tao` and `reqwest` are in the file too.
+
+The code is `web/frontend/src/diagnostics/`. The web build has none of this and needs none: a
+browser tab that dies leaves a console entry and a devtools stack behind.

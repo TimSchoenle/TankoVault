@@ -129,6 +129,11 @@ i18nrs = { version = "0.1.9", default-features = false, features = ["dio"] }
 # markdown-to-HTML pipeline would need `dangerous_inner_html`, which is the one door this app
 # keeps shut (see `src/platform/mod.rs` and the served CSP).
 pulldown-cmark = { version = "0.13.4", default-features = false }
+# The logging facade, on both builds. Already in this graph — `dioxus` logs through it — so this
+# names a crate that is compiled either way rather than adding one. `clippy.toml` bans `dbg!` in
+# favour of it. The *subscriber* that gives the calls somewhere to go is desktop-only, below; on
+# web `dioxus::launch` installs its own, which writes to the browser console.
+tracing = { version = "0.1", default-features = false, features = ["std"] }
 
 # ---------------------------------------------------------------------------------------------
 # Desktop-only. Each backs one entry in the `crate::platform` surface that has no browser API
@@ -210,6 +215,20 @@ semver = { version = "1", optional = true }
 sha2 = { version = "0.11", optional = true }
 # Renders that digest for comparison against the manifest's lower-case hex. Already in the graph.
 hex = { version = "0.4", optional = true }
+# Where the `tracing` calls above end up on this build: the rolling log file and stderr, wired in
+# `src/diagnostics`. Desktop-only because it is the only build with a filesystem to write to —
+# and the only one that can die without leaving anything in a console.
+#
+# Every feature named here is already switched on in this lockfile by `dioxus-logger`, which is
+# in the graph regardless, so this adds a dependency edge rather than a dependency. Listed
+# explicitly all the same: relying on another crate's feature selection is how a working build
+# turns into a resolution error on somebody else's `cargo update`.
+tracing-subscriber = { version = "0.3", default-features = false, features = [
+    "std",
+    "registry",
+    "fmt",
+    "env-filter",
+], optional = true }
 
 # `uuid`'s WebCrypto backend, needed only where `v7` has no OS randomness to reach for. Declared
 # per-target so the desktop build links neither it nor `wasm-bindgen`.
@@ -292,6 +311,7 @@ desktop = [
     "dep:sha2",
     "dep:sys-locale",
     "dep:tokio",
+    "dep:tracing-subscriber",
     # Both resolve to nothing off Windows — the dependencies are declared per-target — so these
     # enable Windows Hello and the `Run`-key autostart where there is one, and change nothing
     # where there is not. Linux gets its autostart entry from `std::fs`.

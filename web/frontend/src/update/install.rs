@@ -367,10 +367,18 @@ pub(crate) fn apply_staged() {
     if crate::platform::store_get(super::STAGED_KEY).is_none() {
         return;
     }
-    let Ok(plan) = plan(flavour()) else {
-        clear();
-        return;
+    let plan = match plan(flavour()) {
+        Ok(plan) => plan,
+        Err(error) => {
+            tracing::warn!(?error, "a staged update is unusable and has been discarded");
+            clear();
+            return;
+        }
     };
+    tracing::info!(
+        version = plan.version,
+        "applying a staged update; handing off to the installer"
+    );
     // Written first: after the hand-off there is no process left here to write anything, and an
     // install that fails is caught by the version check at the other end rather than by this one.
     crate::platform::store_set(super::APPLIED_KEY, &plan.version);
@@ -382,7 +390,12 @@ pub(crate) fn apply_staged() {
         ),
     );
     // Only reached if the hand-off itself failed; the success path does not return.
-    let _ = launch(&plan);
+    let Err(error) = launch(&plan);
+    tracing::error!(
+        version = plan.version,
+        error,
+        "the installer hand-off failed; starting the installed version instead"
+    );
     crate::platform::store_remove(super::APPLIED_KEY);
     clear();
 }
@@ -428,10 +441,14 @@ pub(crate) fn run_as_relauncher() -> bool {
     match invocation(std::env::args_os().skip(1)) {
         Invocation::App => false,
         Invocation::Relaunch(target) => {
+            tracing::info!(?target, "running as the update relauncher");
             relaunch_after_install(&target);
             true
         }
-        Invocation::RelaunchWithoutTarget => true,
+        Invocation::RelaunchWithoutTarget => {
+            tracing::warn!("started as the relauncher with no target; exiting without a window");
+            true
+        }
     }
 }
 

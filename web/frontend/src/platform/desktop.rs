@@ -59,13 +59,29 @@ struct Settings {
     values: BTreeMap<String, String>,
 }
 
+/// The one place this app's directories are named. Everything below derives from it, because
+/// several things have to agree on where they are: the settings document, the single-instance
+/// lock in [`super::instance`], and the log this build writes.
+fn project_dirs() -> Option<directories::ProjectDirs> {
+    directories::ProjectDirs::from("dev", "", "TankoVault")
+}
+
 /// This app's config directory, or `None` where the platform exposes none.
 ///
-/// The one place the directory is named, because two things live in it that must agree on where
-/// it is: the settings document, and the single-instance lock in [`super::instance`].
+/// Holds the settings document and the single-instance lock. Not the log: see [`log_dir`].
 pub(super) fn config_dir() -> Option<PathBuf> {
-    directories::ProjectDirs::from("dev", "", "TankoVault")
-        .map(|dirs| dirs.config_dir().to_path_buf())
+    project_dirs().map(|dirs| dirs.config_dir().to_path_buf())
+}
+
+/// Where the rolling log and any crash reports go, or `None` where the platform exposes no local
+/// data directory.
+///
+/// The *local* data directory, deliberately, rather than sitting beside `settings.json`: on a
+/// domain-joined Windows machine the config directory is the roaming profile, copied over the
+/// network at every sign-in and sign-out. A log is the last thing that should be carried across
+/// a network, and a crash report is worth nothing on a second machine anyway.
+pub(crate) fn log_dir() -> Option<PathBuf> {
+    project_dirs().map(|dirs| dirs.data_local_dir().join("logs"))
 }
 
 fn settings() -> &'static RwLock<Settings> {
@@ -77,11 +93,26 @@ impl Settings {
     /// Read the settings document once, tolerating every way it can be absent or unreadable.
     fn load() -> Self {
         let path = config_dir().map(|dir| dir.join(SETTINGS_FILE_NAME));
-        let values = path
-            .as_ref()
-            .and_then(|path| std::fs::read_to_string(path).ok())
-            .and_then(|text| serde_json::from_str::<BTreeMap<String, String>>(&text).ok())
-            .unwrap_or_default();
+        let values = match path.as_ref().map(std::fs::read_to_string) {
+            Some(Ok(text)) => match serde_json::from_str::<BTreeMap<String, String>>(&text) {
+                Ok(values) => values,
+                // A first run reads as defaults and a *corrupt* document reads as defaults too,
+                // and from the reader's chair the two are one symptom: the app forgot its server.
+                Err(error) => {
+                    tracing::warn!(
+                        ?path,
+                        %error,
+                        "settings document is unreadable; starting from defaults"
+                    );
+                    BTreeMap::new()
+                }
+            },
+            Some(Err(error)) if error.kind() != std::io::ErrorKind::NotFound => {
+                tracing::warn!(?path, %error, "settings document could not be read");
+                BTreeMap::new()
+            }
+            _ => BTreeMap::new(),
+        };
         Self { path, values }
     }
 
@@ -97,15 +128,21 @@ impl Settings {
         let Some(dir) = path.parent() else {
             return;
         };
-        if std::fs::create_dir_all(dir).is_err() {
+        if let Err(error) = std::fs::create_dir_all(dir) {
+            tracing::warn!(
+                ?dir,
+                %error,
+                "settings cannot be persisted: the config directory is unwritable"
+            );
             return;
         }
         let Ok(text) = serde_json::to_string_pretty(&self.values) else {
             return;
         };
         let staged = path.with_extension("json.tmp");
-        if std::fs::write(&staged, text).is_ok() {
-            let _ = std::fs::rename(&staged, path);
+        let written = std::fs::write(&staged, text).and_then(|()| std::fs::rename(&staged, path));
+        if let Err(error) = written {
+            tracing::warn!(?path, %error, "settings could not be written");
         }
     }
 }
@@ -185,14 +222,29 @@ fn credentials() -> &'static std::sync::mpsc::Sender<CredentialRequest> {
                         let secret = entry(&account).and_then(|e| e.get_password().ok());
                         let _ = reply.send(secret);
                     }
+                    // Both are logged because a store that refuses writes is invisible until the
+                    // *next* start, where it shows up as an unexplained sign-out — and the
+                    // credential itself is never logged, only whether the store took it.
                     CredentialRequest::Set(account, secret) => {
                         if let Some(entry) = entry(&account) {
-                            let _ = entry.set_password(&secret);
+                            if let Err(error) = entry.set_password(&secret) {
+                                tracing::warn!(
+                                    account,
+                                    %error,
+                                    "the OS credential store refused a write; this session will                                      not survive a restart"
+                                );
+                            }
                         }
                     }
                     CredentialRequest::Delete(account) => {
                         if let Some(entry) = entry(&account) {
-                            let _ = entry.delete_credential();
+                            if let Err(error) = entry.delete_credential() {
+                                tracing::warn!(
+                                    account,
+                                    %error,
+                                    "the OS credential store refused a delete"
+                                );
+                            }
                         }
                     }
                 }
@@ -545,7 +597,9 @@ fn raise(summary: &str, body: &str) -> std::thread::JoinHandle<()> {
             // The name a desktop environment shows and keys its own per-app settings off.
             .appname(NOTIFICATION_APP_NAME);
         identify(&mut notification);
-        let _ = notification.show();
+        if let Err(error) = notification.show() {
+            tracing::debug!(%error, "the OS declined a notification");
+        }
     })
 }
 
@@ -1145,6 +1199,15 @@ pub(crate) fn navigate_to(url: &str) {
     let _ = open::that_detached(url);
 }
 
+/// Shows `path` in the reader's file manager.
+///
+/// The one caller is the About tab's route to [`log_dir`]: a crash report is only useful if the
+/// person who hit the crash can get to it, and a path rendered as text is a path they have to
+/// retype into Explorer.
+pub(crate) fn reveal_path(path: &std::path::Path) {
+    let _ = open::that_detached(path);
+}
+
 /// A no-op: `MountedData` has no selection API, and the only way to reach the DOM's would be
 /// `eval`, which this crate bans. The field is focused either way — see the surface's contract.
 pub(crate) fn select_focused_text() {}
@@ -1265,13 +1328,20 @@ impl EventStream {
 pub(crate) async fn subscribe(url: &str, events: &[&str]) -> Option<EventStream> {
     use eventsource_stream::Eventsource as _;
 
-    let response = reqwest::Client::new()
+    let response = match reqwest::Client::new()
         .get(url)
         .header(reqwest::header::ACCEPT, "text/event-stream")
         .send()
         .await
-        .ok()?;
+    {
+        Ok(response) => response,
+        Err(error) => {
+            tracing::warn!(%error, "the event stream could not be opened");
+            return None;
+        }
+    };
     if !response.status().is_success() {
+        tracing::warn!(status = %response.status(), "the event stream was refused");
         return None;
     }
     Some(EventStream {

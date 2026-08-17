@@ -6854,6 +6854,8 @@ dependencies = [
  "sys-locale",
  "tankovault-api-client",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
  "uuid",
  "wasm-bindgen",
  "wasm-bindgen-futures",

@@ -592,12 +592,26 @@ fn AboutSection() -> Element {
                     {i18n.args("connect.storedAt", &[("path", &path.display().to_string())])}
                 }
             }
+            if let Some(dir) = crate::platform::log_dir() {
+                p { class: "ik-muted", style: "font-size:11.5px;word-break:break-all;margin:4px 0 0;",
+                    {i18n.args("settings.about.logsAt", &[("path", &dir.display().to_string())])}
+                }
+            }
             div { class: "ik-prefs-actions", style: "margin-top:12px;",
                 Button {
                     // The deployment's own project, not this one's: a fork's About tab must
                     // not send its readers here.
                     on_click: move |_| crate::platform::navigate_to(&branding.read().project_url),
                     {i18n.t("settings.about.project")}
+                }
+                // The reason this is a button and not just the path above it: the reader who
+                // needs it is the one whose window vanished, and asking them to retype a path
+                // under `AppData\Local` is asking most of them to give up.
+                if let Some(dir) = crate::platform::log_dir() {
+                    Button {
+                        on_click: move |_| crate::platform::reveal_path(&dir),
+                        {i18n.t("settings.about.openLogs")}
+                    }
                 }
             }
         }

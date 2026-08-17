@@ -45,8 +45,8 @@ pub(crate) use imp::EventStream;
 #[cfg(feature = "desktop")]
 pub(crate) use desktop::{
     autostart_enabled, autostart_supported, close_to_tray_enabled, credential_delete,
-    credential_get, credential_set, fit_window_to_display, notifications_enabled, notify,
-    notify_now, quit_app, server_origin, set_autostart, set_close_to_tray,
+    credential_get, credential_set, fit_window_to_display, log_dir, notifications_enabled, notify,
+    notify_now, quit_app, reveal_path, server_origin, set_autostart, set_close_to_tray,
     set_notifications_enabled, set_server_origin, set_window_heading, set_window_hides_on_close,
     settings_path, show_window, tray_supported, use_tray_commands, window, Tray, TrayCommand,
     ROOT_ATTRIBUTES, STARTUP_INNER_SIZE, WINDOW_HEADING,
@@ -66,6 +66,10 @@ pub(crate) use desktop::{
 /// outlives its own window. A browser tab cannot, and a reader who closes the window still wants
 /// to be told a chapter landed. [`quit_app`] exists because that choice makes the close button
 /// ambiguous — it is the exit that means *exit*.
+///
+/// `log_dir` and `reveal_path` back [`crate::diagnostics`]. A browser tab that dies leaves a
+/// console entry and a devtools stack; a native window that dies leaves nothing at all, so this
+/// build writes its own log and its own crash reports and needs somewhere to put them.
 ///
 /// `credential_*` is the OS credential store — Credential Manager, Secret Service, Keychain.
 /// The web build has no counterpart because it needs none: the browser already keeps the refresh

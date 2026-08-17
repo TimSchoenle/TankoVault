@@ -511,7 +511,11 @@ mod tests {
 
         let keys: Vec<String> = group_by_series(&day).iter().map(feed_row_key).collect();
         let unique: std::collections::HashSet<&String> = keys.iter().collect();
-        assert_eq!(unique.len(), keys.len(), "sibling rows share a key: {keys:?}");
+        assert_eq!(
+            unique.len(),
+            keys.len(),
+            "sibling rows share a key: {keys:?}"
+        );
     }
 
     /// A single chapter must not start reading as a range.

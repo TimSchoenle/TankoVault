@@ -27,6 +27,40 @@ use tokio_util::sync::CancellationToken;
 use tankovault_config::{ConfigError, Loaded};
 use terrace_config::reload::WatchError;
 
+/// Log where the running configuration came from, and warn about every key a higher layer is
+/// shadowing.
+///
+/// **It holds no configuration value** — only key paths, file names and layer names — which is
+/// what makes logging it safe at all; `tankovault_config::explain` says so at the source.
+///
+/// The warning is the part worth having. A key supplied by two of the three *file-ish* layers
+/// is refused at boot, but a mounted secret sitting under a stale `TANKOVAULT_*` variable is an
+/// ordinary override the loader has no reason to refuse — and is exactly the shape of "the
+/// rotated credential is not being picked up". Nothing here can fail a boot: a diagnostic that
+/// takes the process down is worse than no diagnostic.
+fn report_sources() {
+    match tankovault_config::explain() {
+        Ok(explanation) => {
+            for origin in explanation.contested() {
+                let shadowed = origin
+                    .shadowed()
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                tracing::warn!(
+                    key = origin.key(),
+                    effective = %origin.effective(),
+                    %shadowed,
+                    "a configuration key is supplied by more than one layer"
+                );
+            }
+            tracing::debug!(layers = %explanation, "configuration sources");
+        }
+        Err(error) => tracing::debug!(%error, "the configuration layers could not be explained"),
+    }
+}
+
 /// Run a service, rebuilding it whenever its configuration files change.
 ///
 /// `build` receives the current configuration and a token that is cancelled when the runtime
@@ -58,6 +92,8 @@ where
     Fut: Future<Output = Result<(), E>>,
     E: std::fmt::Display + From<WatchError> + From<ConfigError>,
 {
+    report_sources();
+
     terrace_config::reload::run(
         (boot.value, boot.sources),
         shutdown,
@@ -75,9 +111,18 @@ where
 mod tests {
     use std::time::Duration;
 
+    use secrecy::ExposeSecret as _;
+    use terrace_config::testing::{Harness, Rebuilds};
+    use tokio_util::sync::CancellationToken;
+
     /// How long the filesystem must be quiet before the supervisor acts, mirrored from
     /// `terrace_config::reload::Debounce`'s default so the waits below are sized against it.
     const DEBOUNCE: Duration = Duration::from_millis(500);
+
+    #[derive(Debug, serde::Deserialize)]
+    struct TestConfig {
+        database: tankovault_config::DatabaseConfig,
+    }
 
     /// The two behaviours the supervisor exists for, in one run: a rotated secret rebuilds the
     /// runtime with the new value, and a reload that *fails to load* leaves the runtime that is
@@ -92,104 +137,50 @@ mod tests {
     /// is the wiring: that this crate's reload closure re-reads through
     /// `tankovault_config::load_watched`, so a rotated `TANKOVAULT_SECRETS_DIR` entry is what
     /// the rebuilt runtime sees. A closure pointing at anything else would still pass every
-    /// test upstream.
+    /// test upstream — which is why the boot value is loaded through `tankovault_config` here
+    /// rather than through the jail's own loader.
     #[test]
-    #[expect(
-        clippy::result_large_err,
-        reason = "figment::Jail::expect_with fixes the closure's error type"
-    )]
     fn a_rotated_secret_rebuilds_and_a_broken_reload_does_not() {
-        use secrecy::ExposeSecret as _;
-        use std::sync::{Arc, Mutex};
+        Harness::over(tankovault_config::terrace()).run(|jail| {
+            let secrets = jail.secrets_dir()?;
+            let url = jail.secret_key("database.url", "postgres://one/tv")?;
 
-        #[derive(Debug, serde::Deserialize)]
-        struct TestConfig {
-            database: tankovault_config::DatabaseConfig,
-        }
+            let boot = tankovault_config::load_watched::<TestConfig>()?;
+            let rebuilds: Rebuilds = Rebuilds::new();
 
-        /// Long enough that a missed wake-up fails rather than hangs CI; the watcher normally
-        /// answers within `DEBOUNCE`.
-        const PATIENCE: Duration = Duration::from_secs(10);
-
-        figment::Jail::expect_with(|jail| {
-            jail.clear_env();
-            jail.create_dir("secrets")?;
-            jail.create_file("secrets/database__url", "postgres://one/tv")?;
-            let dir = jail.directory().join("secrets");
-            jail.set_env("TANKOVAULT_SECRETS_DIR", dir.display());
-
-            let boot = tankovault_config::load_watched::<TestConfig>()
-                .map_err(|e| e.to_string())
-                .unwrap();
-
-            let runtime = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .expect("runtime");
-
-            runtime.block_on(async move {
-                let seen: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-                let shutdown = tokio_util::sync::CancellationToken::new();
-
-                let recorded = Arc::clone(&seen);
-                let driver_seen = Arc::clone(&seen);
-                let driver_shutdown = shutdown.clone();
-                let driver_dir = dir.clone();
+            jail.block_on(async {
+                let shutdown = CancellationToken::new();
+                let driver = rebuilds.clone();
+                let stop = shutdown.clone();
 
                 tokio::spawn(async move {
-                    let count = |n: usize| {
-                        let seen = Arc::clone(&driver_seen);
-                        async move {
-                            let deadline = tokio::time::Instant::now() + PATIENCE;
-                            while seen.lock().expect("not poisoned").len() < n {
-                                assert!(
-                                    tokio::time::Instant::now() < deadline,
-                                    "the supervisor never reached {n} builds"
-                                );
-                                tokio::time::sleep(Duration::from_millis(25)).await;
-                            }
-                        }
-                    };
-
-                    count(1).await;
-                    std::fs::write(driver_dir.join("database__url"), "postgres://two/tv")
-                        .expect("rotate");
-                    count(2).await;
+                    driver.wait_for(1).await;
+                    std::fs::write(&url, "postgres://two/tv").expect("rotate the mounted secret");
+                    driver.wait_for(2).await;
 
                     // `.` is refused as a key, so this is a reload that fails to *load* while
                     // the directory it lives in is still perfectly readable.
-                    std::fs::write(driver_dir.join("bad.key"), "x").expect("break");
-                    tokio::time::sleep(DEBOUNCE * 4).await;
-                    assert_eq!(
-                        driver_seen.lock().expect("not poisoned").len(),
-                        2,
-                        "a failed reload must not rebuild the running service"
-                    );
+                    std::fs::write(secrets.join("bad.key"), "x").expect("break the mount");
+                    driver.stays_at(2, DEBOUNCE * 4).await;
 
-                    driver_shutdown.cancel();
+                    stop.cancel();
                 });
 
-                super::run(boot, &shutdown, move |cfg, token| {
-                    recorded
-                        .lock()
-                        .expect("not poisoned")
-                        .push(cfg.database.url.expose_secret().to_owned());
-                    async move {
-                        token.cancelled().await;
-                        Ok::<(), anyhow::Error>(())
-                    }
-                })
+                super::run(
+                    boot,
+                    &shutdown,
+                    rebuilds
+                        .serving(|cfg: &TestConfig| cfg.database.url.expose_secret().to_owned()),
+                )
                 .await
                 .expect("the supervisor returns when shutdown is cancelled");
-
-                let seen = seen.lock().expect("not poisoned").clone();
-                assert_eq!(
-                    seen,
-                    ["postgres://one/tv", "postgres://two/tv"],
-                    "the rebuild must use the rotated value, exactly once"
-                );
             });
 
+            assert_eq!(
+                rebuilds.seen(),
+                ["postgres://one/tv", "postgres://two/tv"],
+                "the rebuild must use the rotated value, exactly once"
+            );
             Ok(())
         });
     }

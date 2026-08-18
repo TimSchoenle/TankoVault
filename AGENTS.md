@@ -81,7 +81,10 @@ cargo test -p tankovault-db -p tankovault-api -p tankovault-sync --features inte
 5. **Do not simplify a test you do not understand.** If its doc comment describes a bug, it is
    there to stop that bug returning.
 6. **Never hand-edit generated files** — `openapi.json`, `crates/api-client/src/lib.rs`,
-   `THIRD-PARTY-NOTICES`. Run `cargo run -p xtask -- openapi` / `-- notices`.
+   `THIRD-PARTY-NOTICES`. Run `cargo run -p xtask -- openapi` / `-- notices`. `README.md` is
+   generated too, by CI rather than by `xtask`: edit `.github/templates/README.md.hbs`, and let
+   `auto-fix.yaml` render it. `bash .github/scripts/readme-variables.sh` prints the values it is
+   rendered with.
 7. **`web/frontend` is a separate workspace and inherits nothing** — not lints, not `clippy.toml`.
    A frontend URL and the API struct behind it have no compile-time relationship; `openapi.json`
    is the only connector.

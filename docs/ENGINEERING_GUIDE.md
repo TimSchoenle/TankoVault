@@ -43,7 +43,8 @@ The short list. Everything else in this document is elaboration.
 4. **A secret published in this repository must be refused by the code that reads it.** [§2.2](#22-secrets)
 5. **Anything fetching a URL someone else chose calls `tankovault_domain::ssrf`.** [§2.3](#23-ssrf)
 6. **Generated artefacts are generated.** Never hand-edit `openapi.json`,
-   `crates/api-client/src/lib.rs` or `THIRD-PARTY-NOTICES`. [§1.4](#14-generated-artefacts)
+   `crates/api-client/src/lib.rs`, `THIRD-PARTY-NOTICES` or `README.md`.
+   [§1.4](#14-generated-artefacts)
 7. **A fix that could silently come back gets a test whose doc comment says what the bug was.** [§3.6](#36-tests-carry-the-story)
 8. **`cargo run -p xtask -- ci` is what a change passes before it lands** — run by the human
    pushing it, not by an agent after every edit. [§7](#7-before-you-push), [§8](#8-for-agents)
@@ -131,6 +132,20 @@ document is a pure function of the two lockfiles and the two `about.toml`s.
 Why it is not in `xtask ci` when the other three are: that gate needs nothing but cargo and
 rustfmt, and this one needs `cargo-about` installed. Keeping the promise is worth the separate
 job.
+
+`README.md` is the fifth, and the only one no `xtask` command produces: it is rendered from
+`.github/templates/README.md.hbs` by a shared action, with the variables
+`.github/scripts/readme-variables.sh` reads out of `Cargo.toml`, `rust-toolchain.toml` and
+`deploy/docker-compose.yml`. Edit the **template**; `auto-fix.yaml`'s `readme` job renders it on
+the pull request and commits the result. **[E]** CI's `readme` job renders in check mode on
+`main` and on fork pull requests, where nothing can commit.
+
+Only the numbers with a home elsewhere are injected — the edition, the MSRV, the pinned
+toolchain, and the Postgres and Redis majors the compose file runs. Everything else is prose and
+lives in the template. That is the whole scope on purpose: a generator that also owns the prose
+makes editing the front page a CI round trip, while the five numbers are exactly the copies that
+drifted. Two of them were wrong when the generator was added — the tech-stack line still
+advertised PostgreSQL 17 and Redis 7 against a compose file on 18 and 8.
 
 ---
 
@@ -555,6 +570,7 @@ Everything that can fail, what owns it, and how to run it.
 | `docs/CONFIGURATION.md` matches the config structs | `xtask config-docs --check` | `cargo run -p xtask -- config-docs --check` |
 | SQL cache is complete | `cargo sqlx prepare --check` | `cargo run -p xtask -- sqlx-prepare --check` |
 | `THIRD-PARTY-NOTICES` matches both lockfiles | `xtask notices --check` | `cargo run -p xtask -- notices --check` |
+| `README.md` matches its template | CI's `readme` job | `bash .github/scripts/readme-variables.sh` (prints what CI renders with) |
 | licences, advisories, duplicate-version budget, banned crates | `deny.toml` | `cargo deny check` |
 | secrets in history | gitleaks | CI `secrets` job |
 | coverage floor | `xtask coverage-ratchet` | CI `coverage` job |

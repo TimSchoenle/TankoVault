@@ -58,6 +58,14 @@ TANKOVAULT_CHANNELS__EMAIL_TO='["ops@example.com"]'
 An **unknown** `TANKOVAULT_*` key is ignored, not rejected. A typo therefore fails silently —
 so does a key that has been removed (see [§8](#8-removed-keys)).
 
+**Every service reports its layers at boot.** The log line lists each layer in precedence order
+and, for every key that was supplied, which layer it came from — and it *warns* for a key more
+than one layer supplies. Layers 3, 4 and 5 refuse that combination outright, so what the warning
+catches is the pair no rule can refuse: a mounted secret with a stale `TANKOVAULT_*` variable, or
+a checked-in `config.toml`, sitting on top of it. Nothing in the report is a configuration value,
+only key paths, file names and layer names; the full listing is at `DEBUG`, the warnings at
+`WARN`.
+
 > **This document is gated.** `cargo run -p xtask -- config-docs --check` derives every
 > `TANKOVAULT_*` key from the config structs and from the `std::env::var` call sites, and fails
 > if this document does not match — in either direction. It reads keys from the **leftmost cell

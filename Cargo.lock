@@ -5458,7 +5458,6 @@ dependencies = [
 name = "tankovault-config"
 version = "8.0.1"
 dependencies = [
- "figment",
  "secrecy",
  "serde",
  "tankovault-domain",
@@ -5662,11 +5661,9 @@ dependencies = [
 name = "tankovault-service"
 version = "8.0.1"
 dependencies = [
- "anyhow",
  "arc-swap",
  "async-trait",
  "axum",
- "figment",
  "fred",
  "futures",
  "governor",
@@ -5820,8 +5817,8 @@ dependencies = [
 
 [[package]]
 name = "terrace-config"
-version = "0.2.0"
-source = "git+https://github.com/TimSchoenle/terrace-config?tag=v0.2.0#46d924c25af6a0e67f657686f996539482e8abe3"
+version = "0.5.0"
+source = "git+https://github.com/TimSchoenle/terrace-config?tag=v0.5.0#b47ca70cefaf48484682a0913dbef48ba4eba10c"
 dependencies = [
  "figment",
  "notify",

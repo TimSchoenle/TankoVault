@@ -94,6 +94,7 @@ jobs:
       docker: ${{ steps.decide.outputs.full == 'true' || steps.filter.outputs.docker == 'true' }}
       notices: ${{ steps.decide.outputs.full == 'true' || steps.filter.outputs.notices == 'true' }}
       compose: ${{ steps.decide.outputs.full == 'true' || steps.filter.outputs.compose == 'true' }}
+      readme: ${{ steps.decide.outputs.full == 'true' || steps.filter.outputs.readme == 'true' }}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
@@ -313,6 +314,18 @@ jobs:
               - 'web/frontend/**'
             compose:
               - *workflows
+              - 'deploy/docker-compose.yml'
+            # Everything the rendered `README.md` is a function of: the template, the script that
+            # collects the variables, and the three files it reads them out of. The artefact
+            # itself is listed too, so a hand-edit of a generated document fails the gate that
+            # would otherwise only notice it the next time an input moved.
+            readme:
+              - *workflows
+              - '.github/templates/README.md.hbs'
+              - '.github/scripts/readme-variables.sh'
+              - 'README.md'
+              - 'Cargo.toml'
+              - 'rust-toolchain.toml'
               - 'deploy/docker-compose.yml'
 
   lint:
@@ -1273,6 +1286,51 @@ jobs:
           TANKOVAULT_INTERNAL_TOKEN_WORKER: ci-validation-only
         run: docker compose -f deploy/docker-compose.yml config --quiet
 
+  # `README.md` is generated from `.github/templates/README.md.hbs` (ENGINEERING_GUIDE rule 6).
+  # This is the half of that claim which holds on the branches nothing can commit to: a push to
+  # `main`, and a pull request from a fork. `auto-fix.yaml`'s `readme` job renders and commits
+  # everywhere else.
+  #
+  # Without it, editing `README.md` directly would appear to work right up until the next pull
+  # request silently reverted it — and the numbers the document quotes would be back to being
+  # maintained by hand, which is how the tech-stack line came to advertise a Postgres and a Redis
+  # major behind the ones the compose file has been running for months.
+  #
+  # `check: true` writes nothing and reports the first differing line, so the log says whether it
+  # is a real change or a stray newline.
+  readme:
+    name: README is current
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [changes]
+    if: needs.changes.outputs.readme == 'true'
+    permissions:
+      contents: read # to check out the template and the document it renders to
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Invoked through `bash` rather than executed: this repository is authored on Windows,
+      # where git does not record the executable bit.
+      - name: collect the README variables
+        id: variables
+        run: echo "json=$(bash .github/scripts/readme-variables.sh)" >> "$GITHUB_OUTPUT"
+
+      - name: README.md matches its template
+        uses: TimSchoenle/actions/actions/common/render-template@3b7d152374ee63e720e7c16bed8b088b40554911 # tag=actions-common-render-template-v1.1.1
+        with:
+          template: .github/templates/README.md.hbs
+          output: README.md
+          variables: ${{ steps.variables.outputs.json }}
+          check: true
+
   # The one compile every image below is built on. `cook` and `builder` are the entire wall clock
   # of an image build; everything above them is a `COPY` onto `scratch`.
   #
@@ -1693,6 +1751,7 @@ jobs:
       - audit
       - supply-chain
       - compose
+      - readme
       - docker-deps
       - docker
       - docker-arm64

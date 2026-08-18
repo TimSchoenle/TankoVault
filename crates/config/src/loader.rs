@@ -9,6 +9,7 @@
 use serde::de::DeserializeOwned;
 use terrace_config::Terrace;
 
+pub use terrace_config::explain::{Explanation, Layer};
 pub use terrace_config::{Error as ConfigError, Loaded, Sources};
 
 /// The prefix every configuration variable carries.
@@ -61,6 +62,20 @@ pub fn load_watched<T: DeserializeOwned>() -> Result<Loaded<T>, ConfigError> {
     terrace().load_watched()
 }
 
+/// Report which layer supplied each key, without loading a config.
+///
+/// Re-reads the layers at the moment it is called, so it is as valid inside a reload as at
+/// boot. It carries **no configuration value** — only key paths and the layers they came from
+/// — which is what makes it safe to log, and `tankovault-service`'s reload module is the one
+/// caller that does.
+///
+/// # Errors
+/// As [`load`], except that a key supplied by more than one layer is reported rather than
+/// refused: an explanation of a configuration that fails to load is the case worth having.
+pub fn explain() -> Result<Explanation, ConfigError> {
+    terrace().explain()
+}
+
 /// Shared `serde` default for fields that are on unless explicitly disabled.
 ///
 /// One spelling so no service re-derives it wrong (`cookie_secure` once defaulted to *off*).
@@ -81,6 +96,9 @@ mod tests {
     use crate::{DatabaseConfig, MetricsConfig, load};
     use secrecy::ExposeSecret as _;
     use serde::Deserialize;
+    use terrace_config::testing::Harness;
+
+    use super::Layer;
 
     #[derive(Debug, Deserialize)]
     struct Sample {
@@ -89,23 +107,26 @@ mod tests {
         metrics: MetricsConfig,
     }
 
+    /// A sandbox over the real dialect, so every name these tests arrange is the name
+    /// [`super::terrace`] reads — a variable spelled out by hand would keep passing after the
+    /// prefix moved, while testing something nothing reads.
+    fn harness() -> Harness {
+        Harness::over(super::terrace())
+    }
+
     /// The dialect, end to end: the prefix, the `__` nesting, and the defaults that fill in
     /// around what the environment supplied. `terrace-config` owns the layering and tests it;
     /// what these pin is that this crate wires it to the names an operator actually sets.
+    ///
+    /// `load()` rather than `jail.load()` throughout, because the entry point every service
+    /// boots through is half of what is under test here.
     #[test]
-    // `figment::Jail::expect_with` fixes the closure's error type to the large `figment::Error`.
-    #[expect(
-        clippy::result_large_err,
-        reason = "figment::Jail::expect_with fixes the closure's error type"
-    )]
     fn env_overrides_and_defaults_apply() {
-        figment::Jail::expect_with(|jail| {
-            jail.set_env(
-                "TANKOVAULT_DATABASE__URL",
-                "postgres://localhost/tankovault",
-            );
-            jail.set_env("TANKOVAULT_DATABASE__MAX_CONNECTIONS", "32");
-            let cfg: Sample = load().map_err(|e| e.to_string()).unwrap();
+        harness().run(|jail| {
+            jail.env_key("database.url", "postgres://localhost/tankovault");
+            jail.env_key("database.max_connections", 32);
+
+            let cfg: Sample = load()?;
             // `SecretString` has no `PartialEq`; comparing requires `expose_secret()`.
             assert_eq!(
                 cfg.database.url.expose_secret(),
@@ -123,31 +144,27 @@ mod tests {
     /// A mounted secret outranks the TOML layer, so a `ConfigMap` carrying a placeholder DSN
     /// cannot win over the `Secret` that carries the real one — through the variable names
     /// *this* crate configures, which is the half a dependency cannot pin.
+    ///
+    /// The layer is asserted as well as the value: the two spellings differ, so a `secret` the
+    /// TOML happened to duplicate would produce the expected string from the wrong source and
+    /// pin nothing.
     #[test]
-    #[expect(
-        clippy::result_large_err,
-        reason = "figment::Jail::expect_with fixes the closure's error type"
-    )]
     fn a_secrets_directory_outranks_the_toml_layer() {
-        figment::Jail::expect_with(|jail| {
-            jail.clear_env();
-            jail.create_file(
-                "config.toml",
-                "[database]\nurl = \"postgres://placeholder/tv\"\n",
-            )?;
-            jail.create_dir("secrets")?;
-            jail.create_file("secrets/database__url", "postgres://real/tv\n")?;
-            jail.set_env(
-                "TANKOVAULT_CONFIG",
-                jail.directory().join("config.toml").display(),
-            );
-            jail.set_env(
-                "TANKOVAULT_SECRETS_DIR",
-                jail.directory().join("secrets").display(),
-            );
+        harness().run(|jail| {
+            jail.config("[database]\nurl = \"postgres://placeholder/tv\"\n")?;
+            jail.secret_key("database.url", "postgres://real/tv\n")?;
 
-            let cfg: Sample = load().map_err(|e| e.to_string()).unwrap();
+            let cfg: Sample = load()?;
             assert_eq!(cfg.database.url.expose_secret(), "postgres://real/tv");
+
+            let explanation = super::explain()?;
+            let origin = explanation
+                .origin("database.url")
+                .expect("the loaded key is reported");
+            assert!(
+                matches!(origin.effective(), Layer::SecretsFile(_)),
+                "the mounted file must be the effective source: {origin:?}"
+            );
             Ok(())
         });
     }
@@ -158,20 +175,13 @@ mod tests {
     /// `TANKOVAULT_PROFILE` decides whether the production guards run at all, and it is read by
     /// [`super::is_production`] long before a figment exists. A `Secret` supplying it would have
     /// left a deployment believing it had set the profile while every guard saw it unset.
+    ///
+    /// The file name is spelled verbatim on purpose: what is under test is a *name* the loader
+    /// must refuse, so deriving it from the key would beg the question.
     #[test]
-    #[expect(
-        clippy::result_large_err,
-        reason = "figment::Jail::expect_with fixes the closure's error type"
-    )]
     fn a_process_level_key_cannot_come_from_a_file() {
-        figment::Jail::expect_with(|jail| {
-            jail.clear_env();
-            jail.create_dir("secrets")?;
-            jail.create_file("secrets/profile", "production")?;
-            jail.set_env(
-                "TANKOVAULT_SECRETS_DIR",
-                jail.directory().join("secrets").display(),
-            );
+        harness().run(|jail| {
+            jail.secret("profile", "production")?;
 
             let error = load::<Sample>().expect_err("a file may not supply TANKOVAULT_PROFILE");
             assert!(

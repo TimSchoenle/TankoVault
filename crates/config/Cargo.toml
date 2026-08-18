@@ -25,14 +25,21 @@ serde = { workspace = true }
 secrecy = { workspace = true }
 # The loader itself: this crate owns the *schema* and the TankoVault dialect
 # (`src/loader.rs`), and nothing of the layering, the secrets-directory provider or the
-# shadow-key rejection. `loader` only — the reload supervisor is `crates/service`'s half, and
-# taking it here would link notify into every consumer of a config struct.
-terrace-config = { workspace = true, features = ["loader"] }
+# shadow-key rejection. The reload supervisor is `crates/service`'s half; taking it here would
+# link notify into every consumer of a config struct.
+#
+# `explain` is what `super::explain` reports at boot — where every key came from, and which of
+# them a higher layer is quietly shadowing. It costs no dependency, only a second walk of the
+# layers and the strings that render them.
+terrace-config = { workspace = true, features = ["loader", "explain"] }
 
 [dev-dependencies]
-# `figment::Jail` sets `TANKOVAULT_*` and restores it, which is how these tests avoid
-# `env::set_var`. The same figment `terrace-config` resolves, plus its `test` feature.
-figment = { workspace = true, features = ["test"] }
+# The loader's own test harness: a temporary directory, a cleared environment restored on the
+# way out, and arrangement methods that derive every file and variable name from the dialect
+# under test rather than restating it. It replaced a hand-rolled `figment::Jail` fixture, and
+# with it the `#[expect(clippy::result_large_err)]` that `figment::Error` forced onto every
+# test in this crate.
+terrace-config = { workspace = true, features = ["testing"] }
 
 [lints]
 workspace = true

@@ -105,7 +105,7 @@ xtask/          dev/ops tasks — see "Local development" below
 ## Tech stack
 
 - **Runtime / web** — Tokio, Axum, tower / tower-http
-- **Storage** — PostgreSQL 18 via SQLx (compile-time-checked SQL), Redis 8 via `fred`
+- **Storage** — PostgreSQL {{postgres}} via SQLx (compile-time-checked SQL), Redis {{redis}} via `fred`
 - **Messaging** — NATS JetStream (`async-nats`)
 - **Crawl** — `wreq` + `wreq-util` (BoringSSL; browser TLS/HTTP2 fingerprint emulation) with
   `governor` rate limiting, `scraper` HTML parsing, optional `chromiumoxide` headless render.
@@ -115,7 +115,7 @@ xtask/          dev/ops tasks — see "Local development" below
 - **Observability** — `tracing` + OpenTelemetry + Prometheus metrics
 - **IDs / time** — UUID v7, `time`
 
-Rust edition 2024, MSRV 1.94, built with the 1.94.0 toolchain that
+Rust edition {{edition}}, MSRV {{msrv}}, built with the {{toolchain}} toolchain that
 `rust-toolchain.toml` pins. Lints are strict workspace-wide (`unsafe_code = "forbid"`,
 `clippy::pedantic`).
 

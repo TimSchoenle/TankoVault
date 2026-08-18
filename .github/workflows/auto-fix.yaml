@@ -1,8 +1,8 @@
 name: auto-fix
 
 # The **one** workflow that fixes a pull request mechanically and commits the result: both
-# lockfiles, clippy's machine-applicable suggestions, `cargo fmt`, and the four generated
-# artefacts — in one job, in one commit.
+# lockfiles, clippy's machine-applicable suggestions, `cargo fmt`, the four generated artefacts
+# — in one job, in one commit — and `README.md`, rendered from its template in a job of its own.
 #
 # The dividing line for what belongs here is *determinism*, not convenience. Everything below has
 # exactly one correct output given the tree, so a bot's answer is byte-identical to a human's and
@@ -54,6 +54,13 @@ name: auto-fix
 # three artefacts record, and nothing regenerated them: release #50 landed on `main` with
 # `openapi.json` still reporting `0.4.1`, and `openapi --check` never even ran because `rustdoc`
 # failed earlier in the same job.
+#
+# `README.md` is the fifth, and the reason the `readme` job below is a job rather than a step: it
+# is rendered from `.github/templates/README.md.hbs` with the numbers
+# `.github/scripts/readme-variables.sh` reads out of `Cargo.toml`, `rust-toolchain.toml` and the
+# compose file, and it needs neither a toolchain nor a cache to do it. Its inputs are a different
+# set of paths from everything above — a Postgres bump in the compose file changes the README and
+# nothing else here — so putting it in `fix` would spend a workspace compile on a two-line diff.
 #
 # The lockfile sync is load-bearing for the same reason and is **not optional**.
 # `release-please-config.json` bumps `$.workspace.package.version`, which every one of the 26
@@ -153,6 +160,7 @@ jobs:
       contents: read # to check out the tree and diff it against the base
     outputs:
       relevant: ${{ steps.filter.outputs.fixable }}
+      readme: ${{ steps.filter.outputs.readme }}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
@@ -196,6 +204,18 @@ jobs:
               - 'about.toml'
               - 'THIRD-PARTY-NOTICES'
               - 'web/frontend/**'
+            # Everything `README.md` is a function of: the template, the script that collects the
+            # variables, the three files those variables are read out of, and the rendered file
+            # itself — so that a hand-edit of a generated document is undone by the job that
+            # would have overwritten it rather than surviving until the next unrelated render.
+            readme:
+              - '.github/workflows/auto-fix.yaml'
+              - '.github/templates/README.md.hbs'
+              - '.github/scripts/readme-variables.sh'
+              - 'README.md'
+              - 'Cargo.toml'
+              - 'rust-toolchain.toml'
+              - 'deploy/docker-compose.yml'
 
   fix:
     name: mechanical fixes
@@ -492,20 +512,103 @@ jobs:
           branch: ${{ github.event.pull_request.head.ref }}
           file_pattern: "Cargo.lock web/frontend/Cargo.lock crates services xtask fuzz openapi.json THIRD-PARTY-NOTICES web/frontend/src web/frontend/assets/main.css"
 
+  # `README.md`, rendered from its template and committed back to the branch.
+  #
+  # `needs: [changes, fix]` is **ordering, not a dependency**. Both jobs commit to the pull
+  # request's branch, and the shared action passes the head it read as `expectedHeadOid`, so two
+  # of them writing at once means one fails on a moved parent — a red gate whose cause is a race
+  # nobody can see in the diff. Running them in series costs a minute on the pull requests where
+  # both have something to do, and there is nothing to reason about afterwards. It is also why
+  # this is a second *job* rather than a second workflow: `repo-lint`'s
+  # `concurrency-groups-hold-one-workflow` would refuse the second workflow, and the note at the
+  # top of this file says what the three-workflow version of this cost.
+  #
+  # `!failure()` rather than `success()`: `fix` skips on a pull request with no Rust in it, and
+  # a README that changed on such a branch is exactly the branch this job is for. A *failed*
+  # `fix` is different — it may have left the tree half-fixed, and rendering on top of that
+  # commits a README nobody asked for.
+  readme:
+    name: render the README
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [changes, fix]
+    # Forks get no app secrets, so there would be no token to commit with. `ci.yml`'s `readme`
+    # job is what covers them: it renders in check mode and fails on a stale file.
+    if: ${{ !failure() && !cancelled() && needs.changes.outputs.readme == 'true' && github.event.pull_request.head.repo.full_name == github.repository }}
+    permissions:
+      contents: read # the write happens with the App token below, not with GITHUB_TOKEN
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
+        with:
+          egress-policy: audit
+
+      # An App installation token for the same two reasons `fix` uses one: the commit is
+      # verified, and — unlike one made with `GITHUB_TOKEN` — it re-triggers the checks on the
+      # branch it lands on. Narrowed to the one permission this job uses.
+      - name: Generate Bot Token
+        id: generate_token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.ACTIONS_MAINTENANCE_APP_ID }}
+          private-key: ${{ secrets.ACTIONS_MAINTENANCE_PRIVATE_KEY }}
+          permission-contents: write
+
+      # The head of the branch, not the merge commit: the render has to read the `Cargo.toml`
+      # the pull request proposes, and the commit has to land on top of what is there now —
+      # including whatever `fix` just committed.
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          persist-credentials: false
+
+      # Invoked through `bash` rather than executed: this repository is authored on Windows,
+      # where git does not record the executable bit.
+      - name: collect the README variables
+        id: variables
+        run: echo "json=$(bash .github/scripts/readme-variables.sh)" >> "$GITHUB_OUTPUT"
+
+      # Commits only when the render actually changed the file, so an unrelated pull request
+      # that merely touched `Cargo.toml` makes no commit and no API call.
+      - name: render README.md and commit it
+        id: render
+        uses: TimSchoenle/actions/actions/common/render-template-and-commit@15d83f02081c9dc8a844646199c63792dcccdfa8 # tag=actions-common-render-template-and-commit-v1.1.3
+        with:
+          template: .github/templates/README.md.hbs
+          output: README.md
+          variables: ${{ steps.variables.outputs.json }}
+          token: ${{ steps.generate_token.outputs.token }}
+          branch: ${{ github.event.pull_request.head.ref }}
+          commit_message: "docs: render README.md from its template"
+
+      - name: summarise
+        env:
+          COMMITTED: ${{ steps.render.outputs.changes_detected }}
+          COMMIT_URL: ${{ steps.render.outputs.commit_url }}
+        run: |
+          set -euo pipefail
+          if [ "${COMMITTED}" = "true" ]; then
+            echo "README.md re-rendered: ${COMMIT_URL}" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "README.md already matched its template." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
   # **The name branch protection points at — point it here and nowhere else.** This job carries the
   # required check because it is the only one that always runs: `fix` skips on a pull request with
   # no Rust in it and on every fork, and a skipped job is a weaker promise to a ruleset than a job
   # that ran and said so.
   #
   # `if: always()` rather than `success()`, which would inherit the skips. It fails only on a real
-  # `failure` or `cancelled`; a skipped `fix` is a pull request with nothing to fix, which is a
-  # pass. Same shape, and the same reasoning, as `ci.yml`'s `ci` gate.
+  # `failure` or `cancelled`; a skipped `fix` or `readme` is a pull request with nothing to fix,
+  # which is a pass. Same shape, and the same reasoning, as `ci.yml`'s `ci` gate.
   auto-fix:
     name: apply the mechanical fixes
     runs-on: ubuntu-latest
     timeout-minutes: 5
     if: always()
-    needs: [changes, fix]
+    needs: [changes, fix, readme]
     permissions: {}
     steps:
       - name: verdict

@@ -45,7 +45,8 @@ pub use internal_auth::{
 };
 pub use legal::{LegalConfig, LegalDocument};
 pub use loader::{
-    ConfigError, Loaded, Sources, default_true, is_production, load, load_watched, terrace,
+    ConfigError, Explanation, Layer, Loaded, Sources, default_true, explain, is_production, load,
+    load_watched, terrace,
 };
 pub use matching::MatchingConfig;
 pub use messaging::{NatsConfig, RedisConfig};

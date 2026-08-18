@@ -118,6 +118,14 @@ the file ships at `/THIRD-PARTY-NOTICES` in every image and is served to readers
 `/third-party-notices`. If generation fails because a crate's licence is unaccepted, that is a
 decision to make in `about.toml`, not a build error to work around.
 
+**The README.** `README.md` is rendered from `.github/templates/README.md.hbs`; edit the
+template, never the document. The numbers it quotes — the edition, the MSRV, the pinned
+toolchain, the Postgres and Redis majors — are injected from `Cargo.toml`,
+`rust-toolchain.toml` and `deploy/docker-compose.yml` by `.github/scripts/readme-variables.sh`,
+so bumping any of those carries the documentation with it. CI renders the template and commits
+the result to your pull request; a hand-edited `README.md` is reverted by that commit, and fails
+the `readme` job outright on a fork.
+
 **Configuration.** `docs/CONFIGURATION.md` is the surface — every `TANKOVAULT_*` key, its default,
 and which services read it. Add, rename or retire a field and the document has to follow: a test
 derives the surface from the config structs and the `std::env::var` call sites and fails on a

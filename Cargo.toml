@@ -216,13 +216,11 @@ anyhow = "1"
 # makes every bump a manifest edit that shows up in review. `deny.toml`'s `[sources] allow-git`
 # is the other half — an unlisted git source fails that gate.
 #
-# Features are opted into per consumer (`loader` in `crates/config`, `reload` in
-# `crates/service`) so that a crate which only reads a config file at boot links neither the
-# filesystem watcher nor its debouncer.
-terrace-config = { git = "https://github.com/TimSchoenle/terrace-config", tag = "v0.2.0", default-features = false }
-# Dev-only: `figment::Jail` is how the config tests set `TANKOVAULT_*` without `env::set_var`.
-# The loader itself reaches figment through `terrace-config`, which re-exports it.
-figment = { version = "0.10", features = ["toml", "env"] }
+# Features are opted into per consumer, so that a crate which only reads a config file at boot
+# links neither the filesystem watcher nor its debouncer: `loader` in `crates/config`, `reload`
+# in `crates/service`, `explain` where a boot log reports which layer supplied each key, and
+# `testing` in the two dev-dependency slots that used to reach for `figment::Jail` directly.
+terrace-config = { git = "https://github.com/TimSchoenle/terrace-config", tag = "v0.5.0", default-features = false }
 
 # --- auth / security ---
 # Every secret value in this workspace is a `secrecy` type — `SecretString` for text,

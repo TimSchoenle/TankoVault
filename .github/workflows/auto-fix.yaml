@@ -51,10 +51,11 @@ name: auto-fix
 # fail when they drift, but none fixes anything, so the failure is a red gate waiting on a human
 # to run a command whose output is fully determined by the tree.
 #
-# The contracts have one half this job deliberately does *not* fix: the three-line `LABEL` block in
-# `deploy/docker/Dockerfile`. `xtask config-contract` fails on a mismatch rather than rewriting it,
-# because a bot editing a Dockerfile is a change nobody reviewed — and because that mismatch means
-# the loader's prefix moved, which is a decision, not a formatting slip.
+# The contracts have one half this job deliberately does *not* fix: the three-line `LABEL` regions
+# in `deploy/docker/Dockerfile`. `just contract-json` writes the documents alone; `just regenerate`
+# would also rewrite those regions, and a bot editing a Dockerfile is a change nobody reviewed —
+# and a mismatch there means the loader's prefix moved, which is a decision, not a formatting slip.
+# `xtask config-contract` reports it in the gate, which is the whole fix.
 #
 # That gap is not hypothetical. release-please bumps `$.workspace.package.version`, which all
 # three artefacts record, and nothing regenerated them: release #50 landed on `main` with
@@ -209,13 +210,13 @@ jobs:
               - 'openapi.json'
               - 'about.toml'
               - 'THIRD-PARTY-NOTICES'
-              # The published configuration contracts, and the Dockerfile whose `LABEL` block is
-              # checked against them. The Dockerfile is here even though nothing rewrites it: a
-              # branch that edits the block and nothing else is exactly the branch whose failure
-              # should name the mismatch, and skipping the job would leave that to a `docker`
-              # build twenty minutes later.
+              # The published configuration contracts, and the `justfile` that writes them. The
+              # Dockerfile whose `LABEL` regions are checked against them is deliberately *not*
+              # here any more: nothing in this job rewrites it, and naming that mismatch is
+              # `ci.yml`'s `test` job, whose `rust` filter now lists the Dockerfile for exactly
+              # this reason.
               - 'docs/contracts/**'
-              - 'deploy/docker/Dockerfile'
+              - 'justfile'
               - 'web/frontend/**'
             # Everything `README.md` is a function of: the template, the script that collects the
             # variables, the three files those variables are read out of, and the rendered file
@@ -487,11 +488,19 @@ jobs:
       - name: regenerate THIRD-PARTY-NOTICES
         run: cargo run -p xtask -- notices
 
-      # The nine committed contracts. It also *checks* the Dockerfile's hand-written `LABEL` block
-      # and fails rather than rewriting it: three lines a human pasted are not something a bot
-      # should edit unreviewed, and naming the diff is the whole fix.
+      # The same recipe a developer runs, rather than a second spelling of it in YAML.
+      - name: Install just
+        uses: taiki-e/install-action@288e746965032cfcc232e09af2daf5f23c14d780 # v2.86.1
+        with:
+          tool: just
+
+      # The nine committed contracts, and only those. `just regenerate` would also rewrite the
+      # Dockerfile's `LABEL` regions, and three lines a human pasted are not something a bot
+      # should edit unreviewed — `deploy/docker/Dockerfile` is deliberately not in the
+      # `file_pattern` below either. `xtask config-contract` names that diff in the gate, and
+      # naming it is the whole fix.
       - name: regenerate the configuration contracts
-        run: cargo run -p xtask -- config-contract
+        run: just contract-json
 
       # Same Node major as `ci.yml`'s `css` job, which is what judges the result.
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0

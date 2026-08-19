@@ -223,7 +223,18 @@ cargo run -p xtask -- sqlx-prepare    # refresh the committed sqlx offline query
 cargo run -p xtask -- config-docs     # print the current TANKOVAULT_* surface
 cargo run -p xtask -- notices         # regenerate THIRD-PARTY-NOTICES from both lockfiles
 cargo run -p xtask -- repo-lint       # the invariants no compiler sees (CSP, secrets, metrics)
+cargo run -p xtask -- config-contract # check the nine published contracts and the LABEL regions
 cargo run -p xtask -- install-hooks   # the pre-commit hook
+```
+
+The configuration contracts are the one generated artefact whose writer is not `xtask`: `xtask`
+checks them and [`just`](https://github.com/casey/just) writes them, so the gate carries no second
+copy of the rendering it judges.
+
+```bash
+just                       # list every recipe
+just regenerate            # rewrite docs/contracts/*.json and the Dockerfile's LABEL regions
+just render api contract   # print one rendering of one service, writing nothing
 ```
 
 ### Frontend

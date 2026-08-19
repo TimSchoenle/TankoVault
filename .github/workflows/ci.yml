@@ -295,6 +295,14 @@ jobs:
               # a hand-edit of a generated document is caught by the gate that would otherwise
               # only notice it the next time one of its inputs moved.
               - 'docs/contracts/**'
+              # The Dockerfile, for the `LABEL` regions in it, and the `justfile`, which is what
+              # writes them. `xtask config-contract` in the `test` job is the only cheap thing
+              # that names a mismatch in either: `auto-fix.yaml` writes the documents and
+              # deliberately does not touch a Dockerfile, and the `docker` jobs catch it on the
+              # built image twenty minutes later. A branch that edits the block and nothing else
+              # is exactly the branch that should hear about it first.
+              - 'deploy/docker/Dockerfile'
+              - 'justfile'
               - '.github/coverage-floor.txt'
             frontend:
               - *workflows
@@ -456,14 +464,18 @@ jobs:
       - name: OpenAPI artifacts are up to date
         run: cargo run -p xtask -- openapi --check
 
-      # The nine documents each published image carries, plus the `LABEL` block the Dockerfile
+      # The nine documents each published image carries, plus the `LABEL` regions the Dockerfile
       # writes by hand. This is the *source* half — the built-image half lives in the `docker`
       # jobs, and only that one is evidence — but it is the half that names a renamed key in the
       # pull request that renamed it, one step before a build is spent finding out.
-      # `auto-fix.yaml` regenerates the documents and commits them back; the `LABEL` block it
+      # `auto-fix.yaml` regenerates the documents and commits them back; the `LABEL` regions it
       # reports rather than rewrites.
+      #
+      # No `--check` any more, because there is no other mode: `just regenerate` is the writer.
+      # Two commands rather than one flag is what stops the gate from carrying its own copy of
+      # the rendering it is judging.
       - name: the published configuration contracts are up to date
-        run: cargo run -p xtask -- config-contract --check
+        run: cargo run -p xtask -- config-contract
       # `docs/CONFIGURATION.md` is gated too, but by `xtask::config_docs` under `cargo test` above —
       # it is prose, so there is nothing to regenerate. `xtask -- config-docs` prints the surface.
 

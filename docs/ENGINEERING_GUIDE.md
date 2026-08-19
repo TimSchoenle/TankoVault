@@ -135,8 +135,9 @@ job.
 
 `docs/contracts/*.json` are the fifth, one per published image: the **configuration contract**
 each one carries, which is every `TANKOVAULT_*` key that image's binary reads, in every spelling
-that can supply it, plus a JSON Schema for the document a chart renders. Run
-`cargo run -p xtask -- config-contract`. **[E]** CI's `test` job, `xtask ci`, and — the half that
+that can supply it, plus a JSON Schema for the document a chart renders. Run `just regenerate`;
+the gate is `cargo run -p xtask -- config-contract`, which only checks. **[E]** CI's `test` job,
+`xtask ci`, and — the half that
 is evidence rather than a source diff — the `docker` jobs, which check the **built image** against
 the same generator's output. See [§9](#9-the-configuration-contract).
 
@@ -577,7 +578,7 @@ Everything that can fail, what owns it, and how to run it.
 | `docs/CONFIGURATION.md` matches the config structs | `xtask config-docs --check` | `cargo run -p xtask -- config-docs --check` |
 | SQL cache is complete | `cargo sqlx prepare --check` | `cargo run -p xtask -- sqlx-prepare --check` |
 | `THIRD-PARTY-NOTICES` matches both lockfiles | `xtask notices --check` | `cargo run -p xtask -- notices --check` |
-| the published configuration contracts and the Dockerfile's `LABEL` block match the config roots | `xtask config-contract --check` | `cargo run -p xtask -- config-contract --check` |
+| the published configuration contracts and the Dockerfile's `LABEL` regions match the config roots | `xtask config-contract` | `cargo run -p xtask -- config-contract` (writing is `just regenerate`) |
 | the **built image** carries the contract labels it was built to carry, and embeds the document that was generated with them | CI's `docker` jobs | `bash .github/scripts/verify-config-contract.sh <image> <expected.labels> <expected.json>` (Docker) |
 | `README.md` matches its template | CI's `readme` job | `bash .github/scripts/readme-variables.sh` (prints what CI renders with) |
 | licences, advisories, duplicate-version budget, banned crates | `deny.toml` | `cargo deny check` |
@@ -739,10 +740,18 @@ union instead would have `api`'s document assert that its image reads `anilist.c
 and a chart believing that is a chart being told to mount a secret nothing in that pod consumes.
 
 ```
-cargo run -p tankovault-config-contract -- --service api --format contract     # the document
-cargo run -p tankovault-config-contract -- --service api --format labels       # NAME=value ×3
-cargo run -p tankovault-config-contract -- --service api --format dockerfile   # the LABEL block
+just render api contract      # the document
+just render api labels        # NAME=value ×3
+just render api dockerfile    # the marked LABEL region
+just services                 # the nine names --service accepts
 ```
+
+`just render` is `cargo run -p tankovault-config-contract -- --service <name> --format <format>`
+with the flags already right. Everything else `terrace-config` renders — `json`, `markdown`,
+`markdown-loader`, `markdown-keys`, `toml`, `json-schema` — is the same command with a different
+`--format`, because the generator is
+[`terrace_config::schema::cli::Cli`](https://github.com/TimSchoenle/terrace-config) and only
+`--service` is this repository's own.
 
 Two things it deliberately does not carry. **Compiled-in default values**, because reading them
 needs `Serialize` on every config struct including the ones holding a `SecretString`; `required`
@@ -771,8 +780,11 @@ The labels are a hand-written `LABEL` block, because a `LABEL` key can be interp
 nothing and `--build-arg` cannot reach a file produced inside a builder stage. **So the block is
 only as good as what checks it, and two things do:**
 
-- **[E]** `xtask config-contract --check` compares the block against the generator. Source-side,
-  and it catches a prefix change one step before a build is spent finding out.
+- **[E]** `xtask config-contract` compares every marked region against the generator — the file
+  carries one per runtime stage, and all three are checked. Cut at the
+  `# terrace-config:labels:begin` / `:end` markers `--format dockerfile` emits, so a block written
+  as one `LABEL` per line is still compared whole. Source-side, and it catches a prefix change one
+  step before a build is spent finding out. `just dockerfile-labels` is what rewrites them.
 - **[E]** `.github/scripts/verify-config-contract.sh`, in every `docker` job and in each release
   build leg, checks the **built image** — its labels against the `.labels` file the *same
   generator run* wrote, and the embedded document against the exported copy. A source diff cannot

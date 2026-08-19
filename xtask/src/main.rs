@@ -63,9 +63,11 @@ fn main() -> anyhow::Result<()> {
         return coverage::run_cli(workspace_root(), &args);
     }
 
+    // No `--check`: there is no other mode. Writing the documents and the Dockerfile regions is
+    // `just regenerate`, so that the gate and the writer cannot be two implementations of one
+    // rendering. See `config_contract`'s module docs.
     if cmd == "config-contract" {
-        let check = std::env::args().nth(2).as_deref() == Some("--check");
-        return config_contract::run(workspace_root(), check);
+        return config_contract::run(workspace_root());
     }
 
     if cmd == "config-docs" {
@@ -86,7 +88,7 @@ fn main() -> anyhow::Result<()> {
         eprintln!(
             "unknown command {cmd:?} in a --no-default-features build; usage: xtask \
              <repo-lint|install-hooks|coverage-ratchet [--integration] [report.json]|\
-             config-contract [--check]|config-docs [--check]|notices [--check]|\
+             config-contract|config-docs [--check]|notices [--check]|\
              release-plan <bases.json>|--all>\n\
              ci, migrate, reset, seed, prune-chapters, repair-series, openapi and sqlx-prepare \
              need the \
@@ -154,7 +156,7 @@ async fn compiled_commands(cmd: &str) -> anyhow::Result<()> {
                  <migrate|reset|seed|prune-chapters [--apply]|\
                  repair-series [--split <series-id>] [--apply]|\
                  openapi [--check]|\
-                 config-contract [--check]|config-docs [--check]|notices [--check]|\
+                 config-contract|config-docs [--check]|notices [--check]|\
                  sqlx-prepare [--check]|\
                  release-plan <bases.json>|--all>"
             );

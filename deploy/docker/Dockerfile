@@ -147,9 +147,10 @@ RUN set -eu; \
 # services were built from.
 #
 # **The document and the labels come out of one run**, which is the whole point. The three
-# `dev.terrace.config.*` values below are written by hand in each runtime stage because a `LABEL`
-# key can be interpolated from nothing; what stops them drifting is that CI checks the *built
-# image* against the `.labels` file this stage wrote. See `.github/workflows/ci.yml`.
+# `dev.terrace.config.*` values sit in a marked region in each runtime stage below, because a
+# `LABEL` key can be interpolated from nothing; `just dockerfile-labels` rewrites those regions
+# from this same generator, and what stops them drifting is that CI checks the *built image*
+# against the `.labels` file this stage wrote. See `.github/workflows/ci.yml`.
 #
 # Deliberately **no** `--revision` / `--created`. Both are legitimate contract fields and both
 # make the document differ between two builds of one commit — which would break the chain this
@@ -302,14 +303,22 @@ ENV TANKOVAULT_RENDER__CHROME_PATH=/usr/bin/chromium \
 # service shares — which is what lets one hand-written block serve nine images.
 #
 # `LABEL` takes no interpolation and `--build-arg` cannot reach a file produced inside a builder
-# stage, so these are pasted from `config-contract --format dockerfile` rather than derived.
-# Two things hold them honest, and neither is a source diff: `xtask config-contract --check`
-# compares this block against the generator, and CI compares the **built image** against the
-# `.labels` file the same generator run wrote. A LABEL block with nothing checking it is the
-# failure mode two earlier drafts of this design shipped.
+# stage, so these are written from `config-contract --format dockerfile` — by hand, or by `just
+# dockerfile-labels`, which is the same bytes without the copying — rather than derived.
+# Two things hold them honest, and neither is a source diff: `xtask config-contract` compares
+# every marked region in this file against the generator, and CI compares the **built image**
+# against the `.labels` file the same generator run wrote. A LABEL block with nothing checking it
+# is the failure mode two earlier drafts of this design shipped.
+#
+# The markers are `terrace-config`'s own, and they are what the check and the rewrite both cut on.
+# Finding the `LABEL` line and following its continuations — what this repository did before —
+# reads correctly right up until the block is written as one `LABEL` per line, and then compares
+# one line of three and passes.
+# terrace-config:labels:begin
 LABEL dev.terrace.config.contract.version="1" \
       dev.terrace.config.contract.path="/config/contract.json" \
       dev.terrace.config.prefix="TANKOVAULT_"
+# terrace-config:labels:end
 USER 1001:1001
 ENTRYPOINT ["/usr/local/bin/tankovault-service"]
 
@@ -331,9 +340,11 @@ COPY --from=builder /app/THIRD-PARTY-NOTICES /THIRD-PARTY-NOTICES
 ENV TANKOVAULT_FRONTEND__STATIC_DIR=/srv/www
 # Numeric nonroot UID (scratch has no /etc/passwd); binds 3000, not the privileged port 80.
 # The contract labels; see the `runtime-browser` stage for what holds them honest.
+# terrace-config:labels:begin
 LABEL dev.terrace.config.contract.version="1" \
       dev.terrace.config.contract.path="/config/contract.json" \
       dev.terrace.config.prefix="TANKOVAULT_"
+# terrace-config:labels:end
 USER 1001:1001
 EXPOSE 3000
 ENTRYPOINT ["/usr/local/bin/tankovault-frontend"]
@@ -353,8 +364,10 @@ COPY --from=builder /app/LICENSE /LICENSE
 COPY --from=builder /app/THIRD-PARTY-NOTICES /THIRD-PARTY-NOTICES
 # Numeric nonroot UID (scratch has no /etc/passwd).
 # The contract labels; see the `runtime-browser` stage for what holds them honest.
+# terrace-config:labels:begin
 LABEL dev.terrace.config.contract.version="1" \
       dev.terrace.config.contract.path="/config/contract.json" \
       dev.terrace.config.prefix="TANKOVAULT_"
+# terrace-config:labels:end
 USER 1001:1001
 ENTRYPOINT ["/usr/local/bin/tankovault-service"]

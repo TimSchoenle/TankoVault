@@ -16,7 +16,11 @@ path = "src/main.rs"
 # service boots through rather than restated, so a contract cannot describe a namespace no
 # binary reads.
 tankovault-config = { workspace = true }
-terrace-config = { workspace = true, features = ["schema"] }
+# `schema-cli` rather than `schema`: it is the generator itself — the `--format` vocabulary, the
+# argument syntax, and the dispatch across the renderings — which this crate used to carry by
+# hand. It is an add-on to `schema` and costs no dependency `schema` did not already pull, which
+# is why nothing else in the workspace has to ask for it.
+terrace-config = { workspace = true, features = ["schema-cli"] }
 
 # One dependency per published image, because a contract is a claim about *one* binary. The
 # alternative — describing the union of every root — would have `api`'s document assert that the
@@ -31,6 +35,11 @@ tankovault-notifier = { workspace = true }
 tankovault-render = { workspace = true }
 tankovault-sync = { workspace = true }
 tankovault-worker = { workspace = true }
+
+[dev-dependencies]
+# The tests read the rendered document rather than a second `Contract` built beside it, so that a
+# generator whose output drifted from what it asserts cannot pass. That needs a JSON reader.
+serde_json = { workspace = true }
 
 [lints]
 workspace = true

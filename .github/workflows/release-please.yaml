@@ -1083,17 +1083,40 @@ jobs:
           contract="${RUNNER_TEMP}/contract/${BIN}.json"
 
           for pair in "${DOCKERHUB_IMAGE}@${DOCKERHUB_DIGEST}" "${GHCR_IMAGE}@${GHCR_DIGEST}"; do
-            "${RUNNER_TEMP}/registry-retry" oras attach \
+            # From the contract's own directory, by name. `oras` rejects an absolute file path,
+            # and `--disable-path-validation` would only trade that refusal for a runner path
+            # published as the attachment's title annotation.
+            ( cd "$(dirname "$contract")" && "${RUNNER_TEMP}/registry-retry" oras attach \
               --artifact-type "$artifact_type" \
-              "$pair" "${contract}:application/json"
+              "$pair" "$(basename "$contract"):application/json" )
 
             # The referrer's own digest, which is what cosign signs: signing the image again
             # would say nothing about the document hanging off it.
-            referrer=$("${RUNNER_TEMP}/registry-retry" oras discover --format json \
-              --artifact-type "$artifact_type" "$pair" \
-              | jq -er '[.. | objects | select(.artifactType? == "application/vnd.terrace.config-schema.v1+json") | .digest] | unique
-                        | if length == 1 then .[0]
-                          else error("expected one config-schema referrer, got \(.)") end')
+            #
+            # Polled, because `registry-retry` cannot see this one: Docker Hub's referrers index
+            # is eventually consistent, so for seconds after the attach above returns, a discover
+            # answers with an empty index — a successful call, not a failed one, and the wrapper
+            # only retries failures.
+            digests=""
+            for attempt in 1 2 3 4 5 6; do
+              if [ "$attempt" -gt 1 ]; then
+                sleep $(( (attempt - 1) * 5 ))
+              fi
+              digests=$("${RUNNER_TEMP}/registry-retry" oras discover --format json \
+                --artifact-type "$artifact_type" "$pair" \
+                | jq -r --arg t "$artifact_type" '[.. | objects | select(.artifactType? == $t) | .digest] | unique | .[]')
+              if [ -n "$digests" ]; then
+                break
+              fi
+            done
+
+            # Still exactly one, or the chart repository would have to pick between two documents
+            # claiming to describe the same image.
+            if [ "$(printf '%s\n' "$digests" | grep -c .)" != "1" ]; then
+              echo "::error::expected one config-schema referrer on ${pair} within 75s of attaching one, got: ${digests:-none}" >&2
+              exit 1
+            fi
+            referrer="$digests"
 
             "${RUNNER_TEMP}/registry-retry" cosign sign --yes --identity-token "$token" "${pair%@*}@${referrer}"
           done

@@ -8,6 +8,7 @@
               utoipa's generated siblings, not for an external consumer"
 )]
 
+pub mod config;
 pub mod openapi;
 
 mod account_gate;

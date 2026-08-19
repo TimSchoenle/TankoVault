@@ -16,6 +16,18 @@ metadataTest:
   # the server binds the unprivileged port 3000 instead of 80.
   user: "1001:1001"
   entrypoint: ["/usr/local/bin/tankovault-frontend"]
+  # What a deployment pipeline discovers this image's configuration contract by, read off the
+  # config blob with no layer pull. `.github/scripts/verify-config-contract.sh` is the check that
+  # matters — it compares these against the generator's own output, which is what makes them more
+  # than three strings someone typed — and this restatement is what keeps a `docker save` tarball
+  # and a local build honest too.
+  labels:
+    - key: "dev.terrace.config.contract.version"
+      value: "1"
+    - key: "dev.terrace.config.contract.path"
+      value: "/config/contract.json"
+    - key: "dev.terrace.config.prefix"
+      value: "TANKOVAULT_"
   exposedPorts: ["3000"]
   envVars:
     # The static bundle location the server reads at startup, baked into the image.
@@ -23,6 +35,12 @@ metadataTest:
       value: "/srv/www"
 
 fileExistenceTests:
+  # The offline copy of the contract, at the path the label above names. The chart repo reads it
+  # out of the layer blobs when a registry does not implement the referrers API, so its absence is
+  # invisible on that side until a chart cannot be validated at all.
+  - name: "the configuration contract ships with the image"
+    path: "/config/contract.json"
+    shouldExist: true
   - name: "frontend server binary present and executable"
     path: "/usr/local/bin/tankovault-frontend"
     shouldExist: true
@@ -64,6 +82,11 @@ fileExistenceTests:
     shouldExist: false
 
 fileContentTests:
+  # Existence alone would be satisfied by an empty file. These three are the envelope's own
+  # fields, so a truncated document fails here rather than in the chart repo.
+  - name: "the contract is the generated document, not an empty placeholder"
+    path: "/config/contract.json"
+    expectedContents: ['"terrace_contract": 1', '"prefix": "TANKOVAULT_"', '"json_schema"']
   # An empty file would satisfy the existence test above and discharge nothing; the SPA would
   # link a blank page. Both graphs must be in there, which is what the section headings prove.
   - name: "the notices cover both dependency graphs, not just the backend's"

@@ -1,10 +1,11 @@
 //! Runtime feature-flag plumbing (not the flag values themselves).
 
 use serde::Deserialize;
+use terrace_config::schema::Describe;
 
 /// Runtime feature flags (`tankovault_domain::Feature`); only the *plumbing* — flag values
 /// are set at runtime from the control plane, not deployed here.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Describe)]
 pub struct FeaturesConfig {
     /// Seconds between refreshes of a service's cached flag snapshot — the propagation delay
     /// to *other* replicas (the one that served the change applies it immediately).

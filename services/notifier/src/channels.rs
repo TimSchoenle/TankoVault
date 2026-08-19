@@ -10,51 +10,10 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use secrecy::{ExposeSecret as _, SecretString};
-use serde::Deserialize;
 use tankovault_domain::{Feature, SeriesId};
+
+use crate::config::ChannelsConfig;
 use tankovault_email::{EmailMessage, EmailService};
-
-/// Operator-configured external channel endpoints. All optional; a channel is only
-/// constructed when its URL is present and non-empty.
-#[derive(Debug, Deserialize)]
-pub(crate) struct ChannelsConfig {
-    /// A Discord "Incoming Webhook" URL. Receives the Discord message/embed shape.
-    ///
-    /// A [`SecretString`], not a URL: Discord's form embeds the token in the path
-    /// (`https://discord.com/api/webhooks/{id}/{token}`), and this struct derives `Debug`.
-    #[serde(default)]
-    pub discord_webhook_url: Option<SecretString>,
-    /// A generic HTTP endpoint. Receives [`webhook_payload`] as a JSON `POST` body.
-    ///
-    /// Wrapped for the same reason as [`Self::discord_webhook_url`]: an embedded token in the
-    /// path or query is the ordinary way these endpoints authenticate.
-    #[serde(default)]
-    pub webhook_url: Option<SecretString>,
-    /// Recipients of a new-chapter alert email. Empty disables the email channel.
-    ///
-    /// The relay, credentials and `From` address come from the shared `TANKOVAULT_EMAIL__*`
-    /// config the API uses, so one deployment has one SMTP configuration.
-    #[serde(default)]
-    pub email_to: Vec<String>,
-    /// Per-request timeout for channel deliveries.
-    #[serde(default = "default_timeout_secs")]
-    pub timeout_secs: u64,
-}
-
-impl Default for ChannelsConfig {
-    fn default() -> Self {
-        Self {
-            discord_webhook_url: None,
-            webhook_url: None,
-            email_to: Vec::new(),
-            timeout_secs: default_timeout_secs(),
-        }
-    }
-}
-
-fn default_timeout_secs() -> u64 {
-    10
-}
 
 /// A single new-chapter alert, already resolved to display-ready fields.
 #[derive(Debug, Clone)]

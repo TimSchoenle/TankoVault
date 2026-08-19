@@ -1,9 +1,10 @@
 //! Observability settings shared by every service.
 
 use serde::Deserialize;
+use terrace_config::schema::Describe;
 
 /// Observability / telemetry settings shared by every service.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Describe)]
 pub struct TelemetryConfig {
     /// Logical service name reported in traces/metrics.
     pub service_name: String,

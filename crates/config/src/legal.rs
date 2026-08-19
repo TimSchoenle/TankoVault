@@ -18,13 +18,14 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
+use terrace_config::schema::Describe;
 
 use crate::ConfigError;
 
 /// Where the legal documents live and what they are.
 ///
 /// Every field defaults, so an absent `[legal]` section is valid and simply publishes nothing.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Describe)]
 #[serde(default)]
 pub struct LegalConfig {
     /// Root that relative [`LegalDocument::sources`] paths resolve against.

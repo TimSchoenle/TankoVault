@@ -5,6 +5,7 @@
 // `ci` runs `openapi` in process rather than shelling out, so it sits behind the same gate.
 #[cfg(feature = "full")]
 mod ci;
+mod config_contract;
 mod config_docs;
 mod coverage;
 mod notices;
@@ -62,6 +63,11 @@ fn main() -> anyhow::Result<()> {
         return coverage::run_cli(workspace_root(), &args);
     }
 
+    if cmd == "config-contract" {
+        let check = std::env::args().nth(2).as_deref() == Some("--check");
+        return config_contract::run(workspace_root(), check);
+    }
+
     if cmd == "config-docs" {
         let check = std::env::args().nth(2).as_deref() == Some("--check");
         return config_docs::run(workspace_root(), check);
@@ -80,7 +86,8 @@ fn main() -> anyhow::Result<()> {
         eprintln!(
             "unknown command {cmd:?} in a --no-default-features build; usage: xtask \
              <repo-lint|install-hooks|coverage-ratchet [--integration] [report.json]|\
-             config-docs [--check]|notices [--check]|release-plan <bases.json>|--all>\n\
+             config-contract [--check]|config-docs [--check]|notices [--check]|\
+             release-plan <bases.json>|--all>\n\
              ci, migrate, reset, seed, prune-chapters, repair-series, openapi and sqlx-prepare \
              need the \
              default `full` feature."
@@ -147,7 +154,8 @@ async fn compiled_commands(cmd: &str) -> anyhow::Result<()> {
                  <migrate|reset|seed|prune-chapters [--apply]|\
                  repair-series [--split <series-id>] [--apply]|\
                  openapi [--check]|\
-                 config-docs [--check]|notices [--check]|sqlx-prepare [--check]|\
+                 config-contract [--check]|config-docs [--check]|notices [--check]|\
+                 sqlx-prepare [--check]|\
                  release-plan <bases.json>|--all>"
             );
             std::process::exit(2);

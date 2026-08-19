@@ -3,8 +3,11 @@
 //! unavailable.
 
 mod browser;
-mod config;
 mod solver;
+
+// Re-exported into the binary's own root so `crate::config::…` keeps resolving in the modules
+// beside this one: the type itself lives in the library, where `config-contract` can reach it.
+use tankovault_render::config;
 
 use std::sync::Arc;
 

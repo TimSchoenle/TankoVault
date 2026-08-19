@@ -13,6 +13,7 @@
 //! anything. They live beside the build in `web/frontend/src/platform/`.
 
 use serde::Deserialize;
+use terrace_config::schema::Describe;
 
 /// The name a stock deployment answers to.
 const DEFAULT_NAME: &str = "TankoVault";
@@ -25,7 +26,7 @@ const DEFAULT_WORDMARK_ACCENT: &str = "Vault";
 ///
 /// Every field defaults, so an absent `[branding]` section is valid and reproduces the shipped
 /// identity exactly.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Describe)]
 #[serde(default)]
 pub struct BrandingConfig {
     /// The product name, in prose: email subjects and bodies, page titles, the authenticator
@@ -33,14 +34,17 @@ pub struct BrandingConfig {
     pub name: String,
     /// The two-tone lockup drawn in the rail and the footer. See [`BrandingConfig::wordmark`]
     /// for what an unset lockup resolves to.
+    #[config(nested)]
     pub wordmark: WordmarkConfig,
     /// One line under the wordmark. Unset keeps the shipped, *translated* tagline; setting it
     /// replaces that with this string in every language, which is the right trade for an
     /// operator whose product is not the one the catalogue describes.
     pub tagline: Option<String>,
     /// The notice in the footer's meta line.
+    #[config(nested)]
     pub copyright: CopyrightConfig,
     /// How the deployment's own code is licensed, as shown in the footer.
+    #[config(nested)]
     pub licence: LicenceConfig,
     /// Where the project lives — the footer's source link and the desktop About tab.
     pub project_url: String,
@@ -52,7 +56,7 @@ pub struct BrandingConfig {
 }
 
 /// The two halves of the wordmark.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Describe)]
 #[serde(default)]
 pub struct WordmarkConfig {
     /// The part drawn in the body colour.
@@ -62,7 +66,7 @@ pub struct WordmarkConfig {
 }
 
 /// The footer's copyright line.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Describe)]
 #[serde(default)]
 pub struct CopyrightConfig {
     /// Who holds it.
@@ -76,7 +80,7 @@ pub struct CopyrightConfig {
 }
 
 /// The licence label, and where its text lives.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Describe)]
 #[serde(default)]
 pub struct LicenceConfig {
     /// What the footer prints.

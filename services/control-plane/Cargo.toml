@@ -23,6 +23,11 @@ path = "src/main.rs"
 
 [dependencies]
 tankovault-config = { workspace = true }
+# The `Describe` derive on this service's own config root, beside the blocks
+# `tankovault-config` describes. `config-contract` walks the root to build the document
+# this image publishes, so a local block that skipped the derive would be a key the
+# contract claims the binary does not read.
+terrace-config = { workspace = true, features = ["schema"] }
 # Redis/NATS URLs arrive from config as `SecretString`.
 secrecy = { workspace = true }
 tankovault-service = { workspace = true, features = ["db"] }

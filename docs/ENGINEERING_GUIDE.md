@@ -43,8 +43,8 @@ The short list. Everything else in this document is elaboration.
 4. **A secret published in this repository must be refused by the code that reads it.** [§2.2](#22-secrets)
 5. **Anything fetching a URL someone else chose calls `tankovault_domain::ssrf`.** [§2.3](#23-ssrf)
 6. **Generated artefacts are generated.** Never hand-edit `openapi.json`,
-   `crates/api-client/src/lib.rs`, `THIRD-PARTY-NOTICES` or `README.md`.
-   [§1.4](#14-generated-artefacts)
+   `crates/api-client/src/lib.rs`, `THIRD-PARTY-NOTICES`, `docs/contracts/*.json` or
+   `README.md`. [§1.4](#14-generated-artefacts)
 7. **A fix that could silently come back gets a test whose doc comment says what the bug was.** [§3.6](#36-tests-carry-the-story)
 8. **`cargo run -p xtask -- ci` is what a change passes before it lands** — run by the human
    pushing it, not by an agent after every edit. [§7](#7-before-you-push), [§8](#8-for-agents)
@@ -133,7 +133,14 @@ Why it is not in `xtask ci` when the other three are: that gate needs nothing bu
 rustfmt, and this one needs `cargo-about` installed. Keeping the promise is worth the separate
 job.
 
-`README.md` is the fifth, and the only one no `xtask` command produces: it is rendered from
+`docs/contracts/*.json` are the fifth, one per published image: the **configuration contract**
+each one carries, which is every `TANKOVAULT_*` key that image's binary reads, in every spelling
+that can supply it, plus a JSON Schema for the document a chart renders. Run
+`cargo run -p xtask -- config-contract`. **[E]** CI's `test` job, `xtask ci`, and — the half that
+is evidence rather than a source diff — the `docker` jobs, which check the **built image** against
+the same generator's output. See [§9](#9-the-configuration-contract).
+
+`README.md` is the sixth, and the only one no `xtask` command produces: it is rendered from
 `.github/templates/README.md.hbs` by a shared action, with the variables
 `.github/scripts/readme-variables.sh` reads out of `Cargo.toml`, `rust-toolchain.toml` and
 `deploy/docker-compose.yml`. Edit the **template**; `auto-fix.yaml`'s `readme` job renders it on
@@ -570,6 +577,8 @@ Everything that can fail, what owns it, and how to run it.
 | `docs/CONFIGURATION.md` matches the config structs | `xtask config-docs --check` | `cargo run -p xtask -- config-docs --check` |
 | SQL cache is complete | `cargo sqlx prepare --check` | `cargo run -p xtask -- sqlx-prepare --check` |
 | `THIRD-PARTY-NOTICES` matches both lockfiles | `xtask notices --check` | `cargo run -p xtask -- notices --check` |
+| the published configuration contracts and the Dockerfile's `LABEL` block match the config roots | `xtask config-contract --check` | `cargo run -p xtask -- config-contract --check` |
+| the **built image** carries the contract labels it was built to carry, and embeds the document that was generated with them | CI's `docker` jobs | `bash .github/scripts/verify-config-contract.sh <image> <expected.labels> <expected.json>` (Docker) |
 | `README.md` matches its template | CI's `readme` job | `bash .github/scripts/readme-variables.sh` (prints what CI renders with) |
 | licences, advisories, duplicate-version budget, banned crates | `deny.toml` | `cargo deny check` |
 | secrets in history | gitleaks | CI `secrets` job |
@@ -700,3 +709,101 @@ without having read it.
 - **Report honestly, and report the scope.** If a suite fails, say so with the output. If you
   skipped a step, say which. Name the command you ran and say plainly that the full gate was
   not run — a passing `cargo check` must never read as a green CI run.
+
+---
+
+## 9 The configuration contract
+
+Every published image carries a JSON document naming every setting the binary inside it reads —
+the TOML paths, the `TANKOVAULT_*` spellings derived from them, the `_FILE` and secrets-directory
+spellings derived from those, the variables it reads that are nobody's configuration (`RUST_LOG`),
+and a JSON Schema for the document a chart renders. `TimSchoenle/helm-charts` fetches it by digest
+and validates each chart's rendered `config.toml`, environment and mounted secret file names
+against it.
+
+The defect it closes is one nothing else in this repository can see: `serde` ignores an unknown
+key by design, so a `ConfigMap` full of settings the binary stopped reading is a valid `ConfigMap`
+to `values.schema.json`, to kubeconform and to `helm unittest` alike. The pod starts, reports
+healthy, and runs on a compiled default nobody chose.
+
+### 9.1 What is generated, and from what
+
+`terrace-config`'s `schema` feature is on unconditionally in `crates/config` — see the workspace
+manifest for why a feature would cost a second compile of the service tree — so every block in
+that crate and every service's own `Config` derives `Describe`.
+
+**A contract is a claim about one binary.** That is why each service's root lives in its
+*library* (`services/<svc>/src/config.rs`, `pub mod config`) rather than beside `main`:
+`crates/config-contract` has to describe the very type that binary deserialises. Describing the
+union instead would have `api`'s document assert that its image reads `anilist.client_secret`,
+and a chart believing that is a chart being told to mount a secret nothing in that pod consumes.
+
+```
+cargo run -p tankovault-config-contract -- --service api --format contract     # the document
+cargo run -p tankovault-config-contract -- --service api --format labels       # NAME=value ×3
+cargo run -p tankovault-config-contract -- --service api --format dockerfile   # the LABEL block
+```
+
+Two things it deliberately does not carry. **Compiled-in default values**, because reading them
+needs `Serialize` on every config struct including the ones holding a `SecretString`; `required`
+and the type constraints are published, and `docs/CONFIGURATION.md` still says what an omitted key
+resolves to. And **the image's own `ENV` block** — `frontend` and `render` bake three keys into
+their images and no derive can see a Dockerfile, so those keys are in the document as keys and the
+fact that the image supplies them is not.
+
+### 9.2 Where it lands on the image, and what checks it
+
+Three carriers, and each answers a different question.
+
+1. **The document at `/config/contract.json`**, `COPY`ed from the `contract-builder` stage. The
+   offline copy: a `docker save` tarball, an air-gapped mirror, a future initContainer.
+2. **Three labels on the image config blob** — the envelope version, that path, and the loader's
+   prefix. This is the discovery protocol: `crane config` answers "does this image publish a
+   contract, and which namespace is it about" in one request with no layer pull. The prefix is
+   read *before* the document is fetched, because it is what says which of a pod's variables are
+   the contract's business at all.
+3. **An OCI referrer** of type `application/vnd.terrace.config-schema.v1+json`, attached to the
+   published digest and signed with cosign. The chart repo fetches this one, and **the attachment
+   to a digest is the tie** between image and document — there is no digest field inside the
+   contract and there cannot be, since a digest is what building an image produces.
+
+The labels are a hand-written `LABEL` block, because a `LABEL` key can be interpolated from
+nothing and `--build-arg` cannot reach a file produced inside a builder stage. **So the block is
+only as good as what checks it, and two things do:**
+
+- **[E]** `xtask config-contract --check` compares the block against the generator. Source-side,
+  and it catches a prefix change one step before a build is spent finding out.
+- **[E]** `.github/scripts/verify-config-contract.sh`, in every `docker` job and in each release
+  build leg, checks the **built image** — its labels against the `.labels` file the *same
+  generator run* wrote, and the embedded document against the exported copy. A source diff cannot
+  see a base image that overrode a label, a `LABEL` line deleted on a branch nobody diffed, or a
+  build argument that silently failed to interpolate.
+
+The second comparison is what the design bought by dropping a hash label: a stale embedded copy
+is exactly the failure nothing downstream can see, and the build is the one place holding both
+copies for free.
+
+### 9.3 One set of bytes, end to end
+
+The committed copy under `docs/contracts/`, the copy exported to the host, the copy inside the
+image and the artifact attached to the digest are all the **same bytes**, and every one of those
+equalities is checked. That is why the build passes no `--revision` and no `--created`: both are
+legitimate contract fields, and both would make the document differ between two builds of one
+commit, breaking the chain. `app.version` already says which release it is.
+
+It is also why the release publishes the *verified* bytes — the `build` leg uploads the file it
+checked against the image it had loaded, and `manifest` attaches that artifact rather than running
+the generator a second time.
+
+### 9.4 Ordering in the release
+
+Verification is **before the push**, on every architecture: both release legs are native runners
+that `load` their image, so a failure costs a retry instead of a release. Labels live in each
+platform manifest's own config blob, so an index checked after the fact would see only one arch —
+a per-platform base or build argument can leave one carrying them and another not.
+
+`oras attach` and `cosign sign` run in `manifest`, after that check has passed, against the
+manifest **list** digest — the digest `helm-release` writes into the chart, and therefore the one
+its refresh asks for referrers. The chart repo pins a signer regexp over the workflow identity;
+`.github/workflows/release-please.yaml@refs/heads/main` is what it admits and what these
+signatures carry.

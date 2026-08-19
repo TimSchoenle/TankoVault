@@ -13,8 +13,17 @@ publish = false
 name = "worker"
 path = "src/main.rs"
 
+[lib]
+name = "tankovault_worker"
+path = "src/lib.rs"
+
 [dependencies]
 tankovault-config = { workspace = true }
+# The `Describe` derive on this service's own config root, beside the blocks
+# `tankovault-config` describes. `config-contract` walks the root to build the document
+# this image publishes, so a local block that skipped the derive would be a key the
+# contract claims the binary does not read.
+terrace-config = { workspace = true, features = ["schema"] }
 tankovault-service = { workspace = true, features = ["db"] }
 tokio-util = { workspace = true }
 axum = { workspace = true }

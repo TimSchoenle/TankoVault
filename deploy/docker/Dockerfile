@@ -66,7 +66,7 @@ COPY . .
 # fails here, not in a broken image. Built is not the same as published: `xtask` is here because
 # the compose stack builds an image of it for `migrate`/`seed`, but the deploy blacklist
 # (`[workspace.metadata.deploy.exclude]`, root `Cargo.toml`) keeps it out of every registry.
-ARG SERVICE_BINS="api bootstrap challenge-solver control-plane frontend notifier render sync worker xtask"
+ARG SERVICE_BINS="api bootstrap challenge-solver config-contract control-plane frontend notifier render sync worker xtask"
 # `from=cook,source=/app/target` seeds the mount so a cold cache (CI's is always cold) starts from
 # `cook`'s output instead of rebuilding every dependency. `sharing=locked` lets concurrent builds
 # queue on cargo's target-dir lock rather than race it.
@@ -136,6 +136,39 @@ RUN set -eu; \
     cp /usr/lib/libgcc_s.so.1 /sysroot-nocxx/usr/lib/libgcc_s.so.1; \
     cp /usr/lib/libgcc_s.so.1 /sysroot-browser/usr/lib/musl/libgcc_s.so.1; \
     echo /usr/lib/musl > "/sysroot-browser/etc/ld-musl-${arch}.path"
+
+# The configuration contract each published image carries: every `TANKOVAULT_*` key the binary
+# inside it actually reads, plus the JSON Schema a chart validates its rendered `config.toml`
+# against. `TimSchoenle/helm-charts` fetches it by digest and gates its manifests on it.
+#
+# Generated from the binary `builder` has already compiled, by running `config-contract` out of
+# `/out` — so this stage costs one process per service and no compilation at all. It is also why
+# `config-contract` is in `SERVICE_BINS`: it needs the same link of the same config roots the
+# services were built from.
+#
+# **The document and the labels come out of one run**, which is the whole point. The three
+# `dev.terrace.config.*` values below are written by hand in each runtime stage because a `LABEL`
+# key can be interpolated from nothing; what stops them drifting is that CI checks the *built
+# image* against the `.labels` file this stage wrote. See `.github/workflows/ci.yml`.
+#
+# Deliberately **no** `--revision` / `--created`. Both are legitimate contract fields and both
+# make the document differ between two builds of one commit — which would break the chain this
+# design rests on: the committed copy under `docs/contracts/`, the copy exported to the host, the
+# copy inside the image and the artifact attached to the digest are all the same bytes, and every
+# one of those equalities is checked. `app.version` already says which release this is.
+FROM builder AS contract-builder
+RUN set -eu; \
+    mkdir -p /contract; \
+    for service in $(/out/config-contract --services); do \
+      /out/config-contract --service "${service}" --format contract > "/contract/${service}.json"; \
+      /out/config-contract --service "${service}" --format labels   > "/contract/${service}.labels"; \
+    done; \
+    test -s /contract/api.json || { echo "contract generation produced nothing" >&2; exit 1; }
+
+# The documents alone, so `--output type=local` exports a handful of files rather than the
+# builder's whole filesystem — the host needs them for `oras attach` and for the label check.
+FROM scratch AS contract
+COPY --from=contract-builder /contract/ /
 
 # `dx` needs glibc (wasm-bindgen/wasm-opt), so this half stays on Debian rather than Alpine.
 FROM rust:${RUST_VERSION}-bookworm@sha256:6ae102bdbf528294bc79ad6e1fae682f6f7c2a6e6621506ba959f9685b308a55 AS wasm-chef
@@ -249,6 +282,10 @@ RUN set -eu; \
 # Only ever built with `render`; kept as an ARG so both runtime stages take the same input.
 ARG BIN=render
 COPY --from=builder /out/${BIN} /usr/local/bin/tankovault-service
+# The offline copy of this image's configuration contract. Read by anything holding the image
+# without a registry — `docker save`, an air-gapped mirror, a future initContainer — and by the
+# chart repo's refresh when a registry does not implement the referrers API.
+COPY --from=contract-builder /contract/${BIN}.json /config/contract.json
 # PolyForm Noncommercial's Notices clause: the terms travel with every copy of the software, and
 # a published image is a copy. `.dockerignore` exempts LICENSE from the docs exclusion for this.
 COPY --from=builder /app/LICENSE /LICENSE
@@ -259,6 +296,20 @@ COPY --from=builder /app/THIRD-PARTY-NOTICES /THIRD-PARTY-NOTICES
 # No sandbox: no user namespaces inside the container.
 ENV TANKOVAULT_RENDER__CHROME_PATH=/usr/bin/chromium \
     TANKOVAULT_RENDER__NO_SANDBOX=true
+# What makes the document above discoverable without pulling a layer: a registry client reads
+# these three off the image config blob in one request. All three are constants of *this
+# deployment* — the envelope version, where the offline copy is, and the loader prefix every
+# service shares — which is what lets one hand-written block serve nine images.
+#
+# `LABEL` takes no interpolation and `--build-arg` cannot reach a file produced inside a builder
+# stage, so these are pasted from `config-contract --format dockerfile` rather than derived.
+# Two things hold them honest, and neither is a source diff: `xtask config-contract --check`
+# compares this block against the generator, and CI compares the **built image** against the
+# `.labels` file the same generator run wrote. A LABEL block with nothing checking it is the
+# failure mode two earlier drafts of this design shipped.
+LABEL dev.terrace.config.contract.version="1" \
+      dev.terrace.config.contract.path="/config/contract.json" \
+      dev.terrace.config.prefix="TANKOVAULT_"
 USER 1001:1001
 ENTRYPOINT ["/usr/local/bin/tankovault-service"]
 
@@ -268,6 +319,8 @@ FROM scratch AS frontend
 COPY --from=builder /sysroot-nocxx/ /
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=builder /out/frontend /usr/local/bin/tankovault-frontend
+# This image's own configuration contract; see the `runtime-browser` stage.
+COPY --from=contract-builder /contract/frontend.json /config/contract.json
 COPY --from=wasm-builder /dist /srv/www
 # See the `runtime-browser` stage: the licence terms ship with the image, not just the repo.
 COPY --from=builder /app/LICENSE /LICENSE
@@ -277,6 +330,10 @@ COPY --from=builder /app/LICENSE /LICENSE
 COPY --from=builder /app/THIRD-PARTY-NOTICES /THIRD-PARTY-NOTICES
 ENV TANKOVAULT_FRONTEND__STATIC_DIR=/srv/www
 # Numeric nonroot UID (scratch has no /etc/passwd); binds 3000, not the privileged port 80.
+# The contract labels; see the `runtime-browser` stage for what holds them honest.
+LABEL dev.terrace.config.contract.version="1" \
+      dev.terrace.config.contract.path="/config/contract.json" \
+      dev.terrace.config.prefix="TANKOVAULT_"
 USER 1001:1001
 EXPOSE 3000
 ENTRYPOINT ["/usr/local/bin/tankovault-frontend"]
@@ -289,9 +346,15 @@ COPY --from=builder /sysroot/ /
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 ARG BIN
 COPY --from=builder /out/${BIN} /usr/local/bin/tankovault-service
+# This image's own configuration contract; see the `runtime-browser` stage.
+COPY --from=contract-builder /contract/${BIN}.json /config/contract.json
 # See the `runtime-browser` stage: the licence terms ship with the image, not just the repo.
 COPY --from=builder /app/LICENSE /LICENSE
 COPY --from=builder /app/THIRD-PARTY-NOTICES /THIRD-PARTY-NOTICES
 # Numeric nonroot UID (scratch has no /etc/passwd).
+# The contract labels; see the `runtime-browser` stage for what holds them honest.
+LABEL dev.terrace.config.contract.version="1" \
+      dev.terrace.config.contract.path="/config/contract.json" \
+      dev.terrace.config.prefix="TANKOVAULT_"
 USER 1001:1001
 ENTRYPOINT ["/usr/local/bin/tankovault-service"]

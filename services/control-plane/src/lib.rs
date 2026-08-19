@@ -6,4 +6,5 @@
 //! contrast, is a pure function of a catalogue and is exactly the thing that has to be verified
 //! against a real one.
 
+pub mod config;
 pub mod recsys;

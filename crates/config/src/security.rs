@@ -1,6 +1,7 @@
 //! Edge hardening applied by the shared middleware stack.
 
 use serde::Deserialize;
+use terrace_config::schema::Describe;
 
 use crate::cors::CorsConfig;
 use crate::loader::is_production;
@@ -9,13 +10,14 @@ use crate::loader::is_production;
 ///
 /// `struct_excessive_bools` allowed: these are independent operator toggles mapped 1:1 onto
 /// `TANKOVAULT_SECURITY__*` env vars, not boolean parameters that should be an enum.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Describe)]
 #[expect(
     clippy::struct_excessive_bools,
     reason = "independent operator toggles, one per TANKOVAULT_SECURITY__* variable"
 )]
 pub struct SecurityConfig {
     /// Cross-origin policy. See [`CorsConfig`].
+    #[config(nested)]
     #[serde(default)]
     pub cors: CorsConfig,
     /// Reject request bodies larger than this, in bytes, before they are buffered.

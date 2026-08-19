@@ -1,9 +1,10 @@
 //! Inbound request rate limiting for a service's HTTP edge.
 
 use serde::Deserialize;
+use terrace_config::schema::Describe;
 
 /// Where rate-limit counters live.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Describe)]
 #[serde(rename_all = "lowercase")]
 pub enum RateLimitBackend {
     /// Process-local counters; correct for one replica, but the effective limit multiplies
@@ -17,7 +18,7 @@ pub enum RateLimitBackend {
 
 /// A token-bucket policy: sustained refill rate ([`Self::per_minute`]) plus bucket depth
 /// ([`Self::burst`]). A burst below the sustained rate is normal, not a misconfiguration.
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Copy, Deserialize, Describe)]
 pub struct RateLimitPolicy {
     /// Sustained requests allowed per minute per client key; the bucket's refill rate.
     pub per_minute: u32,
@@ -44,23 +45,27 @@ impl RateLimitPolicy {
 ///
 /// Distinct from the *outbound* crawl politeness in `tankovault_domain::pacing`, which paces
 /// requests this system makes to third-party providers.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Describe)]
 pub struct RateLimitConfig {
     /// Enforce limits. When `false` the layer is not mounted at all (no per-request cost).
     #[serde(default = "crate::default_true")]
     pub enabled: bool,
     /// Counter store. See [`RateLimitBackend`].
+    #[config(values)]
     #[serde(default)]
     pub backend: RateLimitBackend,
     /// Applies to any route without a stricter class below.
+    #[config(nested)]
     #[serde(default = "RateLimitConfig::default_global")]
     pub global: RateLimitPolicy,
     /// Credential-handling routes (login, register, reset, refresh); the online-guessing
     /// control, deliberately far below [`Self::global`].
+    #[config(nested)]
     #[serde(default = "RateLimitConfig::default_auth")]
     pub auth: RateLimitPolicy,
     /// Routes that are cheap to call and expensive to serve (data export, scan triggers,
     /// sync push/pull).
+    #[config(nested)]
     #[serde(default = "RateLimitConfig::default_expensive")]
     pub expensive: RateLimitPolicy,
     /// Trust `X-Forwarded-For`/`X-Real-IP` for the client key. **Only behind a reverse proxy

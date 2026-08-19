@@ -291,6 +291,10 @@ jobs:
               - 'clippy.toml'
               - 'deny.toml'
               - 'openapi.json'
+              # The published configuration contracts, listed for the reason `openapi.json` is:
+              # a hand-edit of a generated document is caught by the gate that would otherwise
+              # only notice it the next time one of its inputs moved.
+              - 'docs/contracts/**'
               - '.github/coverage-floor.txt'
             frontend:
               - *workflows
@@ -451,6 +455,15 @@ jobs:
       # The pre-commit hook normally catches this; this is the backstop for commits made without it.
       - name: OpenAPI artifacts are up to date
         run: cargo run -p xtask -- openapi --check
+
+      # The nine documents each published image carries, plus the `LABEL` block the Dockerfile
+      # writes by hand. This is the *source* half — the built-image half lives in the `docker`
+      # jobs, and only that one is evidence — but it is the half that names a renamed key in the
+      # pull request that renamed it, one step before a build is spent finding out.
+      # `auto-fix.yaml` regenerates the documents and commits them back; the `LABEL` block it
+      # reports rather than rewrites.
+      - name: the published configuration contracts are up to date
+        run: cargo run -p xtask -- config-contract --check
       # `docs/CONFIGURATION.md` is gated too, but by `xtask::config_docs` under `cargo test` above —
       # it is prose, so there is nothing to regenerate. `xtask -- config-docs` prints the surface.
 
@@ -1513,6 +1526,34 @@ jobs:
             ${{ needs.changes.outputs.deps_scope != '' && format('type=registry,ref={0}:{1}-amd64', needs.changes.outputs.buildcache, needs.changes.outputs.deps_scope) || '' }}
             type=registry,ref=${{ needs.changes.outputs.buildcache }}:backend-deps-amd64
 
+      # The generated documents, on the host: `--target contract` is a `scratch` stage holding
+      # nothing but them, so this is a cache hit against the build above plus a layer export. The
+      # `.labels` file it writes is what the step below holds the built *image* to.
+      - name: export the generated contracts
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: deploy/docker/Dockerfile
+          platforms: linux/amd64
+          target: contract
+          outputs: type=local,dest=${{ runner.temp }}/contract-out
+          provenance: false
+          cache-from: |
+            ${{ needs.changes.outputs.deps_scope != '' && format('type=registry,ref={0}:{1}-amd64', needs.changes.outputs.buildcache, needs.changes.outputs.deps_scope) || '' }}
+            type=registry,ref=${{ needs.changes.outputs.buildcache }}:backend-deps-amd64
+
+      # The checkpoint the labels exist for. See the script for why it reads the image rather than
+      # the Dockerfile, and why the embedded document is compared as well.
+      - name: the image publishes the contract it was built to publish
+        env:
+          BIN: ${{ matrix.bin }}
+          TAG: ci
+        run: |
+          bash .github/scripts/verify-config-contract.sh \
+            "tankovault-${BIN}:${TAG}" \
+            "${RUNNER_TEMP}/contract-out/${BIN}.labels" \
+            "${RUNNER_TEMP}/contract-out/${BIN}.json"
+
       # Enforces the image contract: non-root 1001:1001, the entrypoint, the baked-in binary and CA
       # trust store, and for the render tier the absence of root plus the presence of Chromium.
       - name: install container-structure-test
@@ -1616,6 +1657,34 @@ jobs:
             ${{ needs.changes.outputs.deps_scope != '' && format('type=registry,ref={0}:{1}-arm64', needs.changes.outputs.buildcache, needs.changes.outputs.deps_scope) || '' }}
             type=registry,ref=${{ needs.changes.outputs.buildcache }}:backend-deps-arm64
 
+      # The generated documents, on the host: `--target contract` is a `scratch` stage holding
+      # nothing but them, so this is a cache hit against the build above plus a layer export. The
+      # `.labels` file it writes is what the step below holds the built *image* to.
+      - name: export the generated contracts
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: deploy/docker/Dockerfile
+          platforms: linux/arm64
+          target: contract
+          outputs: type=local,dest=${{ runner.temp }}/contract-out
+          provenance: false
+          cache-from: |
+            ${{ needs.changes.outputs.deps_scope != '' && format('type=registry,ref={0}:{1}-arm64', needs.changes.outputs.buildcache, needs.changes.outputs.deps_scope) || '' }}
+            type=registry,ref=${{ needs.changes.outputs.buildcache }}:backend-deps-arm64
+
+      # The checkpoint the labels exist for. See the script for why it reads the image rather than
+      # the Dockerfile, and why the embedded document is compared as well.
+      - name: the image publishes the contract it was built to publish
+        env:
+          BIN: ${{ matrix.bin }}
+          TAG: ci-arm64
+        run: |
+          bash .github/scripts/verify-config-contract.sh \
+            "tankovault-${BIN}:${TAG}" \
+            "${RUNNER_TEMP}/contract-out/${BIN}.labels" \
+            "${RUNNER_TEMP}/contract-out/${BIN}.json"
+
       # The same image contract as the amd64 leg. `container-structure-test` ships a separate
       # arm64 binary; the config files are architecture-independent.
       - name: install container-structure-test
@@ -1700,6 +1769,31 @@ jobs:
           cache-from: |
             ${{ needs.changes.outputs.deps_scope != '' && format('type=registry,ref={0}:{1}-amd64', needs.changes.outputs.buildcache, needs.changes.outputs.deps_scope) || '' }}
             type=registry,ref=${{ needs.changes.outputs.buildcache }}:backend-deps-amd64
+
+      # The generated documents, on the host: `--target contract` is a `scratch` stage holding
+      # nothing but them, so this is a cache hit against the build above plus a layer export. The
+      # `.labels` file it writes is what the step below holds the built *image* to.
+      - name: export the generated contracts
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: deploy/docker/Dockerfile
+          platforms: linux/amd64
+          target: contract
+          outputs: type=local,dest=${{ runner.temp }}/contract-out
+          provenance: false
+          cache-from: |
+            ${{ needs.changes.outputs.deps_scope != '' && format('type=registry,ref={0}:{1}-amd64', needs.changes.outputs.buildcache, needs.changes.outputs.deps_scope) || '' }}
+            type=registry,ref=${{ needs.changes.outputs.buildcache }}:backend-deps-amd64
+
+      # The checkpoint the labels exist for. See the script for why it reads the image rather than
+      # the Dockerfile, and why the embedded document is compared as well.
+      - name: the image publishes the contract it was built to publish
+        run: |
+          bash .github/scripts/verify-config-contract.sh \
+            "tankovault-frontend:ci" \
+            "${RUNNER_TEMP}/contract-out/frontend.labels" \
+            "${RUNNER_TEMP}/contract-out/frontend.json"
 
       # Enforces the frontend image contract: non-root 1001:1001, the unprivileged 3000 port, the
       # entrypoint, the static-dir env var, and the server binary plus built SPA bundle.

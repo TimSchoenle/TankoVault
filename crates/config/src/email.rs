@@ -2,9 +2,10 @@
 
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
+use terrace_config::schema::Describe;
 
 /// Transport security for an SMTP relay, chosen explicitly rather than inferred from the port.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Describe)]
 #[serde(rename_all = "lowercase")]
 pub enum EmailSecurity {
     /// Implicit TLS from the first byte (SMTPS, typically port 465).
@@ -23,12 +24,13 @@ pub enum EmailSecurity {
 /// Either a single [`Self::url`] (lettre relay URL, takes precedence when set) or the explicit
 /// host/port/credentials/security fields. Enabled only when a relay and [`Self::from`] are
 /// both present; otherwise falls back to a no-op mailer.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Describe)]
 pub struct EmailConfig {
     /// Full lettre relay URL; takes precedence over the explicit fields below when set.
     ///
     /// [`SecretString`]: the documented form embeds the mailbox password, unlike the
     /// neighbouring host/port fields.
+    #[config(secret)]
     #[serde(default)]
     pub url: Option<SecretString>,
     /// SMTP host (OVH Exchange: `pro3.mail.ovh.net` for STARTTLS or `ssl0.ovh.net` for TLS).
@@ -41,9 +43,11 @@ pub struct EmailConfig {
     #[serde(default)]
     pub username: Option<String>,
     /// Login password / app password.
+    #[config(secret)]
     #[serde(default)]
     pub password: Option<SecretString>,
     /// Transport security to use with the explicit host/port fields.
+    #[config(values)]
     #[serde(default)]
     pub security: EmailSecurity,
     /// Default `From` mailbox, e.g. `TankoVault <no-reply@example.com>`. Required to send.

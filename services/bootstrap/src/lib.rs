@@ -5,6 +5,8 @@
 //! own database. Two implementations of "create the first admin" would be two chances to grant a
 //! different permission set.
 
+pub mod config;
+
 use secrecy::{SecretSlice, SecretString};
 use tankovault_db::PgPool;
 use tankovault_domain::{AdapterKind, PresetLink, ProviderId};

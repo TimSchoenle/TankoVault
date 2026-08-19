@@ -43,12 +43,18 @@ name: auto-fix
 # ---------------------------------------------------------------------------------------------
 # What it fixes, and why a bot may
 # ---------------------------------------------------------------------------------------------
-# Four files here are generated, committed, and must not be hand-edited: `openapi.json`,
-# `crates/api-client/src/lib.rs`, `THIRD-PARTY-NOTICES` (ENGINEERING_GUIDE rule 6) and
-# `web/frontend/assets/main.css` (Tailwind output, committed so a build without Node works). Three
-# CI jobs — `openapi --check`, `notices drift` and `tailwind output is current` — fail when they
-# drift, but none fixes anything, so the failure is a red gate waiting on a human to run a command
-# whose output is fully determined by the tree.
+# Five things here are generated, committed, and must not be hand-edited: `openapi.json`,
+# `crates/api-client/src/lib.rs`, `THIRD-PARTY-NOTICES` (ENGINEERING_GUIDE rule 6),
+# `web/frontend/assets/main.css` (Tailwind output, committed so a build without Node works) and
+# `docs/contracts/*.json` (the configuration contract each image publishes). Four CI jobs —
+# `openapi --check`, `notices drift`, `config contract drift` and `tailwind output is current` —
+# fail when they drift, but none fixes anything, so the failure is a red gate waiting on a human
+# to run a command whose output is fully determined by the tree.
+#
+# The contracts have one half this job deliberately does *not* fix: the three-line `LABEL` block in
+# `deploy/docker/Dockerfile`. `xtask config-contract` fails on a mismatch rather than rewriting it,
+# because a bot editing a Dockerfile is a change nobody reviewed — and because that mismatch means
+# the loader's prefix moved, which is a decision, not a formatting slip.
 #
 # That gap is not hypothetical. release-please bumps `$.workspace.package.version`, which all
 # three artefacts record, and nothing regenerated them: release #50 landed on `main` with
@@ -203,6 +209,13 @@ jobs:
               - 'openapi.json'
               - 'about.toml'
               - 'THIRD-PARTY-NOTICES'
+              # The published configuration contracts, and the Dockerfile whose `LABEL` block is
+              # checked against them. The Dockerfile is here even though nothing rewrites it: a
+              # branch that edits the block and nothing else is exactly the branch whose failure
+              # should name the mismatch, and skipping the job would leave that to a `docker`
+              # build twenty minutes later.
+              - 'docs/contracts/**'
+              - 'deploy/docker/Dockerfile'
               - 'web/frontend/**'
             # Everything `README.md` is a function of: the template, the script that collects the
             # variables, the three files those variables are read out of, and the rendered file
@@ -474,6 +487,12 @@ jobs:
       - name: regenerate THIRD-PARTY-NOTICES
         run: cargo run -p xtask -- notices
 
+      # The nine committed contracts. It also *checks* the Dockerfile's hand-written `LABEL` block
+      # and fails rather than rewriting it: three lines a human pasted are not something a bot
+      # should edit unreviewed, and naming the diff is the whole fix.
+      - name: regenerate the configuration contracts
+        run: cargo run -p xtask -- config-contract
+
       # Same Node major as `ci.yml`'s `css` job, which is what judges the result.
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -498,8 +517,10 @@ jobs:
       # that won it is itself a `synchronize` event, so this workflow runs again on the head that
       # now exists.
       #
-      # `file_pattern` is scoped to source, the two lockfiles and the four artefacts rather than
-      # the whole tree. Nothing else in this job is meant to change — `npm ci` can touch
+      # `file_pattern` is scoped to source, the two lockfiles and the generated artefacts rather
+      # than the whole tree. `docs/contracts` is nine of them — one per published image — and it
+      # is the one entry that is a *directory of* artefacts, so a service added to
+      # `crates/config-contract` is carried back without touching this line. Nothing else in this job is meant to change — `npm ci` can touch
       # `package-lock.json` — and anything outside this list that changed is a bug to see in a red
       # gate, not to commit silently.
       #
@@ -510,7 +531,7 @@ jobs:
           commit_message: "style: apply the mechanical fixes (lockfiles, clippy --fix, fmt, regenerated artefacts)"
           token: ${{ steps.generate_token.outputs.token }}
           branch: ${{ github.event.pull_request.head.ref }}
-          file_pattern: "Cargo.lock web/frontend/Cargo.lock crates services xtask fuzz openapi.json THIRD-PARTY-NOTICES web/frontend/src web/frontend/assets/main.css"
+          file_pattern: "Cargo.lock web/frontend/Cargo.lock crates services xtask fuzz openapi.json THIRD-PARTY-NOTICES docs/contracts web/frontend/src web/frontend/assets/main.css"
 
   # `README.md`, rendered from its template and committed back to the branch.
   #

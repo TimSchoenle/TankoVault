@@ -12,6 +12,13 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [8.1.1](https://github.com/TimSchoenle/TankoVault/compare/v8.1.0...v8.1.1) (2026-08-19)
+
+
+### Bug Fixes
+
+* **ci:** name the registry in every Docker Hub image reference ([#255](https://github.com/TimSchoenle/TankoVault/issues/255)) ([9c17961](https://github.com/TimSchoenle/TankoVault/commit/9c1796167e18815051a8875a1cd9a237050cdd50))
+
 ## [8.1.0](https://github.com/TimSchoenle/TankoVault/compare/v8.0.1...v8.1.0) (2026-08-19)
 
 

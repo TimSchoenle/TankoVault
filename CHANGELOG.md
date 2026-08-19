@@ -12,6 +12,25 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [8.1.0](https://github.com/TimSchoenle/TankoVault/compare/v8.0.1...v8.1.0) (2026-08-19)
+
+
+### Features
+
+* **config:** update terrace-config to 0.5.0 and generate the README ([#244](https://github.com/TimSchoenle/TankoVault/issues/244)) ([da04d40](https://github.com/TimSchoenle/TankoVault/commit/da04d4093f48d00c41eaa03116f1c071353627fd))
+* **deploy:** publish a configuration contract from every service image ([#251](https://github.com/TimSchoenle/TankoVault/issues/251)) ([fcb1ebe](https://github.com/TimSchoenle/TankoVault/commit/fcb1ebed0091e7a3e8da1e3454bfb0053c6f32e9))
+
+
+### Bug Fixes
+
+* **ci:** attach the contract by name and poll for its referrer ([#254](https://github.com/TimSchoenle/TankoVault/issues/254)) ([d3a775e](https://github.com/TimSchoenle/TankoVault/commit/d3a775eac73f85bd11d4ebf33121078c5a4472c7))
+
+
+### Miscellaneous
+
+* **deps:** update all non-major action updates (minor) ([#245](https://github.com/TimSchoenle/TankoVault/issues/245)) ([274eb0d](https://github.com/TimSchoenle/TankoVault/commit/274eb0df4d341e84565265f163686a67ced398f5))
+* **deps:** update timschoenle/actions/actions/common/commit-changes to vactions-common-commit-changes-v1.3.2 ([#248](https://github.com/TimSchoenle/TankoVault/issues/248)) ([a026060](https://github.com/TimSchoenle/TankoVault/commit/a026060067b3c05d99610ad9de6121d262f87426))
+
 ## [8.0.1](https://github.com/TimSchoenle/TankoVault/compare/v8.0.0...v8.0.1) (2026-08-17)
 
 

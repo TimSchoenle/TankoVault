@@ -63,13 +63,14 @@ pub(crate) fn run(root: &Path) -> anyhow::Result<()> {
     findings.extend(workflows::the_oidc_token_carries_no_newline(root)?);
     findings.extend(workflows::the_build_epoch_is_one_constant(root)?);
     findings.extend(workflows::registry_calls_in_publish_retry(root)?);
+    findings.extend(workflows::image_references_name_their_registry(root)?);
     findings.extend(workflows::release_please_tags_before_it_proposes(root)?);
     findings.extend(floors::coverage_floors_parse(root)?);
     findings.extend(gitattributes::generated_artefacts_check_out_as_lf(root)?);
     findings.extend(tls::every_service_installs_a_crypto_provider(root)?);
 
     if findings.is_empty() {
-        println!("repo-lint: 24 rules, no violations");
+        println!("repo-lint: 26 rules, no violations");
         return Ok(());
     }
 

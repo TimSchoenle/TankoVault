@@ -80,6 +80,8 @@ static INTERNAL_ROUTES: &[tankovault_service::InternalRoute] = {
 #[cfg(all(test, feature = "integration"))]
 mod reconcile_tests;
 
+use tankovault_sync::config::{AniListConfig, Config, MetadataConfig};
+
 use crate::error::AppError;
 
 use std::collections::HashMap;
@@ -101,161 +103,15 @@ use tankovault_service::{
 use engine::SyncEngine;
 use mapping::ConflictPolicy;
 use provider::ExternalProvider;
-use providers::anilist::{AniListClient, DEFAULT_GRAPHQL_URL, DEFAULT_OAUTH_BASE};
+use providers::anilist::AniListClient;
 use tankovault_auth::Sealer;
-use tankovault_config::{DatabaseConfig, TelemetryConfig};
 use tankovault_contracts::sync::{
     AccountSettings, AccountStatus, AuthorizeUrl, ConflictView, Flagged, HistoryView, ProviderInfo,
     Removed, Resolved,
 };
-use tankovault_domain::{Feature, MetadataPriority, SeriesId, UserId};
-
-#[derive(Debug, Deserialize)]
-struct Config {
-    database: DatabaseConfig,
-    telemetry: TelemetryConfig,
-    anilist: AniListConfig,
-    #[serde(default)]
-    metadata: MetadataConfig,
-    #[serde(default = "default_bind")]
-    bind_addr: String,
-    /// Interval (seconds) between scheduled reconciliation ticks. `0` disables the loop.
-    #[serde(default = "default_reconcile_interval")]
-    reconcile_interval_secs: u64,
-    /// Edge hardening for this internal service.
-    #[serde(default)]
-    security: tankovault_config::SecurityConfig,
-    /// Inbound rate limiting; pull/push routes draw from the tighter "expensive" budget.
-    #[serde(default)]
-    rate_limit: tankovault_config::RateLimitConfig,
-    /// Prometheus metrics. Togglable; disabling installs no recorder.
-    #[serde(default)]
-    metrics: tankovault_config::MetricsConfig,
-    /// Runtime feature flags — how often this replica re-reads the operator's decisions.
-    #[serde(default)]
-    features: tankovault_config::FeaturesConfig,
-    /// Shared secret every caller must present: this whole contract is privileged, naming the
-    /// subject user in the path or body.
-    #[serde(default)]
-    internal: tankovault_config::InternalAuthConfig,
-    /// The confidence policy for resolving a remote entry onto a local series. Shared with the
-    /// worker's ingest canonicalisation so the two paths can't disagree on a match.
-    #[serde(default)]
-    matching: tankovault_config::MatchingConfig,
-}
-
-/// Metadata-priority + tokenless enrichment-worker settings.
-// `Clone` because the config now lives behind an `Arc` shared with the reload supervisor and
-// so cannot be moved out of.
-#[derive(Debug, Clone, Deserialize)]
-struct MetadataConfig {
-    /// Per-field source authority order (default: `AniList` before the adapters).
-    #[serde(default)]
-    priority: MetadataPriority,
-    /// Which scraped "genres" intake refuses. Shared with the worker via
-    /// [`tankovault_config::TagIntakeConfig`], because both write the same `tags` vocabulary.
-    #[serde(default)]
-    tags: tankovault_config::TagIntakeConfig,
-    /// Whether the background enrichment worker runs. On by default.
-    #[serde(default = "default_enrich_enabled")]
-    enrich_enabled: bool,
-    /// Seconds between enrichment sweeps.
-    #[serde(default = "default_enrich_interval_secs")]
-    enrich_interval_secs: u64,
-    /// Series fetched per DB page during a sweep.
-    #[serde(default = "default_enrich_batch")]
-    enrich_batch: i64,
-    /// Upper bound on series processed per sweep (paces `AniList`'s rate limit).
-    #[serde(default = "default_enrich_max")]
-    enrich_max_series: usize,
-}
-
-impl Default for MetadataConfig {
-    fn default() -> Self {
-        Self {
-            priority: MetadataPriority::default(),
-            tags: tankovault_config::TagIntakeConfig::default(),
-            enrich_enabled: default_enrich_enabled(),
-            enrich_interval_secs: default_enrich_interval_secs(),
-            enrich_batch: default_enrich_batch(),
-            enrich_max_series: default_enrich_max(),
-        }
-    }
-}
+use tankovault_domain::{Feature, SeriesId, UserId};
 
 // `Clone`: see [`MetadataConfig`]. The `SecretString` fields clone their `Arc`, not the secret.
-#[derive(Debug, Clone, Deserialize)]
-struct AniListConfig {
-    #[serde(deserialize_with = "string_or_number")]
-    client_id: String,
-    /// The `OAuth2` client secret; lets anyone mint tokens as this app.
-    client_secret: SecretString,
-    redirect_uri: String,
-    /// Base64 32-byte data-encryption key for tokens at rest — opens every user's stored
-    /// `AniList` access and refresh token.
-    token_encryption_key: SecretString,
-    #[serde(default = "default_graphql_url")]
-    graphql_url: String,
-    #[serde(default = "default_oauth_base")]
-    oauth_base: String,
-    #[serde(default)]
-    default_conflict_policy: ConflictPolicy,
-    #[serde(default = "default_min_interval_ms")]
-    min_request_interval_ms: u64,
-}
-
-fn default_bind() -> String {
-    "0.0.0.0:8083".to_owned()
-}
-fn default_graphql_url() -> String {
-    DEFAULT_GRAPHQL_URL.to_owned()
-}
-fn default_oauth_base() -> String {
-    DEFAULT_OAUTH_BASE.to_owned()
-}
-fn default_min_interval_ms() -> u64 {
-    700
-}
-fn default_reconcile_interval() -> u64 {
-    900
-}
-fn default_enrich_enabled() -> bool {
-    true
-}
-fn default_enrich_interval_secs() -> u64 {
-    3600
-}
-fn default_enrich_batch() -> i64 {
-    200
-}
-fn default_enrich_max() -> usize {
-    // Must stay comfortably inside one sweep interval at `min_request_interval_ms` pacing, or
-    // sweeps overlap; too low and metadata visibly lags for days.
-    2_000
-}
-
-/// `figment`'s `Env` provider infers numeric-looking values (e.g. `TANKOVAULT_ANILIST__CLIENT_ID`)
-/// as numbers rather than strings, so accept either and coerce to `String`.
-fn string_or_number<'de, D>(deserializer: D) -> Result<String, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum StringOrNumber {
-        String(String),
-        Int(i64),
-        UInt(u64),
-        Float(f64),
-    }
-
-    Ok(match StringOrNumber::deserialize(deserializer)? {
-        StringOrNumber::String(s) => s,
-        StringOrNumber::Int(i) => i.to_string(),
-        StringOrNumber::UInt(u) => u.to_string(),
-        StringOrNumber::Float(f) => f.to_string(),
-    })
-}
 
 /// Build the provider registry; register additional providers here as they land.
 fn build_providers(

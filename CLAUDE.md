@@ -33,7 +33,9 @@ Regeneration is the exception and stays mandatory, because the artefacts are com
 hand-editing them is banned (rule 6): OpenAPI surface changed → `cargo run -p xtask -- openapi`;
 a `query!`/`query_as!` changed → `cargo run -p xtask -- sqlx-prepare` against a migrated
 database; config surface changed → update `docs/CONFIGURATION.md` (`cargo run -p xtask --
-config-docs` prints the current surface); either `Cargo.lock` moved → `cargo run -p xtask --
+config-docs` prints the current surface) **and** run `cargo run -p xtask -- config-contract`,
+which rewrites the nine documents every image publishes and holds the Dockerfile's
+`dev.terrace.config.*` block to them; either `Cargo.lock` moved → `cargo run -p xtask --
 notices`, which needs `cargo-about` installed. The gates check these, they do not fix them.
 
 ## What `xtask ci` cannot tell you
@@ -81,7 +83,8 @@ cargo test -p tankovault-db -p tankovault-api -p tankovault-sync --features inte
 5. **Do not simplify a test you do not understand.** If its doc comment describes a bug, it is
    there to stop that bug returning.
 6. **Never hand-edit generated files** — `openapi.json`, `crates/api-client/src/lib.rs`,
-   `THIRD-PARTY-NOTICES`. Run `cargo run -p xtask -- openapi` / `-- notices`. `README.md` is
+   `THIRD-PARTY-NOTICES`, `docs/contracts/*.json`. Run `cargo run -p xtask -- openapi` /
+   `-- notices` / `-- config-contract`. `README.md` is
    generated too, by CI rather than by `xtask`: edit `.github/templates/README.md.hbs`, and let
    `auto-fix.yaml` render it. `bash .github/scripts/readme-variables.sh` prints the values it is
    rendered with.

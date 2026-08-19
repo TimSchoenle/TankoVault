@@ -1,31 +1,43 @@
-//! Service configuration (loaded via `tankovault-config`: defaults → TOML → `TANKOVAULT_*`).
+//! What the `render` binary reads from its configuration.
+//!
+//! Loaded via `tankovault-config` (defaults → TOML → `TANKOVAULT_*` → files). Public, and in
+//! the library rather than beside `main`, because it is the root `config-contract` describes for
+//! this image: the contract has to be generated from the very type the binary deserialises, or
+//! it is a claim about something else.
 
 use serde::Deserialize;
+use terrace_config::schema::Describe;
 
 /// Top-level render-service config.
-#[derive(Debug, Deserialize)]
-pub(crate) struct Config {
+#[derive(Debug, Deserialize, Describe)]
+pub struct Config {
     #[serde(default = "default_bind")]
-    pub(crate) bind_addr: String,
-    pub(crate) telemetry: tankovault_config::TelemetryConfig,
+    pub bind_addr: String,
+    #[config(nested)]
+    pub telemetry: tankovault_config::TelemetryConfig,
     #[serde(default)]
-    pub(crate) render: RenderConfig,
+    #[config(nested)]
+    pub render: RenderConfig,
     /// Edge hardening: body cap, request timeout, security headers. CORS stays off —
     /// this is an internal service, not a browser-facing one.
     #[serde(default)]
-    pub(crate) security: tankovault_config::SecurityConfig,
+    #[config(nested)]
+    pub security: tankovault_config::SecurityConfig,
     /// Inbound rate limiting. Especially load-bearing here: every request costs a browser
     /// tab, so an unbounded caller exhausts the pool long before it exhausts the CPU.
     #[serde(default)]
-    pub(crate) rate_limit: tankovault_config::RateLimitConfig,
+    #[config(nested)]
+    pub rate_limit: tankovault_config::RateLimitConfig,
     /// Prometheus metrics. Togglable; disabling installs no recorder.
     #[serde(default)]
-    pub(crate) metrics: tankovault_config::MetricsConfig,
+    #[config(nested)]
+    pub metrics: tankovault_config::MetricsConfig,
     /// Shared secret every caller must present. Both routes fetch a caller-supplied URL
     /// with a real browser and return the DOM *and the cookies it collected*, which is a
     /// full internal-network read for anyone who can reach the port.
     #[serde(default)]
-    pub(crate) internal: tankovault_config::InternalAuthConfig,
+    #[config(nested)]
+    pub internal: tankovault_config::InternalAuthConfig,
 }
 
 fn default_bind() -> String {
@@ -33,33 +45,33 @@ fn default_bind() -> String {
 }
 
 /// Headless-browser + rendering knobs.
-#[derive(Debug, Clone, Deserialize)]
-pub(crate) struct RenderConfig {
+#[derive(Debug, Clone, Deserialize, Describe)]
+pub struct RenderConfig {
     /// Explicit Chrome/Chromium executable path. When `None`, `chromiumoxide` auto-detects.
     #[serde(default)]
-    pub(crate) chrome_path: Option<String>,
+    pub chrome_path: Option<String>,
     /// Run the browser headless (the default; set `false` only for local debugging).
     #[serde(default = "default_true")]
-    pub(crate) headless: bool,
+    pub headless: bool,
     /// Pass `--no-sandbox` (required to run Chromium as root inside the runtime container).
     #[serde(default = "default_true")]
-    pub(crate) no_sandbox: bool,
+    pub no_sandbox: bool,
     /// Per-navigation time budget handed to the CDP client (ms).
     #[serde(default = "default_nav_timeout")]
-    pub(crate) nav_timeout_ms: u64,
+    pub nav_timeout_ms: u64,
     /// Extra settle delay applied after navigation on every `/v1/render` (ms).
     #[serde(default)]
-    pub(crate) default_wait_ms: u64,
+    pub default_wait_ms: u64,
     /// User-agent override, applied to the page and reported back so a solved
     /// `cf_clearance` cookie stays paired with a stable UA.
     #[serde(default)]
-    pub(crate) user_agent: Option<String>,
+    pub user_agent: Option<String>,
     /// TTL attached to a solved session when acting as a `ChallengeSolver` back-end (s).
     #[serde(default = "default_ttl")]
-    pub(crate) session_ttl_secs: u64,
+    pub session_ttl_secs: u64,
     /// Extra settle time to let a bot-management challenge clear during `/v1/solve` (ms).
     #[serde(default = "default_challenge_wait")]
-    pub(crate) challenge_wait_ms: u64,
+    pub challenge_wait_ms: u64,
 }
 
 impl Default for RenderConfig {

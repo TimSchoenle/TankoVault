@@ -12,39 +12,8 @@
 //! than structured logs: a `Job`'s whole purpose is the few lines it prints.
 
 use secrecy::{ExposeSecret as _, SecretSlice, SecretString};
-use serde::Deserialize;
+use tankovault_bootstrap::config::Config;
 use tankovault_bootstrap::{AdminOutcome, AdminSeed};
-use tankovault_config::DatabaseConfig;
-
-#[derive(Debug, Deserialize)]
-struct Config {
-    database: DatabaseConfig,
-    #[serde(default)]
-    auth: AuthConfig,
-    #[serde(default = "default_admin_email")]
-    seed_admin_email: String,
-    #[serde(default = "default_admin_username")]
-    seed_admin_username: String,
-    /// No default, unlike `xtask seed`: a published image must not be able to create an account
-    /// whose password is written down in this repository.
-    seed_admin_password: Option<SecretString>,
-}
-
-/// The one `auth` key this binary needs. Deliberately not the API service's own `AuthConfig`
-/// (`services/api/src/main.rs`), which requires the JWT secret a migration job has no business
-/// holding. Not a link: that type is private to another binary crate.
-#[derive(Debug, Default, Deserialize)]
-struct AuthConfig {
-    password_pepper: Option<SecretString>,
-}
-
-fn default_admin_email() -> String {
-    "admin@tankovault.local".to_owned()
-}
-
-fn default_admin_username() -> String {
-    "admin".to_owned()
-}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

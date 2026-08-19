@@ -59,7 +59,7 @@ use tankovault_domain::matching::{Candidate, Canonicaliser, Decision, Query};
 /// // No candidates is the same answer as no good candidate.
 /// assert_eq!(policy.canonicalise(&query, &[]), Decision::Create);
 /// ```
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, terrace_config::schema::Describe)]
 #[expect(
     clippy::struct_excessive_bools,
     reason = "each bool is one independently-settable configuration key, named in \

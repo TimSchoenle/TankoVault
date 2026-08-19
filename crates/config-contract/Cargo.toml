@@ -1,0 +1,36 @@
+[package]
+name = "tankovault-config-contract"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Generates the configuration contract each service image publishes, from the config root that service's binary deserialises."
+publish = false
+
+[[bin]]
+name = "config-contract"
+path = "src/main.rs"
+
+[dependencies]
+# The dialect — the prefix, the reserved keys, the `_FILE` suffix. Read from the loader every
+# service boots through rather than restated, so a contract cannot describe a namespace no
+# binary reads.
+tankovault-config = { workspace = true }
+terrace-config = { workspace = true, features = ["schema"] }
+
+# One dependency per published image, because a contract is a claim about *one* binary. The
+# alternative — describing the union of every root — would have `api`'s document assert that the
+# image reads `anilist.client_secret`, and a chart believing it is a chart being told to mount a
+# secret nothing consumes.
+tankovault-api = { workspace = true }
+tankovault-bootstrap = { workspace = true }
+tankovault-challenge-solver = { workspace = true }
+tankovault-control-plane = { workspace = true }
+tankovault-frontend = { workspace = true }
+tankovault-notifier = { workspace = true }
+tankovault-render = { workspace = true }
+tankovault-sync = { workspace = true }
+tankovault-worker = { workspace = true }
+
+[lints]
+workspace = true

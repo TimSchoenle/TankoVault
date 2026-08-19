@@ -1,9 +1,10 @@
 //! Append-only audit trail settings.
 
 use serde::Deserialize;
+use terrace_config::schema::Describe;
 
 /// Append-only audit trail for privileged and privacy-relevant actions (design §16).
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Describe)]
 pub struct AuditConfig {
     /// Write audit records; `false` installs a no-op sink instead of branching at call sites.
     #[serde(default = "crate::default_true")]

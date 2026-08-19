@@ -69,6 +69,12 @@ const RULES: &[(&str, Rule)] = &[
     // so both go through `version_only_change` before this verdict is believed.
     ("Cargo.toml", Rule::Every),
     ("Cargo.lock", Rule::Every),
+    // The generator that writes the configuration contract every runtime stage copies in. Package
+    // ownership would say the opposite of the truth here: nothing depends on this crate — it
+    // depends on all nine services — so the graph maps it to no image at all, while its output is
+    // inside every one of them. A changed `External` declaration or a renamed service is a change
+    // to every published image.
+    ("crates/config-contract/", Rule::Every),
     // Root-level inputs that belong to a package without living inside it.
     ("migrations/", Rule::Package("tankovault-db")),
     (".sqlx/", Rule::Package("tankovault-db")),

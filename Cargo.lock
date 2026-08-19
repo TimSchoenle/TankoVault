@@ -5334,6 +5334,7 @@ dependencies = [
  "tankovault-recsys",
  "tankovault-service",
  "tankovault-test-support",
+ "terrace-config",
  "thiserror 2.0.20",
  "time",
  "tokio",
@@ -5418,6 +5419,7 @@ dependencies = [
  "tankovault-db",
  "tankovault-domain",
  "tankovault-service",
+ "terrace-config",
  "tokio",
 ]
 
@@ -5450,6 +5452,7 @@ dependencies = [
  "tankovault-config",
  "tankovault-service",
  "tankovault-solver",
+ "terrace-config",
  "tokio",
  "tracing",
 ]
@@ -5462,6 +5465,23 @@ dependencies = [
  "serde",
  "tankovault-domain",
  "tankovault-matcher",
+ "terrace-config",
+]
+
+[[package]]
+name = "tankovault-config-contract"
+version = "8.0.1"
+dependencies = [
+ "tankovault-api",
+ "tankovault-bootstrap",
+ "tankovault-challenge-solver",
+ "tankovault-config",
+ "tankovault-control-plane",
+ "tankovault-frontend",
+ "tankovault-notifier",
+ "tankovault-render",
+ "tankovault-sync",
+ "tankovault-worker",
  "terrace-config",
 ]
 
@@ -5498,6 +5518,7 @@ dependencies = [
  "tankovault-recsys",
  "tankovault-service",
  "tankovault-test-support",
+ "terrace-config",
  "time",
  "tokio",
  "tokio-util",
@@ -5588,6 +5609,7 @@ dependencies = [
  "serde",
  "tankovault-config",
  "tankovault-service",
+ "terrace-config",
  "tokio",
  "tower",
  "tower-http 0.7.0",
@@ -5621,6 +5643,7 @@ dependencies = [
  "tankovault-domain",
  "tankovault-email",
  "tankovault-service",
+ "terrace-config",
  "time",
  "tokio",
  "tokio-util",
@@ -5653,6 +5676,7 @@ dependencies = [
  "tankovault-domain",
  "tankovault-service",
  "tankovault-solver",
+ "terrace-config",
  "tokio",
  "tracing",
 ]
@@ -5734,6 +5758,7 @@ dependencies = [
  "tankovault-matcher",
  "tankovault-service",
  "tankovault-test-support",
+ "terrace-config",
  "thiserror 2.0.20",
  "time",
  "tokio",
@@ -5785,6 +5810,7 @@ dependencies = [
  "tankovault-fetch",
  "tankovault-service",
  "tankovault-solver",
+ "terrace-config",
  "thiserror 2.0.20",
  "time",
  "tokio",
@@ -5817,17 +5843,29 @@ dependencies = [
 
 [[package]]
 name = "terrace-config"
-version = "0.5.0"
-source = "git+https://github.com/TimSchoenle/terrace-config?tag=v0.5.0#b47ca70cefaf48484682a0913dbef48ba4eba10c"
+version = "0.6.0"
+source = "git+https://github.com/TimSchoenle/terrace-config?tag=v0.6.0#fb37309b70ad1d47edd4c1fd0fb3bea86f0ce6c8"
 dependencies = [
  "figment",
  "notify",
  "notify-debouncer-full",
  "serde",
+ "serde_json",
+ "terrace-config-macros",
  "thiserror 2.0.20",
  "tokio",
  "tokio-util",
  "tracing",
+]
+
+[[package]]
+name = "terrace-config-macros"
+version = "0.6.0"
+source = "git+https://github.com/TimSchoenle/terrace-config?tag=v0.6.0#fb37309b70ad1d47edd4c1fd0fb3bea86f0ce6c8"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.3",
 ]
 
 [[package]]

@@ -1,0 +1,2212 @@
+{
+  "terrace_contract": 1,
+  "app": {
+    "name": "tankovault-control-plane",
+    "version": "v8.0.1",
+    "source": "https://github.com/TimSchoenle/TankoVault"
+  },
+  "schema": {
+    "schema_version": 1,
+    "dialect": {
+      "prefix": "TANKOVAULT_",
+      "nesting_separator": "__",
+      "indirection_suffix": "_FILE"
+    },
+    "loader": [
+      {
+        "env": "TANKOVAULT_CONFIG",
+        "role": "config",
+        "docs": "Names the TOML layer: a file, or a directory whose `*.toml` files are all merged in name order.",
+        "default": "config.toml"
+      },
+      {
+        "env": "TANKOVAULT_SECRETS_DIR",
+        "role": "secrets_dir",
+        "docs": "Names a directory of key-named files — a mounted Kubernetes `Secret` volume. Each file supplies the key its name spells.",
+        "default": null
+      },
+      {
+        "env": "TANKOVAULT_PROFILE",
+        "role": "reserved",
+        "docs": "Read directly from the environment before the layered config exists, so no file may supply it.",
+        "default": null
+      },
+      {
+        "env": "TANKOVAULT_CONFIRM_RESET",
+        "role": "reserved",
+        "docs": "Read directly from the environment before the layered config exists, so no file may supply it.",
+        "default": null
+      }
+    ],
+    "keys": [
+      {
+        "path": "database.url",
+        "env": "TANKOVAULT_DATABASE__URL",
+        "env_file": "TANKOVAULT_DATABASE__URL_FILE",
+        "secrets_file": "database__url",
+        "docs": "e.g. `postgres://user:pass@host:5432/tankovault`.\n\nA [`SecretString`]: the DSN carries the password, and this struct's `Debug` is nested\ninside state routinely logged with `?`.",
+        "ty": "SecretString",
+        "values": [],
+        "constraint": {
+          "type": "string"
+        },
+        "text_form": "text",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": true,
+        "secret": true,
+        "reserved": false
+      },
+      {
+        "path": "database.max_connections",
+        "env": "TANKOVAULT_DATABASE__MAX_CONNECTIONS",
+        "env_file": "TANKOVAULT_DATABASE__MAX_CONNECTIONS_FILE",
+        "secrets_file": "database__max_connections",
+        "docs": "Upper bound on the connection pool.",
+        "ty": "u32",
+        "values": [],
+        "constraint": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*\\+?[0-9]+\\s*$",
+          "type": "string"
+        },
+        "text_form": "integer",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "database.acquire_timeout_secs",
+        "env": "TANKOVAULT_DATABASE__ACQUIRE_TIMEOUT_SECS",
+        "env_file": "TANKOVAULT_DATABASE__ACQUIRE_TIMEOUT_SECS_FILE",
+        "secrets_file": "database__acquire_timeout_secs",
+        "docs": "Statement/acquire timeout, seconds.",
+        "ty": "u64",
+        "values": [],
+        "constraint": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*\\+?[0-9]+\\s*$",
+          "type": "string"
+        },
+        "text_form": "integer",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "nats.url",
+        "env": "TANKOVAULT_NATS__URL",
+        "env_file": "TANKOVAULT_NATS__URL_FILE",
+        "secrets_file": "nats__url",
+        "docs": "e.g. `nats://nats:4222`. [`SecretString`]: `nats://user:pass@host` is supported.",
+        "ty": "SecretString",
+        "values": [],
+        "constraint": {
+          "type": "string"
+        },
+        "text_form": "text",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": true,
+        "secret": true,
+        "reserved": false
+      },
+      {
+        "path": "telemetry.service_name",
+        "env": "TANKOVAULT_TELEMETRY__SERVICE_NAME",
+        "env_file": "TANKOVAULT_TELEMETRY__SERVICE_NAME_FILE",
+        "secrets_file": "telemetry__service_name",
+        "docs": "Logical service name reported in traces/metrics.",
+        "ty": "String",
+        "values": [],
+        "constraint": {
+          "type": "string"
+        },
+        "text_form": "text",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": true,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "telemetry.log_filter",
+        "env": "TANKOVAULT_TELEMETRY__LOG_FILTER",
+        "env_file": "TANKOVAULT_TELEMETRY__LOG_FILTER_FILE",
+        "secrets_file": "telemetry__log_filter",
+        "docs": "**`TANKOVAULT_TELEMETRY__OTLP_ENDPOINT` is removed** (it silently did nothing); setting\nit is now a hard config error. Re-add only with a real `OpenTelemetryLayer`.\n\n`RUST_LOG`-style filter (e.g. `info,tankovault=debug`).",
+        "ty": "String",
+        "values": [],
+        "constraint": {
+          "type": "string"
+        },
+        "text_form": "text",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "telemetry.json_logs",
+        "env": "TANKOVAULT_TELEMETRY__JSON_LOGS",
+        "env_file": "TANKOVAULT_TELEMETRY__JSON_LOGS_FILE",
+        "secrets_file": "telemetry__json_logs",
+        "docs": "Emit structured JSON logs (production) vs. pretty logs (dev).",
+        "ty": "bool",
+        "values": [],
+        "constraint": {
+          "type": "boolean"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*(true|false)\\s*$",
+          "type": "string"
+        },
+        "text_form": "boolean",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "redis.url",
+        "env": "TANKOVAULT_REDIS__URL",
+        "env_file": "TANKOVAULT_REDIS__URL_FILE",
+        "secrets_file": "redis__url",
+        "docs": "e.g. `redis://redis:6379`.\n\nA [`SecretString`]: compose uses a credential-free URL, but `redis://:password@host`\nis a supported form.",
+        "ty": "SecretString",
+        "values": [],
+        "constraint": {
+          "type": "string"
+        },
+        "text_form": "text",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": true,
+        "secret": true,
+        "reserved": false
+      },
+      {
+        "path": "scheduler.fast_interval_secs",
+        "env": "TANKOVAULT_SCHEDULER__FAST_INTERVAL_SECS",
+        "env_file": "TANKOVAULT_SCHEDULER__FAST_INTERVAL_SECS_FILE",
+        "secrets_file": "scheduler__fast_interval_secs",
+        "docs": "Seconds between fast-scan sweeps of all active providers. 0 disables.",
+        "ty": "u64",
+        "values": [],
+        "constraint": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*\\+?[0-9]+\\s*$",
+          "type": "string"
+        },
+        "text_form": "integer",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "scheduler.full_interval_secs",
+        "env": "TANKOVAULT_SCHEDULER__FULL_INTERVAL_SECS",
+        "env_file": "TANKOVAULT_SCHEDULER__FULL_INTERVAL_SECS_FILE",
+        "secrets_file": "scheduler__full_interval_secs",
+        "docs": "Seconds between full-scan sweeps. 0 disables (full scans are usually on demand).",
+        "ty": "u64",
+        "values": [],
+        "constraint": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*\\+?[0-9]+\\s*$",
+          "type": "string"
+        },
+        "text_form": "integer",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "scheduler.merge_sweep_interval_secs",
+        "env": "TANKOVAULT_SCHEDULER__MERGE_SWEEP_INTERVAL_SECS",
+        "env_file": "TANKOVAULT_SCHEDULER__MERGE_SWEEP_INTERVAL_SECS_FILE",
+        "secrets_file": "scheduler__merge_sweep_interval_secs",
+        "docs": "Seconds between full duplicate-reconciliation sweeps. 0 disables.\n\nHourly by default: this is the cadence of *discovery*, which blocks the whole catalogue on\nthe compact title key and so costs the same whether anything changed or not.",
+        "ty": "u64",
+        "values": [],
+        "constraint": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*\\+?[0-9]+\\s*$",
+          "type": "string"
+        },
+        "text_form": "integer",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "scheduler.merge_sweep_rotation_interval_secs",
+        "env": "TANKOVAULT_SCHEDULER__MERGE_SWEEP_ROTATION_INTERVAL_SECS",
+        "env_file": "TANKOVAULT_SCHEDULER__MERGE_SWEEP_ROTATION_INTERVAL_SECS_FILE",
+        "secrets_file": "scheduler__merge_sweep_rotation_interval_secs",
+        "docs": "Seconds between rotation-only sweeps — the open queue and the recheck set, no discovery.\n0 disables.\n\nFour times an hour by default. These two shortlists are index scans bounded by their own\nbudgets, and re-scoring is how a pair that was genuinely ambiguous in January becomes an\nautomatic merge once both sides have been enriched; tying that to the discovery cadence\nmeant a queue of thousands took most of a day to turn over once.",
+        "ty": "u64",
+        "values": [],
+        "constraint": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*\\+?[0-9]+\\s*$",
+          "type": "string"
+        },
+        "text_form": "integer",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "scheduler.merge_sweep_pairs",
+        "env": "TANKOVAULT_SCHEDULER__MERGE_SWEEP_PAIRS",
+        "env_file": "TANKOVAULT_SCHEDULER__MERGE_SWEEP_PAIRS_FILE",
+        "secrets_file": "scheduler__merge_sweep_pairs",
+        "docs": "Newly-blocked duplicate pairs shortlisted per sweep.",
+        "ty": "i64",
+        "values": [],
+        "constraint": {
+          "type": "integer"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*[-+]?[0-9]+\\s*$",
+          "type": "string"
+        },
+        "text_form": "integer",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "scheduler.merge_sweep_requeue",
+        "env": "TANKOVAULT_SCHEDULER__MERGE_SWEEP_REQUEUE",
+        "env_file": "TANKOVAULT_SCHEDULER__MERGE_SWEEP_REQUEUE_FILE",
+        "secrets_file": "scheduler__merge_sweep_requeue",
+        "docs": "Open queue rows re-scored per sweep, least-recently-scored first.",
+        "ty": "i64",
+        "values": [],
+        "constraint": {
+          "type": "integer"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*[-+]?[0-9]+\\s*$",
+          "type": "string"
+        },
+        "text_form": "integer",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "scheduler.merge_sweep_recheck",
+        "env": "TANKOVAULT_SCHEDULER__MERGE_SWEEP_RECHECK",
+        "env_file": "TANKOVAULT_SCHEDULER__MERGE_SWEEP_RECHECK_FILE",
+        "secrets_file": "scheduler__merge_sweep_recheck",
+        "docs": "Previously-distinct pairs reconsidered per sweep, least-recently-scored first.",
+        "ty": "i64",
+        "values": [],
+        "constraint": {
+          "type": "integer"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*[-+]?[0-9]+\\s*$",
+          "type": "string"
+        },
+        "text_form": "integer",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "scheduler.recsys_incremental_interval_secs",
+        "env": "TANKOVAULT_SCHEDULER__RECSYS_INCREMENTAL_INTERVAL_SECS",
+        "env_file": "TANKOVAULT_SCHEDULER__RECSYS_INCREMENTAL_INTERVAL_SECS_FILE",
+        "secrets_file": "scheduler__recsys_incremental_interval_secs",
+        "docs": "Seconds between incremental recommendation-model builds. 0 disables.\n\nFrequent by default: an incremental pass re-embeds only what changed and inserts into a\nlive HNSW index, so the cost is proportional to catalogue churn rather than to the\ncatalogue.",
+        "ty": "u64",
+        "values": [],
+        "constraint": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*\\+?[0-9]+\\s*$",
+          "type": "string"
+        },
+        "text_form": "integer",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "scheduler.recsys_full_interval_secs",
+        "env": "TANKOVAULT_SCHEDULER__RECSYS_FULL_INTERVAL_SECS",
+        "env_file": "TANKOVAULT_SCHEDULER__RECSYS_FULL_INTERVAL_SECS_FILE",
+        "secrets_file": "scheduler__recsys_full_interval_secs",
+        "docs": "Seconds between full recommendation-model rebuilds. 0 disables.\n\nA full build re-solves the projection from the whole catalogue, which is what keeps the\nidf and the embedding space current. Weekly: the incremental pass covers changed series,\nso this exists for vocabulary drift rather than for freshness.",
+        "ty": "u64",
+        "values": [],
+        "constraint": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*\\+?[0-9]+\\s*$",
+          "type": "string"
+        },
+        "text_form": "integer",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "scheduler.recsys_batch",
+        "env": "TANKOVAULT_SCHEDULER__RECSYS_BATCH",
+        "env_file": "TANKOVAULT_SCHEDULER__RECSYS_BATCH_FILE",
+        "secrets_file": "scheduler__recsys_batch",
+        "docs": "Series per streamed batch in a model build.",
+        "ty": "i64",
+        "values": [],
+        "constraint": {
+          "type": "integer"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*[-+]?[0-9]+\\s*$",
+          "type": "string"
+        },
+        "text_form": "integer",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "scheduler.recsys_incremental_max",
+        "env": "TANKOVAULT_SCHEDULER__RECSYS_INCREMENTAL_MAX",
+        "env_file": "TANKOVAULT_SCHEDULER__RECSYS_INCREMENTAL_MAX_FILE",
+        "secrets_file": "scheduler__recsys_incremental_max",
+        "docs": "Ceiling on how many series one incremental build may touch.",
+        "ty": "i64",
+        "values": [],
+        "constraint": {
+          "type": "integer"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*[-+]?[0-9]+\\s*$",
+          "type": "string"
+        },
+        "text_form": "integer",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "scheduler.merge_sweep_max_auto_merges",
+        "env": "TANKOVAULT_SCHEDULER__MERGE_SWEEP_MAX_AUTO_MERGES",
+        "env_file": "TANKOVAULT_SCHEDULER__MERGE_SWEEP_MAX_AUTO_MERGES_FILE",
+        "secrets_file": "scheduler__merge_sweep_max_auto_merges",
+        "docs": "Automatic merges permitted in a single sweep — the only bound on a destructive\nbackground action. Without it, a bad threshold or normalization rule could collapse\nthe whole catalogue between two scheduler ticks.",
+        "ty": "i64",
+        "values": [],
+        "constraint": {
+          "type": "integer"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*[-+]?[0-9]+\\s*$",
+          "type": "string"
+        },
+        "text_form": "integer",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "scheduler.run_stale_after_secs",
+        "env": "TANKOVAULT_SCHEDULER__RUN_STALE_AFTER_SECS",
+        "env_file": "TANKOVAULT_SCHEDULER__RUN_STALE_AFTER_SECS_FILE",
+        "secrets_file": "scheduler__run_stale_after_secs",
+        "docs": "How long an unfinished run keeps suppressing new runs of the same provider and mode.\n\nThe suppression itself has no expiry condition other than this one, so the value is the\nonly thing standing between a run that can never settle — a task persisted but never\npublished — and a provider that is never scanned again.",
+        "ty": "u64",
+        "values": [],
+        "constraint": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*\\+?[0-9]+\\s*$",
+          "type": "string"
+        },
+        "text_form": "integer",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "scheduler.failure_backoff_max_secs",
+        "env": "TANKOVAULT_SCHEDULER__FAILURE_BACKOFF_MAX_SECS",
+        "env_file": "TANKOVAULT_SCHEDULER__FAILURE_BACKOFF_MAX_SECS_FILE",
+        "secrets_file": "scheduler__failure_backoff_max_secs",
+        "docs": "Ceiling on how long a provider whose runs keep failing is skipped by the sweeps. 0\ndisables the backoff entirely, restoring the unconditional sweep.\n\nSix hours by default. The sweep is what turns one broken provider into a steady stream of\nrequests at a site that is answering none of them, and the cooldown is the only thing that\nstops it; the cost of the ceiling being *too high* is that a provider which recovered\nwaits up to this long to be noticed, which is why it is hours and not days.",
+        "ty": "u64",
+        "values": [],
+        "constraint": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*\\+?[0-9]+\\s*$",
+          "type": "string"
+        },
+        "text_form": "integer",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "scheduler.reconcile_interval_secs",
+        "env": "TANKOVAULT_SCHEDULER__RECONCILE_INTERVAL_SECS",
+        "env_file": "TANKOVAULT_SCHEDULER__RECONCILE_INTERVAL_SECS_FILE",
+        "secrets_file": "scheduler__reconcile_interval_secs",
+        "docs": "Seconds between passes that reconcile `JetStream` against `scan_tasks`. 0 disables.\n\nThis is a repair, not a schedule: it exists because dispatch and the task table can come\napart with no failure on either side, and nothing else notices when they do. Disabling it\nleaves a lost message costing a run — and, until `run_stale_after_secs`, the provider's\nnext run of that mode as well.",
+        "ty": "u64",
+        "values": [],
+        "constraint": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*\\+?[0-9]+\\s*$",
+          "type": "string"
+        },
+        "text_form": "integer",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "bind_addr",
+        "env": "TANKOVAULT_BIND_ADDR",
+        "env_file": "TANKOVAULT_BIND_ADDR_FILE",
+        "secrets_file": "bind_addr",
+        "docs": "",
+        "ty": "String",
+        "values": [],
+        "constraint": {
+          "type": "string"
+        },
+        "text_form": "text",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "security.cors.allowed_origins",
+        "env": "TANKOVAULT_SECURITY__CORS__ALLOWED_ORIGINS",
+        "env_file": "TANKOVAULT_SECURITY__CORS__ALLOWED_ORIGINS_FILE",
+        "secrets_file": "security__cors__allowed_origins",
+        "docs": "Exact origins allowed, e.g. `https://app.example.com`. Empty disables CORS entirely.",
+        "ty": "Vec<String>",
+        "values": [],
+        "constraint": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*[\\[\\{][\\s\\S]*[\\]\\}]\\s*$",
+          "type": "string"
+        },
+        "text_form": "structured",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "security.cors.allow_credentials",
+        "env": "TANKOVAULT_SECURITY__CORS__ALLOW_CREDENTIALS",
+        "env_file": "TANKOVAULT_SECURITY__CORS__ALLOW_CREDENTIALS_FILE",
+        "secrets_file": "security__cors__allow_credentials",
+        "docs": "Allow credentialed cross-origin requests (cookies, `Authorization`). Cannot combine\nwith a wildcard origin.",
+        "ty": "bool",
+        "values": [],
+        "constraint": {
+          "type": "boolean"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*(true|false)\\s*$",
+          "type": "string"
+        },
+        "text_form": "boolean",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "security.cors.max_age_secs",
+        "env": "TANKOVAULT_SECURITY__CORS__MAX_AGE_SECS",
+        "env_file": "TANKOVAULT_SECURITY__CORS__MAX_AGE_SECS_FILE",
+        "secrets_file": "security__cors__max_age_secs",
+        "docs": "`Access-Control-Max-Age`, seconds.",
+        "ty": "u64",
+        "values": [],
+        "constraint": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*\\+?[0-9]+\\s*$",
+          "type": "string"
+        },
+        "text_form": "integer",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "security.max_body_bytes",
+        "env": "TANKOVAULT_SECURITY__MAX_BODY_BYTES",
+        "env_file": "TANKOVAULT_SECURITY__MAX_BODY_BYTES_FILE",
+        "secrets_file": "security__max_body_bytes",
+        "docs": "Reject request bodies larger than this, in bytes, before they are buffered.",
+        "ty": "usize",
+        "values": [],
+        "constraint": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*\\+?[0-9]+\\s*$",
+          "type": "string"
+        },
+        "text_form": "integer",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "security.request_timeout_secs",
+        "env": "TANKOVAULT_SECURITY__REQUEST_TIMEOUT_SECS",
+        "env_file": "TANKOVAULT_SECURITY__REQUEST_TIMEOUT_SECS_FILE",
+        "secrets_file": "security__request_timeout_secs",
+        "docs": "Abort a request that has not produced a response within this many seconds.",
+        "ty": "u64",
+        "values": [],
+        "constraint": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*\\+?[0-9]+\\s*$",
+          "type": "string"
+        },
+        "text_form": "integer",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "security.hsts",
+        "env": "TANKOVAULT_SECURITY__HSTS",
+        "env_file": "TANKOVAULT_SECURITY__HSTS_FILE",
+        "secrets_file": "security__hsts",
+        "docs": "Emit `Strict-Transport-Security`; meaningless without TLS (browsers ignore it over\nplain HTTP).",
+        "ty": "bool",
+        "values": [],
+        "constraint": {
+          "type": "boolean"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*(true|false)\\s*$",
+          "type": "string"
+        },
+        "text_form": "boolean",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "security.hsts_max_age_secs",
+        "env": "TANKOVAULT_SECURITY__HSTS_MAX_AGE_SECS",
+        "env_file": "TANKOVAULT_SECURITY__HSTS_MAX_AGE_SECS_FILE",
+        "secrets_file": "security__hsts_max_age_secs",
+        "docs": "`max-age` for the HSTS header, seconds (default: two years, the preload minimum).",
+        "ty": "u64",
+        "values": [],
+        "constraint": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*\\+?[0-9]+\\s*$",
+          "type": "string"
+        },
+        "text_form": "integer",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "security.security_headers",
+        "env": "TANKOVAULT_SECURITY__SECURITY_HEADERS",
+        "env_file": "TANKOVAULT_SECURITY__SECURITY_HEADERS_FILE",
+        "secrets_file": "security__security_headers",
+        "docs": "Send the baseline set of hardening headers (`X-Content-Type-Options`,\n`X-Frame-Options`, `Referrer-Policy`, `Cross-Origin-Resource-Policy`).",
+        "ty": "bool",
+        "values": [],
+        "constraint": {
+          "type": "boolean"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*(true|false)\\s*$",
+          "type": "string"
+        },
+        "text_form": "boolean",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "security.trust_request_id",
+        "env": "TANKOVAULT_SECURITY__TRUST_REQUEST_ID",
+        "env_file": "TANKOVAULT_SECURITY__TRUST_REQUEST_ID_FILE",
+        "secrets_file": "security__trust_request_id",
+        "docs": "Accept an inbound `X-Request-Id` instead of minting one. Requires a trusted proxy —\na client-supplied id could otherwise poison log correlation.",
+        "ty": "bool",
+        "values": [],
+        "constraint": {
+          "type": "boolean"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*(true|false)\\s*$",
+          "type": "string"
+        },
+        "text_form": "boolean",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "security.expose_api_docs",
+        "env": "TANKOVAULT_SECURITY__EXPOSE_API_DOCS",
+        "env_file": "TANKOVAULT_SECURITY__EXPOSE_API_DOCS_FILE",
+        "secrets_file": "security__expose_api_docs",
+        "docs": "Serve the browsable API docs (`/scalar`) and the `OpenAPI` document.\n\nDefaults off in production, on elsewhere (hence a function, not a literal): left on,\nit hands an attacker the whole admin surface — every `/v1/admin/*` path, the\npermission vocabulary, exact request bodies — with no failed probe.",
+        "ty": "bool",
+        "values": [],
+        "constraint": {
+          "type": "boolean"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*(true|false)\\s*$",
+          "type": "string"
+        },
+        "text_form": "boolean",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "rate_limit.enabled",
+        "env": "TANKOVAULT_RATE_LIMIT__ENABLED",
+        "env_file": "TANKOVAULT_RATE_LIMIT__ENABLED_FILE",
+        "secrets_file": "rate_limit__enabled",
+        "docs": "Enforce limits. When `false` the layer is not mounted at all (no per-request cost).",
+        "ty": "bool",
+        "values": [],
+        "constraint": {
+          "type": "boolean"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*(true|false)\\s*$",
+          "type": "string"
+        },
+        "text_form": "boolean",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "rate_limit.backend",
+        "env": "TANKOVAULT_RATE_LIMIT__BACKEND",
+        "env_file": "TANKOVAULT_RATE_LIMIT__BACKEND_FILE",
+        "secrets_file": "rate_limit__backend",
+        "docs": "Counter store. See [`RateLimitBackend`].",
+        "ty": "RateLimitBackend",
+        "values": [
+          "memory",
+          "redis"
+        ],
+        "constraint": {
+          "enum": [
+            "memory",
+            "redis"
+          ],
+          "type": "string"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*(memory|redis)\\s*$",
+          "type": "string"
+        },
+        "text_form": "choice",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "rate_limit.global.per_minute",
+        "env": "TANKOVAULT_RATE_LIMIT__GLOBAL__PER_MINUTE",
+        "env_file": "TANKOVAULT_RATE_LIMIT__GLOBAL__PER_MINUTE_FILE",
+        "secrets_file": "rate_limit__global__per_minute",
+        "docs": "Sustained requests allowed per minute per client key; the bucket's refill rate.",
+        "ty": "u32",
+        "values": [],
+        "constraint": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*\\+?[0-9]+\\s*$",
+          "type": "string"
+        },
+        "text_form": "integer",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": true,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "rate_limit.global.burst",
+        "env": "TANKOVAULT_RATE_LIMIT__GLOBAL__BURST",
+        "env_file": "TANKOVAULT_RATE_LIMIT__GLOBAL__BURST_FILE",
+        "secrets_file": "rate_limit__global__burst",
+        "docs": "Bucket depth: the most requests a client may spend back-to-back.",
+        "ty": "u32",
+        "values": [],
+        "constraint": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*\\+?[0-9]+\\s*$",
+          "type": "string"
+        },
+        "text_form": "integer",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": true,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "rate_limit.auth.per_minute",
+        "env": "TANKOVAULT_RATE_LIMIT__AUTH__PER_MINUTE",
+        "env_file": "TANKOVAULT_RATE_LIMIT__AUTH__PER_MINUTE_FILE",
+        "secrets_file": "rate_limit__auth__per_minute",
+        "docs": "Sustained requests allowed per minute per client key; the bucket's refill rate.",
+        "ty": "u32",
+        "values": [],
+        "constraint": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*\\+?[0-9]+\\s*$",
+          "type": "string"
+        },
+        "text_form": "integer",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": true,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "rate_limit.auth.burst",
+        "env": "TANKOVAULT_RATE_LIMIT__AUTH__BURST",
+        "env_file": "TANKOVAULT_RATE_LIMIT__AUTH__BURST_FILE",
+        "secrets_file": "rate_limit__auth__burst",
+        "docs": "Bucket depth: the most requests a client may spend back-to-back.",
+        "ty": "u32",
+        "values": [],
+        "constraint": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*\\+?[0-9]+\\s*$",
+          "type": "string"
+        },
+        "text_form": "integer",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": true,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "rate_limit.expensive.per_minute",
+        "env": "TANKOVAULT_RATE_LIMIT__EXPENSIVE__PER_MINUTE",
+        "env_file": "TANKOVAULT_RATE_LIMIT__EXPENSIVE__PER_MINUTE_FILE",
+        "secrets_file": "rate_limit__expensive__per_minute",
+        "docs": "Sustained requests allowed per minute per client key; the bucket's refill rate.",
+        "ty": "u32",
+        "values": [],
+        "constraint": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*\\+?[0-9]+\\s*$",
+          "type": "string"
+        },
+        "text_form": "integer",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": true,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "rate_limit.expensive.burst",
+        "env": "TANKOVAULT_RATE_LIMIT__EXPENSIVE__BURST",
+        "env_file": "TANKOVAULT_RATE_LIMIT__EXPENSIVE__BURST_FILE",
+        "secrets_file": "rate_limit__expensive__burst",
+        "docs": "Bucket depth: the most requests a client may spend back-to-back.",
+        "ty": "u32",
+        "values": [],
+        "constraint": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*\\+?[0-9]+\\s*$",
+          "type": "string"
+        },
+        "text_form": "integer",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": true,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "rate_limit.trust_forwarded_for",
+        "env": "TANKOVAULT_RATE_LIMIT__TRUST_FORWARDED_FOR",
+        "env_file": "TANKOVAULT_RATE_LIMIT__TRUST_FORWARDED_FOR_FILE",
+        "secrets_file": "rate_limit__trust_forwarded_for",
+        "docs": "Trust `X-Forwarded-For`/`X-Real-IP` for the client key. **Only behind a reverse proxy\nthat overwrites these** — otherwise any client can forge a fresh identity and bypass\nthe limiter.",
+        "ty": "bool",
+        "values": [],
+        "constraint": {
+          "type": "boolean"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*(true|false)\\s*$",
+          "type": "string"
+        },
+        "text_form": "boolean",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "metrics.enabled",
+        "env": "TANKOVAULT_METRICS__ENABLED",
+        "env_file": "TANKOVAULT_METRICS__ENABLED_FILE",
+        "secrets_file": "metrics__enabled",
+        "docs": "Install the Prometheus recorder and serve the scrape endpoint. When `false` the\nscrape route answers `404` and no measurements are retained.",
+        "ty": "bool",
+        "values": [],
+        "constraint": {
+          "type": "boolean"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*(true|false)\\s*$",
+          "type": "string"
+        },
+        "text_form": "boolean",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "metrics.route",
+        "env": "TANKOVAULT_METRICS__ROUTE",
+        "env_file": "TANKOVAULT_METRICS__ROUTE_FILE",
+        "secrets_file": "metrics__route",
+        "docs": "Path the scrape endpoint is mounted at.",
+        "ty": "String",
+        "values": [],
+        "constraint": {
+          "type": "string"
+        },
+        "text_form": "text",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "metrics.listen",
+        "env": "TANKOVAULT_METRICS__LISTEN",
+        "env_file": "TANKOVAULT_METRICS__LISTEN_FILE",
+        "secrets_file": "metrics__listen",
+        "docs": "Address the scrape endpoint binds to on its **own** listener (default `0.0.0.0:9090`),\nisolated from the service's public port. `None` merges it onto the primary port.",
+        "ty": "String",
+        "values": [],
+        "constraint": {
+          "type": "string"
+        },
+        "text_form": "text",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "metrics.http_requests",
+        "env": "TANKOVAULT_METRICS__HTTP_REQUESTS",
+        "env_file": "TANKOVAULT_METRICS__HTTP_REQUESTS_FILE",
+        "secrets_file": "metrics__http_requests",
+        "docs": "Also record per-request HTTP metrics. Separate from [`Self::enabled`]: the request\nhistogram is the expensive, high-cardinality part.",
+        "ty": "bool",
+        "values": [],
+        "constraint": {
+          "type": "boolean"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*(true|false)\\s*$",
+          "type": "string"
+        },
+        "text_form": "boolean",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "features.refresh_secs",
+        "env": "TANKOVAULT_FEATURES__REFRESH_SECS",
+        "env_file": "TANKOVAULT_FEATURES__REFRESH_SECS_FILE",
+        "secrets_file": "features__refresh_secs",
+        "docs": "Seconds between refreshes of a service's cached flag snapshot — the propagation delay\nto *other* replicas (the one that served the change applies it immediately).",
+        "ty": "u64",
+        "values": [],
+        "constraint": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*\\+?[0-9]+\\s*$",
+          "type": "string"
+        },
+        "text_form": "integer",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "internal.identity",
+        "env": "TANKOVAULT_INTERNAL__IDENTITY",
+        "env_file": "TANKOVAULT_INTERNAL__IDENTITY_FILE",
+        "secrets_file": "internal__identity",
+        "docs": "How callers are identified. See [`IdentityMode`].",
+        "ty": "IdentityMode",
+        "values": [
+          "off",
+          "token",
+          "mtls"
+        ],
+        "constraint": {
+          "enum": [
+            "off",
+            "token",
+            "mtls"
+          ],
+          "type": "string"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*(off|token|mtls)\\s*$",
+          "type": "string"
+        },
+        "text_form": "choice",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "internal.caller.name",
+        "env": "TANKOVAULT_INTERNAL__CALLER__NAME",
+        "env_file": "TANKOVAULT_INTERNAL__CALLER__NAME_FILE",
+        "secrets_file": "internal__caller__name",
+        "docs": "The name peers know this service by; must match the key they list it under.",
+        "ty": "String",
+        "values": [],
+        "constraint": {
+          "type": "string"
+        },
+        "text_form": "text",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "internal.caller.token",
+        "env": "TANKOVAULT_INTERNAL__CALLER__TOKEN",
+        "env_file": "TANKOVAULT_INTERNAL__CALLER__TOKEN_FILE",
+        "secrets_file": "internal__caller__token",
+        "docs": "Presented to peers under `identity = \"token\"`. Ignored under `mtls`, where the client\ncertificate is the credential.",
+        "ty": "SecretString",
+        "values": [],
+        "constraint": {
+          "type": "string"
+        },
+        "text_form": "text",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": true,
+        "reserved": false
+      },
+      {
+        "path": "internal.peers",
+        "env": "TANKOVAULT_INTERNAL__PEERS",
+        "env_file": "TANKOVAULT_INTERNAL__PEERS_FILE",
+        "secrets_file": "internal__peers",
+        "docs": "Which services may call this one, keyed by caller name.",
+        "ty": "BTreeMap<String, PeerConfig>",
+        "values": [],
+        "constraint": {
+          "type": "object"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*[\\[\\{][\\s\\S]*[\\]\\}]\\s*$",
+          "type": "string"
+        },
+        "text_form": "structured",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "internal.tls.cert",
+        "env": "TANKOVAULT_INTERNAL__TLS__CERT",
+        "env_file": "TANKOVAULT_INTERNAL__TLS__CERT_FILE",
+        "secrets_file": "internal__tls__cert",
+        "docs": "PEM certificate chain this service serves and presents.",
+        "ty": "PathBuf",
+        "values": [],
+        "constraint": {
+          "type": "string"
+        },
+        "text_form": "text",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "internal.tls.key",
+        "env": "TANKOVAULT_INTERNAL__TLS__KEY",
+        "env_file": "TANKOVAULT_INTERNAL__TLS__KEY_FILE",
+        "secrets_file": "internal__tls__key",
+        "docs": "PEM private key for [`Self::cert`].",
+        "ty": "PathBuf",
+        "values": [],
+        "constraint": {
+          "type": "string"
+        },
+        "text_form": "text",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "internal.tls.ca",
+        "env": "TANKOVAULT_INTERNAL__TLS__CA",
+        "env_file": "TANKOVAULT_INTERNAL__TLS__CA_FILE",
+        "secrets_file": "internal__tls__ca",
+        "docs": "PEM bundle of the authorities a peer certificate must chain to.",
+        "ty": "PathBuf",
+        "values": [],
+        "constraint": {
+          "type": "string"
+        },
+        "text_form": "text",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "internal.tls.probe_listen",
+        "env": "TANKOVAULT_INTERNAL__TLS__PROBE_LISTEN",
+        "env_file": "TANKOVAULT_INTERNAL__TLS__PROBE_LISTEN_FILE",
+        "secrets_file": "internal__tls__probe_listen",
+        "docs": "Address the credential-free `/health` and `/ready` probes bind to, in **plaintext**, on\ntheir own listener (default `0.0.0.0:9091`). Read under `mtls` only.\n\nAn orchestrator probe presents no client certificate, so on the mTLS port its plain\n`GET` is answered with a TLS alert rather than a response and the replica is restarted\nas unhealthy. `null` drops the listener, which is right only where whatever does the\nprobing *can* present a certificate.",
+        "ty": "String",
+        "values": [],
+        "constraint": {
+          "type": "string"
+        },
+        "text_form": "text",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "internal.token",
+        "env": "TANKOVAULT_INTERNAL__TOKEN",
+        "env_file": "TANKOVAULT_INTERNAL__TOKEN_FILE",
+        "secrets_file": "internal__token",
+        "docs": "The retired tier-wide shared secret. Present only so a deployment that still sets it is\ntold what to do instead; see [`InternalAuthConfig::resolve`].",
+        "ty": "SecretString",
+        "values": [],
+        "constraint": {
+          "type": "string"
+        },
+        "text_form": "text",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": true,
+        "reserved": false
+      },
+      {
+        "path": "matching.high",
+        "env": "TANKOVAULT_MATCHING__HIGH",
+        "env_file": "TANKOVAULT_MATCHING__HIGH_FILE",
+        "secrets_file": "matching__high",
+        "docs": "At or above this score, attach to the existing series outright.",
+        "ty": "f32",
+        "values": [],
+        "constraint": {
+          "type": "number"
+        },
+        "text_form": "unknown",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "matching.low",
+        "env": "TANKOVAULT_MATCHING__LOW",
+        "env_file": "TANKOVAULT_MATCHING__LOW_FILE",
+        "secrets_file": "matching__low",
+        "docs": "At or above this score but below [`Self::high`], create the series but flag the pair for\noperator review.",
+        "ty": "f32",
+        "values": [],
+        "constraint": {
+          "type": "number"
+        },
+        "text_form": "unknown",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "matching.auto_merge",
+        "env": "TANKOVAULT_MATCHING__AUTO_MERGE",
+        "env_file": "TANKOVAULT_MATCHING__AUTO_MERGE_FILE",
+        "secrets_file": "matching__auto_merge",
+        "docs": "At or above this score — **and** only when a structural identity rule fired — the\nduplicate sweep merges two existing series without an operator. A separate knob from\n[`Self::high`]: that files an incoming source, this deletes one that already exists.\nSee `tankovault_matcher::adjudicate` for the structural half of the bar.",
+        "ty": "f32",
+        "values": [],
+        "constraint": {
+          "type": "number"
+        },
+        "text_form": "unknown",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "matching.candidate_limit",
+        "env": "TANKOVAULT_MATCHING__CANDIDATE_LIMIT",
+        "env_file": "TANKOVAULT_MATCHING__CANDIDATE_LIMIT_FILE",
+        "secrets_file": "matching__candidate_limit",
+        "docs": "How many trigram candidates to score per query title; more only costs a wider index scan.",
+        "ty": "i64",
+        "values": [],
+        "constraint": {
+          "type": "integer"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*[-+]?[0-9]+\\s*$",
+          "type": "string"
+        },
+        "text_form": "integer",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "matching.block_auto_merge_on_numeric_conflict",
+        "env": "TANKOVAULT_MATCHING__BLOCK_AUTO_MERGE_ON_NUMERIC_CONFLICT",
+        "env_file": "TANKOVAULT_MATCHING__BLOCK_AUTO_MERGE_ON_NUMERIC_CONFLICT_FILE",
+        "secrets_file": "matching__block_auto_merge_on_numeric_conflict",
+        "docs": "Titles carrying different numbers (`Overlord` against `Overlord 2`) are reported as\ndistinct works rather than queued. Switching this off makes a sequel merge-eligible on\ntitle similarity alone, which is the single most expensive mistake this scorer can make —\nthere is no other rule that distinguishes a sequel from its predecessor.",
+        "ty": "bool",
+        "values": [],
+        "constraint": {
+          "type": "boolean"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*(true|false)\\s*$",
+          "type": "string"
+        },
+        "text_form": "boolean",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "matching.block_auto_merge_on_author_conflict",
+        "env": "TANKOVAULT_MATCHING__BLOCK_AUTO_MERGE_ON_AUTHOR_CONFLICT",
+        "env_file": "TANKOVAULT_MATCHING__BLOCK_AUTO_MERGE_ON_AUTHOR_CONFLICT_FILE",
+        "secrets_file": "matching__block_auto_merge_on_author_conflict",
+        "docs": "Both series name authors and share none: a remake, a spin-off, or an unrelated work with\nthe same title. Off costs nothing on a catalogue whose providers rarely publish credits,\nbecause the signal cannot fire without credits on both sides.",
+        "ty": "bool",
+        "values": [],
+        "constraint": {
+          "type": "boolean"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*(true|false)\\s*$",
+          "type": "string"
+        },
+        "text_form": "boolean",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "matching.block_auto_merge_on_year_conflict",
+        "env": "TANKOVAULT_MATCHING__BLOCK_AUTO_MERGE_ON_YEAR_CONFLICT",
+        "env_file": "TANKOVAULT_MATCHING__BLOCK_AUTO_MERGE_ON_YEAR_CONFLICT_FILE",
+        "secrets_file": "matching__block_auto_merge_on_year_conflict",
+        "docs": "Release years three or more years apart. Catches re-serialisations and remakes that share\nan exact title; the scorer's own -0.05 penalty is smaller than the exact-title bonus and\nso cannot hold such a pair back on its own.",
+        "ty": "bool",
+        "values": [],
+        "constraint": {
+          "type": "boolean"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*(true|false)\\s*$",
+          "type": "string"
+        },
+        "text_form": "boolean",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "matching.block_auto_merge_on_type_conflict",
+        "env": "TANKOVAULT_MATCHING__BLOCK_AUTO_MERGE_ON_TYPE_CONFLICT",
+        "env_file": "TANKOVAULT_MATCHING__BLOCK_AUTO_MERGE_ON_TYPE_CONFLICT_FILE",
+        "secrets_file": "matching__block_auto_merge_on_type_conflict",
+        "docs": "Both series declare a medium and they disagree (manga against manhwa). Worth switching\noff on a deployment whose providers guess the medium from the site they scraped it from.",
+        "ty": "bool",
+        "values": [],
+        "constraint": {
+          "type": "boolean"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*(true|false)\\s*$",
+          "type": "string"
+        },
+        "text_form": "boolean",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      }
+    ]
+  },
+  "json_schema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "additionalProperties": false,
+    "properties": {
+      "bind_addr": {
+        "type": "string"
+      },
+      "database": {
+        "additionalProperties": false,
+        "properties": {
+          "acquire_timeout_secs": {
+            "description": "Statement/acquire timeout, seconds.",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "max_connections": {
+            "description": "Upper bound on the connection pool.",
+            "maximum": 4294967295,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "url": {
+            "description": "e.g. `postgres://user:pass@host:5432/tankovault`.\n\nA [`SecretString`]: the DSN carries the password, and this struct's `Debug` is nested\ninside state routinely logged with `?`.",
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "type": "object"
+      },
+      "features": {
+        "additionalProperties": false,
+        "properties": {
+          "refresh_secs": {
+            "description": "Seconds between refreshes of a service's cached flag snapshot — the propagation delay\nto *other* replicas (the one that served the change applies it immediately).",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "internal": {
+        "additionalProperties": false,
+        "properties": {
+          "caller": {
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "description": "The name peers know this service by; must match the key they list it under.",
+                "type": "string"
+              },
+              "token": {
+                "description": "Presented to peers under `identity = \"token\"`. Ignored under `mtls`, where the client\ncertificate is the credential.",
+                "type": "string",
+                "writeOnly": true
+              }
+            },
+            "type": "object"
+          },
+          "identity": {
+            "description": "How callers are identified. See [`IdentityMode`].",
+            "enum": [
+              "off",
+              "token",
+              "mtls"
+            ],
+            "type": "string"
+          },
+          "peers": {
+            "description": "Which services may call this one, keyed by caller name.",
+            "type": "object"
+          },
+          "tls": {
+            "additionalProperties": false,
+            "properties": {
+              "ca": {
+                "description": "PEM bundle of the authorities a peer certificate must chain to.",
+                "type": "string"
+              },
+              "cert": {
+                "description": "PEM certificate chain this service serves and presents.",
+                "type": "string"
+              },
+              "key": {
+                "description": "PEM private key for [`Self::cert`].",
+                "type": "string"
+              },
+              "probe_listen": {
+                "description": "Address the credential-free `/health` and `/ready` probes bind to, in **plaintext**, on\ntheir own listener (default `0.0.0.0:9091`). Read under `mtls` only.\n\nAn orchestrator probe presents no client certificate, so on the mTLS port its plain\n`GET` is answered with a TLS alert rather than a response and the replica is restarted\nas unhealthy. `null` drops the listener, which is right only where whatever does the\nprobing *can* present a certificate.",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "token": {
+            "description": "The retired tier-wide shared secret. Present only so a deployment that still sets it is\ntold what to do instead; see [`InternalAuthConfig::resolve`].",
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "type": "object"
+      },
+      "matching": {
+        "additionalProperties": false,
+        "properties": {
+          "auto_merge": {
+            "description": "At or above this score — **and** only when a structural identity rule fired — the\nduplicate sweep merges two existing series without an operator. A separate knob from\n[`Self::high`]: that files an incoming source, this deletes one that already exists.\nSee `tankovault_matcher::adjudicate` for the structural half of the bar.",
+            "type": "number"
+          },
+          "block_auto_merge_on_author_conflict": {
+            "description": "Both series name authors and share none: a remake, a spin-off, or an unrelated work with\nthe same title. Off costs nothing on a catalogue whose providers rarely publish credits,\nbecause the signal cannot fire without credits on both sides.",
+            "type": "boolean"
+          },
+          "block_auto_merge_on_numeric_conflict": {
+            "description": "Titles carrying different numbers (`Overlord` against `Overlord 2`) are reported as\ndistinct works rather than queued. Switching this off makes a sequel merge-eligible on\ntitle similarity alone, which is the single most expensive mistake this scorer can make —\nthere is no other rule that distinguishes a sequel from its predecessor.",
+            "type": "boolean"
+          },
+          "block_auto_merge_on_type_conflict": {
+            "description": "Both series declare a medium and they disagree (manga against manhwa). Worth switching\noff on a deployment whose providers guess the medium from the site they scraped it from.",
+            "type": "boolean"
+          },
+          "block_auto_merge_on_year_conflict": {
+            "description": "Release years three or more years apart. Catches re-serialisations and remakes that share\nan exact title; the scorer's own -0.05 penalty is smaller than the exact-title bonus and\nso cannot hold such a pair back on its own.",
+            "type": "boolean"
+          },
+          "candidate_limit": {
+            "description": "How many trigram candidates to score per query title; more only costs a wider index scan.",
+            "type": "integer"
+          },
+          "high": {
+            "description": "At or above this score, attach to the existing series outright.",
+            "type": "number"
+          },
+          "low": {
+            "description": "At or above this score but below [`Self::high`], create the series but flag the pair for\noperator review.",
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "metrics": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "description": "Install the Prometheus recorder and serve the scrape endpoint. When `false` the\nscrape route answers `404` and no measurements are retained.",
+            "type": "boolean"
+          },
+          "http_requests": {
+            "description": "Also record per-request HTTP metrics. Separate from [`Self::enabled`]: the request\nhistogram is the expensive, high-cardinality part.",
+            "type": "boolean"
+          },
+          "listen": {
+            "description": "Address the scrape endpoint binds to on its **own** listener (default `0.0.0.0:9090`),\nisolated from the service's public port. `None` merges it onto the primary port.",
+            "type": "string"
+          },
+          "route": {
+            "description": "Path the scrape endpoint is mounted at.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "nats": {
+        "additionalProperties": false,
+        "properties": {
+          "url": {
+            "description": "e.g. `nats://nats:4222`. [`SecretString`]: `nats://user:pass@host` is supported.",
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "type": "object"
+      },
+      "rate_limit": {
+        "additionalProperties": false,
+        "properties": {
+          "auth": {
+            "additionalProperties": false,
+            "properties": {
+              "burst": {
+                "description": "Bucket depth: the most requests a client may spend back-to-back.",
+                "maximum": 4294967295,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "per_minute": {
+                "description": "Sustained requests allowed per minute per client key; the bucket's refill rate.",
+                "maximum": 4294967295,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "type": "object"
+          },
+          "backend": {
+            "description": "Counter store. See [`RateLimitBackend`].",
+            "enum": [
+              "memory",
+              "redis"
+            ],
+            "type": "string"
+          },
+          "enabled": {
+            "description": "Enforce limits. When `false` the layer is not mounted at all (no per-request cost).",
+            "type": "boolean"
+          },
+          "expensive": {
+            "additionalProperties": false,
+            "properties": {
+              "burst": {
+                "description": "Bucket depth: the most requests a client may spend back-to-back.",
+                "maximum": 4294967295,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "per_minute": {
+                "description": "Sustained requests allowed per minute per client key; the bucket's refill rate.",
+                "maximum": 4294967295,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "type": "object"
+          },
+          "global": {
+            "additionalProperties": false,
+            "properties": {
+              "burst": {
+                "description": "Bucket depth: the most requests a client may spend back-to-back.",
+                "maximum": 4294967295,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "per_minute": {
+                "description": "Sustained requests allowed per minute per client key; the bucket's refill rate.",
+                "maximum": 4294967295,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "type": "object"
+          },
+          "trust_forwarded_for": {
+            "description": "Trust `X-Forwarded-For`/`X-Real-IP` for the client key. **Only behind a reverse proxy\nthat overwrites these** — otherwise any client can forge a fresh identity and bypass\nthe limiter.",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "redis": {
+        "additionalProperties": false,
+        "properties": {
+          "url": {
+            "description": "e.g. `redis://redis:6379`.\n\nA [`SecretString`]: compose uses a credential-free URL, but `redis://:password@host`\nis a supported form.",
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "type": "object"
+      },
+      "scheduler": {
+        "additionalProperties": false,
+        "properties": {
+          "failure_backoff_max_secs": {
+            "description": "Ceiling on how long a provider whose runs keep failing is skipped by the sweeps. 0\ndisables the backoff entirely, restoring the unconditional sweep.\n\nSix hours by default. The sweep is what turns one broken provider into a steady stream of\nrequests at a site that is answering none of them, and the cooldown is the only thing that\nstops it; the cost of the ceiling being *too high* is that a provider which recovered\nwaits up to this long to be noticed, which is why it is hours and not days.",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "fast_interval_secs": {
+            "description": "Seconds between fast-scan sweeps of all active providers. 0 disables.",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "full_interval_secs": {
+            "description": "Seconds between full-scan sweeps. 0 disables (full scans are usually on demand).",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "merge_sweep_interval_secs": {
+            "description": "Seconds between full duplicate-reconciliation sweeps. 0 disables.\n\nHourly by default: this is the cadence of *discovery*, which blocks the whole catalogue on\nthe compact title key and so costs the same whether anything changed or not.",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "merge_sweep_max_auto_merges": {
+            "description": "Automatic merges permitted in a single sweep — the only bound on a destructive\nbackground action. Without it, a bad threshold or normalization rule could collapse\nthe whole catalogue between two scheduler ticks.",
+            "type": "integer"
+          },
+          "merge_sweep_pairs": {
+            "description": "Newly-blocked duplicate pairs shortlisted per sweep.",
+            "type": "integer"
+          },
+          "merge_sweep_recheck": {
+            "description": "Previously-distinct pairs reconsidered per sweep, least-recently-scored first.",
+            "type": "integer"
+          },
+          "merge_sweep_requeue": {
+            "description": "Open queue rows re-scored per sweep, least-recently-scored first.",
+            "type": "integer"
+          },
+          "merge_sweep_rotation_interval_secs": {
+            "description": "Seconds between rotation-only sweeps — the open queue and the recheck set, no discovery.\n0 disables.\n\nFour times an hour by default. These two shortlists are index scans bounded by their own\nbudgets, and re-scoring is how a pair that was genuinely ambiguous in January becomes an\nautomatic merge once both sides have been enriched; tying that to the discovery cadence\nmeant a queue of thousands took most of a day to turn over once.",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "reconcile_interval_secs": {
+            "description": "Seconds between passes that reconcile `JetStream` against `scan_tasks`. 0 disables.\n\nThis is a repair, not a schedule: it exists because dispatch and the task table can come\napart with no failure on either side, and nothing else notices when they do. Disabling it\nleaves a lost message costing a run — and, until `run_stale_after_secs`, the provider's\nnext run of that mode as well.",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "recsys_batch": {
+            "description": "Series per streamed batch in a model build.",
+            "type": "integer"
+          },
+          "recsys_full_interval_secs": {
+            "description": "Seconds between full recommendation-model rebuilds. 0 disables.\n\nA full build re-solves the projection from the whole catalogue, which is what keeps the\nidf and the embedding space current. Weekly: the incremental pass covers changed series,\nso this exists for vocabulary drift rather than for freshness.",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "recsys_incremental_interval_secs": {
+            "description": "Seconds between incremental recommendation-model builds. 0 disables.\n\nFrequent by default: an incremental pass re-embeds only what changed and inserts into a\nlive HNSW index, so the cost is proportional to catalogue churn rather than to the\ncatalogue.",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "recsys_incremental_max": {
+            "description": "Ceiling on how many series one incremental build may touch.",
+            "type": "integer"
+          },
+          "run_stale_after_secs": {
+            "description": "How long an unfinished run keeps suppressing new runs of the same provider and mode.\n\nThe suppression itself has no expiry condition other than this one, so the value is the\nonly thing standing between a run that can never settle — a task persisted but never\npublished — and a provider that is never scanned again.",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "security": {
+        "additionalProperties": false,
+        "properties": {
+          "cors": {
+            "additionalProperties": false,
+            "properties": {
+              "allow_credentials": {
+                "description": "Allow credentialed cross-origin requests (cookies, `Authorization`). Cannot combine\nwith a wildcard origin.",
+                "type": "boolean"
+              },
+              "allowed_origins": {
+                "description": "Exact origins allowed, e.g. `https://app.example.com`. Empty disables CORS entirely.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "max_age_secs": {
+                "description": "`Access-Control-Max-Age`, seconds.",
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "type": "object"
+          },
+          "expose_api_docs": {
+            "description": "Serve the browsable API docs (`/scalar`) and the `OpenAPI` document.\n\nDefaults off in production, on elsewhere (hence a function, not a literal): left on,\nit hands an attacker the whole admin surface — every `/v1/admin/*` path, the\npermission vocabulary, exact request bodies — with no failed probe.",
+            "type": "boolean"
+          },
+          "hsts": {
+            "description": "Emit `Strict-Transport-Security`; meaningless without TLS (browsers ignore it over\nplain HTTP).",
+            "type": "boolean"
+          },
+          "hsts_max_age_secs": {
+            "description": "`max-age` for the HSTS header, seconds (default: two years, the preload minimum).",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "max_body_bytes": {
+            "description": "Reject request bodies larger than this, in bytes, before they are buffered.",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "request_timeout_secs": {
+            "description": "Abort a request that has not produced a response within this many seconds.",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "security_headers": {
+            "description": "Send the baseline set of hardening headers (`X-Content-Type-Options`,\n`X-Frame-Options`, `Referrer-Policy`, `Cross-Origin-Resource-Policy`).",
+            "type": "boolean"
+          },
+          "trust_request_id": {
+            "description": "Accept an inbound `X-Request-Id` instead of minting one. Requires a trusted proxy —\na client-supplied id could otherwise poison log correlation.",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "telemetry": {
+        "additionalProperties": false,
+        "properties": {
+          "json_logs": {
+            "description": "Emit structured JSON logs (production) vs. pretty logs (dev).",
+            "type": "boolean"
+          },
+          "log_filter": {
+            "description": "**`TANKOVAULT_TELEMETRY__OTLP_ENDPOINT` is removed** (it silently did nothing); setting\nit is now a hard config error. Re-add only with a real `OpenTelemetryLayer`.\n\n`RUST_LOG`-style filter (e.g. `info,tankovault=debug`).",
+            "type": "string"
+          },
+          "service_name": {
+            "description": "Logical service name reported in traces/metrics.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "title": "tankovault-control-plane configuration",
+    "type": "object"
+  },
+  "external": {
+    "env": [
+      {
+        "name": "RUST_LOG",
+        "owner": "tracing",
+        "docs": "Verbosity, as `tracing` directives — `info`, `tankovault_api=debug,info`. Read by `EnvFilter::try_from_default_env`, which is consulted *before* `telemetry.log_filter` and wins over it when set.",
+        "ty": "String",
+        "values": [],
+        "constraint": {
+          "type": "string"
+        },
+        "text_form": "text",
+        "required": false,
+        "secret": false
+      }
+    ],
+    "ignore": [
+      "KUBERNETES_*",
+      "HOSTNAME"
+    ],
+    "unknown": "reject"
+  }
+}

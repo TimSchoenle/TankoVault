@@ -31,7 +31,11 @@ secrecy = { workspace = true }
 # `explain` is what `super::explain` reports at boot — where every key came from, and which of
 # them a higher layer is quietly shadowing. It costs no dependency, only a second walk of the
 # layers and the strings that render them.
-terrace-config = { workspace = true, features = ["loader", "explain"] }
+#
+# `schema` is the `Describe` derive every block in this crate carries, and the `Contract` the
+# image build publishes from it. On unconditionally rather than behind a feature of ours: see the
+# workspace manifest's entry for why a feature would cost a second compile of the service tree.
+terrace-config = { workspace = true, features = ["loader", "explain", "schema"] }
 
 [dev-dependencies]
 # The loader's own test harness: a temporary directory, a cleared environment restored on the

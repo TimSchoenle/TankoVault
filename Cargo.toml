@@ -3,6 +3,7 @@ resolver = "3"
 members = [
     "crates/domain",
     "crates/config",
+    "crates/config-contract",
     "crates/contracts",
     "crates/service",
     "crates/db",
@@ -41,6 +42,7 @@ exclude = ["web/frontend", "fuzz"]
 # finding.
 [workspace.metadata.deploy.exclude]
 xtask = "the repository's task runner, not a service: its commands (migrate, seed, reset, openapi) act on a developer's own checkout and database"
+config-contract = "a build-time generator, not a service: it prints the configuration contract each image publishes and is run inside the build to produce that file"
 
 [workspace.package]
 version = "8.0.1"
@@ -99,9 +101,19 @@ tankovault-email = { path = "crates/email" }
 tankovault-matcher = { path = "crates/matcher" }
 tankovault-recsys = { path = "crates/recsys" }
 tankovault-bus = { path = "crates/bus" }
-# A service crate, unlike the rest here: `xtask` runs the same install steps against a
-# developer's database, and the one implementation lives with the binary that ships it.
+# The service crates, named here because `config-contract` depends on every one of them: a
+# published contract is a claim about one binary, so the generator has to reach the very config
+# root that binary deserialises. `bootstrap` is also `xtask`'s, which runs the same install steps
+# against a developer's database — one implementation, living with the binary that ships it.
+tankovault-api = { path = "services/api" }
 tankovault-bootstrap = { path = "services/bootstrap" }
+tankovault-challenge-solver = { path = "services/challenge-solver" }
+tankovault-control-plane = { path = "services/control-plane" }
+tankovault-frontend = { path = "services/frontend" }
+tankovault-notifier = { path = "services/notifier" }
+tankovault-render = { path = "services/render" }
+tankovault-sync = { path = "services/sync" }
+tankovault-worker = { path = "services/worker" }
 # Unused by any member today — `web/frontend` is excluded and uses its own path dep — but kept
 # as the one place the crate is named, for a future host-side consumer.
 tankovault-api-client = { path = "crates/api-client" }
@@ -220,7 +232,14 @@ anyhow = "1"
 # links neither the filesystem watcher nor its debouncer: `loader` in `crates/config`, `reload`
 # in `crates/service`, `explain` where a boot log reports which layer supplied each key, and
 # `testing` in the two dev-dependency slots that used to reach for `figment::Jail` directly.
-terrace-config = { git = "https://github.com/TimSchoenle/terrace-config", tag = "v0.5.0", default-features = false }
+#
+# `schema` is the exception, and it is on in `crates/config` unconditionally rather than behind a
+# feature of ours. Gating it would mean `#[cfg_attr(feature = …, config(nested))]` on every nested
+# field — `config` is the derive's helper attribute, so the attribute has to be gated wherever the
+# derive is — and, worse, generating a contract would then compile the whole service tree a second
+# time under a different feature set. The image build generates nine contracts from the binaries
+# it has already compiled; that only works while the schema half is always present.
+terrace-config = { git = "https://github.com/TimSchoenle/terrace-config", tag = "v0.6.0", default-features = false }
 
 # --- auth / security ---
 # Every secret value in this workspace is a `secrecy` type — `SecretString` for text,

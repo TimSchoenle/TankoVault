@@ -81,6 +81,22 @@ const GATES: &[Gate] = &[
         // process, so it inherits the main thread's platform-default stack otherwise.
         step: Step::InProcess(|| crate::run_with_deep_stack(|| crate::openapi(true))),
     },
+    // The nine committed contracts, and the `LABEL` block the Dockerfile carries by hand. Both
+    // are what a deployment pipeline reads to discover an image's configuration surface, and both
+    // are hand-unreviewable inside a container build — this is the step where a renamed key shows
+    // up as a diff in the pull request that renamed it.
+    Gate {
+        name: "config contract drift",
+        step: Step::InProcess(|| crate::config_contract::run(crate::workspace_root(), true)),
+    },
+    // The nine committed contracts, and the `LABEL` block the Dockerfile carries by hand. Both
+    // are what a deployment pipeline reads to discover an image's configuration surface, and
+    // both are unreviewable inside a container build — this is the step where a renamed key
+    // shows up as a diff in the pull request that renamed it.
+    Gate {
+        name: "config contract drift",
+        step: Step::InProcess(|| crate::config_contract::run(crate::workspace_root(), true)),
+    },
     Gate {
         name: "repo invariants",
         step: Step::InProcess(|| crate::repo_lint::run(crate::workspace_root())),

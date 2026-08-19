@@ -3,6 +3,7 @@
 
 use serde::Deserialize;
 use tankovault_domain::{MetadataPriority, TermBlocklist};
+use terrace_config::schema::Describe;
 
 /// Per-field source authority and the intake vocabulary guard, read by **both** the worker's
 /// ingest path and external sync's enrichment writer.
@@ -19,12 +20,17 @@ use tankovault_domain::{MetadataPriority, TermBlocklist};
 /// assert!(config.term_blocklist().blocks("Updating"));
 /// assert!(!config.term_blocklist().blocks("Romance"));
 /// ```
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Describe)]
 pub struct MetadataPriorityConfig {
     /// Per-field source authority order (default: `AniList` before the adapters).
+    // Deliberately a leaf rather than `#[config(nested)]`: the type is `tankovault-domain`'s,
+    // and describing it would put `terrace-config` — and figment with it — into the workspace's
+    // leaf crate. The contract therefore publishes `metadata.priority` with no constraint, which
+    // is the honest answer: a consumer can see the key exists and cannot check its shape.
     #[serde(default)]
     pub priority: MetadataPriority,
     /// Vocabulary guard: which scraped terms intake refuses, as tags and as credits alike.
+    #[config(nested)]
     #[serde(default)]
     pub tags: TagIntakeConfig,
 }
@@ -47,7 +53,7 @@ impl MetadataPriorityConfig {
 /// scrape template's own field labels), and the extra list is whatever the operator's own
 /// providers turn out to emit. Making one replace the other would mean an operator adding a
 /// single term silently loses the rest.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Describe)]
 pub struct TagIntakeConfig {
     /// Whether the shipped [`tankovault_domain::DEFAULT_BLOCKED_TERMS`] apply.
     ///

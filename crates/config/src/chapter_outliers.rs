@@ -3,6 +3,7 @@
 use crate::ConfigError;
 use serde::Deserialize;
 use tankovault_domain::chapter_outliers::OutlierPolicy;
+use terrace_config::schema::Describe;
 
 /// How aggressively a scan rejects chapter numbers a source cannot plausibly have released.
 ///
@@ -26,7 +27,7 @@ use tankovault_domain::chapter_outliers::OutlierPolicy;
 /// let off = ChapterOutlierConfig { enabled: false, ..ChapterOutlierConfig::default() };
 /// assert!(implausible_indices(&listing, &off.policy()).is_empty());
 /// ```
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Describe)]
 pub struct ChapterOutlierConfig {
     /// Whether a scan rejects anything at all.
     ///

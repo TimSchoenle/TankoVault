@@ -4,6 +4,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use terrace_config::schema::Describe;
 
 use crate::ConfigError;
 
@@ -12,7 +13,7 @@ use crate::ConfigError;
 /// The mode changes only that one question. Everything downstream — which caller may reach
 /// which route, what a refusal looks like, what gets audited — is identical in all three, so a
 /// deployment cannot be authorised differently by virtue of how it proves identity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Describe)]
 #[serde(rename_all = "snake_case")]
 pub enum IdentityMode {
     /// No identity at all: every caller is anonymous and every route is open.
@@ -48,21 +49,23 @@ impl std::fmt::Display for IdentityMode {
 }
 
 /// Who *this* service is when it calls another. Absent on a service that calls nobody.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Describe)]
 pub struct CallerConfig {
     /// The name peers know this service by; must match the key they list it under.
     #[serde(default)]
     pub name: Option<String>,
     /// Presented to peers under `identity = "token"`. Ignored under `mtls`, where the client
     /// certificate is the credential.
+    #[config(secret)]
     #[serde(default)]
     pub token: Option<SecretString>,
 }
 
 /// One service permitted to call this one. Absent on a service nobody calls.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Describe)]
 pub struct PeerConfig {
     /// The token this peer presents under `identity = "token"`.
+    #[config(secret)]
     #[serde(default)]
     pub token: Option<SecretString>,
     /// The client-certificate subject alternative name this peer presents under
@@ -73,7 +76,7 @@ pub struct PeerConfig {
 
 /// Where the mTLS material lives. Paths, not contents: whatever writes them — cert-manager, a
 /// mounted Secret, a hand-rolled CA — is outside this process's concern.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Describe)]
 pub struct InternalTlsConfig {
     /// PEM certificate chain this service serves and presents.
     #[serde(default)]
@@ -126,22 +129,26 @@ impl Default for InternalTlsConfig {
 /// Privileged internal routes (sync state, scan triggers, arbitrary-URL fetch) are reachable by
 /// service name from anywhere on the network, so every call carries a per-caller credential and
 /// every callee decides, per route, which callers it accepts. See [`InternalAuthConfig::resolve`].
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Describe)]
 pub struct InternalAuthConfig {
     /// How callers are identified. See [`IdentityMode`].
+    #[config(values)]
     #[serde(default)]
     pub identity: IdentityMode,
     /// Who this service is when it calls a peer.
+    #[config(nested)]
     #[serde(default)]
     pub caller: CallerConfig,
     /// Which services may call this one, keyed by caller name.
     #[serde(default)]
     pub peers: BTreeMap<String, PeerConfig>,
     /// Certificate material for `identity = "mtls"`.
+    #[config(nested)]
     #[serde(default)]
     pub tls: InternalTlsConfig,
     /// The retired tier-wide shared secret. Present only so a deployment that still sets it is
     /// told what to do instead; see [`InternalAuthConfig::resolve`].
+    #[config(secret)]
     #[serde(default)]
     pub token: Option<SecretString>,
 }

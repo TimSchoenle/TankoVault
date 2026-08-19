@@ -5,11 +5,15 @@
 
 mod channels;
 
+// Re-exported into the binary's own root so `crate::config::…` keeps resolving in the modules
+// beside this one: the type itself lives in the library, where `config-contract` can reach it.
+use tankovault_notifier::config;
+use tankovault_notifier::config::Config;
+
 use std::sync::Arc;
 use std::time::Duration;
 
 use channels::{Alert, NotificationChannel};
-use serde::Deserialize;
 use tankovault_bus::Bus;
 use tankovault_contracts::{ChapterDiscovered, UserNotification, subjects};
 use tankovault_db::PgPool;
@@ -20,40 +24,6 @@ use tankovault_service::{
     CancellationToken, FeatureGate, Health, HttpStack, MetricsRegistry, PostgresFlagSource,
 };
 use time::OffsetDateTime;
-
-#[derive(Debug, Deserialize)]
-struct Config {
-    database: tankovault_config::DatabaseConfig,
-    nats: tankovault_config::NatsConfig,
-    telemetry: tankovault_config::TelemetryConfig,
-    #[serde(default)]
-    channels: channels::ChannelsConfig,
-    /// The shared `TANKOVAULT_EMAIL__*` relay configuration, identical to the API's — must
-    /// stay shared, or the envelope-sender policy silently diverges from the API's mail.
-    #[serde(default)]
-    email: tankovault_config::EmailConfig,
-    #[serde(default = "default_bind")]
-    bind_addr: String,
-    /// Edge hardening for the ops listener.
-    #[serde(default)]
-    security: tankovault_config::SecurityConfig,
-    /// Prometheus metrics. Togglable; disabling installs no recorder.
-    #[serde(default)]
-    metrics: tankovault_config::MetricsConfig,
-    /// Runtime feature flags — how often this replica re-reads the operator's decisions.
-    #[serde(default)]
-    features: tankovault_config::FeaturesConfig,
-    /// Internal-tier identity. This service serves no internal route and calls no peer, so it
-    /// reads only one thing from here: the certificate material for its broker connection under
-    /// `identity = "mtls"`. It is still resolved in full, so a malformed internal section is
-    /// refused here exactly as it is everywhere else.
-    #[serde(default)]
-    internal: tankovault_config::InternalAuthConfig,
-}
-
-fn default_bind() -> String {
-    "0.0.0.0:8082".to_owned()
-}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

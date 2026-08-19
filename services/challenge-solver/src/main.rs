@@ -1,9 +1,8 @@
 //! Bot-management bypass service: exposes `POST /v1/solve` over a pluggable
 //! [`ChallengeSolver`] back-end (TRAWL by default).
 
-use serde::Deserialize;
 use std::sync::Arc;
-use tankovault_config::TelemetryConfig;
+use tankovault_challenge_solver::config::Config;
 use tankovault_service::{
     CancellationToken, Health, HttpStack, InternalRoute, MetricsRegistry, RateLimiter,
     RouteClassifier,
@@ -17,58 +16,6 @@ use tankovault_solver::{ChallengeSolver, TrawlSolver};
 /// user. The entry itself comes from `tankovault_solver::http` so the route this service mounts
 /// and the route it authorises cannot be spelled differently.
 static INTERNAL_ROUTES: &[InternalRoute] = &[tankovault_solver::http::solve_route(&["worker"])];
-
-#[derive(Debug, Deserialize)]
-struct Config {
-    #[serde(default = "default_bind")]
-    bind_addr: String,
-    telemetry: TelemetryConfig,
-    solver: SolverBackendConfig,
-    /// Edge hardening: body cap, timeout, security headers. CORS stays off — nothing
-    /// browser-originated calls this service.
-    #[serde(default)]
-    security: tankovault_config::SecurityConfig,
-    /// Inbound rate limiting. On by default: a runaway worker retry loop can exhaust the
-    /// solver pool as easily as a hostile client.
-    #[serde(default)]
-    rate_limit: tankovault_config::RateLimitConfig,
-    /// Prometheus metrics; disabling installs no recorder.
-    #[serde(default)]
-    metrics: tankovault_config::MetricsConfig,
-    /// Shared secret every caller must present. `/v1/solve` fetches a caller-supplied URL
-    /// and returns the body — an SSRF primitive for anyone who can reach the port.
-    #[serde(default)]
-    internal: tankovault_config::InternalAuthConfig,
-}
-
-fn default_bind() -> String {
-    "0.0.0.0:8090".to_owned()
-}
-
-#[derive(Debug, Deserialize)]
-struct SolverBackendConfig {
-    /// Back-end selector; only `trawl` is wired today.
-    #[serde(default = "default_backend")]
-    backend: String,
-    /// TRAWL base endpoint, e.g. `http://trawl:8191`.
-    trawl_endpoint: String,
-    #[serde(default = "default_timeout")]
-    max_timeout_ms: u64,
-    /// How long *this* deployment caches a solved session for. Independent of TRAWL's own
-    /// `SESSION_TTL_SECONDS`, which governs the cookie jar it replays internally.
-    #[serde(default = "default_ttl")]
-    session_ttl_secs: u64,
-}
-
-fn default_backend() -> String {
-    "trawl".to_owned()
-}
-fn default_timeout() -> u64 {
-    60_000
-}
-fn default_ttl() -> u64 {
-    900
-}
 
 #[derive(Clone)]
 struct AppState {

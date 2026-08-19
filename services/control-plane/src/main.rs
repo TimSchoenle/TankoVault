@@ -8,6 +8,7 @@ mod dedupe;
 mod leader;
 mod reconcile;
 
+use tankovault_control_plane::config::{Config, SchedulerConfig};
 use tankovault_control_plane::recsys;
 use tankovault_service::metrics::names::{
     RECSYS_BUILD_DURATION, RECSYS_BUILD_SERIES, RECSYS_MODEL_SERIES,
@@ -63,260 +64,8 @@ static INTERNAL_ROUTES: &[InternalRoute] = &[
     },
 ];
 
-#[derive(Debug, Deserialize)]
-struct Config {
-    database: tankovault_config::DatabaseConfig,
-    nats: tankovault_config::NatsConfig,
-    telemetry: tankovault_config::TelemetryConfig,
-    /// Optional Redis endpoint used for singleton-scheduler leader election. When absent,
-    /// this replica is treated as the sole leader (single-instance / local dev).
-    #[serde(default)]
-    redis: Option<tankovault_config::RedisConfig>,
-    #[serde(default)]
-    scheduler: SchedulerConfig,
-    #[serde(default = "default_bind")]
-    bind_addr: String,
-    /// Edge hardening for the internal trigger endpoint.
-    #[serde(default)]
-    security: tankovault_config::SecurityConfig,
-    /// Inbound rate limiting on `/internal/scans`, so a stuck caller cannot fan out
-    /// unbounded scan runs.
-    #[serde(default)]
-    rate_limit: tankovault_config::RateLimitConfig,
-    /// Prometheus metrics. Togglable; disabling installs no recorder.
-    #[serde(default)]
-    metrics: tankovault_config::MetricsConfig,
-    /// Runtime feature flags — how often this replica re-reads the operator's decisions.
-    #[serde(default)]
-    features: tankovault_config::FeaturesConfig,
-    /// Shared secret every caller must present on `/internal/*`. Triggering scan runs is an
-    /// operator action; the endpoint's name is not an access control.
-    #[serde(default)]
-    internal: tankovault_config::InternalAuthConfig,
-    /// The confidence policy for matching series, shared with the worker's ingest and
-    /// external sync so no two paths disagree; the duplicate sweep applies it to
-    /// existing series.
-    #[serde(default)]
-    matching: tankovault_config::MatchingConfig,
-}
-
-fn default_bind() -> String {
-    "0.0.0.0:8081".to_owned()
-}
-
 // `Clone` so the scheduler loop can own a copy: the config now lives behind an `Arc` shared
 // with the reload supervisor, so it cannot be moved out of.
-#[derive(Debug, Clone, Deserialize)]
-struct SchedulerConfig {
-    /// Seconds between fast-scan sweeps of all active providers. 0 disables.
-    #[serde(default = "default_fast_interval")]
-    fast_interval_secs: u64,
-    /// Seconds between full-scan sweeps. 0 disables (full scans are usually on demand).
-    #[serde(default)]
-    full_interval_secs: u64,
-    /// Seconds between full duplicate-reconciliation sweeps. 0 disables.
-    ///
-    /// Hourly by default: this is the cadence of *discovery*, which blocks the whole catalogue on
-    /// the compact title key and so costs the same whether anything changed or not.
-    #[serde(default = "default_merge_sweep_interval")]
-    merge_sweep_interval_secs: u64,
-    /// Seconds between rotation-only sweeps — the open queue and the recheck set, no discovery.
-    /// 0 disables.
-    ///
-    /// Four times an hour by default. These two shortlists are index scans bounded by their own
-    /// budgets, and re-scoring is how a pair that was genuinely ambiguous in January becomes an
-    /// automatic merge once both sides have been enriched; tying that to the discovery cadence
-    /// meant a queue of thousands took most of a day to turn over once.
-    #[serde(default = "default_merge_sweep_rotation_interval")]
-    merge_sweep_rotation_interval_secs: u64,
-    /// Newly-blocked duplicate pairs shortlisted per sweep.
-    #[serde(default = "default_merge_sweep_pairs")]
-    merge_sweep_pairs: i64,
-    /// Open queue rows re-scored per sweep, least-recently-scored first.
-    #[serde(default = "default_merge_sweep_requeue")]
-    merge_sweep_requeue: i64,
-    /// Previously-distinct pairs reconsidered per sweep, least-recently-scored first.
-    #[serde(default = "default_merge_sweep_recheck")]
-    merge_sweep_recheck: i64,
-    /// Seconds between incremental recommendation-model builds. 0 disables.
-    ///
-    /// Frequent by default: an incremental pass re-embeds only what changed and inserts into a
-    /// live HNSW index, so the cost is proportional to catalogue churn rather than to the
-    /// catalogue.
-    #[serde(default = "default_recsys_incremental_interval")]
-    recsys_incremental_interval_secs: u64,
-    /// Seconds between full recommendation-model rebuilds. 0 disables.
-    ///
-    /// A full build re-solves the projection from the whole catalogue, which is what keeps the
-    /// idf and the embedding space current. Weekly: the incremental pass covers changed series,
-    /// so this exists for vocabulary drift rather than for freshness.
-    #[serde(default = "default_recsys_full_interval")]
-    recsys_full_interval_secs: u64,
-    /// Series per streamed batch in a model build.
-    #[serde(default = "default_recsys_batch")]
-    recsys_batch: i64,
-    /// Ceiling on how many series one incremental build may touch.
-    #[serde(default = "default_recsys_incremental_max")]
-    recsys_incremental_max: i64,
-    /// Automatic merges permitted in a single sweep — the only bound on a destructive
-    /// background action. Without it, a bad threshold or normalization rule could collapse
-    /// the whole catalogue between two scheduler ticks.
-    #[serde(default = "default_merge_sweep_max_auto_merges")]
-    merge_sweep_max_auto_merges: i64,
-    /// How long an unfinished run keeps suppressing new runs of the same provider and mode.
-    ///
-    /// The suppression itself has no expiry condition other than this one, so the value is the
-    /// only thing standing between a run that can never settle — a task persisted but never
-    /// published — and a provider that is never scanned again.
-    #[serde(default = "default_run_stale_after")]
-    run_stale_after_secs: u64,
-    /// Ceiling on how long a provider whose runs keep failing is skipped by the sweeps. 0
-    /// disables the backoff entirely, restoring the unconditional sweep.
-    ///
-    /// Six hours by default. The sweep is what turns one broken provider into a steady stream of
-    /// requests at a site that is answering none of them, and the cooldown is the only thing that
-    /// stops it; the cost of the ceiling being *too high* is that a provider which recovered
-    /// waits up to this long to be noticed, which is why it is hours and not days.
-    #[serde(default = "default_failure_backoff_max")]
-    failure_backoff_max_secs: u64,
-    /// Seconds between passes that reconcile `JetStream` against `scan_tasks`. 0 disables.
-    ///
-    /// This is a repair, not a schedule: it exists because dispatch and the task table can come
-    /// apart with no failure on either side, and nothing else notices when they do. Disabling it
-    /// leaves a lost message costing a run — and, until `run_stale_after_secs`, the provider's
-    /// next run of that mode as well.
-    #[serde(default = "default_reconcile_interval")]
-    reconcile_interval_secs: u64,
-}
-
-impl Default for SchedulerConfig {
-    fn default() -> Self {
-        Self {
-            fast_interval_secs: default_fast_interval(),
-            full_interval_secs: 0,
-            merge_sweep_interval_secs: default_merge_sweep_interval(),
-            merge_sweep_rotation_interval_secs: default_merge_sweep_rotation_interval(),
-            merge_sweep_pairs: default_merge_sweep_pairs(),
-            merge_sweep_requeue: default_merge_sweep_requeue(),
-            merge_sweep_recheck: default_merge_sweep_recheck(),
-            merge_sweep_max_auto_merges: default_merge_sweep_max_auto_merges(),
-            run_stale_after_secs: default_run_stale_after(),
-            failure_backoff_max_secs: default_failure_backoff_max(),
-            reconcile_interval_secs: default_reconcile_interval(),
-            recsys_incremental_interval_secs: default_recsys_incremental_interval(),
-            recsys_full_interval_secs: default_recsys_full_interval(),
-            recsys_batch: default_recsys_batch(),
-            recsys_incremental_max: default_recsys_incremental_max(),
-        }
-    }
-}
-
-impl SchedulerConfig {
-    /// The failure backoff for one scan mode.
-    ///
-    /// The mode's own sweep interval is the unit, so the first step is "skip one sweep" and a
-    /// deployment that sweeps hourly backs off in hours. A disabled cadence (`0`) has no sweep to
-    /// skip, so the policy is inert there whatever the ceiling says.
-    fn backoff(&self, mode: ScanMode) -> cooldown::ScanBackoff {
-        let interval = match mode {
-            ScanMode::Fast => self.fast_interval_secs,
-            ScanMode::Full => self.full_interval_secs,
-        };
-        cooldown::ScanBackoff {
-            interval: Duration::from_secs(interval),
-            max: Duration::from_secs(self.failure_backoff_max_secs),
-        }
-    }
-
-    const fn merge_budget(&self) -> dedupe::SweepBudget {
-        dedupe::SweepBudget {
-            pairs: self.merge_sweep_pairs,
-            requeue: self.merge_sweep_requeue,
-            recheck: self.merge_sweep_recheck,
-            max_auto_merges: self.merge_sweep_max_auto_merges,
-        }
-    }
-
-    /// The budget for a rotation-only pass.
-    ///
-    /// Discovery is dropped, and the automatic-merge ceiling is scaled by how much more often
-    /// this runs than the full sweep does. That ceiling is really a *rate* — the bound on how
-    /// many rows a bad threshold can delete before an operator looks — so running the rotation
-    /// four times an hour at the full sweep's per-run ceiling would quintuple the rate without
-    /// anyone having chosen to. With discovery disabled there is no other sweep to share the rate
-    /// with, and the rotation carries the whole ceiling.
-    fn rotation_budget(&self) -> dedupe::SweepBudget {
-        let full = self.merge_budget();
-        let scaled = i64::try_from(self.merge_sweep_rotation_interval_secs)
-            .unwrap_or(i64::MAX)
-            .saturating_mul(full.max_auto_merges)
-            .checked_div(i64::try_from(self.merge_sweep_interval_secs).unwrap_or(i64::MAX))
-            .unwrap_or(full.max_auto_merges);
-        dedupe::SweepBudget {
-            pairs: 0,
-            max_auto_merges: scaled.clamp(1, full.max_auto_merges.max(1)),
-            ..full
-        }
-    }
-}
-
-fn default_fast_interval() -> u64 {
-    300
-}
-fn default_merge_sweep_interval() -> u64 {
-    3600
-}
-fn default_merge_sweep_rotation_interval() -> u64 {
-    900
-}
-fn default_merge_sweep_pairs() -> i64 {
-    500
-}
-fn default_merge_sweep_requeue() -> i64 {
-    500
-}
-fn default_merge_sweep_recheck() -> i64 {
-    500
-}
-fn default_merge_sweep_max_auto_merges() -> i64 {
-    200
-}
-
-/// An hour — comfortably longer than any healthy scan of one provider, and short enough that a
-/// run which can never settle costs at most one hour of that provider's schedule.
-const fn default_run_stale_after() -> u64 {
-    3600
-}
-
-/// Six hours: four attempts a day at a provider that is down, against 288 at the default fast
-/// cadence, while still finding it within a working day of it coming back.
-const fn default_failure_backoff_max() -> u64 {
-    21_600
-}
-
-/// Five minutes: frequent enough that a lost message costs one scan cycle rather than the hour
-/// `run_stale_after_secs` would otherwise take to release the provider, and rare enough that the
-/// pass — one broker call per lane with open work, and nothing at all when there is none — is
-/// invisible next to a sweep.
-const fn default_reconcile_interval() -> u64 {
-    300
-}
-
-const fn default_recsys_incremental_interval() -> u64 {
-    900
-}
-
-const fn default_recsys_full_interval() -> u64 {
-    604_800
-}
-
-const fn default_recsys_batch() -> i64 {
-    512
-}
-
-const fn default_recsys_incremental_max() -> i64 {
-    20_000
-}
 
 #[derive(Clone)]
 struct AppState {
@@ -432,11 +181,11 @@ async fn serve_once(
         features,
         tunables,
         matching: cfg.matching.clone(),
-        merge_budget: cfg.scheduler.merge_budget(),
-        rotation_budget: cfg.scheduler.rotation_budget(),
+        merge_budget: merge_budget(&cfg.scheduler),
+        rotation_budget: rotation_budget(&cfg.scheduler),
         run_stale_after: Duration::from_secs(cfg.scheduler.run_stale_after_secs),
-        fast_backoff: cfg.scheduler.backoff(ScanMode::Fast),
-        full_backoff: cfg.scheduler.backoff(ScanMode::Full),
+        fast_backoff: backoff(&cfg.scheduler, ScanMode::Fast),
+        full_backoff: backoff(&cfg.scheduler, ScanMode::Full),
         recsys_batch: cfg.scheduler.recsys_batch,
         recsys_incremental_max: cfg.scheduler.recsys_incremental_max,
     };
@@ -510,6 +259,56 @@ async fn serve_once(
     )
     .await?;
     Ok(())
+}
+
+// The scheduler's derived budgets, as free functions rather than an inherent `impl`: the config
+// type lives in this crate's library — `config-contract` has to reach it — and the types these
+// return are the binary's own.
+/// The failure backoff for one scan mode.
+///
+/// The mode's own sweep interval is the unit, so the first step is "skip one sweep" and a
+/// deployment that sweeps hourly backs off in hours. A disabled cadence (`0`) has no sweep to
+/// skip, so the policy is inert there whatever the ceiling says.
+fn backoff(scheduler: &SchedulerConfig, mode: ScanMode) -> cooldown::ScanBackoff {
+    let interval = match mode {
+        ScanMode::Fast => scheduler.fast_interval_secs,
+        ScanMode::Full => scheduler.full_interval_secs,
+    };
+    cooldown::ScanBackoff {
+        interval: Duration::from_secs(interval),
+        max: Duration::from_secs(scheduler.failure_backoff_max_secs),
+    }
+}
+
+const fn merge_budget(scheduler: &SchedulerConfig) -> dedupe::SweepBudget {
+    dedupe::SweepBudget {
+        pairs: scheduler.merge_sweep_pairs,
+        requeue: scheduler.merge_sweep_requeue,
+        recheck: scheduler.merge_sweep_recheck,
+        max_auto_merges: scheduler.merge_sweep_max_auto_merges,
+    }
+}
+
+/// The budget for a rotation-only pass.
+///
+/// Discovery is dropped, and the automatic-merge ceiling is scaled by how much more often
+/// this runs than the full sweep does. That ceiling is really a *rate* — the bound on how
+/// many rows a bad threshold can delete before an operator looks — so running the rotation
+/// four times an hour at the full sweep's per-run ceiling would quintuple the rate without
+/// anyone having chosen to. With discovery disabled there is no other sweep to share the rate
+/// with, and the rotation carries the whole ceiling.
+fn rotation_budget(scheduler: &SchedulerConfig) -> dedupe::SweepBudget {
+    let full = merge_budget(scheduler);
+    let scaled = i64::try_from(scheduler.merge_sweep_rotation_interval_secs)
+        .unwrap_or(i64::MAX)
+        .saturating_mul(full.max_auto_merges)
+        .checked_div(i64::try_from(scheduler.merge_sweep_interval_secs).unwrap_or(i64::MAX))
+        .unwrap_or(full.max_auto_merges);
+    dedupe::SweepBudget {
+        pairs: 0,
+        max_auto_merges: scaled.clamp(1, full.max_auto_merges.max(1)),
+        ..full
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -1123,7 +922,8 @@ fn internal<E: std::fmt::Display>(e: E) -> Problem {
 
 #[cfg(test)]
 mod tests {
-    use super::{SchedulerConfig, default_merge_sweep_max_auto_merges};
+    use super::{SchedulerConfig, merge_budget, rotation_budget};
+    use tankovault_control_plane::config::default_merge_sweep_max_auto_merges;
 
     /// Running the queue rotation more often must not raise how many series the sweeps may
     /// delete per hour.
@@ -1138,11 +938,11 @@ mod tests {
     fn a_rotation_pass_does_not_multiply_the_hourly_merge_ceiling() {
         let cfg = SchedulerConfig::default();
         let per_hour = 3600 / cfg.merge_sweep_rotation_interval_secs;
-        let rotation = cfg.rotation_budget();
+        let rotation = rotation_budget(&cfg);
 
         assert_eq!(
             rotation.max_auto_merges * i64::try_from(per_hour).expect("a small count"),
-            cfg.merge_budget().max_auto_merges,
+            merge_budget(&cfg).max_auto_merges,
             "four rotations at the scaled ceiling must equal one full sweep at the configured one",
         );
         assert_eq!(
@@ -1162,7 +962,7 @@ mod tests {
             ..SchedulerConfig::default()
         };
         assert_eq!(
-            cfg.rotation_budget().max_auto_merges,
+            rotation_budget(&cfg).max_auto_merges,
             default_merge_sweep_max_auto_merges(),
         );
     }
@@ -1180,6 +980,6 @@ mod tests {
             merge_sweep_max_auto_merges: 10,
             ..SchedulerConfig::default()
         };
-        assert_eq!(cfg.rotation_budget().max_auto_merges, 1);
+        assert_eq!(rotation_budget(&cfg).max_auto_merges, 1);
     }
 }

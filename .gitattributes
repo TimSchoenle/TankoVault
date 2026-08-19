@@ -24,6 +24,10 @@
 openapi.json                 linguist-generated=true -diff eol=lf
 crates/api-client/src/lib.rs linguist-generated=true -diff eol=lf
 .sqlx/*.json                 linguist-generated=true -diff eol=lf
+# The nine published configuration contracts, kept `diff`-able on purpose: a removed or renamed
+# key is exactly what a reviewer of this diff should be reading, since it is what a chart
+# validating against the image will start refusing.
+docs/contracts/*.json        linguist-generated=true eol=lf
 Cargo.lock                   linguist-generated=true eol=lf
 
 # The repository is developed on Windows and built on Linux. Normalise line endings in the

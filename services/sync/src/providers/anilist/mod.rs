@@ -17,10 +17,6 @@ use crate::provider::{ExternalProvider, OAuthTokens, RemoteEntry, RemoteMetadata
 
 pub(crate) use client::AniListClient;
 
-/// Default `AniList` GraphQL endpoint.
-pub(crate) const DEFAULT_GRAPHQL_URL: &str = "https://graphql.anilist.co";
-/// Default `AniList` OAuth base (authorize + token live under here).
-pub(crate) const DEFAULT_OAUTH_BASE: &str = "https://anilist.co/api/v2/oauth";
 /// The provider key used in `external_accounts` / `sync_mappings`.
 pub(crate) const PROVIDER: &str = "anilist";
 

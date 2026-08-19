@@ -2,7 +2,7 @@
   "terrace_contract": 1,
   "app": {
     "name": "tankovault-worker",
-    "version": "v8.1.0",
+    "version": "v8.1.1",
     "source": "https://github.com/TimSchoenle/TankoVault"
   },
   "schema": {

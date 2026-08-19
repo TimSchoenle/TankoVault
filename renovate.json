@@ -24,12 +24,6 @@
       "automerge": false
     },
     {
-      "description": "One pull request for routine Cargo churn across all three workspaces (root, web/frontend, fuzz) instead of three streams of singletons.",
-      "matchManagers": ["cargo"],
-      "matchUpdateTypes": ["minor", "patch"],
-      "groupName": "cargo non-major"
-    },
-    {
       "description": "Dev-only; the `css` CI job rebuilds and diffs the committed assets/main.css, so a bad bump fails loudly rather than silently restyling the SPA.",
       "matchManagers": ["npm"],
       "matchUpdateTypes": ["minor", "patch"],

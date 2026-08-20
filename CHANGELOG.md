@@ -12,6 +12,19 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [8.3.0](https://github.com/TimSchoenle/TankoVault/compare/v8.2.0...v8.3.0) (2026-08-20)
+
+
+### Features
+
+* **console:** sweep the whole catalogue from the merge panel ([#260](https://github.com/TimSchoenle/TankoVault/issues/260)) ([471ffbc](https://github.com/TimSchoenle/TankoVault/commit/471ffbcfd1ad1c09e89996e77b54d5ebe7b20713))
+
+
+### Miscellaneous
+
+* **deps:** update oasdiff/oasdiff-action action to v0.1.13 ([#247](https://github.com/TimSchoenle/TankoVault/issues/247)) ([ed2021f](https://github.com/TimSchoenle/TankoVault/commit/ed2021f641315bf32135ef65f74206c567c218ba))
+* **deps:** update rust crate x509-parser to 0.18 ([#252](https://github.com/TimSchoenle/TankoVault/issues/252)) ([ca89bd7](https://github.com/TimSchoenle/TankoVault/commit/ca89bd7b1a22e31ca7393360a1674eba0861fff8))
+
 ## [8.2.0](https://github.com/TimSchoenle/TankoVault/compare/v8.1.1...v8.2.0) (2026-08-20)
 
 

@@ -2175,6 +2175,113 @@
         ],
         "type": "object"
       },
+      "MergeFullSweepStatusView": {
+        "description": "What the exhaustive duplicate sweep is doing, or last did.\n\nThe counters carry the same meanings as [`MergeSweepView`]'s, summed over every round the run\nhas drawn so far. `chains_deferred` has none here: it says the last *pass* skipped a pair\nbecause of its own merge, and a run that keeps drawing rounds until nothing new appears has\nalready come back for it.",
+        "properties": {
+          "auto_merged": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "blocked": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "deferred": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "distinct": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "error": {
+            "description": "How the last run ended when it ended badly. A failed run still releases its claim, so a\nfailure shows up here rather than as a sweep that never finishes.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "finished_at": {
+            "description": "RFC 3339. When the most recent run released its claim; absent while one is running.",
+            "example": "2026-08-20T12:09:00Z",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pairs_examined": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "queued": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "reopened": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "requeued": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "rounds": {
+            "description": "Rounds drawn. One round is one budgeted sweep.",
+            "format": "int32",
+            "type": "integer"
+          },
+          "running": {
+            "description": "Whether a run holds the claim and is still stamping it. A holder whose heartbeat has gone\nstale reads `false`, because that is the operator's actual question: is the button live.",
+            "type": "boolean"
+          },
+          "started_at": {
+            "description": "RFC 3339. When the current or most recent run started.",
+            "example": "2026-08-20T12:00:00Z",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "stopped": {
+            "description": "Why the last run stopped: `exhausted`, `merge_ceiling`, `round_cap` or `failed`. Only\n`exhausted` means every shortlist was walked out — the rest mean another run has work to\ndo. Absent before the first run, and while one is in flight.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "withdrawn": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "running",
+          "rounds",
+          "pairs_examined",
+          "auto_merged",
+          "queued",
+          "requeued",
+          "reopened",
+          "withdrawn",
+          "distinct",
+          "deferred",
+          "blocked"
+        ],
+        "type": "object"
+      },
+      "MergeFullSweepView": {
+        "description": "Whether an exhaustive duplicate sweep was started.\n\nReturned by `POST /v1/admin/merge-candidates/sweep-all`. The run is detached, so this answers\nonly whether one *started*: it draws rounds until every shortlist has been walked out, which\nis far longer than a request may be held open for. What the run goes on to do — rounds,\ncounters and how it ended — is on `GET /v1/admin/merge-candidates/sweep-all`.",
+        "properties": {
+          "started": {
+            "description": "`false` when a live run already held the claim. The correct response is to watch that\nrun, not to retry: it is doing this one's work, and starting a second would spend the\nautomatic-merge ceiling twice over.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "started"
+        ],
+        "type": "object"
+      },
       "MergePolicyKnob": {
         "description": "One knob of the automatic-merge policy, as the console shows it.\n\nAssembled by the control plane rather than by the API, because the effective value is the\nstored override *layered over this deployment's configured* `matching` block — and the\ncontrol plane is the service that holds both. An API that resolved it against the compiled\nregistry instead would report a default the sweep does not use.",
         "properties": {
@@ -8090,6 +8197,108 @@
           }
         ],
         "summary": "Run the duplicate sweep",
+        "tags": [
+          "admin-matching"
+        ]
+      }
+    },
+    "/v1/admin/merge-candidates/sweep-all": {
+      "get": {
+        "description": "Progress of the run `POST` of this path starts, and the outcome of the last one. Read from\nthe database rather than from the control plane: the run writes its progress there after\nevery round, and asking the replica that happens to answer would get the state of whichever\none was asked rather than of the run.",
+        "operationId": "full_merge_sweep_status",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MergeFullSweepStatusView"
+                }
+              }
+            },
+            "description": "The exhaustive sweep's current state"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "no second factor is enrolled, or the caller does not hold the required permission"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Get the exhaustive duplicate sweep's state",
+        "tags": [
+          "admin-matching"
+        ]
+      },
+      "post": {
+        "description": "The same sweep as `POST /v1/admin/merge-candidates/sweep`, drawn over and over until a round\nshortlists nothing it has not already judged — one full rotation of the open queue and the\nrecheck set, and every newly-blocked pair besides. A single sweep only covers one budget's\nworth of each and leaves the rest to the schedule; this is the button for \"look at all of it\nnow\", after a normalization change or a policy change that should not wait hours to land.\n\nThe run is detached and takes minutes, so this answers only whether one *started*. Progress,\nthe totals so far and how the last one ended are on `GET` of this same path, which the console\npolls. A request arriving while a run is live answers `started: false`: the claim is what\nstops two runs spending the automatic-merge ceiling twice over.",
+        "operationId": "sweep_all_merge_candidates",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MergeFullSweepView"
+                }
+              }
+            },
+            "description": "Whether a run was started"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "automatic duplicate merging is switched off"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Run an exhaustive duplicate sweep",
         "tags": [
           "admin-matching"
         ]

@@ -24,7 +24,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tankovault_bus::Bus;
 use tankovault_contracts::admin::{
-    MergePolicyView, RecsysBuildMode, RecsysBuildView, ScanTriggeredView,
+    MergeFullSweepView, MergePolicyView, RecsysBuildMode, RecsysBuildView, ScanTriggeredView,
 };
 use tankovault_contracts::{ScanTaskMessage, TaskKind};
 use tankovault_db::PgPool;
@@ -43,6 +43,8 @@ use tankovault_service::{
 const SCANS: &str = "/internal/scans";
 /// Sweep the catalogue for duplicate series and merge what passes the threshold.
 const MERGE_SWEEP: &str = "/internal/merge-sweep";
+/// Start an exhaustive sweep — rounds of [`MERGE_SWEEP`] until every shortlist is walked out.
+const MERGE_SWEEP_ALL: &str = "/internal/merge-sweep-all";
 /// Read the automatic-merge policy the sweep applies.
 const MERGE_POLICY: &str = "/internal/merge-policy";
 /// Rebuild the recommendation model.
@@ -62,6 +64,11 @@ static INTERNAL_ROUTES: &[InternalRoute] = &[
     InternalRoute {
         method: axum::http::Method::POST,
         path: MERGE_SWEEP,
+        callers: &["api"],
+    },
+    InternalRoute {
+        method: axum::http::Method::POST,
+        path: MERGE_SWEEP_ALL,
         callers: &["api"],
     },
     InternalRoute {
@@ -262,6 +269,7 @@ async fn serve_once(
             Router::new()
                 .route(SCANS, post(trigger_scan))
                 .route(MERGE_SWEEP, post(trigger_merge_sweep))
+                .route(MERGE_SWEEP_ALL, post(trigger_full_merge_sweep))
                 .route(
                     MERGE_POLICY,
                     get(read_merge_policy).post(write_merge_policy),
@@ -412,7 +420,8 @@ async fn trigger_merge_sweep(
         actor,
     )
     .await
-    .map_err(internal)?;
+    .map_err(internal)?
+    .report;
     tracing::info!(
         examined = report.pairs_examined,
         auto_merged = report.auto_merged,
@@ -423,6 +432,36 @@ async fn trigger_merge_sweep(
         "duplicate sweep (on demand) complete"
     );
     Ok(Json(report))
+}
+
+/// Starts an exhaustive duplicate sweep and answers at once; the run itself is detached.
+///
+/// Not leader-gated (it runs on the replica asked) but still gated on `scanning.auto_merge`,
+/// since the switch has to hold at the component doing the work. The run's claim is the mutual
+/// exclusion: a request arriving while one is live answers `started: false` rather than putting
+/// a second run's merges on top of the ceiling an operator already authorised.
+async fn trigger_full_merge_sweep(
+    State(state): State<AppState>,
+    body: Option<Json<MergeSweepRequest>>,
+) -> Result<Json<MergeFullSweepView>, Problem> {
+    if !state.features.is_enabled(Feature::ScanningAutoMerge) {
+        return Err(Problem::new(
+            StatusCode::NOT_FOUND,
+            "feature_disabled",
+            "automatic duplicate merging is switched off",
+        ));
+    }
+    let actor = body.and_then(|Json(b)| b.actor);
+    let started = dedupe::sweep_all_detached(
+        &state.pool,
+        policy::thresholds(&state.matching, &state.tunables),
+        state.merge_budget,
+        actor,
+    )
+    .await
+    .map_err(internal)?;
+    tracing::info!(started, "exhaustive duplicate sweep requested");
+    Ok(Json(MergeFullSweepView { started }))
 }
 
 /// The automatic-merge policy as this service resolves it: the configured `matching` block with
@@ -869,7 +908,7 @@ async fn maybe_merge_sweep(
     let started = std::time::Instant::now();
     let thresholds = policy::thresholds(&state.matching, &state.tunables);
     match dedupe::sweep(&state.pool, thresholds, budget, scope, None).await {
-        Ok(report) => {
+        Ok(dedupe::SweepRun { report, .. }) => {
             tracing::info!(
                 examined = report.pairs_examined,
                 auto_merged = report.auto_merged,

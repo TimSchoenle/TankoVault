@@ -521,6 +521,20 @@ pub struct RecsysBuildView {
     pub generation: i32,
 }
 
+/// Whether an exhaustive duplicate sweep was started.
+///
+/// Returned by `POST /v1/admin/merge-candidates/sweep-all`. The run is detached, so this answers
+/// only whether one *started*: it draws rounds until every shortlist has been walked out, which
+/// is far longer than a request may be held open for. What the run goes on to do — rounds,
+/// counters and how it ended — is on `GET /v1/admin/merge-candidates/sweep-all`.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, ToSchema)]
+pub struct MergeFullSweepView {
+    /// `false` when a live run already held the claim. The correct response is to watch that
+    /// run, not to retry: it is doing this one's work, and starting a second would spend the
+    /// automatic-merge ceiling twice over.
+    pub started: bool,
+}
+
 /// What one duplicate-reconciliation sweep did.
 ///
 /// Returned by `POST /v1/admin/merge-candidates/sweep` and logged by the scheduled sweep, so an

@@ -11,17 +11,23 @@ use crate::components::{
     StepUpGuard,
 };
 use crate::hooks::{use_reload, Reload};
-use crate::i18n::use_i18n;
+use crate::i18n::{use_i18n, Translator};
 use crate::models::*;
 use crate::state::capabilities::use_capabilities;
 use crate::state::use_session;
 use crate::views::console::query::Band;
 use crate::views::console::tuning::{Knob, KnobRow};
 use crate::views::console::{use_console_nav, ConsoleQuery};
-use crate::wire::types::{Permission, TunableGroup};
+use crate::wire::types::{MergeFullSweepStatusView, Permission, TunableGroup};
 use dioxus::prelude::*;
 use inkstone_ui::{Button, Pill, ToggleButton, Tone};
 use progenitor_client::ResponseValue;
+
+/// How often the exhaustive sweep's state is re-read while a run holds the claim.
+///
+/// Fast enough that the counters visibly move, slow enough to be nothing beside the work the run
+/// is doing. Only ticks while a run is live; see [`FullSweep`].
+const FULL_SWEEP_POLL_MS: u32 = 3_000;
 
 /// The tuning groups this panel renders, each with the catalogue key that titles it.
 ///
@@ -180,6 +186,7 @@ pub(super) fn MergeQueue() -> Element {
                     {i18n.t("console.merge.rebuildKeys")}
                 }
             }
+            FullSweep { reload, gate }
             StepUpGuard { gate, intro: Some(i18n.t("console.stepUp.intro")) }
             if !notice.read().is_empty() {
                 div { class: "ik-card", style: "margin-bottom:12px;padding:10px;",
@@ -189,6 +196,147 @@ pub(super) fn MergeQueue() -> Element {
             MergePolicy { reload, gate }
             {body}
         }
+    }
+}
+
+/// The exhaustive sweep: the button that starts one, and the state of the run it started.
+///
+/// It has a surface of its own because it outlives the request that starts it. The button beside
+/// it reports itself in the response body — one sweep, one report — but an exhaustive run is
+/// detached and takes minutes, so the only honest place for its outcome is something that keeps
+/// re-reading it. Without that, the operator who pressed the button has no way to tell a run
+/// that is working from one that has stopped.
+#[component]
+fn FullSweep(reload: Reload, gate: StepUpGate) -> Element {
+    let api = api::use_api();
+    let i18n = use_i18n();
+    let session = use_session();
+    let tick = use_reload();
+    let mut busy = use_signal(|| false);
+    let mut notice = use_signal(String::new);
+
+    let status = use_resource(move || {
+        reload.track();
+        tick.track();
+        let client = api.client();
+        async move {
+            client
+                .full_merge_sweep_status()
+                .send()
+                .await
+                .map(ResponseValue::into_inner)
+                .map_err(|e| api::friendly_error(i18n, e))
+        }
+    });
+
+    // Only while a run holds the claim. A finished run's figures do not move, so a standing timer
+    // over them would be a request every few seconds for an answer that cannot change. The flag
+    // is read *inside* the loop rather than captured from the render that spawned it: this future
+    // runs once, and a copy taken at mount would be `false` for a run started from this button.
+    use_future(move || async move {
+        loop {
+            crate::platform::sleep_ms(FULL_SWEEP_POLL_MS).await;
+            if matches!(&*status.read_unchecked(), Some(Ok(view)) if view.running) {
+                tick.bump();
+            }
+        }
+    });
+
+    let start = move |_| {
+        gate.attempt(move || {
+            if *busy.peek() {
+                return;
+            }
+            busy.set(true);
+            notice.set(String::new());
+            spawn(async move {
+                let client = gate.client(api);
+                if session.token_value().is_some() {
+                    match client.sweep_all_merge_candidates().send().await {
+                        Ok(r) => {
+                            notice.set(i18n.t(if r.into_inner().started {
+                                "console.merge.fullSweepStarted"
+                            } else {
+                                // A run already held the claim. Not an error: the run in flight
+                                // is doing this one's work, and the line below tracks it.
+                                "console.merge.fullSweepBusy"
+                            }));
+                            // The poll reads the *fetched* state, which still says idle until
+                            // this refetch lands — without it nothing would ever start ticking.
+                            tick.bump();
+                        }
+                        Err(e) => {
+                            if !gate.refused(api::Refusal::of(&e)) {
+                                notice.set(i18n.args(
+                                    "console.merge.actionFailed",
+                                    &[("message", &api::guarded_error(i18n, e))],
+                                ));
+                            }
+                        }
+                    }
+                }
+                busy.set(false);
+            });
+        });
+    };
+
+    let (line, running) = match &*status.read() {
+        Some(Ok(view)) => (full_sweep_line(i18n, view), view.running),
+        _ => (None, false),
+    };
+
+    rsx! {
+        div { class: "ik-card", style: "margin-bottom:12px;padding:10px;",
+            div { class: "ik-flex", style: "gap:8px;align-items:center;flex-wrap:wrap;",
+                Button {
+                    disabled: running || *busy.read(),
+                    on_click: start,
+                    {i18n.t("console.merge.fullSweep")}
+                }
+                span { class: "ik-muted", style: "font-size:12px;max-width:74ch;",
+                    {line.unwrap_or_else(|| i18n.t("console.merge.fullSweepIdle"))}
+                }
+            }
+            if !notice.read().is_empty() {
+                p { style: "font-size:12px;margin:8px 0 0;", "{notice}" }
+            }
+        }
+    }
+}
+
+/// The one-line account of the exhaustive sweep: what it is doing, or how the last run ended.
+///
+/// `None` before any run has been recorded, so the panel can say "never run" rather than render
+/// a row of zeroes that reads like a run which found nothing.
+fn full_sweep_line(i18n: Translator, view: &MergeFullSweepStatusView) -> Option<String> {
+    let rounds = view.rounds.to_string();
+    let examined = view.pairs_examined.to_string();
+    let merged = view.auto_merged.to_string();
+    // Newly queued and reopened both lengthen the queue; re-scored rows do not — the same reading
+    // as the single sweep's report, so the two sentences are counting the same thing.
+    let queued = (view.queued + view.reopened).to_string();
+    let withdrawn = view.withdrawn.to_string();
+    let counts = [
+        ("rounds", rounds.as_str()),
+        ("examined", examined.as_str()),
+        ("merged", merged.as_str()),
+        ("queued", queued.as_str()),
+        ("withdrawn", withdrawn.as_str()),
+    ];
+
+    if view.running {
+        return Some(i18n.args("console.merge.fullSweepRunning", &counts));
+    }
+    match view.stopped.as_deref()? {
+        "exhausted" => Some(i18n.args("console.merge.fullSweepDone", &counts)),
+        "merge_ceiling" => Some(i18n.args("console.merge.fullSweepCeiling", &counts)),
+        "round_cap" => Some(i18n.args("console.merge.fullSweepCapped", &counts)),
+        // `failed`, and any reason a later control plane adds: say the run stopped and show what
+        // it said, rather than inventing a sentence for a reason this build does not know.
+        _ => Some(i18n.args(
+            "console.merge.fullSweepFailed",
+            &[("message", view.error.as_deref().unwrap_or("-"))],
+        )),
     }
 }
 

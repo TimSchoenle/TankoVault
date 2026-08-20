@@ -90,6 +90,10 @@ pub fn route_classifier() -> RouteClassifier {
         // A sweep re-blocks the whole catalogue; a key rebuild rewrites every normalized
         // title — the heaviest calls the console can make.
         .expensive("/v1/admin/merge-candidates/sweep")
+        // The exhaustive run is that sweep drawn until the shortlists are dry. `_write` because
+        // the console polls the `GET` of the same path every few seconds for as long as a run
+        // lasts, and the whole point of the poll is that it stays cheap.
+        .expensive_write("/v1/admin/merge-candidates/sweep-all")
         .expensive("/v1/admin/matching/rebuild-keys")
         // Each call cascades a batch of series into a dozen tables, and a purge is a *loop* of
         // them — the one console action that deliberately calls the same endpoint hundreds of
@@ -188,10 +192,17 @@ pub fn route_features() -> RouteFeatures {
         .gate_path_writes("/v1/admin/scans", Feature::ScanningManual)
         .gate("/v1/admin/merge-candidates", Feature::ScanningMergeQueue)
         .gate("/v1/admin/series/merge", Feature::ScanningMergeQueue)
-        // Longest prefix overrides the rule above for the sweep — the one route here that
-        // deletes series. The control plane re-checks the same flag independently.
+        // Longest prefix overrides the rule above for the sweeps — the routes here that delete
+        // series. The control plane re-checks the same flag independently.
         .gate(
             "/v1/admin/merge-candidates/sweep",
+            Feature::ScanningAutoMerge,
+        )
+        // Written out rather than left to the rule above. Prefixes match as raw strings, so
+        // `…/sweep` covers `…/sweep-all` only because one spells the other — rename the first
+        // and the exhaustive run, which deletes series by the hundred, silently loses its flag.
+        .gate(
+            "/v1/admin/merge-candidates/sweep-all",
             Feature::ScanningAutoMerge,
         )
         // Covers the key rebuild and the automatic-merge policy. The policy deliberately does
@@ -569,6 +580,10 @@ fn documented_router() -> OpenApiRouter<AppState> {
         .routes(routes!(admin::dismiss_merge_candidate))
         .routes(routes!(admin::merge_series))
         .routes(routes!(admin::sweep_merge_candidates))
+        .routes(routes!(
+            admin::sweep_all_merge_candidates,
+            admin::full_merge_sweep_status
+        ))
         .routes(routes!(admin::rebuild_matching_keys))
         .routes(routes!(admin::get_merge_policy))
         .routes(routes!(admin::set_merge_policy, admin::reset_merge_policy))

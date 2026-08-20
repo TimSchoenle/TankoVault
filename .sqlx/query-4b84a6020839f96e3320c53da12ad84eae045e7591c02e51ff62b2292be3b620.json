@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE merge_full_sweep_state SET running      = false, heartbeat_at = now(), finished_at  = now(), stopped      = $2, error        = $3 WHERE id AND claim_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4b84a6020839f96e3320c53da12ad84eae045e7591c02e51ff62b2292be3b620"
+}

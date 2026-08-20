@@ -200,12 +200,14 @@ pub(crate) async fn sweep(
     budget: SweepBudget,
     scope: SweepScope,
     actor: Option<UserId>,
-) -> anyhow::Result<MergeSweepView> {
+) -> anyhow::Result<SweepRun> {
     let mut remaining = budget;
     let mut total = MergeSweepView::default();
+    let mut shortlisted = Vec::new();
     for pass in 0..MAX_PASSES {
-        let report = sweep_once(pool, policy, remaining, scope, actor).await?;
+        let (report, pairs) = sweep_once(pool, policy, remaining, scope, actor).await?;
         accumulate(&mut total, &report);
+        shortlisted.extend(pairs);
         // Spent against the run, not the pass: the ceiling is what stands between a bad
         // threshold and a collapsed catalogue, and it has to mean the same thing however many
         // passes the chains ask for.
@@ -219,7 +221,22 @@ pub(crate) async fn sweep(
             "re-running the sweep for a merge chain"
         );
     }
-    Ok(total)
+    Ok(SweepRun {
+        report: total,
+        shortlisted,
+    })
+}
+
+/// What one call to [`sweep`] did, and which pairs it looked at doing it.
+pub(crate) struct SweepRun {
+    pub(crate) report: MergeSweepView,
+    /// Every pair the run's passes shortlisted. May repeat a pair across passes.
+    ///
+    /// Only [`run_full_sweep`] reads it, and only to answer "is there more to do?". The counts
+    /// cannot answer that: two of the three shortlists are ordered least-recently-scored first
+    /// and re-scoring moves a pair to the back of that order, so they keep returning rows
+    /// forever. Whether a round shortlisted anything *new* is the question that terminates.
+    pub(crate) shortlisted: Vec<DuplicatePair>,
 }
 
 /// Add one pass's counts into the run's totals.
@@ -237,6 +254,189 @@ fn accumulate(total: &mut MergeSweepView, pass: &MergeSweepView) {
     total.deferred += pass.deferred;
     total.blocked += pass.blocked;
     total.chains_deferred = pass.chains_deferred;
+}
+
+/// The most rounds one exhaustive run will draw, whatever the shortlists still hold.
+///
+/// A ceiling on wall-clock time and on the memory [`RoundLoop::seen`] costs, not a statement
+/// about the catalogue: at the shipped budgets it covers a few hundred thousand distinct pairs,
+/// well past any catalogue the sweep has been pointed at. A run that reaches it stops with
+/// [`Stop::RoundCap`], which the console reports as work remaining rather than as a finished walk.
+const MAX_ROUNDS: i32 = 256;
+
+/// Why an exhaustive run stopped, as `merge_full_sweep_state.stopped` records it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Stop {
+    /// A round shortlisted nothing the run had not already seen: every pair has been judged.
+    Exhausted,
+    /// The run's automatic-merge ceiling was spent. Pairs remain.
+    MergeCeiling,
+    /// [`MAX_ROUNDS`] rounds were drawn and the shortlists still held new pairs.
+    RoundCap,
+}
+
+impl Stop {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Exhausted => "exhausted",
+            Self::MergeCeiling => "merge_ceiling",
+            Self::RoundCap => "round_cap",
+        }
+    }
+}
+
+/// Decides when an exhaustive run has nothing left to do.
+///
+/// A run cannot stop when a round examines nothing, because two of the three shortlists never
+/// come back empty: `open_merge_pairs` and `distinct_merge_pairs` are ordered
+/// least-recently-scored first, and re-scoring a pair moves it to the back of its own order. A
+/// catalogue holding one open candidate would hand that same pair back every round until the cap.
+/// What ends the walk is a round that shortlists nothing *new*, which is exactly one full
+/// rotation of each list.
+struct RoundLoop {
+    /// Every pair shortlisted so far this run.
+    seen: HashSet<DuplicatePair>,
+    /// Automatic merges the run may still make. Spent across rounds rather than per round: the
+    /// ceiling is the only bound on a background action that deletes series, and it has to mean
+    /// the same thing however many rounds one press of the button turns into.
+    merges_left: i64,
+    rounds: i32,
+}
+
+impl RoundLoop {
+    fn new(budget: SweepBudget) -> Self {
+        Self {
+            seen: HashSet::new(),
+            merges_left: budget.max_auto_merges,
+            rounds: 0,
+        }
+    }
+
+    /// Fold one round in, returning why the run must stop — or `None` to draw another.
+    fn admit(&mut self, run: &SweepRun) -> Option<Stop> {
+        self.rounds += 1;
+        // `count()`, not `any()`: every pair has to reach `seen`, or one the short-circuit
+        // skipped would read as new next round and the walk would never end.
+        let fresh = run
+            .shortlisted
+            .iter()
+            .filter(|pair| self.seen.insert(**pair))
+            .count();
+        self.merges_left -= run.report.auto_merged;
+        if fresh == 0 {
+            // Checked first: a round that found nothing new *and* spent the last merge has
+            // still finished the walk, and reporting it as ceiling-limited would send an
+            // operator back to press the button on an empty catalogue.
+            return Some(Stop::Exhausted);
+        }
+        if self.merges_left <= 0 {
+            return Some(Stop::MergeCeiling);
+        }
+        if self.rounds >= MAX_ROUNDS {
+            return Some(Stop::RoundCap);
+        }
+        None
+    }
+}
+
+/// The run's totals in the shape the state row stores.
+///
+/// `chains_deferred` is dropped: it says the last *pass* skipped a pair because of its own merge,
+/// and a run that draws rounds until the shortlists hold nothing new has already come back for it.
+const fn counters(total: &MergeSweepView) -> matching::FullSweepCounters {
+    matching::FullSweepCounters {
+        pairs_examined: total.pairs_examined,
+        auto_merged: total.auto_merged,
+        queued: total.queued,
+        requeued: total.requeued,
+        reopened: total.reopened,
+        withdrawn: total.withdrawn,
+        distinct: total.distinct,
+        deferred: total.deferred,
+        blocked: total.blocked,
+    }
+}
+
+/// Start an exhaustive sweep on a task of its own, answering whether this call started one.
+///
+/// `false` means a live run already holds the claim. The correct response is to say so, not to
+/// queue behind it: the other run is doing this one's work.
+///
+/// **An exhaustive run must never be awaited inside a request handler.** It draws rounds until
+/// the shortlists hold nothing new, which is minutes, and the API's upstream timeout is
+/// twenty-five seconds — a handler awaiting one would be dropped mid-run, taking the only call
+/// that releases the claim with it. The lease on the claim is the second half of that guard;
+/// this is the first. `recsys::build_detached` carries the same note because that is where the
+/// failure was found the first time.
+///
+/// # Errors
+///
+/// Database failures while claiming. Failures *within* the run are recorded on
+/// `merge_full_sweep_state`, which is where the console reads them from.
+pub(crate) async fn sweep_all_detached(
+    pool: &PgPool,
+    policy: Thresholds,
+    budget: SweepBudget,
+    actor: Option<UserId>,
+) -> anyhow::Result<bool> {
+    let Some(claim) = matching::claim_full_sweep(pool).await? else {
+        tracing::debug!("exhaustive duplicate sweep already running; not starting another");
+        return Ok(false);
+    };
+
+    let pool = pool.clone();
+    tokio::spawn(async move {
+        let outcome = run_full_sweep(&pool, policy, budget, actor, claim).await;
+        let (stopped, error) = match &outcome {
+            Ok(stop) => (stop.as_str(), None),
+            Err(error) => ("failed", Some(error.to_string())),
+        };
+        // Released however the run ended. A run that returned early without reaching here would
+        // hold the claim until its lease expired, with the console showing a sweep making no
+        // progress and nothing saying why.
+        if let Err(e) = matching::finish_full_sweep(&pool, claim, stopped, error.as_deref()).await {
+            tracing::warn!(error = %e, "could not release the exhaustive duplicate sweep's claim");
+        }
+        match outcome {
+            Ok(stop) => tracing::info!(
+                stopped = stop.as_str(),
+                "exhaustive duplicate sweep complete"
+            ),
+            Err(error) => tracing::warn!(error = %error, "exhaustive duplicate sweep failed"),
+        }
+    });
+    Ok(true)
+}
+
+/// Draw rounds under a claim already taken, until one turns up nothing new.
+///
+/// # Errors
+///
+/// Database failures. Whatever earlier rounds committed stays committed; every round is an
+/// ordinary sweep and re-running is idempotent.
+async fn run_full_sweep(
+    pool: &PgPool,
+    policy: Thresholds,
+    budget: SweepBudget,
+    actor: Option<UserId>,
+    claim: matching::FullSweepClaim,
+) -> anyhow::Result<Stop> {
+    let mut rounds = RoundLoop::new(budget);
+    let mut total = MergeSweepView::default();
+    loop {
+        let mut round = budget;
+        round.max_auto_merges = rounds.merges_left;
+        let run = sweep(pool, policy, round, SweepScope::Full, actor).await?;
+        accumulate(&mut total, &run.report);
+        let stop = rounds.admit(&run);
+        // Written after every round, including the last: this row is the only progress an
+        // operator can see, and a run that only reported at the end would be indistinguishable
+        // from one that hung on its first.
+        matching::advance_full_sweep(pool, claim, rounds.rounds, counters(&total)).await?;
+        if let Some(stop) = stop {
+            return Ok(stop);
+        }
+    }
 }
 
 /// Run one pass of a sweep.
@@ -262,10 +462,10 @@ async fn sweep_once(
     budget: SweepBudget,
     scope: SweepScope,
     actor: Option<UserId>,
-) -> anyhow::Result<MergeSweepView> {
+) -> anyhow::Result<(MergeSweepView, Vec<DuplicatePair>)> {
     let (pairs, triggers) = shortlist(pool, budget, scope).await?;
     if pairs.is_empty() {
-        return Ok(MergeSweepView::default());
+        return Ok((MergeSweepView::default(), Vec::new()));
     }
 
     let pass = Pass {
@@ -299,7 +499,7 @@ async fn sweep_once(
         .collect();
     journal(pool, &decisions).await;
 
-    Ok(report)
+    Ok((report, pairs))
 }
 
 /// Everything one pass needs that does not change while it runs.
@@ -944,6 +1144,78 @@ mod tests {
         assert_eq!(
             total.chains_deferred, 0,
             "the chain the first pass deferred is the one the second resolved"
+        );
+    }
+
+    fn round(shortlisted: &[DuplicatePair], auto_merged: i64) -> SweepRun {
+        SweepRun {
+            report: MergeSweepView {
+                auto_merged,
+                ..MergeSweepView::default()
+            },
+            shortlisted: shortlisted.to_vec(),
+        }
+    }
+
+    const fn budget(max_auto_merges: i64) -> SweepBudget {
+        SweepBudget {
+            pairs: 500,
+            requeue: 500,
+            recheck: 500,
+            max_auto_merges,
+        }
+    }
+
+    /// An exhaustive run ends on a round that shortlists nothing new, not on one that finds
+    /// nothing at all.
+    ///
+    /// `open_merge_pairs` and `distinct_merge_pairs` are ordered least-recently-scored first and
+    /// re-scoring moves a pair to the back of that order, so neither ever returns empty. A run
+    /// that waited for an empty round would draw all [`MAX_ROUNDS`] of them against a catalogue
+    /// holding a single open candidate, re-scoring that one pair 256 times.
+    ///
+    /// Both pairs must reach `seen` in the first round, which is why the filter is counted rather
+    /// than short-circuited: with `any()` the second pair would still look new in round two.
+    #[test]
+    fn an_exhaustive_run_ends_when_a_round_shortlists_nothing_new() {
+        let a = (SeriesId::new(), SeriesId::new());
+        let b = (SeriesId::new(), SeriesId::new());
+        let mut rounds = RoundLoop::new(budget(200));
+
+        assert_eq!(
+            rounds.admit(&round(&[a, b], 0)),
+            None,
+            "the first round shortlisted two pairs this run had not judged"
+        );
+        assert_eq!(
+            rounds.admit(&round(&[a, b], 0)),
+            Some(Stop::Exhausted),
+            "the same two pairs back again is one full rotation, not more work"
+        );
+    }
+
+    /// The automatic-merge ceiling bounds the whole run, not each round of it.
+    ///
+    /// It is the only thing standing between a bad threshold and a collapsed catalogue. Charging
+    /// every round the full ceiling — the obvious way to write the loop, since each round is an
+    /// ordinary sweep — would let one press of the button delete `MAX_ROUNDS` times as many
+    /// series as the operator authorised.
+    #[test]
+    fn the_automatic_merge_ceiling_is_spent_across_rounds_not_per_round() {
+        let a = (SeriesId::new(), SeriesId::new());
+        let b = (SeriesId::new(), SeriesId::new());
+        let mut rounds = RoundLoop::new(budget(3));
+
+        assert_eq!(
+            rounds.admit(&round(&[a], 2)),
+            None,
+            "two of the three merges are spent; the run may draw another round"
+        );
+        assert_eq!(rounds.merges_left, 1);
+        assert_eq!(
+            rounds.admit(&round(&[b], 1)),
+            Some(Stop::MergeCeiling),
+            "the third merge spends the run's ceiling, whatever the shortlists still hold"
         );
     }
 

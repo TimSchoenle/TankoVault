@@ -421,6 +421,10 @@ async fn tunable_views(state: &AppState) -> ApiResult<Vec<TunableView>> {
 
     Ok(Tunable::all()
         .iter()
+        // The registry also carries the automatic-merge policy, which is served — and
+        // permissioned — by `/v1/admin/matching/policy`. Publishing it here would put a knob
+        // that deletes series on a page reachable with `recsys.write`.
+        .filter(|tunable| !tunable.is_matching())
         .map(|&tunable| {
             let spec = tunable.spec();
             let stored = by_key.get(spec.key).copied();
@@ -452,7 +456,14 @@ async fn tunable_views(state: &AppState) -> ApiResult<Vec<TunableView>> {
         .collect())
 }
 
+/// The tunable `key` names, provided it is one this surface owns.
+///
+/// A `matching.*` key is refused as unknown rather than accepted: it is a real registry entry,
+/// but writing it from here would move the duplicate sweep's policy under the recommender's
+/// permission, and `recsys.write` is not `merge.write`.
 fn parse_tunable(key: &str) -> ApiResult<Tunable> {
     key.parse()
-        .map_err(|_| ApiError::BadRequest(format!("unknown tunable: {key}")))
+        .ok()
+        .filter(|tunable: &Tunable| !tunable.is_matching())
+        .ok_or_else(|| ApiError::BadRequest(format!("unknown tunable: {key}")))
 }

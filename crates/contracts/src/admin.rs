@@ -567,6 +567,48 @@ pub struct MergeSweepView {
     pub chains_deferred: i64,
 }
 
+/// One knob of the automatic-merge policy, as the console shows it.
+///
+/// Assembled by the control plane rather than by the API, because the effective value is the
+/// stored override *layered over this deployment's configured* `matching` block — and the
+/// control plane is the service that holds both. An API that resolved it against the compiled
+/// registry instead would report a default the sweep does not use.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[schema(as = MergePolicyKnob)]
+pub struct MergePolicyView {
+    /// The persisted key, e.g. `matching.auto_merge`.
+    pub key: String,
+    pub title: String,
+    /// What the value does, written to be read immediately before someone changes production.
+    pub description: String,
+    // Tokens rather than the domain enums: utoipa publishes a `///` as the public description,
+    // and a rustdoc link to a crate the client cannot see is noise in a generated client.
+    /// `ratio` for the threshold, `toggle` for a guard — what the console renders, a field or a
+    /// switch.
+    pub kind: String,
+    /// When a change reaches the sweep. Every knob here is `next_sweep`.
+    pub applies: String,
+    /// The effective value, already clamped: exactly what the next sweep will apply.
+    pub value: f64,
+    /// What this deployment falls back to when no override is stored — its configured
+    /// `matching` value, which is the compiled default unless the deployment set it. This is
+    /// what resetting the knob returns it to, so it is not the same number as the compiled
+    /// default and must not be shown as one.
+    pub default_value: f64,
+    /// Inclusive bounds. Enforced by the control plane, not only by the UI.
+    pub min: f64,
+    pub max: f64,
+    /// Whether an operator has explicitly decided this one, as opposed to it following the
+    /// deployment's configuration.
+    pub overridden: bool,
+    /// Why it was last changed, if the operator said.
+    pub note: Option<String>,
+    /// Username of the operator who last changed it; `None` once that account is erased.
+    pub updated_by: Option<String>,
+    /// RFC 3339. Absent while the knob follows the configuration.
+    pub updated_at: Option<String>,
+}
+
 /// What a normalized-key rebuild changed.
 ///
 /// `normalized_title` is a persisted matching key, so a change to the normalization rules only

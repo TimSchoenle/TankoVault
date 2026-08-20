@@ -826,6 +826,13 @@
       "hide": "Ausblenden",
       "keep": "Behalten (kanonisch)",
       "merge": "Zusammenführen →",
+      "policy": {
+        "hide": "Richtlinie ausblenden",
+        "intro": "Was der Duplikat-Abgleich ohne Rückfrage zusammenführen darf. Eine Änderung wirkt ab dem nächsten Abgleich – auch bei einem, den du hier startest – und ändert nichts an bereits zusammengeführten Serien. Ohne eigenen Wert folgt ein Schalter der Konfiguration dieser Instanz.",
+        "readOnly": "Du kannst diese Richtlinie sehen, aber nicht ändern.",
+        "show": "Richtlinie anzeigen",
+        "title": "Richtlinie für automatische Zusammenführung"
+      },
       "reason": "Grund: {reason}",
       "rebuildDone": "Schlüssel neu berechnet: {series} Serien, {titles} Alternativtitel aktualisiert.",
       "rebuildKeys": "Schlüssel neu berechnen",
@@ -1022,9 +1029,12 @@
       "applies": {
         "immediately": "Sofort",
         "nextBuild": "Nächster Build",
-        "nextFullBuild": "Vollständiger Build"
+        "nextFullBuild": "Vollständiger Build",
+        "nextSweep": "Nächster Abgleich"
       },
       "bounds": "{min} – {max} · ausgeliefert mit {default}",
+      "boundsConfigured": "{min} – {max} · Rückfallwert {default}",
+      "boundsToggle": "an oder aus · Rückfallwert {default}",
       "changed": "Vom Standard abweichend",
       "changedBy": "{user} · {date}",
       "generation": "Generation {n}",
@@ -1071,6 +1081,10 @@
       "saved": "Gespeichert.",
       "stageStep": "Schritt {n} von {of}",
       "startedAt": "gestartet {date}",
+      "toggle": {
+        "off": "Aus",
+        "on": "An"
+      },
       "tuning": "Feineinstellung",
       "valueLabel": "Wert für {title}"
     },

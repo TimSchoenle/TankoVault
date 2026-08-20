@@ -10,7 +10,7 @@
 //! bounds (`recsys.cooccurrence.min_support`) is a k-anonymity threshold. Clamping here is what
 //! makes that bound hold against a hand-edited database as well as against a bad request.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 use tankovault_domain::Tunable;
 use tokio_util::sync::CancellationToken;
@@ -19,6 +19,11 @@ use tokio_util::sync::CancellationToken;
 #[derive(Debug, Clone, Default)]
 struct Snapshot {
     values: HashMap<Tunable, f64>,
+    /// The tunables a row actually stood behind, as opposed to those sitting at their compiled
+    /// default. Kept apart from the values because a caller layering this over a *configured*
+    /// baseline — the duplicate sweep does — cannot otherwise tell an operator's deliberate
+    /// `0.97` from the compiled one, and would silently discard the configured value.
+    overridden: HashSet<Tunable>,
 }
 
 impl Snapshot {
@@ -29,6 +34,7 @@ impl Snapshot {
                 .iter()
                 .map(|&t| (t, t.default_value()))
                 .collect(),
+            overridden: HashSet::new(),
         }
     }
 
@@ -56,6 +62,7 @@ impl Snapshot {
                 );
             }
             snapshot.values.insert(tunable, clamped);
+            snapshot.overridden.insert(tunable);
         }
         snapshot
     }
@@ -149,6 +156,7 @@ impl TunableSet {
                 snapshot
                     .values
                     .insert(*tunable, tunable.spec().clamp(*value));
+                snapshot.overridden.insert(*tunable);
             }
         }
         set
@@ -174,6 +182,47 @@ impl TunableSet {
         // every consumer goes through, so a future path that writes the snapshot without
         // resolving still cannot leak a value past a bound.
         tunable.spec().clamp(raw)
+    }
+
+    /// The stored override for `tunable`, clamped — `None` while it sits at its compiled
+    /// default.
+    ///
+    /// The distinction only matters to a caller that has a baseline of its own; everything else
+    /// wants [`Self::get`], which resolves the same value without the caller thinking about it.
+    #[must_use]
+    pub fn override_for(&self, tunable: Tunable) -> Option<f64> {
+        let guard = match self.snapshot.read() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        if !guard.overridden.contains(&tunable) {
+            return None;
+        }
+        guard
+            .values
+            .get(&tunable)
+            .map(|&value| tunable.spec().clamp(value))
+    }
+
+    /// The override if an operator has stored one, else `baseline` — both clamped to the
+    /// registry's range.
+    ///
+    /// For the values that also have a *configured* baseline, which the compiled default is
+    /// not: the duplicate sweep's policy ships in `tankovault_config::MatchingConfig` and is
+    /// then overridden, per key, from the console. Resolving those against the compiled default
+    /// instead would silently revert a deployment's configured policy the moment any other key
+    /// on the page was touched.
+    #[must_use]
+    pub fn resolve(&self, tunable: Tunable, baseline: f64) -> f64 {
+        self.override_for(tunable)
+            .unwrap_or_else(|| tunable.spec().clamp(baseline))
+    }
+
+    /// [`Self::resolve`] for a [`tankovault_domain::TunableKind::Toggle`].
+    #[must_use]
+    pub fn resolve_bool(&self, tunable: Tunable, baseline: bool) -> bool {
+        self.override_for(tunable)
+            .map_or(baseline, |value| tunable.is_on(value))
     }
 
     /// [`Self::get`] as an `f32`, for the ranking maths, which is `f32` throughout.
@@ -321,6 +370,31 @@ mod tests {
         assert_eq!(snapshot.values[&Tunable::CooccurrenceMinSupport], 5.0);
         // And through the accessor a caller would actually use.
         assert_eq!(set.get_usize(Tunable::CooccurrenceMinSupport), 5);
+    }
+
+    /// **A value nobody overrode must not displace the caller's own baseline.**
+    ///
+    /// The bug this pins: resolving the duplicate sweep's policy through `get`, which answers
+    /// with the compiled default when no row exists. A deployment that had configured
+    /// `matching.auto_merge` would have had it silently replaced by the shipped `0.97` — a
+    /// policy change with nothing anywhere to report it.
+    #[test]
+    fn a_baseline_stands_until_an_override_replaces_it() {
+        let untouched = TunableSet::defaults();
+        assert_eq!(untouched.resolve(Tunable::MatchingAutoMerge, 0.99), 0.99);
+        assert!(!untouched.resolve_bool(Tunable::MatchingBlockOnYearConflict, false));
+        assert_eq!(untouched.override_for(Tunable::MatchingAutoMerge), None);
+
+        let decided = TunableSet::with_values(&[
+            (Tunable::MatchingAutoMerge, 0.90),
+            (Tunable::MatchingBlockOnYearConflict, 1.0),
+        ]);
+        assert_eq!(decided.resolve(Tunable::MatchingAutoMerge, 0.99), 0.90);
+        assert!(decided.resolve_bool(Tunable::MatchingBlockOnYearConflict, false));
+
+        // An out-of-range baseline is confined exactly as a stored value is: the range is the
+        // reader's guarantee, whichever layer the number arrived from.
+        assert_eq!(untouched.resolve(Tunable::MatchingAutoMerge, 4.0), 1.0);
     }
 
     #[test]

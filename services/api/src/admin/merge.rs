@@ -2,21 +2,26 @@
 //! the normalized-key rebuild the sweep depends on.
 
 use crate::audit::audit;
-use crate::error::ApiResult;
+use crate::error::{ApiError, ApiResult};
 use crate::openapi::ADMIN_MATCHING_TAG;
 use crate::state::{AppState, AuthUser};
 use crate::views::IntoView;
 use axum::Json;
-use axum::extract::{Query, State};
+use axum::extract::{Path, Query, State};
 use serde::Deserialize;
-use tankovault_contracts::admin::{KeyRebuildView, MergeCandidateView, MergeSweepView};
-use tankovault_domain::{Permission, SeriesId};
+use tankovault_contracts::admin::{
+    KeyRebuildView, MergeCandidateView, MergePolicyView, MergeSweepView,
+};
+use tankovault_domain::{Permission, SeriesId, Tunable};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 /// Page size cap for the review queue; safe because results are score-ordered, so a cap only
 /// trims the low-confidence end.
 const MAX_CANDIDATES: i64 = 200;
+
+/// The control plane's automatic-merge policy route, which both reads and writes go through.
+const MERGE_POLICY: &str = "/internal/merge-policy";
 
 #[derive(Debug, Default, Deserialize, IntoParams)]
 pub struct CandidateFilter {
@@ -201,6 +206,149 @@ pub async fn sweep_merge_candidates(
     )
     .await;
     Ok(Json(report))
+}
+
+/// Get the automatic-merge policy
+///
+/// The threshold and the four guards the duplicate sweep applies, each with its effective
+/// value, what this deployment falls back to without an override, and who last changed it.
+///
+/// Read from the control plane rather than resolved here: the fallback is that image's
+/// configured `matching` block, and a policy page that showed the *compiled* default would name
+/// a value the sweep does not use and reset knobs to it.
+#[utoipa::path(
+    get,
+    path = "/v1/admin/matching/policy",
+    tag = ADMIN_MATCHING_TAG,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Every knob of the automatic-merge policy", body = Vec<MergePolicyView>),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
+    )
+)]
+pub async fn get_merge_policy(
+    State(state): State<AppState>,
+    user: AuthUser,
+) -> ApiResult<Json<Vec<MergePolicyView>>> {
+    user.require(Permission::MergeRead).await?;
+    let Json(policy) = state.control_plane.get(MERGE_POLICY).await?;
+    Ok(Json(policy))
+}
+
+/// A proposed new value for one knob of the automatic-merge policy.
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct SetMergePolicy {
+    /// A guard is `1` or `0`; the threshold is a score in its published range.
+    pub value: f64,
+    /// Why, for the console and the audit record.
+    #[serde(default)]
+    pub note: Option<String>,
+}
+
+/// Set an automatic-merge policy value
+///
+/// Takes effect on the next sweep, including one an operator starts from this page. Nothing
+/// already merged is revisited, and a queued pair keeps its recorded verdict until the sweep
+/// re-scores it.
+#[utoipa::path(
+    put,
+    path = "/v1/admin/matching/policy/{key}",
+    tag = ADMIN_MATCHING_TAG,
+    params(("key" = String, Path, description = "Policy key, e.g. `matching.auto_merge`")),
+    request_body = SetMergePolicy,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "The whole policy after the change", body = Vec<MergePolicyView>),
+        (status = 400, description = "unknown key, or a value outside its range", body = crate::error::ProblemDetails),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
+    )
+)]
+pub async fn set_merge_policy(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(key): Path<String>,
+    Json(body): Json<SetMergePolicy>,
+) -> ApiResult<Json<Vec<MergePolicyView>>> {
+    user.require(Permission::MergeWrite).await?;
+    write_merge_policy(&state, &user, &key, Some(body.value), body.note).await
+}
+
+/// Reset an automatic-merge policy value
+///
+/// Drops the stored override so the knob follows this deployment's configuration again.
+/// Distinct from writing that same number, which records a decision that would survive a later
+/// change to the configuration.
+#[utoipa::path(
+    delete,
+    path = "/v1/admin/matching/policy/{key}",
+    tag = ADMIN_MATCHING_TAG,
+    params(("key" = String, Path, description = "Policy key, e.g. `matching.auto_merge`")),
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "The whole policy after the reset", body = Vec<MergePolicyView>),
+        (status = 400, description = "unknown key", body = crate::error::ProblemDetails),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
+    )
+)]
+pub async fn reset_merge_policy(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(key): Path<String>,
+) -> ApiResult<Json<Vec<MergePolicyView>>> {
+    user.require(Permission::MergeWrite).await?;
+    write_merge_policy(&state, &user, &key, None, None).await
+}
+
+/// The half a set and a reset share: refuse an unknown key here, forward the decision, and
+/// record who took it.
+///
+/// The key is parsed against the registry before it travels, so an unknown one is a `400` from
+/// this service rather than a round trip that reports the control plane's refusal — and the
+/// forwarded key is the registry's own `'static` string, never the caller's.
+async fn write_merge_policy(
+    state: &AppState,
+    user: &AuthUser,
+    key: &str,
+    value: Option<f64>,
+    note: Option<String>,
+) -> ApiResult<Json<Vec<MergePolicyView>>> {
+    let tunable: Tunable = key
+        .parse()
+        .ok()
+        .filter(|t: &Tunable| t.is_matching())
+        .ok_or_else(|| {
+            ApiError::BadRequest(format!("no automatic-merge setting is called \"{key}\""))
+        })?;
+
+    let Json(policy): Json<Vec<MergePolicyView>> = state
+        .control_plane
+        .post(
+            MERGE_POLICY,
+            &serde_json::json!({
+                "key": tunable.key(),
+                "value": value,
+                "note": note,
+                "actor": user.user_id,
+            }),
+        )
+        .await?;
+
+    audit(
+        state,
+        user,
+        if value.is_some() {
+            "matching.policy.set"
+        } else {
+            "matching.policy.reset"
+        },
+        tunable.key(),
+        &serde_json::json!({ "value": value, "note": note }),
+    )
+    .await;
+    Ok(Json(policy))
 }
 
 /// Rebuild the normalized matching keys

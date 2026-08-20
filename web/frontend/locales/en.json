@@ -826,6 +826,13 @@
       "hide": "Hide",
       "keep": "Keep (canonical)",
       "merge": "Merge →",
+      "policy": {
+        "hide": "Hide policy",
+        "intro": "What the duplicate sweep may merge without asking. A change takes effect on the next sweep — including one you start here — and never revisits a merge already made. A knob with no override follows this deployment’s configuration.",
+        "readOnly": "You can see this policy, but not change it.",
+        "show": "Show policy",
+        "title": "Automatic-merge policy"
+      },
       "reason": "reason: {reason}",
       "rebuildDone": "Rebuilt keys: {series} series, {titles} alternative titles updated.",
       "rebuildKeys": "Rebuild match keys",
@@ -1022,9 +1029,12 @@
       "applies": {
         "immediately": "Immediate",
         "nextBuild": "Next build",
-        "nextFullBuild": "Full rebuild"
+        "nextFullBuild": "Full rebuild",
+        "nextSweep": "Next sweep"
       },
       "bounds": "{min} – {max} · ships as {default}",
+      "boundsConfigured": "{min} – {max} · falls back to {default}",
+      "boundsToggle": "on or off · falls back to {default}",
       "changed": "Changed from default",
       "changedBy": "{user} · {date}",
       "generation": "generation {n}",
@@ -1071,6 +1081,10 @@
       "saved": "Saved.",
       "stageStep": "step {n} of {of}",
       "startedAt": "started {date}",
+      "toggle": {
+        "off": "Off",
+        "on": "On"
+      },
       "tuning": "Tuning",
       "valueLabel": "Value for {title}"
     },

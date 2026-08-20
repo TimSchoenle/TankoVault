@@ -7,17 +7,30 @@
 
 use crate::api;
 use crate::components::{
-    async_block, async_block_list, use_step_up_gate, Cover, StepUpGate, StepUpGuard,
+    async_block, async_block_list, async_view, use_step_up_gate, Cover, SkeletonBlock, StepUpGate,
+    StepUpGuard,
 };
 use crate::hooks::{use_reload, Reload};
 use crate::i18n::use_i18n;
 use crate::models::*;
+use crate::state::capabilities::use_capabilities;
 use crate::state::use_session;
 use crate::views::console::query::Band;
+use crate::views::console::tuning::{Knob, KnobRow};
 use crate::views::console::{use_console_nav, ConsoleQuery};
+use crate::wire::types::{Permission, TunableGroup};
 use dioxus::prelude::*;
 use inkstone_ui::{Button, Pill, ToggleButton, Tone};
 use progenitor_client::ResponseValue;
+
+/// The tuning groups this panel renders, each with the catalogue key that titles it.
+///
+/// One entry, and a list anyway: `every_published_group_is_offered_and_worded` reads it against
+/// the vocabulary the API publishes, so a group added to the registry has to land on one of the
+/// console's panels rather than silently on neither.
+pub(in crate::views::console) const POLICY_GROUPS: [(TunableGroup, &str); 1] =
+    [(TunableGroup::Matching, "console.merge.policy.title")];
+
 /// Canonicalisation review queue with merge / dismiss actions and the duplicate sweep.
 #[component]
 pub(super) fn MergeQueue() -> Element {
@@ -173,7 +186,85 @@ pub(super) fn MergeQueue() -> Element {
                     "{notice}"
                 }
             }
+            MergePolicy { reload, gate }
             {body}
+        }
+    }
+}
+
+/// The policy the sweep applies, above the queue it produced.
+///
+/// Here rather than on a page of its own because the two are one decision: an operator reads a
+/// row the sweep queued — or one it merged — and the question that follows is whether the bar
+/// that put it there is the right bar. A separate page would mean judging the queue and tuning
+/// the rule that fills it without ever seeing them together.
+#[component]
+fn MergePolicy(reload: Reload, gate: StepUpGate) -> Element {
+    let api = api::use_api();
+    let i18n = use_i18n();
+    let caps = use_capabilities();
+    let can_write = caps.can(Permission::MergeWrite);
+    let mut open = use_signal(|| false);
+
+    // Fetched only once the card is open, so the queue — the reason an operator is on this tab —
+    // does not pay for a panel most visits never expand.
+    let policy = use_resource(move || {
+        reload.track();
+        let wanted = *open.read();
+        let client = api.client();
+        async move {
+            if !wanted {
+                return Ok(Vec::new());
+            }
+            client
+                .get_merge_policy()
+                .send()
+                .await
+                .map(ResponseValue::into_inner)
+                .map_err(|e| api::friendly_error(i18n, e))
+        }
+    });
+
+    // Collapsed by default: the queue is what an operator came for, and the policy is what they
+    // open once they disagree with it.
+    rsx! {
+        div { class: "ik-card", style: "margin-bottom:12px;padding:10px;",
+            div { class: "ik-flex", style: "gap:8px;align-items:center;",
+                strong { style: "font-size:13px;", {i18n.t(POLICY_GROUPS[0].1)} }
+                div { class: "grow" }
+                Button {
+                    on_click: move |_| { let v = *open.peek(); open.set(!v); },
+                    if *open.read() {
+                        {i18n.t("console.merge.policy.hide")}
+                    } else {
+                        {i18n.t("console.merge.policy.show")}
+                    }
+                }
+            }
+            if *open.read() {
+                p { class: "ik-muted", style: "font-size:12px;margin:8px 0 0;max-width:74ch;",
+                    {i18n.t("console.merge.policy.intro")}
+                }
+                if !can_write {
+                    p { class: "ik-muted", style: "font-size:12px;margin:4px 0 0;",
+                        {i18n.t("console.merge.policy.readOnly")}
+                    }
+                }
+                {
+                    async_view(
+                        &policy,
+                        reload,
+                        || rsx! { SkeletonBlock { height: 260 } },
+                        |rows| rsx! {
+                            div { class: "ik-tablewrap", style: "margin-top:10px;",
+                                for row in rows.iter().map(Knob::matching) {
+                                    KnobRow { key: "{row.key}", row, can_write, reload, gate }
+                                }
+                            }
+                        },
+                    )
+                }
+            }
         }
     }
 }

@@ -155,6 +155,56 @@ async fn a_value_outside_its_range_is_refused_at_both_ends() {
     assert_eq!(status, StatusCode::BAD_REQUEST, "an unknown key is refused");
 }
 
+/// **The automatic-merge policy is not reachable with `recsys.write`.**
+///
+/// The bug this pins: both surfaces store their values in one `tunable_overrides` table and read
+/// them from one compiled registry, so the *only* thing separating them is which keys each
+/// endpoint will serve and accept. Without that filter, an account trusted to tune a shelf could
+/// switch off the guard that stops the sweep merging a remake into its original — a destructive
+/// capability reached through the permission for a cosmetic one.
+#[tokio::test]
+async fn the_merge_policy_is_not_served_or_written_by_the_recommender_surface() {
+    let app = TestApp::spawn_with(TestConfig::new().without_rate_limiting()).await;
+    let (bearer, step_up) = credentials(&app, operator(&app).await).await;
+
+    let (status, body) = app
+        .call_elevated(
+            "GET",
+            "/v1/admin/recommendations/tunables",
+            Some(&bearer),
+            Some(&step_up),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let published: Vec<&str> = body
+        .as_array()
+        .expect("an array of tunables")
+        .iter()
+        .filter_map(|item| item["key"].as_str())
+        .collect();
+    for &tunable in Tunable::matching() {
+        assert!(
+            !published.contains(&tunable.key()),
+            "{tunable} must not be published by the recommendation surface"
+        );
+        let (status, _) = app
+            .call_elevated(
+                "PUT",
+                &format!("/v1/admin/recommendations/tunables/{}", tunable.key()),
+                Some(&bearer),
+                Some(&step_up),
+                Some(json!({ "value": 0.0 })),
+            )
+            .await;
+        assert_eq!(
+            status,
+            StatusCode::BAD_REQUEST,
+            "{tunable} must not be writable with recsys.write"
+        );
+    }
+}
+
 /// **A shelf with every score weight at zero has nothing to rank by.**
 ///
 /// The bug this pins: the five weights are rank-normalised per path before blending, so their
@@ -224,13 +274,18 @@ async fn the_listing_is_the_compiled_registry() {
         )
         .await;
     assert_eq!(status, StatusCode::OK);
+    let recsys: Vec<Tunable> = Tunable::all()
+        .iter()
+        .copied()
+        .filter(|t| !t.is_matching())
+        .collect();
     assert_eq!(
         body.as_array().map(Vec::len),
-        Some(Tunable::all().len()),
-        "the listing must publish every tunable this build defines"
+        Some(recsys.len()),
+        "the listing must publish every recommendation tunable this build defines"
     );
 
-    for &tunable in Tunable::all() {
+    for &tunable in &recsys {
         let published = row(&body, tunable.key());
         let spec = tunable.spec();
         assert_eq!(published["default_value"], json!(spec.default), "{tunable}");

@@ -9,7 +9,6 @@
 use std::collections::{HashMap, HashSet};
 
 use serde_json::json;
-use tankovault_config::MatchingConfig;
 use tankovault_contracts::admin::MergeSweepView;
 use tankovault_db::PgPool;
 use tankovault_db::repo::matching::{
@@ -197,7 +196,7 @@ const MAX_PASSES: u32 = 3;
 /// Database failures; merges already committed stay committed (idempotent, safe to re-run).
 pub(crate) async fn sweep(
     pool: &PgPool,
-    policy: &MatchingConfig,
+    policy: Thresholds,
     budget: SweepBudget,
     scope: SweepScope,
     actor: Option<UserId>,
@@ -259,7 +258,7 @@ fn accumulate(total: &mut MergeSweepView, pass: &MergeSweepView) {
 /// Database failures; merges already committed stay committed (idempotent, safe to re-run).
 async fn sweep_once(
     pool: &PgPool,
-    policy: &MatchingConfig,
+    policy: Thresholds,
     budget: SweepBudget,
     scope: SweepScope,
     actor: Option<UserId>,
@@ -269,17 +268,16 @@ async fn sweep_once(
         return Ok(MergeSweepView::default());
     }
 
-    let thresholds = policy.thresholds();
     let pass = Pass {
         pool,
-        thresholds,
+        thresholds: policy,
         budget,
         triggers,
         ctx: JournalContext {
             // One id for the whole run, so a bad sweep can be read — and reverted — as a unit.
             sweep_id: Uuid::now_v7(),
             actor,
-            policy: policy_json(thresholds),
+            policy: policy_json(policy),
         },
         // Batched reads for the whole shortlist. `pair_similarities` is per-pair, not
         // per-series — omitting it would re-score a trigram-matched row lower on no new evidence.
@@ -770,9 +768,22 @@ struct PairReading {
 /// The search runs on [`assess`], and only the winner is re-run through [`explain`] to itemise
 /// it. Explaining every reading would allocate a term list per alias per direction for a number
 /// the sweep discards.
+///
+/// # Why a structural reading outranks a higher-scoring fuzzy one
+///
+/// `trigram` is the *pair's* similarity, and `pair_similarities` takes it over each side's
+/// alternative titles as well as the two canonical ones — so a pair whose synonym identifies it
+/// hands every reading a number the canonical titles did not earn. `assess` bases a reading on
+/// `max(trigram, textual)`, which lifts the canonical reading to the clamp ceiling with no
+/// identity signal behind it, where it ties with the alias reading that *does* carry one. Ranked
+/// on score alone, the tie went to whichever came first — the canonical one — and the pair was
+/// filed as `no_structural_identity` at 100%, which `adjudicate` can never merge and no later
+/// sweep re-reads any differently. Structure first, then score: an identity rule is the
+/// stronger claim about a pair, and it is the only one an automatic merge may act on.
 fn best_reading(left: &SeriesMatchFacts, right: &SeriesMatchFacts, trigram: f32) -> PairReading {
-    // score, whether the query side was the left series, the winning title, whether it is an alias
-    let mut best: Option<(f32, bool, &str, bool)> = None;
+    // whether an identity rule fired, the score, whether the query side was the left series,
+    // the winning title, whether it is an alias
+    let mut best: Option<(bool, f32, bool, &str, bool)> = None;
 
     for query_is_left in [true, false] {
         let (query_side, candidate_side) = if query_is_left {
@@ -784,8 +795,8 @@ fn best_reading(left: &SeriesMatchFacts, right: &SeriesMatchFacts, trigram: f32)
         let mut query = query_of(query_side, String::new());
 
         // The canonical title goes first and ties are kept (the comparison is strict), so a pair
-        // that both a canonical title and an alias explain is reported with the canonical
-        // reading's signals.
+        // that both a canonical title and an alias explain *in the same class* is reported with
+        // the canonical reading's signals.
         let titles = std::iter::once((query_side.normalized_title.as_str(), false)).chain(
             query_side
                 .alt_normalized_titles
@@ -795,15 +806,16 @@ fn best_reading(left: &SeriesMatchFacts, right: &SeriesMatchFacts, trigram: f32)
         for (title, from_alias) in titles {
             query.normalized_title.clear();
             query.normalized_title.push_str(title);
-            let score = assess(&query, &candidate).score;
-            if best.is_none_or(|(b, ..)| score > b) {
-                best = Some((score, query_is_left, title, from_alias));
+            let assessment = assess(&query, &candidate);
+            let rank = (assessment.signals.is_structural(), assessment.score);
+            if best.is_none_or(|(structural, score, ..)| rank > (structural, score)) {
+                best = Some((rank.0, rank.1, query_is_left, title, from_alias));
             }
         }
     }
 
     // At least one reading always exists: every series has a canonical normalized title.
-    let (_, query_is_left, title, from_alias) =
+    let (_, _, query_is_left, title, from_alias) =
         best.expect("a pair always has at least the two canonical readings");
     let (query_side, candidate_side) = if query_is_left {
         (left, right)
@@ -868,6 +880,7 @@ fn relabel_alias_query(mut explanation: Explanation, query_from_alias: bool) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tankovault_config::MatchingConfig;
     use tankovault_domain::ContentType;
 
     fn facts(title: &str, alts: &[&str], sources: i64, chapters: i64) -> SeriesMatchFacts {
@@ -961,6 +974,32 @@ mod tests {
                 "{:?}",
                 reading.assessment
             );
+        }
+    }
+
+    /// **The synonym that identifies a pair survives the trigram score that synonym produced.**
+    ///
+    /// `pair_similarities` takes the trigram over each side's alternative titles as well as the
+    /// two canonical ones, so this pair arrives with 1.0 — earned by the synonym and handed to
+    /// every reading. That lifted the canonical reading, which agrees on nothing, to the clamp
+    /// ceiling, where it tied with the alias reading that carries the identity and beat it on
+    /// iteration order. The row then read "100% match … titles are similar but not the same
+    /// string": no structural signal, so no sweep could ever merge it, and no badge to say which
+    /// title the number came from. The older test above pins the same pair at a trigram of zero,
+    /// which is the one value that hides this.
+    #[test]
+    fn an_alias_identity_is_not_lost_to_the_trigram_it_produced() {
+        let left = facts("Solo Leveling", &["Na Honjaman Level Up"], 1, 10);
+        let right = facts("Na Honjaman Level Up", &[], 1, 10);
+
+        for (a, b) in [(&left, &right), (&right, &left)] {
+            let reading = best_reading(a, b, 1.0);
+            assert!(
+                reading.assessment.signals.alias_identity,
+                "{:?}",
+                reading.assessment
+            );
+            assert_eq!(verdict_for(a, b, 1.0), MergeVerdict::Auto);
         }
     }
 

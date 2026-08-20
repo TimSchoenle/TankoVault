@@ -133,6 +133,18 @@ pub enum Tunable {
     ServeShelfTtlSeconds,
     #[serde(rename = "recsys.serve.feedback_decay_days")]
     ServeFeedbackDecayDays,
+
+    // --- automatic merges (docs/CONFIGURATION.md §`matching`) ---
+    #[serde(rename = "matching.auto_merge")]
+    MatchingAutoMerge,
+    #[serde(rename = "matching.block_auto_merge_on_numeric_conflict")]
+    MatchingBlockOnNumericConflict,
+    #[serde(rename = "matching.block_auto_merge_on_author_conflict")]
+    MatchingBlockOnAuthorConflict,
+    #[serde(rename = "matching.block_auto_merge_on_year_conflict")]
+    MatchingBlockOnYearConflict,
+    #[serde(rename = "matching.block_auto_merge_on_type_conflict")]
+    MatchingBlockOnTypeConflict,
 }
 
 /// The compiled facts about one tunable: what it is, what it ships as, and how far it may move.
@@ -225,7 +237,39 @@ impl Tunable {
             Self::ServeShelfSize,
             Self::ServeShelfTtlSeconds,
             Self::ServeFeedbackDecayDays,
+            Self::MatchingAutoMerge,
+            Self::MatchingBlockOnNumericConflict,
+            Self::MatchingBlockOnAuthorConflict,
+            Self::MatchingBlockOnYearConflict,
+            Self::MatchingBlockOnTypeConflict,
         ]
+    }
+
+    /// The automatic-merge policy, in the order the console lists it: the threshold, then the
+    /// guards that can hold a pair back after it clears the threshold.
+    ///
+    /// A slice of its own because this group is served by its own endpoint under its own
+    /// permission — an operator who may resolve duplicates is not thereby a recommender
+    /// tuner — and because the duplicate sweep resolves exactly these five against its
+    /// configuration.
+    #[must_use]
+    pub const fn matching() -> &'static [Self] {
+        &[
+            Self::MatchingAutoMerge,
+            Self::MatchingBlockOnNumericConflict,
+            Self::MatchingBlockOnAuthorConflict,
+            Self::MatchingBlockOnYearConflict,
+            Self::MatchingBlockOnTypeConflict,
+        ]
+    }
+
+    /// Whether this tunable belongs to the automatic-merge policy rather than the recommender.
+    ///
+    /// The recommendation endpoints filter on it, so a knob added to one surface cannot appear
+    /// on the other by accident.
+    #[must_use]
+    pub const fn is_matching(self) -> bool {
+        matches!(self.spec().group, TunableGroup::Matching)
     }
 
     /// The five weights that blend the retrieval paths.
@@ -277,9 +321,9 @@ impl Tunable {
     )]
     #[must_use]
     pub const fn spec(self) -> TunableSpec {
-        use Applies::{Immediately, NextBuild, NextFullBuild};
+        use Applies::{Immediately, NextBuild, NextFullBuild, NextSweep};
         use TunableGroup as G;
-        use TunableKind::{Count, Days, Ratio, Seconds, Weight};
+        use TunableKind::{Count, Days, Ratio, Seconds, Toggle, Weight};
 
         match self {
             // ----- affinity -----
@@ -828,7 +872,101 @@ impl Tunable {
                 kind: Days,
                 applies: Immediately,
             },
+
+            // ----- automatic merges -----
+            Self::MatchingAutoMerge => TunableSpec {
+                key: "matching.auto_merge",
+                group: G::Matching,
+                title: "Automatic-merge threshold",
+                description: "At or above this score — and only with a structural identity \
+                              rule behind it — the duplicate sweep merges two series that \
+                              already exist, without asking. Deliberately close to the \
+                              ceiling: the merge deletes a row and the id every bookmark and \
+                              tracker mapping already names. Lowering it does not loosen the \
+                              identity rule, which no score can substitute for.",
+                default: 0.97,
+                // Not 0.0: an automatic threshold below the review floor would merge everything
+                // the sweep shortlists, and "merge on any structural hit" is what 0.6 already
+                // means. The bound is what stops a slip of a keystroke collapsing a catalogue.
+                min: 0.6,
+                max: 1.0,
+                kind: Ratio,
+                applies: NextSweep,
+            },
+            Self::MatchingBlockOnNumericConflict => TunableSpec {
+                key: "matching.block_auto_merge_on_numeric_conflict",
+                group: G::Matching,
+                title: "Hold back numbered sequels",
+                description: "Titles carrying different numbers (Overlord against Overlord 2) \
+                              are reported as distinct rather than queued — the one guard whose \
+                              verdict is not review, because queueing a sequel asks an operator \
+                              to re-derive the one fact the scorer is certain about. Off makes a \
+                              sequel merge-eligible on title similarity alone, and nothing else \
+                              in the scorer tells a sequel from its predecessor.",
+                default: 1.0,
+                min: 0.0,
+                max: 1.0,
+                kind: Toggle,
+                applies: NextSweep,
+            },
+            Self::MatchingBlockOnAuthorConflict => TunableSpec {
+                key: "matching.block_auto_merge_on_author_conflict",
+                group: G::Matching,
+                title: "Hold back disagreeing credits",
+                description: "Both series name authors and share none: a remake, a spin-off, or \
+                              an unrelated work with the same title. Costs nothing on a \
+                              catalogue whose providers rarely publish credits, because the \
+                              signal cannot fire without credits on both sides.",
+                default: 1.0,
+                min: 0.0,
+                max: 1.0,
+                kind: Toggle,
+                applies: NextSweep,
+            },
+            Self::MatchingBlockOnYearConflict => TunableSpec {
+                key: "matching.block_auto_merge_on_year_conflict",
+                group: G::Matching,
+                title: "Hold back distant release years",
+                description: "Release years three or more years apart. Catches re-serialisations \
+                              and remakes sharing an exact title; the scorer's own −0.05 penalty \
+                              is smaller than the +0.1 exact-title bonus and so cannot hold such \
+                              a pair back on its own.",
+                default: 1.0,
+                min: 0.0,
+                max: 1.0,
+                kind: Toggle,
+                applies: NextSweep,
+            },
+            Self::MatchingBlockOnTypeConflict => TunableSpec {
+                key: "matching.block_auto_merge_on_type_conflict",
+                group: G::Matching,
+                title: "Hold back disagreeing media",
+                description: "Both series declare a medium and they disagree (manga against \
+                              manhwa). Worth switching off on a deployment whose providers infer \
+                              the medium from the site they scraped it from rather than from the \
+                              work.",
+                default: 1.0,
+                min: 0.0,
+                max: 1.0,
+                kind: Toggle,
+                applies: NextSweep,
+            },
         }
+    }
+
+    /// A [`TunableKind::Toggle`]'s value as the switch it represents.
+    ///
+    /// The midpoint decides, so every stored number means something: a row hand-edited to `0.4`
+    /// reads as off rather than as an on-ness no switch can render. Calling this on a tunable
+    /// that is not a toggle is a programming error and says so in debug.
+    #[must_use]
+    pub fn is_on(self, value: f64) -> bool {
+        debug_assert_eq!(
+            self.spec().kind,
+            TunableKind::Toggle,
+            "{self} is not a toggle"
+        );
+        value >= 0.5
     }
 }
 

@@ -10,20 +10,19 @@
 
 use crate::api;
 use crate::components::{
-    async_view, use_step_up_gate, ErrorLine, Kpi, OutcomeLine, SkeletonBlock, StepUpGate,
-    StepUpGuard,
+    async_view, use_step_up_gate, Kpi, SkeletonBlock, StepUpGate, StepUpGuard,
 };
-use crate::hooks::{use_busy, use_outcome, use_reload, Busy, Outcome, Reload};
+use crate::hooks::{use_busy, use_reload, Reload};
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
 use crate::state::capabilities::use_capabilities;
 use crate::util::{iso_date, rel_time, thousands};
+use crate::views::console::tuning::{Knob, KnobGroup};
 use crate::wire::types::{
-    Applies, ModelHealthView, Permission, RebuildRequest, RecsysBuildMode, SetTunable,
-    TunableGroup, TunableKind, TunableView,
+    ModelHealthView, Permission, RebuildRequest, RecsysBuildMode, TunableGroup,
 };
 use dioxus::prelude::*;
-use inkstone_ui::{Button, Pill, Tone};
+use inkstone_ui::Button;
 use progenitor_client::ResponseValue;
 /// How often the health panel re-reads itself while a build holds the claim.
 ///
@@ -109,10 +108,10 @@ pub(super) fn RecommendationsPanel() -> Element {
                     || rsx! { SkeletonBlock { height: 420 } },
                     |rows| rsx! {
                         for (group , title_key) in GROUPS {
-                            TunableGroupSection {
+                            KnobGroup {
                                 key: "{title_key}",
                                 title: i18n.t(title_key),
-                                rows: rows.iter().filter(|row| row.group == group).cloned().collect::<Vec<_>>(),
+                                rows: rows.iter().filter(|row| row.group == group).map(Knob::recsys).collect::<Vec<_>>(),
                                 can_write,
                                 reload,
                                 gate,
@@ -429,310 +428,17 @@ fn RebuildButton(
     }
 }
 
-/// One group heading and its rows. A heading over nothing reads as a failed load, so an empty
-/// group renders as nothing at all.
-#[component]
-fn TunableGroupSection(
-    title: String,
-    rows: Vec<TunableView>,
-    can_write: bool,
-    reload: Reload,
-    gate: StepUpGate,
-) -> Element {
-    if rows.is_empty() {
-        return rsx! {};
-    }
-    rsx! {
-        div { class: "ik-subhead", style: "margin-top:18px;", "{title}" }
-        div { class: "ik-tablewrap",
-            for row in rows {
-                TunableRow { key: "{row.key}", row, can_write, reload, gate }
-            }
-        }
-    }
-}
-
-/// One tuning value: what it does, what it is, and the controls to change it.
-#[component]
-fn TunableRow(row: TunableView, can_write: bool, reload: Reload, gate: StepUpGate) -> Element {
-    let i18n = use_i18n();
-    let busy = use_busy();
-    let outcome = use_outcome();
-
-    let key = row.key.to_string();
-    let value = row.value;
-    let kind = row.kind;
-    let mut draft = use_signal(|| format_value(value, kind));
-    let mut note = use_signal(String::new);
-
-    // Re-seed when the server's value moves under the editor — a reset, or another operator's
-    // write. Without this a reset leaves the field showing the number that was just withdrawn.
-    use_effect(use_reactive!(|(value, kind)| {
-        draft.set(format_value(value, kind));
-    }));
-
-    let changed = row.overridden && (value - row.default_value).abs() > f64::EPSILON;
-    let parsed = draft.read().trim().parse::<f64>().ok();
-    let in_range = parsed.is_some_and(|n| n >= row.min && n <= row.max);
-    let dirty = parsed.is_some_and(|n| (n - value).abs() > f64::EPSILON);
-
-    rsx! {
-        div { class: "ik-row", style: "align-items:flex-start;",
-            div { class: "grow",
-                div { class: "ik-flex", style: "gap:8px;align-items:center;flex-wrap:wrap;",
-                    strong { style: "font-size:13px;", "{row.title}" }
-                    AppliesPill { applies: row.applies }
-                    if changed {
-                        Pill {
-                            tone: Tone::Accent,
-                            {i18n.t("console.recsys.changed")}
-                        }
-                    }
-                    if row.privacy_floor {
-                        Pill {
-                            class: "star",
-                            title: i18n.t("console.recsys.privacyFloorHint"),
-                            {i18n.t("console.recsys.privacyFloor")}
-                        }
-                    }
-                }
-                div { class: "ik-mono ik-muted", style: "font-size:11px;margin-top:2px;", "{key}" }
-                p { class: "ik-muted", style: "font-size:12px;margin:6px 0 0;max-width:74ch;",
-                    "{row.description}"
-                }
-                div { class: "ik-mono ik-muted", style: "font-size:11px;margin-top:4px;",
-                    {
-                        i18n.args(
-                            "console.recsys.bounds",
-                            &[
-                                ("min", &format_value(row.min, row.kind)),
-                                ("max", &format_value(row.max, row.kind)),
-                                ("default", &format_value(row.default_value, row.kind)),
-                            ],
-                        )
-                    }
-                }
-                if let Some(stored) = row.note.clone() {
-                    p { style: "font-size:12px;margin:4px 0 0;", "“{stored}”" }
-                }
-                if let Some(by) = row.updated_by.clone() {
-                    div { class: "ik-mono ik-muted", style: "font-size:11px;margin-top:2px;",
-                        {
-                            let when = iso_date(row.updated_at.as_deref()).to_owned();
-                            i18n.args("console.recsys.changedBy", &[("user", &by), ("date", &when)])
-                        }
-                    }
-                }
-                OutcomeLine { outcome: outcome.read().clone() }
-                if parsed.is_some() && !in_range {
-                    ErrorLine { message: i18n.t("console.recsys.outOfRange") }
-                }
-            }
-
-            if can_write {
-                div { class: "ik-flex", style: "gap:6px;flex-shrink:0;align-items:flex-start;",
-                    div { style: "display:flex;flex-direction:column;gap:6px;width:190px;",
-                        input {
-                            class: "ik-input",
-                            style: "font-family:var(--font-mono);font-size:13px;padding:7px 10px;",
-                            r#type: "text",
-                            inputmode: "decimal",
-                            "aria-label": i18n.args("console.recsys.valueLabel", &[("title", &row.title)]),
-                            value: "{draft}",
-                            oninput: move |event| draft.set(event.value()),
-                        }
-                        input {
-                            class: "ik-input",
-                            style: "font-size:12px;padding:7px 10px;",
-                            r#type: "text",
-                            placeholder: i18n.t("console.recsys.notePlaceholder"),
-                            "aria-label": i18n.t("console.recsys.notePlaceholder"),
-                            value: "{note}",
-                            oninput: move |event| note.set(event.value()),
-                        }
-                    }
-                    SaveButton {
-                        tunable: key.clone(),
-                        value: parsed.unwrap_or(value),
-                        note,
-                        enabled: dirty && in_range,
-                        busy,
-                        outcome,
-                        reload,
-                        gate,
-                    }
-                    // Only when there is an override to withdraw; otherwise reset does nothing.
-                    if row.overridden {
-                        ResetButton { tunable: key.clone(), busy, outcome, reload, gate }
-                    }
-                }
-            } else {
-                span { class: "ik-mono", style: "font-size:13px;flex:none;",
-                    {format_value(value, row.kind)}
-                }
-            }
-        }
-    }
-}
-
-/// When a change to this value actually reaches a reader.
-///
-/// Shown on every row because it is this surface's most likely failure: an operator raises a
-/// value baked into stored vectors, sees no change, and concludes the page is broken.
-#[component]
-fn AppliesPill(applies: Applies) -> Element {
-    let i18n = use_i18n();
-    let (class, key) = match applies {
-        Applies::Immediately => ("ik-pill jade", "console.recsys.applies.immediately"),
-        Applies::NextBuild => ("ik-pill", "console.recsys.applies.nextBuild"),
-        Applies::NextFullBuild => ("ik-pill star", "console.recsys.applies.nextFullBuild"),
-    };
-    rsx! {
-        span { class: "{class}", {i18n.t(key)} }
-    }
-}
-
-/// Record an explicit decision for one value.
-#[component]
-fn SaveButton(
-    tunable: String,
-    value: f64,
-    note: Signal<String>,
-    enabled: bool,
-    busy: Busy,
-    outcome: Signal<Outcome>,
-    reload: Reload,
-    gate: StepUpGate,
-) -> Element {
-    let api = api::use_api();
-    let i18n = use_i18n();
-    let mut outcome = outcome;
-    let mut note = note;
-
-    let click = move |_| {
-        let key = tunable.clone();
-        gate.attempt(move || {
-            if !busy.claim() {
-                return;
-            }
-            let key = key.clone();
-            let written = note.peek().trim().to_owned();
-            let client = gate.client(api);
-            outcome.set(None);
-            spawn(async move {
-                let result = client
-                    .set_tunable()
-                    .key(key)
-                    .body(SetTunable {
-                        value,
-                        note: (!written.is_empty()).then_some(written),
-                    })
-                    .send()
-                    .await;
-                match result {
-                    Ok(_) => {
-                        outcome.set(Some(Ok(i18n.t("console.recsys.saved"))));
-                        note.set(String::new());
-                    }
-                    // The server's own sentence: a refused write carries the rule it broke, and
-                    // "the request was rejected" would leave the operator retrying it.
-                    Err(e) => {
-                        if !gate.refused(api::Refusal::of(&e)) {
-                            let message = api::problem_detail(&e)
-                                .unwrap_or_else(|| api::guarded_error(i18n, e));
-                            outcome.set(Some(Err(message)));
-                        }
-                    }
-                }
-                busy.release();
-                reload.bump();
-            });
-        });
-    };
-
-    rsx! {
-        Button {
-            tone: Tone::Primary,
-            style: "flex:none;",
-            disabled: busy.is_busy() || !enabled,
-            on_click: click,
-            {i18n.t("common.save")}
-        }
-    }
-}
-
-/// Drop the stored override so the value follows the compiled default.
-///
-/// Distinct from writing that same number, which records a decision that would survive a future
-/// change of the default — so this is its own control rather than a "type the default" hint.
-#[component]
-fn ResetButton(
-    tunable: String,
-    busy: Busy,
-    outcome: Signal<Outcome>,
-    reload: Reload,
-    gate: StepUpGate,
-) -> Element {
-    let api = api::use_api();
-    let i18n = use_i18n();
-    let mut outcome = outcome;
-
-    let click = move |_| {
-        let key = tunable.clone();
-        gate.attempt(move || {
-            if !busy.claim() {
-                return;
-            }
-            let key = key.clone();
-            let client = gate.client(api);
-            outcome.set(None);
-            spawn(async move {
-                if let Err(e) = client.reset_tunable().key(key).send().await {
-                    if !gate.refused(api::Refusal::of(&e)) {
-                        let message =
-                            api::problem_detail(&e).unwrap_or_else(|| api::guarded_error(i18n, e));
-                        outcome.set(Some(Err(message)));
-                    }
-                }
-                busy.release();
-                reload.bump();
-            });
-        });
-    };
-
-    rsx! {
-        Button {
-            style: "flex:none;",
-            disabled: busy.is_busy(),
-            title: i18n.t("console.recsys.resetHint"),
-            on_click: click,
-            Ic { icon: Icon::Refresh, size: 14 }
-        }
-    }
-}
-
-/// Render a tuning value the way its kind means it.
-///
-/// Whole numbers for the kinds the pipeline rounds anyway, two decimals for the fractional ones
-/// — a shelf size shown as `12.00` invites an operator to wonder what the fraction does.
-fn format_value(value: f64, kind: TunableKind) -> String {
-    match kind {
-        TunableKind::Count | TunableKind::Days | TunableKind::Seconds => format!("{value:.0}"),
-        TunableKind::Ratio | TunableKind::Weight => format!("{value:.2}"),
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{format_value, GROUPS};
-    use crate::wire::types::TunableKind;
+    use super::GROUPS;
 
-    /// The tuning page must show every group the API publishes, and word each one.
+    /// Every group the API publishes must be offered by one of the console's two tuning panels,
+    /// and worded.
     ///
-    /// `GROUPS` is hand-maintained (the generated client cannot enumerate a schema enum), and a
-    /// group missing from it is not an error anywhere: its tunables simply never render, so a
-    /// whole section of the registry becomes unreachable from the console while the page still
-    /// looks complete. Read against the committed `openapi.json`, the only artefact that
+    /// Both lists are hand-maintained (the generated client cannot enumerate a schema enum), and
+    /// a group missing from both is not an error anywhere: its rows simply never render, so a
+    /// whole section of the registry becomes unreachable from the console while the pages still
+    /// look complete. Read against the committed `openapi.json`, the only artefact that
     /// connects this workspace to the API's.
     #[test]
     fn every_published_group_is_offered_and_worded() {
@@ -745,31 +451,28 @@ mod tests {
             .iter()
             .map(|v| v.as_str().expect("group tokens are strings").to_owned())
             .collect();
-        let mut offered: Vec<String> = GROUPS.iter().map(|(group, _)| group.to_string()).collect();
+        // The merge panel owns the automatic-merge group: it belongs beside the queue it
+        // governs, and it sits behind a different permission from everything here.
+        let offering = || {
+            GROUPS
+                .iter()
+                .chain(crate::views::console::merge::POLICY_GROUPS.iter())
+        };
+        let mut offered: Vec<String> = offering().map(|(group, _)| group.to_string()).collect();
 
         published.sort();
         offered.sort();
         assert_eq!(
             offered, published,
-            "the tuning page groups differ from the set the API publishes; add the missing \
-             variant to `GROUPS` and word it in the catalogue"
+            "the tuning groups the console offers differ from the set the API publishes; add \
+             the missing variant to `GROUPS` or `POLICY_GROUPS` and word it in the catalogue"
         );
 
-        for (group, key) in GROUPS {
+        for (group, key) in offering() {
             assert!(
                 crate::i18n::has_key(key),
                 "`{group}` is offered but `{key}` is not in the catalogue"
             );
         }
-    }
-
-    /// A count shown with decimals reads as a value the pipeline honours fractionally, which
-    /// none of the counted kinds do.
-    #[test]
-    fn counted_kinds_render_whole_and_fractional_ones_do_not() {
-        assert_eq!(format_value(12.0, TunableKind::Count), "12");
-        assert_eq!(format_value(21600.0, TunableKind::Seconds), "21600");
-        assert_eq!(format_value(0.7, TunableKind::Ratio), "0.70");
-        assert_eq!(format_value(-0.6, TunableKind::Weight), "-0.60");
     }
 }

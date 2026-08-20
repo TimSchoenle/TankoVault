@@ -6,6 +6,7 @@ mod aggregator;
 mod cooldown;
 mod dedupe;
 mod leader;
+mod policy;
 mod reconcile;
 
 use tankovault_control_plane::config::{Config, SchedulerConfig};
@@ -16,16 +17,20 @@ use tankovault_service::metrics::names::{
 
 use axum::extract::State;
 use axum::http::StatusCode;
-use axum::routing::post;
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::Deserialize;
 use std::sync::Arc;
 use std::time::Duration;
 use tankovault_bus::Bus;
-use tankovault_contracts::admin::{RecsysBuildMode, RecsysBuildView, ScanTriggeredView};
+use tankovault_contracts::admin::{
+    MergePolicyView, RecsysBuildMode, RecsysBuildView, ScanTriggeredView,
+};
 use tankovault_contracts::{ScanTaskMessage, TaskKind};
 use tankovault_db::PgPool;
-use tankovault_domain::{Feature, Provider, ProviderId, RunState, ScanMode, ScanRunId};
+use tankovault_domain::{
+    Feature, Provider, ProviderId, RunState, ScanMode, ScanRunId, Tunable, UserId,
+};
 use tankovault_service::health::PostgresCheck;
 use tankovault_service::problem::Problem;
 use tankovault_service::{
@@ -38,6 +43,8 @@ use tankovault_service::{
 const SCANS: &str = "/internal/scans";
 /// Sweep the catalogue for duplicate series and merge what passes the threshold.
 const MERGE_SWEEP: &str = "/internal/merge-sweep";
+/// Read the automatic-merge policy the sweep applies.
+const MERGE_POLICY: &str = "/internal/merge-policy";
 /// Rebuild the recommendation model.
 const RECSYS_BUILD: &str = "/internal/recsys-build";
 
@@ -55,6 +62,16 @@ static INTERNAL_ROUTES: &[InternalRoute] = &[
     InternalRoute {
         method: axum::http::Method::POST,
         path: MERGE_SWEEP,
+        callers: &["api"],
+    },
+    InternalRoute {
+        method: axum::http::Method::GET,
+        path: MERGE_POLICY,
+        callers: &["api"],
+    },
+    InternalRoute {
+        method: axum::http::Method::POST,
+        path: MERGE_POLICY,
         callers: &["api"],
     },
     InternalRoute {
@@ -245,6 +262,10 @@ async fn serve_once(
             Router::new()
                 .route(SCANS, post(trigger_scan))
                 .route(MERGE_SWEEP, post(trigger_merge_sweep))
+                .route(
+                    MERGE_POLICY,
+                    get(read_merge_policy).post(write_merge_policy),
+                )
                 .route(RECSYS_BUILD, post(trigger_recsys_build))
                 .with_state(state),
         )
@@ -385,7 +406,7 @@ async fn trigger_merge_sweep(
     // not only to re-score the ones already recorded.
     let report = dedupe::sweep(
         &state.pool,
-        &state.matching,
+        policy::thresholds(&state.matching, &state.tunables),
         state.merge_budget,
         dedupe::SweepScope::Full,
         actor,
@@ -402,6 +423,75 @@ async fn trigger_merge_sweep(
         "duplicate sweep (on demand) complete"
     );
     Ok(Json(report))
+}
+
+/// The automatic-merge policy as this service resolves it: the configured `matching` block with
+/// every stored override applied.
+///
+/// Served from here rather than assembled in the API because the configured baseline is this
+/// image's, and the console has to be able to say what resetting a knob would return it to.
+async fn read_merge_policy(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<MergePolicyView>>, Problem> {
+    policy::view(&state.pool, &state.matching, &state.tunables)
+        .await
+        .map(Json)
+        .map_err(internal)
+}
+
+/// Record — or withdraw — an operator's decision about one knob of that policy.
+///
+/// Answers with the whole policy as it now stands, for the same reason the flags and tuning
+/// endpoints do: a console that patched its own row from the request it just sent can show a
+/// value this service does not hold.
+async fn write_merge_policy(
+    State(state): State<AppState>,
+    Json(req): Json<MergePolicyRequest>,
+) -> Result<Json<Vec<MergePolicyView>>, Problem> {
+    let tunable: Tunable = req.key.parse().map_err(|_| {
+        Problem::new(
+            StatusCode::BAD_REQUEST,
+            "unknown_tunable",
+            "no such automatic-merge setting",
+        )
+    })?;
+    // The key alone does not authorise the write: every other tunable belongs to the
+    // recommender, whose surface is behind a different permission in the API.
+    if !tunable.is_matching() {
+        return Err(Problem::new(
+            StatusCode::BAD_REQUEST,
+            "unknown_tunable",
+            "no such automatic-merge setting",
+        ));
+    }
+
+    if let Some(refusal) = req.value.and_then(|v| policy::refusal(tunable, v)) {
+        return Err(Problem::new(
+            StatusCode::BAD_REQUEST,
+            "out_of_range",
+            &refusal,
+        ));
+    }
+
+    let note = req.note.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    policy::apply(
+        &state.pool,
+        &state.tunables,
+        tunable,
+        req.value,
+        note,
+        req.actor,
+    )
+    .await
+    .map_err(internal)?;
+
+    tracing::info!(
+        tunable = %tunable,
+        value = ?req.value,
+        actor = %req.actor.as_uuid(),
+        "automatic-merge policy changed"
+    );
+    read_merge_policy(State(state)).await
 }
 
 /// Start one model build on demand — to apply a `next_build` tuning change, or to bring a model
@@ -454,6 +544,18 @@ async fn trigger_recsys_build(
 #[derive(Debug, Deserialize)]
 struct RecsysBuildRequest {
     mode: RecsysBuildMode,
+}
+
+/// One knob of the automatic-merge policy, as the API forwards an operator's decision.
+#[derive(Debug, Deserialize)]
+struct MergePolicyRequest {
+    /// The `matching.*` key. Anything else is refused, whatever the caller's permission.
+    key: String,
+    /// `None` withdraws the override, returning the knob to this deployment's configuration.
+    value: Option<f64>,
+    note: Option<String>,
+    /// The operator who decided it, recorded on the row so the page can say who last did.
+    actor: UserId,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -765,7 +867,8 @@ async fn maybe_merge_sweep(
         dedupe::SweepScope::Rotation => state.rotation_budget,
     };
     let started = std::time::Instant::now();
-    match dedupe::sweep(&state.pool, &state.matching, budget, scope, None).await {
+    let thresholds = policy::thresholds(&state.matching, &state.tunables);
+    match dedupe::sweep(&state.pool, thresholds, budget, scope, None).await {
         Ok(report) => {
             tracing::info!(
                 examined = report.pairs_examined,

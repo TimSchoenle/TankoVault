@@ -24,6 +24,7 @@ mod scans;
 mod solver;
 mod stats;
 mod sync;
+mod tuning;
 mod users;
 
 pub(crate) use query::ConsoleQuery;

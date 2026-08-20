@@ -337,6 +337,22 @@ shared author credits, and vetoed outright when the two titles carry different n
 | `TANKOVAULT_MATCHING__AUTO_MERGE` | `0.97` | control-plane | At or above this — **and** only when a structural identity rule fired (identical titles, identical modulo whitespace, or an exact hit on a name the series already answers to) — the duplicate sweep merges two *already-existing* series without asking. A separate knob from `HIGH` because it governs a different act: `HIGH` files an incoming source, this one deletes a series row and the id it carries. A score alone never suffices; see `tankovault_matcher::adjudicate`. |
 | `TANKOVAULT_MATCHING__CANDIDATE_LIMIT` | `10` | worker, sync | Trigram candidates scored per query title. More costs a wider index scan and buys nothing once the true match is in the set. |
 
+#### These five are a baseline, not the last word
+
+`AUTO_MERGE` and the four guards below are the **automatic-merge policy**, and the operator
+console overrides them per key at *Console → Merge → Automatic-merge policy*
+(`GET`/`PUT`/`DELETE /v1/admin/matching/policy`, `merge.read` / `merge.write`). What the console
+stores wins; a key nobody has touched there follows the value configured here. Resetting a knob
+in the console withdraws its override, which returns it to this deployment's configured value —
+not to the shipped default, and the page shows which number that is.
+
+The rest of the `matching` block is configuration only. `HIGH`, `LOW` and `CANDIDATE_LIMIT` are
+read by the worker and by external sync, and neither watches the override table, so a console
+knob for them would move a number those services never see.
+
+An override takes effect on the next sweep — including one started from the console's own
+sweep button — and revisits nothing already merged.
+
 #### The automatic-merge guards
 
 A score is one number and cannot express "these titles agree and the works do not". Each guard

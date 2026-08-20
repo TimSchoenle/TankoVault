@@ -22,7 +22,7 @@ fn every_key_round_trips_and_is_unique() {
 fn all_lists_every_variant() {
     // Hand-written and able to drift from the enum; bump it when adding a knob, or a
     // forgotten one is invisible to the console and to every reader.
-    assert_eq!(Tunable::all().len(), 42);
+    assert_eq!(Tunable::all().len(), 47);
 }
 
 #[test]
@@ -138,9 +138,53 @@ fn model_shaped_values_declare_that_they_need_a_rebuild() {
     );
 }
 
+/// Every key names the surface it belongs to, and the two surfaces partition the registry.
+///
+/// The namespace is not decoration: it is what tells an operator reading an audit record or a
+/// `tunable_overrides` row which page wrote it, and `is_matching` is what keeps the
+/// recommendation endpoints from serving — or accepting a write to — a merge policy knob.
 #[test]
-fn keys_are_namespaced_under_recsys() {
+fn every_key_is_namespaced_by_its_surface() {
     for &t in Tunable::all() {
-        assert!(t.key().starts_with("recsys."), "{t} is not namespaced");
+        if t.is_matching() {
+            assert!(t.key().starts_with("matching."), "{t} is not namespaced");
+        } else {
+            assert!(t.key().starts_with("recsys."), "{t} is not namespaced");
+        }
+    }
+}
+
+#[test]
+fn the_matching_slice_is_exactly_the_matching_group() {
+    let listed: BTreeSet<Tunable> = Tunable::matching().iter().copied().collect();
+    let grouped: BTreeSet<Tunable> = Tunable::all()
+        .iter()
+        .copied()
+        .filter(|t| t.spec().group == TunableGroup::Matching)
+        .collect();
+    assert_eq!(listed, grouped);
+    assert_eq!(listed.len(), Tunable::matching().len(), "duplicate entry");
+    for &t in Tunable::matching() {
+        assert!(t.is_matching(), "{t}");
+        assert_eq!(t.spec().applies, Applies::NextSweep, "{t}");
+    }
+}
+
+/// **A toggle reads as off below the midpoint, not as a fraction of on.**
+///
+/// The overrides table is one `f64` column for every kind, so nothing at the storage layer
+/// stops a guard being written as `0.4`. The sweep either applies a guard or does not; reading
+/// the number back through anything but this accessor invents a third state.
+#[test]
+fn a_toggle_resolves_to_one_side_or_the_other() {
+    for &t in Tunable::matching() {
+        if t.spec().kind != TunableKind::Toggle {
+            continue;
+        }
+        assert_eq!(t.spec().range(), 0.0..=1.0, "{t}");
+        assert!(!t.is_on(0.0), "{t}");
+        assert!(!t.is_on(0.49), "{t}");
+        assert!(t.is_on(0.5), "{t}");
+        assert!(t.is_on(1.0), "{t}");
     }
 }

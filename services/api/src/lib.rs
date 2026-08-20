@@ -194,6 +194,10 @@ pub fn route_features() -> RouteFeatures {
             "/v1/admin/merge-candidates/sweep",
             Feature::ScanningAutoMerge,
         )
+        // Covers the key rebuild and the automatic-merge policy. The policy deliberately does
+        // *not* follow `ScanningAutoMerge`, for the reason the merge journal's reads do not:
+        // an operator who has just switched automatic merging off because it over-merged is
+        // exactly the one who needs to read and correct the policy before switching it back on.
         .gate("/v1/admin/matching", Feature::ScanningMergeQueue)
         .gate("/v1/admin/catalogue", Feature::AdminCatalogue)
         // The merge journal follows the sweep it records: with automatic merging switched off
@@ -566,6 +570,8 @@ fn documented_router() -> OpenApiRouter<AppState> {
         .routes(routes!(admin::merge_series))
         .routes(routes!(admin::sweep_merge_candidates))
         .routes(routes!(admin::rebuild_matching_keys))
+        .routes(routes!(admin::get_merge_policy))
+        .routes(routes!(admin::set_merge_policy, admin::reset_merge_policy))
         .routes(routes!(admin::list_merge_decisions))
         .routes(routes!(admin::revert_merge_decision))
         .routes(routes!(admin::flag_merge_decision))

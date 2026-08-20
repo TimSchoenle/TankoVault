@@ -181,6 +181,33 @@ fn admin_gates() -> Vec<Gate> {
             required: &[Permission::MergeWrite],
             body: empty,
         },
+        // --- automatic-merge policy ---
+        // Reading the policy is `merge.read` and moving it is `merge.write`, exactly as for the
+        // queue it governs: an operator trusted to merge two series is trusted to say when the
+        // sweep may do it unattended, and nobody else is.
+        Gate {
+            method: "GET",
+            template: "/v1/admin/matching/policy",
+            path: "/v1/admin/matching/policy",
+            required: &[Permission::MergeRead],
+            // Forwarded to a control plane the harness points at `.invalid`, so the leg-3
+            // outcome is a `502` — after the permission check the matrix is here to assert.
+            body: empty,
+        },
+        Gate {
+            method: "PUT",
+            template: "/v1/admin/matching/policy/{key}",
+            path: "/v1/admin/matching/policy/matching.auto_merge",
+            required: &[Permission::MergeWrite],
+            body: || Some(json!({ "value": 0.97 })),
+        },
+        Gate {
+            method: "DELETE",
+            template: "/v1/admin/matching/policy/{key}",
+            path: "/v1/admin/matching/policy/matching.auto_merge",
+            required: &[Permission::MergeWrite],
+            body: empty,
+        },
         // --- merge decision journal ---
         // Reading the journal and reversing it are separate capabilities on purpose: the revert
         // is the only action in the system that resurrects a deleted series.

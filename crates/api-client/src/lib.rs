@@ -527,7 +527,8 @@ pub mod types {
     #[doc = "  \"enum\": ["]
     #[doc = "    \"immediately\","]
     #[doc = "    \"next_build\","]
-    #[doc = "    \"next_full_build\""]
+    #[doc = "    \"next_full_build\","]
+    #[doc = "    \"next_sweep\""]
     #[doc = "  ]"]
     #[doc = "}"]
     #[doc = r" ```"]
@@ -551,6 +552,8 @@ pub mod types {
         NextBuild,
         #[serde(rename = "next_full_build")]
         NextFullBuild,
+        #[serde(rename = "next_sweep")]
+        NextSweep,
     }
     impl ::std::fmt::Display for Applies {
         fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -558,6 +561,7 @@ pub mod types {
                 Self::Immediately => f.write_str("immediately"),
                 Self::NextBuild => f.write_str("next_build"),
                 Self::NextFullBuild => f.write_str("next_full_build"),
+                Self::NextSweep => f.write_str("next_sweep"),
             }
         }
     }
@@ -568,6 +572,7 @@ pub mod types {
                 "immediately" => Ok(Self::Immediately),
                 "next_build" => Ok(Self::NextBuild),
                 "next_full_build" => Ok(Self::NextFullBuild),
+                "next_sweep" => Ok(Self::NextSweep),
                 _ => Err("invalid value".into()),
             }
         }
@@ -4717,6 +4722,129 @@ pub mod types {
     }
     impl MergeDecision {
         pub fn builder() -> builder::MergeDecision {
+            Default::default()
+        }
+    }
+    #[doc = "One knob of the automatic-merge policy, as the console shows it.\n\nAssembled by the control plane rather than by the API, because the effective value is the\nstored override *layered over this deployment's configured* `matching` block — and the\ncontrol plane is the service that holds both. An API that resolved it against the compiled\nregistry instead would report a default the sweep does not use."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One knob of the automatic-merge policy, as the console shows it.\\n\\nAssembled by the control plane rather than by the API, because the effective value is the\\nstored override *layered over this deployment's configured* `matching` block — and the\\ncontrol plane is the service that holds both. An API that resolved it against the compiled\\nregistry instead would report a default the sweep does not use.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"applies\","]
+    #[doc = "    \"default_value\","]
+    #[doc = "    \"description\","]
+    #[doc = "    \"key\","]
+    #[doc = "    \"kind\","]
+    #[doc = "    \"max\","]
+    #[doc = "    \"min\","]
+    #[doc = "    \"overridden\","]
+    #[doc = "    \"title\","]
+    #[doc = "    \"value\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"applies\": {"]
+    #[doc = "      \"description\": \"When a change reaches the sweep. Every knob here is `next_sweep`.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"default_value\": {"]
+    #[doc = "      \"description\": \"What this deployment falls back to when no override is stored — its configured\\n`matching` value, which is the compiled default unless the deployment set it. This is\\nwhat resetting the knob returns it to, so it is not the same number as the compiled\\ndefault and must not be shown as one.\","]
+    #[doc = "      \"type\": \"number\","]
+    #[doc = "      \"format\": \"double\""]
+    #[doc = "    },"]
+    #[doc = "    \"description\": {"]
+    #[doc = "      \"description\": \"What the value does, written to be read immediately before someone changes production.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"key\": {"]
+    #[doc = "      \"description\": \"The persisted key, e.g. `matching.auto_merge`.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"kind\": {"]
+    #[doc = "      \"description\": \"`ratio` for the threshold, `toggle` for a guard — what the console renders, a field or a\\nswitch.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"max\": {"]
+    #[doc = "      \"type\": \"number\","]
+    #[doc = "      \"format\": \"double\""]
+    #[doc = "    },"]
+    #[doc = "    \"min\": {"]
+    #[doc = "      \"description\": \"Inclusive bounds. Enforced by the control plane, not only by the UI.\","]
+    #[doc = "      \"type\": \"number\","]
+    #[doc = "      \"format\": \"double\""]
+    #[doc = "    },"]
+    #[doc = "    \"note\": {"]
+    #[doc = "      \"description\": \"Why it was last changed, if the operator said.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"overridden\": {"]
+    #[doc = "      \"description\": \"Whether an operator has explicitly decided this one, as opposed to it following the\\ndeployment's configuration.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"title\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"updated_at\": {"]
+    #[doc = "      \"description\": \"RFC 3339. Absent while the knob follows the configuration.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"updated_by\": {"]
+    #[doc = "      \"description\": \"Username of the operator who last changed it; `None` once that account is erased.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"value\": {"]
+    #[doc = "      \"description\": \"The effective value, already clamped: exactly what the next sweep will apply.\","]
+    #[doc = "      \"type\": \"number\","]
+    #[doc = "      \"format\": \"double\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct MergePolicyKnob {
+        #[doc = "When a change reaches the sweep. Every knob here is `next_sweep`."]
+        pub applies: ::std::string::String,
+        #[doc = "What this deployment falls back to when no override is stored — its configured\n`matching` value, which is the compiled default unless the deployment set it. This is\nwhat resetting the knob returns it to, so it is not the same number as the compiled\ndefault and must not be shown as one."]
+        pub default_value: f64,
+        #[doc = "What the value does, written to be read immediately before someone changes production."]
+        pub description: ::std::string::String,
+        #[doc = "The persisted key, e.g. `matching.auto_merge`."]
+        pub key: ::std::string::String,
+        #[doc = "`ratio` for the threshold, `toggle` for a guard — what the console renders, a field or a\nswitch."]
+        pub kind: ::std::string::String,
+        pub max: f64,
+        #[doc = "Inclusive bounds. Enforced by the control plane, not only by the UI."]
+        pub min: f64,
+        #[doc = "Why it was last changed, if the operator said."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub note: ::std::option::Option<::std::string::String>,
+        #[doc = "Whether an operator has explicitly decided this one, as opposed to it following the\ndeployment's configuration."]
+        pub overridden: bool,
+        pub title: ::std::string::String,
+        #[doc = "RFC 3339. Absent while the knob follows the configuration."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub updated_at: ::std::option::Option<::std::string::String>,
+        #[doc = "Username of the operator who last changed it; `None` once that account is erased."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub updated_by: ::std::option::Option<::std::string::String>,
+        #[doc = "The effective value, already clamped: exactly what the next sweep will apply."]
+        pub value: f64,
+    }
+    impl MergePolicyKnob {
+        pub fn builder() -> builder::MergePolicyKnob {
             Default::default()
         }
     }
@@ -10752,6 +10880,47 @@ pub mod types {
             Default::default()
         }
     }
+    #[doc = "A proposed new value for one knob of the automatic-merge policy."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"A proposed new value for one knob of the automatic-merge policy.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"value\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"note\": {"]
+    #[doc = "      \"description\": \"Why, for the console and the audit record.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"value\": {"]
+    #[doc = "      \"description\": \"A guard is `1` or `0`; the threshold is a score in its published range.\","]
+    #[doc = "      \"type\": \"number\","]
+    #[doc = "      \"format\": \"double\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct SetMergePolicy {
+        #[doc = "Why, for the console and the audit record."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub note: ::std::option::Option<::std::string::String>,
+        #[doc = "A guard is `1` or `0`; the threshold is a score in its published range."]
+        pub value: f64,
+    }
+    impl SetMergePolicy {
+        pub fn builder() -> builder::SetMergePolicy {
+            Default::default()
+        }
+    }
     #[doc = "`SetPermissions`"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -12995,7 +13164,12 @@ pub mod types {
     #[doc = "    \"recsys.cooccurrence.max_list_entries\","]
     #[doc = "    \"recsys.serve.shelf_size\","]
     #[doc = "    \"recsys.serve.shelf_ttl_seconds\","]
-    #[doc = "    \"recsys.serve.feedback_decay_days\""]
+    #[doc = "    \"recsys.serve.feedback_decay_days\","]
+    #[doc = "    \"matching.auto_merge\","]
+    #[doc = "    \"matching.block_auto_merge_on_numeric_conflict\","]
+    #[doc = "    \"matching.block_auto_merge_on_author_conflict\","]
+    #[doc = "    \"matching.block_auto_merge_on_year_conflict\","]
+    #[doc = "    \"matching.block_auto_merge_on_type_conflict\""]
     #[doc = "  ]"]
     #[doc = "}"]
     #[doc = r" ```"]
@@ -13097,6 +13271,16 @@ pub mod types {
         RecsysServeShelfTtlSeconds,
         #[serde(rename = "recsys.serve.feedback_decay_days")]
         RecsysServeFeedbackDecayDays,
+        #[serde(rename = "matching.auto_merge")]
+        MatchingAutoMerge,
+        #[serde(rename = "matching.block_auto_merge_on_numeric_conflict")]
+        MatchingBlockAutoMergeOnNumericConflict,
+        #[serde(rename = "matching.block_auto_merge_on_author_conflict")]
+        MatchingBlockAutoMergeOnAuthorConflict,
+        #[serde(rename = "matching.block_auto_merge_on_year_conflict")]
+        MatchingBlockAutoMergeOnYearConflict,
+        #[serde(rename = "matching.block_auto_merge_on_type_conflict")]
+        MatchingBlockAutoMergeOnTypeConflict,
     }
     impl ::std::fmt::Display for Tunable {
         fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -13175,6 +13359,19 @@ pub mod types {
                 Self::RecsysServeFeedbackDecayDays => {
                     f.write_str("recsys.serve.feedback_decay_days")
                 }
+                Self::MatchingAutoMerge => f.write_str("matching.auto_merge"),
+                Self::MatchingBlockAutoMergeOnNumericConflict => {
+                    f.write_str("matching.block_auto_merge_on_numeric_conflict")
+                }
+                Self::MatchingBlockAutoMergeOnAuthorConflict => {
+                    f.write_str("matching.block_auto_merge_on_author_conflict")
+                }
+                Self::MatchingBlockAutoMergeOnYearConflict => {
+                    f.write_str("matching.block_auto_merge_on_year_conflict")
+                }
+                Self::MatchingBlockAutoMergeOnTypeConflict => {
+                    f.write_str("matching.block_auto_merge_on_type_conflict")
+                }
             }
         }
     }
@@ -13232,6 +13429,19 @@ pub mod types {
                 "recsys.serve.shelf_size" => Ok(Self::RecsysServeShelfSize),
                 "recsys.serve.shelf_ttl_seconds" => Ok(Self::RecsysServeShelfTtlSeconds),
                 "recsys.serve.feedback_decay_days" => Ok(Self::RecsysServeFeedbackDecayDays),
+                "matching.auto_merge" => Ok(Self::MatchingAutoMerge),
+                "matching.block_auto_merge_on_numeric_conflict" => {
+                    Ok(Self::MatchingBlockAutoMergeOnNumericConflict)
+                }
+                "matching.block_auto_merge_on_author_conflict" => {
+                    Ok(Self::MatchingBlockAutoMergeOnAuthorConflict)
+                }
+                "matching.block_auto_merge_on_year_conflict" => {
+                    Ok(Self::MatchingBlockAutoMergeOnYearConflict)
+                }
+                "matching.block_auto_merge_on_type_conflict" => {
+                    Ok(Self::MatchingBlockAutoMergeOnTypeConflict)
+                }
                 _ => Err("invalid value".into()),
             }
         }
@@ -13274,7 +13484,8 @@ pub mod types {
     #[doc = "    \"prior\","]
     #[doc = "    \"build\","]
     #[doc = "    \"cooccurrence\","]
-    #[doc = "    \"serving\""]
+    #[doc = "    \"serving\","]
+    #[doc = "    \"matching\""]
     #[doc = "  ]"]
     #[doc = "}"]
     #[doc = r" ```"]
@@ -13308,6 +13519,8 @@ pub mod types {
         Cooccurrence,
         #[serde(rename = "serving")]
         Serving,
+        #[serde(rename = "matching")]
+        Matching,
     }
     impl ::std::fmt::Display for TunableGroup {
         fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -13320,6 +13533,7 @@ pub mod types {
                 Self::Build => f.write_str("build"),
                 Self::Cooccurrence => f.write_str("cooccurrence"),
                 Self::Serving => f.write_str("serving"),
+                Self::Matching => f.write_str("matching"),
             }
         }
     }
@@ -13335,6 +13549,7 @@ pub mod types {
                 "build" => Ok(Self::Build),
                 "cooccurrence" => Ok(Self::Cooccurrence),
                 "serving" => Ok(Self::Serving),
+                "matching" => Ok(Self::Matching),
                 _ => Err("invalid value".into()),
             }
         }
@@ -13374,7 +13589,8 @@ pub mod types {
     #[doc = "    \"weight\","]
     #[doc = "    \"count\","]
     #[doc = "    \"days\","]
-    #[doc = "    \"seconds\""]
+    #[doc = "    \"seconds\","]
+    #[doc = "    \"toggle\""]
     #[doc = "  ]"]
     #[doc = "}"]
     #[doc = r" ```"]
@@ -13402,6 +13618,8 @@ pub mod types {
         Days,
         #[serde(rename = "seconds")]
         Seconds,
+        #[serde(rename = "toggle")]
+        Toggle,
     }
     impl ::std::fmt::Display for TunableKind {
         fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -13411,6 +13629,7 @@ pub mod types {
                 Self::Count => f.write_str("count"),
                 Self::Days => f.write_str("days"),
                 Self::Seconds => f.write_str("seconds"),
+                Self::Toggle => f.write_str("toggle"),
             }
         }
     }
@@ -13423,6 +13642,7 @@ pub mod types {
                 "count" => Ok(Self::Count),
                 "days" => Ok(Self::Days),
                 "seconds" => Ok(Self::Seconds),
+                "toggle" => Ok(Self::Toggle),
                 _ => Err("invalid value".into()),
             }
         }
@@ -20538,6 +20758,223 @@ pub mod types {
                     trigger: Ok(value.trigger),
                     undo_rows: Ok(value.undo_rows),
                     verdict: Ok(value.verdict),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct MergePolicyKnob {
+            applies: ::std::result::Result<::std::string::String, ::std::string::String>,
+            default_value: ::std::result::Result<f64, ::std::string::String>,
+            description: ::std::result::Result<::std::string::String, ::std::string::String>,
+            key: ::std::result::Result<::std::string::String, ::std::string::String>,
+            kind: ::std::result::Result<::std::string::String, ::std::string::String>,
+            max: ::std::result::Result<f64, ::std::string::String>,
+            min: ::std::result::Result<f64, ::std::string::String>,
+            note: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            overridden: ::std::result::Result<bool, ::std::string::String>,
+            title: ::std::result::Result<::std::string::String, ::std::string::String>,
+            updated_at: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            updated_by: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            value: ::std::result::Result<f64, ::std::string::String>,
+        }
+        impl ::std::default::Default for MergePolicyKnob {
+            fn default() -> Self {
+                Self {
+                    applies: Err("no value supplied for applies".to_string()),
+                    default_value: Err("no value supplied for default_value".to_string()),
+                    description: Err("no value supplied for description".to_string()),
+                    key: Err("no value supplied for key".to_string()),
+                    kind: Err("no value supplied for kind".to_string()),
+                    max: Err("no value supplied for max".to_string()),
+                    min: Err("no value supplied for min".to_string()),
+                    note: Ok(Default::default()),
+                    overridden: Err("no value supplied for overridden".to_string()),
+                    title: Err("no value supplied for title".to_string()),
+                    updated_at: Ok(Default::default()),
+                    updated_by: Ok(Default::default()),
+                    value: Err("no value supplied for value".to_string()),
+                }
+            }
+        }
+        impl MergePolicyKnob {
+            pub fn applies<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.applies = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for applies: {e}"));
+                self
+            }
+            pub fn default_value<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<f64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.default_value = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for default_value: {e}"));
+                self
+            }
+            pub fn description<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.description = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for description: {e}"));
+                self
+            }
+            pub fn key<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.key = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for key: {e}"));
+                self
+            }
+            pub fn kind<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.kind = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for kind: {e}"));
+                self
+            }
+            pub fn max<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<f64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.max = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for max: {e}"));
+                self
+            }
+            pub fn min<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<f64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.min = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for min: {e}"));
+                self
+            }
+            pub fn note<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.note = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for note: {e}"));
+                self
+            }
+            pub fn overridden<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.overridden = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for overridden: {e}"));
+                self
+            }
+            pub fn title<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.title = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for title: {e}"));
+                self
+            }
+            pub fn updated_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.updated_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for updated_at: {e}"));
+                self
+            }
+            pub fn updated_by<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.updated_by = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for updated_by: {e}"));
+                self
+            }
+            pub fn value<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<f64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.value = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for value: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<MergePolicyKnob> for super::MergePolicyKnob {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: MergePolicyKnob,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    applies: value.applies?,
+                    default_value: value.default_value?,
+                    description: value.description?,
+                    key: value.key?,
+                    kind: value.kind?,
+                    max: value.max?,
+                    min: value.min?,
+                    note: value.note?,
+                    overridden: value.overridden?,
+                    title: value.title?,
+                    updated_at: value.updated_at?,
+                    updated_by: value.updated_by?,
+                    value: value.value?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::MergePolicyKnob> for MergePolicyKnob {
+            fn from(value: super::MergePolicyKnob) -> Self {
+                Self {
+                    applies: Ok(value.applies),
+                    default_value: Ok(value.default_value),
+                    description: Ok(value.description),
+                    key: Ok(value.key),
+                    kind: Ok(value.kind),
+                    max: Ok(value.max),
+                    min: Ok(value.min),
+                    note: Ok(value.note),
+                    overridden: Ok(value.overridden),
+                    title: Ok(value.title),
+                    updated_at: Ok(value.updated_at),
+                    updated_by: Ok(value.updated_by),
+                    value: Ok(value.value),
                 }
             }
         }
@@ -27722,6 +28159,63 @@ pub mod types {
             }
         }
         #[derive(Clone, Debug)]
+        pub struct SetMergePolicy {
+            note: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            value: ::std::result::Result<f64, ::std::string::String>,
+        }
+        impl ::std::default::Default for SetMergePolicy {
+            fn default() -> Self {
+                Self {
+                    note: Ok(Default::default()),
+                    value: Err("no value supplied for value".to_string()),
+                }
+            }
+        }
+        impl SetMergePolicy {
+            pub fn note<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.note = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for note: {e}"));
+                self
+            }
+            pub fn value<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<f64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.value = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for value: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<SetMergePolicy> for super::SetMergePolicy {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: SetMergePolicy,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    note: value.note?,
+                    value: value.value?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::SetMergePolicy> for SetMergePolicy {
+            fn from(value: super::SetMergePolicy) -> Self {
+                Self {
+                    note: Ok(value.note),
+                    value: Ok(value.value),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
         pub struct SetPermissions {
             permissions:
                 ::std::result::Result<::std::vec::Vec<super::Permission>, ::std::string::String>,
@@ -33102,6 +33596,18 @@ impl Client {
     pub fn reset_flag(&self) -> builder::ResetFlag<'_> {
         builder::ResetFlag::new(self)
     }
+    #[doc = "Get the automatic-merge policy\n\nThe threshold and the four guards the duplicate sweep applies, each with its effective\nvalue, what this deployment falls back to without an override, and who last changed it.\n\nRead from the control plane rather than resolved here: the fallback is that image's\nconfigured `matching` block, and a policy page that showed the *compiled* default would name\na value the sweep does not use and reset knobs to it.\n\nSends a `GET` request to `/v1/admin/matching/policy`\n\n```ignore\nlet response = client.get_merge_policy()\n    .send()\n    .await;\n```"]
+    pub fn get_merge_policy(&self) -> builder::GetMergePolicy<'_> {
+        builder::GetMergePolicy::new(self)
+    }
+    #[doc = "Set an automatic-merge policy value\n\nTakes effect on the next sweep, including one an operator starts from this page. Nothing\nalready merged is revisited, and a queued pair keeps its recorded verdict until the sweep\nre-scores it.\n\nSends a `PUT` request to `/v1/admin/matching/policy/{key}`\n\nArguments:\n- `key`: Policy key, e.g. `matching.auto_merge`\n- `body`\n```ignore\nlet response = client.set_merge_policy()\n    .key(key)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn set_merge_policy(&self) -> builder::SetMergePolicy<'_> {
+        builder::SetMergePolicy::new(self)
+    }
+    #[doc = "Reset an automatic-merge policy value\n\nDrops the stored override so the knob follows this deployment's configuration again.\nDistinct from writing that same number, which records a decision that would survive a later\nchange to the configuration.\n\nSends a `DELETE` request to `/v1/admin/matching/policy/{key}`\n\nArguments:\n- `key`: Policy key, e.g. `matching.auto_merge`\n```ignore\nlet response = client.reset_merge_policy()\n    .key(key)\n    .send()\n    .await;\n```"]
+    pub fn reset_merge_policy(&self) -> builder::ResetMergePolicy<'_> {
+        builder::ResetMergePolicy::new(self)
+    }
     #[doc = "Rebuild the normalized matching keys\n\nRe-derives `series.normalized_title` and `series_titles.normalized` for the whole catalogue\nthrough the current `normalize_title`.\n\n# Why this is an operator action\n\nThe normalized title is a *persisted* key: it is written once, when a series is created, and\nevery later match compares against the stored value. A change to the normalization rules —\nlike making an apostrophe join a word instead of splitting one — therefore leaves the entire\ncatalogue on keys derived by the previous rules, and the improvement only reaches rows that\nhappen to be re-scanned. Running this is what makes a rules change take effect, and it is\nsafe to run repeatedly: only rows whose key actually changed are written.\n\nSends a `POST` request to `/v1/admin/matching/rebuild-keys`\n\n```ignore\nlet response = client.rebuild_matching_keys()\n    .send()\n    .await;\n```"]
     pub fn rebuild_matching_keys(&self) -> builder::RebuildMatchingKeys<'_> {
         builder::RebuildMatchingKeys::new(self)
@@ -34497,6 +35003,228 @@ pub mod builder {
                 .build()?;
             let info = OperationInfo {
                 operation_id: "reset_flag",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::get_merge_policy`]\n\n[`Client::get_merge_policy`]: super::Client::get_merge_policy"]
+    #[derive(Debug, Clone)]
+    pub struct GetMergePolicy<'a> {
+        client: &'a super::Client,
+    }
+    impl<'a> GetMergePolicy<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+        #[doc = "Sends a `GET` request to `/v1/admin/matching/policy`"]
+        pub async fn send(
+            self,
+        ) -> Result<
+            ResponseValue<::std::vec::Vec<types::MergePolicyKnob>>,
+            Error<types::ProblemDetails>,
+        > {
+            let Self { client } = self;
+            let url = format!("{}/v1/admin/matching/policy", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "get_merge_policy",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::set_merge_policy`]\n\n[`Client::set_merge_policy`]: super::Client::set_merge_policy"]
+    #[derive(Debug, Clone)]
+    pub struct SetMergePolicy<'a> {
+        client: &'a super::Client,
+        key: Result<::std::string::String, String>,
+        body: Result<types::builder::SetMergePolicy, String>,
+    }
+    impl<'a> SetMergePolicy<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                key: Err("key was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+        pub fn key<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.key = value.try_into().map_err(|_| {
+                "conversion to `:: std :: string :: String` for key failed".to_string()
+            });
+            self
+        }
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::SetMergePolicy>,
+            <V as std::convert::TryInto<types::SetMergePolicy>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `SetMergePolicy` for body failed: {}", s));
+            self
+        }
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(types::builder::SetMergePolicy) -> types::builder::SetMergePolicy,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+        #[doc = "Sends a `PUT` request to `/v1/admin/matching/policy/{key}`"]
+        pub async fn send(
+            self,
+        ) -> Result<
+            ResponseValue<::std::vec::Vec<types::MergePolicyKnob>>,
+            Error<types::ProblemDetails>,
+        > {
+            let Self { client, key, body } = self;
+            let key = key.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::SetMergePolicy::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/admin/matching/policy/{}",
+                client.baseurl,
+                encode_path(&key.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .put(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "set_merge_policy",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::reset_merge_policy`]\n\n[`Client::reset_merge_policy`]: super::Client::reset_merge_policy"]
+    #[derive(Debug, Clone)]
+    pub struct ResetMergePolicy<'a> {
+        client: &'a super::Client,
+        key: Result<::std::string::String, String>,
+    }
+    impl<'a> ResetMergePolicy<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                key: Err("key was not initialized".to_string()),
+            }
+        }
+        pub fn key<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.key = value.try_into().map_err(|_| {
+                "conversion to `:: std :: string :: String` for key failed".to_string()
+            });
+            self
+        }
+        #[doc = "Sends a `DELETE` request to `/v1/admin/matching/policy/{key}`"]
+        pub async fn send(
+            self,
+        ) -> Result<
+            ResponseValue<::std::vec::Vec<types::MergePolicyKnob>>,
+            Error<types::ProblemDetails>,
+        > {
+            let Self { client, key } = self;
+            let key = key.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/admin/matching/policy/{}",
+                client.baseurl,
+                encode_path(&key.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .delete(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "reset_merge_policy",
             };
             client.pre(&mut request, &info).await?;
             let result = client.exec(request, &info).await;

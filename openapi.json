@@ -213,7 +213,8 @@
         "enum": [
           "immediately",
           "next_build",
-          "next_full_build"
+          "next_full_build",
+          "next_sweep"
         ],
         "type": "string"
       },
@@ -2171,6 +2172,87 @@
           "policy",
           "revertible",
           "undo_rows"
+        ],
+        "type": "object"
+      },
+      "MergePolicyKnob": {
+        "description": "One knob of the automatic-merge policy, as the console shows it.\n\nAssembled by the control plane rather than by the API, because the effective value is the\nstored override *layered over this deployment's configured* `matching` block — and the\ncontrol plane is the service that holds both. An API that resolved it against the compiled\nregistry instead would report a default the sweep does not use.",
+        "properties": {
+          "applies": {
+            "description": "When a change reaches the sweep. Every knob here is `next_sweep`.",
+            "type": "string"
+          },
+          "default_value": {
+            "description": "What this deployment falls back to when no override is stored — its configured\n`matching` value, which is the compiled default unless the deployment set it. This is\nwhat resetting the knob returns it to, so it is not the same number as the compiled\ndefault and must not be shown as one.",
+            "format": "double",
+            "type": "number"
+          },
+          "description": {
+            "description": "What the value does, written to be read immediately before someone changes production.",
+            "type": "string"
+          },
+          "key": {
+            "description": "The persisted key, e.g. `matching.auto_merge`.",
+            "type": "string"
+          },
+          "kind": {
+            "description": "`ratio` for the threshold, `toggle` for a guard — what the console renders, a field or a\nswitch.",
+            "type": "string"
+          },
+          "max": {
+            "format": "double",
+            "type": "number"
+          },
+          "min": {
+            "description": "Inclusive bounds. Enforced by the control plane, not only by the UI.",
+            "format": "double",
+            "type": "number"
+          },
+          "note": {
+            "description": "Why it was last changed, if the operator said.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "overridden": {
+            "description": "Whether an operator has explicitly decided this one, as opposed to it following the\ndeployment's configuration.",
+            "type": "boolean"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updated_at": {
+            "description": "RFC 3339. Absent while the knob follows the configuration.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updated_by": {
+            "description": "Username of the operator who last changed it; `None` once that account is erased.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "value": {
+            "description": "The effective value, already clamped: exactly what the next sweep will apply.",
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "key",
+          "title",
+          "description",
+          "kind",
+          "applies",
+          "value",
+          "default_value",
+          "min",
+          "max",
+          "overridden"
         ],
         "type": "object"
       },
@@ -4957,6 +5039,27 @@
         ],
         "type": "object"
       },
+      "SetMergePolicy": {
+        "description": "A proposed new value for one knob of the automatic-merge policy.",
+        "properties": {
+          "note": {
+            "description": "Why, for the console and the audit record.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "value": {
+            "description": "A guard is `1` or `0`; the threshold is a score in its published range.",
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "type": "object"
+      },
       "SetPermissions": {
         "properties": {
           "permissions": {
@@ -6153,7 +6256,12 @@
           "recsys.cooccurrence.max_list_entries",
           "recsys.serve.shelf_size",
           "recsys.serve.shelf_ttl_seconds",
-          "recsys.serve.feedback_decay_days"
+          "recsys.serve.feedback_decay_days",
+          "matching.auto_merge",
+          "matching.block_auto_merge_on_numeric_conflict",
+          "matching.block_auto_merge_on_author_conflict",
+          "matching.block_auto_merge_on_year_conflict",
+          "matching.block_auto_merge_on_type_conflict"
         ],
         "type": "string"
       },
@@ -6167,7 +6275,8 @@
           "prior",
           "build",
           "cooccurrence",
-          "serving"
+          "serving",
+          "matching"
         ],
         "type": "string"
       },
@@ -6178,7 +6287,8 @@
           "weight",
           "count",
           "days",
-          "seconds"
+          "seconds",
+          "toggle"
         ],
         "type": "string"
       },
@@ -7555,6 +7665,206 @@
         "summary": "Set a feature flag",
         "tags": [
           "admin-feature-flags"
+        ]
+      }
+    },
+    "/v1/admin/matching/policy": {
+      "get": {
+        "description": "The threshold and the four guards the duplicate sweep applies, each with its effective\nvalue, what this deployment falls back to without an override, and who last changed it.\n\nRead from the control plane rather than resolved here: the fallback is that image's\nconfigured `matching` block, and a policy page that showed the *compiled* default would name\na value the sweep does not use and reset knobs to it.",
+        "operationId": "get_merge_policy",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MergePolicyKnob"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Every knob of the automatic-merge policy"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "no second factor is enrolled, or the caller does not hold the required permission"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Get the automatic-merge policy",
+        "tags": [
+          "admin-matching"
+        ]
+      }
+    },
+    "/v1/admin/matching/policy/{key}": {
+      "delete": {
+        "description": "Drops the stored override so the knob follows this deployment's configuration again.\nDistinct from writing that same number, which records a decision that would survive a later\nchange to the configuration.",
+        "operationId": "reset_merge_policy",
+        "parameters": [
+          {
+            "description": "Policy key, e.g. `matching.auto_merge`",
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MergePolicyKnob"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "The whole policy after the reset"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "unknown key"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Reset an automatic-merge policy value",
+        "tags": [
+          "admin-matching"
+        ]
+      },
+      "put": {
+        "description": "Takes effect on the next sweep, including one an operator starts from this page. Nothing\nalready merged is revisited, and a queued pair keeps its recorded verdict until the sweep\nre-scores it.",
+        "operationId": "set_merge_policy",
+        "parameters": [
+          {
+            "description": "Policy key, e.g. `matching.auto_merge`",
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetMergePolicy"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MergePolicyKnob"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "The whole policy after the change"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "unknown key, or a value outside its range"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Set an automatic-merge policy value",
+        "tags": [
+          "admin-matching"
         ]
       }
     },

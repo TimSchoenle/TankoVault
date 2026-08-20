@@ -19,6 +19,9 @@ pub enum TunableGroup {
     Build,
     Cooccurrence,
     Serving,
+    /// The automatic-merge policy the duplicate sweep applies. Served by its own endpoint and
+    /// rendered beside the review queue rather than on the recommendation page.
+    Matching,
 }
 
 impl TunableGroup {
@@ -33,6 +36,7 @@ impl TunableGroup {
             Self::Build => "build",
             Self::Cooccurrence => "cooccurrence",
             Self::Serving => "serving",
+            Self::Matching => "matching",
         }
     }
 }
@@ -59,6 +63,10 @@ pub enum TunableKind {
     Count,
     Days,
     Seconds,
+    /// On or off, stored as `1` or `0` in the same `f64` column as everything else. Readers take
+    /// it through [`crate::Tunable`]'s boolean accessor, which treats any value at or above the
+    /// midpoint as on, so a hand-edited row cannot mean something a switch has no way to show.
+    Toggle,
 }
 
 impl TunableKind {
@@ -70,6 +78,7 @@ impl TunableKind {
             Self::Count => "count",
             Self::Days => "days",
             Self::Seconds => "seconds",
+            Self::Toggle => "toggle",
         }
     }
 }
@@ -97,6 +106,9 @@ pub enum Applies {
     NextBuild,
     /// The next full rebuild — the stored model was computed under the old value.
     NextFullBuild,
+    /// The next duplicate sweep. Nothing already merged is revisited, and nothing already in
+    /// the review queue changes until the sweep re-scores it.
+    NextSweep,
 }
 
 impl Applies {
@@ -106,6 +118,7 @@ impl Applies {
             Self::Immediately => "immediately",
             Self::NextBuild => "next_build",
             Self::NextFullBuild => "next_full_build",
+            Self::NextSweep => "next_sweep",
         }
     }
 }

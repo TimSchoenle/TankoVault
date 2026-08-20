@@ -8,9 +8,9 @@ use crate::state::{AppState, AuthUser};
 use crate::views::IntoView;
 use axum::Json;
 use axum::extract::{Path, Query, State};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tankovault_contracts::admin::{
-    KeyRebuildView, MergeCandidateView, MergePolicyView, MergeSweepView,
+    KeyRebuildView, MergeCandidateView, MergeFullSweepView, MergePolicyView, MergeSweepView,
 };
 use tankovault_domain::{Permission, SeriesId, Tunable};
 use utoipa::{IntoParams, ToSchema};
@@ -206,6 +206,140 @@ pub async fn sweep_merge_candidates(
     )
     .await;
     Ok(Json(report))
+}
+
+/// Run an exhaustive duplicate sweep
+///
+/// The same sweep as `POST /v1/admin/merge-candidates/sweep`, drawn over and over until a round
+/// shortlists nothing it has not already judged — one full rotation of the open queue and the
+/// recheck set, and every newly-blocked pair besides. A single sweep only covers one budget's
+/// worth of each and leaves the rest to the schedule; this is the button for "look at all of it
+/// now", after a normalization change or a policy change that should not wait hours to land.
+///
+/// The run is detached and takes minutes, so this answers only whether one *started*. Progress,
+/// the totals so far and how the last one ended are on `GET` of this same path, which the console
+/// polls. A request arriving while a run is live answers `started: false`: the claim is what
+/// stops two runs spending the automatic-merge ceiling twice over.
+#[utoipa::path(
+    post,
+    path = "/v1/admin/merge-candidates/sweep-all",
+    tag = ADMIN_MATCHING_TAG,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Whether a run was started", body = MergeFullSweepView),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 404, description = "automatic duplicate merging is switched off", body = crate::error::ProblemDetails),
+    )
+)]
+pub async fn sweep_all_merge_candidates(
+    State(state): State<AppState>,
+    user: AuthUser,
+) -> ApiResult<Json<MergeFullSweepView>> {
+    user.require(Permission::MergeWrite).await?;
+    // The actor travels with the request for the same reason as the single sweep: every merge
+    // the run makes is attributable to the person who asked for it, not only to the schedule.
+    let Json(view): Json<MergeFullSweepView> = state
+        .control_plane
+        .post(
+            "/internal/merge-sweep-all",
+            &serde_json::json!({ "actor": user.user_id }),
+        )
+        .await?;
+    audit(
+        &state,
+        &user,
+        "merge.sweep_all",
+        "-",
+        &serde_json::to_value(view).unwrap_or_default(),
+    )
+    .await;
+    Ok(Json(view))
+}
+
+/// What the exhaustive duplicate sweep is doing, or last did.
+///
+/// The counters carry the same meanings as [`MergeSweepView`]'s, summed over every round the run
+/// has drawn so far. `chains_deferred` has none here: it says the last *pass* skipped a pair
+/// because of its own merge, and a run that keeps drawing rounds until nothing new appears has
+/// already come back for it.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct MergeFullSweepStatusView {
+    /// Whether a run holds the claim and is still stamping it. A holder whose heartbeat has gone
+    /// stale reads `false`, because that is the operator's actual question: is the button live.
+    pub running: bool,
+    /// RFC 3339. When the current or most recent run started.
+    #[schema(example = "2026-08-20T12:00:00Z")]
+    pub started_at: Option<String>,
+    /// RFC 3339. When the most recent run released its claim; absent while one is running.
+    #[schema(example = "2026-08-20T12:09:00Z")]
+    pub finished_at: Option<String>,
+    /// Rounds drawn. One round is one budgeted sweep.
+    pub rounds: i32,
+    /// Why the last run stopped: `exhausted`, `merge_ceiling`, `round_cap` or `failed`. Only
+    /// `exhausted` means every shortlist was walked out — the rest mean another run has work to
+    /// do. Absent before the first run, and while one is in flight.
+    pub stopped: Option<String>,
+    /// How the last run ended when it ended badly. A failed run still releases its claim, so a
+    /// failure shows up here rather than as a sweep that never finishes.
+    pub error: Option<String>,
+    pub pairs_examined: i64,
+    pub auto_merged: i64,
+    pub queued: i64,
+    pub requeued: i64,
+    pub reopened: i64,
+    pub withdrawn: i64,
+    pub distinct: i64,
+    pub deferred: i64,
+    pub blocked: i64,
+}
+
+/// Get the exhaustive duplicate sweep's state
+///
+/// Progress of the run `POST` of this path starts, and the outcome of the last one. Read from
+/// the database rather than from the control plane: the run writes its progress there after
+/// every round, and asking the replica that happens to answer would get the state of whichever
+/// one was asked rather than of the run.
+#[utoipa::path(
+    get,
+    path = "/v1/admin/merge-candidates/sweep-all",
+    tag = ADMIN_MATCHING_TAG,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "The exhaustive sweep's current state", body = MergeFullSweepStatusView),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
+    )
+)]
+pub async fn full_merge_sweep_status(
+    State(state): State<AppState>,
+    user: AuthUser,
+) -> ApiResult<Json<MergeFullSweepStatusView>> {
+    user.require(Permission::MergeRead).await?;
+    let sweep = tankovault_db::repo::matching::read_full_sweep_state(&state.pool).await?;
+    let rfc3339 = |at: Option<time::OffsetDateTime>| {
+        at.and_then(|t| {
+            t.format(&time::format_description::well_known::Rfc3339)
+                .ok()
+        })
+    };
+    Ok(Json(MergeFullSweepStatusView {
+        running: sweep.running,
+        started_at: rfc3339(sweep.started_at),
+        finished_at: rfc3339(sweep.finished_at),
+        rounds: sweep.rounds,
+        stopped: sweep.stopped,
+        error: sweep.error,
+        pairs_examined: sweep.counters.pairs_examined,
+        auto_merged: sweep.counters.auto_merged,
+        queued: sweep.counters.queued,
+        requeued: sweep.counters.requeued,
+        reopened: sweep.counters.reopened,
+        withdrawn: sweep.counters.withdrawn,
+        distinct: sweep.counters.distinct,
+        deferred: sweep.counters.deferred,
+        blocked: sweep.counters.blocked,
+    }))
 }
 
 /// Get the automatic-merge policy

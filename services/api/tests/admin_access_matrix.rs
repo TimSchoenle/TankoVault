@@ -176,6 +176,24 @@ fn admin_gates() -> Vec<Gate> {
         },
         Gate {
             method: "POST",
+            template: "/v1/admin/merge-candidates/sweep-all",
+            path: "/v1/admin/merge-candidates/sweep-all",
+            required: &[Permission::MergeWrite],
+            // Forwarded to a control plane the harness points at `.invalid`, so the leg-3
+            // outcome is a `502` — after the permission check the matrix is here to assert.
+            body: empty,
+        },
+        // Starting the exhaustive run is `merge.write` and watching it is `merge.read`, the same
+        // split as the queue it fills: its progress names no series and merges nothing.
+        Gate {
+            method: "GET",
+            template: "/v1/admin/merge-candidates/sweep-all",
+            path: "/v1/admin/merge-candidates/sweep-all",
+            required: &[Permission::MergeRead],
+            body: empty,
+        },
+        Gate {
+            method: "POST",
             template: "/v1/admin/matching/rebuild-keys",
             path: "/v1/admin/matching/rebuild-keys",
             required: &[Permission::MergeWrite],

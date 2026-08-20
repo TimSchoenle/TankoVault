@@ -4725,6 +4725,174 @@ pub mod types {
             Default::default()
         }
     }
+    #[doc = "What the exhaustive duplicate sweep is doing, or last did.\n\nThe counters carry the same meanings as [`MergeSweepView`]'s, summed over every round the run\nhas drawn so far. `chains_deferred` has none here: it says the last *pass* skipped a pair\nbecause of its own merge, and a run that keeps drawing rounds until nothing new appears has\nalready come back for it."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"What the exhaustive duplicate sweep is doing, or last did.\\n\\nThe counters carry the same meanings as [`MergeSweepView`]'s, summed over every round the run\\nhas drawn so far. `chains_deferred` has none here: it says the last *pass* skipped a pair\\nbecause of its own merge, and a run that keeps drawing rounds until nothing new appears has\\nalready come back for it.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"auto_merged\","]
+    #[doc = "    \"blocked\","]
+    #[doc = "    \"deferred\","]
+    #[doc = "    \"distinct\","]
+    #[doc = "    \"pairs_examined\","]
+    #[doc = "    \"queued\","]
+    #[doc = "    \"reopened\","]
+    #[doc = "    \"requeued\","]
+    #[doc = "    \"rounds\","]
+    #[doc = "    \"running\","]
+    #[doc = "    \"withdrawn\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"auto_merged\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"blocked\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"deferred\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"distinct\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"error\": {"]
+    #[doc = "      \"description\": \"How the last run ended when it ended badly. A failed run still releases its claim, so a\\nfailure shows up here rather than as a sweep that never finishes.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"finished_at\": {"]
+    #[doc = "      \"description\": \"RFC 3339. When the most recent run released its claim; absent while one is running.\","]
+    #[doc = "      \"examples\": ["]
+    #[doc = "        \"2026-08-20T12:09:00Z\""]
+    #[doc = "      ],"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"pairs_examined\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"queued\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"reopened\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"requeued\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"rounds\": {"]
+    #[doc = "      \"description\": \"Rounds drawn. One round is one budgeted sweep.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int32\""]
+    #[doc = "    },"]
+    #[doc = "    \"running\": {"]
+    #[doc = "      \"description\": \"Whether a run holds the claim and is still stamping it. A holder whose heartbeat has gone\\nstale reads `false`, because that is the operator's actual question: is the button live.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"started_at\": {"]
+    #[doc = "      \"description\": \"RFC 3339. When the current or most recent run started.\","]
+    #[doc = "      \"examples\": ["]
+    #[doc = "        \"2026-08-20T12:00:00Z\""]
+    #[doc = "      ],"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"stopped\": {"]
+    #[doc = "      \"description\": \"Why the last run stopped: `exhausted`, `merge_ceiling`, `round_cap` or `failed`. Only\\n`exhausted` means every shortlist was walked out — the rest mean another run has work to\\ndo. Absent before the first run, and while one is in flight.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"withdrawn\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct MergeFullSweepStatusView {
+        pub auto_merged: i64,
+        pub blocked: i64,
+        pub deferred: i64,
+        pub distinct: i64,
+        #[doc = "How the last run ended when it ended badly. A failed run still releases its claim, so a\nfailure shows up here rather than as a sweep that never finishes."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub error: ::std::option::Option<::std::string::String>,
+        #[doc = "RFC 3339. When the most recent run released its claim; absent while one is running."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub finished_at: ::std::option::Option<::std::string::String>,
+        pub pairs_examined: i64,
+        pub queued: i64,
+        pub reopened: i64,
+        pub requeued: i64,
+        #[doc = "Rounds drawn. One round is one budgeted sweep."]
+        pub rounds: i32,
+        #[doc = "Whether a run holds the claim and is still stamping it. A holder whose heartbeat has gone\nstale reads `false`, because that is the operator's actual question: is the button live."]
+        pub running: bool,
+        #[doc = "RFC 3339. When the current or most recent run started."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub started_at: ::std::option::Option<::std::string::String>,
+        #[doc = "Why the last run stopped: `exhausted`, `merge_ceiling`, `round_cap` or `failed`. Only\n`exhausted` means every shortlist was walked out — the rest mean another run has work to\ndo. Absent before the first run, and while one is in flight."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub stopped: ::std::option::Option<::std::string::String>,
+        pub withdrawn: i64,
+    }
+    impl MergeFullSweepStatusView {
+        pub fn builder() -> builder::MergeFullSweepStatusView {
+            Default::default()
+        }
+    }
+    #[doc = "Whether an exhaustive duplicate sweep was started.\n\nReturned by `POST /v1/admin/merge-candidates/sweep-all`. The run is detached, so this answers\nonly whether one *started*: it draws rounds until every shortlist has been walked out, which\nis far longer than a request may be held open for. What the run goes on to do — rounds,\ncounters and how it ended — is on `GET /v1/admin/merge-candidates/sweep-all`."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Whether an exhaustive duplicate sweep was started.\\n\\nReturned by `POST /v1/admin/merge-candidates/sweep-all`. The run is detached, so this answers\\nonly whether one *started*: it draws rounds until every shortlist has been walked out, which\\nis far longer than a request may be held open for. What the run goes on to do — rounds,\\ncounters and how it ended — is on `GET /v1/admin/merge-candidates/sweep-all`.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"started\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"started\": {"]
+    #[doc = "      \"description\": \"`false` when a live run already held the claim. The correct response is to watch that\\nrun, not to retry: it is doing this one's work, and starting a second would spend the\\nautomatic-merge ceiling twice over.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct MergeFullSweepView {
+        #[doc = "`false` when a live run already held the claim. The correct response is to watch that\nrun, not to retry: it is doing this one's work, and starting a second would spend the\nautomatic-merge ceiling twice over."]
+        pub started: bool,
+    }
+    impl MergeFullSweepView {
+        pub fn builder() -> builder::MergeFullSweepView {
+            Default::default()
+        }
+    }
     #[doc = "One knob of the automatic-merge policy, as the console shows it.\n\nAssembled by the control plane rather than by the API, because the effective value is the\nstored override *layered over this deployment's configured* `matching` block — and the\ncontrol plane is the service that holds both. An API that resolved it against the compiled\nregistry instead would report a default the sweep does not use."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -20762,6 +20930,294 @@ pub mod types {
             }
         }
         #[derive(Clone, Debug)]
+        pub struct MergeFullSweepStatusView {
+            auto_merged: ::std::result::Result<i64, ::std::string::String>,
+            blocked: ::std::result::Result<i64, ::std::string::String>,
+            deferred: ::std::result::Result<i64, ::std::string::String>,
+            distinct: ::std::result::Result<i64, ::std::string::String>,
+            error: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            finished_at: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            pairs_examined: ::std::result::Result<i64, ::std::string::String>,
+            queued: ::std::result::Result<i64, ::std::string::String>,
+            reopened: ::std::result::Result<i64, ::std::string::String>,
+            requeued: ::std::result::Result<i64, ::std::string::String>,
+            rounds: ::std::result::Result<i32, ::std::string::String>,
+            running: ::std::result::Result<bool, ::std::string::String>,
+            started_at: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            stopped: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            withdrawn: ::std::result::Result<i64, ::std::string::String>,
+        }
+        impl ::std::default::Default for MergeFullSweepStatusView {
+            fn default() -> Self {
+                Self {
+                    auto_merged: Err("no value supplied for auto_merged".to_string()),
+                    blocked: Err("no value supplied for blocked".to_string()),
+                    deferred: Err("no value supplied for deferred".to_string()),
+                    distinct: Err("no value supplied for distinct".to_string()),
+                    error: Ok(Default::default()),
+                    finished_at: Ok(Default::default()),
+                    pairs_examined: Err("no value supplied for pairs_examined".to_string()),
+                    queued: Err("no value supplied for queued".to_string()),
+                    reopened: Err("no value supplied for reopened".to_string()),
+                    requeued: Err("no value supplied for requeued".to_string()),
+                    rounds: Err("no value supplied for rounds".to_string()),
+                    running: Err("no value supplied for running".to_string()),
+                    started_at: Ok(Default::default()),
+                    stopped: Ok(Default::default()),
+                    withdrawn: Err("no value supplied for withdrawn".to_string()),
+                }
+            }
+        }
+        impl MergeFullSweepStatusView {
+            pub fn auto_merged<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.auto_merged = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for auto_merged: {e}"));
+                self
+            }
+            pub fn blocked<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.blocked = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for blocked: {e}"));
+                self
+            }
+            pub fn deferred<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.deferred = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for deferred: {e}"));
+                self
+            }
+            pub fn distinct<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.distinct = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for distinct: {e}"));
+                self
+            }
+            pub fn error<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.error = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for error: {e}"));
+                self
+            }
+            pub fn finished_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.finished_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for finished_at: {e}"));
+                self
+            }
+            pub fn pairs_examined<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.pairs_examined = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for pairs_examined: {e}")
+                });
+                self
+            }
+            pub fn queued<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.queued = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for queued: {e}"));
+                self
+            }
+            pub fn reopened<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.reopened = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for reopened: {e}"));
+                self
+            }
+            pub fn requeued<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.requeued = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for requeued: {e}"));
+                self
+            }
+            pub fn rounds<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.rounds = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for rounds: {e}"));
+                self
+            }
+            pub fn running<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.running = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for running: {e}"));
+                self
+            }
+            pub fn started_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.started_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for started_at: {e}"));
+                self
+            }
+            pub fn stopped<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.stopped = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for stopped: {e}"));
+                self
+            }
+            pub fn withdrawn<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.withdrawn = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for withdrawn: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<MergeFullSweepStatusView> for super::MergeFullSweepStatusView {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: MergeFullSweepStatusView,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    auto_merged: value.auto_merged?,
+                    blocked: value.blocked?,
+                    deferred: value.deferred?,
+                    distinct: value.distinct?,
+                    error: value.error?,
+                    finished_at: value.finished_at?,
+                    pairs_examined: value.pairs_examined?,
+                    queued: value.queued?,
+                    reopened: value.reopened?,
+                    requeued: value.requeued?,
+                    rounds: value.rounds?,
+                    running: value.running?,
+                    started_at: value.started_at?,
+                    stopped: value.stopped?,
+                    withdrawn: value.withdrawn?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::MergeFullSweepStatusView> for MergeFullSweepStatusView {
+            fn from(value: super::MergeFullSweepStatusView) -> Self {
+                Self {
+                    auto_merged: Ok(value.auto_merged),
+                    blocked: Ok(value.blocked),
+                    deferred: Ok(value.deferred),
+                    distinct: Ok(value.distinct),
+                    error: Ok(value.error),
+                    finished_at: Ok(value.finished_at),
+                    pairs_examined: Ok(value.pairs_examined),
+                    queued: Ok(value.queued),
+                    reopened: Ok(value.reopened),
+                    requeued: Ok(value.requeued),
+                    rounds: Ok(value.rounds),
+                    running: Ok(value.running),
+                    started_at: Ok(value.started_at),
+                    stopped: Ok(value.stopped),
+                    withdrawn: Ok(value.withdrawn),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct MergeFullSweepView {
+            started: ::std::result::Result<bool, ::std::string::String>,
+        }
+        impl ::std::default::Default for MergeFullSweepView {
+            fn default() -> Self {
+                Self {
+                    started: Err("no value supplied for started".to_string()),
+                }
+            }
+        }
+        impl MergeFullSweepView {
+            pub fn started<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.started = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for started: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<MergeFullSweepView> for super::MergeFullSweepView {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: MergeFullSweepView,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    started: value.started?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::MergeFullSweepView> for MergeFullSweepView {
+            fn from(value: super::MergeFullSweepView) -> Self {
+                Self {
+                    started: Ok(value.started),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
         pub struct MergePolicyKnob {
             applies: ::std::result::Result<::std::string::String, ::std::string::String>,
             default_value: ::std::result::Result<f64, ::std::string::String>,
@@ -33624,6 +34080,14 @@ impl Client {
     pub fn sweep_merge_candidates(&self) -> builder::SweepMergeCandidates<'_> {
         builder::SweepMergeCandidates::new(self)
     }
+    #[doc = "Get the exhaustive duplicate sweep's state\n\nProgress of the run `POST` of this path starts, and the outcome of the last one. Read from\nthe database rather than from the control plane: the run writes its progress there after\nevery round, and asking the replica that happens to answer would get the state of whichever\none was asked rather than of the run.\n\nSends a `GET` request to `/v1/admin/merge-candidates/sweep-all`\n\n```ignore\nlet response = client.full_merge_sweep_status()\n    .send()\n    .await;\n```"]
+    pub fn full_merge_sweep_status(&self) -> builder::FullMergeSweepStatus<'_> {
+        builder::FullMergeSweepStatus::new(self)
+    }
+    #[doc = "Run an exhaustive duplicate sweep\n\nThe same sweep as `POST /v1/admin/merge-candidates/sweep`, drawn over and over until a round\nshortlists nothing it has not already judged — one full rotation of the open queue and the\nrecheck set, and every newly-blocked pair besides. A single sweep only covers one budget's\nworth of each and leaves the rest to the schedule; this is the button for \"look at all of it\nnow\", after a normalization change or a policy change that should not wait hours to land.\n\nThe run is detached and takes minutes, so this answers only whether one *started*. Progress,\nthe totals so far and how the last one ended are on `GET` of this same path, which the console\npolls. A request arriving while a run is live answers `started: false`: the claim is what\nstops two runs spending the automatic-merge ceiling twice over.\n\nSends a `POST` request to `/v1/admin/merge-candidates/sweep-all`\n\n```ignore\nlet response = client.sweep_all_merge_candidates()\n    .send()\n    .await;\n```"]
+    pub fn sweep_all_merge_candidates(&self) -> builder::SweepAllMergeCandidates<'_> {
+        builder::SweepAllMergeCandidates::new(self)
+    }
     #[doc = "List merge decisions\n\nThe automatic-merge journal, newest first: the itemised score behind each decision, the rule\nthat produced the verdict, the guards that overrode it, and whether it can still be undone.\n\nSends a `GET` request to `/v1/admin/merge-decisions`\n\nArguments:\n- `blocked`: Only decisions a guard held back: the near misses.\n- `flagged`: Only decisions an operator has flagged wrong.\n- `limit`\n- `offset`\n- `outcome`: Restrict to one outcome: `merged`, `queued`, `requeued`, `reopened`, `withdrawn`,\n`distinct`, `deferred`.\n- `revertible`: Only merges that can still be undone.\n- `series_id`: Only decisions naming this series on either side. Survives the merge — an absorbed id is\nstill on the row that absorbed it, which is the one you go looking for.\n\nA bare `Uuid`, not `SeriesId`: an optional newtype in a query parameter generates a\none-variant `oneOf` that the client generator cannot render.\n```ignore\nlet response = client.list_merge_decisions()\n    .blocked(blocked)\n    .flagged(flagged)\n    .limit(limit)\n    .offset(offset)\n    .outcome(outcome)\n    .revertible(revertible)\n    .series_id(series_id)\n    .send()\n    .await;\n```"]
     pub fn list_merge_decisions(&self) -> builder::ListMergeDecisions<'_> {
         builder::ListMergeDecisions::new(self)
@@ -35469,6 +35933,109 @@ pub mod builder {
                 .build()?;
             let info = OperationInfo {
                 operation_id: "sweep_merge_candidates",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                404u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::full_merge_sweep_status`]\n\n[`Client::full_merge_sweep_status`]: super::Client::full_merge_sweep_status"]
+    #[derive(Debug, Clone)]
+    pub struct FullMergeSweepStatus<'a> {
+        client: &'a super::Client,
+    }
+    impl<'a> FullMergeSweepStatus<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+        #[doc = "Sends a `GET` request to `/v1/admin/merge-candidates/sweep-all`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::MergeFullSweepStatusView>, Error<types::ProblemDetails>>
+        {
+            let Self { client } = self;
+            let url = format!("{}/v1/admin/merge-candidates/sweep-all", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "full_merge_sweep_status",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::sweep_all_merge_candidates`]\n\n[`Client::sweep_all_merge_candidates`]: super::Client::sweep_all_merge_candidates"]
+    #[derive(Debug, Clone)]
+    pub struct SweepAllMergeCandidates<'a> {
+        client: &'a super::Client,
+    }
+    impl<'a> SweepAllMergeCandidates<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+        #[doc = "Sends a `POST` request to `/v1/admin/merge-candidates/sweep-all`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::MergeFullSweepView>, Error<types::ProblemDetails>>
+        {
+            let Self { client } = self;
+            let url = format!("{}/v1/admin/merge-candidates/sweep-all", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "sweep_all_merge_candidates",
             };
             client.pre(&mut request, &info).await?;
             let result = client.exec(request, &info).await;

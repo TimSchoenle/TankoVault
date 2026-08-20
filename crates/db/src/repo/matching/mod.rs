@@ -28,10 +28,12 @@
 //!
 //! One module per stage: `candidates` and `pairs` find them, `queue` holds the ambiguous
 //! ones for an operator, `merge` executes the decision, and `keys` maintains the normalized
-//! title keys the first two read.
+//! title keys the first two read. `full_sweep` holds the claim and the progress of the
+//! operator-triggered run that walks all three shortlists to the end.
 
 mod candidates;
 mod decisions;
+mod full_sweep;
 mod keys;
 mod merge;
 mod pairs;
@@ -59,6 +61,10 @@ pub use candidates::{find_candidates, find_candidates_multi};
 pub use decisions::{
     MergeDecisionFilter, MergeDecisionRow, NewMergeDecision, flag_merge_decision,
     list_merge_decisions, record_merge_decisions, revert_merge_decision,
+};
+pub use full_sweep::{
+    FullSweepClaim, FullSweepCounters, FullSweepState, advance_full_sweep, claim_full_sweep,
+    finish_full_sweep, read_full_sweep_state,
 };
 pub use keys::{KeyRebuildReport, rebuild_normalized_keys};
 pub use merge::{merge_series, resolve_merged_series, resolve_merged_series_batch};

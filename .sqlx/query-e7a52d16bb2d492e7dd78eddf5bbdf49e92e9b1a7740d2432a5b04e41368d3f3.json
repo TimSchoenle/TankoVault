@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE merge_full_sweep_state SET heartbeat_at   = now(), rounds         = $2, pairs_examined = $3, auto_merged    = $4, queued         = $5, requeued       = $6, reopened       = $7, withdrawn      = $8, distinct_pairs = $9, deferred       = $10, blocked        = $11 WHERE id AND claim_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e7a52d16bb2d492e7dd78eddf5bbdf49e92e9b1a7740d2432a5b04e41368d3f3"
+}

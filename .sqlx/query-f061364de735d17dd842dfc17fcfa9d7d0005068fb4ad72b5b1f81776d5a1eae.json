@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE merge_full_sweep_state SET running        = true, claim_id       = $1, heartbeat_at   = now(), started_at     = now(), finished_at    = NULL, rounds         = 0, pairs_examined = 0, auto_merged    = 0, queued         = 0, requeued       = 0, reopened       = 0, withdrawn      = 0, distinct_pairs = 0, deferred       = 0, blocked        = 0, stopped        = NULL, error          = NULL WHERE id AND (NOT running OR heartbeat_at IS NULL OR heartbeat_at < now() - make_interval(secs => $2::double precision)) RETURNING claim_id AS \"claim_id!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "claim_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "merge_full_sweep_state",
+            "name": "claim_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "f061364de735d17dd842dfc17fcfa9d7d0005068fb4ad72b5b1f81776d5a1eae"
+}

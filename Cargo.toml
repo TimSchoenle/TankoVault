@@ -45,7 +45,7 @@ xtask = "the repository's task runner, not a service: its commands (migrate, see
 config-contract = "a build-time generator, not a service: it prints the configuration contract each image publishes and is run inside the build to produce that file"
 
 [workspace.package]
-version = "8.2.0"
+version = "8.3.0"
 edition = "2024"
 authors = ["TankoVault contributors"]
 license = "PolyForm-Noncommercial-1.0.0"

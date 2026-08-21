@@ -2,7 +2,7 @@
   "terrace_contract": 1,
   "app": {
     "name": "tankovault-notifier",
-    "version": "v8.3.0",
+    "version": "v8.3.1",
     "source": "https://github.com/TimSchoenle/TankoVault"
   },
   "schema": {

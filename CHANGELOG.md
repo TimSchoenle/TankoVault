@@ -12,6 +12,19 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [8.3.1](https://github.com/TimSchoenle/TankoVault/compare/v8.3.0...v8.3.1) (2026-08-21)
+
+
+### Bug Fixes
+
+* keep a merged-away series from failing the full catalogue sweep ([#266](https://github.com/TimSchoenle/TankoVault/issues/266)) ([6382ed6](https://github.com/TimSchoenle/TankoVault/commit/6382ed62b16c12b8473b2d6cf225dd274b6c019f))
+
+
+### Miscellaneous
+
+* **deps:** update timschoenle/actions/.github/workflows/maintenance-auto-approve-renovate.yaml to vworkflows-maintenance-auto-approve-renovate-v1.4.21 ([#263](https://github.com/TimSchoenle/TankoVault/issues/263)) ([40f7f95](https://github.com/TimSchoenle/TankoVault/commit/40f7f9577f857dbae7f534c3505682fbbe8c521f))
+* **deps:** update timschoenle/actions/.github/workflows/maintenance-timed-auto-pr-approve.yaml to vworkflows-maintenance-timed-auto-pr-approve-v1.2.32 ([#264](https://github.com/TimSchoenle/TankoVault/issues/264)) ([92bbad0](https://github.com/TimSchoenle/TankoVault/commit/92bbad0e306aec1985dae680868ed5bd13318d01))
+
 ## [8.3.0](https://github.com/TimSchoenle/TankoVault/compare/v8.2.0...v8.3.0) (2026-08-20)
 
 

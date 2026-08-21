@@ -538,23 +538,16 @@ impl Pass<'_> {
             let (Some(left), Some(right)) = (self.facts.get(&a), self.facts.get(&b)) else {
                 continue;
             };
-            report.pairs_examined += 1;
 
             let trigram = self.similarity.get(&pair).copied().unwrap_or_default();
             let reading = best_reading(left, right, trigram);
             let verdict = adjudicate(reading.assessment, self.thresholds);
-            if !verdict.blocked_by.is_empty() {
-                report.blocked += 1;
-            }
             let signals = reading.assessment.signals.labels();
             let merge = matches!(verdict.verdict, MergeVerdict::Auto)
                 && report.auto_merged < self.budget.max_auto_merges;
 
             let (action, reason) = match verdict.verdict {
-                MergeVerdict::Auto if !merge => {
-                    report.deferred += 1;
-                    (Action::Deferred, None)
-                }
+                MergeVerdict::Auto if !merge => (Action::Deferred, None),
                 MergeVerdict::Auto => {
                     // Survivor keeps more of the catalogue. The absorbed id stops existing,
                     // breaking any bookmark, notification or tracker mapping naming it directly.
@@ -597,6 +590,9 @@ impl Pass<'_> {
                 pair, left, right, trigram, reading, verdict, signals, reason, action,
             ));
         }
+
+        report.chains_deferred += retract_absorbed(&mut judged, &absorbed);
+        count_judgements(&judged, report);
         Ok(judged)
     }
 
@@ -665,6 +661,50 @@ impl Pass<'_> {
             signals,
             reason,
             action,
+        }
+    }
+}
+
+/// Drop the judgements this pass invalidated by merging one of their series away, returning how
+/// many — a chain deferral, exactly like a pair the judging loop skipped after the merge.
+///
+/// That loop can only skip pairs it has **not yet reached**. A pair judged *before* the merge kept
+/// a verdict naming a series the merge then deleted, and those verdicts are written in one batch
+/// after the loop against two columns that are foreign keys into `series`: the row was rejected,
+/// the whole statement with it, and the sweep failed with
+/// `merge_candidates_candidate_id_fkey`. Any future rework that moves the merges out of the
+/// judging loop, or the queue writes into it, has to keep this ordering fact answered somewhere.
+///
+/// Merges themselves are exempt: their pair names the absorbed series by definition, and their
+/// journal row is already written and carries no foreign key.
+fn retract_absorbed(judged: &mut Vec<Judged<'_>>, absorbed: &HashSet<SeriesId>) -> i64 {
+    if absorbed.is_empty() {
+        return 0;
+    }
+    let mut retracted = 0_i64;
+    judged.retain(|entry| {
+        let stale = !matches!(entry.action, Action::Merged { .. })
+            && (absorbed.contains(&entry.pair.0) || absorbed.contains(&entry.pair.1));
+        retracted += i64::from(stale);
+        !stale
+    });
+    retracted
+}
+
+/// Fold what the pass decided into its report.
+///
+/// Counted after [`retract_absorbed`], not as each pair is judged: a judgement the pass went on to
+/// invalidate was not one it examined to a conclusion, and counting it there would leave
+/// `pairs_examined` and `blocked` describing verdicts nothing acted on. `auto_merged` is counted
+/// in the loop instead, because the merge budget is spent against it as it goes.
+fn count_judgements(judged: &[Judged<'_>], report: &mut MergeSweepView) {
+    for entry in judged {
+        report.pairs_examined += 1;
+        if !entry.verdict.blocked_by.is_empty() {
+            report.blocked += 1;
+        }
+        if matches!(entry.action, Action::Deferred) {
+            report.deferred += 1;
         }
     }
 }
@@ -1145,6 +1185,83 @@ mod tests {
             total.chains_deferred, 0,
             "the chain the first pass deferred is the one the second resolved"
         );
+    }
+
+    fn judgement_of<'a>(
+        left: &'a SeriesMatchFacts,
+        right: &'a SeriesMatchFacts,
+        action: Action<'a>,
+    ) -> Judged<'a> {
+        let reading = best_reading(left, right, 0.0);
+        let verdict = adjudicate(reading.assessment, MatchingConfig::default().thresholds());
+        Judged {
+            pair: (left.series_id, right.series_id),
+            trigger: Trigger::New,
+            left,
+            right,
+            trigram: 0.0,
+            reading,
+            verdict,
+            signals: Vec::new(),
+            reason: None,
+            action,
+        }
+    }
+
+    /// A verdict reached before a merge in the same pass absorbed one of its series is retracted,
+    /// not written.
+    ///
+    /// The judging loop skips pairs naming an already-absorbed series, but it can only skip pairs
+    /// it has not reached yet. A pair judged *earlier* kept its verdict, and the queue write that
+    /// carries the whole pass — both of whose id columns are foreign keys into `series` — was
+    /// rejected as a body: `insert or update on table "merge_candidates" violates foreign key
+    /// constraint "merge_candidates_candidate_id_fkey"`, reported to the operator as
+    /// `Full sweep failed`. The retracted pair is a chain deferral, which is what makes the sweep
+    /// come back for it against the survivor.
+    #[test]
+    fn a_verdict_is_retracted_when_a_later_merge_in_the_pass_absorbs_its_series() {
+        let survivor = facts("Survivor Work", &[], 3, 90);
+        let doomed = facts("Survivorwork", &[], 1, 12);
+        let bystander = facts("Unrelated Work", &[], 1, 8);
+
+        let mut judged = vec![
+            // Judged before the merge, and naming the series the merge went on to delete.
+            judgement_of(&bystander, &doomed, Action::Review),
+            judgement_of(
+                &survivor,
+                &doomed,
+                Action::Merged {
+                    keep: &survivor,
+                    drop: &doomed,
+                },
+            ),
+            judgement_of(&bystander, &survivor, Action::Distinct),
+        ];
+        let absorbed = HashSet::from([doomed.series_id]);
+
+        assert_eq!(retract_absorbed(&mut judged, &absorbed), 1);
+        assert_eq!(judged.len(), 2);
+        assert!(
+            judged
+                .iter()
+                .any(|entry| matches!(entry.action, Action::Merged { .. })),
+            "the merge's own judgement names the absorbed series and must survive: it is \
+             journalled with the undo record, and that row has no foreign key"
+        );
+        assert!(
+            !judged
+                .iter()
+                .any(|entry| matches!(entry.action, Action::Review)),
+            "the review verdict naming the deleted series is gone"
+        );
+
+        let mut untouched = vec![judgement_of(&bystander, &survivor, Action::Distinct)];
+        assert_eq!(
+            retract_absorbed(&mut untouched, &HashSet::new()),
+            0,
+            "a pass that merged nothing retracts nothing"
+        );
+        assert_eq!(untouched.len(), 1);
     }
 
     fn round(shortlisted: &[DuplicatePair], auto_merged: i64) -> SweepRun {

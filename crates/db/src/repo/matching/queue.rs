@@ -20,7 +20,8 @@ pub enum QueueOutcome {
     Refreshed,
     /// A pair the *scorer* had closed as distinct is open again. The queue is one longer.
     Reopened,
-    /// Resolved by an operator, or already merged — left untouched.
+    /// Resolved by an operator, or already merged — left untouched. Also what the single-pair
+    /// [`record_merge_candidate`] reports when one of the two series no longer exists.
     Unchanged,
 }
 
@@ -57,6 +58,17 @@ pub struct NewMergeCandidate<'a> {
 /// both sides authors and synonyms has to be able to come back — while `dismissed`, `merged` and
 /// `auto_merged` stay untouchable, the first because a human decided it and the other two
 /// because the merge already happened.
+///
+/// # A pair whose series is gone is dropped, not an error
+///
+/// Both id columns are `REFERENCES series(id)`, so a pair naming a series that no longer exists
+/// is a foreign-key violation, and one violating row fails the whole statement — which is how a
+/// single absorbed series aborted an entire exhaustive sweep. The window cannot be closed in the
+/// caller: the sweep judges pairs against facts loaded up front and writes them in one statement
+/// at the end, while its own automatic merges and an operator's console merges delete series
+/// throughout. Such pairs are dropped and absent from the result — there is nothing to record
+/// about two series when one has ceased to exist, and the merge that removed it has already
+/// cascaded away every row naming it.
 ///
 /// # Errors
 /// [`crate::DbError::Conflict`] when a pair names one series twice, which the table's own check
@@ -95,21 +107,27 @@ pub async fn record_merge_candidates<'e, E: PgExecutor<'e>>(
     }
 
     // `prior` reads the pre-insert snapshot, so it reports the state the upsert is about to
-    // replace; a data-modifying CTE runs whether or not the outer query selects from it.
+    // replace; a data-modifying CTE runs whether or not the outer query selects from it. `live`
+    // is the foreign-key guard — two primary-key lookups, so a pair either side of which has been
+    // merged away since it was judged leaves the batch instead of failing it.
     let rows = sqlx::query!(
         "WITH input AS ( \
            SELECT d.id, LEAST(d.a, d.b) AS series_id, GREATEST(d.a, d.b) AS candidate_id, \
                   d.score, d.signals, d.reason \
              FROM jsonb_to_recordset($1::jsonb) AS d( \
                   id uuid, a uuid, b uuid, score real, signals text[], reason text) \
+         ), live AS ( \
+           SELECT i.* FROM input i \
+             JOIN series lo ON lo.id = i.series_id \
+             JOIN series hi ON hi.id = i.candidate_id \
          ), prior AS ( \
-           SELECT i.series_id, i.candidate_id, mc.resolved, mc.outcome \
-             FROM input i \
+           SELECT l.series_id, l.candidate_id, mc.resolved, mc.outcome \
+             FROM live l \
              LEFT JOIN merge_candidates mc \
-               ON mc.series_id = i.series_id AND mc.candidate_id = i.candidate_id \
+               ON mc.series_id = l.series_id AND mc.candidate_id = l.candidate_id \
          ), upsert AS ( \
            INSERT INTO merge_candidates (id, series_id, candidate_id, score, signals, reason) \
-           SELECT id, series_id, candidate_id, score, signals, reason FROM input \
+           SELECT id, series_id, candidate_id, score, signals, reason FROM live \
            ON CONFLICT (series_id, candidate_id) DO UPDATE \
               SET score = EXCLUDED.score, \
                   signals = EXCLUDED.signals, \
@@ -175,15 +193,13 @@ pub async fn record_merge_candidate<'e, E: PgExecutor<'e>>(
         }],
     )
     .await?;
-    // One row in, one row out: the statement selects from `prior`, which is a `LEFT JOIN` over
-    // the input and therefore preserves it.
-    outcomes
+    // No row means the pair named a series that has ceased to exist since the caller resolved it.
+    // Nothing was written, which is what `Unchanged` reports; every other case returns a row,
+    // because the statement selects from a `LEFT JOIN` over its input.
+    Ok(outcomes
         .into_iter()
         .next()
-        .map(|(_, _, outcome)| outcome)
-        .ok_or_else(|| {
-            crate::error::DbError::Conflict("the queue upsert returned no row".to_owned())
-        })
+        .map_or(QueueOutcome::Unchanged, |(_, _, outcome)| outcome))
 }
 
 /// A pending merge candidate enriched with everything an operator needs to judge it without
@@ -351,6 +367,11 @@ pub async fn dismiss_merge_candidate<'e, E: PgExecutor<'e>>(
 /// these are duplicates", and the pairs must stay suppressed against the standing duplicate
 /// sweep, which does not consult the queue for pairs it has never seen.
 ///
+/// A pair one of whose series no longer exists suppresses nothing, because there is nothing left
+/// to suppress: the sweep shortlists existing series only, so the pair cannot recur. Flagging an
+/// unreverted merge is the path that asks for it — the absorbed series is gone by definition — and
+/// without the guard that operator action failed on the foreign key instead.
+///
 /// # Errors
 /// [`crate::DbError::Conflict`] when `a == b`; otherwise [`crate::DbError::Sqlx`].
 pub async fn suppress_pair<'e, E: PgExecutor<'e>>(
@@ -367,8 +388,10 @@ pub async fn suppress_pair<'e, E: PgExecutor<'e>>(
     sqlx::query!(
         "INSERT INTO merge_candidates \
             (id, series_id, candidate_id, score, reason, resolved, outcome, resolved_by, resolved_at) \
-         VALUES ($1, LEAST($2::uuid, $3::uuid), GREATEST($2::uuid, $3::uuid), 0, 'operator marked distinct', true, \
-                 'dismissed', $4, now()) \
+         SELECT $1, LEAST($2::uuid, $3::uuid), GREATEST($2::uuid, $3::uuid), 0, \
+                'operator marked distinct', true, 'dismissed', $4, now() \
+          WHERE EXISTS (SELECT 1 FROM series WHERE id = $2::uuid) \
+            AND EXISTS (SELECT 1 FROM series WHERE id = $3::uuid) \
          ON CONFLICT (series_id, candidate_id) DO UPDATE \
             SET resolved = true, outcome = 'dismissed', resolved_by = $4, resolved_at = now(), \
                 updated_at = now()",

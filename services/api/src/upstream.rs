@@ -239,7 +239,8 @@ impl Upstream {
                     %status,
                     "internal call was not recognised: does this deployment's \
                      internal.caller.token match the peer's internal.peers.api.token (or, under \
-                     mtls, does its certificate SAN match internal.peers.api.san)?"
+                     mtls, does its certificate carry the name the peer expects in \
+                     internal.peers.api.san or .spiffe_id)?"
                 );
                 ApiError::BadGateway
             }

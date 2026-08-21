@@ -41,7 +41,7 @@ pub use email::{EmailConfig, EmailSecurity};
 pub use features::FeaturesConfig;
 pub use internal_auth::{
     CallerConfig, IdentityMode, InternalAuthConfig, InternalTlsConfig, MIN_INTERNAL_TOKEN_LEN,
-    PeerConfig, ResolvedCaller, ResolvedInternalAuth, ResolvedPeer, ResolvedTls,
+    PeerConfig, PeerIdentity, ResolvedCaller, ResolvedInternalAuth, ResolvedPeer, ResolvedTls,
 };
 pub use legal::{LegalConfig, LegalDocument};
 pub use loader::{

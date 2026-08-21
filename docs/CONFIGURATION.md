@@ -523,12 +523,38 @@ So a caller sets `internal.caller.*`, a callee sets `internal.peers.*`, and `wor
 | `TANKOVAULT_INTERNAL__IDENTITY` | `off` | all | `off`, `token` or `mtls`. `off` is refused under `TANKOVAULT_PROFILE=production`. |
 | `TANKOVAULT_INTERNAL__CALLER__NAME` | *(unset)* | api, worker | The name this service is known by; must match the key its peers list it under. |
 | `TANKOVAULT_INTERNAL__CALLER__TOKEN` | *(unset)* | api, worker | Required under `identity=token`. Minimum 32 characters, checked in every profile. `openssl rand -hex 32`. Ignored under `mtls`, where the client certificate is the credential. |
-| `TANKOVAULT_INTERNAL__PEERS` | *(empty)* | control-plane, worker, sync, render, challenge-solver | A **map keyed by caller name**, so the environment spelling is `TANKOVAULT_INTERNAL__PEERS__<NAME>__TOKEN` (or `__SAN`) — e.g. `TANKOVAULT_INTERNAL__PEERS__API__TOKEN`. Under `token` each entry needs a `token`; under `mtls` each needs a `san`. A peer carrying the wrong one for the active mode is refused at boot. Because the keys are dynamic, `xtask config-docs` can only see this root — the per-peer keys are documented by this row, not derived. |
+| `TANKOVAULT_INTERNAL__PEERS` | *(empty)* | control-plane, worker, sync, render, challenge-solver | A **map keyed by caller name**, so the environment spelling is `TANKOVAULT_INTERNAL__PEERS__<NAME>__TOKEN` (or `__SAN` / `__SPIFFE_ID`) — e.g. `TANKOVAULT_INTERNAL__PEERS__API__TOKEN`. Under `token` each entry needs a `token`; under `mtls` each needs **exactly one** of `san` (a DNS subject alternative name, as cert-manager issues) or `spiffe_id` (a SPIFFE ID, as SPIRE issues, carried in the URI SAN). A peer carrying the wrong one for the active mode — or both SAN kinds at once — is refused at boot. Because the keys are dynamic, `xtask config-docs` can only see this root — the per-peer keys are documented by this row, not derived. |
 | `TANKOVAULT_INTERNAL__TLS__CERT` | *(unset)* | all under `mtls` | PEM certificate chain this service serves and presents. |
 | `TANKOVAULT_INTERNAL__TLS__KEY` | *(unset)* | all under `mtls` | PEM private key for the above. PKCS#8, PKCS#1 and SEC1 are all accepted — cert-manager's default `privateKey.encoding` and `openssl genrsa` write PKCS#1, `openssl ecparam -genkey` writes SEC1 — and the key is re-encoded as PKCS#8 when it is read, because the outbound stacks do not agree on which forms they take. |
 | `TANKOVAULT_INTERNAL__TLS__CA` | *(unset)* | all under `mtls` | PEM bundle of the authorities a peer certificate must chain to. **Only these** — the public root store is switched off on internal clients, since a peer signed by a public CA is not a peer. |
 | `TANKOVAULT_INTERNAL__TLS__PROBE_LISTEN` | `0.0.0.0:9091` | all under `mtls` | The **plaintext** listener carrying `/health` and `/ready`, read under `mtls` only. A kubelet probe presents no client certificate, so on the mTLS port it gets a TLS alert (`malformed HTTP response "\x15\x03\x03…"`) and the replica is restarted as unhealthy — point the probes here instead. It carries `/health` and `/ready` and nothing else: the metrics scrape stays wherever `TANKOVAULT_METRICS__LISTEN` put it, so merging the scrape onto the mTLS port keeps it behind a certificate. Set to `null` (JSON) only where whatever does the probing can present one. |
 | `TANKOVAULT_INTERNAL__TOKEN` | *(retired)* | — | **Refused at boot.** One secret shared by every service meant any one of them could call all the others' privileged routes: `challenge-solver`'s credential could unlink a user's tracker account through `sync`. Replace it with the per-caller keys above. |
+
+### `san` or `spiffe_id`: which name identifies a peer
+
+Both name a peer's certificate, and they are compared against **different** subject alternative
+name kinds — `san` against DNS names, `spiffe_id` against URI names. Which to set is decided by
+what issued the certificate:
+
+- **cert-manager, `step-ca`, a hand-rolled CA** → `san`, e.g. `api.tankovault.svc`.
+- **SPIRE** → `spiffe_id`, e.g. `spiffe://tankovault.prod/ns/tankovault/sa/api`. An X.509-SVID
+  carries its identity in a URI SAN, and no DNS SAN at all unless one was requested at
+  registration, so `san` cannot recognise one.
+
+Setting both is refused at boot rather than resolved by precedence: an operator who wrote two
+believes both are checked, and honouring one silently would leave the other configured,
+documented, and unenforced.
+
+They are separate keys rather than one key that accepts either spelling because the kinds must
+not share a match set. A trust bundle holds *every* authority a peer may chain to, and any
+authority that can issue a DNS name can equally issue a URI — so a value compared against
+whichever SAN happened to match would let a certificate from the weaker authority carry a forged
+`spiffe://…` and authenticate as the SPIRE workload. The configuration names the kind, and only
+that kind is searched.
+
+A SPIFFE ID is compared whole, never by prefix: IDs are hierarchical, so
+`…/sa/worker-debug` starts with `…/sa/worker`, and a prefix match would let the first answer for
+the second.
 
 `/health` and `/ready` are merged outside this stack on every service, so an orchestrator probe
 never needs a credential. Under `mtls` that is not enough on its own: the credential the probe

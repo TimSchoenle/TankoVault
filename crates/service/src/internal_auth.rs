@@ -21,7 +21,7 @@ use axum::response::{IntoResponse, Response};
 use secrecy::{ExposeSecret, SecretString};
 use std::sync::Arc;
 use subtle::ConstantTimeEq;
-use tankovault_config::{IdentityMode, ResolvedInternalAuth};
+use tankovault_config::{IdentityMode, PeerIdentity, ResolvedInternalAuth};
 
 /// The header a caller presents under [`IdentityMode::Token`].
 ///
@@ -144,7 +144,9 @@ pub struct InternalAuth {
 struct Peer {
     name: Arc<str>,
     token: Option<InternalToken>,
-    san: Option<Arc<str>>,
+    /// What this peer's certificate must prove under `mtls`, including which SAN kind carries
+    /// it. `None` under every other mode.
+    identity: Option<PeerIdentity>,
 }
 
 impl InternalAuth {
@@ -157,7 +159,7 @@ impl InternalAuth {
             .map(|p| Peer {
                 name: Arc::from(p.name.as_str()),
                 token: p.token.as_ref().map(|t| InternalToken::new(t.clone())),
-                san: p.san.as_deref().map(Arc::from),
+                identity: p.identity.clone(),
             })
             .collect::<Vec<_>>();
 
@@ -202,7 +204,7 @@ impl InternalAuth {
                 let sans = req.extensions().get::<crate::tls::PeerSans>()?;
                 self.peers
                     .iter()
-                    .find(|p| p.san.as_deref().is_some_and(|s| sans.contains(s)))
+                    .find(|p| p.identity.as_ref().is_some_and(|id| sans.matches(id)))
                     .map(|p| Caller(Arc::clone(&p.name)))
             }
         }
@@ -414,7 +416,7 @@ mod tests {
         ResolvedPeer {
             name: name.to_owned(),
             token: Some(SecretString::from(token.to_owned())),
-            san: None,
+            identity: None,
         }
     }
 
@@ -452,6 +454,7 @@ mod tests {
                 PeerConfig {
                     token: Some(SecretString::from(placeholder.to_owned())),
                     san: None,
+                    spiffe_id: None,
                 },
             )]),
             ..Default::default()
@@ -552,6 +555,14 @@ mod tests {
         assert!(!table.allows("api", &Method::GET, SCANS));
     }
 
+    fn request_with_sans(sans: crate::tls::PeerSans) -> Request {
+        let mut req = Request::builder()
+            .body(axum::body::Body::empty())
+            .expect("an empty request builds");
+        req.extensions_mut().insert(sans);
+        req
+    }
+
     /// mTLS names the caller from the verified SAN, and a request that arrives without one was
     /// not verified — it must not fall through to "some peer".
     #[test]
@@ -561,11 +572,11 @@ mod tests {
             vec![ResolvedPeer {
                 name: "api".to_owned(),
                 token: None,
-                san: Some("api.tankovault.svc".to_owned()),
+                identity: Some(PeerIdentity::Dns("api.tankovault.svc".to_owned())),
             }],
         );
 
-        let mut req = Request::builder()
+        let req = Request::builder()
             .body(axum::body::Body::empty())
             .expect("an empty request builds");
         assert_eq!(auth.identify(&req), None, "no certificate, no caller");
@@ -573,23 +584,56 @@ mod tests {
         // Every name the certificate carries is offered, and the configured one is in the
         // middle of them: cert-manager emits `api`, `api.<ns>`, `api.<ns>.svc` and the FQDN, and
         // matching only the first would make the peer entry depend on emission order.
-        req.extensions_mut().insert(crate::tls::PeerSans(
+        let req = request_with_sans(crate::tls::PeerSans::new(
             vec![
                 "api".to_owned(),
                 "api.tankovault".to_owned(),
                 "api.tankovault.svc".to_owned(),
-            ]
-            .into(),
+            ],
+            Vec::new(),
         ));
         assert_eq!(auth.identify(&req), Some(Caller(Arc::from("api"))));
 
-        let mut wrong = Request::builder()
-            .body(axum::body::Body::empty())
-            .expect("an empty request builds");
-        wrong.extensions_mut().insert(crate::tls::PeerSans(
-            vec!["worker.tankovault.svc".to_owned()].into(),
+        let wrong = request_with_sans(crate::tls::PeerSans::new(
+            vec!["worker.tankovault.svc".to_owned()],
+            Vec::new(),
         ));
         assert_eq!(auth.identify(&wrong), None, "an unlisted SAN is not a peer");
+    }
+
+    /// A SPIRE-issued X.509-SVID identifies its caller by the SPIFFE ID in the URI SAN.
+    ///
+    /// The bug this pins: `peer_sans` originally read `GeneralName::DNSName` only, so an SVID —
+    /// which carries no DNS SAN unless one was requested at registration — arrived with no names
+    /// at all and every peer was silently refused. It failed closed, which is why it would have
+    /// reached production as "mTLS just does not work" rather than as a security incident.
+    #[test]
+    fn mtls_identifies_a_spiffe_workload_by_its_uri_san() {
+        const ID: &str = "spiffe://tankovault.prod/ns/tankovault/sa/api";
+        let auth = auth(
+            IdentityMode::Mtls,
+            vec![ResolvedPeer {
+                name: "api".to_owned(),
+                token: None,
+                identity: Some(PeerIdentity::Spiffe(ID.to_owned())),
+            }],
+        );
+
+        let req = request_with_sans(crate::tls::PeerSans::new(
+            // SPIRE was asked for DNS names too, so the outbound leg passes hostname
+            // verification. They must not be what identifies the caller.
+            vec!["api".to_owned(), "api.tankovault.svc".to_owned()],
+            vec![ID.to_owned()],
+        ));
+        assert_eq!(auth.identify(&req), Some(Caller(Arc::from("api"))));
+
+        // The same ID presented as a DNS name is a different claim, and not this peer's.
+        let forged = request_with_sans(crate::tls::PeerSans::new(vec![ID.to_owned()], Vec::new()));
+        assert_eq!(
+            auth.identify(&forged),
+            None,
+            "a SPIFFE ID in a DNS SAN is not a SPIFFE identity"
+        );
     }
 
     /// The invariant the whole design rests on: authorisation is mode-independent. If these
@@ -637,6 +681,7 @@ mod tests {
                         "a-token-of-entirely-sufficient-len".to_owned(),
                     )),
                     san: None,
+                    spiffe_id: None,
                 },
             )]),
             ..Default::default()

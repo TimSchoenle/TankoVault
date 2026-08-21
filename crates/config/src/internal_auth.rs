@@ -24,9 +24,13 @@ pub enum IdentityMode {
     /// A per-caller bearer token. The portable mode — compose, bare metal, anything without a
     /// certificate authority.
     Token,
-    /// A verified client certificate; the caller is its SAN. Certificates come from files, so
-    /// this works anywhere they can be written — cert-manager and trust-manager mount them in
-    /// Kubernetes, `openssl` or `step-ca` produce them elsewhere.
+    /// A verified client certificate; the caller is a name that certificate proved.
+    ///
+    /// Certificates come from files, so this works anywhere they can be written — cert-manager
+    /// and trust-manager mount them in Kubernetes, SPIRE writes rotating X.509-SVIDs through
+    /// `spiffe-helper`, `openssl` or `step-ca` produce them elsewhere. Which issuer is in use is
+    /// not a mode of its own: it changes only *which* name identifies a peer, and that is
+    /// [`PeerIdentity`] on the peer entry, not a fourth variant here.
     Mtls,
 }
 
@@ -68,10 +72,24 @@ pub struct PeerConfig {
     #[config(secret)]
     #[serde(default)]
     pub token: Option<SecretString>,
-    /// The client-certificate subject alternative name this peer presents under
+    /// The client-certificate **DNS** subject alternative name this peer presents under
     /// `identity = "mtls"`, e.g. `api.tankovault.svc`.
+    ///
+    /// Mutually exclusive with [`Self::spiffe_id`]; exactly one is required under `mtls`.
     #[serde(default)]
     pub san: Option<String>,
+    /// The SPIFFE ID this peer presents under `identity = "mtls"`, e.g.
+    /// `spiffe://tankovault.prod/ns/tankovault/sa/worker`.
+    ///
+    /// Carried in the certificate's **URI** SAN, which is where SPIRE puts a workload identity
+    /// — an X.509-SVID has no DNS SAN unless one was requested at registration, so [`Self::san`]
+    /// cannot recognise one.
+    ///
+    /// Mutually exclusive with [`Self::san`], and deliberately a separate key rather than a
+    /// value [`Self::san`] also accepts: the two are compared against different SAN kinds, and
+    /// the config has to say which kind it means. See `PeerSans` in `tankovault-service`.
+    #[serde(default)]
+    pub spiffe_id: Option<String>,
 }
 
 /// Where the mTLS material lives. Paths, not contents: whatever writes them — cert-manager, a
@@ -165,6 +183,41 @@ pub struct ResolvedCaller {
     pub token: Option<SecretString>,
 }
 
+/// What a peer's client certificate must prove under `identity = "mtls"`.
+///
+/// The kind is part of the expectation, never inferred from the value. A trust bundle may hold
+/// more than one authority — an internal CA alongside SPIRE's — and any authority that can issue
+/// a `DNSName` can equally issue a `URI` of `spiffe://…`. Comparing a configured name against
+/// whichever SAN happens to match would let the weaker authority answer for the stronger one's
+/// workload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PeerIdentity {
+    /// A DNS subject alternative name, as cert-manager issues.
+    Dns(String),
+    /// A SPIFFE ID, carried in the certificate's URI SAN.
+    Spiffe(String),
+}
+
+impl PeerIdentity {
+    /// The configured value, whichever kind it is. For diagnostics only — a comparison must go
+    /// through the kind, not this.
+    #[must_use]
+    pub fn value(&self) -> &str {
+        match self {
+            Self::Dns(name) | Self::Spiffe(name) => name,
+        }
+    }
+}
+
+impl std::fmt::Display for PeerIdentity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Dns(name) => write!(f, "dns:{name}"),
+            Self::Spiffe(id) => f.write_str(id),
+        }
+    }
+}
+
 /// One caller this service accepts.
 #[derive(Debug, Clone)]
 pub struct ResolvedPeer {
@@ -172,7 +225,7 @@ pub struct ResolvedPeer {
     /// Set under `token`; `None` under `mtls`.
     pub token: Option<SecretString>,
     /// Set under `mtls`; `None` under `token`.
-    pub san: Option<String>,
+    pub identity: Option<PeerIdentity>,
 }
 
 /// Certificate paths, all three present.
@@ -320,26 +373,14 @@ impl InternalAuthConfig {
                     peers.push(ResolvedPeer {
                         name: name.to_owned(),
                         token: Some(check_token(token, &format!("internal.peers.{name}.token"))?),
-                        san: None,
+                        identity: None,
                     });
                 }
                 IdentityMode::Mtls => {
-                    let san = peer
-                        .san
-                        .as_deref()
-                        .map(str::trim)
-                        .filter(|s| !s.is_empty())
-                        .ok_or_else(|| {
-                            ConfigError::Invalid(format!(
-                                "internal.peers.{name}.san is unset and internal.identity=mtls \
-                                 recognises a caller only by its certificate's subject \
-                                 alternative name"
-                            ))
-                        })?;
                     peers.push(ResolvedPeer {
                         name: name.to_owned(),
                         token: None,
-                        san: Some(san.to_owned()),
+                        identity: Some(resolve_peer_identity(name, peer)?),
                     });
                 }
                 IdentityMode::Off => unreachable!("returned above"),
@@ -374,6 +415,41 @@ impl InternalAuthConfig {
             key: self.tls.key.clone().expect("checked above"),
             ca: self.tls.ca.clone().expect("checked above"),
         }))
+    }
+}
+
+/// The scheme every SPIFFE ID carries.
+const SPIFFE_SCHEME: &str = "spiffe://";
+
+/// Which SAN kind a peer is recognised by under `mtls`, requiring exactly one.
+///
+/// Both set is refused rather than resolved by precedence: an operator who wrote two believes
+/// both are checked, and silently honouring one would leave the other looking enforced.
+fn resolve_peer_identity(name: &str, peer: &PeerConfig) -> Result<PeerIdentity, ConfigError> {
+    let trimmed = |value: &Option<String>| {
+        value
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_owned)
+    };
+
+    match (trimmed(&peer.san), trimmed(&peer.spiffe_id)) {
+        (Some(_), Some(_)) => Err(ConfigError::Invalid(format!(
+            "internal.peers.{name} sets both .san and .spiffe_id, which are compared against \
+             different subject alternative name kinds. Set the one the peer's certificate \
+             actually carries: .spiffe_id for a SPIRE-issued X.509-SVID, .san for a DNS name"
+        ))),
+        (Some(san), None) => Ok(PeerIdentity::Dns(san)),
+        (None, Some(id)) if !id.starts_with(SPIFFE_SCHEME) => Err(ConfigError::Invalid(format!(
+            "internal.peers.{name}.spiffe_id is `{id}`, which is not a SPIFFE ID — it must \
+             begin with `{SPIFFE_SCHEME}`. A DNS name goes in internal.peers.{name}.san"
+        ))),
+        (None, Some(id)) => Ok(PeerIdentity::Spiffe(id)),
+        (None, None) => Err(ConfigError::Invalid(format!(
+            "internal.peers.{name} sets neither .san nor .spiffe_id, and internal.identity=mtls \
+             recognises a caller only by a name its certificate proved"
+        ))),
     }
 }
 
@@ -441,10 +517,12 @@ mod tests {
         let token_peer = PeerConfig {
             token: Some(token_of(40)),
             san: None,
+            spiffe_id: None,
         };
         let san_peer = PeerConfig {
             token: None,
             san: Some("api.tankovault.svc".to_owned()),
+            spiffe_id: None,
         };
 
         assert!(
@@ -473,6 +551,77 @@ mod tests {
         assert!(err.to_string().contains("internal.tls"), "{err}");
     }
 
+    /// A SPIFFE ID resolves to [`PeerIdentity::Spiffe`], never to a DNS expectation.
+    ///
+    /// The kind is what `PeerSans` compares against; resolving a SPIFFE ID into the DNS arm
+    /// would make the peer unmatchable, since an X.509-SVID carries no DNS SAN by default.
+    #[test]
+    fn a_spiffe_id_resolves_to_the_uri_kind() {
+        const ID: &str = "spiffe://tankovault.prod/ns/tankovault/sa/api";
+        let mut cfg = with_peer(
+            IdentityMode::Mtls,
+            PeerConfig {
+                token: None,
+                san: None,
+                spiffe_id: Some(ID.to_owned()),
+            },
+        );
+        cfg.tls = InternalTlsConfig {
+            cert: Some("/tls/svid.pem".into()),
+            key: Some("/tls/svid_key.pem".into()),
+            ca: Some("/tls/svid_bundle.pem".into()),
+            probe_listen: Some("0.0.0.0:9091".to_owned()),
+        };
+
+        let resolved = cfg.resolve(false).expect("all mtls material is present");
+        let peer = resolved.peer("api").expect("seeded above");
+        assert_eq!(peer.identity, Some(PeerIdentity::Spiffe(ID.to_owned())));
+    }
+
+    /// Setting both `.san` and `.spiffe_id` is refused, and the error names the peer.
+    ///
+    /// The two are compared against different SAN kinds. Honouring one by precedence would
+    /// leave the other configured, documented and unenforced — the shape of a rule that is
+    /// believed rather than applied.
+    #[test]
+    fn a_peer_cannot_expect_both_san_kinds() {
+        let cfg = with_peer(
+            IdentityMode::Mtls,
+            PeerConfig {
+                token: None,
+                san: Some("api.tankovault.svc".to_owned()),
+                spiffe_id: Some("spiffe://tankovault.prod/ns/tankovault/sa/api".to_owned()),
+            },
+        );
+        let msg = cfg
+            .resolve(false)
+            .expect_err("both kinds set")
+            .to_string();
+        assert!(msg.contains("internal.peers.api"), "{msg}");
+        assert!(msg.contains("spiffe_id"), "{msg}");
+    }
+
+    /// A DNS name in `.spiffe_id` is refused rather than compared against URI SANs, where it
+    /// could never match — a misconfiguration that would otherwise surface as "this peer is
+    /// silently refused" long after the deploy.
+    #[test]
+    fn a_spiffe_id_must_carry_the_scheme() {
+        let cfg = with_peer(
+            IdentityMode::Mtls,
+            PeerConfig {
+                token: None,
+                san: None,
+                spiffe_id: Some("api.tankovault.svc".to_owned()),
+            },
+        );
+        let msg = cfg
+            .resolve(false)
+            .expect_err("not a SPIFFE ID")
+            .to_string();
+        assert!(msg.contains("spiffe://"), "{msg}");
+        assert!(msg.contains("internal.peers.api.san"), "{msg}");
+    }
+
     #[test]
     fn a_short_token_is_refused_and_the_error_names_the_key() {
         let cfg = with_peer(
@@ -480,6 +629,7 @@ mod tests {
             PeerConfig {
                 token: Some(token_of(8)),
                 san: None,
+                spiffe_id: None,
             },
         );
         let err = cfg

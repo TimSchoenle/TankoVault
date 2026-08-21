@@ -29,15 +29,19 @@ use tokio_rustls::TlsAcceptor;
 use tokio_rustls::server::TlsStream;
 use tokio_util::sync::CancellationToken;
 
-use tankovault_config::ResolvedTls;
+use tankovault_config::{PeerIdentity, ResolvedTls};
 
 /// How often the certificate files are restated for change.
 ///
-/// cert-manager renews at roughly two thirds of a certificate's lifetime and the kubelet
-/// refreshes a mounted Secret within about a minute, so for the 90-day certificates this is
-/// sized for, polling is many orders of magnitude faster than it needs to be. Polling rather
-/// than watching deliberately: a `notify` watcher is one more dependency and one more failure
-/// mode (silently dead watches on some filesystems) for a deadline measured in weeks.
+/// Sized for the shortest-lived material this serves, which is a SPIRE X.509-SVID: one hour by
+/// default, rewritten by `spiffe-helper` at roughly half its life, so the window between a
+/// rotation landing on disk and the old certificate expiring is around thirty minutes. Polling
+/// every thirty seconds spends that window sixty times over. The 90-day cert-manager material
+/// this also serves is slower by four orders of magnitude and needs nothing tighter.
+///
+/// Polling rather than watching deliberately: a `notify` watcher is one more dependency and one
+/// more failure mode (silently dead watches on some filesystems), and a missed rotation here
+/// fails closed at the next handshake rather than quietly serving an expired identity.
 const RELOAD_POLL: Duration = Duration::from_secs(30);
 
 /// How long a client is given to finish its handshake before the connection is dropped.
@@ -67,19 +71,47 @@ pub enum TlsError {
     Config(String),
 }
 
-/// The peer identities carried by a verified client certificate.
+/// The peer identities carried by a verified client certificate, kept apart by SAN kind.
 ///
-/// Every DNS subject alternative name, not just the first: a cert-manager certificate routinely
-/// carries `api`, `api.<ns>`, `api.<ns>.svc` and the fully-qualified form, and which one comes
-/// first is not something an operator writing `internal.peers.api.san` should have to predict.
+/// Every name of each kind, not just the first: a cert-manager certificate routinely carries
+/// `api`, `api.<ns>`, `api.<ns>.svc` and the fully-qualified form, and which one comes first is
+/// not something an operator writing `internal.peers.api.san` should have to predict.
+///
+/// # Why the two kinds never share a list
+///
+/// A trust bundle may hold more than one authority — an internal CA alongside SPIRE's — and any
+/// authority that can issue a `DNSName` can equally issue a `URI` of `spiffe://…`. If both kinds
+/// went into one set and a configured value were compared against all of it, a certificate from
+/// the weaker authority carrying a forged SPIFFE URI would authenticate as the SPIRE workload.
+/// The expectation therefore names its kind ([`PeerIdentity`]) and only that kind is searched.
 #[derive(Clone, Debug, Default)]
-pub struct PeerSans(pub Arc<[String]>);
+pub struct PeerSans {
+    dns: Arc<[String]>,
+    uris: Arc<[String]>,
+}
 
 impl PeerSans {
-    /// Whether `candidate` is one of the names this peer proved.
+    /// Build from the names of each kind. Public for tests and for callers assembling a peer
+    /// outside the TLS listener.
     #[must_use]
-    pub fn contains(&self, candidate: &str) -> bool {
-        self.0.iter().any(|s| s == candidate)
+    pub fn new(dns: Vec<String>, uris: Vec<String>) -> Self {
+        Self {
+            dns: dns.into(),
+            uris: uris.into(),
+        }
+    }
+
+    /// Whether the certificate proved the name `expected` demands, of the kind it demands.
+    ///
+    /// Compared whole, never by prefix: `spiffe://td/ns/tankovault/sa/worker-debug` starts with
+    /// `spiffe://td/ns/tankovault/sa/worker`, and a prefix match would let the first answer for
+    /// the second.
+    #[must_use]
+    pub fn matches(&self, expected: &PeerIdentity) -> bool {
+        match expected {
+            PeerIdentity::Dns(name) => self.dns.iter().any(|s| s == name),
+            PeerIdentity::Spiffe(id) => self.uris.iter().any(|s| s == id),
+        }
     }
 }
 
@@ -390,23 +422,30 @@ fn pkcs8_pem(pem: &[u8], path: &Path) -> Result<Vec<u8>, TlsError> {
         })
 }
 
-/// Every DNS subject alternative name in `cert`.
-fn dns_sans(cert: &CertificateDer<'_>) -> Vec<String> {
+/// Every DNS and URI subject alternative name in `cert`, kept apart.
+///
+/// URI names are read because that is where SPIRE puts a workload identity: an X.509-SVID
+/// carries `spiffe://<trust-domain>/<path>` in a URI SAN, and no DNS SAN at all unless one was
+/// requested at registration.
+fn peer_sans(cert: &CertificateDer<'_>) -> PeerSans {
     use x509_parser::extensions::GeneralName;
     let Ok((_, parsed)) = x509_parser::parse_x509_certificate(cert) else {
-        return Vec::new();
+        return PeerSans::default();
     };
     let Ok(Some(san)) = parsed.subject_alternative_name() else {
-        return Vec::new();
+        return PeerSans::default();
     };
-    san.value
-        .general_names
-        .iter()
-        .filter_map(|name| match name {
-            GeneralName::DNSName(dns) => Some((*dns).to_owned()),
-            _ => None,
-        })
-        .collect()
+
+    let mut dns = Vec::new();
+    let mut uris = Vec::new();
+    for name in &san.value.general_names {
+        match name {
+            GeneralName::DNSName(value) => dns.push((*value).to_owned()),
+            GeneralName::URI(value) => uris.push((*value).to_owned()),
+            _ => {}
+        }
+    }
+    PeerSans::new(dns, uris)
 }
 
 /// A listener that yields only connections whose handshake has already completed.
@@ -495,13 +534,10 @@ impl axum::extract::connect_info::Connected<axum::serve::IncomingStream<'_, TlsL
             .1
             .peer_certificates()
             .and_then(<[CertificateDer<'_>]>::first)
-            .map(dns_sans)
+            .map(peer_sans)
             .unwrap_or_default();
 
-        Self {
-            addr,
-            sans: PeerSans(sans.into()),
-        }
+        Self { addr, sans }
     }
 }
 
@@ -509,29 +545,66 @@ impl axum::extract::connect_info::Connected<axum::serve::IncomingStream<'_, TlsL
 mod tests {
     use super::*;
 
-    #[test]
-    fn peer_sans_matches_any_name_the_certificate_proved() {
-        let sans = PeerSans(
-            vec![
-                "api".to_owned(),
-                "api.tankovault".to_owned(),
-                "api.tankovault.svc".to_owned(),
-            ]
-            .into(),
-        );
-        assert!(sans.contains("api"));
-        assert!(sans.contains("api.tankovault.svc"));
-        assert!(!sans.contains("worker"));
-        assert!(!sans.contains("api.tankovault.svc.cluster.local"));
+    fn dns_only(names: &[&str]) -> PeerSans {
+        PeerSans::new(names.iter().map(|s| (*s).to_owned()).collect(), Vec::new())
     }
 
     /// A certificate carries several names and the useful one is rarely first. Matching only
     /// `[0]` would make `internal.peers.<name>.san` depend on the order cert-manager happened
     /// to emit, which is not something an operator can see from the manifest they wrote.
     #[test]
+    fn peer_sans_matches_any_name_the_certificate_proved() {
+        let sans = dns_only(&["api", "api.tankovault", "api.tankovault.svc"]);
+        assert!(sans.matches(&PeerIdentity::Dns("api".to_owned())));
+        assert!(sans.matches(&PeerIdentity::Dns("api.tankovault.svc".to_owned())));
+        assert!(!sans.matches(&PeerIdentity::Dns("worker".to_owned())));
+        assert!(!sans.matches(&PeerIdentity::Dns(
+            "api.tankovault.svc.cluster.local".to_owned()
+        )));
+    }
+
+    /// A SPIFFE ID is matched against URI names, and a DNS name against DNS names — never
+    /// across.
+    ///
+    /// The bug this pins: with both kinds in one list, a certificate from *any* authority in the
+    /// trust bundle could carry `spiffe://…` as a URI (or, worse, as a DNS name) and answer for
+    /// a SPIRE workload. The trust bundle is not a single authority — it is every authority a
+    /// peer is allowed to chain to — so "some SAN matched" is not the same claim as "the SPIFFE
+    /// ID matched".
+    #[test]
+    fn a_name_of_the_wrong_kind_never_satisfies_a_peer() {
+        const ID: &str = "spiffe://tankovault.prod/ns/tankovault/sa/api";
+
+        // The SPIFFE ID smuggled in as a DNS name must not satisfy the SPIFFE expectation.
+        let forged = dns_only(&[ID]);
+        assert!(!forged.matches(&PeerIdentity::Spiffe(ID.to_owned())));
+
+        // Nor does a genuine SVID satisfy a DNS expectation it never proved.
+        let svid = PeerSans::new(Vec::new(), vec![ID.to_owned()]);
+        assert!(svid.matches(&PeerIdentity::Spiffe(ID.to_owned())));
+        assert!(!svid.matches(&PeerIdentity::Dns("api.tankovault.svc".to_owned())));
+    }
+
+    /// SPIFFE IDs are hierarchical, so one is routinely a prefix of another. Matching by prefix
+    /// would let `…/sa/worker-debug` authenticate as `…/sa/worker`.
+    #[test]
+    fn a_spiffe_id_is_matched_whole_not_by_prefix() {
+        let svid = PeerSans::new(
+            Vec::new(),
+            vec!["spiffe://tankovault.prod/ns/tankovault/sa/worker-debug".to_owned()],
+        );
+        assert!(!svid.matches(&PeerIdentity::Spiffe(
+            "spiffe://tankovault.prod/ns/tankovault/sa/worker".to_owned()
+        )));
+    }
+
+    #[test]
     fn an_empty_or_unparsable_certificate_yields_no_names_rather_than_panicking() {
-        assert!(dns_sans(&CertificateDer::from(vec![])).is_empty());
-        assert!(dns_sans(&CertificateDer::from(vec![0x30, 0x00])).is_empty());
+        for bytes in [vec![], vec![0x30, 0x00]] {
+            let sans = peer_sans(&CertificateDer::from(bytes));
+            assert!(!sans.matches(&PeerIdentity::Dns("api".to_owned())));
+            assert!(!sans.matches(&PeerIdentity::Spiffe("spiffe://td/x".to_owned())));
+        }
     }
 
     /// Missing files must surface as a named error rather than a panic: this runs at boot, and

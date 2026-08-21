@@ -593,10 +593,7 @@ mod tests {
                 spiffe_id: Some("spiffe://tankovault.prod/ns/tankovault/sa/api".to_owned()),
             },
         );
-        let msg = cfg
-            .resolve(false)
-            .expect_err("both kinds set")
-            .to_string();
+        let msg = cfg.resolve(false).expect_err("both kinds set").to_string();
         assert!(msg.contains("internal.peers.api"), "{msg}");
         assert!(msg.contains("spiffe_id"), "{msg}");
     }
@@ -614,10 +611,7 @@ mod tests {
                 spiffe_id: Some("api.tankovault.svc".to_owned()),
             },
         );
-        let msg = cfg
-            .resolve(false)
-            .expect_err("not a SPIFFE ID")
-            .to_string();
+        let msg = cfg.resolve(false).expect_err("not a SPIFFE ID").to_string();
         assert!(msg.contains("spiffe://"), "{msg}");
         assert!(msg.contains("internal.peers.api.san"), "{msg}");
     }

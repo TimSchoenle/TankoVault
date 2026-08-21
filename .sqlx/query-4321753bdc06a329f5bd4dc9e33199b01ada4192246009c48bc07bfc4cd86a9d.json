@@ -1,0 +1,37 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH input AS ( SELECT d.id, LEAST(d.a, d.b) AS series_id, GREATEST(d.a, d.b) AS candidate_id, d.score, d.signals FROM jsonb_to_recordset($1::jsonb) AS d( id uuid, a uuid, b uuid, score real, signals text[]) ), live AS ( SELECT i.* FROM input i JOIN series lo ON lo.id = i.series_id JOIN series hi ON hi.id = i.candidate_id ), prior AS ( SELECT l.series_id, l.candidate_id, mc.resolved FROM live l LEFT JOIN merge_candidates mc ON mc.series_id = l.series_id AND mc.candidate_id = l.candidate_id ), upsert AS ( INSERT INTO merge_candidates (id, series_id, candidate_id, score, signals, reason, resolved, outcome, resolved_at) SELECT id, series_id, candidate_id, score, signals, 'duplicate sweep: below the review floor', true, 'distinct', now() FROM live ON CONFLICT (series_id, candidate_id) DO UPDATE SET score = EXCLUDED.score, signals = EXCLUDED.signals, reason = EXCLUDED.reason, resolved = true, outcome = 'distinct', resolved_at = now(), updated_at = now() WHERE merge_candidates.outcome IS DISTINCT FROM 'dismissed' RETURNING 1 AS touched ) SELECT p.series_id AS \"series_id!\", p.candidate_id AS \"candidate_id!\", COALESCE(NOT p.resolved, false) AS \"was_open!\" FROM prior p",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "series_id!",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "candidate_id!",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "was_open!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Jsonb"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "4321753bdc06a329f5bd4dc9e33199b01ada4192246009c48bc07bfc4cd86a9d"
+}

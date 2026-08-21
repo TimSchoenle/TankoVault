@@ -360,6 +360,10 @@ pub struct DistinctVerdict<'a> {
 /// is a human saying these are different works, and it must suppress the pair permanently, which
 /// is exactly what re-entering the recheck rotation would undo.
 ///
+/// A pair naming a series that no longer exists is dropped rather than written, exactly as in
+/// [`record_merge_candidates`](super::record_merge_candidates) and for the same reason: both id
+/// columns are foreign keys into `series`, and one violating row would fail the whole batch.
+///
 /// # Errors
 /// [`crate::DbError::Conflict`] when a pair names one series twice, or when two entries name the
 /// same canonical pair — one `ON CONFLICT DO UPDATE` statement cannot touch a row twice.
@@ -395,24 +399,30 @@ pub async fn record_distinct_pairs<'e, E: PgExecutor<'e>>(
     }
 
     // `prior` reads the pre-insert snapshot, so it reports the state the upsert is about to
-    // replace; a data-modifying CTE runs whether or not the outer query selects from it.
+    // replace; a data-modifying CTE runs whether or not the outer query selects from it. `live`
+    // is the foreign-key guard — two primary-key lookups, so a pair either side of which has been
+    // merged away since it was judged leaves the batch instead of failing it.
     let rows = sqlx::query!(
         "WITH input AS ( \
            SELECT d.id, LEAST(d.a, d.b) AS series_id, GREATEST(d.a, d.b) AS candidate_id, \
                   d.score, d.signals \
              FROM jsonb_to_recordset($1::jsonb) AS d( \
                   id uuid, a uuid, b uuid, score real, signals text[]) \
+         ), live AS ( \
+           SELECT i.* FROM input i \
+             JOIN series lo ON lo.id = i.series_id \
+             JOIN series hi ON hi.id = i.candidate_id \
          ), prior AS ( \
-           SELECT i.series_id, i.candidate_id, mc.resolved \
-             FROM input i \
+           SELECT l.series_id, l.candidate_id, mc.resolved \
+             FROM live l \
              LEFT JOIN merge_candidates mc \
-               ON mc.series_id = i.series_id AND mc.candidate_id = i.candidate_id \
+               ON mc.series_id = l.series_id AND mc.candidate_id = l.candidate_id \
          ), upsert AS ( \
            INSERT INTO merge_candidates \
              (id, series_id, candidate_id, score, signals, reason, resolved, outcome, resolved_at) \
            SELECT id, series_id, candidate_id, score, signals, \
                   'duplicate sweep: below the review floor', true, 'distinct', now() \
-             FROM input \
+             FROM live \
            ON CONFLICT (series_id, candidate_id) DO UPDATE \
               SET score = EXCLUDED.score, \
                   signals = EXCLUDED.signals, \
@@ -447,7 +457,8 @@ pub async fn record_distinct_pairs<'e, E: PgExecutor<'e>>(
 }
 
 /// Record the scorer's verdict that one pair is **not** a duplicate. Returns whether a row was
-/// open before this call.
+/// open before this call — `false` also when one of the two series no longer exists, because the
+/// merge that removed it cascaded the pair's row away.
 ///
 /// See [`record_distinct_pairs`] for the semantics; the sweep batches, this is for callers that
 /// hold a single pair.
@@ -470,15 +481,13 @@ pub async fn record_distinct_pair<'e, E: PgExecutor<'e>>(
         }],
     )
     .await?;
-    // One row in, one row out: the statement selects from `prior`, which is a `LEFT JOIN` over
-    // the input and therefore preserves it.
-    outcomes
+    // No row means one of the two series has ceased to exist since the caller resolved it: the
+    // verdict is not recorded and there was no open row to close. Every other case returns a row,
+    // because the statement selects from a `LEFT JOIN` over its input.
+    Ok(outcomes
         .into_iter()
         .next()
-        .map(|(_, was_open)| was_open)
-        .ok_or_else(|| {
-            crate::error::DbError::Conflict("the distinct upsert returned no row".to_owned())
-        })
+        .is_some_and(|(_, was_open)| was_open))
 }
 
 /// The pairs the scorer has judged distinct, least-recently-scored first, for the sweep to

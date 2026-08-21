@@ -2471,6 +2471,84 @@ async fn a_batched_queue_write_judges_each_pair_against_its_own_prior_state() {
     assert_eq!(outcome, "dismissed");
 }
 
+/// **A batched write must survive a series merged away while the batch was being judged.**
+///
+/// Both id columns are `REFERENCES series(id)`, and the sweep judges a whole shortlist against
+/// facts it loaded up front before writing the verdicts in one statement — so a series absorbed in
+/// the meantime, by the sweep's own automatic merge or by an operator in the console, left a
+/// verdict naming a row that no longer existed. Postgres rejected it and the whole statement with
+/// it: `insert or update on table "merge_candidates" violates foreign key constraint
+/// "merge_candidates_candidate_id_fkey"`, which failed the exhaustive sweep outright and lost
+/// every other verdict in the batch on the way out.
+#[tokio::test]
+async fn a_batched_write_drops_a_pair_whose_series_has_been_merged_away() {
+    use tankovault_db::repo::matching::{
+        DistinctVerdict, NewMergeCandidate, record_distinct_pairs, record_merge_candidates,
+    };
+
+    let db = TestDb::spawn().await;
+    let survivor = insert_series_directly(&db, "Survivor Work").await;
+    let live = insert_series_directly(&db, "Live Work").await;
+    let absorbed = insert_series_directly(&db, "Absorbed Work").await;
+
+    // What the sweep does to itself: the shortlist was judged, then one of its series stopped
+    // existing.
+    merge_series(&db.pool, survivor, absorbed, None, "auto_merged")
+        .await
+        .expect("absorb one side of a judged pair");
+
+    let signals = ["compact_identity"];
+    let queued = record_merge_candidates(
+        &db.pool,
+        &[
+            NewMergeCandidate {
+                pair: (live, absorbed),
+                score: 0.9,
+                signals: &signals,
+                reason: "duplicate sweep",
+            },
+            NewMergeCandidate {
+                pair: (survivor, live),
+                score: 0.8,
+                signals: &signals,
+                reason: "duplicate sweep",
+            },
+        ],
+    )
+    .await
+    .expect("the vanished pair must not fail the batch");
+    assert_eq!(
+        queued
+            .iter()
+            .map(|(a, b, _)| pair_key(*a, *b))
+            .collect::<Vec<_>>(),
+        vec![pair_key(survivor, live)],
+        "the pair naming a series that no longer exists is dropped, the rest is written",
+    );
+
+    let judged = record_distinct_pairs(
+        &db.pool,
+        &[
+            DistinctVerdict {
+                pair: (live, absorbed),
+                score: 0.2,
+                signals: &signals,
+            },
+            DistinctVerdict {
+                pair: (survivor, live),
+                score: 0.1,
+                signals: &signals,
+            },
+        ],
+    )
+    .await
+    .expect("the distinct batch carries the same guard");
+    assert_eq!(
+        judged.iter().map(|(pair, _)| *pair).collect::<Vec<_>>(),
+        vec![pair_key(survivor, live)],
+    );
+}
+
 /// **A batched distinct verdict must report, per pair, whether it closed an open row.**
 ///
 /// `withdrawn` is how a sweep reports the review queue shrinking and it is derived from this flag
@@ -2554,6 +2632,73 @@ async fn a_batched_distinct_verdict_reports_what_it_closed_and_spares_a_dismissa
         "only the scorer's verdicts rotate: {recheck:?}"
     );
     assert!(!recheck.contains(&pair_key(settled.0, settled.1)));
+}
+
+/// **Flagging a merge that was never reverted must not fail on the absorbed series.**
+///
+/// Flagging suppresses the pair so a later sweep cannot merge it again, and it does that by
+/// writing a dismissed `merge_candidates` row — whose two id columns are foreign keys into
+/// `series`. After a merge that has *not* been reverted, one of the pair is exactly what no longer
+/// exists, so the suppression the operator asked for was answered with
+/// `violates foreign key constraint "merge_candidates_candidate_id_fkey"` and the flag failed.
+/// Suppressing nothing is correct here: the sweep shortlists live series only, so a pair that
+/// cannot recur needs no suppression.
+#[tokio::test]
+async fn flagging_an_unreverted_merge_records_the_flag_without_the_absorbed_series() {
+    use tankovault_db::repo::matching::{
+        MergeDecisionFilter, NewMergeDecision, flag_merge_decision, list_merge_decisions,
+        record_merge_decisions,
+    };
+
+    let db = TestDb::spawn().await;
+    let operator = seed::user(&db, "operator").create().await;
+    let survivor = insert_series_directly(&db, "Vinland Saga").await;
+    let absorbed = insert_series_directly(&db, "Vinlandsaga").await;
+
+    let empty = serde_json::json!({});
+    let ids = record_merge_decisions(
+        &db.pool,
+        &[NewMergeDecision {
+            sweep_id: None,
+            trigger: "sweep_new",
+            actor: None,
+            pair: (survivor, absorbed),
+            titles: ("Vinland Saga", "Vinlandsaga"),
+            verdict: "auto",
+            reason: "compact_identity",
+            blocked_by: &[],
+            outcome: "merged",
+            survivor_id: Some(survivor),
+            absorbed_id: Some(absorbed),
+            score: 1.0,
+            base_score: 0.9,
+            signals: &["compact_identity"],
+            terms: &empty,
+            evidence: &empty,
+            policy: &empty,
+            undo: None,
+        }],
+    )
+    .await
+    .expect("journal the merge");
+
+    merge_series(&db.pool, survivor, absorbed, None, "auto_merged")
+        .await
+        .expect("the merge the decision records");
+
+    assert!(
+        flag_merge_decision(&db.pool, ids[0], Some(operator), "wrong pair")
+            .await
+            .expect("flagging must not fail on the series the merge deleted"),
+    );
+
+    let rows = list_merge_decisions(&db.pool, &MergeDecisionFilter::default(), 10, 0)
+        .await
+        .expect("read the journal");
+    assert!(
+        rows.first().is_some_and(|row| row.flagged_at.is_some()),
+        "the flag itself is what the operator asked for and it must be recorded",
+    );
 }
 
 /// **The decision journal's batch insert must round-trip its arrays and its documents.**

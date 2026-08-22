@@ -12,6 +12,15 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [8.4.1](https://github.com/TimSchoenle/TankoVault/compare/v8.4.0...v8.4.1) (2026-08-22)
+
+
+### Miscellaneous
+
+* **deps:** update docker/setup-buildx-action action to v4.3.0 ([#272](https://github.com/TimSchoenle/TankoVault/issues/272)) ([0ce073b](https://github.com/TimSchoenle/TankoVault/commit/0ce073b097bc7ab2a93c8bb53576b2c5c0d8f205))
+* **deps:** update rust crate wreq to v6.0.0-rc.31 ([#268](https://github.com/TimSchoenle/TankoVault/issues/268)) ([7044bf1](https://github.com/TimSchoenle/TankoVault/commit/7044bf12c65dcbc38e2928e0586c98bcca77e1af))
+* **deps:** update taiki-e/install-action action to v2.86.2 ([#261](https://github.com/TimSchoenle/TankoVault/issues/261)) ([4979a58](https://github.com/TimSchoenle/TankoVault/commit/4979a58f81784d31f326b0e8cbe02075450dad8a))
+
 ## [8.4.0](https://github.com/TimSchoenle/TankoVault/compare/v8.3.1...v8.4.0) (2026-08-22)
 
 

@@ -829,7 +829,7 @@
       "fullSweepCeiling": "Vollständiger Durchlauf nach {rounds} Runden am Limit für automatische Zusammenführungen gestoppt: {examined} Paare, {merged} zusammengeführt, {queued} neu eingereiht, {withdrawn} zurückgezogen. Starte ihn erneut, um fortzufahren.",
       "fullSweepDone": "Vollständiger Durchlauf nach {rounds} Runden abgeschlossen: {examined} Paare, {merged} zusammengeführt, {queued} neu eingereiht, {withdrawn} zurückgezogen.",
       "fullSweepFailed": "Vollständiger Durchlauf fehlgeschlagen: {message}",
-      "fullSweepIdle": "Führt den Duplikatlauf so lange wiederholt aus, bis jedes Paar geprüft wurde. Dauert Minuten und läuft im Hintergrund.",
+      "fullSweepIdle": "Führt den Duplikatlauf so lange wiederholt aus, bis jedes Paar geprüft wurde — ohne Obergrenze für die Zahl der Zusammenführungen. Läuft im Hintergrund und kann bei einem großen Katalog länger dauern.",
       "fullSweepRunning": "Vollständiger Durchlauf läuft: {rounds} Runden, {examined} Paare, {merged} zusammengeführt, {queued} neu eingereiht, {withdrawn} zurückgezogen.",
       "fullSweepStarted": "Vollständiger Durchlauf gestartet. Er läuft im Hintergrund; die Zeile neben dieser Schaltfläche verfolgt ihn.",
       "hide": "Ausblenden",

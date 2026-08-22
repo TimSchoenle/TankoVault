@@ -55,8 +55,9 @@ pub struct FullSweepState {
     pub finished_at: Option<OffsetDateTime>,
     pub rounds: i32,
     pub counters: FullSweepCounters,
-    /// Why the last run stopped — `exhausted`, `merge_ceiling`, `round_cap` or `failed`. Only
-    /// `exhausted` means the catalogue was walked to the end.
+    /// Why the last run stopped — `exhausted` or `failed`. A run has no limit it can stop at,
+    /// so anything but a failure means the catalogue was walked to the end. Control planes
+    /// before the limits were lifted also wrote `merge_ceiling` and `round_cap`.
     pub stopped: Option<String>,
     pub error: Option<String>,
 }

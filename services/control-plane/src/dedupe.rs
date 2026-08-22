@@ -256,32 +256,21 @@ fn accumulate(total: &mut MergeSweepView, pass: &MergeSweepView) {
     total.chains_deferred = pass.chains_deferred;
 }
 
-/// The most rounds one exhaustive run will draw, whatever the shortlists still hold.
+/// The budget an exhaustive run draws under: the scheduled one with its ceiling lifted.
 ///
-/// A ceiling on wall-clock time and on the memory [`RoundLoop::seen`] costs, not a statement
-/// about the catalogue: at the shipped budgets it covers a few hundred thousand distinct pairs,
-/// well past any catalogue the sweep has been pointed at. A run that reaches it stops with
-/// [`Stop::RoundCap`], which the console reports as work remaining rather than as a finished walk.
-const MAX_ROUNDS: i32 = 256;
-
-/// Why an exhaustive run stopped, as `merge_full_sweep_state.stopped` records it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Stop {
-    /// A round shortlisted nothing the run had not already seen: every pair has been judged.
-    Exhausted,
-    /// The run's automatic-merge ceiling was spent. Pairs remain.
-    MergeCeiling,
-    /// [`MAX_ROUNDS`] rounds were drawn and the shortlists still held new pairs.
-    RoundCap,
-}
-
-impl Stop {
-    const fn as_str(self) -> &'static str {
-        match self {
-            Self::Exhausted => "exhausted",
-            Self::MergeCeiling => "merge_ceiling",
-            Self::RoundCap => "round_cap",
-        }
+/// `max_auto_merges` bounds a *background* action — it is the rate at which a mistaken threshold
+/// can delete series between two looks by a human. An exhaustive run is that look: an operator
+/// pressed a button that says it sweeps the whole catalogue, and a run which stopped two hundred
+/// merges in reported work remaining and asked to be pressed again. `scanning.auto_merge` is the
+/// switch that decides whether this may merge at all; within it, the walk runs to the end.
+///
+/// The three shortlist sizes stay as configured. They are the page the walk is drawn in, not a
+/// bound on it: rounds continue until one comes back with nothing new, so a smaller page costs
+/// rounds rather than coverage, and it is what keeps one round's facts and scoring in memory.
+const fn exhaustive_budget(scheduled: SweepBudget) -> SweepBudget {
+    SweepBudget {
+        max_auto_merges: i64::MAX,
+        ..scheduled
     }
 }
 
@@ -290,31 +279,32 @@ impl Stop {
 /// A run cannot stop when a round examines nothing, because two of the three shortlists never
 /// come back empty: `open_merge_pairs` and `distinct_merge_pairs` are ordered
 /// least-recently-scored first, and re-scoring a pair moves it to the back of its own order. A
-/// catalogue holding one open candidate would hand that same pair back every round until the cap.
+/// catalogue holding one open candidate would hand that same pair back for ever.
 /// What ends the walk is a round that shortlists nothing *new*, which is exactly one full
 /// rotation of each list.
+///
+/// That is the only thing that ends it. The walk terminates because the catalogue is finite and
+/// merging only ever shrinks it: every round either judges a pair no round has judged or is the
+/// last. The costs that grow with it are [`Self::seen`] — two ids per distinct pair — and the
+/// wall clock, and a run holds its claim by stamping a heartbeat every round, so one that stops
+/// making progress is visible in the console rather than silent.
 struct RoundLoop {
     /// Every pair shortlisted so far this run.
     seen: HashSet<DuplicatePair>,
-    /// Automatic merges the run may still make. Spent across rounds rather than per round: the
-    /// ceiling is the only bound on a background action that deletes series, and it has to mean
-    /// the same thing however many rounds one press of the button turns into.
-    merges_left: i64,
     rounds: i32,
 }
 
 impl RoundLoop {
-    fn new(budget: SweepBudget) -> Self {
+    fn new() -> Self {
         Self {
             seen: HashSet::new(),
-            merges_left: budget.max_auto_merges,
             rounds: 0,
         }
     }
 
-    /// Fold one round in, returning why the run must stop — or `None` to draw another.
-    fn admit(&mut self, run: &SweepRun) -> Option<Stop> {
-        self.rounds += 1;
+    /// Fold one round in, answering whether the walk is finished.
+    fn admit(&mut self, run: &SweepRun) -> bool {
+        self.rounds = self.rounds.saturating_add(1);
         // `count()`, not `any()`: every pair has to reach `seen`, or one the short-circuit
         // skipped would read as new next round and the walk would never end.
         let fresh = run
@@ -322,20 +312,7 @@ impl RoundLoop {
             .iter()
             .filter(|pair| self.seen.insert(**pair))
             .count();
-        self.merges_left -= run.report.auto_merged;
-        if fresh == 0 {
-            // Checked first: a round that found nothing new *and* spent the last merge has
-            // still finished the walk, and reporting it as ceiling-limited would send an
-            // operator back to press the button on an empty catalogue.
-            return Some(Stop::Exhausted);
-        }
-        if self.merges_left <= 0 {
-            return Some(Stop::MergeCeiling);
-        }
-        if self.rounds >= MAX_ROUNDS {
-            return Some(Stop::RoundCap);
-        }
-        None
+        fresh == 0
     }
 }
 
@@ -385,10 +362,13 @@ pub(crate) async fn sweep_all_detached(
     };
 
     let pool = pool.clone();
+    let budget = exhaustive_budget(budget);
     tokio::spawn(async move {
         let outcome = run_full_sweep(&pool, policy, budget, actor, claim).await;
+        // The two values `merge_full_sweep_state.stopped` can hold. A run either walks the
+        // shortlists out or fails trying; there is no longer a limit it can stop at.
         let (stopped, error) = match &outcome {
-            Ok(stop) => (stop.as_str(), None),
+            Ok(()) => ("exhausted", None),
             Err(error) => ("failed", Some(error.to_string())),
         };
         // Released however the run ended. A run that returned early without reaching here would
@@ -398,10 +378,7 @@ pub(crate) async fn sweep_all_detached(
             tracing::warn!(error = %e, "could not release the exhaustive duplicate sweep's claim");
         }
         match outcome {
-            Ok(stop) => tracing::info!(
-                stopped = stop.as_str(),
-                "exhaustive duplicate sweep complete"
-            ),
+            Ok(()) => tracing::info!("exhaustive duplicate sweep complete"),
             Err(error) => tracing::warn!(error = %error, "exhaustive duplicate sweep failed"),
         }
     });
@@ -420,21 +397,19 @@ async fn run_full_sweep(
     budget: SweepBudget,
     actor: Option<UserId>,
     claim: matching::FullSweepClaim,
-) -> anyhow::Result<Stop> {
-    let mut rounds = RoundLoop::new(budget);
+) -> anyhow::Result<()> {
+    let mut rounds = RoundLoop::new();
     let mut total = MergeSweepView::default();
     loop {
-        let mut round = budget;
-        round.max_auto_merges = rounds.merges_left;
-        let run = sweep(pool, policy, round, SweepScope::Full, actor).await?;
+        let run = sweep(pool, policy, budget, SweepScope::Full, actor).await?;
         accumulate(&mut total, &run.report);
-        let stop = rounds.admit(&run);
+        let done = rounds.admit(&run);
         // Written after every round, including the last: this row is the only progress an
         // operator can see, and a run that only reported at the end would be indistinguishable
         // from one that hung on its first.
         matching::advance_full_sweep(pool, claim, rounds.rounds, counters(&total)).await?;
-        if let Some(stop) = stop {
-            return Ok(stop);
+        if done {
+            return Ok(());
         }
     }
 }
@@ -1288,8 +1263,8 @@ mod tests {
     ///
     /// `open_merge_pairs` and `distinct_merge_pairs` are ordered least-recently-scored first and
     /// re-scoring moves a pair to the back of that order, so neither ever returns empty. A run
-    /// that waited for an empty round would draw all [`MAX_ROUNDS`] of them against a catalogue
-    /// holding a single open candidate, re-scoring that one pair 256 times.
+    /// that waited for an empty round would never end against a catalogue holding a single open
+    /// candidate, re-scoring that one pair for as long as the process lived.
     ///
     /// Both pairs must reach `seen` in the first round, which is why the filter is counted rather
     /// than short-circuited: with `any()` the second pair would still look new in round two.
@@ -1297,43 +1272,52 @@ mod tests {
     fn an_exhaustive_run_ends_when_a_round_shortlists_nothing_new() {
         let a = (SeriesId::new(), SeriesId::new());
         let b = (SeriesId::new(), SeriesId::new());
-        let mut rounds = RoundLoop::new(budget(200));
+        let mut rounds = RoundLoop::new();
 
-        assert_eq!(
-            rounds.admit(&round(&[a, b], 0)),
-            None,
+        assert!(
+            !rounds.admit(&round(&[a, b], 0)),
             "the first round shortlisted two pairs this run had not judged"
         );
-        assert_eq!(
+        assert!(
             rounds.admit(&round(&[a, b], 0)),
-            Some(Stop::Exhausted),
             "the same two pairs back again is one full rotation, not more work"
         );
     }
 
-    /// The automatic-merge ceiling bounds the whole run, not each round of it.
+    /// **A round that shortlists new pairs is drawn however many rounds and merges came before.**
     ///
-    /// It is the only thing standing between a bad threshold and a collapsed catalogue. Charging
-    /// every round the full ceiling — the obvious way to write the loop, since each round is an
-    /// ordinary sweep — would let one press of the button delete `MAX_ROUNDS` times as many
-    /// series as the operator authorised.
+    /// The exhaustive run used to stop at the scheduled sweep's automatic-merge ceiling (200) and
+    /// at a 256-round cap, and report the stop as work remaining. The button says it sweeps the
+    /// whole catalogue: on a catalogue with more duplicates than that, it swept a prefix and
+    /// asked to be pressed again — once per 200 merges, with a full-catalogue blocking query
+    /// spent on each press to reach the pairs the last run stopped short of.
     #[test]
-    fn the_automatic_merge_ceiling_is_spent_across_rounds_not_per_round() {
-        let a = (SeriesId::new(), SeriesId::new());
-        let b = (SeriesId::new(), SeriesId::new());
-        let mut rounds = RoundLoop::new(budget(3));
+    fn nothing_but_an_empty_rotation_stops_an_exhaustive_run() {
+        let mut rounds = RoundLoop::new();
 
-        assert_eq!(
-            rounds.admit(&round(&[a], 2)),
-            None,
-            "two of the three merges are spent; the run may draw another round"
-        );
-        assert_eq!(rounds.merges_left, 1);
-        assert_eq!(
-            rounds.admit(&round(&[b], 1)),
-            Some(Stop::MergeCeiling),
-            "the third merge spends the run's ceiling, whatever the shortlists still hold"
-        );
+        for _ in 0..(256 * 4) {
+            let fresh = (SeriesId::new(), SeriesId::new());
+            assert!(
+                !rounds.admit(&round(&[fresh], 500)),
+                "a round that judged a pair no round had judged is not the end of the walk"
+            );
+        }
+    }
+
+    /// The exhaustive budget lifts the merge ceiling and nothing else.
+    ///
+    /// The shortlist sizes are the page the walk is drawn in — raising them here would multiply
+    /// what one round holds in memory without covering a single pair more, since rounds continue
+    /// until one comes back empty-handed.
+    #[test]
+    fn the_exhaustive_budget_lifts_the_ceiling_and_keeps_the_page() {
+        let scheduled = budget(200);
+        let exhaustive = exhaustive_budget(scheduled);
+
+        assert_eq!(exhaustive.max_auto_merges, i64::MAX);
+        assert_eq!(exhaustive.pairs, scheduled.pairs);
+        assert_eq!(exhaustive.requeue, scheduled.requeue);
+        assert_eq!(exhaustive.recheck, scheduled.recheck);
     }
 
     /// A synonym identifies the pair from whichever side it sits on.

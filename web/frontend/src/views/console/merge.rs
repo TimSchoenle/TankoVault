@@ -329,6 +329,9 @@ fn full_sweep_line(i18n: Translator, view: &MergeFullSweepStatusView) -> Option<
     }
     match view.stopped.as_deref()? {
         "exhausted" => Some(i18n.args("console.merge.fullSweepDone", &counts)),
+        // A run has no limit it can stop at any more. These two are what the control plane
+        // recorded when it had, and the last such run's row outlives the upgrade that lifted
+        // them — read as `failed` it would report a completed sweep as a broken one.
         "merge_ceiling" => Some(i18n.args("console.merge.fullSweepCeiling", &counts)),
         "round_cap" => Some(i18n.args("console.merge.fullSweepCapped", &counts)),
         // `failed`, and any reason a later control plane adds: say the run stopped and show what

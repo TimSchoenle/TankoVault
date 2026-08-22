@@ -28,8 +28,8 @@
       ]
     },
     "nullable": [
-      null,
-      null,
+      true,
+      true,
       null
     ]
   },

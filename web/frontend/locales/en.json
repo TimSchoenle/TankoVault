@@ -829,7 +829,7 @@
       "fullSweepCeiling": "Full sweep stopped at its automatic-merge limit after {rounds} rounds: {examined} pairs, {merged} merged, {queued} added to the queue, {withdrawn} withdrawn. Run it again to carry on.",
       "fullSweepDone": "Full sweep complete after {rounds} rounds: {examined} pairs, {merged} merged, {queued} added to the queue, {withdrawn} withdrawn.",
       "fullSweepFailed": "Full sweep failed: {message}",
-      "fullSweepIdle": "Runs the duplicate sweep over and over until every pair has been looked at. Takes minutes, and runs in the background.",
+      "fullSweepIdle": "Runs the duplicate sweep over and over until every pair has been looked at, with no ceiling on how much it may merge. Runs in the background, and can take a while on a large catalogue.",
       "fullSweepRunning": "Full sweep running: {rounds} rounds, {examined} pairs, {merged} merged, {queued} added to the queue, {withdrawn} withdrawn.",
       "fullSweepStarted": "Full sweep started. It runs in the background; the line beside this button follows it.",
       "hide": "Hide",

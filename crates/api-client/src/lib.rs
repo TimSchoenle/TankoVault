@@ -4816,7 +4816,7 @@ pub mod types {
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"stopped\": {"]
-    #[doc = "      \"description\": \"Why the last run stopped: `exhausted`, `merge_ceiling`, `round_cap` or `failed`. Only\\n`exhausted` means every shortlist was walked out — the rest mean another run has work to\\ndo. Absent before the first run, and while one is in flight.\","]
+    #[doc = "      \"description\": \"Why the last run stopped: `exhausted` or `failed`. A run has no limit it can stop at, so\\nanything but a failure means every shortlist was walked out. Absent before the first run,\\nand while one is in flight; older control planes also wrote `merge_ceiling` and\\n`round_cap`.\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
@@ -4853,7 +4853,7 @@ pub mod types {
         #[doc = "RFC 3339. When the current or most recent run started."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub started_at: ::std::option::Option<::std::string::String>,
-        #[doc = "Why the last run stopped: `exhausted`, `merge_ceiling`, `round_cap` or `failed`. Only\n`exhausted` means every shortlist was walked out — the rest mean another run has work to\ndo. Absent before the first run, and while one is in flight."]
+        #[doc = "Why the last run stopped: `exhausted` or `failed`. A run has no limit it can stop at, so\nanything but a failure means every shortlist was walked out. Absent before the first run,\nand while one is in flight; older control planes also wrote `merge_ceiling` and\n`round_cap`."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub stopped: ::std::option::Option<::std::string::String>,
         pub withdrawn: i64,
@@ -34084,7 +34084,7 @@ impl Client {
     pub fn full_merge_sweep_status(&self) -> builder::FullMergeSweepStatus<'_> {
         builder::FullMergeSweepStatus::new(self)
     }
-    #[doc = "Run an exhaustive duplicate sweep\n\nThe same sweep as `POST /v1/admin/merge-candidates/sweep`, drawn over and over until a round\nshortlists nothing it has not already judged — one full rotation of the open queue and the\nrecheck set, and every newly-blocked pair besides. A single sweep only covers one budget's\nworth of each and leaves the rest to the schedule; this is the button for \"look at all of it\nnow\", after a normalization change or a policy change that should not wait hours to land.\n\nThe run is detached and takes minutes, so this answers only whether one *started*. Progress,\nthe totals so far and how the last one ended are on `GET` of this same path, which the console\npolls. A request arriving while a run is live answers `started: false`: the claim is what\nstops two runs spending the automatic-merge ceiling twice over.\n\nSends a `POST` request to `/v1/admin/merge-candidates/sweep-all`\n\n```ignore\nlet response = client.sweep_all_merge_candidates()\n    .send()\n    .await;\n```"]
+    #[doc = "Run an exhaustive duplicate sweep\n\nThe same sweep as `POST /v1/admin/merge-candidates/sweep`, drawn over and over until a round\nshortlists nothing it has not already judged — one full rotation of the open queue and the\nrecheck set, and every newly-blocked pair besides. A single sweep only covers one budget's\nworth of each and leaves the rest to the schedule; this is the button for \"look at all of it\nnow\", after a normalization change or a policy change that should not wait hours to land.\n\nIt runs to the end: the per-sweep automatic-merge ceiling bounds the *scheduled* sweeps, which\nmerge without anyone watching, and is lifted here because this is an operator asking for the\nwhole catalogue. `scanning.auto_merge` remains the switch for whether it may merge at all.\n\nThe run is detached and takes minutes, so this answers only whether one *started*. Progress,\nthe totals so far and how the last one ended are on `GET` of this same path, which the console\npolls. A request arriving while a run is live answers `started: false`: the claim is what keeps\ntwo runs off the same merges.\n\nSends a `POST` request to `/v1/admin/merge-candidates/sweep-all`\n\n```ignore\nlet response = client.sweep_all_merge_candidates()\n    .send()\n    .await;\n```"]
     pub fn sweep_all_merge_candidates(&self) -> builder::SweepAllMergeCandidates<'_> {
         builder::SweepAllMergeCandidates::new(self)
     }

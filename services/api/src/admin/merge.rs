@@ -216,10 +216,14 @@ pub async fn sweep_merge_candidates(
 /// worth of each and leaves the rest to the schedule; this is the button for "look at all of it
 /// now", after a normalization change or a policy change that should not wait hours to land.
 ///
+/// It runs to the end: the per-sweep automatic-merge ceiling bounds the *scheduled* sweeps, which
+/// merge without anyone watching, and is lifted here because this is an operator asking for the
+/// whole catalogue. `scanning.auto_merge` remains the switch for whether it may merge at all.
+///
 /// The run is detached and takes minutes, so this answers only whether one *started*. Progress,
 /// the totals so far and how the last one ended are on `GET` of this same path, which the console
-/// polls. A request arriving while a run is live answers `started: false`: the claim is what
-/// stops two runs spending the automatic-merge ceiling twice over.
+/// polls. A request arriving while a run is live answers `started: false`: the claim is what keeps
+/// two runs off the same merges.
 #[utoipa::path(
     post,
     path = "/v1/admin/merge-candidates/sweep-all",
@@ -276,9 +280,10 @@ pub struct MergeFullSweepStatusView {
     pub finished_at: Option<String>,
     /// Rounds drawn. One round is one budgeted sweep.
     pub rounds: i32,
-    /// Why the last run stopped: `exhausted`, `merge_ceiling`, `round_cap` or `failed`. Only
-    /// `exhausted` means every shortlist was walked out — the rest mean another run has work to
-    /// do. Absent before the first run, and while one is in flight.
+    /// Why the last run stopped: `exhausted` or `failed`. A run has no limit it can stop at, so
+    /// anything but a failure means every shortlist was walked out. Absent before the first run,
+    /// and while one is in flight; older control planes also wrote `merge_ceiling` and
+    /// `round_cap`.
     pub stopped: Option<String>,
     /// How the last run ended when it ended badly. A failed run still releases its claim, so a
     /// failure shows up here rather than as a sweep that never finishes.

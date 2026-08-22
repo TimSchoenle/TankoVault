@@ -139,6 +139,16 @@ skip = [
     # `const-oid`: 0.10 via `digest` 0.11, 0.9 via the passkey stack's older RustCrypto cohort.
     # Same shape as the AEAD cluster; collapses with the same `crypto-glue` bump.
     { crate = "const-oid" },
+    # The X.509 cluster (added 2026-08-22, when `x509-parser` moved to 0.18): `crates/service`
+    # reads subject alternative names off a verified peer certificate with 0.18, and
+    # `webauthn-rs-core` pins 0.16, which drags its own parser stack — `der-parser` 9,
+    # `asn1-rs` 0.6 and `oid-registry` 0.7 — alongside ours. `webauthn-rs` is an exact `=0.6.1-dev`
+    # pin, so nothing on our side can move the older copy; collapses when it takes 0.18.
+    { crate = "x509-parser" },
+    { crate = "der-parser" },
+    { crate = "asn1-rs" },
+    { crate = "asn1-rs-derive" },
+    { crate = "oid-registry" },
 
     # Platform shims, present on any graph touching Windows or macOS bindings.
     { crate = "windows-sys" },

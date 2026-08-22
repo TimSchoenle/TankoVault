@@ -280,7 +280,7 @@ jobs:
       # `--no-default-features` (see `xtask/Cargo.toml`'s `full` feature) cuts the graph from 654
       # crates to 15, so the no-cache posture is now nearly free rather than the price of it.
       # There is no `apt-get` step for the same reason: `wreq` is no longer in the graph.
-      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
       # Docker Hub rather than GHCR because the chart pins Docker Hub, so that is the registry
       # whose tag set has to be the record of what is published.
@@ -452,7 +452,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
       # Shell-computed for the case folding the `params` step below documents.
       - name: resolve the buildkit cache repository
@@ -566,7 +566,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
       # The build target and structure-test contract are derived from the binary name in one
       # `case`, deliberately, rather than as inline `${{ a == b && x || y }}` expressions
@@ -832,7 +832,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
       - name: log in to GHCR
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0

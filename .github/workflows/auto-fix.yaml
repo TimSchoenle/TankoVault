@@ -409,7 +409,7 @@ jobs:
       - name: BoringSSL build dependencies
         uses: ./.github/actions/boringssl-deps
 
-      - uses: taiki-e/install-action@5b4d68e2e660441203ab128a23676f1e4faf1532 # v2.86.3
+      - uses: taiki-e/install-action@a2a5f6e99e1a31540baa0468acfa302cff0f359f # v2.86.4
         with:
           tool: cargo-about
 
@@ -490,7 +490,7 @@ jobs:
 
       # The same recipe a developer runs, rather than a second spelling of it in YAML.
       - name: Install just
-        uses: taiki-e/install-action@5b4d68e2e660441203ab128a23676f1e4faf1532 # v2.86.3
+        uses: taiki-e/install-action@a2a5f6e99e1a31540baa0468acfa302cff0f359f # v2.86.4
         with:
           tool: just
 

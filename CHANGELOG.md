@@ -12,6 +12,24 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [8.5.1](https://github.com/TimSchoenle/TankoVault/compare/v8.5.0...v8.5.1) (2026-08-23)
+
+
+### Documentation
+
+* bring the README onto the estate README standard ([#277](https://github.com/TimSchoenle/TankoVault/issues/277)) ([736cd02](https://github.com/TimSchoenle/TankoVault/commit/736cd024df5ad4979efad36e77ef8e64517c1cd6))
+
+
+### CI
+
+* **release:** upload sentry debug information and tag the release ([#276](https://github.com/TimSchoenle/TankoVault/issues/276)) ([bd30977](https://github.com/TimSchoenle/TankoVault/commit/bd30977912983f9f76f046081a3b14d870733ca3))
+
+
+### Miscellaneous
+
+* **deps:** update redis:8-alpine docker digest to becdda6 ([#279](https://github.com/TimSchoenle/TankoVault/issues/279)) ([bd2a814](https://github.com/TimSchoenle/TankoVault/commit/bd2a8140ea5135bbc9199399730c954828155441))
+* **deps:** update taiki-e/install-action action to v2.86.4 ([#274](https://github.com/TimSchoenle/TankoVault/issues/274)) ([1b28ed9](https://github.com/TimSchoenle/TankoVault/commit/1b28ed9ac03a01610efa9070f8c2893c8c41a673))
+
 ## [8.5.0](https://github.com/TimSchoenle/TankoVault/compare/v8.4.0...v8.5.0) (2026-08-23)
 
 

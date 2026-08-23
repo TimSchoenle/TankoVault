@@ -129,6 +129,58 @@ metric inventory above with its label values, the recording and alerting rules, 
 for every alert, and — the part worth reading before writing a new rule — the list of documented
 failure modes this stack currently emits **nothing** for.
 
+### `telemetry.sentry`
+
+```toml
+[telemetry.sentry]
+enabled            = false   # true → install the client, the panic hook and the tracing layer
+dsn                = ""      # required when enabled; a credential, so mount it as a secret
+traces_sample_rate = 0.0     # 0 → no performance data at all; 0.1 is a normal production figure
+capture_level      = "error" # least severe record that becomes an issue
+breadcrumb_level   = "info"  # least severe record kept as the trail attached to one
+send_default_pii   = false   # true → client IP, resolved user and unredacted request headers
+```
+
+Off is the default and the published compose value. `enabled = true` with no DSN **fails the
+boot** — a reporter that reports nowhere is what `telemetry.otlp_endpoint` was removed for, and
+refusing it is cheaper than finding out during an incident. So is a sample rate outside
+`0.0..=1.0`, or a DSN that does not parse; the error names the key and never quotes the DSN.
+
+Like `metrics`, this is installed once per process, so it is one of the two blocks a
+configuration reload cannot apply ([CONFIGURATION.md §7.3](./CONFIGURATION.md#73-rotation-without-a-restart)).
+Rotating a DSN is a restart.
+
+**What reaches Sentry.** Four sources, all off together:
+
+- Every `tracing` record at or above `capture_level` becomes an issue; everything down to
+  `breadcrumb_level` becomes the breadcrumb trail attached to the next one. Both sit *under* the
+  subscriber's `EnvFilter`, so `TANKOVAULT_TELEMETRY__LOG_FILTER` is a ceiling on them — a filter
+  of `warn` silently removes every `info` breadcrumb.
+- A panic in any handler. The `CatchPanicLayer` still turns the same panic into a `500` for that
+  one request; the two are complementary, not alternatives.
+- Every routed endpoint of every HTTP service, through the shared stack: a hub per request (so
+  concurrent requests cannot share a breadcrumb trail) and, once `traces_sample_rate` is
+  non-zero, one transaction named by the **matched path** — `/v1/series/{id}`, never the concrete
+  URI, for the same cardinality reason the metrics layer uses it.
+- Nothing else. Probe traffic is invisible: `ops_router` is merged outside the middleware stack,
+  exactly as it is for metrics. **Background work is not traced** — a scan task, a scheduler
+  sweep and a notification fan-out produce issues and breadcrumbs but no transaction, because
+  nothing in this workspace opens a `tracing` span around them. The recipe if that changes:
+  `sentry-tracing` turns any root `tracing` span at `info` or above into a transaction by
+  itself, so a `#[tracing::instrument]` on the unit of work is the whole change.
+
+**The trace spans the tier.** `frontend` → `api` → `control-plane`/`sync`/`worker`, and `worker`
+→ `challenge-solver`, each propagate `sentry-trace` outbound and continue it inbound, so one
+reader action is one trace rather than five unrelated ones. The frontend proxy *overwrites* any
+inbound header: that value is a client claim, and the first hop under our control is the parent
+worth recording.
+
+**`send_default_pii` is a security setting.** On, events carry the client IP, the resolved user
+and the full request header set — `Authorization` and `Cookie` included — to a third party. Off
+is also what keeps `sentry-tower` redacting sensitive headers, so leaving it off is two controls
+rather than one. A deployment that publishes a data policy should treat turning it on as a change
+to that policy.
+
 ### `audit`
 
 ```toml

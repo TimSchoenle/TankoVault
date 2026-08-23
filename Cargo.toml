@@ -369,6 +369,41 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt"]
 # `crates/service/src/telemetry.rs`, or not at all.
 metrics = "0.24"
 metrics-exporter-prometheus = { version = "0.18", default-features = false }
+# Error reporting and performance tracing, off unless an operator configures a DSN
+# (`crates/service/src/sentry.rs`). One crate rather than three: `sentry` re-exports
+# `sentry-tracing` and `sentry-tower` under `sentry::integrations::*`, so the three versions
+# cannot drift.
+#
+# `default-features = false` is load-bearing twice over. The default set includes `transport`,
+# which is `reqwest + native-tls` — and `native-tls` links OpenSSL, which `deny.toml` bans
+# outright because the `scratch` runtime images ship none: the failure would be at exec time in
+# production, not at build time in CI. `rustls` here routes the transport through the same
+# `reqwest` (0.13) the workspace already builds, so no second HTTP client and no second TLS
+# stack enter the graph. The defaults also include `logs`, `metrics` and `release-health` —
+# three separate Sentry products this deployment does not use, and each one an egress channel
+# that would exist with no knob in `docs/CONFIGURATION.md` describing it.
+#
+# What is on: `backtrace`/`debug-images` (stack traces and the module list that symbolicates
+# them), `panic` (the hook that turns a panic into an issue — the `catch-panic` layer above
+# turns the same panic into a 500, and neither is a substitute for the other), and the two
+# integrations: `tracing` for the subscriber layer and `tower-axum-matched-path` for one
+# transaction per request named by the matched route rather than by the URI, which is what
+# stops `/v1/series/{id}` becoming one transaction name per series.
+#
+# `contexts` is deliberately **off**, and it is a default. It adds an OS/host/runtime tag block
+# by pulling `os_info`, which carries a fifteen-crate `objc2` tree for its macOS support — into
+# `Cargo.lock`, and so into `THIRD-PARTY-NOTICES`, for platforms no image here targets. What it
+# would report (kernel version, arch, rustc version) is a constant of the image, which the
+# release tag already names.
+sentry = { version = "0.49", default-features = false, features = [
+    "backtrace",
+    "debug-images",
+    "panic",
+    "reqwest",
+    "rustls",
+    "tracing",
+    "tower-axum-matched-path",
+] }
 
 
 # --- email ---

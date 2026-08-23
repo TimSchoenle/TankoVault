@@ -52,7 +52,9 @@ async fn main() -> anyhow::Result<()> {
     let boot = tankovault_config::load_watched::<Config>()?;
     // Both are process-global and installed once, which is why `telemetry.*` and `metrics.*`
     // are the two blocks a configuration reload cannot apply.
-    tankovault_service::init_tracing(&boot.value.telemetry)?;
+    // Bound, not discarded: the guard flushes queued Sentry events on the way out, and
+    // dropping it here would close the client before the service serves anything.
+    let _telemetry = tankovault_service::init_tracing(&boot.value.telemetry)?;
     let metrics =
         MetricsRegistry::install(&boot.value.metrics, &boot.value.telemetry.service_name)?;
     let shutdown = tankovault_service::install_shutdown();
@@ -615,6 +617,10 @@ async fn proxy(
     headers.remove(header::HOST);
     headers.remove(header::CONTENT_LENGTH);
     set_forwarded_headers(&mut headers, &peer.ip().to_string());
+    // Overwrites whatever the browser sent, so the API continues *this* hop's span: the
+    // inbound value is a client claim, and this proxy is the first thing in the trace we
+    // control. A no-op unless Sentry is configured.
+    tankovault_service::propagate_trace(&mut headers);
 
     let upstream = state
         .client

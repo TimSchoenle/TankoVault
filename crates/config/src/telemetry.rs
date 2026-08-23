@@ -3,6 +3,8 @@
 use serde::Deserialize;
 use terrace_config::schema::Describe;
 
+use crate::sentry::SentryConfig;
+
 /// Observability / telemetry settings shared by every service.
 #[derive(Debug, Clone, Deserialize, Describe)]
 pub struct TelemetryConfig {
@@ -17,6 +19,14 @@ pub struct TelemetryConfig {
     /// Emit structured JSON logs (production) vs. pretty logs (dev).
     #[serde(default)]
     pub json_logs: bool,
+    /// Sentry error reporting and performance tracing. Off unless configured; see
+    /// [`SentryConfig`].
+    ///
+    /// Nested here rather than beside `metrics` because it is a sink for the same `tracing`
+    /// stream `log_filter` governs: a record the filter drops never reaches Sentry either.
+    #[serde(default)]
+    #[config(nested)]
+    pub sentry: SentryConfig,
 }
 
 impl TelemetryConfig {

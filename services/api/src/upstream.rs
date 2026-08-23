@@ -141,9 +141,9 @@ impl Upstream {
     /// Fire a request whose outcome the caller does not await — the targeted sync push.
     ///
     /// Returns the builder rather than sending, so the caller owns the `tokio::spawn`. Still
-    /// goes through [`Self::authenticate`], which is the point.
+    /// goes through [`Self::prepare`], which is the point.
     pub fn request(&self, method: reqwest::Method, path: &str) -> reqwest::RequestBuilder {
-        self.authenticate(self.http.request(method, self.url(path)))
+        self.prepare(self.http.request(method, self.url(path)))
     }
 
     /// The peer's name, for the caller's own log lines.
@@ -160,12 +160,21 @@ impl Upstream {
         format!("{}/{}", self.base, path.trim_start_matches('/'))
     }
 
-    /// Attach the internal token, if one is configured.
-    fn authenticate(&self, req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
-        match &self.token {
+    /// Attach the internal token, if one is configured, and the trace this call belongs to.
+    ///
+    /// Every outbound path goes through here — [`Self::send`] and [`Self::request`] both — so
+    /// it is the one place either can be forgotten.
+    fn prepare(&self, req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        let mut req = match &self.token {
             Some(token) => req.header(INTERNAL_TOKEN_HEADER, token.expose_secret()),
             None => req,
+        };
+        // Continues this request's trace on the peer, so one user action reads as one trace
+        // across the tier instead of four unrelated ones. Empty unless Sentry is configured.
+        for (name, value) in tankovault_service::trace_headers() {
+            req = req.header(name, value);
         }
+        req
     }
 
     /// Send, then translate the outcome into this service's error vocabulary.
@@ -173,7 +182,7 @@ impl Upstream {
     /// # Errors
     /// [`ApiError::BadGateway`] or [`ApiError::GatewayTimeout`] on transport failure; [`ApiError::NotFound`] or [`ApiError::Conflict`] when the peer said so deliberately.
     async fn send<T: DeserializeOwned>(&self, req: reqwest::RequestBuilder) -> ApiResult<Json<T>> {
-        let resp = self.authenticate(req).send().await.map_err(|e| {
+        let resp = self.prepare(req).send().await.map_err(|e| {
             tracing::error!(upstream = self.name, error = %e, "internal service unreachable");
             if e.is_timeout() {
                 ApiError::GatewayTimeout

@@ -17,6 +17,18 @@
       "enabled": false
     },
     {
+      "description": "`testcontainers` and `testcontainers-modules` must move together: modules 0.15.0 requires testcontainers `^0.27.0`, and the two cannot even co-resolve — 0.27 pins bollard `^0.20` and 0.28 pins `^0.21`, whose exact `bollard-stubs` 1.x requirements collide. Grouped so the pair lands in one pull request once the ceiling below is lifted.",
+      "matchManagers": ["cargo"],
+      "matchPackageNames": ["testcontainers", "testcontainers-modules"],
+      "groupName": "testcontainers"
+    },
+    {
+      "description": "The ceiling itself, because the group cannot hold the pair back on its own: a group carries only the updates that exist, so with no `testcontainers-modules` release available Renovate still raises `testcontainers` alone and pushes a Cargo.lock it could not regenerate (#253). Raise this bound in the same commit as the `testcontainers-modules` bump, never before it.",
+      "matchManagers": ["cargo"],
+      "matchPackageNames": ["testcontainers"],
+      "allowedVersions": "<0.28.0"
+    },
+    {
       "description": "Postgres majors need the committed `.sqlx` cache re-verified byte-identical before the `sqlx` job's result means anything — needs a human.",
       "matchPackageNames": ["postgres"],
       "matchUpdateTypes": ["major"],

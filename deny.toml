@@ -149,6 +149,16 @@ skip = [
     { crate = "asn1-rs" },
     { crate = "asn1-rs-derive" },
     { crate = "oid-registry" },
+    # The PKCS#8 cluster (added 2026-08-23, when `pkcs8` moved to 0.11 and `sec1` to 0.8):
+    # `crates/service/src/tls.rs` re-encodes a mounted key with the `der` 0.8 generation, and the
+    # 0.7 generation stays behind it under three roots — `crypto-glue` (the exact `=0.6.1-dev`
+    # `webauthn-rs` pin), `jsonwebtoken` 11 (`rsa` 0.9, `ed25519` 2.2, `p256`/`p384`/`p521` 0.13)
+    # and `nkeys` under `async-nats`. None can move today; collapses when all three take `der` 0.8.
+    { crate = "der" },
+    { crate = "pem-rfc7468" },
+    { crate = "pkcs8" },
+    { crate = "sec1" },
+    { crate = "spki" },
 
     # Platform shims, present on any graph touching Windows or macOS bindings.
     { crate = "windows-sys" },

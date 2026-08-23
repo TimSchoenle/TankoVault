@@ -333,10 +333,28 @@ const ID_EC_PUBLIC_KEY: pkcs8::ObjectIdentifier =
 /// [`TlsError::Key`] if `pem` holds no private key, or an elliptic-curve key that names no curve
 /// (RFC 5480 forbids the implicit and explicit forms, and there is nothing to wrap it with).
 fn pkcs8_pem(pem: &[u8], path: &Path) -> Result<Vec<u8>, TlsError> {
-    fn encode(info: &pkcs8::PrivateKeyInfo<'_>) -> Result<Zeroizing<String>, String> {
+    fn encode(info: &pkcs8::PrivateKeyInfoRef<'_>) -> Result<Zeroizing<String>, String> {
         let doc = pkcs8::SecretDocument::try_from(info).map_err(|e| e.to_string())?;
-        doc.to_pem(pkcs8::PrivateKeyInfo::PEM_LABEL, pkcs8::LineEnding::LF)
+        doc.to_pem(pkcs8::PrivateKeyInfoRef::PEM_LABEL, pkcs8::LineEnding::LF)
             .map_err(|e| e.to_string())
+    }
+
+    /// The PKCS#8 `privateKey` field is an `OCTET STRING`, and every encoding below arrives as a
+    /// slice; the one conversion lives here.
+    ///
+    /// Only for keys built from an algorithm identifier and a body. It hard-codes `public_key:
+    /// None`, so routing the already-PKCS#8 passthrough through it would silently strip the
+    /// public key a v2 key carries.
+    fn wrap(
+        algorithm: pkcs8::AlgorithmIdentifierRef<'_>,
+        private_key: &[u8],
+    ) -> Result<Zeroizing<String>, String> {
+        encode(&pkcs8::PrivateKeyInfoRef {
+            algorithm,
+            private_key: pkcs8::der::asn1::OctetStringRef::new(private_key)
+                .map_err(|e| e.to_string())?,
+            public_key: None,
+        })
     }
 
     /// RFC 5915 §1: the curve moves into the PKCS#8 algorithm identifier, and repeating it
@@ -349,14 +367,13 @@ fn pkcs8_pem(pem: &[u8], path: &Path) -> Result<Vec<u8>, TlsError> {
             .ok_or_else(|| "the elliptic-curve key names no curve".to_owned())?;
         ec.parameters = None;
         let inner = Zeroizing::new(ec.to_der().map_err(|e| e.to_string())?);
-        encode(&pkcs8::PrivateKeyInfo {
-            algorithm: pkcs8::AlgorithmIdentifierRef {
+        wrap(
+            pkcs8::AlgorithmIdentifierRef {
                 oid: ID_EC_PUBLIC_KEY,
                 parameters: Some((&curve).into()),
             },
-            private_key: &inner,
-            public_key: None,
-        })
+            &inner,
+        )
     }
 
     let key = PrivateKeyDer::from_pem_slice(pem).map_err(|e| TlsError::Key {
@@ -365,17 +382,16 @@ fn pkcs8_pem(pem: &[u8], path: &Path) -> Result<Vec<u8>, TlsError> {
     })?;
 
     let normalised = match &key {
-        PrivateKeyDer::Pkcs8(key) => pkcs8::PrivateKeyInfo::try_from(key.secret_pkcs8_der())
+        PrivateKeyDer::Pkcs8(key) => pkcs8::PrivateKeyInfoRef::try_from(key.secret_pkcs8_der())
             .map_err(|e| e.to_string())
             .and_then(|info| encode(&info)),
-        PrivateKeyDer::Pkcs1(key) => encode(&pkcs8::PrivateKeyInfo {
-            algorithm: pkcs8::AlgorithmIdentifierRef {
+        PrivateKeyDer::Pkcs1(key) => wrap(
+            pkcs8::AlgorithmIdentifierRef {
                 oid: RSA_ENCRYPTION,
                 parameters: Some(pkcs8::der::asn1::AnyRef::NULL),
             },
-            private_key: key.secret_pkcs1_der(),
-            public_key: None,
-        }),
+            key.secret_pkcs1_der(),
+        ),
         PrivateKeyDer::Sec1(key) => wrap_sec1(key.secret_sec1_der()),
         // `PrivateKeyDer` is `#[non_exhaustive]`; a variant added upstream is not silently
         // mis-wrapped under one of the algorithm identifiers above.
@@ -565,7 +581,7 @@ mod tests {
     /// PEM private-key header spelled in full anywhere in the tree is what the secret scan is
     /// looking for, and it cannot tell this one from a leaked key.
     fn banner() -> Vec<u8> {
-        format!("-----BEGIN {}-----", pkcs8::PrivateKeyInfo::PEM_LABEL).into_bytes()
+        format!("-----BEGIN {}-----", pkcs8::PrivateKeyInfoRef::PEM_LABEL).into_bytes()
     }
 
     /// A SEC1 elliptic-curve key — what `openssl ecparam -genkey` and cert-manager's default
@@ -590,8 +606,9 @@ mod tests {
 
         // The SEC1 file an operator mounts carries the curve inside the structure, which is
         // where `openssl ec` and cert-manager put it and where PKCS#8 does not.
-        let info = pkcs8::PrivateKeyInfo::try_from(generated.as_ref()).expect("a PKCS#8 key");
-        let mut inner = sec1::EcPrivateKey::from_der(info.private_key).expect("a SEC1 key inside");
+        let info = pkcs8::PrivateKeyInfoRef::try_from(generated.as_ref()).expect("a PKCS#8 key");
+        let mut inner =
+            sec1::EcPrivateKey::from_der(info.private_key.as_bytes()).expect("a SEC1 key inside");
         inner.parameters = Some(sec1::EcParameters::NamedCurve(PRIME256V1));
         let normalised = normalise(&pem(
             "EC PRIVATE KEY",
@@ -623,7 +640,7 @@ mod tests {
 
         assert!(normalised.starts_with(&banner()));
         let parsed = PrivateKeyDer::from_pem_slice(&normalised).expect("the output is a key");
-        let info = pkcs8::PrivateKeyInfo::try_from(match &parsed {
+        let info = pkcs8::PrivateKeyInfoRef::try_from(match &parsed {
             PrivateKeyDer::Pkcs8(key) => key.secret_pkcs8_der(),
             other => panic!("expected PKCS#8, got {other:?}"),
         })
@@ -634,7 +651,7 @@ mod tests {
             Some(pkcs8::der::asn1::AnyRef::NULL),
             "RFC 8017 A.1 requires the explicit NULL"
         );
-        assert_eq!(info.private_key, pkcs1);
+        assert_eq!(info.private_key.as_bytes(), pkcs1);
     }
 
     /// A key that is already PKCS#8 still goes through the rewrap, because the prefix test is on
@@ -642,18 +659,19 @@ mod tests {
     /// which some tooling emits and every PEM parser skips — fails it just as a PKCS#1 key does.
     #[test]
     fn an_already_pkcs8_key_loses_a_preamble_that_would_defeat_the_prefix_test() {
-        let inner = pkcs8::PrivateKeyInfo {
+        let inner = pkcs8::PrivateKeyInfoRef {
             algorithm: pkcs8::AlgorithmIdentifierRef {
                 oid: RSA_ENCRYPTION,
                 parameters: Some(pkcs8::der::asn1::AnyRef::NULL),
             },
-            private_key: b"an opaque RSAPrivateKey body",
+            private_key: pkcs8::der::asn1::OctetStringRef::new(b"an opaque RSAPrivateKey body")
+                .expect("the fixture encodes"),
             public_key: None,
         };
         let canonical = normalise(
             pkcs8::SecretDocument::try_from(&inner)
                 .expect("the fixture encodes")
-                .to_pem(pkcs8::PrivateKeyInfo::PEM_LABEL, pkcs8::LineEnding::LF)
+                .to_pem(pkcs8::PrivateKeyInfoRef::PEM_LABEL, pkcs8::LineEnding::LF)
                 .expect("the fixture encodes")
                 .as_bytes(),
         );
@@ -663,6 +681,23 @@ mod tests {
 
         assert_eq!(normalise(&with_preamble), canonical);
         assert!(canonical.starts_with(&banner()));
+    }
+
+    /// A PKCS#8 **v2** key carries its public key alongside the private one (RFC 5958 §2), and
+    /// the rewrap must hand it back unchanged. The passthrough arm is the only path that can:
+    /// [`wrap`] hard-codes `public_key: None` because the PKCS#1 and SEC1 bodies it serves have
+    /// no PKCS#8-level public key, so a refactor that routed the passthrough through it too
+    /// would emit a v1 key that still parses, still signs, and no other assertion here notices.
+    #[test]
+    fn an_already_pkcs8_v2_key_keeps_the_public_key_it_arrived_with() {
+        let generated =
+            ring::signature::Ed25519KeyPair::generate_pkcs8(&ring::rand::SystemRandom::new())
+                .expect("an Ed25519 key generates");
+        let info = pkcs8::PrivateKeyInfoRef::try_from(generated.as_ref()).expect("a PKCS#8 key");
+        assert!(info.public_key.is_some(), "the fixture is not PKCS#8 v2");
+
+        let normalised = normalise(&pem("PRIVATE KEY", generated.as_ref()));
+        assert_eq!(normalised, pem("PRIVATE KEY", generated.as_ref()));
     }
 
     /// The failure has to name the path and stay an error. It is reached while the configuration

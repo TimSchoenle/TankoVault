@@ -37,8 +37,9 @@ testcontainers-modules = { version = "0.15.0", features = ["postgres"] }
 # feature: `reusable-containers`. `testcontainers-modules` does not forward it (it forwards
 # `blocking`, `http_wait`, `properties-config` and `watchdog` and nothing else), and without it
 # every `--features integration` run leaked one Postgres container per test binary — see
-# ARCH-6b. Keep the version in lockstep with the `testcontainers-modules` bump, or `cargo deny`
-# will fail on `multiple-versions`.
+# ARCH-6b. Keep the version in lockstep with the `testcontainers-modules` bump: the two majors
+# cannot co-resolve at all, because each pins a `bollard` whose exact `bollard-stubs` 1.x
+# requirement excludes the other's, so a one-sided bump fails resolution rather than `cargo deny`.
 testcontainers = { version = "0.27.0", features = ["reusable-containers"] }
 
 [lints]

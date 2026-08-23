@@ -52,7 +52,32 @@ ENV SQLX_OFFLINE=true
 # Native build (no --target): btls-sys's bindgen dlopens libclang at build-script time, and musl's
 # default +crt-static forbids dlopen in build scripts; RUSTFLAGS doesn't reach host build scripts
 # under --target, so native is the only way -crt-static below reaches them too.
-ENV RUSTFLAGS="-C target-feature=-crt-static"
+#
+# `--build-id` is what makes a Sentry stack trace symbolicable at all. The SDK's `debug-images`
+# feature reports each loaded module by its GNU build-id note, and the server looks the debug file
+# up by the same id — so a binary linked without the note reports frames as bare addresses no
+# upload can ever repair. It is set explicitly rather than left to the linker's default because
+# that default is a property of the *base image's* toolchain, and losing it would be silent: the
+# build succeeds, the images ship, and only a production stack trace shows what happened.
+# `sha1` is a hash of the linked output, so it stays a function of the input and does not disturb
+# the byte-identical rebuilds `SOURCE_DATE_EPOCH` buys.
+ENV RUSTFLAGS="-C target-feature=-crt-static -C link-arg=-Wl,--build-id=sha1"
+# Debug information for that symbolication, kept out of the shipped binary by `builder`, which
+# splits it into `/debug/` and strips what it copies to `/out/`. So the images do not grow.
+#
+# Environment variables rather than `[profile.release]` in the root `Cargo.toml`, on purpose: a
+# workspace-wide `debug`/`strip` change would slow every local and CI `--release` build for the
+# benefit of the nine binaries that are actually reported on, and `web/frontend` — its own
+# workspace, its own profiles — would be untouched by it anyway. This is the same shape the wasm
+# half uses below.
+#
+# They belong in **`cook`, not `builder`**: the debug level is part of cargo's fingerprint, so
+# cooking the dependency graph without them and building with them recompiles all 523 crates.
+# `line-tables-only`, not full DWARF: it carries the function names, files and line numbers a
+# stack trace is read for, at a fraction of the object size and link time. Full DWARF is the knob
+# to turn if a report ever needs locals or inlined-frame parameters.
+ENV CARGO_PROFILE_RELEASE_DEBUG=line-tables-only \
+    CARGO_PROFILE_RELEASE_STRIP=false
 # CARGO_HOME must cover cargo's own package-cache lock, not just registry/git — otherwise
 # concurrent builds shred each other's registry (`File exists (os error 17)`).
 ENV CARGO_HOME=/cargo
@@ -94,7 +119,49 @@ RUN --mount=type=cache,id=tankovault-backend-cargo,target=/cargo,sharing=shared 
     for bin in ${SERVICE_BINS}; do flags="${flags} --bin ${bin}"; done; \
     cargo auditable build --release --locked ${flags}; \
     mkdir -p /out; \
-    for bin in ${SERVICE_BINS}; do cp "target/release/${bin}" "/out/${bin}"; done
+    for bin in ${SERVICE_BINS}; do \
+      mkdir -p "/debug/${bin}"; \
+      objcopy --only-keep-debug "target/release/${bin}" "/debug/${bin}/${bin}.debug"; \
+      objcopy --strip-debug --strip-unneeded "target/release/${bin}" "/out/${bin}"; \
+    done
+
+# What `/out` ships and what `/debug` keeps have to stay tied to each other, and both ways of
+# breaking that tie are silent.
+#
+# **The build-id is the tie.** Sentry matches a frame to a debug file by it and by nothing else:
+# an upload whose id does not match the running binary is accepted, stored, and never consulted
+# again. A binary with no note at all reports addresses forever. Neither shows up as an error
+# anywhere — the release publishes, the symbolication just never happens — so it is checked here,
+# on every image build, rather than discovered from a production issue.
+#
+# **`.dep-v0` is checked in the same pass** because it is the section a stripping pass is most
+# likely to take with it: `cargo auditable` writes the resolved dependency list into a
+# non-allocated section, and it is the only thing that makes a `scratch` image scannable — the
+# SBOM `release-please.yaml` attests is read out of it and there is no package database to fall
+# back to.
+#
+# `2>/dev/null` on the debug file alone: `--only-keep-debug` output has no allocated `.interp`,
+# and readelf warns about the missing interpreter on every one of them. Not suppressed for the
+# shipped binary, where the same warning would be a real finding.
+RUN set -eu; \
+    rc=0; \
+    for bin in ${SERVICE_BINS}; do \
+      id="$(readelf -n "/out/${bin}" | sed -n 's/.*Build ID: \([0-9a-f][0-9a-f]*\).*/\1/p')"; \
+      debug_id="$(readelf -n "/debug/${bin}/${bin}.debug" 2>/dev/null | sed -n 's/.*Build ID: \([0-9a-f][0-9a-f]*\).*/\1/p')"; \
+      if [ -z "${id}" ]; then \
+        echo "symbol contract: ${bin} carries no GNU build-id, so no upload can symbolicate it" >&2; \
+        rc=1; \
+      elif [ "${id}" != "${debug_id}" ]; then \
+        echo "symbol contract: ${bin} is build-id ${id} but its debug file is ${debug_id:-none}" >&2; \
+        rc=1; \
+      fi; \
+      readelf -S "/out/${bin}" | grep -q '\.dep-v0' || { \
+        echo "symbol contract: stripping removed ${bin}'s .dep-v0 section; the SBOM has nothing to read" >&2; \
+        rc=1; \
+      }; \
+    done; \
+    [ "$rc" -eq 0 ] || { echo "Check the RUSTFLAGS and the objcopy flags in the stage above." >&2; exit 1; }; \
+    echo "symbol contract: ok"
 
 # Every runtime stage ships a hand-picked set of shared libraries; a binary linking one more than
 # its stage carries still builds and only fails at exec (`wreq` 6 → `btls-sys` added a `libstdc++`
@@ -170,6 +237,63 @@ RUN set -eu; \
 # builder's whole filesystem — the host needs them for `oras attach` and for the label check.
 FROM scratch AS contract
 COPY --from=contract-builder /contract/ /
+
+# The split-out debug information, plus the source bundle that turns a symbolicated frame into an
+# actual line of code in the Sentry UI. Built only by the `symbols` job in
+# `.github/workflows/release-please.yaml`; no published image contains this stage or anything it
+# produces.
+#
+# **The bundling has to happen in here**, which is the whole reason this stage exists rather than
+# `sentry-cli debug-files upload --include-sources` on the runner. The paths DWARF records are
+# this container's — `/app/services/api/src/...` for the workspace, `/cargo/registry/src/...` for
+# the 523 dependencies — and neither exists on a GitHub runner, so `--include-sources` there
+# resolves nothing and uploads a debug file with no source attached, successfully and silently.
+# `bundle-sources` run next to the sources writes a `.src.zip` keyed by the same debug id, which
+# uploads from anywhere.
+#
+# `/cargo` is remounted because the dependency sources live on it and not in `builder`'s layers.
+#
+# sentry-cli is pinned by version **and digest**, and deliberately carries no `renovate:` marker:
+# its releases publish no checksum file, so the two values are one pair a bot cannot update
+# together — a version bumped without its digest would fail this build with a checksum mismatch
+# that names neither. Move them together, by hand, or not at all; a sentry-cli a few versions
+# behind reads the same DWARF.
+FROM builder AS debug-bundler
+#
+# The two digests are spelled `CLI_DIGEST_*` and not `SENTRY_CLI_SHA256_*` on purpose: gitleaks'
+# `sentry-access-token` rule matches any 64-hex value within twenty characters of the word
+# `sentry`, so the obvious name makes a published checksum read as a leaked credential and fails
+# `secret scan` on every pull request. Renaming keeps that rule at full strength, which an inline
+# `gitleaks:allow` would not.
+ARG SENTRY_CLI_VERSION=3.6.2
+ARG CLI_DIGEST_X86_64=3a4bbf2c0d06378d4e59b337647483751a0a2b1603db5fd4991847d0cfd6478c
+ARG CLI_DIGEST_AARCH64=ff112ecf694b7d6b3629a6228ed4e3f7a0d51401bdf48a5051a79d8749dccd06
+RUN --mount=type=cache,id=tankovault-backend-cargo,target=/cargo,sharing=shared \
+    set -eu; \
+    arch="$(uname -m)"; \
+    case "${arch}" in \
+      x86_64)  asset="sentry-cli-Linux-x86_64";  sha="${CLI_DIGEST_X86_64}" ;; \
+      aarch64) asset="sentry-cli-Linux-aarch64"; sha="${CLI_DIGEST_AARCH64}" ;; \
+      *) echo "no sentry-cli asset is pinned for ${arch}" >&2; exit 1 ;; \
+    esac; \
+    wget -q -O /tmp/sentry-cli \
+      "https://github.com/getsentry/sentry-cli/releases/download/${SENTRY_CLI_VERSION}/${asset}"; \
+    echo "${sha}  /tmp/sentry-cli" | sha256sum -c -; \
+    chmod +x /tmp/sentry-cli; \
+    for dir in /debug/*; do \
+      bin="$(basename "${dir}")"; \
+      /tmp/sentry-cli debug-files bundle-sources "${dir}/${bin}.debug"; \
+      ls "${dir}"/*.src.zip >/dev/null 2>&1 || { \
+        echo "no source bundle was produced for ${bin}; its debug file records no source paths" >&2; \
+        exit 1; \
+      }; \
+    done; \
+    rm -f /tmp/sentry-cli
+
+# One directory per binary, so the uploading job can select the images this release actually
+# published without having to map a debug id back to a service name.
+FROM scratch AS debug-symbols
+COPY --from=debug-bundler /debug/ /
 
 # `dx` needs glibc (wasm-bindgen/wasm-opt), so this half stays on Debian rather than Alpine.
 FROM rust:${RUST_VERSION}-bookworm@sha256:6ae102bdbf528294bc79ad6e1fae682f6f7c2a6e6621506ba959f9685b308a55 AS wasm-chef

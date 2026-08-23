@@ -1142,6 +1142,251 @@ jobs:
           "${RUNNER_TEMP}/registry-retry" cosign attest --yes --identity-token "$token" --predicate "$SBOM" --type spdxjson "${DOCKERHUB_IMAGE}@${DOCKERHUB_DIGEST}"
           "${RUNNER_TEMP}/registry-retry" cosign attest --yes --identity-token "$token" --predicate "$SBOM" --type spdxjson "${GHCR_IMAGE}@${GHCR_DIGEST}"
 
+  # ---------------------------------------------------------------------------------------------
+  # Sentry: the two halves that make a production stack trace readable
+  # ---------------------------------------------------------------------------------------------
+  # `telemetry.sentry` is off by default and a deployment that never turns it on is unaffected by
+  # everything below — but a deployment that *does* turn it on gets addresses instead of code
+  # unless this workflow does two things the running service cannot do for itself.
+  #
+  #   `symbols`        uploads the debug information split out of the published binaries, keyed by
+  #                    GNU build-id, together with the source bundles the Dockerfile produced next
+  #                    to the sources. This is what turns `0x7f2a…` into a file and a line.
+  #   `sentry-release` creates the release object the services tag their events with, associates
+  #                    the commits in it, and finalises it. This is what makes a new issue
+  #                    attributable to a deploy and what "first seen in" reads.
+  #
+  # **The release name is a contract with the code.** `crates/service/src/sentry.rs` defaults
+  # `release` to `tankovault@<CARGO_PKG_VERSION>` and release-please bumps that version in the
+  # commit this run released, so the name below is the same string every replica will send. If the
+  # two ever differ, nothing fails: Sentry accepts events for a release it has never heard of and
+  # accepts a release nothing reports to, and every regression stops being attributable without a
+  # single red job. `xtask repo-lint`'s `sentry-release-name-agrees` is what holds them together.
+  #
+  # Both jobs are **opt-in and gated on a repository variable**, not on the secret: the `secrets`
+  # context is not available to a job-level `if:`, so `vars.SENTRY_ORG` and `vars.SENTRY_PROJECT`
+  # are what decides whether this repository reports to Sentry at all. Once they are set, a missing
+  # token fails loudly rather than skipping — a half-configured integration that silently uploads
+  # nothing is the failure this whole design exists to avoid.
+  #
+  # Both are also gated on `plan.outputs.any`: a release that rebuilt no image deployed no new
+  # binary, so there is nothing to symbolicate and no version anything will report under.
+  symbols:
+    name: sentry debug files (${{ matrix.arch }})
+    needs: [release-please, plan, release-deps]
+    if: ${{ !cancelled() && !failure() && needs.release-please.outputs.release_created == 'true' && needs.plan.outputs.any == 'true' && vars.SENTRY_ORG != '' && vars.SENTRY_PROJECT != '' }}
+    # Required, not decorative: `SENTRY_AUTH_TOKEN` is a `release` environment secret, and a job
+    # that omits the environment reads it as an empty string.
+    environment:
+      name: release
+      deployment: false
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    permissions:
+      contents: read # to check out the build context
+    strategy:
+      fail-fast: false
+      matrix:
+        # Native per architecture, for the reason the `build` matrix is: the debug information
+        # describes a binary that was compiled natively, so the two legs are not interchangeable
+        # and both have to be uploaded — a service running on arm64 is symbolicated by the arm64
+        # debug file and by nothing else.
+        #
+        # sentry-cli is pinned by version *and* digest here for the same reason the Dockerfile
+        # pins it: its releases publish no checksum file, so no `renovate:` marker can keep the
+        # two in step and they move together by hand. The version must match the Dockerfile's.
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+            cli_asset: sentry-cli-Linux-x86_64
+            cli_sha256: 3a4bbf2c0d06378d4e59b337647483751a0a2b1603db5fd4991847d0cfd6478c
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            cli_asset: sentry-cli-Linux-aarch64
+            cli_sha256: ff112ecf694b7d6b3629a6228ed4e3f7a0d51401bdf48a5051a79d8749dccd06
+    env:
+      SENTRY_CLI_VERSION: 3.6.2
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      # Shell-computed for the case folding the `build` job's `params` step documents.
+      - name: resolve the buildkit cache repository
+        id: buildcache
+        run: echo "ref=${GHCR_REGISTRY}/${GITHUB_REPOSITORY,,}/buildcache" >> "$GITHUB_OUTPUT"
+
+      # Read-only here: this job imports the warm-up's cache and exports none of its own.
+      - name: log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ${{ env.GHCR_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # No `SERVICE_BINS`, no `BIN`, no `SOURCE_DATE_EPOCH` — the same discipline as every other
+      # leg: a build argument the warm-up did not pass is one this must not pass either, or it
+      # looks up a cache key nothing wrote and recompiles the workspace to export a directory.
+      # `builder` is therefore an import, and only `debug-bundler` — which downloads sentry-cli
+      # and zips the sources DWARF points at — actually runs.
+      - name: export the debug information
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: deploy/docker/Dockerfile
+          platforms: linux/${{ matrix.arch }}
+          target: debug-symbols
+          outputs: type=local,dest=${{ runner.temp }}/debug-out
+          provenance: false
+          cache-from: type=registry,ref=${{ steps.buildcache.outputs.ref }}:release-deps-${{ matrix.arch }}
+
+      - name: install sentry-cli
+        env:
+          ASSET: ${{ matrix.cli_asset }}
+          SHA256: ${{ matrix.cli_sha256 }}
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          curl -fsSL -o sentry-cli \
+            "https://github.com/getsentry/sentry-cli/releases/download/${SENTRY_CLI_VERSION}/${ASSET}"
+          echo "${SHA256}  sentry-cli" | sha256sum -c -
+          chmod +x sentry-cli
+          sudo mv sentry-cli /usr/local/bin/sentry-cli
+
+      # The variables are what opted this repository in, so a token missing behind them is a
+      # half-configured integration and not a reason to skip: skipping would publish a release
+      # whose issues can never be symbolicated, and say nothing about it anywhere.
+      - name: the Sentry credentials are present
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "$SENTRY_AUTH_TOKEN" ]; then
+            echo "::error::vars.SENTRY_ORG and vars.SENTRY_PROJECT are set, so this release uploads debug information — but the release environment holds no SENTRY_AUTH_TOKEN. Add it, or clear the variables to opt out."
+            exit 1
+          fi
+
+      # Only the images this release actually published. Everything else is either unchanged —
+      # in which case its debug file is already in Sentry under the same build-id, because the
+      # image build is reproducible — or never deployed at all (`xtask`, `config-contract`).
+      #
+      # A published image with no exported debug file is a hard failure rather than a skip: it
+      # means the split in the Dockerfile stopped covering a binary, and the only other way to
+      # find that out is an unsymbolicated issue months later.
+      - name: upload the debug information for the published images
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
+          SENTRY_URL: ${{ vars.SENTRY_URL || 'https://sentry.io/' }}
+          IMAGES: ${{ needs.plan.outputs.images }}
+        run: |
+          set -euo pipefail
+          staged="${RUNNER_TEMP}/debug-upload"
+          mkdir -p "$staged"
+          for bin in $(printf '%s' "$IMAGES" | jq -r '.[]'); do
+            if [ ! -d "${RUNNER_TEMP}/debug-out/${bin}" ]; then
+              echo "::error::${bin} was published in this release but no debug information was exported for it"
+              exit 1
+            fi
+            cp -r "${RUNNER_TEMP}/debug-out/${bin}" "$staged/"
+          done
+          # `--wait` blocks until Sentry has finished processing rather than until the upload
+          # returns, which is the difference between "the files arrived" and "the files are
+          # usable". A rejected DIF is reported here instead of discovered from a stack trace.
+          sentry-cli debug-files upload --wait "$staged"
+
+  sentry-release:
+    name: sentry release
+    needs: [release-please, plan, symbols, manifest]
+    if: ${{ !cancelled() && !failure() && needs.release-please.outputs.release_created == 'true' && needs.plan.outputs.any == 'true' && vars.SENTRY_ORG != '' && vars.SENTRY_PROJECT != '' }}
+    environment:
+      name: release
+      deployment: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read # to check out the history `set-commits` reads
+    env:
+      SENTRY_CLI_VERSION: 3.6.2
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
+
+      # Full history: `set-commits` needs to see the commits between the previous release and this
+      # one, and a shallow clone silently reports an empty range rather than failing.
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: install sentry-cli
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          curl -fsSL -o sentry-cli \
+            "https://github.com/getsentry/sentry-cli/releases/download/${SENTRY_CLI_VERSION}/sentry-cli-Linux-x86_64"
+          echo "3a4bbf2c0d06378d4e59b337647483751a0a2b1603db5fd4991847d0cfd6478c  sentry-cli" | sha256sum -c -
+          chmod +x sentry-cli
+          sudo mv sentry-cli /usr/local/bin/sentry-cli
+
+      - name: the Sentry credentials are present
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "$SENTRY_AUTH_TOKEN" ]; then
+            echo "::error::vars.SENTRY_ORG and vars.SENTRY_PROJECT are set, so this release creates a Sentry release — but the release environment holds no SENTRY_AUTH_TOKEN. Add it, or clear the variables to opt out."
+            exit 1
+          fi
+
+      # `RELEASE` is assembled in `env:` rather than in the script, so the name appears once, as a
+      # literal, in the place `xtask repo-lint`'s `sentry-release-name-agrees` reads it — and so
+      # it obeys this file's `${{ }}` rule, which is that a script receives values and never has
+      # them substituted into it.
+      #
+      # `version` and not `tag_name`: `crates/service/src/sentry.rs` builds the same string from
+      # `CARGO_PKG_VERSION`, which carries no `v`.
+      - name: create and finalise the release
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
+          SENTRY_URL: ${{ vars.SENTRY_URL || 'https://sentry.io/' }}
+          RELEASE: tankovault@${{ needs.release-please.outputs.version }}
+        run: |
+          set -euo pipefail
+          release="$RELEASE"
+
+          sentry-cli releases new "$release"
+
+          # Commit association is what produces suspect commits and issue ownership, and `--auto`
+          # reads the repository through Sentry's own GitHub integration. That integration is an
+          # organisation setting nothing in this repository can create or check, so its absence is
+          # reported and stepped over rather than failing a release whose images are already
+          # published and whose chart bump has already been proposed. The release itself, the
+          # version tag on every event and the symbolication above are all unaffected by it.
+          if ! sentry-cli releases set-commits "$release" --auto --ignore-missing --ignore-empty; then
+            echo "::warning::could not associate commits with ${release}; Sentry's GitHub integration is probably not configured for this organisation. The release exists and events will be tagged with it, but suspect commits will be empty."
+          fi
+
+          # Finalising sets `dateReleased`, which is what Sentry's regression detection reads as
+          # "this version is out". Not a `deploys new`: the chart repository decides when a
+          # version reaches an environment, and claiming a deployment from here would date every
+          # one of them to the moment the images were pushed.
+          sentry-cli releases finalize "$release"
+
   # The hand-off to the deployable chart: pin the services this run published in
   # `TimSchoenle/helm-charts` to their new digests, and open a pull request there. It is a pull
   # request and not a push because the chart repository gates its own releases — this job
@@ -1788,7 +2033,7 @@ jobs:
 
   summary:
     name: release summary
-    needs: [release-please, plan, release-deps, build, manifest, helm-release, desktop-release, release-pr]
+    needs: [release-please, plan, release-deps, build, manifest, symbols, sentry-release, helm-release, desktop-release, release-pr]
     if: always() && needs.release-please.outputs.release_created == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -1811,6 +2056,8 @@ jobs:
           CHART_VERSION: ${{ needs.helm-release.outputs.chart_version }}
           RELEASED: ${{ needs.desktop-release.result }}
           NEXT_PR: ${{ needs.release-pr.result }}
+          SYMBOLS: ${{ needs.symbols.result }}
+          SENTRY: ${{ needs.sentry-release.result }}
         run: |
           # Case-folded to match what was actually pushed; see the `build` job's `params` step.
           GHCR_PREFIX="${GHCR_REGISTRY}/${GITHUB_REPOSITORY,,}"
@@ -1869,6 +2116,21 @@ jobs:
               echo "draft is publishable once its installers are attached."
             fi
             echo
+            # Reported only when it was attempted: a repository that has not set `SENTRY_ORG` has
+            # opted out, and a skipped job is the expected state rather than something to explain
+            # once per release.
+            if [ "$SYMBOLS" != "skipped" ] || [ "$SENTRY" != "skipped" ]; then
+              if [ "$SYMBOLS" = "success" ] && [ "$SENTRY" = "success" ]; then
+                echo "Sentry: debug information uploaded for both architectures, and release"
+                echo "\`tankovault@${TAG#v}\` finalised — the tag every replica sends on its events."
+              else
+                echo "Sentry reported \`${SYMBOLS}\` for the debug information and \`${SENTRY}\` for"
+                echo "the release object. **Issues raised by this version may not symbolicate.**"
+                echo "Re-running those two jobs is safe: an upload is keyed by build-id and a"
+                echo "release is created idempotently."
+              fi
+              echo
+            fi
             # The pull request for the *next* release is built from the tag this run published, so
             # it is the one job that cannot run until the draft is out. Not opening it is safe —
             # the next push to `main` opens it — but it is invisible from anywhere else.

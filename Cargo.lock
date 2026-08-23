@@ -5664,6 +5664,7 @@ dependencies = [
  "serde_json",
  "tankovault-config",
  "tankovault-contracts",
+ "tankovault-service",
  "thiserror 2.0.20",
  "tokio",
  "tokio-util",

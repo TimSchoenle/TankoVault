@@ -9,6 +9,7 @@ use tankovault_api::config::{AuthConfig, Config};
 use tankovault_service::{
     CancellationToken, Health, MetricsRegistry, PostgresAuditSink, health::PostgresCheck,
 };
+use tracing::Instrument as _;
 
 /// Rows deleted per audit-retention sweep.
 ///
@@ -406,11 +407,14 @@ fn spawn_audit_retention(
         tankovault_service::shutdown::every(interval, shutdown, "audit-retention", move || {
             let pool = pool.clone();
             async move {
+                // A trace root: a timer tick has no request above it, and `sentry-tracing`
+                // turns a root span into one transaction.
                 match tankovault_db::repo::audit::prune_older_than(
                     &pool,
                     retention_days,
                     AUDIT_PRUNE_BATCH,
                 )
+                .instrument(tracing::info_span!("audit_retention", "sentry.op" = "cron"))
                 .await
                 {
                     Ok(0) => {}
@@ -528,7 +532,12 @@ fn spawn_credential_sweep(
             move || {
                 let pool = pool.clone();
                 async move {
-                    sweep_once(&pool).await;
+                    sweep_once(&pool)
+                        .instrument(tracing::info_span!(
+                            "credential_sweep",
+                            "sentry.op" = "cron"
+                        ))
+                        .await;
                 }
             },
         )

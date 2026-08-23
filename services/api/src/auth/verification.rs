@@ -113,7 +113,10 @@ pub async fn resend_verification(
     Json(req): Json<ResendVerificationRequest>,
 ) -> StatusCode {
     let email = req.email.trim().to_owned();
-    tokio::spawn(async move { deliver_verification_resend(state, email).await });
+    // Detached, but not out of the trace; see `tankovault_service::in_current_trace`.
+    tokio::spawn(tankovault_service::in_current_trace(async move {
+        deliver_verification_resend(state, email).await;
+    }));
     StatusCode::ACCEPTED
 }
 

@@ -135,7 +135,7 @@ failure modes this stack currently emits **nothing** for.
 [telemetry.sentry]
 enabled            = false   # true → install the client, the panic hook and the tracing layer
 dsn                = ""      # required when enabled; a credential, so mount it as a secret
-traces_sample_rate = 0.0     # 0 → no performance data at all; 0.1 is a normal production figure
+traces_sample_rate = 0.0     # fraction of traces this service *starts*; 0.1 is a normal figure
 capture_level      = "error" # least severe record that becomes an issue
 breadcrumb_level   = "info"  # least severe record kept as the trail attached to one
 send_default_pii   = false   # true → client IP, resolved user and unredacted request headers
@@ -159,27 +159,64 @@ Rotating a DSN is a restart.
 - A panic in any handler. The `CatchPanicLayer` still turns the same panic into a `500` for that
   one request; the two are complementary, not alternatives.
 - Every routed endpoint of every HTTP service, through the shared stack: a hub per request (so
-  concurrent requests cannot share a breadcrumb trail) and, once `traces_sample_rate` is
-  non-zero, one transaction named by the **matched path** — `/v1/series/{id}`, never the concrete
-  URI, for the same cardinality reason the metrics layer uses it.
-- Nothing else. Probe traffic is invisible: `ops_router` is merged outside the middleware stack,
-  exactly as it is for metrics. **Background work is not traced** — a scan task, a scheduler
-  sweep and a notification fan-out produce issues and breadcrumbs but no transaction, because
-  nothing in this workspace opens a `tracing` span around them. The recipe if that changes:
-  `sentry-tracing` turns any root `tracing` span at `info` or above into a transaction by
-  itself, so a `#[tracing::instrument]` on the unit of work is the whole change.
-
-**The trace spans the tier.** `frontend` → `api` → `control-plane`/`sync`/`worker`, and `worker`
-→ `challenge-solver`, each propagate `sentry-trace` outbound and continue it inbound, so one
-reader action is one trace rather than five unrelated ones. The frontend proxy *overwrites* any
-inbound header: that value is a client claim, and the first hop under our control is the parent
-worth recording.
+  concurrent requests cannot share a breadcrumb trail) and one transaction named by the
+  **matched path** — `/v1/series/{id}`, never the concrete URI, for the same cardinality reason
+  the metrics layer uses it.
+- Every unit of **background work**, as its own transaction: one per scan task
+  (`scan_task`), scheduler sweep (`scheduler_sweep`), duplicate sweep (`merge_sweep`),
+  dispatch reconciliation (`dispatch_reconcile`), model build (`recsys_build`), sync
+  reconciliation (`sync_reconcile`), metadata enrichment (`metadata_enrichment`), audit and
+  credential sweep, and one per broker delivery (`bus_delivery`). Each is an ordinary
+  `tracing` span, so the same context lands on the log lines whether or not Sentry is on.
+- Nothing else. Probe traffic is invisible: `ops_router` is merged outside the middleware
+  stack, exactly as it is for metrics.
 
 **`send_default_pii` is a security setting.** On, events carry the client IP, the resolved user
 and the full request header set — `Authorization` and `Cookie` included — to a third party. Off
 is also what keeps `sentry-tower` redacting sensitive headers, so leaving it off is two controls
 rather than one. A deployment that publishes a data policy should treat turning it on as a change
 to that policy.
+
+#### The trace, end to end
+
+One reader action is one trace across every service it touches, and the broker is not where it
+stops:
+
+| From | Carried on | To | Transaction there |
+|---|---|---|---|
+| browser → `frontend` | — (the trace starts here) | proxy | request |
+| `frontend` | HTTP header | `api` | request |
+| `api` | HTTP header | `control-plane`, `sync`, `worker` | request |
+| `control-plane` sweep | **NATS header** | `worker` | `scan_task` |
+| `worker` progress event | **NATS header** | `control-plane` | `bus_delivery` |
+| `worker` chapter event | **NATS header** | `notifier` | `bus_delivery` |
+| `notifier` live push | **NATS header** | `api` SSE relay | — |
+| `worker` solve | HTTP header | `challenge-solver`, `render` | request |
+
+Two mechanisms, one header name. Over HTTP it is
+`tankovault_service::trace_headers()`, attached at three choke points — the API's `Upstream`
+client, the shared solve client in `crates/fetch`, and the frontend proxy. Over the broker it is
+`tankovault_bus`, which writes the header on **every** publish and reads it on **every**
+delivery, so a new subject inherits the behaviour rather than having to remember it. A message
+published while tracing is off carries no header block at all, so the wire bytes of a
+Sentry-less deployment are unchanged.
+
+The frontend proxy *overwrites* any inbound `sentry-trace`: that value is a client claim, and
+the first hop under our control is the parent worth recording.
+
+Work a request **detaches** stays in its trace too — the targeted sync push, a transactional
+email, an operator-triggered duplicate sweep or model build. A `tokio::spawn` starts with a
+fresh Sentry hub, so each of those is wrapped in `tankovault_service::in_current_trace`, which
+binds the spawning task's hub. The rule when adding one: call it *outside* the spawned future,
+because it captures the hub that is current when it runs.
+
+`traces_sample_rate` is the fraction of traces a service **starts**, not a switch for taking
+part in one. A service left at `0.0` still continues a trace handed to it, so a rate set on the
+edge alone still produces a whole trace — but set it uniformly, because the service that starts
+a trace is the one whose rate decides whether it exists at all.
+
+The one hop deliberately **not** propagated is the call out to TRAWL from `render` and
+`challenge-solver`. It is a third party, and a trace id is not something to hand one.
 
 ### `audit`
 

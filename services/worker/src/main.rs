@@ -22,6 +22,7 @@ use tankovault_service::{CancellationToken, Health, HttpStack, MetricsRegistry};
 use tankovault_solver::ChallengeSolver;
 use tankovault_worker::config::{Config, WorkerConfig};
 use tokio::task::JoinSet;
+use tracing::Instrument as _;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -340,7 +341,13 @@ async fn run_consumer(
             };
             let slug = task.provider_slug.clone();
             busy.insert(slug.clone());
-            let id = inflight.spawn(run_task(Arc::clone(engine), msg, task)).id();
+            // The worker does not use `tankovault_bus::consume` — it has its own fair-share
+            // queue — so the trace continuation that lives there has to be repeated here, or
+            // a scan task would be the one hop where the trace stops.
+            let span = task_span(&msg, &task);
+            let id = inflight
+                .spawn(run_task(Arc::clone(engine), msg, task).instrument(span))
+                .id();
             slugs.insert(id, slug);
             continue;
         }
@@ -437,6 +444,38 @@ fn release(
 /// that explain the task afterwards: the stage reporter, and the fetch accounting scope, which
 /// is entered here because a scope covers exactly the futures of the tokio task that opened it
 /// and this is that task.
+/// One transaction per scan task, continuing whatever queued it.
+///
+/// The transaction is named `scan_task` for every provider, with the provider as a field: a
+/// name per provider would be fifty transaction names for one operation, which is how a
+/// performance view stops aggregating.
+///
+/// Two spellings because `sentry.trace` cannot be recorded after the span is created — the SDK
+/// reads it when the transaction is opened — so an absent header has to be a different span
+/// rather than an empty field, which would parse as a malformed trace.
+fn task_span(msg: &tankovault_bus::BrokerMessage, task: &ScanTaskMessage) -> tracing::Span {
+    if let Some(trace) = tankovault_bus::trace_of(msg) {
+        tracing::info_span!(
+            "scan_task",
+            "sentry.op" = "queue.process",
+            "sentry.trace" = trace,
+            provider = %task.provider_slug,
+            task_id = %task.task_id,
+            mode = task.mode.as_str(),
+            kind = task.kind.as_str(),
+        )
+    } else {
+        tracing::info_span!(
+            "scan_task",
+            "sentry.op" = "queue.process",
+            provider = %task.provider_slug,
+            task_id = %task.task_id,
+            mode = task.mode.as_str(),
+            kind = task.kind.as_str(),
+        )
+    }
+}
+
 async fn run_task(engine: Arc<Engine>, msg: tankovault_bus::BrokerMessage, task: ScanTaskMessage) {
     // Wrapped here rather than inside the engine: ack lifetime belongs to whoever owns the
     // message, and doing it at this level means *every* task kind is covered — a 20k-entry

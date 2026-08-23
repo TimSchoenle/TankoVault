@@ -162,14 +162,25 @@ What it covers when enabled: every `tracing` record at or above `CAPTURE_LEVEL` 
 issue and everything down to `BREADCRUMB_LEVEL` becomes the trail attached to it; a panic in
 any handler becomes an issue (the `CatchPanicLayer` still turns the same panic into a `500`,
 so the replica keeps serving); every routed endpoint of every HTTP service gets a per-request
-hub, and — once `TRACES_SAMPLE_RATE` is non-zero — one transaction named by the matched route.
-The trace continues across the tier: `frontend` → `api` → `control-plane`/`sync`/`worker`, and
-`worker` → `challenge-solver`, all propagate `sentry-trace` on the way out and continue it on
-the way in, so one reader action reads as one trace rather than five.
+hub and one transaction named by the matched route; and every unit of background work — a scan
+task, a scheduler sweep, a duplicate sweep, a model build, a reconciliation, an enrichment
+pass, each broker delivery — gets one of its own.
 
-Two things are deliberately outside it. `/health`, `/ready` and the scrape endpoint are merged
-outside the middleware stack, so probe traffic is not traced. And `bootstrap` has no
-`telemetry` block at all ([§5](#5-per-service-blocks)), so a migration job reports nothing.
+**The trace spans the whole tier**, over HTTP *and* over the broker. `frontend` → `api` →
+`control-plane`/`sync`/`worker` and `worker` → `challenge-solver`/`render` carry
+`sentry-trace` as a request header; every `JetStream` and core-NATS publish carries it as a
+message header, and every consumer continues it. So a scheduled sweep, the scan tasks it
+queues, the workers that run them, the progress events that come back and the notifications
+they fan out are one trace — see [`OPERATIONS.md` §2](./OPERATIONS.md#telemetrysentry) for the
+diagram of which hop carries what.
+
+Three things are deliberately outside it. `/health`, `/ready` and the scrape endpoint are
+merged outside the middleware stack, so probe traffic is not traced. `bootstrap` has no
+`telemetry` block at all ([§5](#5-per-service-blocks)), so a migration job reports nothing — it
+is a one-shot `Job` whose failure already stops the rollout with a non-zero exit code, which is
+a louder signal than an issue, and it is in no request's trace to join.
+And the `render`/`challenge-solver` call **out** to TRAWL is not propagated: it is a third
+party, and a trace id is not something to hand one.
 
 | Key | Default | Services | Notes |
 |---|---|---|---|
@@ -179,13 +190,13 @@ outside the middleware stack, so probe traffic is not traced. And `bootstrap` ha
 | `TANKOVAULT_TELEMETRY__SENTRY__RELEASE` | `tankovault@<workspace version>` | as above | One release for the whole tier, because the nine images are cut from one version and deployed together. |
 | `TANKOVAULT_TELEMETRY__SENTRY__SERVER_NAME` | *(unset)* | as above | Unset reports no hostname. |
 | `TANKOVAULT_TELEMETRY__SENTRY__SAMPLE_RATE` | `1.0` | as above | Fraction of **issues** sent. A blunt cap: it drops whole issues, not repetitions of one. Outside `0.0`-`1.0` fails the boot. |
-| `TANKOVAULT_TELEMETRY__SENTRY__TRACES_SAMPLE_RATE` | `0.0` | as above | Fraction of **traces** sampled. `0.0` means no performance data at all — set it (`0.05`-`0.2` is a normal production figure) to get transactions. |
+| `TANKOVAULT_TELEMETRY__SENTRY__TRACES_SAMPLE_RATE` | `0.0` | as above | Fraction of the traces this service **starts** that are recorded. `0.0` starts none of its own but still **continues** a trace it is handed, so a service left at `0.0` does not cut the tier-wide trace in half. Set it uniformly across services (`0.05`-`0.2` is a normal production figure): the service that starts a trace is the one whose rate decides whether it exists. |
 | `TANKOVAULT_TELEMETRY__SENTRY__CAPTURE_LEVEL` | `error` | as above | `off`\|`error`\|`warn`\|`info`\|`debug`\|`trace`. The least severe record that becomes an issue. |
 | `TANKOVAULT_TELEMETRY__SENTRY__BREADCRUMB_LEVEL` | `info` | as above | Same vocabulary. Bounded above by `TANKOVAULT_TELEMETRY__LOG_FILTER`: a record the log filter drops never reaches Sentry either, so a filter of `warn` silently removes every `info` breadcrumb. |
 | `TANKOVAULT_TELEMETRY__SENTRY__MAX_BREADCRUMBS` | `100` | as above | |
 | `TANKOVAULT_TELEMETRY__SENTRY__ATTACH_STACKTRACES` | `true` | as above | For events that carry none of their own. |
 | `TANKOVAULT_TELEMETRY__SENTRY__SEND_DEFAULT_PII` | `false` | as above | **Security setting.** On, events carry the client IP, the resolved user and the *unredacted* request headers — `Authorization` and `Cookie` included — to a third party. Off is what keeps `sentry-tower` redacting sensitive headers. |
-| `TANKOVAULT_TELEMETRY__SENTRY__HTTP_TRANSACTIONS` | `true` | as above | One transaction per request, named by the matched route so `/v1/series/{id}` stays one name. Inert while `TRACES_SAMPLE_RATE` is `0.0`. |
+| `TANKOVAULT_TELEMETRY__SENTRY__HTTP_TRANSACTIONS` | `true` | as above | One transaction per request, named by the matched route so `/v1/series/{id}` stays one name. Whether a started transaction is *kept* is `TRACES_SAMPLE_RATE`'s decision; this is the switch for a service that should stay out of traces entirely. |
 | `TANKOVAULT_TELEMETRY__SENTRY__SPAN_ATTRIBUTES` | `false` | as above | Copy `tracing` span fields onto the span. Off because those fields routinely carry ids and user-supplied titles, and a transaction is retained longer than a log line. |
 | `TANKOVAULT_TELEMETRY__SENTRY__SHUTDOWN_TIMEOUT_SECS` | `2` | as above | How long exit waits for queued events to drain. |
 | `TANKOVAULT_TELEMETRY__SENTRY__DEBUG` | `false` | as above | SDK diagnostics on stderr. For proving a DSN works, not for running. |

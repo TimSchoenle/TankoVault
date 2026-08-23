@@ -38,6 +38,7 @@ use tankovault_service::{
     MetricsRegistry, PostgresFlagSource, PostgresTunableSource, RateLimiter, RouteClassifier,
     RouteTable, TunableSet,
 };
+use tracing::Instrument as _;
 
 /// Trigger a scan run for one provider, or for every enabled provider.
 const SCANS: &str = "/internal/scans";
@@ -833,7 +834,14 @@ async fn maybe_recsys_build(
         cfg.recsys_incremental_max,
     );
     let started = std::time::Instant::now();
-    match recsys::build(&state.pool, tuning, full).await {
+    match recsys::build(&state.pool, tuning, full)
+        .instrument(tracing::info_span!(
+            "recsys_build",
+            "sentry.op" = "cron",
+            kind
+        ))
+        .await
+    {
         Ok(Some(report)) => {
             tracing::info!(
                 kind,
@@ -879,7 +887,16 @@ async fn maybe_reconcile(state: &AppState, leadership: &leader::Leadership) {
         return;
     }
     let started = std::time::Instant::now();
-    if let Err(e) = reconcile::pass(state).await {
+    // A trace root: this is a timer tick, not a request, so nothing is on the stack to be a
+    // parent. `sentry-tracing` turns a root span into one transaction, which is what puts the
+    // scan tasks this republishes under the sweep that republished them.
+    if let Err(e) = reconcile::pass(state)
+        .instrument(tracing::info_span!(
+            "dispatch_reconcile",
+            "sentry.op" = "cron"
+        ))
+        .await
+    {
         tracing::warn!(error = %e, "scan dispatch reconciliation failed");
     }
     metrics::histogram!("scan_reconcile_duration_seconds").record(started.elapsed().as_secs_f64());
@@ -909,7 +926,18 @@ async fn maybe_merge_sweep(
     };
     let started = std::time::Instant::now();
     let thresholds = policy::thresholds(&state.matching, &state.tunables);
-    match dedupe::sweep(&state.pool, thresholds, budget, scope, None).await {
+    let sweep_span = tracing::info_span!(
+        "merge_sweep",
+        "sentry.op" = "cron",
+        scope = match scope {
+            dedupe::SweepScope::Full => "full",
+            dedupe::SweepScope::Rotation => "rotation",
+        },
+    );
+    match dedupe::sweep(&state.pool, thresholds, budget, scope, None)
+        .instrument(sweep_span)
+        .await
+    {
         Ok(dedupe::SweepRun { report, .. }) => {
             tracing::info!(
                 examined = report.pairs_examined,
@@ -968,7 +996,15 @@ async fn maybe_sweep(state: &AppState, leadership: &leader::Leadership, mode: Sc
         return;
     }
     if leadership.is_leader() {
-        sweep(state, mode).await;
+        // The trace root for the whole scan pipeline: the tasks this sweep publishes carry it
+        // onto the workers, and their progress events carry it back to the aggregator.
+        sweep(state, mode)
+            .instrument(tracing::info_span!(
+                "scheduler_sweep",
+                "sentry.op" = "cron",
+                mode = mode.as_str(),
+            ))
+            .await;
     } else {
         tracing::debug!(?mode, "skipping sweep; not scheduler leader");
     }

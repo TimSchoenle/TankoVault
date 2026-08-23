@@ -362,7 +362,7 @@
         "env": "TANKOVAULT_TELEMETRY__SENTRY__TRACES_SAMPLE_RATE",
         "env_file": "TANKOVAULT_TELEMETRY__SENTRY__TRACES_SAMPLE_RATE_FILE",
         "secrets_file": "telemetry__sentry__traces_sample_rate",
-        "docs": "Fraction of traces sampled, `0.0`-`1.0`. `0.0` (the default) disables performance\ntracing entirely: spans are not sampled and no transaction is started per request.",
+        "docs": "Fraction of traces this service **starts** that are recorded, `0.0`-`1.0`.\n\n`0.0` (the default) means it starts none of its own. It does **not** mean this service\nis absent from a trace: a request or a broker message arriving with a trace already\nsampled is continued regardless, which is what keeps one reader action readable across\nthe whole tier rather than ending at the first service configured differently. Set it\nuniformly anyway — `0.05`-`0.2` is an ordinary production figure — since the service\nthat *starts* a trace is the one whose rate decides whether it exists at all.",
         "ty": "f32",
         "values": [],
         "constraint": {
@@ -507,7 +507,7 @@
         "env": "TANKOVAULT_TELEMETRY__SENTRY__HTTP_TRANSACTIONS",
         "env_file": "TANKOVAULT_TELEMETRY__SENTRY__HTTP_TRANSACTIONS_FILE",
         "secrets_file": "telemetry__sentry__http_transactions",
-        "docs": "Record request spans through the shared HTTP stack: one Sentry transaction per\nrequest, named by the *matched route* rather than the URI, so an id in the path does\nnot become its own transaction name. Inert while [`Self::traces_sample_rate`] is `0.0`.",
+        "docs": "Record request spans through the shared HTTP stack: one Sentry transaction per\nrequest, named by the *matched route* rather than the URI, so an id in the path does\nnot become its own transaction name.\n\nWhether a started transaction is *kept* is [`Self::traces_sample_rate`]'s decision.\nThis is the switch for a service that should stay out of traces entirely.",
         "ty": "bool",
         "values": [],
         "constraint": {
@@ -2603,7 +2603,7 @@
                 "type": "string"
               },
               "http_transactions": {
-                "description": "Record request spans through the shared HTTP stack: one Sentry transaction per\nrequest, named by the *matched route* rather than the URI, so an id in the path does\nnot become its own transaction name. Inert while [`Self::traces_sample_rate`] is `0.0`.",
+                "description": "Record request spans through the shared HTTP stack: one Sentry transaction per\nrequest, named by the *matched route* rather than the URI, so an id in the path does\nnot become its own transaction name.\n\nWhether a started transaction is *kept* is [`Self::traces_sample_rate`]'s decision.\nThis is the switch for a service that should stay out of traces entirely.",
                 "type": "boolean"
               },
               "max_breadcrumbs": {
@@ -2637,7 +2637,7 @@
                 "type": "boolean"
               },
               "traces_sample_rate": {
-                "description": "Fraction of traces sampled, `0.0`-`1.0`. `0.0` (the default) disables performance\ntracing entirely: spans are not sampled and no transaction is started per request.",
+                "description": "Fraction of traces this service **starts** that are recorded, `0.0`-`1.0`.\n\n`0.0` (the default) means it starts none of its own. It does **not** mean this service\nis absent from a trace: a request or a broker message arriving with a trace already\nsampled is continued regardless, which is what keeps one reader action readable across\nthe whole tier rather than ending at the first service configured differently. Set it\nuniformly anyway — `0.05`-`0.2` is an ordinary production figure — since the service\nthat *starts* a trace is the one whose rate decides whether it exists at all.",
                 "type": "number"
               }
             },

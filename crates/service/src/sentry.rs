@@ -38,7 +38,8 @@ static HTTP: OnceLock<HttpOptions> = OnceLock::new();
 struct HttpOptions {
     /// A client is bound, so requests get their own hub and their request metadata.
     active: bool,
-    /// Additionally start one transaction per request. Needs a non-zero trace sample rate.
+    /// Additionally start one transaction per request. Whether that transaction is *kept* is
+    /// the sampler's decision, not this one.
     transactions: bool,
 }
 
@@ -138,7 +139,7 @@ pub(crate) fn init(
 
     record_http(HttpOptions {
         active: true,
-        transactions: cfg.http_transactions && cfg.traces_sample_rate > 0.0,
+        transactions: cfg.http_transactions,
     });
 
     Ok(Some(guard))
@@ -159,7 +160,6 @@ where
 
     let capture = cfg.capture_level;
     let breadcrumb = cfg.breadcrumb_level;
-    let traced = cfg.traces_sample_rate > 0.0;
 
     let mut layer = ::sentry::integrations::tracing::layer()
         .event_filter(move |metadata| {
@@ -172,7 +172,12 @@ where
                 EventFilter::Ignore
             }
         })
-        .span_filter(move |metadata| traced && default_span_filter(metadata));
+        // Not additionally gated on `traces_sample_rate`. Whether a span is *recorded* is the
+        // sampler's decision, and it is the one that can honour an inherited one: a service at
+        // rate `0.0` starts no trace of its own but still continues a trace it was handed,
+        // which is the whole of what makes one reader action readable across nine binaries.
+        // Gating span creation locally would cut that trace at the first such service.
+        .span_filter(default_span_filter);
 
     if cfg.span_attributes {
         layer = layer.enable_span_attributes();
@@ -239,6 +244,25 @@ pub fn propagate_trace(headers: &mut axum::http::HeaderMap) {
         };
         headers.insert(name, value);
     }
+}
+
+/// Carry the caller's trace onto a `tokio::spawn`ed future.
+///
+/// The Sentry hub is thread-local and a spawned task starts with a fresh one, so work detached
+/// from a request — the targeted sync push, a transactional email, an operator-triggered sweep
+/// — otherwise reports as an orphan with nothing above it, which is exactly the request that
+/// explains why it ran.
+///
+/// Must be called on the **spawning** task: it binds the hub that is current *now*, so
+/// `spawn(in_current_trace(work))` carries the trace and `spawn(async { in_current_trace(work)
+/// .await })` does not.
+///
+/// A no-op beyond one clone while Sentry is off.
+pub fn in_current_trace<F>(fut: F) -> impl std::future::Future<Output = F::Output>
+where
+    F: std::future::Future,
+{
+    ::sentry::SentryFutureExt::bind_hub(fut, ::sentry::Hub::current())
 }
 
 /// Whether a record at `level` is at least as severe as `threshold`.

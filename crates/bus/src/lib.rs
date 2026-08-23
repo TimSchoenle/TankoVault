@@ -1,6 +1,12 @@
 //! Thin `JetStream` helpers shared by the control-plane, workers, and notifier: connect,
 //! provision streams, publish tasks/events, and open pull consumers, all keyed off subject
 //! names in [`tankovault_contracts::subjects`].
+//!
+//! It is also where a distributed trace crosses the broker. Every publish carries
+//! [`TRACE_HEADER`] and every delivery continues it ([`trace_of`], and the span [`consume`]
+//! opens per message), so a scan task runs under the sweep that queued it rather than as an
+//! orphan. Putting it here rather than at each publisher is what makes a *new* subject inherit
+//! the behaviour instead of having to remember it.
 
 use async_nats::jetstream::{self, AckKind, consumer::PullConsumer, consumer::pull, stream};
 use futures::StreamExt;
@@ -12,6 +18,7 @@ use tankovault_contracts::{
     UserNotification, subjects,
 };
 use thiserror::Error;
+use tracing::Instrument as _;
 use uuid::Uuid;
 
 /// A message as it arrives from the broker: the envelope carrying a serialized
@@ -107,6 +114,45 @@ fn is_consumer_not_found(err: &stream::ConsumerError) -> bool {
         stream::ConsumerErrorKind::JetStream(e)
             if e.error_code() == jetstream::ErrorCode::CONSUMER_NOT_FOUND
     )
+}
+
+/// Header carrying the trace this message belongs to, so a scan task consumed by a worker
+/// continues the request that queued it instead of starting a trace of its own.
+///
+/// The name is Sentry's, not ours: it is what `sentry-tracing` and every other Sentry SDK
+/// read, and the value is opaque here. It is written on every publish and read on every
+/// delivery, so the broker is not where a trace ends.
+pub const TRACE_HEADER: &str = "sentry-trace";
+
+/// The trace this message belongs to, or `None` for one published with tracing off.
+///
+/// Public because the worker does not use [`consume`] — it has its own fair-share queue —
+/// and still has to continue the trace.
+#[must_use]
+pub fn trace_of(msg: &BrokerMessage) -> Option<&str> {
+    trace_in(msg.headers.as_ref())
+}
+
+/// [`trace_of`] over the header map alone, so it is testable without a broker.
+fn trace_in(headers: Option<&async_nats::HeaderMap>) -> Option<&str> {
+    headers?
+        .get(TRACE_HEADER)
+        .map(async_nats::HeaderValue::as_str)
+}
+
+/// The outbound trace headers, or `None` when there is no trace to carry.
+///
+/// `None` rather than an empty map on purpose: a message published *with* headers goes on the
+/// wire as `HPUB` and carries a `NATS/1.0` block, so an empty map would change every message
+/// this workspace publishes in a deployment that does not use Sentry at all.
+fn outbound_headers() -> Option<async_nats::HeaderMap> {
+    let mut headers: Option<async_nats::HeaderMap> = None;
+    for (name, value) in tankovault_service::trace_headers() {
+        headers
+            .get_or_insert_with(async_nats::HeaderMap::new)
+            .insert(name, value);
+    }
+    headers
 }
 
 /// A `JetStream` context plus the underlying core-NATS client.
@@ -277,11 +323,16 @@ impl Bus {
         event: &UserNotification,
     ) -> Result<(), BusError> {
         let subject = subjects::user_notify_subject(event.user_id.as_uuid());
-        let bytes = serde_json::to_vec(event)?;
-        self.client
-            .publish(subject, bytes::Bytes::from(bytes))
-            .await
-            .map_err(|e| BusError::Nats(e.to_string()))
+        let payload = bytes::Bytes::from(serde_json::to_vec(event)?);
+        match outbound_headers() {
+            Some(headers) => {
+                self.client
+                    .publish_with_headers(subject, headers, payload)
+                    .await
+            }
+            None => self.client.publish(subject, payload).await,
+        }
+        .map_err(|e| BusError::Nats(e.to_string()))
     }
 
     /// Subscribe (core NATS) to a single user's live-notification subject. The returned
@@ -304,11 +355,16 @@ impl Bus {
 
     async fn publish<T: Serialize>(&self, subject: String, payload: &T) -> Result<(), BusError> {
         let bytes = serde_json::to_vec(payload)?;
-        let ack = self
-            .js
-            .publish(subject, bytes::Bytes::from(bytes))
-            .await
-            .map_err(|e| BusError::Jetstream(e.to_string()))?;
+        let payload = bytes::Bytes::from(bytes);
+        let published = match outbound_headers() {
+            Some(headers) => {
+                self.js
+                    .publish_with_headers(subject, headers, payload)
+                    .await
+            }
+            None => self.js.publish(subject, payload).await,
+        };
+        let ack = published.map_err(|e| BusError::Jetstream(e.to_string()))?;
         ack.await.map_err(|e| BusError::Jetstream(e.to_string()))?;
         Ok(())
     }
@@ -652,9 +708,33 @@ where
         };
 
         let deliveries = delivery_count(&msg);
+        // One span per delivery, continuing the trace the publisher was in. `sentry-tracing`
+        // turns a root span into a transaction and this one is a root — nothing else is on the
+        // stack here — so a consumer's work appears under the request that queued it rather
+        // than as an orphan. Costs a span whether or not Sentry is on, which is worth it on its
+        // own: the handler's log lines gain the subject and the delivery count.
+        let span = if let Some(trace) = trace_of(&msg) {
+            tracing::info_span!(
+                "bus_delivery",
+                "sentry.name" = what,
+                "sentry.op" = "queue.process",
+                "sentry.trace" = trace,
+                subject = what,
+                deliveries,
+            )
+        } else {
+            tracing::info_span!(
+                "bus_delivery",
+                "sentry.name" = what,
+                "sentry.op" = "queue.process",
+                subject = what,
+                deliveries,
+            )
+        };
+        let work = handler(decoded, msg.clone()).instrument(span);
         let outcome = match policy.heartbeat {
-            Some(every) => with_ack_heartbeat(&msg, every, handler(decoded, msg.clone())).await,
-            None => handler(decoded, msg.clone()).await,
+            Some(every) => with_ack_heartbeat(&msg, every, work).await,
+            None => work.await,
         };
 
         let retry = match outcome {
@@ -700,6 +780,32 @@ async fn ack_or_warn(msg: &jetstream::Message, what: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A deployment with Sentry off must publish exactly the bytes it published before this
+    /// existed. An empty `HeaderMap` would not: `publish_with_headers` sends `HPUB` with a
+    /// `NATS/1.0` block, so "no trace" has to mean *no headers*, not empty ones.
+    #[test]
+    fn no_trace_means_no_header_block_at_all() {
+        assert!(outbound_headers().is_none());
+    }
+
+    #[test]
+    fn the_trace_header_is_read_back_off_a_delivery() {
+        assert_eq!(trace_in(None), None);
+
+        let empty = async_nats::HeaderMap::new();
+        assert_eq!(trace_in(Some(&empty)), None);
+
+        let mut carried = async_nats::HeaderMap::new();
+        carried.insert(
+            TRACE_HEADER,
+            "d49d9bf66f13450b81f65bc51cf49c03-a1b2c3d4e5f60718-1",
+        );
+        assert_eq!(
+            trace_in(Some(&carried)),
+            Some("d49d9bf66f13450b81f65bc51cf49c03-a1b2c3d4e5f60718-1")
+        );
+    }
 
     #[test]
     fn the_default_policy_does_not_retry() {

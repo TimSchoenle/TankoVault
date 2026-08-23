@@ -67,8 +67,14 @@ pub struct SentryConfig {
     /// whole issues, not repetitions of one — so leave it at `1.0` unless quota forces it.
     #[serde(default = "SentryConfig::default_sample_rate")]
     pub sample_rate: f32,
-    /// Fraction of traces sampled, `0.0`-`1.0`. `0.0` (the default) disables performance
-    /// tracing entirely: spans are not sampled and no transaction is started per request.
+    /// Fraction of traces this service **starts** that are recorded, `0.0`-`1.0`.
+    ///
+    /// `0.0` (the default) means it starts none of its own. It does **not** mean this service
+    /// is absent from a trace: a request or a broker message arriving with a trace already
+    /// sampled is continued regardless, which is what keeps one reader action readable across
+    /// the whole tier rather than ending at the first service configured differently. Set it
+    /// uniformly anyway — `0.05`-`0.2` is an ordinary production figure — since the service
+    /// that *starts* a trace is the one whose rate decides whether it exists at all.
     #[serde(default)]
     pub traces_sample_rate: f32,
     /// Least severe `tracing` level reported as a Sentry **issue**.
@@ -96,7 +102,10 @@ pub struct SentryConfig {
     pub send_default_pii: bool,
     /// Record request spans through the shared HTTP stack: one Sentry transaction per
     /// request, named by the *matched route* rather than the URI, so an id in the path does
-    /// not become its own transaction name. Inert while [`Self::traces_sample_rate`] is `0.0`.
+    /// not become its own transaction name.
+    ///
+    /// Whether a started transaction is *kept* is [`Self::traces_sample_rate`]'s decision.
+    /// This is the switch for a service that should stay out of traces entirely.
     #[serde(default = "crate::default_true")]
     pub http_transactions: bool,
     /// Copy `tracing` span fields onto the Sentry span as attributes. Off: span fields in

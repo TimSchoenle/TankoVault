@@ -110,6 +110,7 @@ use tankovault_contracts::sync::{
     Removed, Resolved,
 };
 use tankovault_domain::{Feature, SeriesId, UserId};
+use tracing::Instrument as _;
 
 // `Clone`: see [`MetadataConfig`]. The `SecretString` fields clone their `Arc`, not the secret.
 
@@ -151,7 +152,16 @@ fn spawn_enrichment_worker(
         tankovault_service::shutdown::every(interval, shutdown, "metadata-enrichment", move || {
             let worker = worker.clone();
             async move {
-                if let Err(e) = worker.enrich_all(batch, max).await {
+                // A trace root: a timer tick has no request above it, and `sentry-tracing`
+                // turns a root span into one transaction.
+                if let Err(e) = worker
+                    .enrich_all(batch, max)
+                    .instrument(tracing::info_span!(
+                        "metadata_enrichment",
+                        "sentry.op" = "cron"
+                    ))
+                    .await
+                {
                     tracing::warn!(error = %e, "tokenless metadata enrichment sweep failed");
                 }
             }
@@ -192,7 +202,10 @@ fn spawn_reconciliation_loop(
                     tracing::debug!("skipping reconciliation; scheduled sync is switched off");
                     return;
                 }
-                engine.reconcile_all_accounts().await;
+                engine
+                    .reconcile_all_accounts()
+                    .instrument(tracing::info_span!("sync_reconcile", "sentry.op" = "cron"))
+                    .await;
             }
         })
         .await;

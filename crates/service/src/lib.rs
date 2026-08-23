@@ -63,7 +63,7 @@ pub use ratelimit::{RateLimiter, RouteClass, RouteClassifier};
 pub use reload::run as run_reloading;
 // The outbound half of distributed tracing: `crate::HttpStack` continues an incoming trace,
 // these carry it onto the next hop. No-ops while Sentry is off.
-pub use sentry::{propagate_trace, trace_headers};
+pub use sentry::{in_current_trace, propagate_trace, trace_headers};
 pub use shutdown::install_shutdown;
 pub use tls::{ClientMaterial, InternalPeer, PeerSans, ReloadingTls, TlsError, client_material};
 // Re-exported so a service can name the token `run_reloading` hands its runtime without

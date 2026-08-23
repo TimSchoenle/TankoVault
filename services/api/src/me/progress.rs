@@ -304,11 +304,13 @@ pub(super) fn spawn_targeted_push_many(
         return;
     }
     let state = state.clone();
-    tokio::spawn(async move {
+    // Crosses into `sync` over HTTP, so losing the hub here would break the trace at a
+    // service boundary rather than merely inside this one.
+    tokio::spawn(tankovault_service::in_current_trace(async move {
         for series_id in series_ids {
             push_series(&state, user_id, series_id).await;
         }
-    });
+    }));
 }
 
 /// Best-effort background push of `series_id` to every linked provider; logged on failure,
@@ -319,9 +321,9 @@ pub(super) fn spawn_targeted_push(state: &AppState, user_id: UserId, series_id: 
         return;
     }
     let state = state.clone();
-    tokio::spawn(async move {
+    tokio::spawn(tankovault_service::in_current_trace(async move {
         push_series(&state, user_id, series_id).await;
-    });
+    }));
 }
 
 /// Whether a targeted push should be attempted, gated on both [`Feature::SyncAutoPush`] and

@@ -2,10 +2,16 @@
 #
 # Emits the variable payload for `.github/templates/README.md.hbs` as strict JSON on stdout.
 #
-# Every number the README quotes has a home somewhere else in the repository, and every one of
-# them was a hand-maintained copy of that home until this existed. Two of the five were already
-# wrong: the tech-stack line advertised PostgreSQL 17 and Redis 7 while the deployable compose
-# file had been on 18 and 8 for months, and nothing failed, because prose is not a gate.
+# Every version, licence and one-liner the README quotes has a home somewhere else in the
+# repository, and every one of them was a hand-maintained copy of that home until this existed.
+# Two of the first five were already wrong: the tech-stack line advertised PostgreSQL 17 and
+# Redis 7 while the deployable compose file had been on 18 and 8 for months, and nothing failed,
+# because prose is not a gate.
+#
+# `version`, `license` and `description` were added when the README moved onto the estate
+# standard. The release version in particular is the one a badge and an image tag both quote, and
+# release-please rewrites `[workspace.package] version` on every release — a typed copy would
+# have been stale within a week.
 #
 # Run it yourself to see what CI will render with:
 #
@@ -21,13 +27,18 @@ set -euo pipefail
 
 cd "$(dirname "$0")/../.."
 
-# Reads an anchored `key = "value"` from a TOML file and rejects anything that would need JSON
-# escaping. Every field here is a version string, so the accepted alphabet is the whole contract
-# — and constraining it is what makes the `printf` at the bottom safe without a JSON encoder.
+# Reads an anchored `key = "value"` from a TOML file, against an alphabet the caller names.
+#
+# The pattern is the whole safety argument. There is no JSON encoder here, so a value that
+# reached the `printf` at the bottom carrying a quote or a backslash would emit a payload
+# `render-template` refuses to parse — or, worse, one it parses as something else. Every caller
+# passes a pattern that admits neither, which is why the printf can interpolate raw.
 #
 # Anchoring is what keeps it to the table it means: a dependency's version sits inside an inline
 # table (`figment = { version = "0.10", … }`) and never starts a line, and every workspace member
-# inherits with `edition.workspace = true` from a manifest this never opens.
+# inherits with `edition.workspace = true` from a manifest this never opens. `[workspace.package]`
+# is the only table in `Cargo.toml` whose keys start a line and are spelled the way this reads
+# them, so `version`, `license` and `description` all mean the workspace's own.
 field() {
     local file="$1" key="$2" pattern="$3" value
     value="$(sed -n "s/^${key} = \"\([^\"]*\)\".*/\1/p" "${file}" | head -n1)"
@@ -38,7 +49,7 @@ field() {
     fi
 
     if ! printf '%s' "${value}" | grep -Eq "${pattern}"; then
-        echo "readme-variables: '${key} = \"${value}\"' in ${file} is not a version" >&2
+        echo "readme-variables: '${key} = \"${value}\"' in ${file} is outside the alphabet ${pattern}" >&2
         return 1
     fi
 
@@ -82,11 +93,14 @@ image_major() {
     printf '%s' "${major}"
 }
 
+version="$(field Cargo.toml version '^[0-9]+\.[0-9]+\.[0-9]+$')"
+license="$(field Cargo.toml license '^[A-Za-z0-9][A-Za-z0-9 ().+-]*$')"
+description="$(field Cargo.toml description "^[A-Za-z0-9][A-Za-z0-9 ,.:;()/'-]*\$")"
 edition="$(field Cargo.toml edition '^[0-9]{4}$')"
 msrv="$(field Cargo.toml rust-version '^[0-9]+(\.[0-9]+){0,2}$')"
 toolchain="$(field rust-toolchain.toml channel '^[0-9]+(\.[0-9]+){0,2}$')"
 postgres="$(image_major postgres)"
 redis="$(image_major redis)"
 
-printf '{"edition":"%s","msrv":"%s","toolchain":"%s","postgres":"%s","redis":"%s"}\n' \
-    "${edition}" "${msrv}" "${toolchain}" "${postgres}" "${redis}"
+printf '{"version":"%s","license":"%s","description":"%s","edition":"%s","msrv":"%s","toolchain":"%s","postgres":"%s","redis":"%s"}\n' \
+    "${version}" "${license}" "${description}" "${edition}" "${msrv}" "${toolchain}" "${postgres}" "${redis}"

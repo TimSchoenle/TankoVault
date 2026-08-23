@@ -1,303 +1,322 @@
 <!--
 Generated from .github/templates/README.md.hbs — edit that file, not this one. `auto-fix.yaml`
-renders it on every pull request and commits the result back to the branch; a push to `main`
-whose README.md does not match its template fails `ci.yml`'s `readme` job.
+renders it on every pull request and commits the result back to the branch; a push to `main`,
+and a pull request from a fork, are covered by `ci.yml`'s `readme` job, which renders with
+`check: true` and fails on a stale file rather than writing one.
 
 Variables come from .github/scripts/readme-variables.sh, which reads them out of the files that
 own them:
 
-    edition    [workspace.package] edition, from Cargo.toml
-    msrv       [workspace.package] rust-version, from Cargo.toml
-    toolchain  [toolchain] channel, from rust-toolchain.toml
-    postgres   the major of the postgres service image, from deploy/docker-compose.yml
-    redis      the major of the redis service image, from deploy/docker-compose.yml
+    version      [workspace.package] version, from Cargo.toml
+    license      [workspace.package] license, from Cargo.toml
+    description  [workspace.package] description, from Cargo.toml
+    edition      [workspace.package] edition, from Cargo.toml
+    msrv         [workspace.package] rust-version, from Cargo.toml
+    toolchain    [toolchain] channel, from rust-toolchain.toml
+    postgres     the major of the postgres service image, from deploy/docker-compose.yml
+    redis        the major of the redis service image, from deploy/docker-compose.yml
 
 Run that script to see what CI will render with. Everything else here is prose and belongs in
 this file: a number with a home elsewhere is injected, a sentence is written.
 -->
 # TankoVault
 
-> **This is a hobby project.** I build it for my own use.
-> There is no publicly hosted instance.
+Multi-service Rust aggregator and tracker for manga, manhwa and manhua. Stores links and metadata, not chapter images.
 
-A fully-Rust, multi-service **manga / manhwa / manhua aggregator and tracker**. TankoVault indexes
-series metadata across many independent provider sites, treats each work as one **canonical
-series** with many **provider sources**, and layers watchlists, read progress, notifications, and
-AniList sync on top.
+[![Release](https://img.shields.io/github/v/release/TimSchoenle/TankoVault?sort=semver)](https://github.com/TimSchoenle/TankoVault/releases)
+[![CI](https://img.shields.io/github/actions/workflow/status/TimSchoenle/TankoVault/ci.yml?branch=main)](https://github.com/TimSchoenle/TankoVault/actions/workflows/ci.yml)
+[![License](https://img.shields.io/static/v1?label=license&message=PolyForm-Noncommercial-1.0.0&color=blue)](LICENSE)
+[![Rust](https://img.shields.io/static/v1?label=rust&message=1.94%2B&color=orange)](https://www.rust-lang.org)
 
-> **Links, not content.** TankoVault stores **links and metadata only**. It never downloads, caches,
-> or serves chapter images or page content. Operators remain responsible for the legality of crawling
-> any given source in their jurisdiction and under each site's terms.
+## What this is
 
-## Features
+A hobby project, built for my own use. There is no publicly hosted instance, and no support
+promise attaches to any of the images below.
 
-- **Cross-provider aggregation** — merge title, alt titles, description, tags, cover URL, status, and
-  author from many sites into a single canonical series with a search vector.
-- **Two scan cadences** — a rare **full scan** (rebuild the archive) and a frequent **fast scan** (pick
-  up only new chapters from each provider's "latest" feed).
-- **No-code provider onboarding** — config-driven adapters cover the common CMS case; custom adapters
-  drop in behind the same `SourceAdapter` trait.
-- **Domain-migration resilience** — stored links are relative paths resolved against the provider base
-  URL at read time, so a site moving domains is a one-field change.
-- **Challenge bypass** — a cheap classifier detects Cloudflare / JS / Turnstile interstitials in
-  milliseconds and delegates to a pluggable challenge-solver service (TRAWL by default).
-- **User system** — watchlists, read progress, per-title notification opt-in, and back-sync to
-  **AniList**.
-- **Operator console** — live scan progress, provider health, and adapter config editing.
-- **Horizontal scale** on the API and worker tiers.
+TankoVault indexes series metadata across independent provider sites and reconciles it into one
+**canonical series** with many **provider sources**. Watchlists, read progress, per-title
+notifications and AniList back-sync sit on that model. All of it is one Cargo workspace: sixteen
+crates under `crates/` and nine published binaries, of which eight are long-running services and
+one is the one-shot installer a deployment runs before a rollout.
 
-## Architecture
+**It stores links and metadata, and nothing else.** No chapter image is downloaded, cached or
+served. An operator remains responsible for whether crawling a given source is lawful in their
+jurisdiction and under that site's terms.
 
-Eight deployable services plus shared libraries, all in one Cargo workspace. PostgreSQL is the system
-of record; NATS JetStream distributes tasks and domain events; Redis backs caching, rate-limit state,
-and leader election.
-
-```mermaid
-flowchart TD
-    FE[Frontend Dioxus WASM SPA] -->|REST + SSE| API[API service Axum]
-    API -->|reads/writes| PG[(PostgreSQL)]
-    API -->|control| CP[Control plane]
-    CP -->|tasks via NATS| W[Worker pool]
-    W -->|solve request| CS[Challenge solver]
-    W -->|domain events| NOTIF[Notifier]
-    W -->|progress| SYNC[AniList sync]
-```
-
-| Service | Role |
-| --- | --- |
-| `api` | Public Axum edge: auth, read models, write endpoints, admin, SSE scan feed. |
-| `control-plane` | Scheduler, run planner, task fan-out, provider health; singleton leader. |
-| `worker` | Fetch + parse via adapters, upsert chapter/metadata deltas. |
-| `notifier` | New-chapter → user notification fan-out. |
-| `sync` | AniList push/pull. |
-| `challenge-solver` | Modular bot-management bypass tier (TRAWL-backed, pluggable). |
-| `render` | Optional headless-browser tier for JS-rendered provider pages. |
-| `frontend` | Serves the Dioxus WASM SPA and reverse-proxies `/v1/*` to the API. |
-
-### Workspace layout
-
-```
-crates/
-  domain/       pure types (Series, Chapter, Provider, enums) — no I/O
-  db/           sqlx repositories and query modules
-  adapters/     SourceAdapter trait + Madara/config-driven + custom adapters
-  fetch/        Fetcher trait, browser emulation, rate limiting, caching, solver client
-  solver/       ChallengeSolver trait + detection + TRAWL/render back-ends
-  recsys/       the recommendation model as pure functions over plain data
-  contracts/    NATS message/event schemas (serde)
-  auth/         password hashing, JWT, RBAC guards
-  config/       layered, typed config loading (file + env)
-  matcher/      series canonicalisation / fuzzy matching
-  service/      shared service wiring
-  email/        outbound mail (lettre)
-  bus/          NATS JetStream client helpers
-  api-client/   generated typed client (from the OpenAPI spec)
-  test-support/ shared test fixtures
-services/       the eight deployable services in the table above, plus bootstrap — one-shot
-                install steps (migrate, seed) shipped as its own image, so a deployment
-                never carries `xtask` and its `reset`
-web/frontend/   Dioxus WASM SPA + Tailwind (excluded from the host workspace)
-migrations/     versioned sqlx migration SQL
-deploy/         Dockerfiles, docker-compose (+ an observability overlay), local env example
-xtask/          dev/ops tasks — see "Local development" below
-```
-
-## Tech stack
-
-- **Runtime / web** — Tokio, Axum, tower / tower-http
-- **Storage** — PostgreSQL 18 via SQLx (compile-time-checked SQL), Redis 8 via `fred`
-- **Messaging** — NATS JetStream (`async-nats`)
-- **Crawl** — `wreq` + `wreq-util` (BoringSSL; browser TLS/HTTP2 fingerprint emulation) with
-  `governor` rate limiting, `scraper` HTML parsing, optional `chromiumoxide` headless render.
-  Internal service-to-service HTTP stays on `reqwest` (rustls).
-- **Frontend** — Dioxus (WASM) + `dioxus-router`, TailwindCSS v4
-- **Security** — Argon2id password hashing, JWT access + rotating refresh tokens
-- **Observability** — `tracing` + OpenTelemetry + Prometheus metrics
-- **IDs / time** — UUID v7, `time`
-
-Rust edition 2024, MSRV 1.94, built with the 1.94.0 toolchain that
-`rust-toolchain.toml` pins. Lints are strict workspace-wide (`unsafe_code = "forbid"`,
-`clippy::pedantic`).
-
-## Quick start (Docker)
-
-The full stack runs from the repo root (the compose build context is the repo root):
+## Quick start
 
 ```bash
 docker compose -f deploy/docker-compose.yml up --build
 ```
 
-This applies migrations, seeds a demo admin (`admin` / `changeme12345`) and a placeholder provider,
-then starts every service and the frontend.
+That applies the migrations, seeds a demo administrator (`admin` / `changeme12345`) and a
+placeholder provider, then starts every service. Open <http://localhost:3000>.
 
-Open the app at **http://localhost:3000** — the `frontend` server serves the SPA and proxies `/v1/*`
-to the API, so a browser needs only this one origin. The API is also exposed directly on
-http://localhost:8080 for tooling.
+Port 3000 is the only one published on the host. The `frontend` service serves the SPA and
+reverse-proxies `/v1/*` to the `api` service, so a browser needs that one origin, and the
+privileged internal contracts stay on the compose network. Docker writes its own firewall rules
+when it publishes a port, so exposing one of those would put it on every interface the host has.
 
-| Service | Port |
-| --- | --- |
-| frontend | 3000 |
-| api | 8080 |
-| control-plane | 8081 |
-| notifier | 8082 |
-| sync | 8083 |
-| render | 8084 |
-| challenge-solver | 8090 |
-| TRAWL | 8191 |
+## Table of contents
 
-Apply migrations only:
+- [Features](#features)
+- [Installation](#installation)
+- [Usage](#usage)
+- [Configuration](#configuration)
+- [Operations](#operations)
+- [Compatibility](#compatibility)
+- [Documentation](#documentation)
+- [Contributing](#contributing)
+- [Security](#security)
+- [License](#license)
+
+## Features
+
+- One work is one series. Title, alternative titles, description, tags, cover URL, status and
+  author are merged across every provider carrying it, behind a search vector. The candidate
+  scoring and the merge bands are pure functions in `crates/matcher`.
+- Two scan cadences. A full scan rebuilds a provider's archive; a fast scan reads only its
+  latest feed, and that is the one that runs on a schedule.
+- **Adding a provider is usually configuration rather than code.** A config-driven adapter covers
+  the common CMS shape, and anything else drops in behind the same `SourceAdapter` trait.
+- Chapter links are stored as paths relative to the provider's base URL and resolved at read
+  time, so a site changing domain is a one-field edit rather than a migration.
+- Providers behind Cloudflare or DDoS-Guard fingerprint the TLS ClientHello and the HTTP/2
+  SETTINGS frame, so the crawl path uses `wreq` with browser emulation while internal
+  service-to-service HTTP stays on `reqwest`. A cheap classifier spots an interstitial in
+  milliseconds and hands the URL to a pluggable solver tier.
+- Recommendations are a scoring model over plain data in `crates/recsys`, with no I/O of its own.
+- Passkeys, TOTP and passwords, over argon2id hashing, a JWT access token and a rotating refresh
+  token. AniList tokens are encrypted at rest.
+- An operator console for live scan progress, provider health and adapter configuration.
+
+## Installation
+
+`deploy/docker-compose.yml` on a single host is the shape this repository builds and tests.
+
+### Container images
+
+Nine images per release, each a `linux/amd64` + `linux/arm64` manifest list, on two registries:
 
 ```bash
-docker compose -f deploy/docker-compose.yml run --rm migrate
+docker pull ghcr.io/timschoenle/tankovault/api:v8.5.0
+docker pull docker.io/timschoenle/tankovault-api:v8.5.0
 ```
 
-See [`deploy/README.md`](deploy/README.md) for single-service image builds and reproducible
-builds. `docker compose` on a single host is the only supported deployment shape today;
-Kubernetes is not implemented.
+Substitute `api` for `bootstrap`, `challenge-solver`, `control-plane`, `frontend`, `notifier`,
+`render`, `sync` or `worker`. Each digest carries a cosign keyless signature, an attested SBOM
+and its own configuration contract as an OCI artifact. Pin by digest in production.
 
-## Configuration
+All of them come out of one `deploy/docker/Dockerfile`. Eight run on `scratch` as `1001:1001`,
+with no shell and no package manager; `render` drives a real Chromium and runs on `debian-slim`
+instead.
 
-Every service reads layered config via `tankovault-config`: optional TOML at `$TANKOVAULT_CONFIG`
-(a file or a directory of fragments), overlaid by `TANKOVAULT_*` environment variables (`__`
-denotes nesting, e.g. `TANKOVAULT_DATABASE__URL`), then by files — `$TANKOVAULT_SECRETS_DIR`
-and `TANKOVAULT_<KEY>_FILE`. The compose file sets dev defaults inline.
-
-Secrets should arrive as files rather than environment variables wherever the platform allows
-it: the file layers keep credentials out of `/proc/<pid>/environ` and out of every child
-process, and a service picks up a rotated file by rebuilding itself, with no restart.
-
-At boot every service reports where its configuration came from — the layers, in precedence
-order, and the key each value was taken from. A key that *two* layers supply is logged as a
-warning, which is the shape of "the rotated secret is not being picked up": the mount is there,
-and a stale `TANKOVAULT_*` variable is sitting on top of it. The report names keys and layers
-only; no configuration value is ever recorded.
-
-**[`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) is the complete reference** — every key, its
-default, which services read it, and the failure modes worth knowing (several are silent).
-
-**Required before any non-local use** — these have no working default and the stack fails fast
-rather than booting insecure:
-
-- `TANKOVAULT_AUTH__JWT_SECRET` — API token signing secret.
-- `TANKOVAULT_AUTH__PASSWORD_PEPPER` — optional server-side pepper mixed into every argon2id hash;
-  once set it must stay stable and match across the `api` and `seed` services.
-- `TANKOVAULT_ANILIST__CLIENT_ID` / `__CLIENT_SECRET` / `__REDIRECT_URI` — AniList OAuth app.
-- `TANKOVAULT_ANILIST__TOKEN_ENCRYPTION_KEY` — base64 32-byte key for tokens at rest
-  (`openssl rand -base64 32`).
-
-## Local development
-
-Build, test, and lint the host workspace (the frontend is excluded and built separately):
+### Helm
 
 ```bash
+helm repo add timschoenle https://timschoenle.github.io/helm-charts
+helm install tankovault timschoenle/tankovault
+```
+
+The chart is in [TimSchoenle/helm-charts](https://github.com/TimSchoenle/helm-charts/tree/main/charts/tankovault)
+and versions on its own cadence; a release here opens a pull request there that moves its
+`appVersion`. It reads each image's published configuration contract, which is how the chart's
+CI catches a key this workspace renamed.
+
+### Desktop application
+
+Every release attaches a portable Windows and a portable Linux archive of the frontend built for
+the desktop platform. It talks to an `api` instance you already run.
+
+### From source
+
+```bash
+git clone https://github.com/TimSchoenle/TankoVault.git
+cd TankoVault
 cargo build
-cargo test
-# `--all-targets` silently EXCLUDES doc tests, and the `///` examples are contracts here, so
-# they get their own run. CI does the same.
-cargo test --workspace --doc
-cargo clippy --all-targets -- -D warnings
-cargo fmt --check
 ```
 
-Property tests (`proptest`) live in `tests/prop_*.rs` next to the code they cover and run in that
-ordinary `cargo test` — no extra toolchain. Coverage-guided fuzzing needs nightly and therefore
-lives outside the workspace, in [`fuzz/`](fuzz/README.md), which no CI gate runs:
+`rust-toolchain.toml` names the channel, so `rustup` installs it on the first `cargo` invocation.
+Node.js is needed for the frontend's Tailwind step, and [`just`](https://github.com/casey/just)
+for the recipes that regenerate the configuration contracts.
+
+## Usage
+
+The host workspace excludes `web/frontend`, which targets `wasm32-unknown-unknown`, and `fuzz`,
+which needs nightly. Each carries its own toolchain file and lockfile.
 
 ```bash
-cargo +nightly fuzz build                                     # all targets compile
-cargo +nightly fuzz run adapters_html_parsers \
-  fuzz/corpus/adapters_html_parsers fuzz/seeds/adapters_html_parsers \
-  -- -max_total_time=60 -timeout=2 -rss_limit_mb=512
+just verify                    # fmt, clippy under -D warnings, and the test suite
+cargo test --workspace --doc   # `--all-targets` excludes doc tests, and these are contracts
 ```
 
-Dev/ops tasks live in `xtask` (`migrate` / `reset` / `seed` / `sqlx-prepare` read `DATABASE_URL`;
-`openapi` does not):
+Dev and ops tasks are `xtask` subcommands. `migrate`, `reset`, `seed` and `sqlx-prepare` read
+`DATABASE_URL`; the others touch no database.
 
 ```bash
-cargo run -p xtask -- ci              # every offline gate CI runs, in CI's order
-cargo run -p xtask -- migrate         # apply pending migrations
-cargo run -p xtask -- reset           # DESTRUCTIVE: drop + recreate schema (dev only)
-cargo run -p xtask -- seed            # demo admin + built-in provider presets
-cargo run -p xtask -- openapi         # regenerate openapi.json + the typed api-client
-cargo run -p xtask -- sqlx-prepare    # refresh the committed sqlx offline query cache
-cargo run -p xtask -- config-docs     # print the current TANKOVAULT_* surface
-cargo run -p xtask -- notices         # regenerate THIRD-PARTY-NOTICES from both lockfiles
-cargo run -p xtask -- repo-lint       # the invariants no compiler sees (CSP, secrets, metrics)
-cargo run -p xtask -- config-contract # check the nine published contracts and the LABEL regions
-cargo run -p xtask -- install-hooks   # the pre-commit hook
+cargo run -p xtask -- ci               # every offline gate CI runs, in CI's order
+cargo run -p xtask -- migrate          # apply pending migrations
+cargo run -p xtask -- seed             # demo administrator and the built-in provider presets
+cargo run -p xtask -- openapi          # regenerate openapi.json and the typed client
+cargo run -p xtask -- sqlx-prepare     # refresh the committed sqlx offline query cache
+cargo run -p xtask -- notices          # regenerate THIRD-PARTY-NOTICES from both lockfiles
+cargo run -p xtask -- repo-lint        # the invariants no compiler sees
+cargo run -p xtask -- config-contract  # check the nine contracts and the Dockerfile LABEL regions
 ```
 
-The configuration contracts are the one generated artefact whose writer is not `xtask`: `xtask`
-checks them and [`just`](https://github.com/casey/just) writes them, so the gate carries no second
-copy of the rendering it judges.
+`config-contract` checks and `just regenerate` writes. Splitting them is deliberate: a gate that
+carried its own copy of the rendering it judges would be a second opinion rather than a check.
 
 ```bash
-just                       # list every recipe
-just regenerate            # rewrite docs/contracts/*.json and the Dockerfile's LABEL regions
-just render api contract   # print one rendering of one service, writing nothing
+just regenerate                # rewrite docs/contracts/*.json and the Dockerfile LABEL regions
+just render api contract       # print one rendering of one service, writing nothing
 ```
 
-### Frontend
-
-The Dioxus SPA targets `wasm32-unknown-unknown` and is built with the `dx` CLI from `web/frontend/`:
+The SPA is built with the `dx` CLI from its own directory:
 
 ```bash
 cd web/frontend
-npm install          # first time only (Tailwind tooling)
-npm run css:watch    # terminal 1: input.css -> assets/main.css
-dx serve             # terminal 2: dev server with hot reload
-dx build --release   # static WASM + assets
+npm install          # first time only, for the Tailwind tooling
+npm run css:watch    # terminal 1
+dx serve             # terminal 2
 ```
 
-See [`web/frontend/README.md`](web/frontend/README.md) for the design system, the generated API
-client, and the i18n rules.
+Property tests live beside the code they cover and run in the ordinary `cargo test`.
+Coverage-guided fuzzing needs nightly and lives in [`fuzz/`](fuzz/README.md), which no gate runs.
+
+## Configuration
+
+Every service loads the same five layers through `terrace-config`, each overriding the one above
+it:
+
+1. **Defaults** — the `Default` impl of each typed block.
+2. **TOML** at `$TANKOVAULT_CONFIG` — a file, or every `*.toml` inside it when it names a
+   directory.
+3. **Environment** — `TANKOVAULT_`-prefixed variables, `__` for nesting.
+4. **Secrets directory** at `$TANKOVAULT_SECRETS_DIR` — one file per key, named after it.
+5. **File indirection** — `TANKOVAULT_<KEY>_FILE=/path` names a file holding the value.
+
+Prefer the two file layers for anything secret. They keep the value out of `/proc/<pid>/environ`
+and out of every child process, and a rotated file is picked up by rebuilding the configuration
+rather than by restarting the process.
+
+At boot each service reports which layer supplied each key, in precedence order, and warns when
+two layers supply the same one. That warning is the shape of "the rotated secret is not being
+read": the mount is there and a stale `TANKOVAULT_*` variable is sitting on top of it. Keys and
+layers only. No value is ever logged.
+
+These have no working default, and the stack refuses to boot rather than starting insecure:
+
+- `TANKOVAULT_AUTH__JWT_SECRET` signs the API access tokens.
+- `TANKOVAULT_AUTH__PASSWORD_PEPPER` is mixed into every argon2id hash. It is optional, but once
+  set it has to stay stable and has to match across the `api` service and the seeding step.
+- `TANKOVAULT_ANILIST__CLIENT_ID`, `__CLIENT_SECRET` and `__REDIRECT_URI` are the AniList OAuth
+  application.
+- `TANKOVAULT_ANILIST__TOKEN_ENCRYPTION_KEY` is a base64 32-byte key for those tokens at rest.
+
+[docs/CONFIGURATION.md](docs/CONFIGURATION.md) is the full reference: every key, its default,
+which services read it, and the failure modes worth knowing. Several of those are silent.
+
+The nine documents under [docs/contracts/](docs/contracts/) are the machine-readable half of the
+same surface. Each is generated from the config root one image's binary deserialises, and is
+published on that image's digest.
+
+## Operations
+
+### Probes
+
+| Endpoint | Meaning |
+| --- | --- |
+| `GET /health` | Liveness. Consults no dependency, so a failing Postgres cannot start a restart loop. |
+| `GET /ready` | Readiness, with per-dependency detail. Each check gets two seconds before it counts as failed. |
+| `GET /metrics` | The Prometheus scrape, on a listener of its own where one is configured. |
+
+`/health` and `/ready` are the whole credential-free surface. The scrape joins them only while it
+has no listener of its own, so giving it one keeps it off the port an orchestrator probes.
+
+### The internal tier
+
+Services authenticate each other with per-caller tokens or with mutual TLS, selected by
+`TANKOVAULT_INTERNAL__IDENTITY`. Each callee lists the callers it accepts, so one service's
+credential opens the routes that service is meant to reach and no others. Under mutual TLS a
+kubelet probe presents no client certificate, so `/health` and `/ready` move to the plaintext
+probe listener and every probe has to be pointed at it.
+
+### Storage and messaging
+
+PostgreSQL is the system of record, and `pgvector` has been a hard dependency of it since
+migration 0027. NATS JetStream carries tasks and domain events. Redis backs caching, rate-limit
+state, and the control-plane's leader election, which is what makes a second replica of it safe.
+
+Migration is a discrete one-shot step in the `bootstrap` image rather than something a service
+does at startup. Resetting a schema exists only in `xtask`, from a checkout, behind an explicit
+confirmation variable, so nothing published carries a destructive command.
+
+## Compatibility
+
+| | Supported |
+| --- | --- |
+| Rust | 1.94 minimum, edition 2024; built with 1.94.0 |
+| PostgreSQL | 18, with `pgvector` |
+| Redis | 8 |
+| NATS | JetStream |
+| Platforms | `linux/amd64`, `linux/arm64` |
+
+The minimum is checked by its own CI job rather than asserted. It and the pinned channel are
+separate claims that happen to agree today.
 
 ## Documentation
 
-- [`docs/design.md`](docs/design.md) — authoritative architecture and build specification.
-- [`docs/ENGINEERING_GUIDE.md`](docs/ENGINEERING_GUIDE.md) — the rules the code is written to, and
-  what enforces each one. Start here before changing anything.
-- [`docs/OPERATIONS.md`](docs/OPERATIONS.md) — running and operating the fleet.
-- [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) — every `TANKOVAULT_*` key and its default.
-- [`docs/OBSERVABILITY.md`](docs/OBSERVABILITY.md) — the metric catalogue and what to alert on.
-- [`docs/PROVIDERS.md`](docs/PROVIDERS.md) — provider adapters.
-- [`docs/READING_PROGRESS_AND_SYNC.md`](docs/READING_PROGRESS_AND_SYNC.md) — progress and AniList sync.
-- [`docs/RECOMMENDATIONS.md`](docs/RECOMMENDATIONS.md) — the suggestion system.
-- [`docs/DESIGN_SPEC.md`](docs/DESIGN_SPEC.md) — the SPA's design system; source files cite it by
-  section.
-- [`docs/RELEASING.md`](docs/RELEASING.md) — how a release is cut and published.
-- [`openapi.json`](openapi.json) — canonical REST API spec (also served at `/scalar`).
+| Document | Purpose |
+| --- | --- |
+| [docs/design.md](docs/design.md) | The architecture and build specification other documents cite by section |
+| [docs/ENGINEERING_GUIDE.md](docs/ENGINEERING_GUIDE.md) | The rules the code is written to, and what enforces each one. Read before changing anything |
+| [docs/OPERATIONS.md](docs/OPERATIONS.md) | Running the fleet: scaling, failure modes, runbooks |
+| [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | Every `TANKOVAULT_*` key, its default, and which services read it |
+| [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md) | The metric catalogue and what is worth alerting on |
+| [docs/PROVIDERS.md](docs/PROVIDERS.md) | Provider adapters: the trait, the config-driven case, and onboarding one |
+| [docs/CHALLENGE_HANDLING.md](docs/CHALLENGE_HANDLING.md) | Interstitial detection and the solver tier behind it |
+| [docs/CHAPTER_STORAGE.md](docs/CHAPTER_STORAGE.md) | How chapter links are stored and resolved |
+| [docs/READING_PROGRESS_AND_SYNC.md](docs/READING_PROGRESS_AND_SYNC.md) | Read progress and the AniList push and pull |
+| [docs/RECOMMENDATIONS.md](docs/RECOMMENDATIONS.md) | The recommendation model, feature by feature |
+| [docs/DESIGN_SPEC.md](docs/DESIGN_SPEC.md) | The SPA's design system; frontend source files cite it by section |
+| [docs/RELEASING.md](docs/RELEASING.md) | How a release is cut, signed and published |
+| [docs/contracts/](docs/contracts/) | The nine published configuration contracts, one per image |
+| [deploy/README.md](deploy/README.md) | The Dockerfile's stages, the compose stack, and the one-shot install steps |
+| [web/frontend/README.md](web/frontend/README.md) | The SPA: design system, generated API client, i18n rules |
+| [openapi.json](openapi.json) | The REST API specification, generated from the handlers |
+
+## Contributing
+
+Issues and pull requests are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) covers the commit
+convention, the gates and the inbound licence terms; read it before opening one. Several files
+here are generated and say so in their first lines, and CI reverts an edit made to the output
+instead of to its source.
+
+## Security
+
+Do not open a public issue for a vulnerability. [SECURITY.md](SECURITY.md) has the reporting
+instructions and the supported versions.
 
 ## License
 
-**[PolyForm Noncommercial 1.0.0](LICENSE)** — source available, not open source. Use, modify and
-redistribute it freely for any noncommercial purpose; **commercial use requires a separate
-licence** from the copyright holder. Charities, schools, public research bodies and government
-institutions count as noncommercial regardless of how they are funded.
+[PolyForm-Noncommercial-1.0.0](LICENSE). Source available, not open source. Use, modify and redistribute it for
+any noncommercial purpose; commercial use needs a separate licence from the copyright holder.
+Charities, schools, public research bodies and government institutions count as noncommercial
+however they are funded.
 
-Where the line falls, in plain terms:
+Where the line falls, in plain terms. Running your own instance for yourself, your household or
+your friends is fine, including when donations cover the hosting bill, and so is modifying it and
+publishing your fork under the same terms. Charging for access, running ads against it, or
+offering it to customers as a hosted service needs a licence from me. Open an issue and ask if
+you are unsure.
 
-- **Fine** — running your own instance, for yourself, your household or your friends, including
-  when donations cover the hosting bill. Modifying it. Publishing your fork under the same terms.
-- **Needs a licence from me** — charging for access, running ads against it, or offering it to
-  customers as a hosted or managed service.
+The published images carry the same terms and ship them at `/LICENSE`. A registry page does not
+say so, but pulling one to run a paid service is unlicensed.
 
-If you are unsure which side something falls on, open an issue and ask.
-
-The published images carry the same terms — a registry page does not say so, but pulling
-`ghcr.io/timschoenle/tankovault/api` to run a paid service is unlicensed. The terms ship inside
-every image at `/LICENSE`.
-
-### Third-party licences
-
-Those terms cover TankoVault's own code. The dependencies it is built from are separately
-licensed — overwhelmingly MIT, Apache-2.0 and similar — and most of them require their licence
-text to accompany a binary distribution, which an image and a WASM bundle both are.
-
-[`THIRD-PARTY-NOTICES`](THIRD-PARTY-NOTICES) is that text for both dependency graphs, generated
-from the lockfiles by `cargo run -p xtask -- notices`. It ships at `/THIRD-PARTY-NOTICES` in
-every image, and a running instance serves it at `/third-party-notices`, linked from the app's
-navigation — so the person whose browser ran the code can read the terms it came under.
-
-Contributions are welcome and are covered by the inbound terms in
-[`CONTRIBUTING.md`](CONTRIBUTING.md); read those before opening a pull request.
+The dependencies are licensed separately, overwhelmingly MIT and Apache-2.0, and most of them
+require their licence text to accompany a binary distribution, which an image and a WASM bundle
+both are. [THIRD-PARTY-NOTICES](THIRD-PARTY-NOTICES) is that text for both dependency graphs,
+generated from the lockfiles by `cargo run -p xtask -- notices`. Every image ships it at
+`/THIRD-PARTY-NOTICES`, and a running instance serves it at `/third-party-notices`, linked from
+the app's navigation, so the person whose browser ran the code can read the terms it came under.

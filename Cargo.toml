@@ -48,6 +48,11 @@ config-contract = "a build-time generator, not a service: it prints the configur
 version = "8.5.0"
 edition = "2024"
 authors = ["TankoVault contributors"]
+# No member inherits this — each crate describes itself, and this describes the repository.
+# `.github/scripts/readme-variables.sh` reads it for the README's one-liner and for the GitHub
+# repository description, which were a hand-typed sentence and an empty field until it existed.
+# Keep it at or under 120 characters, which is what GitHub accepts for the latter.
+description = "Multi-service Rust aggregator and tracker for manga, manhwa and manhua. Stores links and metadata, not chapter images."
 license = "PolyForm-Noncommercial-1.0.0"
 # Verified by the `msrv` CI job, not asserted: `sqlx 0.9` alone requires 1.94.0.
 rust-version = "1.94"

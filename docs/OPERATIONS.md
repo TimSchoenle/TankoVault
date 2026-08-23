@@ -218,6 +218,25 @@ a trace is the one whose rate decides whether it exists at all.
 The one hop deliberately **not** propagated is the call out to TRAWL from `render` and
 `challenge-solver`. It is a third party, and a trace id is not something to hand one.
 
+#### `release`, and whether a stack trace is readable
+
+Left unset, `release` is `tankovault@<version of the binary>` — one tag across the tier, because
+the nine images are cut from one workspace version and deployed together. Set it only to override
+that, and set it to the same string everywhere if you do: a per-service release splits one
+regression across nine of them.
+
+Whether an issue arrives with **functions and line numbers or with bare addresses** is decided by
+the release pipeline, not by anything here. Published images are stripped, so the SDK sends the
+build-id of each loaded module and Sentry resolves the frames against debug files the `symbols`
+job uploaded for that build — including a source bundle, so the frame opens on the actual line.
+This happens only for images built by `release-please.yaml`, and only for an organisation that has
+opted in with the `SENTRY_ORG` / `SENTRY_PROJECT` repository variables; a locally built image or a
+private fork that has not will report addresses. [`RELEASING.md`](./RELEASING.md#sentry-debug-information-and-the-release-object)
+has the chain and the credentials.
+
+The SPA and the desktop client carry no Sentry SDK, so nothing is reported from a reader's
+browser or machine and no JavaScript source maps exist anywhere in this repository.
+
 ### `audit`
 
 ```toml

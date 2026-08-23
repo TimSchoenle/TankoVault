@@ -65,6 +65,7 @@ pub(crate) fn run(root: &Path) -> anyhow::Result<()> {
     findings.extend(workflows::registry_calls_in_publish_retry(root)?);
     findings.extend(workflows::image_references_name_their_registry(root)?);
     findings.extend(workflows::release_please_tags_before_it_proposes(root)?);
+    findings.extend(workflows::sentry_release_name_agrees(root)?);
     findings.extend(floors::coverage_floors_parse(root)?);
     findings.extend(gitattributes::generated_artefacts_check_out_as_lf(root)?);
     findings.extend(tls::every_service_installs_a_crypto_provider(root)?);

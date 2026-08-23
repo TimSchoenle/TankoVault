@@ -27,6 +27,8 @@ commit to main (conventional commits)
         │           └─ build (2 legs per planned image: amd64 + arm64, native runners)
         │                 └─ manifest (1 job per planned image: list, cosign sign, SBOM attest)
         │                       └─ helm-release → chart bump PR against TimSchoenle/helm-charts
+        │           └─ symbols (2 legs: debug info + source bundles → Sentry)
+        │                 └─ sentry-release (create, associate commits, finalise)
         └─ desktop (installer matrix)
               └─ desktop-release → attaches them, publishes the draft. **This creates the tag.**
                     └─ release-pr → opens the *next* release PR, against the tag just created
@@ -280,6 +282,64 @@ To rebuild everything regardless — a toolchain change nothing in the tree reco
 planner cannot read — set the repository variable `RELEASE_REBUILD_ALL` to `true` before merging
 the release pull request.
 
+## Sentry: debug information and the release object
+
+`telemetry.sentry` is off by default ([`OPERATIONS.md` §2](./OPERATIONS.md#telemetrysentry)) and a
+deployment that leaves it off is unaffected by everything in this section. A deployment that turns
+it on gets two things from the release, neither of which a running replica can produce for itself.
+
+**Symbolication.** The published binaries are stripped, so a panic reports frames as bare
+addresses. `crates/service/src/sentry.rs` enables the SDK's `debug-images` feature, which sends the
+GNU build-id of every loaded module with the event; Sentry then looks up the debug file uploaded
+under that same id and turns the addresses into functions, files and lines. The chain is:
+
+| Where | What it does |
+| --- | --- |
+| `cook` (Dockerfile) | `-Wl,--build-id=sha1` and `CARGO_PROFILE_RELEASE_DEBUG=line-tables-only`, `…_STRIP=false` |
+| `builder` | `objcopy` splits the debug info into `/debug/<bin>/<bin>.debug` and strips what it copies to `/out/<bin>` |
+| `builder` | asserts every shipped binary has a build-id, that its debug file carries the same one, and that `.dep-v0` survived the strip |
+| `debug-bundler` | `sentry-cli debug-files bundle-sources` writes a `.src.zip` beside each debug file |
+| `symbols` (workflow) | exports `--target debug-symbols` per architecture and uploads the directories for the images this release published |
+
+**The source bundles are built inside the image and not on the runner.** The paths DWARF records
+are the container's — `/app/services/api/src/…` and `/cargo/registry/src/…` — and neither exists on
+a GitHub runner, so `sentry-cli debug-files upload --include-sources` there resolves nothing and
+uploads a debug file with no source attached, successfully and without a warning.
+
+**Image size is unchanged.** Debug info never reaches a runtime stage: `/out` holds the stripped
+binaries, exactly as before, and `/debug` is copied only into the `debug-symbols` stage, which no
+published image is built from.
+
+Only the images in this release's `plan` are uploaded. A service that did not change is already in
+Sentry under the same build-id, because its image build is reproducible.
+
+**The release object.** `sentry-release` creates `tankovault@X.Y.Z`, associates the commits in it
+and finalises it — which is what `dateReleased`, "first seen in" and regression detection read.
+That name is a contract with the code: `crates/service/src/sentry.rs` defaults
+`telemetry.sentry.release` to `tankovault@<CARGO_PKG_VERSION>`, and release-please has bumped that
+version in the commit being released. A disagreement between the two is silent in both directions
+— Sentry accepts events for a release it has never heard of, and a release nothing reports to — so
+`xtask repo-lint`'s `sentry-release-name-agrees` holds them together.
+
+Commit association goes through Sentry's own GitHub integration, which is an organisation setting
+nothing in this repository can create or check. Its absence is reported as a warning and stepped
+over: the images are already published by then, and suspect commits are not worth failing a
+release for. Symbolication and the release tag are unaffected by it.
+
+**Both jobs are opt-in**, gated on `vars.SENTRY_ORG` and `vars.SENTRY_PROJECT` — repository
+variables, because the `secrets` context is not available to a job-level `if:`. With them unset,
+both jobs skip and the release summary says nothing about Sentry. With them set and no
+`SENTRY_AUTH_TOKEN` in the `release` environment, both jobs **fail**: a half-configured
+integration that uploads nothing is the outcome this design exists to prevent.
+
+Both are safe to re-run on their own. An upload is keyed by build-id and Sentry deduplicates it;
+`releases new` on an existing release is a no-op.
+
+**What is not covered.** The WASM SPA and the desktop client carry no Sentry SDK, so they report
+nothing and there is nothing to symbolicate for them — no JavaScript source maps are produced or
+uploaded anywhere in this repository. Adding browser reporting would also need a CSP change, which
+[`ENGINEERING_GUIDE.md`](./ENGINEERING_GUIDE.md) rule 1 governs.
+
 ## The chart hand-off
 
 Publishing an image deploys nothing. The deployable chart lives in
@@ -428,6 +488,16 @@ This is what the two former gates were waiting on:
 | `ACTIONS_MAINTENANCE_APP_ID`, `ACTIONS_MAINTENANCE_PRIVATE_KEY` | repository secret | auto-merge, auto-fix |
 | `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` | `release` environment secret | `plan` (reading the published tag set), image publish |
 | `MINISIGN_SECRET_KEY`, `MINISIGN_PASSWORD` | `release` environment secret | `desktop-release` (signing the desktop manifest) |
+| `SENTRY_AUTH_TOKEN` | `release` environment secret | `symbols`, `sentry-release` |
+| `SENTRY_ORG`, `SENTRY_PROJECT` | repository **variable** | `symbols`, `sentry-release` — and the switch that decides whether they run at all |
+| `SENTRY_URL` | repository **variable**, optional | self-hosted Sentry; defaults to `https://sentry.io/` |
+
+The Sentry pair are **repository variables and not environment ones**, and that is not a
+preference: the `secrets` context is unavailable to a job-level `if:`, and an environment variable
+is not resolved until the environment is, so neither can gate a job. A repository variable can.
+The credential stays an environment secret alongside the other publishing credentials, and the two
+jobs fail loudly if the variables are set without it. The token needs `project:releases` and
+`org:read`; `project:write` as well if the Sentry project should be created on first upload.
 
 Every job that reads a **`release` environment** secret names `environment: release` with
 `deployment: false` — `release-please`, `helm-release`, `plan`, and both publish jobs, `build` and

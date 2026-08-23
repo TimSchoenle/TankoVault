@@ -29,6 +29,7 @@ mod metadata;
 mod metrics;
 mod ratelimit;
 mod security;
+mod sentry;
 mod telemetry;
 
 pub use audit::AuditConfig;
@@ -54,4 +55,5 @@ pub use metadata::{MetadataPriorityConfig, TagIntakeConfig};
 pub use metrics::MetricsConfig;
 pub use ratelimit::{RateLimitBackend, RateLimitConfig, RateLimitPolicy};
 pub use security::SecurityConfig;
+pub use sentry::{SentryConfig, SentryLevel};
 pub use telemetry::TelemetryConfig;

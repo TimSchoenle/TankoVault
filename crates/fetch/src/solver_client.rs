@@ -105,6 +105,11 @@ impl ChallengeSolver for HttpChallengeSolver {
         if let Some(token) = &self.token {
             request = request.header("x-internal-token", token.expose_secret());
         }
+        // So the solve appears under the scan that asked for it rather than as its own trace.
+        // Empty unless Sentry is configured.
+        for (name, value) in tankovault_service::trace_headers() {
+            request = request.header(name, value);
+        }
         let resp = request.send().await.map_err(|e| {
             if e.is_timeout() {
                 SolveError::Timeout

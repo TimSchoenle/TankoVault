@@ -20,6 +20,7 @@ use tankovault_domain::{SeriesId, UserId};
 use tankovault_matcher::{
     Adjudication, Candidate, Explanation, Query, Thresholds, adjudicate, assess, explain,
 };
+use tracing::Instrument as _;
 use uuid::Uuid;
 
 /// How much work one sweep may do. `max_auto_merges` bounds a background action that deletes
@@ -363,7 +364,7 @@ pub(crate) async fn sweep_all_detached(
 
     let pool = pool.clone();
     let budget = exhaustive_budget(budget);
-    tokio::spawn(async move {
+    let run = async move {
         let outcome = run_full_sweep(&pool, policy, budget, actor, claim).await;
         // The two values `merge_full_sweep_state.stopped` can hold. A run either walks the
         // shortlists out or fails trying; there is no longer a limit it can stop at.
@@ -381,7 +382,12 @@ pub(crate) async fn sweep_all_detached(
             Ok(()) => tracing::info!("exhaustive duplicate sweep complete"),
             Err(error) => tracing::warn!(error = %error, "exhaustive duplicate sweep failed"),
         }
-    });
+    };
+    // Detached but kept in the trace, and named the same as the scheduled sweep so an
+    // operator-triggered run and a timer-driven one aggregate as one operation.
+    tokio::spawn(tankovault_service::in_current_trace(run.instrument(
+        tracing::info_span!("merge_sweep", "sentry.op" = "cron", scope = "exhaustive"),
+    )));
     Ok(true)
 }
 

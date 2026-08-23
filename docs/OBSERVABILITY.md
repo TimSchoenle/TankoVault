@@ -21,6 +21,13 @@ of rules with only one of them deployed is how the deployed set goes stale.
 This document stays here because it is about what the *code* emits and what each alert means —
 neither of which moves with the manifests. Every rule name below is the name in the chart.
 
+**Metrics only.** Errors and distributed traces are a separate, optional sink — Sentry, off
+unless `telemetry.sentry.enabled` is set, described in
+[`OPERATIONS.md` §2](./OPERATIONS.md#telemetrysentry) and keyed in
+[`CONFIGURATION.md` §4](./CONFIGURATION.md#telemetrysentry--error-reporting-and-distributed-tracing).
+The two answer different questions and neither replaces the other: a counter says how often, a
+trace says which request and where in it. Nothing below assumes Sentry is enabled.
+
 ---
 
 ## 1. What is measured

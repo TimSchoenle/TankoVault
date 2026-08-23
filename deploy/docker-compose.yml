@@ -20,6 +20,13 @@ x-build: &build
 x-telemetry: &telemetry
   TANKOVAULT_TELEMETRY__JSON_LOGS: "true"
   TANKOVAULT_TELEMETRY__LOG_FILTER: "info,tankovault=debug"
+  # Sentry, off unless deploy/local.env turns it on. Passed through with an empty default
+  # rather than given one here: a DSN is a credential, and a working default published in this
+  # file is what `xtask repo-lint` exists to catch. `ENABLED=true` with an empty DSN is refused
+  # at boot rather than started silently — docs/CONFIGURATION.md §4 `telemetry.sentry`.
+  TANKOVAULT_TELEMETRY__SENTRY__ENABLED: "${TANKOVAULT_SENTRY_ENABLED:-false}"
+  TANKOVAULT_TELEMETRY__SENTRY__DSN: "${TANKOVAULT_SENTRY_DSN:-}"
+  TANKOVAULT_TELEMETRY__SENTRY__TRACES_SAMPLE_RATE: "${TANKOVAULT_SENTRY_TRACES_SAMPLE_RATE:-0}"
 
 # Internal-tier identity. Each *caller* has its own credential and each *callee* lists only the
 # callers it accepts, so a service's token opens the routes that service is meant to reach and

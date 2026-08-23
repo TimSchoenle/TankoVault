@@ -37,6 +37,9 @@ pub mod metrics;
 pub mod problem;
 pub mod ratelimit;
 pub mod reload;
+// Private: the Sentry client is installed by `init_tracing` and reached through the guard it
+// returns, so there is no second way to switch it on.
+mod sentry;
 pub mod shutdown;
 pub mod telemetry;
 pub mod tls;
@@ -58,11 +61,14 @@ pub use metrics::MetricsRegistry;
 pub use problem::{IntoProblem, Problem};
 pub use ratelimit::{RateLimiter, RouteClass, RouteClassifier};
 pub use reload::run as run_reloading;
+// The outbound half of distributed tracing: `crate::HttpStack` continues an incoming trace,
+// these carry it onto the next hop. No-ops while Sentry is off.
+pub use sentry::{in_current_trace, propagate_trace, trace_headers};
 pub use shutdown::install_shutdown;
 pub use tls::{ClientMaterial, InternalPeer, PeerSans, ReloadingTls, TlsError, client_material};
 // Re-exported so a service can name the token `run_reloading` hands its runtime without
 // taking a direct `tokio-util` dependency for one type.
-pub use telemetry::init_tracing;
+pub use telemetry::{TelemetryGuard, init_tracing};
 pub use tokio_util::sync::CancellationToken;
 pub use tunables::{TunableDefaultsOnly, TunableSet, TunableSource};
 
@@ -80,6 +86,11 @@ pub enum ServiceError {
     /// The global `tracing` subscriber could not be installed (usually: called twice).
     #[error("failed to install tracing subscriber: {0}")]
     Tracing(String),
+    /// `telemetry.sentry` is switched on but unusable — no DSN, an unparseable one, or a
+    /// sample rate outside `0.0..=1.0`. Fatal rather than degraded: the alternative is a
+    /// deployment that believes it is reporting errors and is not.
+    #[error("invalid Sentry configuration: {0}")]
+    Sentry(String),
     /// The process-wide metrics recorder could not be installed.
     #[error("failed to install metrics recorder: {0}")]
     Metrics(String),

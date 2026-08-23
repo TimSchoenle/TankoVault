@@ -31,12 +31,14 @@ const DRAIN_TIMEOUT: Duration = Duration::from_secs(20);
 /// Order is fixed and is a security property. Outermost first:
 /// 1. Request id — so every log line, including a rejection, carries one.
 /// 2. Tracing.
-/// 3. Metrics — includes time spent waiting on the rate limiter.
-/// 4. Security headers / CORS — applied to every response, including the 429 and 408.
-/// 5. Rate limit — after the cheap layers, before real work.
-/// 6. Principal — above the limiter, which reads what it inserts.
-/// 7. Internal auth (internal tier only) — after headers, before timeout/body budget.
-/// 8. Timeout, body limit, compression — the per-request work bounds.
+/// 3. Sentry (when configured) — a hub per request, so concurrent requests cannot share a
+///    breadcrumb trail, and optionally one transaction per matched route.
+/// 4. Metrics — includes time spent waiting on the rate limiter.
+/// 5. Security headers / CORS — applied to every response, including the 429 and 408.
+/// 6. Rate limit — after the cheap layers, before real work.
+/// 7. Principal — above the limiter, which reads what it inserts.
+/// 8. Internal auth (internal tier only) — after headers, before timeout/body budget.
+/// 9. Timeout, body limit, compression — the per-request work bounds.
 pub struct HttpStack {
     security: SecurityConfig,
     metrics: MetricsRegistry,
@@ -120,6 +122,13 @@ impl HttpStack {
             .map(|auth| axum::middleware::from_fn_with_state(auth, crate::internal_auth::identify));
         let principal_layer = principal
             .map(|resolve| axum::middleware::from_fn_with_state(resolve, identify_principal));
+        // Read off the process-global client rather than carried on the stack, because that is
+        // what it describes: `sentry::init` binds one client per process. `None` whenever
+        // `telemetry.sentry.enabled` is off.
+        let (sentry_hub, sentry_http) = match crate::sentry::http_layers() {
+            Some((hub, http)) => (Some(hub), Some(http)),
+            None => (None, None),
+        };
         let cors = security.cors.is_enabled().then(|| build_cors(&security));
         let security_headers = security.security_headers.then(|| {
             axum::middleware::from_fn_with_state(security.clone(), apply_security_headers)
@@ -146,6 +155,11 @@ impl HttpStack {
             .layer(tower::util::option_layer(security_headers))
             .layer(tower::util::option_layer(metrics_layer))
             .layer(PropagateRequestIdLayer::new(REQUEST_ID))
+            // Outside everything that can reject, so a 429 or a 408 is still reported with
+            // its request attached. `sentry_hub` is the outer of the two on purpose: the
+            // other one writes onto the hub it binds.
+            .layer(tower::util::option_layer(sentry_http))
+            .layer(tower::util::option_layer(sentry_hub))
             .layer(TraceLayer::new_for_http())
             .layer(SetRequestIdLayer::new(REQUEST_ID, MakeRequestUuid))
     }

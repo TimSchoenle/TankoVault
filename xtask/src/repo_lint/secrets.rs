@@ -69,7 +69,9 @@ fn compose_default(line: &str) -> Option<(String, String)> {
 
 /// Whether a configuration key names a credential rather than an ordinary setting.
 fn is_credential(name: &str) -> bool {
-    const MARKERS: [&str; 5] = ["TOKEN", "SECRET", "PASSWORD", "PEPPER", "_KEY"];
+    // `DSN` is here for the same reason `crates/config` wraps one in a `SecretString`: the
+    // key embedded in a Sentry DSN is a bearer credential for the project ingest endpoint.
+    const MARKERS: [&str; 6] = ["TOKEN", "SECRET", "PASSWORD", "PEPPER", "_KEY", "DSN"];
     let upper = name.to_uppercase();
     MARKERS.iter().any(|marker| upper.contains(marker))
 }

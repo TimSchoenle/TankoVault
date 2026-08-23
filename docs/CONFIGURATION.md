@@ -151,6 +151,56 @@ a service only if that service names it — the *Services* column is the authori
 | `TANKOVAULT_TELEMETRY__LOG_FILTER` | `info` | all | `RUST_LOG` syntax, e.g. `info,tankovault=debug`. Overridden wholesale by `RUST_LOG`. |
 | `TANKOVAULT_TELEMETRY__JSON_LOGS` | `false` | all | Structured JSON with span context. Set it in any deployment whose logs are shipped anywhere. |
 
+### `telemetry.sentry` — error reporting and distributed tracing
+
+Off unless you turn it on, and nothing here is read while `ENABLED` is `false`. Turning it on
+**without** a DSN fails the boot: a reporter that reports nowhere is the failure
+`TANKOVAULT_TELEMETRY__OTLP_ENDPOINT` was removed for ([§8](#8-removed-keys)), so it is refused
+rather than logged.
+
+What it covers when enabled: every `tracing` record at or above `CAPTURE_LEVEL` becomes an
+issue and everything down to `BREADCRUMB_LEVEL` becomes the trail attached to it; a panic in
+any handler becomes an issue (the `CatchPanicLayer` still turns the same panic into a `500`,
+so the replica keeps serving); every routed endpoint of every HTTP service gets a per-request
+hub and one transaction named by the matched route; and every unit of background work — a scan
+task, a scheduler sweep, a duplicate sweep, a model build, a reconciliation, an enrichment
+pass, each broker delivery — gets one of its own.
+
+**The trace spans the whole tier**, over HTTP *and* over the broker. `frontend` → `api` →
+`control-plane`/`sync`/`worker` and `worker` → `challenge-solver`/`render` carry
+`sentry-trace` as a request header; every `JetStream` and core-NATS publish carries it as a
+message header, and every consumer continues it. So a scheduled sweep, the scan tasks it
+queues, the workers that run them, the progress events that come back and the notifications
+they fan out are one trace — see [`OPERATIONS.md` §2](./OPERATIONS.md#telemetrysentry) for the
+diagram of which hop carries what.
+
+Three things are deliberately outside it. `/health`, `/ready` and the scrape endpoint are
+merged outside the middleware stack, so probe traffic is not traced. `bootstrap` has no
+`telemetry` block at all ([§5](#5-per-service-blocks)), so a migration job reports nothing — it
+is a one-shot `Job` whose failure already stops the rollout with a non-zero exit code, which is
+a louder signal than an issue, and it is in no request's trace to join.
+And the `render`/`challenge-solver` call **out** to TRAWL is not propagated: it is a third
+party, and a trace id is not something to hand one.
+
+| Key | Default | Services | Notes |
+|---|---|---|---|
+| `TANKOVAULT_TELEMETRY__SENTRY__ENABLED` | `false` | all but `bootstrap` | A real off switch: no client, no panic hook, no layer, no egress. |
+| `TANKOVAULT_TELEMETRY__SENTRY__DSN` | *(required when enabled)* | as above | `https://<key>@<host>/<project>`. A **credential** — mount it as a secret, not a `ConfigMap` value. Malformed fails the boot without echoing the value. |
+| `TANKOVAULT_TELEMETRY__SENTRY__ENVIRONMENT` | `production` under `TANKOVAULT_PROFILE=production`, else `development` | as above | |
+| `TANKOVAULT_TELEMETRY__SENTRY__RELEASE` | `tankovault@<workspace version>` | as above | One release for the whole tier, because the nine images are cut from one version and deployed together. |
+| `TANKOVAULT_TELEMETRY__SENTRY__SERVER_NAME` | *(unset)* | as above | Unset reports no hostname. |
+| `TANKOVAULT_TELEMETRY__SENTRY__SAMPLE_RATE` | `1.0` | as above | Fraction of **issues** sent. A blunt cap: it drops whole issues, not repetitions of one. Outside `0.0`-`1.0` fails the boot. |
+| `TANKOVAULT_TELEMETRY__SENTRY__TRACES_SAMPLE_RATE` | `0.0` | as above | Fraction of the traces this service **starts** that are recorded. `0.0` starts none of its own but still **continues** a trace it is handed, so a service left at `0.0` does not cut the tier-wide trace in half. Set it uniformly across services (`0.05`-`0.2` is a normal production figure): the service that starts a trace is the one whose rate decides whether it exists. |
+| `TANKOVAULT_TELEMETRY__SENTRY__CAPTURE_LEVEL` | `error` | as above | `off`\|`error`\|`warn`\|`info`\|`debug`\|`trace`. The least severe record that becomes an issue. |
+| `TANKOVAULT_TELEMETRY__SENTRY__BREADCRUMB_LEVEL` | `info` | as above | Same vocabulary. Bounded above by `TANKOVAULT_TELEMETRY__LOG_FILTER`: a record the log filter drops never reaches Sentry either, so a filter of `warn` silently removes every `info` breadcrumb. |
+| `TANKOVAULT_TELEMETRY__SENTRY__MAX_BREADCRUMBS` | `100` | as above | |
+| `TANKOVAULT_TELEMETRY__SENTRY__ATTACH_STACKTRACES` | `true` | as above | For events that carry none of their own. |
+| `TANKOVAULT_TELEMETRY__SENTRY__SEND_DEFAULT_PII` | `false` | as above | **Security setting.** On, events carry the client IP, the resolved user and the *unredacted* request headers — `Authorization` and `Cookie` included — to a third party. Off is what keeps `sentry-tower` redacting sensitive headers. |
+| `TANKOVAULT_TELEMETRY__SENTRY__HTTP_TRANSACTIONS` | `true` | as above | One transaction per request, named by the matched route so `/v1/series/{id}` stays one name. Whether a started transaction is *kept* is `TRACES_SAMPLE_RATE`'s decision; this is the switch for a service that should stay out of traces entirely. |
+| `TANKOVAULT_TELEMETRY__SENTRY__SPAN_ATTRIBUTES` | `false` | as above | Copy `tracing` span fields onto the span. Off because those fields routinely carry ids and user-supplied titles, and a transaction is retained longer than a log line. |
+| `TANKOVAULT_TELEMETRY__SENTRY__SHUTDOWN_TIMEOUT_SECS` | `2` | as above | How long exit waits for queued events to drain. |
+| `TANKOVAULT_TELEMETRY__SENTRY__DEBUG` | `false` | as above | SDK diagnostics on stderr. For proving a DSN works, not for running. |
+
 ### `metrics` — Prometheus
 
 | Key | Default | Services | Notes |
@@ -871,8 +921,9 @@ listener and the background loops. In-flight requests drain before the replaceme
 - A reload that fails to read, or fails to build, **leaves the running service exactly as it
   was** and logs the reason. A bad file write cannot take down a healthy pod.
 - Files that change but resolve to the same values rebuild nothing.
-- `telemetry.*` and `metrics.*` are the exception: the `tracing` subscriber and the metrics
-  recorder are process-global and installed once, so those two blocks still need a restart.
+- `telemetry.*` (including `telemetry.sentry.*`) and `metrics.*` are the exception: the
+  `tracing` subscriber, the Sentry client and the metrics recorder are process-global and
+  installed once, so those two blocks still need a restart. A rotated DSN is a restart.
 - Rotating `auth.jwt_secret` **signs every user out** — sessions signed with the old key stop
   verifying. Rotating `auth.password_pepper` makes every stored password fail to verify, and
   rotating `anilist.token_encryption_key` does not re-seal tokens already at rest. Those three

@@ -149,11 +149,11 @@ pub fn send_in_background(state: &AppState, message: EmailMessage) {
         return;
     }
     let mailer = state.mailer.clone();
-    tokio::spawn(async move {
+    tokio::spawn(tankovault_service::in_current_trace(async move {
         if let Err(e) = mailer.send(message).await {
             tracing::warn!(error = %e, "failed to send transactional email");
         }
-    });
+    }));
 }
 
 #[cfg(test)]

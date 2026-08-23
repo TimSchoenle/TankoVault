@@ -17,6 +17,7 @@ use tankovault_db::repo::recsys;
 use tankovault_domain::{SeriesId, Tunable};
 use tankovault_recsys::{Basis, GramAccumulator};
 use tankovault_service::TunableSet;
+use tracing::Instrument as _;
 
 /// How much work one build may do, and how the index is shaped.
 ///
@@ -170,24 +171,32 @@ pub async fn build_detached(
     };
 
     let pool = pool.clone();
-    tokio::spawn(async move {
-        match run_claimed(pool, tuning, full, claim).await {
-            Ok(report) => tracing::info!(
-                full,
-                generation = report.generation,
-                series = report.series_built,
-                vocabulary = report.vocabulary,
-                dims = report.dense_dims,
-                "recommendation model build (on demand) complete"
-            ),
-            Err(error) => tracing::warn!(
-                full,
-                generation = claim.generation,
-                error = %error,
-                "recommendation model build (on demand) failed"
-            ),
+    // Detached but kept in the trace, and named the same as the scheduled build.
+    tokio::spawn(tankovault_service::in_current_trace(
+        async move {
+            match run_claimed(pool, tuning, full, claim).await {
+                Ok(report) => tracing::info!(
+                    full,
+                    generation = report.generation,
+                    series = report.series_built,
+                    vocabulary = report.vocabulary,
+                    dims = report.dense_dims,
+                    "recommendation model build (on demand) complete"
+                ),
+                Err(error) => tracing::warn!(
+                    full,
+                    generation = claim.generation,
+                    error = %error,
+                    "recommendation model build (on demand) failed"
+                ),
+            }
         }
-    });
+        .instrument(tracing::info_span!(
+            "recsys_build",
+            "sentry.op" = "cron",
+            kind = if full { "full" } else { "incremental" }
+        )),
+    ));
     Ok(Some(claim.generation))
 }
 

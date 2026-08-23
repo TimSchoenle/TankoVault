@@ -14,6 +14,11 @@ tankovault-contracts = { workspace = true }
 # `ResolvedTls` only: the same certificate paths the HTTP tier uses, so the broker connection
 # and the service mesh cannot end up trusting different authorities.
 tankovault-config = { workspace = true }
+# `trace_headers` only, for the trace-continuation header this crate writes on publish and
+# reads on delivery. It is the one place a trace can cross the broker, so the knowledge of how
+# a trace is carried stays here rather than at every publisher. No cycle: `tankovault-service`
+# reaches `config`, `domain` and `db`, none of which reach this crate.
+tankovault-service = { workspace = true }
 async-nats = { workspace = true }
 # `Bus::connect` takes the NATS URL as a `SecretString`: `nats://user:pass@host` is a
 # supported form, so the URL is a credential even when a given deployment leaves it bare.

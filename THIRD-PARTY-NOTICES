@@ -36,7 +36,7 @@ Ships as: the eight service binaries (api, bootstrap, worker, control-plane, not
 
 Licences in this section, by number of crates:
 
-  Apache License 2.0 (Apache-2.0) — 388 crates, 39 distinct notices
+  Apache License 2.0 (Apache-2.0) — 393 crates, 39 distinct notices
   MIT License (MIT) — 120 crates, 73 distinct notices
   ISC License (ISC) — 25 crates, 23 distinct notices
   Unicode License v3 (Unicode-3.0) — 19 crates, 2 distinct notices
@@ -320,6 +320,7 @@ by the block naming that crate.
   - curve25519-dalek-derive 0.1.1
   - debugid 0.8.0
   - der 0.7.10
+  - der 0.8.1
   - der-parser 10.0.0
   - der-parser 9.0.0
   - der_derive 0.7.3
@@ -428,6 +429,7 @@ by the block naming that crate.
   - pear 0.2.9
   - pear_codegen 0.2.9
   - pem-rfc7468 0.7.0
+  - pem-rfc7468 1.0.0
   - percent-encoding 2.3.2
   - pin-project 1.1.13
   - pin-project-internal 1.1.13
@@ -435,6 +437,7 @@ by the block naming that crate.
   - pkcs1 0.7.5
   - pkcs5 0.7.1
   - pkcs8 0.10.2
+  - pkcs8 0.11.0
   - pkg-config 0.3.34
   - polyval 0.6.2
   - polyval 0.7.3
@@ -472,6 +475,7 @@ by the block naming that crate.
   - scopeguard 1.2.0
   - scrypt 0.11.0
   - sec1 0.7.3
+  - sec1 0.8.1
   - secrecy 0.10.3
   - semver 1.0.28
   - serde 1.0.229
@@ -503,6 +507,7 @@ by the block naming that crate.
   - socket2 0.6.5
   - spinning_top 0.3.0
   - spki 0.7.3
+  - spki 0.8.0
   - sqlx-core 0.9.0
   - sqlx-macros 0.9.0
   - sqlx-macros-core 0.9.0

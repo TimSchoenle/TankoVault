@@ -616,7 +616,7 @@
         "env": "TANKOVAULT_WORKER__CHALLENGE_SOLVER_ENDPOINT",
         "env_file": "TANKOVAULT_WORKER__CHALLENGE_SOLVER_ENDPOINT_FILE",
         "secrets_file": "worker__challenge_solver_endpoint",
-        "docs": "",
+        "docs": "Base origin of `challenge-solver`, no trailing slash. A provider that never serves an\ninterstitial is crawled whether or not this endpoint answers.",
         "ty": "String",
         "values": [],
         "constraint": {
@@ -639,7 +639,7 @@
         "env": "TANKOVAULT_WORKER__MAX_CATALOG_PAGES",
         "env_file": "TANKOVAULT_WORKER__MAX_CATALOG_PAGES_FILE",
         "secrets_file": "worker__max_catalog_pages",
-        "docs": "",
+        "docs": "Catalogue pages one full scan may walk before it stops and warns. A backstop against a\npaginator that never reports a last page, not a tuning knob: real termination is the\nadapter's `has_next`, and the default sits well above any catalogue seen so far.",
         "ty": "u32",
         "values": [],
         "constraint": {
@@ -2562,9 +2562,11 @@
         "additionalProperties": false,
         "properties": {
           "challenge_solver_endpoint": {
+            "description": "Base origin of `challenge-solver`, no trailing slash. A provider that never serves an\ninterstitial is crawled whether or not this endpoint answers.",
             "type": "string"
           },
           "max_catalog_pages": {
+            "description": "Catalogue pages one full scan may walk before it stops and warns. A backstop against a\npaginator that never reports a last page, not a tuning knob: real termination is the\nadapter's `has_next`, and the default sits well above any catalogue seen so far.",
             "maximum": 4294967295,
             "minimum": 0,
             "type": "integer"

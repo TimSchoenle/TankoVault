@@ -639,7 +639,7 @@
         "env": "TANKOVAULT_AUTH__ACCESS_TTL_MINUTES",
         "env_file": "TANKOVAULT_AUTH__ACCESS_TTL_MINUTES_FILE",
         "secrets_file": "auth__access_ttl_minutes",
-        "docs": "",
+        "docs": "How long an access token stays valid. Short, because nothing revokes one before it\nexpires; the refresh token is the revocable half.",
         "ty": "i64",
         "values": [],
         "constraint": {
@@ -666,7 +666,7 @@
         "env": "TANKOVAULT_AUTH__REFRESH_TTL_DAYS",
         "env_file": "TANKOVAULT_AUTH__REFRESH_TTL_DAYS_FILE",
         "secrets_file": "auth__refresh_ttl_days",
-        "docs": "",
+        "docs": "How long a refresh token stays valid, and so how long a signed-out-of-sight session can\ncome back. Each use rotates the token and revokes its predecessor.",
         "ty": "i64",
         "values": [],
         "constraint": {
@@ -939,7 +939,7 @@
         "env": "TANKOVAULT_CONTROL_PLANE_URL",
         "env_file": "TANKOVAULT_CONTROL_PLANE_URL_FILE",
         "secrets_file": "control_plane_url",
-        "docs": "",
+        "docs": "Where the admin console's scan triggers and flag writes are forwarded, no trailing\nslash. Every call to it carries the shared internal secret.",
         "ty": "String",
         "values": [],
         "constraint": {
@@ -962,7 +962,7 @@
         "env": "TANKOVAULT_SYNC_URL",
         "env_file": "TANKOVAULT_SYNC_URL_FILE",
         "secrets_file": "sync_url",
-        "docs": "",
+        "docs": "Where the `/v1/me/sync/*` proxies forward to, no trailing slash.",
         "ty": "String",
         "values": [],
         "constraint": {
@@ -985,7 +985,7 @@
         "env": "TANKOVAULT_WORKER_URL",
         "env_file": "TANKOVAULT_WORKER_URL_FILE",
         "secrets_file": "worker_url",
-        "docs": "",
+        "docs": "Where the admin console's provider dry-run is forwarded, no trailing slash.",
         "ty": "String",
         "values": [],
         "constraint": {
@@ -2873,6 +2873,7 @@
         "additionalProperties": false,
         "properties": {
           "access_ttl_minutes": {
+            "description": "How long an access token stays valid. Short, because nothing revokes one before it\nexpires; the refresh token is the revocable half.",
             "type": "integer"
           },
           "cookie_secure": {
@@ -2899,6 +2900,7 @@
             "writeOnly": true
           },
           "refresh_ttl_days": {
+            "description": "How long a refresh token stays valid, and so how long a signed-out-of-sight session can\ncome back. Each use rotates the token and revokes its predecessor.",
             "type": "integer"
           },
           "step_up_max_ttl_minutes": {
@@ -3023,6 +3025,7 @@
         "type": "object"
       },
       "control_plane_url": {
+        "description": "Where the admin console's scan triggers and flag writes are forwarded, no trailing\nslash. Every call to it carries the shared internal secret.",
         "type": "string"
       },
       "database": {
@@ -3402,6 +3405,7 @@
         "type": "object"
       },
       "sync_url": {
+        "description": "Where the `/v1/me/sync/*` proxies forward to, no trailing slash.",
         "type": "string"
       },
       "telemetry": {
@@ -3494,6 +3498,7 @@
         "type": "object"
       },
       "worker_url": {
+        "description": "Where the admin console's provider dry-run is forwarded, no trailing slash.",
         "type": "string"
       }
     },

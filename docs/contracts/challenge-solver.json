@@ -44,7 +44,7 @@
         "env": "TANKOVAULT_BIND_ADDR",
         "env_file": "TANKOVAULT_BIND_ADDR_FILE",
         "secrets_file": "bind_addr",
-        "docs": "",
+        "docs": "Listen address for `/v1/solve` and the probes. Internal-tier only.",
         "ty": "String",
         "values": [],
         "constraint": {
@@ -582,7 +582,7 @@
         "env": "TANKOVAULT_SOLVER__MAX_TIMEOUT_MS",
         "env_file": "TANKOVAULT_SOLVER__MAX_TIMEOUT_MS_FILE",
         "secrets_file": "solver__max_timeout_ms",
-        "docs": "",
+        "docs": "Ceiling on one solve attempt, in milliseconds. A challenge still standing at the end of\nit is reported unsolved, which the caller treats as retryable.",
         "ty": "u64",
         "values": [],
         "constraint": {
@@ -1503,6 +1503,7 @@
     "additionalProperties": false,
     "properties": {
       "bind_addr": {
+        "description": "Listen address for `/v1/solve` and the probes. Internal-tier only.",
         "type": "string"
       },
       "internal": {
@@ -1731,6 +1732,7 @@
             "type": "string"
           },
           "max_timeout_ms": {
+            "description": "Ceiling on one solve attempt, in milliseconds. A challenge still standing at the end of\nit is reported unsolved, which the caller treats as retryable.",
             "minimum": 0,
             "type": "integer"
           },

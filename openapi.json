@@ -51,47 +51,57 @@
         "type": "string"
       },
       "AdminAccountRow": {
-        "description": "One row of the admin Sync console's \"Linked accounts\" table. The automatic-sync policy\ncolumns and pending-conflict count (design v2 §B.7) are read-only operator visibility —\nthey are user settings, never operator-overridable.",
+        "description": "One row of the admin Sync console's \"Linked accounts\" table.\n\nThe automatic-sync policy columns and the pending-conflict count (design v2 §B.7) are\nvisibility only. They are the user's settings, and no operator route writes them.",
         "properties": {
           "auto_sync_enabled": {
+            "description": "The user's own setting for scheduled syncing. Read-only to an operator.",
             "type": "boolean"
           },
           "conflict_policy": {
+            "description": "The user's own answer to a two-sided change: which side wins.",
             "type": "string"
           },
           "created_at": {
+            "description": "When the link was made.",
             "type": "string"
           },
           "external_username": {
+            "description": "The handle on that tracker, `null` until a sync has read it.",
             "type": [
               "string",
               "null"
             ]
           },
           "last_error": {
+            "description": "Why the most recent sync failed, `null` when the last one succeeded.",
             "type": [
               "string",
               "null"
             ]
           },
           "last_synced_at": {
+            "description": "When a sync last completed for this link, `null` if none has.",
             "type": [
               "string",
               "null"
             ]
           },
           "pending_conflicts": {
+            "description": "Conflicts on this link nobody has resolved.",
             "format": "int64",
             "type": "integer"
           },
           "provider": {
+            "description": "Which external tracker, as a slug.",
             "type": "string"
           },
           "user_id": {
+            "description": "The local account the link belongs to.",
             "format": "uuid",
             "type": "string"
           },
           "username": {
+            "description": "Its username, joined in so the table renders from one fetch.",
             "type": "string"
           }
         },
@@ -110,19 +120,24 @@
         "description": "One row of the admin Sync console's \"Series mappings\" table.",
         "properties": {
           "external_id": {
+            "description": "The tracker's own id for the same work.",
             "type": "string"
           },
           "provider": {
+            "description": "Which external tracker, as a slug.",
             "type": "string"
           },
           "series_id": {
+            "description": "The local series.",
             "format": "uuid",
             "type": "string"
           },
           "series_title": {
+            "description": "Its canonical title.",
             "type": "string"
           },
           "updated_at": {
+            "description": "When the mapping was last written.",
             "type": "string"
           }
         },
@@ -163,6 +178,7 @@
             ]
           },
           "email": {
+            "description": "The subject's address, `null` once they have been erased.",
             "type": [
               "string",
               "null"
@@ -177,7 +193,8 @@
             "type": "boolean"
           },
           "request": {
-            "$ref": "#/components/schemas/RequestRow"
+            "$ref": "#/components/schemas/RequestRow",
+            "description": "The subject-facing record, exactly as the subject sees it on their own page."
           },
           "resolved_by": {
             "description": "Operator who resolved it, if resolved.",
@@ -245,6 +262,7 @@
         "description": "A page of the audit trail plus how many records the filter matches in total.\n\nAn envelope rather than a bare list, because the trail is deep enough that the console can\nonly ever hold a window on it, and a window with no total is a pager that cannot say where\nit is.",
         "properties": {
           "items": {
+            "description": "The page, newest record first.",
             "items": {
               "$ref": "#/components/schemas/AuditView"
             },
@@ -266,6 +284,7 @@
         "description": "One privileged-action record enriched with the actor's username, for the console feed.",
         "properties": {
           "action": {
+            "description": "What was done, as a stable action token.",
             "type": "string"
           },
           "actor": {
@@ -276,16 +295,20 @@
             ]
           },
           "created_at": {
+            "description": "When the action was recorded.",
             "type": "string"
           },
           "detail": {
-            "$ref": "#/components/schemas/Value"
+            "$ref": "#/components/schemas/Value",
+            "description": "Action-specific detail. Shape belongs to the action, not to this type."
           },
           "id": {
+            "description": "The audit row.",
             "format": "uuid",
             "type": "string"
           },
           "target": {
+            "description": "What it was done to, `null` for an action with no single subject.",
             "type": [
               "string",
               "null"
@@ -304,12 +327,15 @@
         "description": "An author/artist credit.",
         "properties": {
           "id": {
-            "$ref": "#/components/schemas/AuthorId"
+            "$ref": "#/components/schemas/AuthorId",
+            "description": "Primary key."
           },
           "name": {
+            "description": "Credit as displayed.",
             "type": "string"
           },
           "slug": {
+            "description": "URL-safe key, unique across authors.",
             "type": "string"
           }
         },
@@ -329,6 +355,7 @@
         "description": "The provider's OAuth consent URL, for `GET /v1/me/sync/{provider}/authorize`.",
         "properties": {
           "url": {
+            "description": "The provider's own consent page, already carrying this deployment's client id\nand redirect. Send the user to it; do not rebuild it.",
             "type": "string"
           }
         },
@@ -439,7 +466,8 @@
                 "type": "null"
               },
               {
-                "$ref": "#/components/schemas/ScanMode"
+                "$ref": "#/components/schemas/ScanMode",
+                "description": "Narrows the cancellation to one cadence, so a fast sweep can be stopped without\ntouching an archive rebuild that has been running for an hour."
               }
             ]
           },
@@ -813,6 +841,7 @@
         "description": "One pending conflict awaiting the user's decision (design v2 §B.6 `GET /v1/me/sync/conflicts`).\n\nProduced by `services/sync` from a repository row and re-published verbatim by\n`services/api`. It lives here rather than on the row struct for the reason given in\n[`crate::admin`]: a `SELECT` column rename must not be able to rewrite the public API\nwithout a compile error. The published component name is pinned to `ConflictRow` — the\nmove is an internal layering fix and must not rename anything on the wire.",
         "properties": {
           "detected_at": {
+            "description": "When a sync first found the two disagreeing.",
             "type": "string"
           },
           "field": {
@@ -820,23 +849,29 @@
             "type": "string"
           },
           "id": {
+            "description": "The conflict, which is what a resolve call names.",
             "format": "uuid",
             "type": "string"
           },
           "local_value": {
+            "description": "What this deployment holds for `field`, rendered as text.",
             "type": "string"
           },
           "provider": {
+            "description": "Which external tracker, as a slug.",
             "type": "string"
           },
           "remote_value": {
+            "description": "What the tracker holds for it, rendered the same way.",
             "type": "string"
           },
           "series_id": {
+            "description": "The local series both sides disagree about.",
             "format": "uuid",
             "type": "string"
           },
           "series_title": {
+            "description": "Its canonical title, joined in so the list renders from one fetch.",
             "type": "string"
           }
         },
@@ -1054,6 +1089,7 @@
             "type": "integer"
           },
           "users": {
+            "description": "The page, in the directory's own order.",
             "items": {
               "$ref": "#/components/schemas/DirectoryRow"
             },
@@ -1070,9 +1106,11 @@
         "description": "One row of the operator user directory.\n\nCarries a grant *count* rather than the grants themselves: the directory is a list, and a\nuser's actual capabilities are what the detail view is for. The count is enough to answer\n\"which of these accounts are privileged at all\", which is the question the list is scanned\nfor.",
         "properties": {
           "created_at": {
+            "description": "When it was registered.",
             "type": "string"
           },
           "email": {
+            "description": "Its sign-in address.",
             "type": "string"
           },
           "email_verified": {
@@ -1080,6 +1118,7 @@
             "type": "boolean"
           },
           "id": {
+            "description": "The account.",
             "type": "string"
           },
           "is_super_user": {
@@ -1087,6 +1126,7 @@
             "type": "boolean"
           },
           "last_login_at": {
+            "description": "Its most recent sign-in, `null` for an account that has never signed in.",
             "type": [
               "string",
               "null"
@@ -1098,7 +1138,8 @@
             "type": "integer"
           },
           "status": {
-            "$ref": "#/components/schemas/AccountStatus"
+            "$ref": "#/components/schemas/AccountStatus",
+            "description": "Whether it may authenticate at all."
           },
           "tracked_count": {
             "description": "How many series the user tracks — the cheapest signal of a real, in-use account.",
@@ -1106,6 +1147,7 @@
             "type": "integer"
           },
           "username": {
+            "description": "Its display handle.",
             "type": "string"
           }
         },
@@ -1233,29 +1275,35 @@
             ]
           },
           "attempts": {
+            "description": "Claims taken before it gave up.",
             "format": "int32",
             "type": "integer"
           },
           "error": {
+            "description": "Why it failed, `null` for a task that recorded no message.",
             "type": [
               "string",
               "null"
             ]
           },
           "finished_at": {
+            "description": "When it gave up.",
             "type": [
               "string",
               "null"
             ]
           },
           "id": {
+            "description": "The failed task.",
             "format": "uuid",
             "type": "string"
           },
           "kind": {
+            "description": "What the task was asked to do.",
             "type": "string"
           },
           "mode": {
+            "description": "Cadence of the owning run: `full` or `fast`.",
             "type": "string"
           },
           "provider_slug": {
@@ -1266,6 +1314,7 @@
             ]
           },
           "run_id": {
+            "description": "The run it belonged to.",
             "format": "uuid",
             "type": "string"
           }
@@ -1288,6 +1337,7 @@
             "type": "integer"
           },
           "count": {
+            "description": "Failures sharing this error, cleared ones counted only when the caller asked for them.",
             "format": "int64",
             "type": "integer"
           },
@@ -1306,6 +1356,7 @@
             "type": "array"
           },
           "latest_at": {
+            "description": "The most recent of them, `null` only if the group is empty.",
             "type": [
               "string",
               "null"
@@ -1552,6 +1603,7 @@
         "description": "A single grant, with its provenance, for the user-detail view.",
         "properties": {
           "granted_at": {
+            "description": "When the grant was made.",
             "type": "string"
           },
           "granted_by": {
@@ -1594,6 +1646,7 @@
             "type": "string"
           },
           "created_at": {
+            "description": "When the action was taken, which is what the list is ordered by.",
             "type": "string"
           },
           "detail": {
@@ -1601,17 +1654,21 @@
             "type": "object"
           },
           "id": {
+            "description": "The history row.",
             "format": "uuid",
             "type": "string"
           },
           "provider": {
+            "description": "Which external tracker, as a slug.",
             "type": "string"
           },
           "series_id": {
+            "description": "The local series the action touched.",
             "format": "uuid",
             "type": "string"
           },
           "series_title": {
+            "description": "Its canonical title, joined in so the list renders from one fetch.",
             "type": "string"
           }
         },
@@ -1642,10 +1699,12 @@
         "description": "What a normalized-key rebuild changed.\n\n`normalized_title` is a persisted matching key, so a change to the normalization rules only\nreaches rows that happen to be re-scanned until this runs.",
         "properties": {
           "series_scanned": {
+            "description": "Canonical titles read.",
             "format": "int64",
             "type": "integer"
           },
           "series_updated": {
+            "description": "Of those, whose key the corrected rules changed.",
             "format": "int64",
             "type": "integer"
           },
@@ -1655,10 +1714,12 @@
             "type": "integer"
           },
           "titles_scanned": {
+            "description": "Alternative titles read.",
             "format": "int64",
             "type": "integer"
           },
           "titles_updated": {
+            "description": "Of those, whose key the corrected rules changed.",
             "format": "int64",
             "type": "integer"
           }
@@ -1677,22 +1738,27 @@
         "properties": {
           "announcement": {
             "default": true,
+            "description": "An operator broadcast. Defaults on.",
             "type": "boolean"
           },
           "new_chapter": {
             "default": true,
+            "description": "A watched series gained a chapter. Defaults on.",
             "type": "boolean"
           },
           "series_completed": {
             "default": true,
+            "description": "A watched series was marked finished. Defaults on.",
             "type": "boolean"
           },
           "source_added": {
             "default": true,
+            "description": "A watched series appeared on a further provider. Defaults on.",
             "type": "boolean"
           },
           "sync_conflict": {
             "default": true,
+            "description": "An `AniList` sync could not reconcile a title. Defaults on.",
             "type": "boolean"
           }
         },
@@ -1884,25 +1950,30 @@
         "type": "object"
       },
       "MeStats": {
-        "description": "Lifetime reading stats for the Home/Profile headline (frontend §9.3 `GET /v1/me/stats`).\n`chapters_read` is the sum of whole chapters below each series' last-read marker — an\nhonest proxy over stored progress (there is no per-chapter read-event log, so a daily\n\"streak\" is intentionally omitted rather than fabricated).",
+        "description": "Lifetime reading figures for the Home and Profile headline (frontend §9.3).\n\nEverything here is derived from stored progress markers. There is no per-chapter read-event\nlog, so a daily \"streak\" is omitted rather than fabricated from what is left.",
         "properties": {
           "chapters_read": {
+            "description": "Whole chapters below the last-read marker, summed across every tracked series.",
             "format": "int64",
             "type": "integer"
           },
           "completed": {
+            "description": "Of those, held at `completed`.",
             "format": "int64",
             "type": "integer"
           },
           "reading": {
+            "description": "Of those, held at `reading`.",
             "format": "int64",
             "type": "integer"
           },
           "tracking": {
+            "description": "Series on the watchlist at any status.",
             "format": "int64",
             "type": "integer"
           },
           "unread": {
+            "description": "Whole chapters above those markers: what is waiting.",
             "format": "int64",
             "type": "integer"
           }
@@ -1920,48 +1991,60 @@
         "description": "A pending merge candidate, enriched with everything the console needs to triage it without\nopening both series (design §11 `GET /v1/admin/merge-candidates`).\n\nThe counts and `suggested_keep` are not decoration. Acting on a candidate means choosing\nwhich of the two rows survives, and the absorbed id *stops existing* — every bookmark,\nnotification and external tracker mapping naming it breaks. The right answer is whichever\nseries carries more of the catalogue, which is a comparison the server can make once instead\nof an operator eyeballing it per row.",
         "properties": {
           "candidate_chapters": {
+            "description": "Chapter links under that side.",
             "format": "int64",
             "type": "integer"
           },
           "candidate_id": {
-            "$ref": "#/components/schemas/SeriesId"
+            "$ref": "#/components/schemas/SeriesId",
+            "description": "The other side."
           },
           "candidate_sources": {
+            "description": "Providers carrying that side.",
             "format": "int64",
             "type": "integer"
           },
           "candidate_title": {
+            "description": "Its canonical title.",
             "type": "string"
           },
           "created_at": {
+            "description": "When the pair first entered the queue.",
             "type": "string"
           },
           "id": {
+            "description": "The queue row, which is what a resolve call names.",
             "format": "uuid",
             "type": "string"
           },
           "reason": {
+            "description": "The rule that put the pair here, `null` for a row from before the journal existed.",
             "type": [
               "string",
               "null"
             ]
           },
           "score": {
+            "description": "Similarity in `[0,1]` after every scoring term.",
             "format": "float",
             "type": "number"
           },
           "series_chapters": {
+            "description": "Chapter links under that side.",
             "format": "int64",
             "type": "integer"
           },
           "series_id": {
-            "$ref": "#/components/schemas/SeriesId"
+            "$ref": "#/components/schemas/SeriesId",
+            "description": "One side of the pair."
           },
           "series_sources": {
+            "description": "Providers carrying that side.",
             "format": "int64",
             "type": "integer"
           },
           "series_title": {
+            "description": "Its canonical title.",
             "type": "string"
           },
           "signals": {
@@ -1976,6 +2059,7 @@
             "description": "Which side the console should offer to keep. Advisory: the merge endpoint takes an\nexplicit direction."
           },
           "updated_at": {
+            "description": "When a sweep last re-scored the row in place.",
             "type": "string"
           }
         },
@@ -2006,11 +2090,13 @@
                 "type": "null"
               },
               {
-                "$ref": "#/components/schemas/SeriesId"
+                "$ref": "#/components/schemas/SeriesId",
+                "description": "The series that stopped existing, `null` for anything but a merge."
               }
             ]
           },
           "actor": {
+            "description": "The operator behind an `operator` trigger, `null` for a sweep.",
             "format": "uuid",
             "type": [
               "string",
@@ -2030,6 +2116,7 @@
             "type": "array"
           },
           "decided_at": {
+            "description": "When the verdict was taken.",
             "type": "string"
           },
           "evidence": {
@@ -2037,18 +2124,21 @@
             "description": "Both sides' facts, which titles matched, and how the survivor was chosen."
           },
           "flag_reason": {
+            "description": "What they gave as the reason.",
             "type": [
               "string",
               "null"
             ]
           },
           "flagged_at": {
+            "description": "When an operator marked the decision wrong, `null` if nobody has.",
             "type": [
               "string",
               "null"
             ]
           },
           "flagged_by": {
+            "description": "Who marked it.",
             "format": "uuid",
             "type": [
               "string",
@@ -2056,13 +2146,16 @@
             ]
           },
           "id": {
+            "description": "The journal row, which is what a revert or a flag names.",
             "format": "uuid",
             "type": "string"
           },
           "left_id": {
-            "$ref": "#/components/schemas/SeriesId"
+            "$ref": "#/components/schemas/SeriesId",
+            "description": "One side of the pair, as it was at decision time."
           },
           "left_title": {
+            "description": "Left title as it read then, kept even after the series is absorbed.",
             "type": "string"
           },
           "outcome": {
@@ -2078,18 +2171,21 @@
             "type": "string"
           },
           "revert_reason": {
+            "description": "What they gave as the reason.",
             "type": [
               "string",
               "null"
             ]
           },
           "reverted_at": {
+            "description": "When the merge was undone, `null` while it stands.",
             "type": [
               "string",
               "null"
             ]
           },
           "reverted_by": {
+            "description": "Who undid it.",
             "format": "uuid",
             "type": [
               "string",
@@ -2101,16 +2197,20 @@
             "type": "boolean"
           },
           "right_id": {
-            "$ref": "#/components/schemas/SeriesId"
+            "$ref": "#/components/schemas/SeriesId",
+            "description": "The other side."
           },
           "right_title": {
+            "description": "Right title as it read then.",
             "type": "string"
           },
           "score": {
+            "description": "The final similarity in `[0,1]`, after every term in `terms`.",
             "format": "float",
             "type": "number"
           },
           "signals": {
+            "description": "Stable slugs for the scoring rules that fired.",
             "items": {
               "type": "string"
             },
@@ -2122,7 +2222,8 @@
                 "type": "null"
               },
               {
-                "$ref": "#/components/schemas/SeriesId"
+                "$ref": "#/components/schemas/SeriesId",
+                "description": "The series that survived, `null` for anything but a merge."
               }
             ]
           },
@@ -2307,6 +2408,7 @@
             "type": "string"
           },
           "max": {
+            "description": "Inclusive upper bound.",
             "format": "double",
             "type": "number"
           },
@@ -2327,6 +2429,7 @@
             "type": "boolean"
           },
           "title": {
+            "description": "Section-local label.",
             "type": "string"
           },
           "updated_at": {
@@ -2384,6 +2487,7 @@
         "description": "What undoing an automatic merge put back.",
         "properties": {
           "decision_id": {
+            "description": "The journal row that was undone.",
             "format": "uuid",
             "type": "string"
           },
@@ -2401,7 +2505,8 @@
             "type": "integer"
           },
           "survivor_id": {
-            "$ref": "#/components/schemas/SeriesId"
+            "$ref": "#/components/schemas/SeriesId",
+            "description": "The series the rows went back off."
           }
         },
         "required": [
@@ -3296,13 +3401,18 @@
         "description": "One entry of the preset catalogue bundled with the build, as the installer recorded it.\n\nPersisted rather than read from `tankovault_adapters`, because the api tier deliberately\ndoes not link the adapter crate (it would drag `BoringSSL` into that image); the install job\nwrites the catalogue down and every other tier reads it as data.",
         "properties": {
           "adapter": {
-            "$ref": "#/components/schemas/AdapterKind"
+            "$ref": "#/components/schemas/AdapterKind",
+            "description": "Parser written onto a locked row on every rollout."
           },
           "base_url": {
+            "description": "Domain root written onto a locked row on every rollout.",
             "type": "string"
           },
-          "config": {},
+          "config": {
+            "description": "Selectors and pagination written onto a locked row on every rollout."
+          },
           "name": {
+            "description": "Site name written onto a locked row on every rollout.",
             "type": "string"
           },
           "politeness": {
@@ -3310,6 +3420,7 @@
             "description": "What a *new* provider from this preset starts at. Never re-applied to an existing row —\nsee [`PresetLink`] on why politeness is outside the lock."
           },
           "slug": {
+            "description": "Catalogue key, which is also the slug of any provider the installer creates from it.",
             "type": "string"
           },
           "updated_at": {
@@ -3505,7 +3616,8 @@
         "description": "A source site. The single place a domain (`base_url`) is defined.",
         "properties": {
           "adapter": {
-            "$ref": "#/components/schemas/AdapterKind"
+            "$ref": "#/components/schemas/AdapterKind",
+            "description": "Which parser drives this site, and so how `config` is read."
           },
           "base_url": {
             "description": "The domain root. Changing this one field migrates every stored link.",
@@ -3515,10 +3627,12 @@
             "description": "Adapter selector/pagination config (shape depends on `adapter`)."
           },
           "created_at": {
+            "description": "When the provider was registered.",
             "type": "string"
           },
           "id": {
-            "$ref": "#/components/schemas/ProviderId"
+            "$ref": "#/components/schemas/ProviderId",
+            "description": "Primary key. Deleting it cascades to every source and chapter beneath it; a scan run\nsurvives with its `provider_id` set to `None`."
           },
           "last_full_scan_at": {
             "description": "Wire shape is a plain string (whatever `time`'s serde impl emits), never parsed\nclient-side — kept untyped here so the generated frontend type doesn't need a date\ncrate (mirrors the `no date crate in the bundle` constraint on the other timestamp\nfields below).",
@@ -3528,10 +3642,12 @@
             ]
           },
           "name": {
+            "description": "Site name as an operator reads it in the console.",
             "type": "string"
           },
           "politeness": {
-            "$ref": "#/components/schemas/Politeness"
+            "$ref": "#/components/schemas/Politeness",
+            "description": "The crawl budget every request to this site is held to."
           },
           "preset": {
             "oneOf": [
@@ -3545,12 +3661,15 @@
             ]
           },
           "slug": {
+            "description": "Stable URL-safe handle, unique across providers, and what a task subject and a console\nfilter are both written in terms of.",
             "type": "string"
           },
           "state": {
-            "$ref": "#/components/schemas/ProviderState"
+            "$ref": "#/components/schemas/ProviderState",
+            "description": "Live health, which is what the scheduler consults before dispatching work here."
           },
           "updated_at": {
+            "description": "When any field on the row was last written, a preset sync included.",
             "type": "string"
           }
         },
@@ -3595,44 +3714,54 @@
         "description": "One provider's scan health over the summary's window.",
         "properties": {
           "failures_open": {
+            "description": "Failures still in the triage feed for this provider.",
             "format": "int64",
             "type": "integer"
           },
           "last_failure_at": {
+            "description": "Its most recent failure in the window, `null` when it had none.",
             "type": [
               "string",
               "null"
             ]
           },
           "last_run_at": {
+            "description": "Its most recent run in the window, `null` when it had none.",
             "type": [
               "string",
               "null"
             ]
           },
           "name": {
+            "description": "Its display name.",
             "type": "string"
           },
           "runs": {
+            "description": "Runs it had in the window.",
             "format": "int64",
             "type": "integer"
           },
           "runs_active": {
+            "description": "Of those, still queued or running.",
             "format": "int64",
             "type": "integer"
           },
           "runs_failed": {
+            "description": "Of those, failed.",
             "format": "int64",
             "type": "integer"
           },
           "slug": {
+            "description": "The provider, as the console filter spells it.",
             "type": "string"
           },
           "tasks_done": {
+            "description": "Tasks of those runs that settled successfully.",
             "format": "int64",
             "type": "integer"
           },
           "tasks_failed": {
+            "description": "Tasks of those runs that failed.",
             "format": "int64",
             "type": "integer"
           }
@@ -3662,30 +3791,36 @@
             "type": "integer"
           },
           "chapter_count": {
+            "description": "Chapter links under this provider's sources.",
             "format": "int64",
             "type": "integer"
           },
           "chapters_24h": {
+            "description": "Chapters first seen here in the last 24 hours.",
             "format": "int64",
             "type": "integer"
           },
           "chapters_7d": {
+            "description": "Chapters first seen here in the last 7 days.",
             "format": "int64",
             "type": "integer"
           },
           "last_chapter_at": {
+            "description": "When a chapter was last discovered here, `null` for a provider with none.",
             "type": [
               "string",
               "null"
             ]
           },
           "last_full_scan_at": {
+            "description": "When an archive rebuild last completed, `null` if none ever has.",
             "type": [
               "string",
               "null"
             ]
           },
           "last_run_at": {
+            "description": "When the most recent run was created, `null` for a provider never scanned.",
             "type": [
               "string",
               "null"
@@ -3699,15 +3834,18 @@
             ]
           },
           "last_scanned_at": {
+            "description": "The most recent scan across this provider's sources, `null` until one finishes.",
             "type": [
               "string",
               "null"
             ]
           },
           "name": {
+            "description": "Its display name.",
             "type": "string"
           },
           "provider_id": {
+            "description": "The provider these figures are for.",
             "format": "uuid",
             "type": "string"
           },
@@ -3717,6 +3855,7 @@
             "type": "integer"
           },
           "slug": {
+            "description": "Its slug, joined in so the table renders from one fetch.",
             "type": "string"
           },
           "source_count": {
@@ -3760,10 +3899,12 @@
         "description": "A provider entry for the Discover filter list: identity plus how many distinct series it\ncarries, so the UI can show \"Provider (N)\" options without exposing operator-only\nconfig/politeness.",
         "properties": {
           "id": {
+            "description": "The provider, which is what a browse filter carries.",
             "format": "uuid",
             "type": "string"
           },
           "name": {
+            "description": "Its display name.",
             "type": "string"
           },
           "series_count": {
@@ -3772,6 +3913,7 @@
             "type": "integer"
           },
           "slug": {
+            "description": "Its URL-safe key, which is what appears in a shareable filter link.",
             "type": "string"
           }
         },
@@ -3812,6 +3954,7 @@
         "properties": {
           "enabled": {
             "default": false,
+            "description": "Whether the window suppresses anything at all. Defaults off.",
             "type": "boolean"
           },
           "end_minute": {
@@ -4046,19 +4189,24 @@
         "description": "One row of the admin console's \"Unmatched remote entries\" queue: a fetched provider entry\nthe auto-matcher could not confidently link to a local series.",
         "properties": {
           "content_type": {
+            "description": "Medium as the tracker spells it.",
             "type": "string"
           },
           "external_id": {
+            "description": "The tracker's own id for the entry.",
             "type": "string"
           },
           "progress": {
+            "description": "Chapters read, on the tracker's scale.",
             "format": "double",
             "type": "number"
           },
           "provider": {
+            "description": "Which external tracker, as a slug.",
             "type": "string"
           },
           "start_year": {
+            "description": "Year the tracker gives, `null` when it gives none.",
             "format": "int32",
             "type": [
               "integer",
@@ -4066,16 +4214,20 @@
             ]
           },
           "status": {
+            "description": "Tracking status as the tracker spells it.",
             "type": "string"
           },
           "title": {
+            "description": "Title as the tracker spells it, which is what the operator matches on.",
             "type": "string"
           },
           "user_id": {
+            "description": "Whose list the entry came off.",
             "format": "uuid",
             "type": "string"
           },
           "username": {
+            "description": "That user's username.",
             "type": "string"
           }
         },
@@ -4107,22 +4259,27 @@
         "description": "A request as the subject sees it, and the shape the operator queue extends.",
         "properties": {
           "detail": {
+            "description": "What the subject wrote when filing, `null` when they wrote nothing.",
             "type": [
               "string",
               "null"
             ]
           },
           "due_at": {
+            "description": "The Art. 12(3) deadline. Past it with the request open is what `overdue` reports.",
             "type": "string"
           },
           "id": {
+            "description": "The request, which is what a resolve or a withdrawal names.",
             "format": "uuid",
             "type": "string"
           },
           "kind": {
-            "$ref": "#/components/schemas/RequestKind"
+            "$ref": "#/components/schemas/RequestKind",
+            "description": "Which right is being exercised."
           },
           "requested_at": {
+            "description": "When it was filed, which is what the Art. 12(3) deadline runs from.",
             "type": "string"
           },
           "resolution_note": {
@@ -4133,13 +4290,15 @@
             ]
           },
           "resolved_at": {
+            "description": "When it settled, `null` while it is still open.",
             "type": [
               "string",
               "null"
             ]
           },
           "status": {
-            "$ref": "#/components/schemas/RequestStatus"
+            "$ref": "#/components/schemas/RequestStatus",
+            "description": "Where it is in its lifecycle."
           }
         },
         "required": [
@@ -4239,11 +4398,13 @@
             ]
           },
           "queued_tasks": {
+            "description": "Tasks nobody has claimed yet.",
             "format": "int64",
             "type": "integer"
           },
           "run_id": {
-            "$ref": "#/components/schemas/ScanRunId"
+            "$ref": "#/components/schemas/ScanRunId",
+            "description": "The run this breakdown belongs to."
           },
           "running_tasks": {
             "description": "Tasks a worker is holding right now.",
@@ -4280,6 +4441,7 @@
             ]
           },
           "stage_total": {
+            "description": "What the stage counts up to, where it counts at all.",
             "format": "int32",
             "type": [
               "integer",
@@ -4328,6 +4490,7 @@
             "type": "integer"
           },
           "fetch_ms": {
+            "description": "Milliseconds spent inside those requests.",
             "format": "int64",
             "type": "integer"
           },
@@ -4337,14 +4500,17 @@
             "type": "integer"
           },
           "requests": {
+            "description": "Outbound requests the run made.",
             "format": "int64",
             "type": "integer"
           },
           "solver_calls": {
+            "description": "Solve attempts, whether or not they succeeded.",
             "format": "int64",
             "type": "integer"
           },
           "solver_ms": {
+            "description": "Milliseconds spent waiting on a challenge solver.",
             "format": "int64",
             "type": "integer"
           },
@@ -4388,6 +4554,7 @@
             "type": "array"
           },
           "runs": {
+            "description": "One entry per run in flight, and none for a run that has settled.",
             "items": {
               "$ref": "#/components/schemas/RunActivityView"
             },
@@ -4432,27 +4599,33 @@
         "description": "A scan run as the console reads it: the persisted row plus the slug of the provider it was\nscoped to.\n\nPublished under the `ScanRun` component name, which is what the generated client and the\nfrontend already call it. The slug is the addition: a run carrying only `provider_id` renders\nas a truncated uuid and cannot be matched against a filter an operator typed, which is why\nthe panel's provider filter had no effect on anything the live stream pushed.",
         "properties": {
           "created_at": {
+            "description": "When the run was enqueued.",
             "type": "string"
           },
           "done_tasks": {
+            "description": "Tasks that finished successfully.",
             "format": "int32",
             "type": "integer"
           },
           "failed_tasks": {
+            "description": "Tasks that gave up.",
             "format": "int32",
             "type": "integer"
           },
           "finished_at": {
+            "description": "When the run settled, `null` while it is still going.",
             "type": [
               "string",
               "null"
             ]
           },
           "id": {
-            "$ref": "#/components/schemas/ScanRunId"
+            "$ref": "#/components/schemas/ScanRunId",
+            "description": "The run."
           },
           "mode": {
-            "$ref": "#/components/schemas/ScanMode"
+            "$ref": "#/components/schemas/ScanMode",
+            "description": "Whether the run rebuilds the archive or reads the latest feed."
           },
           "provider_id": {
             "oneOf": [
@@ -4460,7 +4633,8 @@
                 "type": "null"
               },
               {
-                "$ref": "#/components/schemas/ProviderId"
+                "$ref": "#/components/schemas/ProviderId",
+                "description": "`null` for a run covering every enabled provider, and once the named provider is\ndeleted."
               }
             ]
           },
@@ -4472,15 +4646,18 @@
             ]
           },
           "started_at": {
+            "description": "When the first task was claimed, `null` while the run is still queued.",
             "type": [
               "string",
               "null"
             ]
           },
           "state": {
-            "$ref": "#/components/schemas/RunState"
+            "$ref": "#/components/schemas/RunState",
+            "description": "Where the run is in its lifecycle."
           },
           "total_tasks": {
+            "description": "Tasks the run dispatched.",
             "format": "int32",
             "type": "integer"
           }
@@ -4507,13 +4684,15 @@
             "type": "array"
           },
           "tasks": {
+            "description": "Every task of the run, whatever its state.",
             "items": {
               "$ref": "#/components/schemas/ScanTaskDetailView"
             },
             "type": "array"
           },
           "telemetry": {
-            "$ref": "#/components/schemas/RunTelemetryView"
+            "$ref": "#/components/schemas/RunTelemetryView",
+            "description": "Where the run's time went, summed over its tasks."
           }
         },
         "required": [
@@ -4532,6 +4711,7 @@
         "description": "A page of scan runs plus how many the filter matches in total.",
         "properties": {
           "items": {
+            "description": "The page, newest run first.",
             "items": {
               "$ref": "#/components/schemas/ScanRun"
             },
@@ -4563,12 +4743,14 @@
             "type": "integer"
           },
           "first_run_at": {
+            "description": "Creation time of the oldest matching run, `null` when the filter matched none.",
             "type": [
               "string",
               "null"
             ]
           },
           "last_run_at": {
+            "description": "Creation time of the newest matching run, `null` when the filter matched none.",
             "type": [
               "string",
               "null"
@@ -4582,38 +4764,47 @@
             "type": "array"
           },
           "runs_cancelled": {
+            "description": "Of those, stopped by an operator.",
             "format": "int64",
             "type": "integer"
           },
           "runs_completed": {
+            "description": "Of those, finished with at least one task done.",
             "format": "int64",
             "type": "integer"
           },
           "runs_failed": {
+            "description": "Of those, finished with every task failed, which is what marks a run failed rather\nthan completed.",
             "format": "int64",
             "type": "integer"
           },
           "runs_queued": {
+            "description": "Of those, still waiting to start.",
             "format": "int64",
             "type": "integer"
           },
           "runs_running": {
+            "description": "Of those, in flight.",
             "format": "int64",
             "type": "integer"
           },
           "runs_total": {
+            "description": "Runs the filter matched.",
             "format": "int64",
             "type": "integer"
           },
           "tasks_done": {
+            "description": "Of those, settled successfully. The numerator the panel divides itself.",
             "format": "int64",
             "type": "integer"
           },
           "tasks_failed": {
+            "description": "Of those, settled as failures.",
             "format": "int64",
             "type": "integer"
           },
           "tasks_total": {
+            "description": "Tasks those runs dispatched.",
             "format": "int64",
             "type": "integer"
           }
@@ -4638,10 +4829,12 @@
         "description": "One task of a run, with its stage and what it cost.",
         "properties": {
           "attempts": {
+            "description": "Claims taken on it, so a retried task reads higher than one.",
             "format": "int32",
             "type": "integer"
           },
           "claimed_at": {
+            "description": "When a worker last took it, `null` while queued.",
             "type": [
               "string",
               "null"
@@ -4663,22 +4856,26 @@
             ]
           },
           "error": {
+            "description": "Why it failed, `null` unless it did.",
             "type": [
               "string",
               "null"
             ]
           },
           "finished_at": {
+            "description": "When it settled, `null` while it has not.",
             "type": [
               "string",
               "null"
             ]
           },
           "id": {
+            "description": "The task.",
             "format": "uuid",
             "type": "string"
           },
           "kind": {
+            "description": "What the task was asked to do: a catalogue page, a series, a latest feed.",
             "type": "string"
           },
           "stage": {
@@ -4689,18 +4886,21 @@
             ]
           },
           "stage_at": {
+            "description": "When it entered that stage.",
             "type": [
               "string",
               "null"
             ]
           },
           "stage_detail": {
+            "description": "What the stage is working against: a series path, a catalogue page.",
             "type": [
               "string",
               "null"
             ]
           },
           "stage_done": {
+            "description": "Progress inside the stage, where the stage counts anything.",
             "format": "int32",
             "type": [
               "integer",
@@ -4708,6 +4908,7 @@
             ]
           },
           "stage_total": {
+            "description": "What that progress counts up to.",
             "format": "int32",
             "type": [
               "integer",
@@ -4715,10 +4916,12 @@
             ]
           },
           "state": {
-            "$ref": "#/components/schemas/TaskState"
+            "$ref": "#/components/schemas/TaskState",
+            "description": "Where the task is in its lifecycle."
           },
           "target": {
-            "$ref": "#/components/schemas/Value"
+            "$ref": "#/components/schemas/Value",
+            "description": "The task's target, shaped by `kind`."
           },
           "telemetry": {
             "oneOf": [
@@ -4740,6 +4943,7 @@
             ]
           },
           "worker_id": {
+            "description": "The worker holding it, `null` before the first claim.",
             "type": [
               "string",
               "null"
@@ -5378,6 +5582,7 @@
         "description": "Summed milliseconds for one stage across a run.",
         "properties": {
           "millis": {
+            "description": "Milliseconds in this stage, summed across the run.",
             "format": "int64",
             "type": "integer"
           },
@@ -5403,22 +5608,27 @@
         "properties": {
           "completed": {
             "default": false,
+            "description": "Deliver for series the reader finished. Defaults **off**.",
             "type": "boolean"
           },
           "dropped": {
             "default": false,
+            "description": "Deliver for series the reader abandoned. Defaults **off**.",
             "type": "boolean"
           },
           "paused": {
             "default": true,
+            "description": "Deliver for series the reader set down. Defaults on.",
             "type": "boolean"
           },
           "planned": {
             "default": true,
+            "description": "Deliver for series on the plan-to-read list. Defaults on.",
             "type": "boolean"
           },
           "reading": {
             "default": true,
+            "description": "Deliver for series the reader is following. Defaults on.",
             "type": "boolean"
           }
         },
@@ -5574,6 +5784,7 @@
         "description": "Acknowledgement for a sync route that answers `204 No Content`.\n\n`services/sync` returns a bare `204` for linking an account and for patching settings;\n`services/api` republishes those as `200 {\"ok\": true}` because its `Upstream::decode`\nsynthesises this body for an empty upstream response. That synthesis is the contract, not\nan accident: naming it here means a change to either side breaks a type rather than\nsilently altering what the SPA receives. `ok` is always `true` — a failure is a status\ncode, never a `false` here.",
         "properties": {
           "ok": {
+            "description": "Always `true`. A failure arrives as a status code, never as `false` here.",
             "type": "boolean"
           }
         },
@@ -5597,6 +5808,7 @@
             ]
           },
           "ancestor_remote": {
+            "description": "The remote side of that ancestor.",
             "type": [
               "string",
               "null"
@@ -5607,6 +5819,7 @@
             "type": "boolean"
           },
           "decided_at": {
+            "description": "When the decision was taken.",
             "type": "string"
           },
           "evidence": {
@@ -5614,24 +5827,28 @@
             "description": "Which titles matched, the scored terms, the runner-up, and the provider's own metadata."
           },
           "external_id": {
+            "description": "The tracker's own id, `null` for a decision about a local series only.",
             "type": [
               "string",
               "null"
             ]
           },
           "flag_reason": {
+            "description": "What they gave as the reason.",
             "type": [
               "string",
               "null"
             ]
           },
           "flagged_at": {
+            "description": "When an operator marked the decision wrong, `null` if nobody has.",
             "type": [
               "string",
               "null"
             ]
           },
           "flagged_by": {
+            "description": "Who marked it.",
             "format": "uuid",
             "type": [
               "string",
@@ -5639,22 +5856,26 @@
             ]
           },
           "id": {
+            "description": "The journal row, which is what a revert or a flag names.",
             "format": "uuid",
             "type": "string"
           },
           "local_after": {
+            "description": "The local value after it, equal to `local_before` when nothing was written.",
             "type": [
               "string",
               "null"
             ]
           },
           "local_before": {
+            "description": "The local value before the decision.",
             "type": [
               "string",
               "null"
             ]
           },
           "match_score": {
+            "description": "Title-match similarity in `[0,1]`, `null` outside a match decision.",
             "format": "float",
             "type": [
               "number",
@@ -5662,18 +5883,21 @@
             ]
           },
           "match_signals": {
+            "description": "Stable slugs for the matching rules that fired. Empty outside a match decision.",
             "items": {
               "type": "string"
             },
             "type": "array"
           },
           "policy": {
+            "description": "The conflict policy in force, `null` where the decision needed none.",
             "type": [
               "string",
               "null"
             ]
           },
           "provider": {
+            "description": "Which external tracker, as a slug.",
             "type": "string"
           },
           "reason": {
@@ -5681,30 +5905,35 @@
             "type": "string"
           },
           "remote_after": {
+            "description": "The remote value after it.",
             "type": [
               "string",
               "null"
             ]
           },
           "remote_before": {
+            "description": "The remote value before the decision.",
             "type": [
               "string",
               "null"
             ]
           },
           "revert_reason": {
+            "description": "What they gave as the reason.",
             "type": [
               "string",
               "null"
             ]
           },
           "reverted_at": {
+            "description": "When the decision was undone, `null` while it stands.",
             "type": [
               "string",
               "null"
             ]
           },
           "reverted_by": {
+            "description": "Who undid it.",
             "format": "uuid",
             "type": [
               "string",
@@ -5726,21 +5955,25 @@
                 "type": "null"
               },
               {
-                "$ref": "#/components/schemas/SeriesId"
+                "$ref": "#/components/schemas/SeriesId",
+                "description": "The local series, `null` for an entry that matched none."
               }
             ]
           },
           "series_title": {
+            "description": "Its canonical title, `null` for the same reason.",
             "type": [
               "string",
               "null"
             ]
           },
           "user_id": {
+            "description": "Whose account was being reconciled.",
             "format": "uuid",
             "type": "string"
           },
           "username": {
+            "description": "That user's username, `null` once the account is erased.",
             "type": [
               "string",
               "null"
@@ -5793,6 +6026,7 @@
         "description": "Whether flagging a decision recorded the flag.",
         "properties": {
           "flagged": {
+            "description": "`false` when the decision already carried a flag.",
             "type": "boolean"
           }
         },
@@ -5894,6 +6128,7 @@
         "description": "Whether unlinking an account or clearing a mapping actually removed anything.",
         "properties": {
           "removed": {
+            "description": "`false` when there was nothing to remove, which is not an error.",
             "type": "boolean"
           }
         },
@@ -5906,6 +6141,7 @@
         "description": "Whether resolving a conflict settled one.",
         "properties": {
           "resolved": {
+            "description": "`false` when the conflict was already settled, which is not an error.",
             "type": "boolean"
           }
         },
@@ -5922,6 +6158,7 @@
             "type": "boolean"
           },
           "decision_id": {
+            "description": "The journal row that was undone.",
             "format": "uuid",
             "type": "string"
           },
@@ -5970,34 +6207,42 @@
         "description": "System-wide rollup for the console header.",
         "properties": {
           "chapters_1h": {
+            "description": "Chapters first seen in the last hour, by discovery rather than publication date.",
             "format": "int64",
             "type": "integer"
           },
           "chapters_24h": {
+            "description": "Chapters first seen in the last 24 hours.",
             "format": "int64",
             "type": "integer"
           },
           "chapters_7d": {
+            "description": "Chapters first seen in the last 7 days.",
             "format": "int64",
             "type": "integer"
           },
           "chapters_total": {
+            "description": "Chapter links held, part releases counted separately.",
             "format": "int64",
             "type": "integer"
           },
           "pending_merges": {
+            "description": "Merge candidates nobody has resolved yet.",
             "format": "int64",
             "type": "integer"
           },
           "providers_active": {
+            "description": "Providers in `active`.",
             "format": "int64",
             "type": "integer"
           },
           "providers_disabled": {
+            "description": "Providers an operator turned off.",
             "format": "int64",
             "type": "integer"
           },
           "providers_total": {
+            "description": "Every provider row, whatever its state.",
             "format": "int64",
             "type": "integer"
           },
@@ -6012,30 +6257,37 @@
             "type": "integer"
           },
           "runs_running": {
+            "description": "The subset of `runs_active` that has actually started.",
             "format": "int64",
             "type": "integer"
           },
           "series_total": {
+            "description": "Canonical series, not provider pages.",
             "format": "int64",
             "type": "integer"
           },
           "sources_total": {
+            "description": "Series-to-provider links across every provider.",
             "format": "int64",
             "type": "integer"
           },
           "tasks_failed_24h": {
+            "description": "Tasks that failed in the last 24 hours, by the time they settled.",
             "format": "int64",
             "type": "integer"
           },
           "tasks_queued": {
+            "description": "Tasks waiting for a worker across every run.",
             "format": "int64",
             "type": "integer"
           },
           "tasks_running": {
+            "description": "Tasks claimed or fetching.",
             "format": "int64",
             "type": "integer"
           },
           "users_total": {
+            "description": "Registered accounts, suspended ones included.",
             "format": "int64",
             "type": "integer"
           }
@@ -6065,12 +6317,15 @@
         "description": "A genre/tag.",
         "properties": {
           "id": {
-            "$ref": "#/components/schemas/TagId"
+            "$ref": "#/components/schemas/TagId",
+            "description": "Primary key."
           },
           "name": {
+            "description": "Tag as displayed.",
             "type": "string"
           },
           "slug": {
+            "description": "URL-safe key, unique across tags, and what a browse filter carries.",
             "type": "string"
           }
         },
@@ -6116,39 +6371,47 @@
         "description": "One settled task in the live tail.",
         "properties": {
           "attempts": {
+            "description": "Claims taken on it before it settled.",
             "format": "int32",
             "type": "integer"
           },
           "error": {
+            "description": "Why it failed, `null` unless it did.",
             "type": [
               "string",
               "null"
             ]
           },
           "finished_at": {
+            "description": "When it settled, which is what the tail is ordered by.",
             "type": [
               "string",
               "null"
             ]
           },
           "id": {
+            "description": "The task.",
             "format": "uuid",
             "type": "string"
           },
           "kind": {
+            "description": "What the task was asked to do.",
             "type": "string"
           },
           "provider_slug": {
+            "description": "Provider of the owning run, `null` once that provider is deleted.",
             "type": [
               "string",
               "null"
             ]
           },
           "run_id": {
-            "$ref": "#/components/schemas/ScanRunId"
+            "$ref": "#/components/schemas/ScanRunId",
+            "description": "The run it belonged to."
           },
           "state": {
-            "$ref": "#/components/schemas/TaskState"
+            "$ref": "#/components/schemas/TaskState",
+            "description": "How it settled, which for a tail entry is `done`, `failed` or `skipped`."
           },
           "target": {
             "$ref": "#/components/schemas/Value",
@@ -6491,10 +6754,12 @@
         "description": "One row of the admin Sync console's \"Assign queue\" — a canonical series that has **no**\nexternal mapping for the given provider yet, so an operator can review and assign one.",
         "properties": {
           "series_id": {
+            "description": "The unmapped series.",
             "format": "uuid",
             "type": "string"
           },
           "series_title": {
+            "description": "Its canonical title.",
             "type": "string"
           },
           "source_count": {
@@ -6564,18 +6829,23 @@
             "type": "integer"
           },
           "created_at": {
+            "description": "When it was registered.",
             "type": "string"
           },
           "email": {
+            "description": "Its sign-in address.",
             "type": "string"
           },
           "email_verified": {
+            "description": "Whether the address has been confirmed.",
             "type": "boolean"
           },
           "id": {
+            "description": "The account.",
             "type": "string"
           },
           "last_login_at": {
+            "description": "Its most recent sign-in, `null` for an account that has never signed in.",
             "type": [
               "string",
               "null"
@@ -6592,25 +6862,30 @@
             "type": "integer"
           },
           "status": {
-            "$ref": "#/components/schemas/AccountStatus"
+            "$ref": "#/components/schemas/AccountStatus",
+            "description": "Whether it may authenticate at all."
           },
           "suspended_at": {
+            "description": "When it was suspended, `null` while it is active.",
             "type": [
               "string",
               "null"
             ]
           },
           "suspension_reason": {
+            "description": "What an operator gave when suspending, `null` while the account is active.",
             "type": [
               "string",
               "null"
             ]
           },
           "tracked_count": {
+            "description": "Series the user tracks.",
             "format": "int64",
             "type": "integer"
           },
           "username": {
+            "description": "Its display handle.",
             "type": "string"
           }
         },

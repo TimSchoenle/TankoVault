@@ -593,7 +593,7 @@
         "env": "TANKOVAULT_ANILIST__CLIENT_ID",
         "env_file": "TANKOVAULT_ANILIST__CLIENT_ID_FILE",
         "secrets_file": "anilist__client_id",
-        "docs": "",
+        "docs": "The `OAuth2` client id, from the application `AniList` issued. Accepted as a number\ntoo, because the environment provider infers one.",
         "ty": "String",
         "values": [],
         "constraint": {
@@ -639,7 +639,7 @@
         "env": "TANKOVAULT_ANILIST__REDIRECT_URI",
         "env_file": "TANKOVAULT_ANILIST__REDIRECT_URI_FILE",
         "secrets_file": "anilist__redirect_uri",
-        "docs": "",
+        "docs": "Where `AniList` returns the reader after they authorise. Registered on the `AniList`\napplication, and refused if the two disagree by a single character.",
         "ty": "String",
         "values": [],
         "constraint": {
@@ -685,7 +685,7 @@
         "env": "TANKOVAULT_ANILIST__GRAPHQL_URL",
         "env_file": "TANKOVAULT_ANILIST__GRAPHQL_URL_FILE",
         "secrets_file": "anilist__graphql_url",
-        "docs": "",
+        "docs": "The `GraphQL` endpoint every read and write goes to. Overridable so a test can point\nit at a stub.",
         "ty": "String",
         "values": [],
         "constraint": {
@@ -708,7 +708,7 @@
         "env": "TANKOVAULT_ANILIST__OAUTH_BASE",
         "env_file": "TANKOVAULT_ANILIST__OAUTH_BASE_FILE",
         "secrets_file": "anilist__oauth_base",
-        "docs": "",
+        "docs": "Base URL the `authorize` and `token` paths hang off.",
         "ty": "String",
         "values": [],
         "constraint": {
@@ -731,7 +731,7 @@
         "env": "TANKOVAULT_ANILIST__DEFAULT_CONFLICT_POLICY",
         "env_file": "TANKOVAULT_ANILIST__DEFAULT_CONFLICT_POLICY_FILE",
         "secrets_file": "anilist__default_conflict_policy",
-        "docs": "",
+        "docs": "Which side wins a two-sided change for a reader who has expressed no preference. Each\nreader may override it on their own link.",
         "ty": "ConflictPolicy",
         "values": [],
         "text_form": "unknown",
@@ -751,7 +751,7 @@
         "env": "TANKOVAULT_ANILIST__MIN_REQUEST_INTERVAL_MS",
         "env_file": "TANKOVAULT_ANILIST__MIN_REQUEST_INTERVAL_MS_FILE",
         "secrets_file": "anilist__min_request_interval_ms",
-        "docs": "",
+        "docs": "Shortest gap between two requests to `AniList`, in milliseconds. It paces this\ndeployment's whole traffic, not one reader's: `AniList` rate-limits per application.",
         "ty": "u64",
         "values": [],
         "constraint": {
@@ -996,7 +996,7 @@
         "env": "TANKOVAULT_BIND_ADDR",
         "env_file": "TANKOVAULT_BIND_ADDR_FILE",
         "secrets_file": "bind_addr",
-        "docs": "",
+        "docs": "Listen address for the internally-authenticated sync contract and the probes. Not a\npublic listener; the API proxies `/v1/me/sync/*` to it.",
         "ty": "String",
         "values": [],
         "constraint": {
@@ -2147,6 +2147,7 @@
         "additionalProperties": false,
         "properties": {
           "client_id": {
+            "description": "The `OAuth2` client id, from the application `AniList` issued. Accepted as a number\ntoo, because the environment provider infers one.",
             "type": "string"
           },
           "client_secret": {
@@ -2154,18 +2155,24 @@
             "type": "string",
             "writeOnly": true
           },
-          "default_conflict_policy": {},
+          "default_conflict_policy": {
+            "description": "Which side wins a two-sided change for a reader who has expressed no preference. Each\nreader may override it on their own link."
+          },
           "graphql_url": {
+            "description": "The `GraphQL` endpoint every read and write goes to. Overridable so a test can point\nit at a stub.",
             "type": "string"
           },
           "min_request_interval_ms": {
+            "description": "Shortest gap between two requests to `AniList`, in milliseconds. It paces this\ndeployment's whole traffic, not one reader's: `AniList` rate-limits per application.",
             "minimum": 0,
             "type": "integer"
           },
           "oauth_base": {
+            "description": "Base URL the `authorize` and `token` paths hang off.",
             "type": "string"
           },
           "redirect_uri": {
+            "description": "Where `AniList` returns the reader after they authorise. Registered on the `AniList`\napplication, and refused if the two disagree by a single character.",
             "type": "string"
           },
           "token_encryption_key": {
@@ -2177,6 +2184,7 @@
         "type": "object"
       },
       "bind_addr": {
+        "description": "Listen address for the internally-authenticated sync contract and the probes. Not a\npublic listener; the API proxies `/v1/me/sync/*` to it.",
         "type": "string"
       },
       "database": {

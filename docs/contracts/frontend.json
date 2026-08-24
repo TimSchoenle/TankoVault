@@ -44,7 +44,7 @@
         "env": "TANKOVAULT_BIND_ADDR",
         "env_file": "TANKOVAULT_BIND_ADDR_FILE",
         "secrets_file": "bind_addr",
-        "docs": "",
+        "docs": "The public listener, serving both the SPA bundle and the `/v1/*` proxy.",
         "ty": "String",
         "values": [],
         "constraint": {
@@ -1093,6 +1093,7 @@
     "additionalProperties": false,
     "properties": {
       "bind_addr": {
+        "description": "The public listener, serving both the SPA bundle and the `/v1/*` proxy.",
         "type": "string"
       },
       "branding": {

@@ -147,7 +147,7 @@
         "env": "TANKOVAULT_SEED_ADMIN_EMAIL",
         "env_file": "TANKOVAULT_SEED_ADMIN_EMAIL_FILE",
         "secrets_file": "seed_admin_email",
-        "docs": "",
+        "docs": "Address of the account to seed. An account already holding it is left untouched.",
         "ty": "String",
         "values": [],
         "constraint": {
@@ -170,7 +170,7 @@
         "env": "TANKOVAULT_SEED_ADMIN_USERNAME",
         "env_file": "TANKOVAULT_SEED_ADMIN_USERNAME_FILE",
         "secrets_file": "seed_admin_username",
-        "docs": "",
+        "docs": "Name of the account to seed. An account already holding it is left untouched.",
         "ty": "String",
         "values": [],
         "constraint": {
@@ -251,6 +251,7 @@
         "type": "object"
       },
       "seed_admin_email": {
+        "description": "Address of the account to seed. An account already holding it is left untouched.",
         "type": "string"
       },
       "seed_admin_password": {
@@ -259,6 +260,7 @@
         "writeOnly": true
       },
       "seed_admin_username": {
+        "description": "Name of the account to seed. An account already holding it is left untouched.",
         "type": "string"
       }
     },

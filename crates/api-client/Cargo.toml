@@ -36,6 +36,15 @@ ignored = ["serde", "url"]
 [lints.rust]
 unsafe_code = "forbid"
 unreachable_pub = "warn"
+# The one recorded divergence from `[workspace.lints.rust]`, and the reason it is `allow` rather
+# than absent: `missing_docs` fires 2 607 times on this file. Every one of those items is
+# `progenitor` output whose only documentation `xtask openapi` could write is the OpenAPI
+# `description` it already emits as `#[doc = "…"]` where the specification carries one. The
+# contract those types describe is `openapi.json`, which is generated from the API's own
+# `///` comments — the doc-comment standard's rule that a generated file's documentation lives
+# with its source, not its output. `tests/workspace_lints.rs` records this exemption by name and
+# still fails on any other divergence.
+missing_docs = "allow"
 rust_2018_idioms = { level = "warn", priority = -1 }
 
 [lints.clippy]

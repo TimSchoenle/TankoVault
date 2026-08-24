@@ -60,6 +60,11 @@ rust-version = "1.94"
 [workspace.lints.rust]
 unsafe_code = "forbid"
 unreachable_pub = "warn"
+# Fires on the crate root, every module, every public item and every public struct field, and
+# stays quiet on private ones. That last part is why it is the right level for this estate: a
+# private helper whose body is six obvious lines has nothing to say, and no lint can tell it
+# apart from the private constant whose value came out of a rate limit.
+missing_docs = "warn"
 # A lint group must sit at a lower priority than individual lints, or `cargo clippy` refuses to
 # run (equal-priority error).
 rust_2018_idioms = { level = "warn", priority = -1 }
@@ -83,6 +88,20 @@ multiple_crate_versions = "allow"
 missing_errors_doc = "warn"
 missing_panics_doc = "warn"
 must_use_candidate = "allow"
+# The rest of the doc-comment gate. `pedantic` already carries the first four; naming them is
+# how the next reader learns they are deliberate rather than swept in with the group.
+#
+# `doc_markdown` is the one that earns its keep daily: an identifier written outside backticks
+# renders as prose, and rustdoc's search index never sees it. `too_long_first_doc_paragraph`
+# catches the missing blank line after the summary, which turns a whole comment into the index
+# entry every search result is truncated from.
+doc_markdown = "warn"
+too_long_first_doc_paragraph = "warn"
+doc_link_with_quotes = "warn"
+doc_broken_link = "warn"
+doc_include_without_cfg = "warn"
+# `clippy::missing_docs_in_private_items` is deliberately absent; see the `missing_docs` note in
+# `[workspace.lints.rust]`.
 
 # A broken intra-doc link renders as literal `[`Foo`]` text — invisible to anyone reading the
 # source. `crates/api-client` is exempt by construction (its own `[lints]` table): the
@@ -90,6 +109,9 @@ must_use_candidate = "allow"
 [workspace.lints.rustdoc]
 broken_intra_doc_links = "deny"
 private_intra_doc_links = "warn"
+# A stray backtick escapes into the rendered page as a code span running to the end of the
+# paragraph. Invisible in the source, obvious to whoever opens the documentation.
+unescaped_backticks = "warn"
 
 [workspace.dependencies]
 # --- internal crates ---

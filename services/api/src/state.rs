@@ -18,6 +18,7 @@ use tankovault_service::{AuditEvent, AuditSink, FeatureGate, TunableSet};
 /// Application state shared across handlers.
 #[derive(Clone)]
 pub struct AppState {
+    /// The catalogue. Cloning it clones a handle, not the pool.
     pub pool: PgPool,
     /// HS256 signing key for access tokens.
     ///
@@ -31,7 +32,9 @@ pub struct AppState {
     ///
     /// `Arc` for the same reason as [`Self::jwt_secret`].
     pub password_pepper: Arc<SecretSlice<u8>>,
+    /// How long a minted access token stays valid, from `auth.access_ttl_minutes`.
     pub access_ttl: time::Duration,
+    /// How long a refresh family stays renewable, from `auth.refresh_ttl_days`.
     pub refresh_ttl: time::Duration,
     /// The control-plane, for proxying "Scan now".
     pub control_plane: crate::upstream::Upstream,

@@ -18,20 +18,31 @@ use tankovault_domain::{
 /// A fully-scanned series ready to persist: canonical metadata, alternative titles,
 /// and the full chapter list, plus the content hash for change detection.
 pub struct ScannedSeries {
+    /// The provider the scan read.
     pub provider_id: ProviderId,
+    /// The relative path of the page it read, which with the provider is the identity.
     pub source_path: String,
+    /// The title that provider spells the series under, `None` when it gave none.
     pub provider_title: Option<String>,
+    /// The canonical fields to upsert onto the series.
     pub meta: SeriesUpsert,
+    /// `(title, normalized)` pairs to add. Never removes one already held.
     pub alt_titles: Vec<(String, String)>,
+    /// Genre names to attach, by name.
     pub tags: Vec<String>,
+    /// Credits to attach, by name.
     pub authors: Vec<String>,
+    /// Every chapter the page listed, not only the new ones.
     pub chapters: Vec<ChapterUpsert>,
+    /// Hash of the metadata and chapter list, so an unchanged page skips the write.
     pub content_hash: Vec<u8>,
 }
 
 /// Result of ingesting a scanned series.
 pub struct IngestOutcome {
+    /// The canonical series the source resolved to, whether matched or created.
     pub series_id: SeriesId,
+    /// The provider page, whether matched or created.
     pub source_id: SeriesSourceId,
     /// Newly-discovered chapter numbers, in input order (for `chapter.discovered`).
     pub new_chapters: Vec<f64>,

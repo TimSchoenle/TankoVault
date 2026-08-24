@@ -64,6 +64,8 @@ struct Cached {
 }
 
 impl LegalDocs {
+    /// Reads no file: each document is loaded on its first request and re-read when its mtime
+    /// moves, so an operator can replace a policy without restarting the service.
     #[must_use]
     pub fn new(config: LegalConfig) -> Self {
         Self {
@@ -72,6 +74,8 @@ impl LegalDocs {
         }
     }
 
+    /// The configuration as resolved at boot, for the index route that lists which documents
+    /// this deployment publishes.
     #[must_use]
     pub fn config(&self) -> &LegalConfig {
         &self.config

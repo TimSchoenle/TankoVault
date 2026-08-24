@@ -228,9 +228,11 @@ pub async fn watchlist_list<'e, E: PgExecutor<'e>>(
         .collect())
 }
 
-/// Set a watchlist entry's status without disturbing its `notify` flag, inserting the
-/// entry (with `notify` defaulted on) if absent. Used by `AniList` pull to import and
-/// refresh statuses without clobbering a user's per-title notification choice.
+/// Set a watchlist entry's status without disturbing its `notify` flag, inserting the entry
+/// with `notify` on if it is absent.
+///
+/// `AniList` pull imports and refreshes statuses through it, so a remote change cannot clobber
+/// a reader's per-title notification choice.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only — no other variant is reachable. As with

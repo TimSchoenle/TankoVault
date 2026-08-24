@@ -7,12 +7,16 @@
 use serde::Deserialize;
 use terrace_config::schema::Describe;
 
+/// Top-level control-plane config.
 #[derive(Debug, Deserialize, Describe)]
 pub struct Config {
+    /// Where the catalogue lives, and how many connections this service may hold open.
     #[config(nested)]
     pub database: tankovault_config::DatabaseConfig,
+    /// The task broker every scheduled sweep publishes into. Required.
     #[config(nested)]
     pub nats: tankovault_config::NatsConfig,
+    /// Log filter, log format and Sentry reporting.
     #[config(nested)]
     pub telemetry: tankovault_config::TelemetryConfig,
     /// Optional Redis endpoint used for singleton-scheduler leader election. When absent,
@@ -20,9 +24,11 @@ pub struct Config {
     #[serde(default)]
     #[config(nested)]
     pub redis: Option<tankovault_config::RedisConfig>,
+    /// How often each sweep runs, and how much work each one takes on.
     #[serde(default)]
     #[config(nested)]
     pub scheduler: SchedulerConfig,
+    /// Listen address for `/internal/*` and the probes. Not a public listener.
     #[serde(default = "default_bind")]
     pub bind_addr: String,
     /// Edge hardening for the internal trigger endpoint.
@@ -59,6 +65,10 @@ fn default_bind() -> String {
     "0.0.0.0:8081".to_owned()
 }
 
+/// How often each standing sweep runs, and how much work one takes on.
+///
+/// Every interval is in seconds and every one of them accepts `0`, which disables that sweep
+/// and only that sweep.
 #[derive(Debug, Clone, Deserialize, Describe)]
 pub struct SchedulerConfig {
     /// Seconds between fast-scan sweeps of all active providers. 0 disables.

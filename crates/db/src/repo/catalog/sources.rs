@@ -73,9 +73,11 @@ pub async fn upsert_source<'e, E: PgExecutor<'e>>(
     Ok(SeriesSourceId::from_uuid(id))
 }
 
-/// Ensure a series **source** row exists for a catalogue entry, creating a canonical series
-/// from the listing title when the source is new. No-op if the source already exists, so it
-/// never downgrades metadata a later `Series` task has enriched.
+/// Ensure a series **source** row exists for a catalogue entry.
+///
+/// Creates a canonical series from the listing title when the source is new, and does nothing
+/// at all when it already exists, so it never downgrades metadata a later `Series` task has
+/// enriched.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; an already-registered source is `Ok(())` with nothing

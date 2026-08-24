@@ -31,6 +31,7 @@ use uuid::Uuid;
 /// carries any more, or one carried but never populated.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SeriesHealth {
+    /// No health constraint.
     #[default]
     Any,
     /// No `series_sources` row at all: nothing will ever scan it again.
@@ -46,41 +47,58 @@ pub struct MaintenanceFilter {
     pub search: String,
     /// Restrict to series carried by this provider slug.
     pub provider_slug: Option<String>,
+    /// Which shape of junk to hunt for.
     pub health: SeriesHealth,
+    /// Rows per page.
     pub limit: i64,
+    /// Rows to skip.
     pub offset: i64,
 }
 
 /// One row of the maintenance list: what the series is, and how much would go with it.
 #[derive(Debug, Clone)]
 pub struct MaintenanceRow {
+    /// The series, which is what a deletion names.
     pub id: Uuid,
+    /// Its title, so an operator can recognise what they are about to delete.
     pub canonical_title: String,
+    /// Its medium, as a text-cast token.
     pub content_type: String,
+    /// Its publication status, as a text-cast token.
     pub status: String,
+    /// Its year, `None` when the catalogue has none.
     pub release_year: Option<i32>,
     /// Slugs of every provider carrying this series, so the operator can see what a deletion
     /// would have to be re-scanned from.
     pub providers: Vec<String>,
+    /// Provider pages under it.
     pub source_count: i64,
+    /// Chapter links under those pages.
     pub chapter_count: i64,
     /// Readers with this series on a watchlist — the blast radius that is not re-scannable.
     pub watcher_count: i64,
+    /// When the series was created.
     pub created_at: OffsetDateTime,
+    /// When it was last written, which is how stale a row reads.
     pub updated_at: OffsetDateTime,
 }
 
 /// A page of the maintenance list plus the unfiltered-by-page total.
 pub struct MaintenancePage {
+    /// The page, in the listing's order.
     pub items: Vec<MaintenanceRow>,
+    /// Rows the filter matched, ignoring `limit` and `offset`.
     pub total: i64,
 }
 
 /// The deployment-wide totals the purge panel states its blast radius from.
 #[derive(Debug, Clone, FromRow)]
 pub struct CatalogueTotals {
+    /// Canonical series held.
     pub series_total: i64,
+    /// Provider pages held.
     pub sources_total: i64,
+    /// Chapter links held.
     pub chapters_total: i64,
     /// Series with no source row left.
     pub orphaned_series: i64,
@@ -98,10 +116,15 @@ pub struct CatalogueTotals {
 /// the rows the statement named and says nothing about what cascaded.
 #[derive(Debug, Clone, Copy, Default, FromRow)]
 pub struct DeletionReport {
+    /// Series rows removed.
     pub series: i64,
+    /// Provider pages that cascaded away with them.
     pub sources: i64,
+    /// Chapter links that cascaded away.
     pub chapters: i64,
+    /// Watchlist entries that cascaded away. Not re-scannable.
     pub watchlist_entries: i64,
+    /// Reading positions that cascaded away. Not re-scannable.
     pub progress_rows: i64,
 }
 

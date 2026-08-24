@@ -33,9 +33,11 @@ fn merge(base: &mut Value, over: &Value) {
     }
 }
 
-/// Build the adapter for a provider: `Madara` merges provider `config` onto Madara defaults,
-/// `GenericConfig` uses `config` as-is, `Custom` dispatches by slug (`kunmanga` reuses the
-/// Madara HTML selectors and overrides only chapter fetching).
+/// Build the adapter for a provider.
+///
+/// `Madara` merges the provider's `config` onto the Madara defaults, `GenericConfig` takes
+/// `config` as it stands, and `Custom` dispatches by slug — `kunmanga` reuses the Madara HTML
+/// selectors and overrides chapter fetching alone.
 ///
 /// # Errors
 /// Malformed effective config, or an unregistered custom provider slug.

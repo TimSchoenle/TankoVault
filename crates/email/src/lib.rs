@@ -110,9 +110,10 @@ pub trait EmailService: Send + Sync {
     async fn send(&self, message: EmailMessage) -> Result<(), EmailError>;
 }
 
-/// An SMTP-backed mailer. Built from [`EmailConfig`] (or a raw relay URL) and reused for
-/// every send; a connection is opened per message (no background pool task), matching the
-/// rest of the stack's runtime-independent construction.
+/// An SMTP-backed mailer, built from [`EmailConfig`] or a raw relay URL.
+///
+/// Reused for every send, and a connection is opened per message rather than pooled by a
+/// background task, matching the rest of the stack's runtime-independent construction.
 pub struct SmtpMailer {
     transport: AsyncSmtpTransport<Tokio1Executor>,
     from: Mailbox,
@@ -327,9 +328,11 @@ impl EmailService for NoopMailer {
     }
 }
 
-/// Build the appropriate [`EmailService`] for `cfg`: a live [`SmtpMailer`] when a relay and
-/// `From` address are configured, otherwise (or on a misconfigured relay) a [`NoopMailer`]
-/// with a warning rather than aborting service boot.
+/// Build the [`EmailService`] `cfg` calls for.
+///
+/// A live [`SmtpMailer`] when a relay and a `From` address are configured. Anything else,
+/// a misconfigured relay included, yields a [`NoopMailer`] and a warning: an unsendable
+/// registration email must not stop the service booting.
 #[must_use]
 pub fn build(cfg: &EmailConfig) -> Arc<dyn EmailService> {
     if !cfg.is_enabled() {

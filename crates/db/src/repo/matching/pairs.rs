@@ -42,7 +42,7 @@ use super::MAX_KEY_FANOUT;
 /// with a `LIMIT` in front of it. Six such keys — `Status`, `Alternative`, `Genres`, `View`,
 /// `Rating`, `Release`, scraped as alternative titles out of a summary block's labels — took the
 /// live shortlist from 4 352 pairs to 15 176 110, and buried a byte-identical duplicate at
-/// position 8.9 million of a list the sweep reads 500 of. [`MAX_KEY_FANOUT`] is the ceiling, and
+/// position 8.9 million of a list the sweep reads 500 of. `MAX_KEY_FANOUT` is the ceiling, and
 /// the justification is independent of what produced the key: a title thousands of series answer
 /// to does not identify any of them.
 ///
@@ -142,16 +142,28 @@ pub async fn find_duplicate_pairs<'e, E: PgExecutor<'e>>(
 /// written yet, so those bonuses can never fire there. Here they always can.
 #[derive(Debug, Clone)]
 pub struct SeriesMatchFacts {
+    /// The series these facts describe.
     pub series_id: SeriesId,
+    /// Its display title, for the evidence the decision records.
     pub canonical_title: String,
+    /// The key the base similarity is measured on.
     pub normalized_title: String,
+    /// Its aliases, normalized, which an identity rule may match on alone.
     pub alt_normalized_titles: Vec<String>,
+    /// Its medium, which a guard can refuse a merge on.
     pub content_type: ContentType,
+    /// Its year, `None` when the catalogue has none. A guard refuses on a mismatch,
+    /// never on an absence.
     pub release_year: Option<i32>,
+    /// Its genre names, for the overlap bonus.
     pub tags: Vec<String>,
+    /// Its credits, for the shared-author signal.
     pub authors: Vec<String>,
+    /// Providers carrying it, the first term in the survivor choice.
     pub source_count: i64,
+    /// Chapter links under it, the second term.
     pub chapter_count: i64,
+    /// Readers watching it, which is what a wrong survivor choice costs.
     pub watcher_count: i64,
 }
 
@@ -234,9 +246,12 @@ pub async fn series_match_facts<'e, E: PgExecutor<'e>>(
         .collect())
 }
 
-/// The trigram similarity of each given pair, computed exactly as [`find_candidates`](super::find_candidates) computes
-/// it: canonical against canonical, and each side's alternative titles against the other's
-/// canonical title, taking the best.
+/// The trigram similarity of each given pair, on the same rule [`find_candidates`] uses.
+///
+/// Canonical against canonical, and each side's alternative titles against the other's canonical
+/// title, taking the best of the three.
+///
+/// [`find_candidates`]: super::find_candidates
 ///
 /// # Why the sweep needs this
 ///
@@ -338,6 +353,7 @@ pub async fn open_merge_pairs<'e, E: PgExecutor<'e>>(
 pub struct DistinctVerdict<'a> {
     /// The pair in any order; [`record_distinct_pairs`] stores it in canonical id order.
     pub pair: DuplicatePair,
+    /// The similarity it was judged at, so a later threshold change can reopen it.
     pub score: f32,
     /// The stable slugs of the scoring rules that fired.
     pub signals: &'a [&'a str],
@@ -456,9 +472,10 @@ pub async fn record_distinct_pairs<'e, E: PgExecutor<'e>>(
         .collect())
 }
 
-/// Record the scorer's verdict that one pair is **not** a duplicate. Returns whether a row was
-/// open before this call — `false` also when one of the two series no longer exists, because the
-/// merge that removed it cascaded the pair's row away.
+/// Records the scorer's verdict that one pair is not a duplicate.
+///
+/// Answers whether a queue row was open before the call. `false` also when one of the two series
+/// no longer exists, because the merge that removed it cascaded the pair's row away.
 ///
 /// See [`record_distinct_pairs`] for the semantics; the sweep batches, this is for callers that
 /// hold a single pair.

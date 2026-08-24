@@ -62,6 +62,8 @@ fn content_type_of(value: &Value) -> ContentType {
 pub struct FlameComicsAdapter;
 
 impl FlameComicsAdapter {
+    /// Stateless: the provider's base URL and the fetch stack arrive per call in [`Ctx`], so
+    /// one instance serves every provider configured against this adapter.
     #[must_use]
     pub fn new() -> Self {
         Self

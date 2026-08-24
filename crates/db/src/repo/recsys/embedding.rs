@@ -130,6 +130,7 @@ struct NeighbourRow {
 
 /// A retrieved neighbour and how close it is.
 pub struct Neighbour {
+    /// The retrieved series.
     pub series_id: SeriesId,
     /// Cosine similarity in `[0, 1]`, not the distance the index ranks by.
     pub score: f32,

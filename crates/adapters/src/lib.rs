@@ -51,14 +51,14 @@ pub use witchtoons::WitchToonsAdapter;
 
 /// Seams for the out-of-workspace fuzz crate, which can only reach `pub` items.
 ///
-/// [`json::parse_json_body`] stays `pub(crate)` and is re-exported here `#[doc(hidden)]` instead,
+/// `json::parse_json_body` stays `pub(crate)` and is re-exported here `#[doc(hidden)]` instead,
 /// so its candidate scan (a past quadratic-DoS site) stays fuzzable without becoming public API.
 #[doc(hidden)]
 pub mod __fuzz {
     use crate::error::AdapterError;
     use tankovault_fetch::FetchResponse;
 
-    /// [`crate::json::parse_json_body`] monomorphised at `T = serde_json::Value`: the oracle is
+    /// `crate::json::parse_json_body` monomorphised at `T = serde_json::Value`: the oracle is
     /// the candidate scan's time/memory, not the parse result.
     ///
     /// # Errors

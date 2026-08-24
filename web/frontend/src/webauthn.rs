@@ -120,9 +120,9 @@ impl CeremonyError {
 
 /// Whether this browser and this page can run a ceremony at all.
 ///
-/// Used to hide the passkey controls rather than to gate the call — a control that fails when
-/// pressed is worse than one that is not offered. The call is still guarded, because a stale
-/// render is not a security boundary.
+/// Hides the passkey controls rather than gating the call: a control that fails when pressed is
+/// worse than one that is not offered. The call is still guarded, because a stale render is not
+/// a security boundary.
 #[cfg(feature = "web")]
 pub(crate) fn is_available() -> bool {
     web_sys::window().is_some_and(|w| !JsValue::from(w.navigator().credentials()).is_undefined())

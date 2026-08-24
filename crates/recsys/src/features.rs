@@ -14,12 +14,20 @@ use tankovault_domain::{ContentType, SeriesStatus};
 /// are different features, and a single string vocabulary would collide them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum FeatureKind {
+    /// A genre or theme slug from `series_tags`, carrying its own per-link weight.
     Tag,
+    /// A credited creator. The one kind excluded from the dense embedding.
     Author,
+    /// Manga, manhwa or manhua. Never emitted for [`ContentType::Unknown`].
     ContentType,
+    /// Country of origin, lower-cased.
     Country,
+    /// Publication state. Never emitted for [`SeriesStatus::Unknown`].
     Status,
+    /// The decade the series started in, as `1990s`. Absent for an unknown or out-of-range year.
     Decade,
+    /// A chapter-count bucket from [`length_bucket`]. Absent for a series with no chapters,
+    /// which is unscanned rather than short.
     Length,
     /// What the work was adapted from — `AniList`'s `source` (`original`, `light_novel`, …).
     Source,
@@ -84,11 +92,15 @@ impl fmt::Display for FeatureKind {
 /// One feature: an axis and a value on it.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FeatureKey {
+    /// The axis, which is what keeps the tag `action` and the author `action` apart.
     pub kind: FeatureKind,
+    /// The value on that axis, already normalised by whoever built the key: slugs and country
+    /// codes arrive lower-cased, and the vocabulary is compared byte for byte.
     pub value: String,
 }
 
 impl FeatureKey {
+    /// Pairs `kind` with `value` verbatim; normalisation is the caller's.
     #[must_use]
     pub fn new(kind: FeatureKind, value: impl Into<String>) -> Self {
         Self {
@@ -105,14 +117,20 @@ impl FeatureKey {
 /// repair without two code paths.
 #[derive(Debug, Clone, Default)]
 pub struct SeriesFacts {
+    /// [`ContentType::Unknown`] emits no feature.
     pub content_type: ContentType,
+    /// [`SeriesStatus::Unknown`] emits no feature.
     pub status: SeriesStatus,
+    /// Year of first publication. Feeds the decade bucket, which [`decade_of`] drops outside
+    /// 1900 to 2200.
     pub release_year: Option<i32>,
     /// Distinct whole chapters across every source. Feeds the length bucket only.
     pub chapter_count: i64,
     /// `(slug, link weight)` — the link weight is `series_tags.weight`, `AniList`'s rank/100.
     pub tags: Vec<(String, f32)>,
+    /// Author slugs. Every one carries the same weight, since a credit is not partial.
     pub authors: Vec<String>,
+    /// Country of origin, lower-cased before it becomes a feature.
     pub country: Option<String>,
     /// `AniList`'s `source`, lower-cased (`original`, `light_novel`, …).
     pub source: Option<String>,

@@ -6,9 +6,13 @@ use uuid::Uuid;
 /// What a normalized-key rebuild changed.
 #[derive(Debug, Clone, Copy, Default, serde::Serialize)]
 pub struct KeyRebuildReport {
+    /// Canonical titles read.
     pub series_scanned: i64,
+    /// Of those, whose key the corrected rules changed.
     pub series_updated: i64,
+    /// Alternative titles read.
     pub titles_scanned: i64,
+    /// Of those, whose key the corrected rules changed.
     pub titles_updated: i64,
     /// Alternative titles dropped because the corrected rules collapsed them onto a key the
     /// same series already had.

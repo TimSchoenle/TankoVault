@@ -30,6 +30,7 @@ pub enum QueueOutcome {
 pub struct NewMergeCandidate<'a> {
     /// The pair in any order; [`record_merge_candidates`] stores it in canonical id order.
     pub pair: (SeriesId, SeriesId),
+    /// Similarity in `[0,1]`, after every scoring term.
     pub score: f32,
     /// The stable slugs of the scoring rules that fired.
     pub signals: &'a [&'a str],
@@ -212,27 +213,40 @@ pub async fn record_merge_candidate<'e, E: PgExecutor<'e>>(
 /// notification and external mapping already names.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct MergeCandidateView {
+    /// The queue row, which is what a resolve call names.
     pub id: Uuid,
+    /// One side of the pair, in canonical id order.
     pub series_id: SeriesId,
+    /// Its canonical title.
     pub series_title: String,
+    /// Providers carrying that side.
     pub series_sources: i64,
+    /// Chapter links under that side.
     pub series_chapters: i64,
+    /// The other side.
     pub candidate_id: SeriesId,
+    /// Its canonical title.
     pub candidate_title: String,
+    /// Providers carrying that side.
     pub candidate_sources: i64,
+    /// Chapter links under that side.
     pub candidate_chapters: i64,
+    /// Similarity in `[0,1]`, after every scoring term.
     pub score: f32,
     /// The stable slugs of the scoring rules that fired
     /// ([`tankovault_domain::matching::MatchSignals::labels`]).
     pub signals: Vec<String>,
+    /// The sentence the console shows, `None` for a row from before it was stored.
     pub reason: Option<String>,
     /// Which of the two the console should offer to keep: the series with more sources, then
     /// more chapters, then the older id. Advisory — `POST /v1/admin/series/merge` takes an
     /// explicit direction — but it is the answer an operator would reach anyway, computed once
     /// here instead of eyeballed 2 600 times.
     pub suggested_keep: SeriesId,
+    /// When the pair first entered the queue.
     #[serde(with = "time::serde::rfc3339")]
     pub created_at: time::OffsetDateTime,
+    /// When a sweep last re-scored the row in place.
     #[serde(with = "time::serde::rfc3339")]
     pub updated_at: time::OffsetDateTime,
 }

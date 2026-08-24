@@ -17,28 +17,46 @@ use tankovault_domain::{SeriesId, UserId};
 /// One decision to record. A reconciliation run produces many, so these are inserted as a batch.
 #[derive(Debug, Clone)]
 pub struct NewSyncDecision {
+    /// Whose account was being reconciled.
     pub user_id: UserId,
     /// `None` when a remote entry matched no local series — the case worth recording.
     pub series_id: Option<SeriesId>,
+    /// Which external tracker, as a slug.
     pub provider: String,
+    /// The tracker's own id, `None` for a decision about a local series only.
     pub external_id: Option<String>,
     /// `match` | `progress` | `status` | `series` | `metadata`.
     pub scope: String,
+    /// What was done, or considered and declined.
+    /// `matched` | `unmatched` | `pull` | `push` | `create_remote` | `conflict` | `noop`
+    /// | `skipped` | `import_status` | `enriched` | `unmapped`.
     pub action: String,
     /// The stable slug for *why*.
     pub reason: String,
+    /// The conflict policy in force, `None` where the decision needed none.
     pub policy: Option<String>,
     /// Whether anything was actually written. Most of a settled run is `false`, and separating
     /// the two is what lets the console show what changed without hiding what was considered.
     pub applied: bool,
+    /// The local value going in.
     pub local_before: Option<String>,
+    /// The local value coming out, equal to `local_before` when nothing was written.
     pub local_after: Option<String>,
+    /// The remote value going in.
     pub remote_before: Option<String>,
+    /// The remote value coming out.
     pub remote_after: Option<String>,
+    /// The local side of the three-way ancestor. Without it a pull cannot be told
+    /// from a clobber.
     pub ancestor_local: Option<String>,
+    /// The remote side of that ancestor.
     pub ancestor_remote: Option<String>,
+    /// Title-match similarity in `[0,1]`, `None` outside a match decision.
     pub match_score: Option<f32>,
+    /// Stable slugs for the matching rules that fired. Empty outside a match decision.
     pub match_signals: Vec<String>,
+    /// Which titles matched, the scored terms, the runner-up, and the provider's own
+    /// metadata.
     pub evidence: Json,
 }
 
@@ -178,50 +196,85 @@ pub async fn record_sync_decisions<'e, E: PgExecutor<'e>>(
 /// One journal row as the console renders it.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SyncDecisionRow {
+    /// The journal row, which is what a revert or a flag names.
     pub id: Uuid,
+    /// Groups one account reconciliation.
     pub run_id: Uuid,
+    /// When the decision was taken.
     #[serde(with = "time::serde::rfc3339")]
     pub decided_at: OffsetDateTime,
+    /// Whose account was being reconciled.
     pub user_id: Uuid,
+    /// That user's username, `None` once the account is erased.
     pub username: Option<String>,
+    /// The local series, `None` for an entry that matched none.
     pub series_id: Option<SeriesId>,
+    /// Its canonical title, `None` for the same reason.
     pub series_title: Option<String>,
+    /// Which external tracker, as a slug.
     pub provider: String,
+    /// The tracker's own id, `None` for a decision about a local series only.
     pub external_id: Option<String>,
+    /// Which part of the reconciliation this decision belongs to.
     pub scope: String,
+    /// What was done, or considered and declined.
     pub action: String,
+    /// The stable slug for why.
     pub reason: String,
+    /// The conflict policy in force, `None` where the decision needed none.
     pub policy: Option<String>,
+    /// Whether anything was written. A run is mostly considerations.
     pub applied: bool,
+    /// The local value going in.
     pub local_before: Option<String>,
+    /// The local value coming out.
     pub local_after: Option<String>,
+    /// The remote value going in.
     pub remote_before: Option<String>,
+    /// The remote value coming out.
     pub remote_after: Option<String>,
+    /// The local side of the three-way ancestor.
     pub ancestor_local: Option<String>,
+    /// The remote side of it.
     pub ancestor_remote: Option<String>,
+    /// Title-match similarity in `[0,1]`, `None` outside a match decision.
     pub match_score: Option<f32>,
+    /// Stable slugs for the matching rules that fired.
     pub match_signals: Vec<String>,
+    /// Which titles matched, the scored terms, and the runner-up.
     pub evidence: Json,
+    /// When the decision was undone, `None` while it stands.
     #[serde(with = "time::serde::rfc3339::option")]
     pub reverted_at: Option<OffsetDateTime>,
+    /// Who undid it.
     pub reverted_by: Option<Uuid>,
+    /// What they gave as the reason.
     pub revert_reason: Option<String>,
+    /// When an operator marked it wrong, `None` if nobody has.
     #[serde(with = "time::serde::rfc3339::option")]
     pub flagged_at: Option<OffsetDateTime>,
+    /// Who marked it.
     pub flagged_by: Option<Uuid>,
+    /// What they gave as the reason.
     pub flag_reason: Option<String>,
 }
 
 /// How the console narrows the journal.
 #[derive(Debug, Default, Clone)]
 pub struct SyncDecisionFilter {
+    /// One account's decisions.
     pub user_id: Option<UserId>,
+    /// One series' decisions.
     pub series_id: Option<SeriesId>,
+    /// One tracker's decisions, by slug.
     pub provider: Option<String>,
+    /// One action.
     pub action: Option<String>,
+    /// One reconciliation run.
     pub run_id: Option<Uuid>,
     /// Only decisions that wrote something. The default view: a run is mostly considerations.
     pub applied_only: bool,
+    /// Only decisions an operator has marked wrong.
     pub flagged_only: bool,
 }
 

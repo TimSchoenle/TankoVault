@@ -21,7 +21,8 @@ fn hasher(pepper: &SecretSlice<u8>) -> Result<Argon2<'_>, AuthError> {
     .map_err(|_| AuthError::Hashing)
 }
 
-/// Hash a plaintext password into an argon2id PHC string (salt embedded), keyed by `pepper`.
+/// Hash a plaintext password into an argon2id PHC string, salt embedded, keyed by `pepper`.
+///
 /// The pepper is not embedded and must be supplied again to [`verify_password`]; pass an
 /// empty [`SecretSlice`] to hash without one.
 ///

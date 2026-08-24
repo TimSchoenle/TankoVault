@@ -18,7 +18,7 @@
 //!
 //! The `--format` vocabulary, the argument syntax behind it, the dispatch across the nine
 //! renderings and the stamping of a build identity onto the contract are
-//! [`Cli`](terrace_config::schema::cli::Cli). They were the same two hundred lines in every
+//! [`terrace_config::schema::cli::Cli`]. They were the same two hundred lines in every
 //! repository that had a generator, which is how three of them ended up disagreeing about how to
 //! cut a `LABEL` block back out of a Dockerfile.
 //!

@@ -8,14 +8,20 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use terrace_config::schema::Describe;
 
+/// Top-level notifier config.
 #[derive(Debug, Deserialize, Describe)]
 pub struct Config {
+    /// Where the catalogue lives, and how many connections this service may hold open.
     #[config(nested)]
     pub database: tankovault_config::DatabaseConfig,
+    /// The broker this service consumes chapter events from. Required.
     #[config(nested)]
     pub nats: tankovault_config::NatsConfig,
+    /// Log filter, log format and Sentry reporting.
     #[config(nested)]
     pub telemetry: tankovault_config::TelemetryConfig,
+    /// Where an alert is delivered. Every channel is optional, and all of them may be absent:
+    /// that leaves the in-app notification as the only delivery.
     #[serde(default)]
     #[config(nested)]
     pub channels: ChannelsConfig,
@@ -24,6 +30,7 @@ pub struct Config {
     #[serde(default)]
     #[config(nested)]
     pub email: tankovault_config::EmailConfig,
+    /// Ops listener binding: probes and the metrics scrape, no delivery contract.
     #[serde(default = "default_bind")]
     pub bind_addr: String,
     /// Edge hardening for the ops listener.

@@ -38,11 +38,14 @@ use uuid::Uuid;
 
 /// One chapter to upsert (from an adapter's `fetch_chapters`).
 pub struct ChapterUpsert {
+    /// Chapter number, fractional for a part release.
     pub number: f64,
+    /// Title as the provider gives it, `None` when it publishes only a number.
     pub title: Option<String>,
     /// RELATIVE link to the chapter page, as the adapter emitted it — site-relative and whole.
     /// [`upsert_chapters`] compresses it against the source path; callers do not.
     pub path: String,
+    /// When the provider says it went up, `None` when it publishes no date.
     pub published_at: Option<OffsetDateTime>,
     /// What the provider says about reading it: free, or behind a paywall.
     pub access: ChapterAccess,
@@ -199,9 +202,10 @@ pub async fn max_chapter_number<'e, E: PgExecutor<'e>>(
     Ok(max.map(from_milli))
 }
 
-/// Distinct **whole** chapters a source has; part releases (`152.1`..`152.6`) collapse into
-/// their whole chapter rather than each counting separately. Distinct from
-/// `series_sources.chapter_count`, a raw scanned-row count.
+/// Distinct whole chapters a source has, with part releases folded into their whole.
+///
+/// `152.1` through `152.6` count once, as chapter 152. Not the same figure as
+/// `series_sources.chapter_count`, which is a raw scanned-row count.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; no chapters or unknown source is `Ok(0)`. Saturates at
@@ -280,9 +284,10 @@ pub async fn count_full_chapters_by_provider<'e, E: PgExecutor<'e>>(
         .collect())
 }
 
-/// Distinct **whole** chapters across a *set* of sources (design §10 same-source merge) — the
-/// union-aware counterpart to [`count_full_chapters`]; summing per-source counts would
-/// double-count a chapter two sources share. Empty slice yields `0`.
+/// Distinct whole chapters across a set of sources, counted once each (design §10).
+///
+/// The union-aware counterpart to [`count_full_chapters`]: summing per-source counts would
+/// double every chapter two sources both carry. An empty slice yields `0`.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; saturates at `i32::MAX` like [`count_full_chapters`].
@@ -301,10 +306,11 @@ pub async fn count_full_chapters_across<'e, E: PgExecutor<'e>>(
     Ok(i32::try_from(count).unwrap_or(i32::MAX))
 }
 
-/// Chapters spanning a *set* of sources, de-duplicated (`DISTINCT ON (number_milli)`,
-/// earliest-discovered wins) and newest-first — the merge-aware counterpart to
-/// [`list_chapters`]. Caller must ensure all sources share one provider; not checked here, and
-/// mixed providers produce links resolved against the wrong `base_url`.
+/// Chapters across a set of sources, de-duplicated by number and newest first.
+///
+/// The merge-aware counterpart to [`list_chapters`]. Where two sources carry one number, the
+/// earliest-discovered row wins. Every source must belong to one provider: nothing checks it,
+/// and a mixed set produces links resolved against the wrong `base_url`.
 ///
 /// `viewer` is who is asking, and it decides whether the provider's paid early-access chapters
 /// are in the list at all. They are omitted unless that reader has opted the provider in — a row

@@ -1,6 +1,7 @@
-//! The feature registry — every switchable capability in the product, its compiled default,
-//! and its control-plane grouping. The database stores only overrides, so an empty override
-//! table is a fully working deployment; see [`Feature::is_locked`] for the two that refuse off.
+//! Every switchable capability in the product, with its compiled default and console grouping.
+//!
+//! The database stores only overrides, so an empty override table is a fully working
+//! deployment. [`Feature::is_locked`] names the two that refuse to be turned off.
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -610,6 +611,7 @@ impl fmt::Display for Feature {
 #[derive(Debug, Clone, thiserror::Error)]
 #[error("unknown feature: {key:?}")]
 pub struct ParseFeatureError {
+    /// The token that matched no feature in this build.
     pub key: String,
 }
 
@@ -631,17 +633,26 @@ impl FromStr for Feature {
 )]
 #[serde(rename_all = "snake_case")]
 pub enum FeatureGroup {
+    /// Series, chapters and everything the browse surface reads.
     Catalogue,
+    /// Registration, sign-in and account lifecycle.
     Accounts,
+    /// Data export, erasure and the retention rules.
     Privacy,
+    /// Watchlists and read progress.
     Tracking,
+    /// Delivery of in-app and outbound notifications.
     Notifications,
+    /// `AniList` import, export and back-sync.
     Sync,
+    /// Crawling: scan dispatch, adapters and the solver tiers.
     Scanning,
+    /// The operator console and the surfaces reachable only from it.
     Operations,
 }
 
 impl FeatureGroup {
+    /// The token this group serializes to, which is also its section key in the console.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {

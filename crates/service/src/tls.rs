@@ -1,7 +1,8 @@
 //! Mutually-authenticated TLS for the internal tier.
 //!
-//! This module knows about three files — a certificate, its key, and a bundle of authorities —
-//! and nothing about where they come from. Under Kubernetes cert-manager writes the first two
+//! Three files are all this module knows about — a certificate, its key, and a bundle of
+//! authorities — and it knows nothing about where they come from. Under Kubernetes
+//! cert-manager writes the first two
 //! into a Secret and trust-manager writes the third into a `ConfigMap`, both mounted as volumes;
 //! elsewhere `openssl` or `step-ca` produce the same three files. Keeping the orchestrator out
 //! of the code is what lets `identity = "mtls"` work outside Kubernetes at all.
@@ -53,16 +54,36 @@ const ACCEPT_BACKLOG: usize = 128;
 /// Errors from reading or serving the mTLS material.
 #[derive(Debug, thiserror::Error)]
 pub enum TlsError {
+    /// One of the three files could not be opened or read.
     #[error("reading {path}: {source}")]
     Read {
+        /// The path as configured, so the message names the mount rather than the role.
         path: String,
+        /// The `open` or `read` that failed. `NotFound` is the common one: a mount that is not
+        /// there yet.
         #[source]
         source: io::Error,
     },
+    /// The file was read and parsed, and held none of what it is there to hold. A volume
+    /// mounted before its writer has populated it looks exactly like this.
     #[error("{path} contains no {want}")]
-    Empty { path: String, want: &'static str },
+    Empty {
+        /// The path as configured.
+        path: String,
+        /// What was looked for, as it appears in the message: `certificates`, `authorities`.
+        want: &'static str,
+    },
+    /// The key file parsed as PEM but not as a key this stack can present, an encrypted
+    /// PKCS#8 blob being the usual case.
     #[error("{path} is not a private key this stack can present: {reason}")]
-    Key { path: String, reason: String },
+    Key {
+        /// The path as configured.
+        path: String,
+        /// What was wrong with it, in terms an operator can act on.
+        reason: String,
+    },
+    /// The three files were all readable and rustls still refused the combination, most often
+    /// a key that does not belong to the certificate.
     #[error("building the TLS configuration: {0}")]
     Config(String),
 }
@@ -89,7 +110,10 @@ impl PeerSans {
 /// names when the connection was mutually authenticated.
 #[derive(Clone, Debug)]
 pub struct InternalPeer {
+    /// The remote socket address, which is what the rate limiter keys on either way.
     pub addr: SocketAddr,
+    /// Every DNS name the verified certificate carried. Empty when it carried none, so no
+    /// configured peer name can match it.
     pub sans: PeerSans,
 }
 
@@ -268,9 +292,10 @@ fn build(paths: &ResolvedTls) -> Result<Arc<ServerConfig>, TlsError> {
 pub struct ClientMaterial {
     /// The certificate chain, PEM.
     pub cert: Vec<u8>,
-    /// The private key, **PKCS#8 PEM** whatever the mounted file held — see [`pkcs8_pem`]. Not a
-    /// `secrecy` type: it never leaves this struct as text, and the TLS builders that consume it
-    /// take `&[u8]`.
+    /// The private key, **PKCS#8 PEM** whatever the mounted file held, SEC1 and PKCS#1 included.
+    ///
+    /// Not a `secrecy` type: it never leaves this struct as text, and the TLS builders that
+    /// consume it take `&[u8]`.
     pub key: Vec<u8>,
     /// The authorities a server certificate must chain to, PEM.
     pub ca: Vec<u8>,
@@ -291,7 +316,7 @@ impl std::fmt::Debug for ClientMaterial {
 ///
 /// # Errors
 /// [`TlsError::Read`] naming whichever path could not be read, or [`TlsError::Key`] when the key
-/// is not one [`pkcs8_pem`] can normalise.
+/// is in no format this stack can normalise to PKCS#8.
 pub fn client_material(paths: &ResolvedTls) -> Result<ClientMaterial, TlsError> {
     let read = |path: &Path| {
         std::fs::read(path).map_err(|source| TlsError::Read {
@@ -427,7 +452,7 @@ fn dns_sans(cert: &CertificateDer<'_>) -> Vec<String> {
 
 /// A listener that yields only connections whose handshake has already completed.
 ///
-/// Handshakes run on their own tasks and are bounded by [`HANDSHAKE_TIMEOUT`]: performing them
+/// Handshakes run on their own tasks and are bounded by `HANDSHAKE_TIMEOUT`: performing them
 /// inside `accept` would let one slow client stall every other connection to the service.
 pub struct TlsListener {
     rx: tokio::sync::mpsc::Receiver<(TlsStream<TcpStream>, SocketAddr)>,

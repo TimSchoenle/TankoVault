@@ -9,16 +9,24 @@ use uuid::Uuid;
 /// The single row of `rec_build_state`.
 #[derive(Debug, Clone, FromRow)]
 pub struct BuildState {
+    /// The generation currently being written, or the last one completed.
     pub generation: i32,
+    /// What the build is doing, or the stage it stopped in.
     pub stage: String,
+    /// When the current or last build claimed the row.
     pub started_at: Option<OffsetDateTime>,
+    /// When the last build released it, `None` while one is running.
     pub finished_at: Option<OffsetDateTime>,
+    /// Series the running stage has finished.
     pub series_built: i32,
     /// What the running stage is counting towards. Display only — nothing branches on it, and a
     /// stage that cannot cheaply know its own size leaves it at zero.
     pub stage_total: i32,
+    /// Distinct features interned in this generation.
     pub vocabulary: i32,
+    /// Width of the embedding this generation was projected into.
     pub dense_dims: i32,
+    /// Why the last build failed, `None` when it did not.
     pub error: Option<String>,
 }
 
@@ -29,7 +37,9 @@ pub struct BuildState {
 /// while it was still running cannot touch the state of the run that replaced it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BuildClaim {
+    /// The generation this run writes under.
     pub generation: i32,
+    /// The token. Every advance and release is conditioned on it.
     pub claim_id: Uuid,
 }
 

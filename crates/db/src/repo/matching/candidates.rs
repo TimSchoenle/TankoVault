@@ -9,7 +9,7 @@ use uuid::Uuid;
 /// Find existing series whose canonical or alternative normalized titles are
 /// trigram-similar to `normalized`, ordered by best similarity.
 ///
-/// An *alternative* title held by more than [`MAX_KEY_FANOUT`] series is not searched: a name
+/// An *alternative* title held by more than `MAX_KEY_FANOUT` series is not searched: a name
 /// that many distinct works answer to identifies none of them, and shortlisting on one is what
 /// let a single row accumulate 281 unrelated sources. Canonical titles are not capped — a series
 /// keeps its own name however many others share it.
@@ -57,7 +57,7 @@ pub async fn find_candidates<'e, E: PgExecutor<'e>>(
         // that scored at or above it, so it can never have been the `GREATEST`. `UNION ALL`,
         // because the `GROUP BY` already collapses the duplicates a `UNION` would have sorted for.
         //
-        // The alias branch drops keys held by more than [`MAX_KEY_FANOUT`] series: a name that
+        // The alias branch drops keys held by more than `MAX_KEY_FANOUT` series: a name that
         // many distinct works answer to identifies none of them, and shortlisting on one is how a
         // single row grew to 281 unrelated sources. The window runs over the rows the GIN index
         // already returned, so it costs a partition of that set and no extra scan — and for the

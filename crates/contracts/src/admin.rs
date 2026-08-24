@@ -18,24 +18,39 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[schema(as = SystemStats)]
 pub struct SystemStatsView {
+    /// Every provider row, whatever its state.
     pub providers_total: i64,
+    /// Providers in `active`.
     pub providers_active: i64,
+    /// Providers an operator turned off.
     pub providers_disabled: i64,
     /// Providers in a non-serving health state (degraded/challenged/solving/blocked).
     pub providers_unhealthy: i64,
+    /// Canonical series, not provider pages.
     pub series_total: i64,
+    /// Series-to-provider links across every provider.
     pub sources_total: i64,
+    /// Chapter links held, part releases counted separately.
     pub chapters_total: i64,
+    /// Chapters first seen in the last hour, by discovery rather than publication date.
     pub chapters_1h: i64,
+    /// Chapters first seen in the last 24 hours.
     pub chapters_24h: i64,
+    /// Chapters first seen in the last 7 days.
     pub chapters_7d: i64,
+    /// Registered accounts, suspended ones included.
     pub users_total: i64,
+    /// Merge candidates nobody has resolved yet.
     pub pending_merges: i64,
     /// Scan runs currently queued or running.
     pub runs_active: i64,
+    /// The subset of `runs_active` that has actually started.
     pub runs_running: i64,
+    /// Tasks waiting for a worker across every run.
     pub tasks_queued: i64,
+    /// Tasks claimed or fetching.
     pub tasks_running: i64,
+    /// Tasks that failed in the last 24 hours, by the time they settled.
     pub tasks_failed_24h: i64,
 }
 
@@ -44,8 +59,11 @@ pub struct SystemStatsView {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[schema(as = ProviderStat)]
 pub struct ProviderStatView {
+    /// The provider these figures are for.
     pub provider_id: Uuid,
+    /// Its slug, joined in so the table renders from one fetch.
     pub slug: String,
+    /// Its display name.
     pub name: String,
     /// Provider health state token (`active` | `disabled` | `blocked` | …).
     pub state: String,
@@ -57,20 +75,27 @@ pub struct ProviderStatView {
     pub source_count: i64,
     /// Source links currently in a non-active state.
     pub blocked_sources: i64,
+    /// Chapter links under this provider's sources.
     pub chapter_count: i64,
+    /// Chapters first seen here in the last 24 hours.
     pub chapters_24h: i64,
+    /// Chapters first seen here in the last 7 days.
     pub chapters_7d: i64,
+    /// When a chapter was last discovered here, `null` for a provider with none.
     #[serde(with = "time::serde::rfc3339::option")]
     #[schema(value_type = Option<String>)]
     pub last_chapter_at: Option<OffsetDateTime>,
+    /// The most recent scan across this provider's sources, `null` until one finishes.
     #[serde(with = "time::serde::rfc3339::option")]
     #[schema(value_type = Option<String>)]
     pub last_scanned_at: Option<OffsetDateTime>,
+    /// When an archive rebuild last completed, `null` if none ever has.
     #[serde(with = "time::serde::rfc3339::option")]
     #[schema(value_type = Option<String>)]
     pub last_full_scan_at: Option<OffsetDateTime>,
     /// State of the provider's most recent scan run, if any.
     pub last_run_state: Option<String>,
+    /// When the most recent run was created, `null` for a provider never scanned.
     #[serde(with = "time::serde::rfc3339::option")]
     #[schema(value_type = Option<String>)]
     pub last_run_at: Option<OffsetDateTime>,
@@ -79,12 +104,17 @@ pub struct ProviderStatView {
 /// One privileged-action record enriched with the actor's username, for the console feed.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct AuditView {
+    /// The audit row.
     pub id: Uuid,
     /// Actor username (`None` for system-originated actions or a since-deleted user).
     pub actor: Option<String>,
+    /// What was done, as a stable action token.
     pub action: String,
+    /// What it was done to, `null` for an action with no single subject.
     pub target: Option<String>,
+    /// Action-specific detail. Shape belongs to the action, not to this type.
     pub detail: Json,
+    /// When the action was recorded.
     #[serde(with = "time::serde::rfc3339")]
     #[schema(value_type = String)]
     pub created_at: OffsetDateTime,
@@ -100,21 +130,32 @@ pub struct AuditView {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[schema(as = ScanRun)]
 pub struct ScanRunView {
+    /// The run.
     pub id: ScanRunId,
+    /// `null` for a run covering every enabled provider, and once the named provider is
+    /// deleted.
     pub provider_id: Option<ProviderId>,
     /// `null` for an all-provider run, and for a run whose provider has since been deleted.
     pub provider_slug: Option<String>,
+    /// Whether the run rebuilds the archive or reads the latest feed.
     pub mode: ScanMode,
+    /// Where the run is in its lifecycle.
     pub state: RunState,
+    /// Tasks the run dispatched.
     pub total_tasks: i32,
+    /// Tasks that finished successfully.
     pub done_tasks: i32,
+    /// Tasks that gave up.
     pub failed_tasks: i32,
+    /// When the first task was claimed, `null` while the run is still queued.
     #[serde(with = "time::serde::rfc3339::option")]
     #[schema(value_type = Option<String>)]
     pub started_at: Option<OffsetDateTime>,
+    /// When the run settled, `null` while it is still going.
     #[serde(with = "time::serde::rfc3339::option")]
     #[schema(value_type = Option<String>)]
     pub finished_at: Option<OffsetDateTime>,
+    /// When the run was enqueued.
     #[serde(with = "time::serde::rfc3339")]
     #[schema(value_type = String)]
     pub created_at: OffsetDateTime,
@@ -123,6 +164,7 @@ pub struct ScanRunView {
 /// A page of scan runs plus how many the filter matches in total.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ScanRunPageView {
+    /// The page, newest run first.
     pub items: Vec<ScanRunView>,
     /// Total matching the current filter, ignoring `limit`/`offset`.
     pub total: i64,
@@ -136,23 +178,35 @@ pub struct ScanRunPageView {
 /// magnitude behind it, which a lone percentage cannot.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ScanSummaryView {
+    /// Runs the filter matched.
     pub runs_total: i64,
+    /// Of those, still waiting to start.
     pub runs_queued: i64,
+    /// Of those, in flight.
     pub runs_running: i64,
+    /// Of those, finished with at least one task done.
     pub runs_completed: i64,
+    /// Of those, finished with every task failed, which is what marks a run failed rather
+    /// than completed.
     pub runs_failed: i64,
+    /// Of those, stopped by an operator.
     pub runs_cancelled: i64,
+    /// Tasks those runs dispatched.
     pub tasks_total: i64,
+    /// Of those, settled successfully. The numerator the panel divides itself.
     pub tasks_done: i64,
+    /// Of those, settled as failures.
     pub tasks_failed: i64,
     /// Failures still in the triage feed, as opposed to `tasks_failed`, which counts every
     /// failure in the window including the ones an operator has cleared.
     pub failures_open: i64,
     /// Summed run wall-clock in seconds; a run in flight counts up to now.
     pub busy_seconds: f64,
+    /// Creation time of the oldest matching run, `null` when the filter matched none.
     #[serde(with = "time::serde::rfc3339::option")]
     #[schema(value_type = Option<String>)]
     pub first_run_at: Option<OffsetDateTime>,
+    /// Creation time of the newest matching run, `null` when the filter matched none.
     #[serde(with = "time::serde::rfc3339::option")]
     #[schema(value_type = Option<String>)]
     pub last_run_at: Option<OffsetDateTime>,
@@ -164,17 +218,27 @@ pub struct ScanSummaryView {
 /// One provider's scan health over the summary's window.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ProviderScanHealthView {
+    /// The provider, as the console filter spells it.
     pub slug: String,
+    /// Its display name.
     pub name: String,
+    /// Runs it had in the window.
     pub runs: i64,
+    /// Of those, still queued or running.
     pub runs_active: i64,
+    /// Of those, failed.
     pub runs_failed: i64,
+    /// Tasks of those runs that settled successfully.
     pub tasks_done: i64,
+    /// Tasks of those runs that failed.
     pub tasks_failed: i64,
+    /// Failures still in the triage feed for this provider.
     pub failures_open: i64,
+    /// Its most recent run in the window, `null` when it had none.
     #[serde(with = "time::serde::rfc3339::option")]
     #[schema(value_type = Option<String>)]
     pub last_run_at: Option<OffsetDateTime>,
+    /// Its most recent failure in the window, `null` when it had none.
     #[serde(with = "time::serde::rfc3339::option")]
     #[schema(value_type = Option<String>)]
     pub last_failure_at: Option<OffsetDateTime>,
@@ -187,6 +251,7 @@ pub struct ProviderScanHealthView {
 /// settled most recently.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ScanActivityView {
+    /// One entry per run in flight, and none for a run that has settled.
     pub runs: Vec<RunActivityView>,
     /// The most recently settled tasks of the runs in flight, newest first. Empty when nothing
     /// is running, which is the honest answer rather than a replay of the last scan.
@@ -196,7 +261,9 @@ pub struct ScanActivityView {
 /// One in-flight run's task breakdown.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct RunActivityView {
+    /// The run this breakdown belongs to.
     pub run_id: ScanRunId,
+    /// Tasks nobody has claimed yet.
     pub queued_tasks: i64,
     /// Tasks a worker is holding right now.
     pub running_tasks: i64,
@@ -222,6 +289,7 @@ pub struct RunActivityView {
     /// Progress inside the stage, where the stage counts anything.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stage_done: Option<i32>,
+    /// What the stage counts up to, where it counts at all.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stage_total: Option<i32>,
     /// What the stage is working against — a series path, a catalogue page.
@@ -256,6 +324,8 @@ pub struct CancelScansBody {
     /// Provider slug.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider: Option<String>,
+    /// Narrows the cancellation to one cadence, so a fast sweep can be stopped without
+    /// touching an archive rebuild that has been running for an hour.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mode: Option<ScanMode>,
 }
@@ -263,10 +333,12 @@ pub struct CancelScansBody {
 /// One run's tasks and the breakdown of where its time went.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ScanRunDetailView {
+    /// Where the run's time went, summed over its tasks.
     pub telemetry: RunTelemetryView,
     /// Summed milliseconds per stage across the run, largest first — the answer to "what was this
     /// run actually doing for twenty minutes".
     pub stages: Vec<StageTotalView>,
+    /// Every task of the run, whatever its state.
     pub tasks: Vec<ScanTaskDetailView>,
 }
 
@@ -281,13 +353,17 @@ pub struct RunTelemetryView {
     pub busy_ms: i64,
     /// Summed time tasks spent created but unclaimed — queued behind a busy provider.
     pub wait_ms: i64,
+    /// Outbound requests the run made.
     pub requests: i64,
+    /// Milliseconds spent inside those requests.
     pub fetch_ms: i64,
     /// Milliseconds spent waiting for permission to send a request: the concurrency gate, the
     /// token rate, the crawl delay and any adaptive 429 penalty. Read against `busy_ms`, this is
     /// what separates "the scan is broken" from "the provider's crawl budget is small".
     pub pace_wait_ms: i64,
+    /// Milliseconds spent waiting on a challenge solver.
     pub solver_ms: i64,
+    /// Solve attempts, whether or not they succeeded.
     pub solver_calls: i64,
     /// Responses the provider answered 429/503, each of which widened its spacing thereafter.
     pub throttled: i64,
@@ -298,6 +374,7 @@ pub struct RunTelemetryView {
 pub struct StageTotalView {
     /// A [`tankovault_domain::ScanStage`] token.
     pub stage: String,
+    /// Milliseconds in this stage, summed across the run.
     pub millis: i64,
     /// Tasks that reported this stage at all.
     pub tasks: i64,
@@ -306,13 +383,20 @@ pub struct StageTotalView {
 /// One task of a run, with its stage and what it cost.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ScanTaskDetailView {
+    /// The task.
     pub id: Uuid,
+    /// What the task was asked to do: a catalogue page, a series, a latest feed.
     pub kind: String,
+    /// The task's target, shaped by `kind`.
     pub target: Json,
+    /// Where the task is in its lifecycle.
     pub state: TaskState,
+    /// Claims taken on it, so a retried task reads higher than one.
     pub attempts: i16,
+    /// The worker holding it, `null` before the first claim.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub worker_id: Option<String>,
+    /// Why it failed, `null` unless it did.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
     /// The stage the task is in, or the one it ended in. On a failure this is the most useful
@@ -320,22 +404,28 @@ pub struct ScanTaskDetailView {
     /// rejected what it sent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stage: Option<String>,
+    /// When it entered that stage.
     #[serde(default, with = "time::serde::rfc3339::option")]
     #[schema(value_type = Option<String>)]
     pub stage_at: Option<OffsetDateTime>,
+    /// Progress inside the stage, where the stage counts anything.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stage_done: Option<i32>,
+    /// What that progress counts up to.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stage_total: Option<i32>,
+    /// What the stage is working against: a series path, a catalogue page.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stage_detail: Option<String>,
     /// `null` for tasks created before the column existed.
     #[serde(default, with = "time::serde::rfc3339::option")]
     #[schema(value_type = Option<String>)]
     pub created_at: Option<OffsetDateTime>,
+    /// When a worker last took it, `null` while queued.
     #[serde(default, with = "time::serde::rfc3339::option")]
     #[schema(value_type = Option<String>)]
     pub claimed_at: Option<OffsetDateTime>,
+    /// When it settled, `null` while it has not.
     #[serde(default, with = "time::serde::rfc3339::option")]
     #[schema(value_type = Option<String>)]
     pub finished_at: Option<OffsetDateTime>,
@@ -353,15 +443,23 @@ pub struct ScanTaskDetailView {
 /// One settled task in the live tail.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct TaskEventView {
+    /// The task.
     pub id: Uuid,
+    /// The run it belonged to.
     pub run_id: ScanRunId,
+    /// Provider of the owning run, `null` once that provider is deleted.
     pub provider_slug: Option<String>,
+    /// What the task was asked to do.
     pub kind: String,
+    /// How it settled, which for a tail entry is `done`, `failed` or `skipped`.
     pub state: TaskState,
     /// What the task was pointed at, as the planner wrote it.
     pub target: Json,
+    /// Why it failed, `null` unless it did.
     pub error: Option<String>,
+    /// Claims taken on it before it settled.
     pub attempts: i16,
+    /// When it settled, which is what the tail is ordered by.
     #[serde(with = "time::serde::rfc3339::option")]
     #[schema(value_type = Option<String>)]
     pub finished_at: Option<OffsetDateTime>,
@@ -406,6 +504,7 @@ pub struct FailuresClearedView {
 pub struct FailureGroupView {
     /// The error text these failures share. `null` groups the failures that recorded none.
     pub error: Option<String>,
+    /// Failures sharing this error, cleared ones counted only when the caller asked for them.
     pub count: i64,
     /// How many of `count` an operator has already cleared. Non-zero only when the caller asked
     /// for cleared failures back.
@@ -415,6 +514,7 @@ pub struct FailureGroupView {
     /// Task kinds this error struck, sorted — the same message on a `series` task and on a
     /// `catalog_page` task is two problems, not one.
     pub kinds: Vec<String>,
+    /// The most recent of them, `null` only if the group is empty.
     #[serde(with = "time::serde::rfc3339::option")]
     #[schema(value_type = Option<String>)]
     pub latest_at: Option<OffsetDateTime>,
@@ -427,6 +527,7 @@ pub struct FailureGroupView {
 /// it is.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct AuditPageView {
+    /// The page, newest record first.
     pub items: Vec<AuditView>,
     /// Total matching the current filter, ignoring `limit`/`offset`.
     pub total: i64,
@@ -435,14 +536,21 @@ pub struct AuditPageView {
 /// A failed scan task enriched with its run's provider + mode, for the console error feed.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct FailedTaskView {
+    /// The failed task.
     pub id: Uuid,
+    /// The run it belonged to.
     pub run_id: Uuid,
     /// Provider slug of the owning run (`None` if the provider was since deleted).
     pub provider_slug: Option<String>,
+    /// Cadence of the owning run: `full` or `fast`.
     pub mode: String,
+    /// What the task was asked to do.
     pub kind: String,
+    /// Why it failed, `null` for a task that recorded no message.
     pub error: Option<String>,
+    /// Claims taken before it gave up.
     pub attempts: i16,
+    /// When it gave up.
     #[serde(with = "time::serde::rfc3339::option")]
     #[schema(value_type = Option<String>)]
     pub finished_at: Option<OffsetDateTime>,
@@ -462,27 +570,40 @@ pub struct FailedTaskView {
 /// of an operator eyeballing it per row.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct MergeCandidateView {
+    /// The queue row, which is what a resolve call names.
     pub id: Uuid,
+    /// One side of the pair.
     pub series_id: SeriesId,
+    /// Its canonical title.
     pub series_title: String,
+    /// Providers carrying that side.
     pub series_sources: i64,
+    /// Chapter links under that side.
     pub series_chapters: i64,
+    /// The other side.
     pub candidate_id: SeriesId,
+    /// Its canonical title.
     pub candidate_title: String,
+    /// Providers carrying that side.
     pub candidate_sources: i64,
+    /// Chapter links under that side.
     pub candidate_chapters: i64,
+    /// Similarity in `[0,1]` after every scoring term.
     pub score: f32,
     /// Stable slugs for the scoring rules that fired — `exact_title`, `compact_identity`,
     /// `alias_identity`, `near_identical`, `shared_author`, and so on. Rendered as badges; the
     /// set is `tankovault_domain::matching::MatchSignals::labels`.
     pub signals: Vec<String>,
+    /// The rule that put the pair here, `null` for a row from before the journal existed.
     pub reason: Option<String>,
     /// Which side the console should offer to keep. Advisory: the merge endpoint takes an
     /// explicit direction.
     pub suggested_keep: SeriesId,
+    /// When the pair first entered the queue.
     #[serde(with = "time::serde::rfc3339")]
     #[schema(value_type = String)]
     pub created_at: OffsetDateTime,
+    /// When a sweep last re-scored the row in place.
     #[serde(with = "time::serde::rfc3339")]
     #[schema(value_type = String)]
     pub updated_at: OffsetDateTime,
@@ -592,6 +713,7 @@ pub struct MergeSweepView {
 pub struct MergePolicyView {
     /// The persisted key, e.g. `matching.auto_merge`.
     pub key: String,
+    /// Section-local label.
     pub title: String,
     /// What the value does, written to be read immediately before someone changes production.
     pub description: String,
@@ -611,6 +733,7 @@ pub struct MergePolicyView {
     pub default_value: f64,
     /// Inclusive bounds. Enforced by the control plane, not only by the UI.
     pub min: f64,
+    /// Inclusive upper bound.
     pub max: f64,
     /// Whether an operator has explicitly decided this one, as opposed to it following the
     /// deployment's configuration.
@@ -629,32 +752,47 @@ pub struct MergePolicyView {
 /// reaches rows that happen to be re-scanned until this runs.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, ToSchema)]
 pub struct KeyRebuildView {
+    /// Canonical titles read.
     pub series_scanned: i64,
+    /// Of those, whose key the corrected rules changed.
     pub series_updated: i64,
+    /// Alternative titles read.
     pub titles_scanned: i64,
+    /// Of those, whose key the corrected rules changed.
     pub titles_updated: i64,
     /// Alternative titles dropped because the corrected rules collapsed them onto a key the
     /// same series already held.
     pub titles_deduplicated: i64,
 }
 
-/// One row of the admin Sync console's "Linked accounts" table. The automatic-sync policy
-/// columns and pending-conflict count (design v2 §B.7) are read-only operator visibility —
-/// they are user settings, never operator-overridable.
+/// One row of the admin Sync console's "Linked accounts" table.
+///
+/// The automatic-sync policy columns and the pending-conflict count (design v2 §B.7) are
+/// visibility only. They are the user's settings, and no operator route writes them.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[schema(as = AdminAccountRow)]
 pub struct SyncAccountView {
+    /// The local account the link belongs to.
     pub user_id: Uuid,
+    /// Its username, joined in so the table renders from one fetch.
     pub username: String,
+    /// Which external tracker, as a slug.
     pub provider: String,
+    /// The handle on that tracker, `null` until a sync has read it.
     pub external_username: Option<String>,
+    /// When a sync last completed for this link, `null` if none has.
     #[serde(with = "time::serde::rfc3339::option")]
     #[schema(value_type = Option<String>)]
     pub last_synced_at: Option<OffsetDateTime>,
+    /// Why the most recent sync failed, `null` when the last one succeeded.
     pub last_error: Option<String>,
+    /// The user's own setting for scheduled syncing. Read-only to an operator.
     pub auto_sync_enabled: bool,
+    /// The user's own answer to a two-sided change: which side wins.
     pub conflict_policy: String,
+    /// Conflicts on this link nobody has resolved.
     pub pending_conflicts: i64,
+    /// When the link was made.
     #[serde(with = "time::serde::rfc3339")]
     #[schema(value_type = String)]
     pub created_at: OffsetDateTime,
@@ -664,10 +802,15 @@ pub struct SyncAccountView {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[schema(as = AdminMappingRow)]
 pub struct SyncMappingView {
+    /// The local series.
     pub series_id: Uuid,
+    /// Its canonical title.
     pub series_title: String,
+    /// Which external tracker, as a slug.
     pub provider: String,
+    /// The tracker's own id for the same work.
     pub external_id: String,
+    /// When the mapping was last written.
     #[serde(with = "time::serde::rfc3339")]
     #[schema(value_type = String)]
     pub updated_at: OffsetDateTime,
@@ -678,7 +821,9 @@ pub struct SyncMappingView {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[schema(as = UnmappedSeriesRow)]
 pub struct UnmappedSeriesView {
+    /// The unmapped series.
     pub series_id: Uuid,
+    /// Its canonical title.
     pub series_title: String,
     /// How many local sources back this series (a proxy for how confident a match is worth).
     pub source_count: i64,
@@ -689,14 +834,23 @@ pub struct UnmappedSeriesView {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[schema(as = RemoteEntryRow)]
 pub struct RemoteEntryView {
+    /// Whose list the entry came off.
     pub user_id: Uuid,
+    /// That user's username.
     pub username: String,
+    /// Which external tracker, as a slug.
     pub provider: String,
+    /// The tracker's own id for the entry.
     pub external_id: String,
+    /// Title as the tracker spells it, which is what the operator matches on.
     pub title: String,
+    /// Tracking status as the tracker spells it.
     pub status: String,
+    /// Chapters read, on the tracker's scale.
     pub progress: f64,
+    /// Medium as the tracker spells it.
     pub content_type: String,
+    /// Year the tracker gives, `null` when it gives none.
     pub start_year: Option<i32>,
 }
 
@@ -709,10 +863,14 @@ pub struct RemoteEntryView {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[schema(as = DirectoryRow)]
 pub struct UserDirectoryRow {
+    /// The account.
     #[schema(value_type = String)]
     pub id: Uuid,
+    /// Its sign-in address.
     pub email: String,
+    /// Its display handle.
     pub username: String,
+    /// Whether it may authenticate at all.
     pub status: AccountStatus,
     /// Whether the address has been confirmed. An unverified account that has existed for
     /// months is usually an abandoned registration.
@@ -730,9 +888,11 @@ pub struct UserDirectoryRow {
     pub is_super_user: bool,
     /// How many series the user tracks — the cheapest signal of a real, in-use account.
     pub tracked_count: i64,
+    /// Its most recent sign-in, `null` for an account that has never signed in.
     #[serde(with = "time::serde::rfc3339::option")]
     #[schema(value_type = Option<String>)]
     pub last_login_at: Option<OffsetDateTime>,
+    /// When it was registered.
     #[serde(with = "time::serde::rfc3339")]
     #[schema(value_type = String)]
     pub created_at: OffsetDateTime,
@@ -743,6 +903,7 @@ pub struct UserDirectoryRow {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[schema(as = DirectoryPage)]
 pub struct UserDirectoryPage {
+    /// The page, in the directory's own order.
     pub users: Vec<UserDirectoryRow>,
     /// Total matching the current search, ignoring `limit`/`offset`.
     pub total: i64,
@@ -754,25 +915,35 @@ pub struct UserDirectoryPage {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[schema(as = UserDetail)]
 pub struct UserDetailView {
+    /// The account.
     #[schema(value_type = String)]
     pub id: Uuid,
+    /// Its sign-in address.
     pub email: String,
+    /// Its display handle.
     pub username: String,
+    /// Whether it may authenticate at all.
     pub status: AccountStatus,
+    /// Whether the address has been confirmed.
     pub email_verified: bool,
+    /// What an operator gave when suspending, `null` while the account is active.
     pub suspension_reason: Option<String>,
+    /// When it was suspended, `null` while it is active.
     #[serde(with = "time::serde::rfc3339::option")]
     #[schema(value_type = Option<String>)]
     pub suspended_at: Option<OffsetDateTime>,
+    /// Its most recent sign-in, `null` for an account that has never signed in.
     #[serde(with = "time::serde::rfc3339::option")]
     #[schema(value_type = Option<String>)]
     pub last_login_at: Option<OffsetDateTime>,
+    /// When it was registered.
     #[serde(with = "time::serde::rfc3339")]
     #[schema(value_type = String)]
     pub created_at: OffsetDateTime,
     /// Live login sessions. Tells an operator whether a suspension will actually take effect
     /// without also revoking sessions.
     pub active_sessions: i64,
+    /// Series the user tracks.
     pub tracked_count: i64,
     /// Linked external trackers, so an operator can see the account has third-party
     /// credentials at rest before deciding to erase it.
@@ -792,6 +963,7 @@ pub struct GrantView {
     pub permission: String,
     /// Whether this build recognises the token. `false` means the grant is inert.
     pub known: bool,
+    /// When the grant was made.
     #[serde(with = "time::serde::rfc3339")]
     #[schema(value_type = String)]
     pub granted_at: OffsetDateTime,
@@ -811,6 +983,7 @@ pub struct GrantView {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[schema(as = AdminRequestRow)]
 pub struct AdminPrivacyRequestView {
+    /// The subject-facing record, exactly as the subject sees it on their own page.
     pub request: crate::me::PrivacyRequestView,
     /// The subject's id, or `None` once they have been erased.
     #[schema(value_type = Option<String>)]
@@ -818,6 +991,7 @@ pub struct AdminPrivacyRequestView {
     /// The subject's username. `None` means the account is gone — for a completed erasure
     /// that is the expected end state, not missing data.
     pub username: Option<String>,
+    /// The subject's address, `null` once they have been erased.
     pub email: Option<String>,
     /// Operator who claimed it, if any.
     pub claimed_by: Option<String>,
@@ -867,7 +1041,9 @@ pub struct ScanTriggeredView {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[schema(as = MergeDecision)]
 pub struct MergeDecisionView {
+    /// The journal row, which is what a revert or a flag names.
     pub id: Uuid,
+    /// When the verdict was taken.
     #[serde(with = "time::serde::rfc3339")]
     #[schema(value_type = String)]
     pub decided_at: OffsetDateTime,
@@ -875,10 +1051,15 @@ pub struct MergeDecisionView {
     pub sweep_id: Option<Uuid>,
     /// `sweep_new` | `sweep_requeue` | `sweep_recheck` | `operator`.
     pub trigger: String,
+    /// The operator behind an `operator` trigger, `null` for a sweep.
     pub actor: Option<Uuid>,
+    /// One side of the pair, as it was at decision time.
     pub left_id: SeriesId,
+    /// The other side.
     pub right_id: SeriesId,
+    /// Left title as it read then, kept even after the series is absorbed.
     pub left_title: String,
+    /// Right title as it read then.
     pub right_title: String,
     /// `auto` | `review` | `distinct`.
     pub verdict: String,
@@ -890,11 +1071,15 @@ pub struct MergeDecisionView {
     /// What was actually done, which is not always the verdict: `merged`, `queued`, `requeued`,
     /// `reopened`, `withdrawn`, `distinct`, `deferred`.
     pub outcome: String,
+    /// The series that survived, `null` for anything but a merge.
     pub survivor_id: Option<SeriesId>,
+    /// The series that stopped existing, `null` for anything but a merge.
     pub absorbed_id: Option<SeriesId>,
+    /// The final similarity in `[0,1]`, after every term in `terms`.
     pub score: f32,
     /// The similarity the score started from, before any bonus or penalty.
     pub base_score: f32,
+    /// Stable slugs for the scoring rules that fired.
     pub signals: Vec<String>,
     /// `[{rule, delta, detail}]` — every term the scorer applied, in order.
     pub terms: Json,
@@ -906,15 +1091,21 @@ pub struct MergeDecisionView {
     pub revertible: bool,
     /// How many rows a revert would restore or move back.
     pub undo_rows: i64,
+    /// When the merge was undone, `null` while it stands.
     #[serde(with = "time::serde::rfc3339::option")]
     #[schema(value_type = Option<String>)]
     pub reverted_at: Option<OffsetDateTime>,
+    /// Who undid it.
     pub reverted_by: Option<Uuid>,
+    /// What they gave as the reason.
     pub revert_reason: Option<String>,
+    /// When an operator marked the decision wrong, `null` if nobody has.
     #[serde(with = "time::serde::rfc3339::option")]
     #[schema(value_type = Option<String>)]
     pub flagged_at: Option<OffsetDateTime>,
+    /// Who marked it.
     pub flagged_by: Option<Uuid>,
+    /// What they gave as the reason.
     pub flag_reason: Option<String>,
 }
 
@@ -922,9 +1113,11 @@ pub struct MergeDecisionView {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[schema(as = MergeReverted)]
 pub struct MergeRevertedView {
+    /// The journal row that was undone.
     pub decision_id: Uuid,
     /// The series that exists again, under its original id.
     pub restored_id: SeriesId,
+    /// The series the rows went back off.
     pub survivor_id: SeriesId,
     /// Rows restored or moved back off the survivor.
     pub rows_restored: i64,
@@ -940,17 +1133,25 @@ pub struct MergeRevertedView {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[schema(as = SyncDecision)]
 pub struct SyncDecisionView {
+    /// The journal row, which is what a revert or a flag names.
     pub id: Uuid,
     /// Groups one account reconciliation.
     pub run_id: Uuid,
+    /// When the decision was taken.
     #[serde(with = "time::serde::rfc3339")]
     #[schema(value_type = String)]
     pub decided_at: OffsetDateTime,
+    /// Whose account was being reconciled.
     pub user_id: Uuid,
+    /// That user's username, `null` once the account is erased.
     pub username: Option<String>,
+    /// The local series, `null` for an entry that matched none.
     pub series_id: Option<SeriesId>,
+    /// Its canonical title, `null` for the same reason.
     pub series_title: Option<String>,
+    /// Which external tracker, as a slug.
     pub provider: String,
+    /// The tracker's own id, `null` for a decision about a local series only.
     pub external_id: Option<String>,
     /// `match` | `progress` | `status` | `series` | `metadata`.
     pub scope: String,
@@ -960,29 +1161,43 @@ pub struct SyncDecisionView {
     /// The stable slug for why: `only_remote_changed`, `both_sides_changed_policy_remote_wins`,
     /// `title_match_above_threshold`, `blocked_by_operator`, …
     pub reason: String,
+    /// The conflict policy in force, `null` where the decision needed none.
     pub policy: Option<String>,
     /// Whether anything was actually written. A run is mostly considerations.
     pub applied: bool,
+    /// The local value before the decision.
     pub local_before: Option<String>,
+    /// The local value after it, equal to `local_before` when nothing was written.
     pub local_after: Option<String>,
+    /// The remote value before the decision.
     pub remote_before: Option<String>,
+    /// The remote value after it.
     pub remote_after: Option<String>,
     /// The three-way merge's common ancestor. Without it a pull cannot be told from a clobber.
     pub ancestor_local: Option<String>,
+    /// The remote side of that ancestor.
     pub ancestor_remote: Option<String>,
+    /// Title-match similarity in `[0,1]`, `null` outside a match decision.
     pub match_score: Option<f32>,
+    /// Stable slugs for the matching rules that fired. Empty outside a match decision.
     pub match_signals: Vec<String>,
     /// Which titles matched, the scored terms, the runner-up, and the provider's own metadata.
     pub evidence: Json,
+    /// When the decision was undone, `null` while it stands.
     #[serde(with = "time::serde::rfc3339::option")]
     #[schema(value_type = Option<String>)]
     pub reverted_at: Option<OffsetDateTime>,
+    /// Who undid it.
     pub reverted_by: Option<Uuid>,
+    /// What they gave as the reason.
     pub revert_reason: Option<String>,
+    /// When an operator marked the decision wrong, `null` if nobody has.
     #[serde(with = "time::serde::rfc3339::option")]
     #[schema(value_type = Option<String>)]
     pub flagged_at: Option<OffsetDateTime>,
+    /// Who marked it.
     pub flagged_by: Option<Uuid>,
+    /// What they gave as the reason.
     pub flag_reason: Option<String>,
 }
 
@@ -990,6 +1205,7 @@ pub struct SyncDecisionView {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[schema(as = SyncReverted)]
 pub struct SyncRevertedView {
+    /// The journal row that was undone.
     pub decision_id: Uuid,
     /// `local_progress` | `local_status` | `watchlist_entry` | `remote_entry` | `match`.
     pub restored: String,

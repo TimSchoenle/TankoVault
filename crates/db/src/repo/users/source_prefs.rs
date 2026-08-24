@@ -8,8 +8,11 @@ use uuid::Uuid;
 /// One provider in a reader's priority list, richest end of the list first.
 #[derive(Debug, Clone)]
 pub struct RankedProvider {
+    /// The provider's id.
     pub id: Uuid,
+    /// Its stable slug, which is what a stored preference is keyed on.
     pub slug: String,
+    /// Its display name, as an operator set it.
     pub name: String,
 }
 

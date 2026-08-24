@@ -16,17 +16,26 @@ pub const DEFAULT_GRAPHQL_URL: &str = "https://graphql.anilist.co";
 /// Default `AniList` OAuth base (authorize + token live under here).
 pub const DEFAULT_OAUTH_BASE: &str = "https://anilist.co/api/v2/oauth";
 
+/// Top-level sync config.
 #[derive(Debug, Deserialize, Describe)]
 pub struct Config {
+    /// Where the catalogue lives, and how many connections this service may hold open.
     #[config(nested)]
     pub database: DatabaseConfig,
+    /// Log filter, log format and Sentry reporting.
     #[config(nested)]
     pub telemetry: TelemetryConfig,
+    /// The `AniList` application this deployment syncs through. Required: there is no second
+    /// tracker to fall back to.
     #[config(nested)]
     pub anilist: AniListConfig,
+    /// Which source owns each metadata field, and whether the background enrichment worker
+    /// runs at all.
     #[serde(default)]
     #[config(nested)]
     pub metadata: MetadataConfig,
+    /// Listen address for the internally-authenticated sync contract and the probes. Not a
+    /// public listener; the API proxies `/v1/me/sync/*` to it.
     #[serde(default = "default_bind")]
     pub bind_addr: String,
     /// Interval (seconds) between scheduled reconciliation ticks. `0` disables the loop.
@@ -90,27 +99,39 @@ pub struct MetadataConfig {
     pub enrich_max_series: usize,
 }
 
+/// The `AniList` application this deployment syncs through, and how hard it may push.
 #[derive(Debug, Clone, Deserialize, Describe)]
 pub struct AniListConfig {
+    /// The `OAuth2` client id, from the application `AniList` issued. Accepted as a number
+    /// too, because the environment provider infers one.
     #[serde(deserialize_with = "string_or_number")]
     pub client_id: String,
     /// The `OAuth2` client secret; lets anyone mint tokens as this app.
     #[config(secret)]
     pub client_secret: SecretString,
+    /// Where `AniList` returns the reader after they authorise. Registered on the `AniList`
+    /// application, and refused if the two disagree by a single character.
     pub redirect_uri: String,
     /// Base64 32-byte data-encryption key for tokens at rest — opens every user's stored
     /// `AniList` access and refresh token.
     #[config(secret)]
     pub token_encryption_key: SecretString,
+    /// The `GraphQL` endpoint every read and write goes to. Overridable so a test can point
+    /// it at a stub.
     #[serde(default = "default_graphql_url")]
     pub graphql_url: String,
+    /// Base URL the `authorize` and `token` paths hang off.
     #[serde(default = "default_oauth_base")]
     pub oauth_base: String,
     // A leaf rather than `#[config(values)]`: the type is `tankovault-contracts`', which is a
     // wire-shape crate and has no business linking figment. The contract publishes the key with
     // no constraint, which says what is true — the key exists, and nothing here can check it.
+    /// Which side wins a two-sided change for a reader who has expressed no preference. Each
+    /// reader may override it on their own link.
     #[serde(default)]
     pub default_conflict_policy: ConflictPolicy,
+    /// Shortest gap between two requests to `AniList`, in milliseconds. It paces this
+    /// deployment's whole traffic, not one reader's: `AniList` rate-limits per application.
     #[serde(default = "default_min_interval_ms")]
     pub min_request_interval_ms: u64,
 }

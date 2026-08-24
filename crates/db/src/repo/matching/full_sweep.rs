@@ -22,6 +22,7 @@ const LEASE_SECS: f64 = 300.0;
 /// while it was still going cannot write over the run that replaced it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FullSweepClaim {
+    /// The token. Every advance and release is conditioned on it.
     pub claim_id: Uuid,
 }
 
@@ -32,14 +33,23 @@ pub struct FullSweepClaim {
 /// drawing rounds until the shortlists are dry has resolved it by definition.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct FullSweepCounters {
+    /// Pairs re-scored across every round.
     pub pairs_examined: i64,
+    /// Pairs merged without asking.
     pub auto_merged: i64,
+    /// Pairs put in the review queue that had never been there.
     pub queued: i64,
+    /// Open rows re-scored in place. These do not lengthen the queue.
     pub requeued: i64,
+    /// Pairs previously closed as distinct that enrichment brought back.
     pub reopened: i64,
+    /// Open rows removed because re-scoring put the pair below the review floor.
     pub withdrawn: i64,
+    /// Pairs judged distinct and left alone.
     pub distinct: i64,
+    /// Pairs a round left for the next one.
     pub deferred: i64,
+    /// Pairs a guard held back after they cleared the threshold.
     pub blocked: i64,
 }
 
@@ -50,15 +60,19 @@ pub struct FullSweepState {
     /// gone stale reads as not running, because that is what an operator needs to know: the
     /// button is pressable again.
     pub running: bool,
+    /// When the current or last run took the claim.
     pub started_at: Option<OffsetDateTime>,
     /// When the last run released the claim; absent while one is running.
     pub finished_at: Option<OffsetDateTime>,
+    /// Rounds drawn so far, or in total once the run has finished.
     pub rounds: i32,
+    /// What those rounds did, summed.
     pub counters: FullSweepCounters,
     /// Why the last run stopped — `exhausted` or `failed`. A run has no limit it can stop at,
     /// so anything but a failure means the catalogue was walked to the end. Control planes
     /// before the limits were lifted also wrote `merge_ceiling` and `round_cap`.
     pub stopped: Option<String>,
+    /// Why the last run failed, `None` when it did not.
     pub error: Option<String>,
 }
 
@@ -67,7 +81,7 @@ pub struct FullSweepState {
 /// Returns `None` when a live run already holds the claim — the correct response to which is to
 /// report that, not to queue behind it: the other run is doing this one's work.
 ///
-/// A claim whose `heartbeat_at` is older than [`LEASE_SECS`] is broken and re-granted. Without
+/// A claim whose `heartbeat_at` is older than `LEASE_SECS` is broken and re-granted. Without
 /// that, a run killed between two rounds would hold the claim forever and no operator could
 /// start another.
 ///
@@ -182,7 +196,7 @@ pub async fn finish_full_sweep<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// Read the exhaustive sweep's state, resolving `running` against the same [`LEASE_SECS`] the
+/// Read the exhaustive sweep's state, resolving `running` against the same `LEASE_SECS` the
 /// claim is granted under.
 ///
 /// # Errors

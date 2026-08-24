@@ -1,6 +1,7 @@
-//! Which upstream source has the final say on each piece of series metadata — domain policy,
-//! not deployment wiring. Sources are a closed enum, so a typo in a priority list fails at
-//! load instead of silently degrading to "no listed source matched".
+//! Which upstream source has the final say on each piece of series metadata.
+//!
+//! Domain policy, not deployment wiring. Sources are a closed enum, so a typo in a priority
+//! list fails at load instead of degrading silently to "no listed source matched".
 //!
 //! [`MetadataPriority::resolve`] answers with the winning *source* as well as the value: a
 //! writer that does not store which source won cannot honour this policy on the next write,

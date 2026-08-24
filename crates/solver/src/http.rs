@@ -1,6 +1,8 @@
-//! The `POST /v1/solve` contract, defined once so `challenge-solver` and `render` — both of
-//! which expose it, and both of which `tankovault_fetch::HttpChallengeSolver` assumes are
-//! interchangeable — cannot drift apart in status, metric label or error shape.
+//! The `POST /v1/solve` contract, defined once.
+//!
+//! `challenge-solver` and `render` both expose it, and `tankovault_fetch::HttpChallengeSolver`
+//! assumes the two are interchangeable, so neither may drift from the other in status, metric
+//! label or error shape.
 //!
 //! Behind the `axum` feature so the crate stays usable by consumers that only want the
 //! [`ChallengeSolver`] trait and the detection helpers.

@@ -14,9 +14,11 @@ pub struct OverrideRow {
     /// The feature key, as a string not the enum, so an override from a retired build stays
     /// visible instead of vanishing from the only page that can delete it.
     pub feature_key: String,
+    /// The operator's answer, which wins over the compiled default either way round.
     pub enabled: bool,
     /// Why the switch was flipped, if the operator said.
     pub note: Option<String>,
+    /// When it last changed. Creating the override and editing it both move this.
     #[serde(with = "time::serde::rfc3339")]
     pub updated_at: OffsetDateTime,
     /// Username of the operator who last changed it; `None` once that account is erased.

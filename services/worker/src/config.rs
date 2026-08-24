@@ -8,14 +8,20 @@ use serde::Deserialize;
 use tankovault_config::{DatabaseConfig, NatsConfig, TelemetryConfig};
 use terrace_config::schema::Describe;
 
+/// Top-level worker config.
 #[derive(Debug, Deserialize, Describe)]
 pub struct Config {
+    /// Where the catalogue lives, and how many connections this service may hold open.
     #[config(nested)]
     pub database: DatabaseConfig,
+    /// The task broker. Required: a worker with no `JetStream` connection claims nothing and
+    /// scans nothing.
     #[config(nested)]
     pub nats: NatsConfig,
+    /// Log filter, log format and Sentry reporting.
     #[config(nested)]
     pub telemetry: TelemetryConfig,
+    /// The crawl loop's own knobs: solver endpoint, page cap and concurrency.
     #[serde(default)]
     #[config(nested)]
     pub worker: WorkerConfig,
@@ -65,10 +71,16 @@ fn default_bind() -> String {
     "0.0.0.0:8085".to_owned()
 }
 
+/// The crawl loop's own knobs.
 #[derive(Debug, Deserialize, Describe)]
 pub struct WorkerConfig {
+    /// Base origin of `challenge-solver`, no trailing slash. A provider that never serves an
+    /// interstitial is crawled whether or not this endpoint answers.
     #[serde(default = "default_solver_endpoint")]
     pub challenge_solver_endpoint: String,
+    /// Catalogue pages one full scan may walk before it stops and warns. A backstop against a
+    /// paginator that never reports a last page, not a tuning knob: real termination is the
+    /// adapter's `has_next`, and the default sits well above any catalogue seen so far.
     #[serde(default = "default_max_pages")]
     pub max_catalog_pages: u32,
     /// How often the round-robin queue re-reads the provider list, in seconds.

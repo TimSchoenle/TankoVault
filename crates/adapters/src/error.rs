@@ -15,7 +15,10 @@ pub enum AdapterError {
     /// Carries the URL: the transport reports what failed, never where.
     #[error("fetch of {url} failed: {source}")]
     Fetch {
+        /// The absolute URL, already resolved against the provider base.
         url: String,
+        /// What the fetch stack reported. [`FetchError::is_transient`] is the narrower question
+        /// [`AdapterError::is_transient`] widens.
         #[source]
         source: FetchError,
     },
@@ -28,13 +31,22 @@ pub enum AdapterError {
     /// served under a success status before falling back to this.
     #[error("provider returned HTTP {status} {} for {url} ({envelope})", http_reason(*.status))]
     Http {
+        /// The status as served, before any of the body-based reclassifications above.
         status: u16,
+        /// The absolute URL, already resolved against the provider base.
         url: String,
+        /// Content type, byte count, cache hit and a 240-character body prefix, on one line.
+        /// It is what tells a stale selector apart from a page that never arrived.
         envelope: String,
     },
     /// A CSS selector in the adapter config was invalid.
     #[error("invalid selector {selector:?}: {reason}")]
-    Selector { selector: String, reason: String },
+    Selector {
+        /// The selector as written in the adapter config, so the operator can find the key.
+        selector: String,
+        /// The CSS parser's own complaint.
+        reason: String,
+    },
     /// The adapter config JSON did not match the expected schema.
     #[error("invalid adapter config: {0}")]
     Config(String),
@@ -49,11 +61,20 @@ pub enum AdapterError {
     /// Distinct from [`Self::Parse`]: the body is somebody else's page, not malformed data, so
     /// it is retryable where a genuine parse failure is not.
     #[error("provider served a {kind} challenge page instead of content: {url}")]
-    Challenged { url: String, kind: ChallengeKind },
+    Challenged {
+        /// The absolute URL the interstitial was served for.
+        url: String,
+        /// Which vendor's interstitial the body matched, which decides whether the solver can
+        /// be asked to try again.
+        kind: ChallengeKind,
+    },
     /// A rate-limit notice reached the adapter under a success status; a `429` labelled
     /// honestly never gets this far.
     #[error("provider served a rate-limit page instead of content: {url}")]
-    Throttled { url: String },
+    Throttled {
+        /// The absolute URL the notice was served for.
+        url: String,
+    },
     /// The provider's own web server answered from its built-in error document, so the request
     /// never reached the site's application.
     ///
@@ -66,8 +87,13 @@ pub enum AdapterError {
          error page rather than the site ({url})"
     )]
     Unserved {
+        /// The absolute URL that reached the error document.
         url: String,
+        /// The status the error document wore, kept because it is what the log would otherwise
+        /// have reported and what an operator will see in the provider's own access log.
         status: u16,
+        /// The web server whose stock error page was recognised, such as `nginx`. Drawn from a
+        /// fixed marker table, so it names a product rather than the `Server` header.
         server: &'static str,
     },
     /// No adapter is registered for a `custom` provider slug.

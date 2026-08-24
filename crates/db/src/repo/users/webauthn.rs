@@ -1,6 +1,7 @@
-//! `WebAuthn` credentials — passkeys and second-factor security keys — and the short-lived
-//! ceremony state that registers or asserts them. Credential and ceremony state are opaque
-//! `webauthn-rs` JSON; every write is scoped to a user id in the statement itself.
+//! `WebAuthn` credentials, and the short-lived ceremony state that registers or asserts them.
+//!
+//! Passkeys and second-factor security keys both live here. Credential and ceremony state are
+//! opaque `webauthn-rs` JSON, and every write is scoped to a user id in the statement itself.
 //!
 //! Both kinds live in one table, and every read here is scoped by [`CredentialPurpose`]. That
 //! is not tidiness: an unscoped read would let a security key answer a passkey assertion, which
@@ -43,13 +44,19 @@ impl CredentialPurpose {
 /// it asked for, and a field that could disagree with the query is a field that will.
 #[derive(Debug, Clone)]
 pub struct CredentialRecord {
+    /// The stored row, which is what a rename or a revocation names.
     pub id: Uuid,
+    /// Whose credential it is.
     pub user_id: UserId,
+    /// The authenticator's own id, which is what an assertion arrives naming.
     pub credential_id: Vec<u8>,
     /// Serialised `webauthn_rs::prelude::Passkey` or `SecurityKey`; opaque here.
     pub credential: serde_json::Value,
+    /// What the user called it, so they can tell two keys apart when revoking one.
     pub label: String,
+    /// When it was registered.
     pub created_at: OffsetDateTime,
+    /// When it last answered a ceremony, `None` if it never has.
     pub last_used_at: Option<OffsetDateTime>,
 }
 

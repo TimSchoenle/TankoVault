@@ -6,9 +6,13 @@ use serde::Deserialize;
 /// The selector/pagination config a generic adapter reads.
 #[derive(Debug, Clone, Deserialize)]
 pub struct AdapterConfig {
+    /// How the full scan walks the provider's catalogue.
     pub catalog: CatalogCfg,
+    /// How the fast scan reads its "latest updates" feed.
     pub latest: LatestCfg,
+    /// How one series page is read.
     pub series: SeriesCfg,
+    /// How a series' chapter list is read.
     pub chapters: ChaptersCfg,
 }
 

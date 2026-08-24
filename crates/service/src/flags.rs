@@ -89,6 +89,8 @@ pub struct PostgresFlagSource {
 
 #[cfg(feature = "db")]
 impl PostgresFlagSource {
+    /// Reads overrides through `pool`. Every refresh is one query on it, so the pool has to be
+    /// one the service can spare a connection from on a timer.
     #[must_use]
     pub fn new(pool: tankovault_db::PgPool) -> Self {
         Self { pool }
@@ -297,7 +299,7 @@ impl RouteFeatures {
 
     /// Gate exactly `path` — not the routes beneath it.
     ///
-    /// Use where a route's path is also the prefix of an unrelated family; see [`Rule::exact`].
+    /// Use where a route's path is also the prefix of an unrelated family.
     #[must_use]
     pub fn gate_path(self, path: impl Into<String>, feature: Feature) -> Self {
         self.rule(path, feature, false, true)
@@ -387,6 +389,8 @@ pub struct FeatureLayer {
 }
 
 impl FeatureLayer {
+    /// Pairs the gate with the route table it is consulted against. A route absent from
+    /// `routes` is never gated.
     #[must_use]
     pub fn new(gate: FeatureGate, routes: RouteFeatures) -> Self {
         Self {

@@ -40,14 +40,19 @@ pub async fn append_history<'e, E: PgExecutor<'e>>(
 /// `Deserialize` + schema'd: `services/api` republishes this in the `OpenAPI` document.
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct HistoryRow {
+    /// The history row.
     pub id: Uuid,
+    /// The local series the action touched.
     pub series_id: Uuid,
+    /// Its canonical title, joined in so the list renders from one fetch.
     pub series_title: String,
+    /// Which external tracker, as a slug.
     pub provider: String,
     /// What the engine did, e.g. `pull`, `push` or `resolve`.
     pub action: String,
     /// Free-form, action-specific detail (the changed field and its before/after values).
     pub detail: Json,
+    /// When the action was taken, which is what the list is ordered by.
     #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,
 }

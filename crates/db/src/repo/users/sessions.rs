@@ -11,9 +11,16 @@ use uuid::Uuid;
 /// non-secret metadata is exposed.
 #[derive(Debug, Clone)]
 pub struct SessionInfo {
+    /// The live refresh token's row id. It changes on every rotation, so it names the current
+    /// token rather than the session.
     pub id: Uuid,
+    /// The rotation family, which is what a user means by "this session" and what revoking one
+    /// ends.
     pub family_id: Uuid,
+    /// When this token was issued, so a rotation moves it. The family's first sign-in is not
+    /// recorded here.
     pub created_at: OffsetDateTime,
+    /// When the session stops being renewable, from `auth.refresh_ttl_days`.
     pub expires_at: OffsetDateTime,
 }
 

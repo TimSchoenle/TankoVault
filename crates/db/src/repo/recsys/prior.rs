@@ -38,11 +38,17 @@ struct InputsRow {
 
 /// The raw signals a prior is computed from, before blending.
 pub struct PriorInputs {
+    /// The series being scored.
     pub series_id: SeriesId,
+    /// Readers with it on a watchlist.
     pub watchers: i64,
+    /// Providers carrying it.
     pub sources: i64,
+    /// Chapter links under it.
     pub chapters: i64,
+    /// Upstream's average score in `0..100`, `None` when no upstream has one.
     pub external_score: Option<f32>,
+    /// Upstream's own popularity figure, `None` when no upstream has one.
     pub external_popularity: Option<i32>,
     /// Tags and authors only — **not** every feature.
     ///
@@ -58,6 +64,8 @@ pub struct PriorInputs {
     /// unreachable: every retrieval path joins `series_prior.recommendable`, so a series the
     /// build refused can never be recovered by a read-time filter, however permissive.
     pub adult_gated: bool,
+    /// Whether any provider carrying it is still serving. A series nobody can open
+    /// does not belong on a shelf.
     pub has_active_source: bool,
 }
 

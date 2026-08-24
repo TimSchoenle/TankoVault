@@ -13,12 +13,19 @@ use uuid::Uuid;
 
 /// Canonical-series metadata to upsert (from an adapter's `fetch_series`).
 pub struct SeriesUpsert {
+    /// The title to present the work under.
     pub canonical_title: String,
+    /// That title under [`tankovault_domain::normalize_title`], which is the matching key.
     pub normalized_title: String,
+    /// Synopsis, `None` when the adapter found none.
     pub description: Option<String>,
+    /// Cover image link, `None` when the adapter found none.
     pub cover_url: Option<String>,
+    /// Medium, `Unknown` when the provider states none.
     pub content_type: ContentType,
+    /// Publication status, `Unknown` when the provider states none.
     pub status: SeriesStatus,
+    /// Year of first publication, `None` when the provider states none.
     pub release_year: Option<i32>,
 }
 
@@ -69,9 +76,11 @@ impl TryFrom<SeriesRow> for Series {
     }
 }
 
-/// Resolve the canonical series for a scanned source (design §10): trigram candidate lookup,
-/// then whatever the caller's [`Canonicaliser`] decides — attach, flag ambiguous (new series
-/// plus a merge-candidate row), or create.
+/// Resolves which canonical series a scanned source belongs to (design §10).
+///
+/// A trigram candidate lookup, then whatever the caller's [`Canonicaliser`] decides: attach to
+/// an existing series, create one and file a merge candidate against the near miss, or create
+/// one outright.
 ///
 /// Called once per entry inside the caller's transaction, so each entry resolves against series
 /// its predecessors just created; concurrent cross-provider creation can still race and produce
@@ -246,7 +255,9 @@ pub async fn adult_gated_many<'e, E: PgExecutor<'e>>(
 
 /// The two fields a list row needs to name a series it links to.
 pub struct SeriesDisplay {
+    /// The canonical title.
     pub title: String,
+    /// The cover link, `None` when no provider supplied one.
     pub cover_url: Option<String>,
 }
 

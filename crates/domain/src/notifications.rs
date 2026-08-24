@@ -112,13 +112,22 @@ pub enum PrefsError {
     #[error(
         "preference document version {found} is newer than this server understands ({PREFS_VERSION})"
     )]
-    UnknownVersion { found: u8 },
+    UnknownVersion {
+        /// The version the document claims.
+        found: u8,
+    },
     /// A quiet-hours boundary outside `0..1440`.
     #[error("minute-of-day {found} is out of range (0..{MINUTES_PER_DAY})")]
-    MinuteOutOfRange { found: u16 },
+    MinuteOutOfRange {
+        /// The offending minute-of-day.
+        found: u16,
+    },
     /// A UTC offset outside ±18:00.
     #[error("UTC offset {found} minutes is out of range (±{MAX_OFFSET_MINUTES})")]
-    OffsetOutOfRange { found: i16 },
+    OffsetOutOfRange {
+        /// The offending offset, in minutes east of UTC.
+        found: i16,
+    },
 }
 
 /// A reader's notification preferences, stored as `users.notification_prefs`.
@@ -195,10 +204,15 @@ impl NotificationPrefs {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(default)]
 pub struct KindPrefs {
+    /// A watched series gained a chapter. Defaults on.
     pub new_chapter: bool,
+    /// A watched series was marked finished. Defaults on.
     pub series_completed: bool,
+    /// A watched series appeared on a further provider. Defaults on.
     pub source_added: bool,
+    /// An `AniList` sync could not reconcile a title. Defaults on.
     pub sync_conflict: bool,
+    /// An operator broadcast. Defaults on.
     pub announcement: bool,
 }
 
@@ -215,6 +229,7 @@ impl Default for KindPrefs {
 }
 
 impl KindPrefs {
+    /// Whether a notification of `kind` may be raised for this reader.
     #[must_use]
     pub fn allows(&self, kind: NotificationKind) -> bool {
         match kind {
@@ -238,10 +253,15 @@ impl KindPrefs {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(default)]
 pub struct StatusPrefs {
+    /// Deliver for series the reader is following. Defaults on.
     pub reading: bool,
+    /// Deliver for series on the plan-to-read list. Defaults on.
     pub planned: bool,
+    /// Deliver for series the reader set down. Defaults on.
     pub paused: bool,
+    /// Deliver for series the reader abandoned. Defaults **off**.
     pub dropped: bool,
+    /// Deliver for series the reader finished. Defaults **off**.
     pub completed: bool,
 }
 
@@ -258,6 +278,7 @@ impl Default for StatusPrefs {
 }
 
 impl StatusPrefs {
+    /// Whether a series held at `status` may raise a notification.
     #[must_use]
     pub fn allows(&self, status: WatchStatus) -> bool {
         match status {
@@ -301,6 +322,7 @@ impl Default for ChannelPrefs {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(default)]
 pub struct QuietHours {
+    /// Whether the window suppresses anything at all. Defaults off.
     pub enabled: bool,
     /// Minutes from local midnight at which the window opens (inclusive).
     pub start_minute: u16,

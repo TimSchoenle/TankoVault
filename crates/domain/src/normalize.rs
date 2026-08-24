@@ -1,6 +1,7 @@
-//! Title normalization — the shared key used for canonical-series matching and the
-//! `normalized_title` column. Pure and deterministic: lowercase, fold diacritics/width
-//! variants, elide apostrophes and combining marks, drop noise words, collapse whitespace.
+//! Reduces a provider title to the matching key stored in `normalized_title`.
+//!
+//! Pure and deterministic: lowercase, fold diacritics and width variants, elide apostrophes
+//! and combining marks, drop noise words, collapse whitespace.
 
 /// Noise tokens that carry no discriminating signal across provider titles.
 const NOISE_WORDS: &[&str] = &[

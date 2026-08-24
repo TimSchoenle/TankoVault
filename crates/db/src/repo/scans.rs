@@ -96,6 +96,7 @@ pub async fn get_run<'e, E: PgExecutor<'e>>(exec: E, id: ScanRunId) -> DbResult<
 /// the panel's provider filter look broken.
 #[derive(Debug, Clone)]
 pub struct RunListing {
+    /// The run row as stored.
     pub run: ScanRun,
     /// `None` for an all-provider run, and for a run whose provider has since been deleted.
     pub provider_slug: Option<String>,
@@ -171,6 +172,7 @@ pub enum RunSort {
     /// Newest first.
     #[default]
     Recent,
+    /// Oldest first.
     Oldest,
     /// Most failed tasks first.
     Failures,
@@ -197,16 +199,22 @@ pub struct RunFilter<'a> {
     /// Provider slug, not id: the console filters from the URL, and a slug is what an operator
     /// can type and paste.
     pub provider: Option<&'a str>,
+    /// Restricts to one cadence.
     pub mode: Option<ScanMode>,
+    /// Restricts to one lifecycle state.
     pub state: Option<RunState>,
+    /// Inclusive lower bound on the run's creation time.
     pub since: Option<OffsetDateTime>,
+    /// Ordering, applied over the whole matched window rather than over the page.
     pub sort: RunSort,
 }
 
 /// One page of scan runs, plus how many the filter matches in total.
 #[derive(Debug, Clone)]
 pub struct RunPage {
+    /// The page, in the filter's order.
     pub items: Vec<RunListing>,
+    /// Runs the filter matched, ignoring `limit` and `offset`.
     pub total: i64,
 }
 
@@ -449,13 +457,15 @@ pub async fn finish_run<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// Atomically finalise a run **iff** it is still `running` and every planned task has
-/// settled (`done_tasks + failed_tasks >= total_tasks`, with `total_tasks > 0`). The
-/// terminal state is [`RunState::Failed`] only when every task failed, otherwise
-/// [`RunState::Completed`] (a partially-failed run still completed). Returns the updated
-/// [`ScanRun`] when this call performed the transition, or `None` when the run was not
-/// yet complete or another actor already finalised it — so the progress aggregator emits
-/// exactly one terminal event and cannot loop (design §8, §12).
+/// Settles a run, but only if it is still `running` and every planned task has settled.
+///
+/// "Every planned task" is `done_tasks + failed_tasks >= total_tasks` with `total_tasks > 0`.
+/// The terminal state is [`RunState::Failed`] only when every task failed; a partially failed
+/// run still completed.
+///
+/// Answers `Some` only for the call that performed the transition, and `None` when the run was
+/// not yet complete or another actor got there first. That is what lets the progress aggregator
+/// emit exactly one terminal event per run rather than looping (design §8, §12).
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only — no other variant is reachable. `Ok(None)` carries four
@@ -766,6 +776,7 @@ pub struct TaskOutcome<'a> {
     /// Wall clock from claim to settle. Saturating at `i32::MAX` ms (~24 days) is the caller's
     /// job; the column is `int`.
     pub duration_ms: i32,
+    /// Where inside the task that wall clock went.
     pub timings: &'a StageTimings,
 }
 
@@ -871,14 +882,21 @@ pub async fn fail_task<'e, E: PgExecutor<'e>>(
 /// A failed scan task enriched with its run's provider + mode, for the console error feed.
 #[derive(Debug, Clone, serde::Serialize, FromRow)]
 pub struct FailedTaskView {
+    /// The failed task.
     pub id: Uuid,
+    /// The run it belonged to.
     pub run_id: Uuid,
     /// Provider slug of the owning run (`None` if the provider was since deleted).
     pub provider_slug: Option<String>,
+    /// Cadence of the owning run, as a text-cast token.
     pub mode: String,
+    /// What the task was asked to do.
     pub kind: String,
+    /// Why it failed, `None` for a task that recorded no message.
     pub error: Option<String>,
+    /// Claims taken before it gave up.
     pub attempts: i16,
+    /// When it gave up, which is what the feed windows on.
     #[serde(with = "time::serde::rfc3339::option")]
     pub finished_at: Option<OffsetDateTime>,
     /// When an operator cleared this failure from the triage feed, if they have.
@@ -933,6 +951,7 @@ pub async fn failed_tasks_filtered<'e, E: PgExecutor<'e>>(
 pub struct FailureGroup {
     /// The error text these failures share. `None` groups the failures that recorded none.
     pub error: Option<String>,
+    /// Failures sharing this error, cleared ones counted only when the caller asked for them.
     pub count: i64,
     /// How many of `count` an operator has already cleared. Non-zero only when the caller asked
     /// for cleared failures back.
@@ -942,6 +961,7 @@ pub struct FailureGroup {
     /// Task kinds this error struck, sorted — a `series` failure and a `catalog_page` failure
     /// with the same message are different problems.
     pub kinds: Vec<String>,
+    /// The most recent of them.
     pub latest_at: Option<OffsetDateTime>,
 }
 
@@ -1024,10 +1044,13 @@ impl<'a> ErrorSelector<'a> {
 /// whole feed.
 #[derive(Debug, Clone, Default)]
 pub struct FailureSelector<'a> {
+    /// One provider's failures, by slug.
     pub provider: Option<&'a str>,
+    /// Inclusive lower bound on the failure's `finished_at`.
     pub since: Option<OffsetDateTime>,
     /// One run's failures.
     pub run_id: Option<ScanRunId>,
+    /// Which error text to clear, and whether a missing one counts.
     pub error: ErrorSelector<'a>,
 }
 
@@ -1209,14 +1232,24 @@ pub async fn cancel_active_runs<'e, E: PgExecutor<'e>>(
 /// deployment's.
 #[derive(Debug, Clone)]
 pub struct ScanSummary {
+    /// Runs the filter matched.
     pub runs_total: i64,
+    /// Of those, still waiting to start.
     pub runs_queued: i64,
+    /// Of those, in flight.
     pub runs_running: i64,
+    /// Of those, settled with at least one task done.
     pub runs_completed: i64,
+    /// Of those, settled with every task failed, which is what marks a run failed rather
+    /// than completed.
     pub runs_failed: i64,
+    /// Of those, stopped by an operator.
     pub runs_cancelled: i64,
+    /// Tasks those runs dispatched.
     pub tasks_total: i64,
+    /// Of those, settled successfully.
     pub tasks_done: i64,
+    /// Of those, settled as failures.
     pub tasks_failed: i64,
     /// Failures still in the triage feed — what an operator has left to look at, as opposed to
     /// `tasks_failed`, which counts everything that ever failed in the window.
@@ -1224,7 +1257,9 @@ pub struct ScanSummary {
     /// Summed run wall-clock in seconds. A run still in flight counts up to `now()`, which is
     /// what makes throughput derived from this move while a scan is running.
     pub busy_seconds: f64,
+    /// Creation time of the oldest matching run, `None` when nothing matched.
     pub first_run_at: Option<OffsetDateTime>,
+    /// Creation time of the newest matching run, `None` when nothing matched.
     pub last_run_at: Option<OffsetDateTime>,
 }
 
@@ -1286,16 +1321,25 @@ pub async fn scan_summary<'e, E: PgExecutor<'e>>(
 /// One provider's scan health over the window.
 #[derive(Debug, Clone)]
 pub struct ProviderScanHealth {
+    /// The provider, as the console filter spells it.
     pub slug: String,
+    /// Its display name.
     pub name: String,
+    /// Runs it had in the window.
     pub runs: i64,
+    /// Of those, still queued or running.
     pub runs_active: i64,
+    /// Of those, failed.
     pub runs_failed: i64,
+    /// Tasks of those runs that settled successfully.
     pub tasks_done: i64,
+    /// Tasks of those runs that failed.
     pub tasks_failed: i64,
     /// Failures still in the triage feed for this provider.
     pub failures_open: i64,
+    /// Its most recent run in the window, `None` when it had none.
     pub last_run_at: Option<OffsetDateTime>,
+    /// Its most recent failure in the window, `None` when it had none.
     pub last_failure_at: Option<OffsetDateTime>,
 }
 
@@ -1350,8 +1394,11 @@ pub async fn provider_scan_health<'e, E: PgExecutor<'e>>(
     Ok(rows)
 }
 
+/// One in-flight run's task breakdown, as the live console panel reads it.
 pub struct RunActivity {
+    /// The run.
     pub run_id: Uuid,
+    /// Tasks nobody has claimed yet.
     pub queued_tasks: i64,
     /// Tasks a worker is holding right now.
     pub running_tasks: i64,
@@ -1370,7 +1417,9 @@ pub struct RunActivity {
     /// When that task entered the stage above, which is what makes "stuck in `series_chapters`
     /// for nine minutes" readable at all.
     pub stage_at: Option<OffsetDateTime>,
+    /// Progress inside that stage, where the stage counts anything.
     pub stage_done: Option<i32>,
+    /// What that progress counts up to.
     pub stage_total: Option<i32>,
     /// What that stage is working against — a series path, a catalogue page.
     pub stage_detail: Option<String>,
@@ -1422,15 +1471,23 @@ pub async fn active_run_activity<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec
 /// One settled task, as the live tail reports it.
 #[derive(Debug, Clone)]
 pub struct TaskEvent {
+    /// The task.
     pub id: Uuid,
+    /// The run it belonged to.
     pub run_id: Uuid,
+    /// Provider of the owning run, `None` once that provider is deleted.
     pub provider_slug: Option<String>,
+    /// What the task was asked to do.
     pub kind: String,
+    /// How it settled: `done`, `failed` or `skipped`.
     pub state: TaskState,
     /// What the task was pointed at — the page or series path, as the planner wrote it.
     pub target: Json,
+    /// Why it failed, `None` unless it did.
     pub error: Option<String>,
+    /// Claims taken on it before it settled.
     pub attempts: i16,
+    /// When it settled, which is what the tail is ordered by.
     pub finished_at: Option<OffsetDateTime>,
 }
 
@@ -1472,23 +1529,37 @@ pub async fn recent_task_activity<'e, E: PgExecutor<'e>>(
 /// One task of a run, with its stage and the breakdown it recorded when it settled.
 #[derive(Debug, Clone)]
 pub struct TaskBreakdown {
+    /// The task.
     pub id: Uuid,
+    /// What the task was asked to do.
     pub kind: String,
+    /// What it was pointed at, as the planner wrote it.
     pub target: Json,
+    /// Where it is in its lifecycle.
     pub state: TaskState,
+    /// Claims taken on it, so a retried task reads higher than one.
     pub attempts: i16,
+    /// The worker holding it, `None` before the first claim.
     pub worker_id: Option<String>,
+    /// Why it failed, `None` unless it did.
     pub error: Option<String>,
     /// The stage the task is in, or — for a settled task — the one it ended in. A failure's stage
     /// is the single most useful field here: it says whether the provider stopped answering or
     /// our own ingest rejected the page.
     pub stage: Option<String>,
+    /// When it entered that stage.
     pub stage_at: Option<OffsetDateTime>,
+    /// Progress inside the stage, where the stage counts anything.
     pub stage_done: Option<i32>,
+    /// What that progress counts up to.
     pub stage_total: Option<i32>,
+    /// What the stage is working against: a series path, a catalogue page.
     pub stage_detail: Option<String>,
+    /// When the task was planned, `None` for rows written before the column existed.
     pub created_at: Option<OffsetDateTime>,
+    /// When a worker last took it, `None` while queued.
     pub claimed_at: Option<OffsetDateTime>,
+    /// When it settled, `None` while it has not.
     pub finished_at: Option<OffsetDateTime>,
     /// Milliseconds between creation and claim — time nobody was working on it.
     pub wait_ms: Option<i32>,
@@ -1567,20 +1638,27 @@ pub struct RunTelemetry {
     pub busy_ms: i64,
     /// Summed queue wait: time tasks spent created but unclaimed.
     pub wait_ms: i64,
+    /// Outbound requests the run made.
     pub requests: i64,
+    /// Milliseconds spent inside those requests.
     pub fetch_ms: i64,
     /// Time spent waiting for permission to send a request. Read against `busy_ms`, this is the
     /// figure that separates "the scan is slow" from "the provider's crawl budget is small".
     pub pace_wait_ms: i64,
+    /// Milliseconds spent waiting on a challenge solver.
     pub solver_ms: i64,
+    /// Solve attempts, whether or not they succeeded.
     pub solver_calls: i64,
+    /// Responses the provider answered 429 or 503, each of which widened its spacing.
     pub throttled: i64,
 }
 
 /// Summed milliseconds for one stage across a run.
 #[derive(Debug, Clone)]
 pub struct StageTotal {
+    /// A [`tankovault_domain::ScanStage`] token.
     pub stage: String,
+    /// Milliseconds in this stage, summed across the run.
     pub millis: i64,
     /// Tasks that reported this stage at all.
     pub tasks: i64,
@@ -1652,8 +1730,11 @@ pub async fn run_telemetry<'e, E: PgExecutor<'e> + Copy>(
 /// One provider lane's open work, as the database sees it.
 #[derive(Debug, Clone)]
 pub struct OpenLane {
+    /// The provider whose lane this is.
     pub provider_id: ProviderId,
+    /// Its slug, which is the last token of the lane's subject.
     pub provider_slug: String,
+    /// The cadence. A provider has one lane per cadence, not one in total.
     pub mode: ScanMode,
     /// Tasks still open (`queued`/`claimed`/`running`) in runs that have not settled.
     pub open_tasks: i64,
@@ -1667,9 +1748,13 @@ pub struct OpenLane {
 /// not already carry.
 #[derive(Debug, Clone)]
 pub struct StrandedTask {
+    /// The task to republish.
     pub id: ScanTaskId,
+    /// The run it belongs to.
     pub run_id: ScanRunId,
+    /// Which adapter entry point the message should name.
     pub kind: String,
+    /// The target to carry on it, unchanged from the row.
     pub target: Json,
 }
 

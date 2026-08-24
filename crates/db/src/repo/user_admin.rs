@@ -24,9 +24,13 @@ use uuid::Uuid;
 /// for.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct DirectoryRow {
+    /// The account.
     pub id: Uuid,
+    /// Its sign-in address.
     pub email: String,
+    /// Its display handle.
     pub username: String,
+    /// Whether it may authenticate at all.
     pub status: AccountStatus,
     /// Whether the address has been confirmed. An unverified account that has existed for
     /// months is usually an abandoned registration.
@@ -44,8 +48,10 @@ pub struct DirectoryRow {
     pub is_super_user: bool,
     /// How many series the user tracks — the cheapest signal of a real, in-use account.
     pub tracked_count: i64,
+    /// Its most recent sign-in, `None` for an account that has never signed in.
     #[serde(with = "time::serde::rfc3339::option")]
     pub last_login_at: Option<OffsetDateTime>,
+    /// When it was registered.
     #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,
 }
@@ -54,6 +60,7 @@ pub struct DirectoryRow {
 /// "showing 1–25 of 312" without a second request.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct DirectoryPage {
+    /// The page, in the directory's order.
     pub users: Vec<DirectoryRow>,
     /// Total matching the current search, ignoring `limit`/`offset`.
     pub total: i64,
@@ -161,21 +168,31 @@ pub async fn directory<'e, E: PgExecutor<'e>>(
 /// an edit).
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct UserDetail {
+    /// The account.
     pub id: Uuid,
+    /// Its sign-in address.
     pub email: String,
+    /// Its display handle.
     pub username: String,
+    /// Whether it may authenticate at all.
     pub status: AccountStatus,
+    /// Whether the address has been confirmed.
     pub email_verified: bool,
+    /// What an operator gave when suspending, `None` while the account is active.
     pub suspension_reason: Option<String>,
+    /// When it was suspended, `None` while it is active.
     #[serde(with = "time::serde::rfc3339::option")]
     pub suspended_at: Option<OffsetDateTime>,
+    /// Its most recent sign-in, `None` for an account that has never signed in.
     #[serde(with = "time::serde::rfc3339::option")]
     pub last_login_at: Option<OffsetDateTime>,
+    /// When it was registered.
     #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,
     /// Live login sessions. Tells an operator whether a suspension will actually take effect
     /// without also revoking sessions.
     pub active_sessions: i64,
+    /// Series the user tracks.
     pub tracked_count: i64,
     /// Linked external trackers, so an operator can see the account has third-party
     /// credentials at rest before deciding to erase it.

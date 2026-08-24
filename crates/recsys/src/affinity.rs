@@ -69,6 +69,8 @@ impl Default for AffinityParams {
 /// What a reader has done with a series.
 #[derive(Debug, Clone, Copy)]
 pub struct Interaction {
+    /// The reader's own label. It picks the base weight, which reading depth then scales for
+    /// every status but `Completed` and `Planned`.
     pub status: WatchStatus,
     /// Whole chapters below the reader's progress marker.
     pub chapters_read: i64,

@@ -13,10 +13,15 @@ use uuid::Uuid;
 /// ciphertext (see module docs); callers decrypt with the sync service's data key.
 #[derive(Debug, Clone)]
 pub struct ExternalAccount {
+    /// The local account the link belongs to.
     pub user_id: UserId,
+    /// Which external tracker, as a slug.
     pub provider: String,
+    /// AES-GCM ciphertext. Decrypt with the sync service's data key; never logged.
     pub access_token: Vec<u8>,
+    /// AES-GCM ciphertext, `None` for a provider that issues no refresh token.
     pub refresh_token: Option<Vec<u8>>,
+    /// When the access token stops working, `None` when the provider states no expiry.
     pub expires_at: Option<OffsetDateTime>,
     /// Display name for the linked account, kept current so the UI can show "Connected as X".
     pub external_username: Option<String>,
@@ -139,9 +144,11 @@ pub async fn update_account_settings<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// Seed the per-account conflict policy from the service default on first link (design v2 §B.1);
-/// no-op once the user has changed it. "Not yet chosen" is inferred from the column still
-/// reading `'newest_wins'`, so a user who deliberately picks that value is re-seeded on re-link.
+/// Seeds the per-account conflict policy from the service default, on first link only.
+///
+/// Does nothing once the user has chosen one. "Not yet chosen" is inferred from the column still
+/// reading `newest_wins`, so a user who deliberately picks that value is seeded again if they
+/// re-link (design v2 §B.1).
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; always `Ok(())` — seeded, declined, or no such account are the

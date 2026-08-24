@@ -6,12 +6,17 @@ use tankovault_domain::matching::{MatchSignals, MergeVerdict};
 /// Confidence thresholds for the decision bands, plus the guards an automatic merge must clear.
 #[derive(Debug, Clone, Copy)]
 pub struct Thresholds {
+    /// At or above this score [`decide`](crate::decide) attaches a scanned source to the
+    /// existing series with no review, unless the titles carry conflicting numbers.
     pub high: f32,
+    /// The review floor. Below it a pair is not queued at all: `decide` creates a new series
+    /// and [`adjudicate`](crate::adjudicate) reports [`MergeVerdict::Distinct`].
     pub low: f32,
     /// At or above this score — **and** only with a structural identity signal, and only with
     /// every enabled [`MergeGuards`] silent — two series that already exist separately are
     /// merged without asking. See [`adjudicate`](crate::adjudicate).
     pub auto_merge: f32,
+    /// Which vetoes are switched on for this deployment.
     pub guards: MergeGuards,
 }
 
@@ -101,7 +106,9 @@ impl Default for Thresholds {
 /// A scored pair, with the rules that produced the score.
 #[derive(Debug, Clone, Copy)]
 pub struct Assessment {
+    /// The final similarity, clamped to 0.0..=1.0 after every term is applied.
     pub score: f32,
+    /// Which rules fired, recorded whether or not they moved the score.
     pub signals: MatchSignals,
 }
 
@@ -128,6 +135,7 @@ pub struct ScoreTerm {
 /// whether the answer was reached for the right reason. See [`explain`](crate::explain).
 #[derive(Debug, Clone)]
 pub struct Explanation {
+    /// The verdict-bearing half: the same score and signals a decision is taken from.
     pub assessment: Assessment,
     /// The base similarity before any term: the strongest of the trigram score the database
     /// computed, the token-set ratio and the compact edit ratio.
@@ -150,6 +158,7 @@ pub struct Explanation {
 /// it from a score and a bag of signal names.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Adjudication {
+    /// What to do with the pair.
     pub verdict: MergeVerdict,
     /// Stable slug for the rule that decided it.
     pub reason: &'static str,

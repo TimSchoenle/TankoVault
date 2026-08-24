@@ -76,8 +76,8 @@ impl Health {
 
     /// Probe every dependency concurrently and aggregate the results.
     ///
-    /// Checks run in parallel and each is bounded by [`CHECK_TIMEOUT`], so total probe
-    /// latency is that timeout rather than its sum over dependencies.
+    /// Checks run in parallel and each is bounded by `CHECK_TIMEOUT`, so total probe latency
+    /// is that timeout rather than its sum over dependencies.
     ///
     /// Also publishes the readiness gauges, so a probe is the only thing that has to run for
     /// per-dependency health to be a metric.

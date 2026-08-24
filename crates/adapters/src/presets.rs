@@ -4,9 +4,10 @@
 use serde_json::{Value, json};
 use tankovault_domain::{AdapterKind, Politeness};
 
-/// A ready-to-seed provider definition: identity, domain, adapter kind, the selector
-/// overrides merged onto the adapter defaults (empty for a fully custom adapter), and the
-/// crawl budget the site's size warrants.
+/// A ready-to-seed provider definition.
+///
+/// Identity, domain and adapter kind, the selector overrides merged onto the adapter defaults
+/// (empty for a fully custom adapter), and the crawl budget the site's size warrants.
 pub struct BuiltinPreset {
     /// Stable slug (rate-limit + custom-adapter dispatch key).
     pub slug: &'static str,

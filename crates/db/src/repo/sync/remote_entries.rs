@@ -10,12 +10,20 @@ use uuid::Uuid;
 /// One remote-entry snapshot to persist, as produced by the resolve pass of a reconciliation.
 #[derive(Debug, Clone)]
 pub struct FetchedRemoteEntry {
+    /// The tracker's own id for the entry.
     pub external_id: String,
+    /// Title as the tracker spells it, which is what the matcher scores on.
     pub title: String,
+    /// Tracking status as the tracker spells it.
     pub status: String,
+    /// Chapters read, on the tracker's scale.
     pub progress: f64,
+    /// Medium as the tracker spells it.
     pub content_type: String,
+    /// Year the tracker gives, `None` when it gives none.
     pub start_year: Option<i32>,
+    /// When the tracker says the entry last changed, which is what a three-way
+    /// merge compares against the stored snapshot.
     pub updated_at: OffsetDateTime,
     /// The canonical series this entry resolved to, or `None` for the unmatched queue.
     pub series_id: Option<SeriesId>,

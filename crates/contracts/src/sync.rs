@@ -158,6 +158,8 @@ pub struct ProviderInfo {
 /// The provider's OAuth consent URL, for `GET /v1/me/sync/{provider}/authorize`.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct AuthorizeUrl {
+    /// The provider's own consent page, already carrying this deployment's client id
+    /// and redirect. Send the user to it; do not rebuild it.
     pub url: String,
 }
 
@@ -171,14 +173,21 @@ pub struct AuthorizeUrl {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[schema(as = ConflictRow)]
 pub struct ConflictView {
+    /// The conflict, which is what a resolve call names.
     pub id: uuid::Uuid,
+    /// The local series both sides disagree about.
     pub series_id: uuid::Uuid,
+    /// Its canonical title, joined in so the list renders from one fetch.
     pub series_title: String,
+    /// Which external tracker, as a slug.
     pub provider: String,
     /// Which tracked field disagrees, e.g. `progress` or `status`.
     pub field: String,
+    /// What this deployment holds for `field`, rendered as text.
     pub local_value: String,
+    /// What the tracker holds for it, rendered the same way.
     pub remote_value: String,
+    /// When a sync first found the two disagreeing.
     #[serde(with = "time::serde::rfc3339")]
     #[schema(value_type = String)]
     pub detected_at: time::OffsetDateTime,
@@ -189,15 +198,20 @@ pub struct ConflictView {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[schema(as = HistoryRow)]
 pub struct HistoryView {
+    /// The history row.
     pub id: uuid::Uuid,
+    /// The local series the action touched.
     pub series_id: uuid::Uuid,
+    /// Its canonical title, joined in so the list renders from one fetch.
     pub series_title: String,
+    /// Which external tracker, as a slug.
     pub provider: String,
     /// What the engine did, e.g. `pull`, `push` or `resolve`.
     pub action: String,
     /// Free-form, action-specific detail (the changed field and its before/after values).
     #[schema(value_type = Object)]
     pub detail: serde_json::Value,
+    /// When the action was taken, which is what the list is ordered by.
     #[serde(with = "time::serde::rfc3339")]
     #[schema(value_type = String)]
     pub created_at: time::OffsetDateTime,
@@ -214,6 +228,7 @@ pub struct HistoryView {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema)]
 #[schema(as = SyncAck)]
 pub struct Ack {
+    /// Always `true`. A failure arrives as a status code, never as `false` here.
     pub ok: bool,
 }
 
@@ -227,6 +242,7 @@ impl Default for Ack {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema)]
 #[schema(as = SyncRemoved)]
 pub struct Removed {
+    /// `false` when there was nothing to remove, which is not an error.
     pub removed: bool,
 }
 
@@ -234,6 +250,7 @@ pub struct Removed {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema)]
 #[schema(as = SyncResolved)]
 pub struct Resolved {
+    /// `false` when the conflict was already settled, which is not an error.
     pub resolved: bool,
 }
 
@@ -241,6 +258,7 @@ pub struct Resolved {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema)]
 #[schema(as = SyncFlagged)]
 pub struct Flagged {
+    /// `false` when the decision already carried a flag.
     pub flagged: bool,
 }
 
@@ -286,8 +304,11 @@ pub struct EnrichReport {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[schema(as = SyncProviderPushOutcome)]
 pub struct ProviderPushOutcome {
+    /// Which external tracker, as a slug.
     pub provider: String,
+    /// Whether this provider accepted the push. One failure does not fail the others.
     pub ok: bool,
+    /// Why it refused, `null` when it did not.
     pub error: Option<String>,
 }
 
@@ -317,7 +338,9 @@ pub enum RestoredSide {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[schema(as = SyncRevertReport)]
 pub struct RevertReport {
+    /// The journal row that was undone.
     pub decision_id: uuid::Uuid,
+    /// Which side the revert wrote to.
     pub restored: RestoredSide,
     /// The value the restored side now holds, for the console to show without re-reading.
     pub value: Option<String>,

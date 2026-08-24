@@ -56,6 +56,11 @@ use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 use utoipa_scalar::{Scalar, Servable};
 
+/// The whole specification, every documented route merged into [`openapi::ApiDoc`].
+///
+/// The router half is discarded, so this is safe to call outside a running service; it is what
+/// `xtask openapi` serialises to `openapi.json`.
+#[must_use]
 pub fn full_openapi() -> utoipa::openapi::OpenApi {
     documented_router().split_for_parts().1
 }

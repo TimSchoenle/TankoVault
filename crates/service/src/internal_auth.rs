@@ -98,7 +98,9 @@ impl std::fmt::Display for Caller {
 /// path parameter cannot be crafted to look like a different route.
 #[derive(Debug, Clone)]
 pub struct InternalRoute {
+    /// Matched exactly, so `GET` and `POST` on one path are two entries.
     pub method: Method,
+    /// The axum route pattern, braces and all.
     pub path: &'static str,
     /// Caller names permitted here. Empty means nobody, which is a usable way to retire a route
     /// without deleting it.

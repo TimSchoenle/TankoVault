@@ -22,8 +22,12 @@ pub async fn migrate(pool: &PgPool) -> anyhow::Result<()> {
 
 /// Who the first administrator is, and what the password is hashed with.
 pub struct AdminSeed<'a> {
+    /// The account's address. A unique violation on it, or on `username`, is what makes
+    /// [`seed_admin`] idempotent.
     pub email: &'a str,
+    /// The account's name, subject to the same uniqueness as `email`.
     pub username: &'a str,
+    /// The plaintext password, hashed here and never stored.
     pub password: &'a SecretString,
     /// **Must be the pepper the api runs with.** A hash is peppered at rest, so seeding with
     /// one value and serving with another strands the account: the password is correct and the
@@ -35,6 +39,7 @@ pub struct AdminSeed<'a> {
 pub enum AdminOutcome {
     /// The account was created and granted every permission.
     Created {
+        /// The name the account was created under.
         username: String,
         /// Whether it also became the deployment's super user — false when the database
         /// already held other accounts, or a super user.
@@ -47,6 +52,7 @@ pub enum AdminOutcome {
 /// Everything a run of [`seed_admin`] has to report: what happened to the configured account,
 /// and whether the deployment gained an owner along the way.
 pub struct AdminReport {
+    /// What became of the configured account.
     pub outcome: AdminOutcome,
     /// The account this run promoted to super user because the deployment had none — by
     /// username, since that is what an install log can be read against.

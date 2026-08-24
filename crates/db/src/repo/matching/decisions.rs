@@ -18,24 +18,37 @@ pub struct NewMergeDecision<'a> {
     pub sweep_id: Option<Uuid>,
     /// `sweep_new` | `sweep_requeue` | `sweep_recheck` | `operator`.
     pub trigger: &'a str,
+    /// The operator behind an `operator` trigger, `None` for a sweep.
     pub actor: Option<UserId>,
     /// The pair in any order — [`record_merge_decisions`] puts it in canonical order itself.
     pub pair: (SeriesId, SeriesId),
+    /// Both canonical titles, in the same order as `pair`, so the row still reads
+    /// after one of the two series stops existing.
     pub titles: (&'a str, &'a str),
     /// `auto` | `review` | `distinct`, from `tankovault_matcher::Adjudication`.
     pub verdict: &'a str,
+    /// The stable slug of the rule that produced the verdict.
     pub reason: &'a str,
+    /// Guards that fired. Non-empty on a `review` means the pair cleared the score
+    /// and identity bar and was held back anyway.
     pub blocked_by: &'a [&'a str],
     /// What was actually done, which is not always the verdict.
     pub outcome: &'a str,
+    /// The series that survived, `None` for anything but a merge.
     pub survivor_id: Option<SeriesId>,
+    /// The series that stopped existing, `None` for anything but a merge.
     pub absorbed_id: Option<SeriesId>,
+    /// The final similarity in `[0,1]`, after every term in `terms`.
     pub score: f32,
+    /// The similarity the score started from, before any bonus or penalty.
     pub base_score: f32,
+    /// Stable slugs for the scoring rules that fired.
     pub signals: &'a [&'a str],
     /// `[{rule, delta, detail}]`, from `tankovault_matcher::Explanation::terms`.
     pub terms: &'a Json,
+    /// Both sides' facts, which titles matched, and how the survivor was chosen.
     pub evidence: &'a Json,
+    /// The thresholds and guards in force when the decision was taken.
     pub policy: &'a Json,
     /// The undo journal, for a decision that merged something. `None` means the decision
     /// cannot be reverted — which is correct for every outcome but `merged`.
@@ -151,39 +164,66 @@ fn decision_row(id: Uuid, decision: &NewMergeDecision<'_>) -> DbResult<Json> {
 /// carries the one fact a list *does* need from it — how much a revert would put back.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct MergeDecisionRow {
+    /// The journal row, which is what a revert or a flag names.
     pub id: Uuid,
+    /// When the verdict was taken.
     #[serde(with = "time::serde::rfc3339")]
     pub decided_at: OffsetDateTime,
+    /// Groups every decision of one sweep run, `None` for a console merge.
     pub sweep_id: Option<Uuid>,
+    /// What produced the decision: a sweep pass, or an operator.
     pub trigger: String,
+    /// The operator behind an `operator` trigger, `None` for a sweep.
     pub actor: Option<Uuid>,
+    /// One side of the pair, in the canonical order the insert imposed.
     pub left_id: SeriesId,
+    /// The other side.
     pub right_id: SeriesId,
+    /// Left title as it read then, kept even after that series is absorbed.
     pub left_title: String,
+    /// Right title as it read then.
     pub right_title: String,
+    /// What the scorer concluded: `auto`, `review` or `distinct`.
     pub verdict: String,
+    /// The stable slug of the rule that produced that verdict.
     pub reason: String,
+    /// Guards that fired.
     pub blocked_by: Vec<String>,
+    /// What was actually done, which is not always the verdict.
     pub outcome: String,
+    /// The series that survived, `None` for anything but a merge.
     pub survivor_id: Option<SeriesId>,
+    /// The series that stopped existing, `None` for anything but a merge.
     pub absorbed_id: Option<SeriesId>,
+    /// The final similarity in `[0,1]`.
     pub score: f32,
+    /// The similarity it started from, before any bonus or penalty.
     pub base_score: f32,
+    /// Stable slugs for the scoring rules that fired.
     pub signals: Vec<String>,
+    /// Every term the scorer applied, in order.
     pub terms: Json,
+    /// Both sides' facts, which titles matched, and how the survivor was chosen.
     pub evidence: Json,
+    /// The thresholds and guards in force when the decision was taken.
     pub policy: Json,
     /// Whether this decision still has an unspent undo journal.
     pub revertible: bool,
     /// How many rows a revert would restore or move back.
     pub undo_rows: i64,
+    /// When the merge was undone, `None` while it stands.
     #[serde(with = "time::serde::rfc3339::option")]
     pub reverted_at: Option<OffsetDateTime>,
+    /// Who undid it.
     pub reverted_by: Option<Uuid>,
+    /// What they gave as the reason.
     pub revert_reason: Option<String>,
+    /// When an operator marked it wrong, `None` if nobody has.
     #[serde(with = "time::serde::rfc3339::option")]
     pub flagged_at: Option<OffsetDateTime>,
+    /// Who marked it.
     pub flagged_by: Option<Uuid>,
+    /// What they gave as the reason.
     pub flag_reason: Option<String>,
 }
 

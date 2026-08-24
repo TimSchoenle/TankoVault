@@ -1,6 +1,7 @@
-//! The migration-safe link resolver: every persisted location is a relative path, resolved to
-//! an absolute URL at read time from `provider.base_url`, so a domain migration is a one-row
-//! `base_url` update with zero link rewrites.
+//! Resolves a stored relative path against `provider.base_url` at read time.
+//!
+//! Every persisted location is relative, which is what makes a provider changing domain a
+//! one-row `base_url` update instead of a rewrite of every link under it.
 
 use thiserror::Error;
 use url::Url;
@@ -16,7 +17,12 @@ pub enum ResolveError {
     UnsupportedScheme(String),
     /// The concatenated result was not a valid URL.
     #[error("could not resolve path {path:?} against base {base:?}")]
-    Unresolvable { base: String, path: String },
+    Unresolvable {
+        /// The provider base URL the join was attempted against.
+        base: String,
+        /// The stored path that would not join onto it.
+        path: String,
+    },
 }
 
 /// Resolve a stored relative `path` against a provider `base_url` into an absolute URL.

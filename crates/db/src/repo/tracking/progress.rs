@@ -42,9 +42,10 @@ fn is_whole(number: f64) -> bool {
 }
 
 /// Set a user's whole-chapter frontier for a series outright, clearing any now-stale part
-/// frontier (design v2 §A.3 / §B.5). Used by the renamed `PUT /v1/me/progress/:series_id`
-/// endpoint (which keeps its "set progress to N" semantics) and by external-sync pulls that
-/// adopt a remote integer progress.
+/// frontier (design v2 §A.3 / §B.5).
+///
+/// Serves `PUT /v1/me/progress/{series_id}`, which keeps its "set progress to N" meaning, and
+/// external-sync pulls that adopt a remote integer progress.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only — no other variant is reachable. Progress on an untracked
@@ -226,8 +227,10 @@ pub async fn progress_mark_read(
 }
 
 /// Apply the §A.3 "mark chapter unread" rule for a single chapter `number`, retreating the
-/// relevant frontier to just before it. Retreating the whole frontier also clears any part
-/// frontier (everything after `number` is un-read).
+/// relevant frontier to just before it.
+///
+/// Retreating the whole frontier also clears any part frontier: everything after `number` is
+/// unread.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only — no other variant is reachable, from the read, either
@@ -482,9 +485,10 @@ pub async fn set_sync_override<'e, E: PgExecutor<'e>>(
 }
 
 /// The single choke point every sync path calls before touching a series (design v2 §A.5).
-/// Precedence: a per-provider override wins outright; otherwise the blanket `sync_excluded`
-/// flag; otherwise included. A series not on the watchlist at all is treated as included
-/// (there is nothing to exclude yet).
+///
+/// Precedence: a per-provider override wins outright, then the blanket `sync_excluded` flag,
+/// then included. A series not on the watchlist at all counts as included, since there is
+/// nothing to exclude yet.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only — no other variant is reachable; the `COALESCE` chain always

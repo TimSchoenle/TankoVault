@@ -17,11 +17,17 @@ use tankovault_domain::{
 /// an `Unknown` enum variant or a blank string — see `MetadataValue`.
 #[derive(Debug, Default, Clone)]
 pub struct MetadataCandidate<'a> {
+    /// The title this source offers.
     pub canonical_title: Option<&'a str>,
+    /// The synopsis this source offers. A blank string counts as no opinion.
     pub description: Option<&'a str>,
+    /// The cover link this source offers.
     pub cover_url: Option<&'a str>,
+    /// The medium this source states. `Unknown` counts as no opinion.
     pub content_type: Option<ContentType>,
+    /// The publication status this source states. `Unknown` counts as no opinion.
     pub status: Option<SeriesStatus>,
+    /// The year this source states.
     pub release_year: Option<i32>,
 }
 

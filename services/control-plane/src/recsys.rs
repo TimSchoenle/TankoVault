@@ -33,7 +33,10 @@ pub struct BuildBudget {
     pub incremental_max: i64,
     /// Features that may shape the dense space — the covariance matrix's side.
     pub dense_input_cap: i64,
+    /// The HNSW index's `m`, clamped to pgvector's 2..=100 at index creation.
     pub hnsw_m: i32,
+    /// The HNSW index's `ef_construction`, clamped to 4..=1000. Baked into the built index, so
+    /// a change takes effect at the next full build and not before.
     pub hnsw_ef_construction: i32,
     /// Directions the projection solves for. Capped at the width `series_embedding` is declared
     /// with; a narrower basis is zero-padded into the column, which costs nothing in a cosine.
@@ -47,7 +50,10 @@ pub struct BuildBudget {
 /// generation that is internally inconsistent and impossible to reason about afterwards.
 #[derive(Debug, Clone, Copy)]
 pub struct BuildTuning {
+    /// The work and shape limits, two of which came from configuration rather than the
+    /// registry.
     pub budget: BuildBudget,
+    /// The appeal prior's blend for this run.
     pub prior: PriorWeights,
     /// Descriptive features a series needs before the model will recommend it.
     pub min_features: i64,
@@ -90,8 +96,13 @@ impl BuildTuning {
 /// How the appeal prior blends its signals.
 #[derive(Debug, Clone, Copy)]
 pub struct PriorWeights {
+    /// Weight on how many readers watch the series, damped by
+    /// [`Self::watcher_confidence_k`].
     pub watchers: f32,
+    /// Weight on the rating an external tracker publishes. Zero for a series nothing enriched.
     pub external_score: f32,
+    /// Weight on how many providers carry the series, which stands in for how widely it is
+    /// distributed.
     pub source_count: f32,
     /// Weight on recent release activity. Reserved: the builder has no velocity input yet and
     /// writes zero, so raising this changes nothing until that signal lands.
@@ -103,9 +114,15 @@ pub struct PriorWeights {
 /// What a build did.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct BuildReport {
+    /// The generation every row this run wrote carries.
     pub generation: i32,
+    /// Series embedded in this run. For an incremental pass that is the changed set, not the
+    /// catalogue.
     pub series_built: i64,
+    /// Distinct features the run's vocabulary held.
     pub vocabulary: i64,
+    /// Directions the projection actually solved for, which is at most
+    /// [`BuildBudget::embedding_dims`] and lower when the vocabulary could not support it.
     pub dense_dims: i64,
 }
 

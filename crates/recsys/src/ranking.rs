@@ -80,7 +80,9 @@ impl PathWeights {
 /// One candidate as retrieval produced it.
 #[derive(Debug, Clone)]
 pub struct Candidate<Id> {
+    /// The series retrieval turned up.
     pub id: Id,
+    /// Which retrieval path produced it. The same series may arrive by several.
     pub path: Path,
     /// The path's own score, on the path's own scale.
     pub score: f32,
@@ -91,8 +93,12 @@ pub struct Candidate<Id> {
 /// A candidate after blending.
 #[derive(Debug, Clone)]
 pub struct Scored<Id> {
+    /// The series being recommended.
     pub id: Id,
+    /// The sum of this series' rank-normalised contributions, so it is comparable across
+    /// candidates where a [`Candidate::score`] is not.
     pub score: f32,
+    /// The series that produced it, for the "because you read …" line.
     pub because: Option<Id>,
     /// The strongest path that produced it, for explanation and debugging.
     pub path: Path,

@@ -30,9 +30,11 @@ pub use async_nats::jetstream::Message as BrokerMessage;
 /// [`BrokerMessage`].
 pub use async_nats::jetstream::consumer::PullConsumer as BrokerConsumer;
 
-/// Redelivery deadline for a claimed scan task: bounds how long a worker may go **silent**,
-/// not how long a task may take (see [`with_ack_heartbeat`]). Kept modest so a crashed worker
-/// is redelivered quickly rather than after an hour of dead air.
+/// Redelivery deadline for a claimed scan task.
+///
+/// It bounds how long a worker may go **silent**, not how long a task may take: see
+/// [`with_ack_heartbeat`]. Kept modest so a crashed worker's task is redelivered quickly
+/// rather than after an hour of dead air.
 pub const TASK_ACK_WAIT: Duration = Duration::from_secs(300);
 
 /// How often an in-flight task reports progress, as a fraction of [`TASK_ACK_WAIT`]; derived
@@ -169,12 +171,20 @@ pub struct Bus {
 /// Bus errors.
 #[derive(Debug, Error)]
 pub enum BusError {
+    /// The connection itself never came up: an unreachable address, a rejected credential, or
+    /// a TLS handshake the server refused.
     #[error("nats connect error: {0}")]
     Connect(String),
+    /// The connection is live and `JetStream` refused the operation, most often because the
+    /// stream this subject belongs to has not been created.
     #[error("jetstream error: {0}")]
     Jetstream(String),
+    /// A core-NATS publish or subscribe failed on a live connection. Ephemeral traffic only,
+    /// so nothing durable was lost.
     #[error("nats error: {0}")]
     Nats(String),
+    /// A payload could not be encoded to or decoded from JSON, which is a contract mismatch
+    /// between two services rather than a broker fault.
     #[error("serialization error: {0}")]
     Serde(#[from] serde_json::Error),
 }

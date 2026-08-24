@@ -8,12 +8,16 @@ use serde::Deserialize;
 use tankovault_config::TelemetryConfig;
 use terrace_config::schema::Describe;
 
+/// Top-level challenge-solver config.
 #[derive(Debug, Deserialize, Describe)]
 pub struct Config {
+    /// Listen address for `/v1/solve` and the probes. Internal-tier only.
     #[serde(default = "default_bind")]
     pub bind_addr: String,
+    /// Log filter, log format and Sentry reporting.
     #[config(nested)]
     pub telemetry: TelemetryConfig,
+    /// Which back-end solves an interstitial, and how long it is given.
     #[config(nested)]
     pub solver: SolverBackendConfig,
     /// Edge hardening: body cap, timeout, security headers. CORS stays off — nothing
@@ -41,6 +45,7 @@ fn default_bind() -> String {
     "0.0.0.0:8090".to_owned()
 }
 
+/// Which back-end solves an interstitial, and how long it is given.
 #[derive(Debug, Deserialize, Describe)]
 pub struct SolverBackendConfig {
     /// Back-end selector; only `trawl` is wired today.
@@ -48,6 +53,8 @@ pub struct SolverBackendConfig {
     pub backend: String,
     /// TRAWL base endpoint, e.g. `http://trawl:8191`.
     pub trawl_endpoint: String,
+    /// Ceiling on one solve attempt, in milliseconds. A challenge still standing at the end of
+    /// it is reported unsolved, which the caller treats as retryable.
     #[serde(default = "default_timeout")]
     pub max_timeout_ms: u64,
     /// How long *this* deployment caches a solved session for. Independent of TRAWL's own

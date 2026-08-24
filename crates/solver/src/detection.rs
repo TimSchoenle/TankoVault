@@ -25,6 +25,13 @@ const CHALLENGE_STATUSES: [u16; 3] = [403, 429, 503];
 /// enough that the scan stays trivial on a multi-megabyte body.
 const TITLE_SCAN_BYTES: usize = 4096;
 
+/// Classify a response as a bot-management interstitial, using its status, headers and body
+/// together.
+///
+/// `None` is the answer for an ordinary page and for a page this cannot tell apart from one:
+/// the cost of a false positive is a fetch spent on a solver that has nothing to solve, so the
+/// markers are the ones no ordinary page emits. A body alone, with no envelope to corroborate
+/// it, is [`detect_challenge_body`]'s question.
 pub fn detect_challenge<R: ResponseView>(resp: &R) -> Option<ChallengeKind> {
     let status = resp.status();
 

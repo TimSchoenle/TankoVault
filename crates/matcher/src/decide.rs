@@ -6,8 +6,10 @@ use tankovault_domain::matching::{Candidate, Decision, MergeVerdict, Query};
 use crate::assess::assess;
 use crate::types::{Adjudication, Assessment, Thresholds};
 
-/// The single best-scoring candidate for `query`, with its score — or `None` when there are
-/// no candidates. Unlike [`decide`], this reports the raw best so a caller working across
+/// The single best-scoring candidate for `query`, with its score, or `None` when there are no
+/// candidates.
+///
+/// Unlike [`decide`], this reports the raw best so a caller working across
 /// several title variants (e.g. romaji/english/native) can pick the global maximum before
 /// applying its own threshold.
 #[must_use]

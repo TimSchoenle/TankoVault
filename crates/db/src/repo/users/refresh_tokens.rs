@@ -9,10 +9,15 @@ use uuid::Uuid;
 
 /// A stored refresh-token record (hash only).
 pub struct RefreshRecord {
+    /// The stored row. The token itself is held only as a hash.
     pub id: Uuid,
+    /// Whose session it belongs to.
     pub user_id: UserId,
+    /// The rotation chain. Reusing a spent token revokes the whole family.
     pub family_id: Uuid,
+    /// When the token stops being accepted.
     pub expires_at: OffsetDateTime,
+    /// When it was revoked, `None` while it still stands.
     pub revoked_at: Option<OffsetDateTime>,
 }
 

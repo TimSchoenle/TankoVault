@@ -133,9 +133,10 @@ pub(crate) fn shares_a_name(a: &[String], b: &[String]) -> bool {
         .any(|x| b.iter().any(|y| x.eq_ignore_ascii_case(y)))
 }
 
-/// Token-set ratio: the Jaccard overlap of the two titles' word sets, in `[0,1]`. Order- and
-/// duplicate-insensitive, so "life starting in another world" and "another world starting
-/// life" score identically. Pure and DB-free.
+/// Token-set ratio: the Jaccard overlap of the two titles' word sets, in `[0,1]`.
+///
+/// Order- and duplicate-insensitive, so "life starting in another world" and "another world
+/// starting life" score identically. Pure and DB-free.
 #[must_use]
 #[expect(
     clippy::cast_precision_loss,

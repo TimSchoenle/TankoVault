@@ -33,6 +33,13 @@ use utoipa::ToSchema;
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, ToSchema,
 )]
 #[non_exhaustive]
+#[expect(
+    missing_docs,
+    reason = "each variant's contract is its `spec()` arm, which carries the title, the \
+              description an operator reads in the console, the range and the `Applies` \
+              class. A `///` here would be a second copy of that text, kept in a second \
+              place, and the copy is the one nothing renders"
+)]
 pub enum Tunable {
     // --- affinity (§4.1) ---
     #[serde(rename = "recsys.affinity.base.completed")]
@@ -153,16 +160,21 @@ pub struct TunableSpec {
     /// The persisted key. Stable forever — it is a database primary key and appears in audit
     /// records.
     pub key: &'static str,
+    /// Which console section lists it.
     pub group: TunableGroup,
+    /// Section-local label. Not stable, unlike `key`.
     pub title: &'static str,
     /// What the value does, written to be read immediately before someone changes production.
     pub description: &'static str,
+    /// What the value ships as, and what a deployment with no override row runs on.
     pub default: f64,
     /// Inclusive lower bound. Enforced on write *and* clamped on read; see [`Self::range`].
     pub min: f64,
     /// Inclusive upper bound.
     pub max: f64,
+    /// Which reader interprets the number, and how the console renders and validates it.
     pub kind: TunableKind,
+    /// When a change to this value reaches a reader.
     pub applies: Applies,
 }
 
@@ -980,6 +992,7 @@ impl fmt::Display for Tunable {
 #[derive(Debug, Clone, thiserror::Error)]
 #[error("unknown tunable: {key:?}")]
 pub struct ParseTunableError {
+    /// The key that matched no tunable in this build.
     pub key: String,
 }
 

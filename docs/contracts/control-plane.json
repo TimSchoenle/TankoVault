@@ -1053,7 +1053,7 @@
         "env": "TANKOVAULT_BIND_ADDR",
         "env_file": "TANKOVAULT_BIND_ADDR_FILE",
         "secrets_file": "bind_addr",
-        "docs": "",
+        "docs": "Listen address for `/internal/*` and the probes. Not a public listener.",
         "ty": "String",
         "values": [],
         "constraint": {
@@ -2173,6 +2173,7 @@
     "additionalProperties": false,
     "properties": {
       "bind_addr": {
+        "description": "Listen address for `/internal/*` and the probes. Not a public listener.",
         "type": "string"
       },
       "database": {

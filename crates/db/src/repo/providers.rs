@@ -56,11 +56,17 @@ impl From<ProviderRow> for Provider {
 
 /// Parameters for creating a provider.
 pub struct NewProvider {
+    /// The URL-safe handle. Unique, so a second insert under it is a conflict.
     pub slug: String,
+    /// The display name.
     pub name: String,
+    /// The domain root every stored path is resolved against.
     pub base_url: String,
+    /// Which parser drives the site.
     pub adapter: AdapterKind,
+    /// Selectors and pagination for that parser.
     pub config: Json,
+    /// The crawl budget this provider starts at.
     pub politeness: Politeness,
     /// The preset this row is being installed from, if any. A provider created from a preset
     /// starts **locked** — the installer just wrote the shipped values, so there is nothing of
@@ -369,8 +375,11 @@ pub async fn get_many<'e, E: PgExecutor<'e>>(
 /// without exposing operator-only config/politeness.
 #[derive(Debug, Clone, serde::Serialize, FromRow)]
 pub struct PublicProvider {
+    /// The provider, which is what a browse filter carries.
     pub id: Uuid,
+    /// Its URL-safe key, which is what a shareable filter link carries.
     pub slug: String,
+    /// Its display name.
     pub name: String,
     /// Distinct canonical series with at least one source on this provider.
     pub series_count: i64,

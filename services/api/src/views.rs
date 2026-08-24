@@ -711,8 +711,8 @@ mod tests {
         OffsetDateTime::from_unix_timestamp(1_754_700_000).expect("a representable instant")
     }
 
-    /// This module's whole purpose is that a column which stops being published is a compile
-    /// error rather than a silent hole in the API — but the compiler only checks that every
+    /// A column that stops being published is a compile error rather than a silent hole in the
+    /// API, which is what this module is for — but the compiler only checks that every
     /// *field of the view* is assigned, never that it was assigned the matching one. Two fields
     /// of the same type transposed compiles cleanly and ships wrong numbers, which on this
     /// surface means an operator reading one provider's failure count against another's.

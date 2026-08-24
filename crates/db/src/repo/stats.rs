@@ -1,7 +1,8 @@
-//! Operator-console read models (design §17.2.7): system-wide rollups and per-provider
-//! crawl statistics. These are read-only aggregates over the catalogue, scan, and user
-//! tables, computed on demand for the admin dashboard — no denormalised counters to keep
-//! in sync. Every query is a single static statement (`SQLx` 0.9 rejects non-`'static` SQL).
+//! The console header rollup and the per-provider crawl table (design §17.2.7).
+//!
+//! Read-only aggregates over the catalogue, scan and user tables, computed per request. There
+//! is no denormalised counter to keep in sync, so a figure here cannot drift from the rows it
+//! counts. Every query is a single static statement, which `SQLx` 0.9 requires.
 
 use crate::error::DbResult;
 use serde::Serialize;
@@ -12,24 +13,39 @@ use uuid::Uuid;
 /// System-wide rollup for the console header (single-row query).
 #[derive(Debug, Clone, Serialize, FromRow)]
 pub struct SystemStats {
+    /// Every provider row, whatever its state.
     pub providers_total: i64,
+    /// Providers in `active`.
     pub providers_active: i64,
+    /// Providers an operator turned off.
     pub providers_disabled: i64,
     /// Providers in a non-serving health state (degraded/challenged/solving/blocked).
     pub providers_unhealthy: i64,
+    /// Canonical series, not provider pages.
     pub series_total: i64,
+    /// Series-to-provider links across every provider.
     pub sources_total: i64,
+    /// Chapter links held, part releases counted separately.
     pub chapters_total: i64,
+    /// Chapters first seen in the last hour, by `discovered_at` rather than publication date.
     pub chapters_1h: i64,
+    /// Chapters first seen in the last 24 hours.
     pub chapters_24h: i64,
+    /// Chapters first seen in the last 7 days.
     pub chapters_7d: i64,
+    /// Registered accounts, suspended ones included.
     pub users_total: i64,
+    /// Merge candidates nobody has resolved yet.
     pub pending_merges: i64,
     /// Scan runs currently queued or running.
     pub runs_active: i64,
+    /// The subset of `runs_active` that has actually started.
     pub runs_running: i64,
+    /// Tasks waiting for a worker across every run.
     pub tasks_queued: i64,
+    /// Tasks claimed or fetching.
     pub tasks_running: i64,
+    /// Tasks that failed in the last 24 hours, by the time they settled.
     pub tasks_failed_24h: i64,
 }
 
@@ -37,8 +53,11 @@ pub struct SystemStats {
 /// identity fields are joined in so the console renders the table from one fetch.
 #[derive(Debug, Clone, Serialize, FromRow)]
 pub struct ProviderStat {
+    /// The provider these figures are for.
     pub provider_id: Uuid,
+    /// Its slug, joined in so the table needs one fetch.
     pub slug: String,
+    /// Its display name, which is also the tiebreak in the row order.
     pub name: String,
     /// Provider health state token (`active` | `disabled` | `blocked` | …).
     pub state: String,
@@ -50,17 +69,24 @@ pub struct ProviderStat {
     pub source_count: i64,
     /// Source links currently in a non-active state.
     pub blocked_sources: i64,
+    /// Chapter links under this provider's sources.
     pub chapter_count: i64,
+    /// Chapters first seen here in the last 24 hours.
     pub chapters_24h: i64,
+    /// Chapters first seen here in the last 7 days.
     pub chapters_7d: i64,
+    /// When a chapter was last discovered here, `None` for a provider with no chapters.
     #[serde(with = "time::serde::rfc3339::option")]
     pub last_chapter_at: Option<OffsetDateTime>,
+    /// The most recent scan across this provider's sources, `None` until one finishes.
     #[serde(with = "time::serde::rfc3339::option")]
     pub last_scanned_at: Option<OffsetDateTime>,
+    /// When a full archive rebuild last completed, `None` if none ever has.
     #[serde(with = "time::serde::rfc3339::option")]
     pub last_full_scan_at: Option<OffsetDateTime>,
     /// State of the provider's most recent scan run, if any.
     pub last_run_state: Option<String>,
+    /// When the most recent run was created, `None` for a provider never scanned.
     #[serde(with = "time::serde::rfc3339::option")]
     pub last_run_at: Option<OffsetDateTime>,
 }

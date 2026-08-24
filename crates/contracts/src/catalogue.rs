@@ -14,8 +14,11 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[schema(as = PublicProvider)]
 pub struct PublicProviderView {
+    /// The provider, which is what a browse filter carries.
     pub id: Uuid,
+    /// Its URL-safe key, which is what appears in a shareable filter link.
     pub slug: String,
+    /// Its display name.
     pub name: String,
     /// Distinct canonical series with at least one source on this provider.
     pub series_count: i64,

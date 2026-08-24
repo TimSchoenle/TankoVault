@@ -90,6 +90,7 @@ struct Rule {
     writes_only: bool,
 }
 
+/// The path-prefix table that decides which budget a request is charged to.
 #[derive(Debug, Clone, Default)]
 pub struct RouteClassifier {
     /// Rules kept sorted longest-prefix-first so the first match is the most specific.

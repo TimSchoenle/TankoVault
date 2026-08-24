@@ -51,11 +51,17 @@ impl TaskKind {
 /// in the `scan_tasks` table.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScanTaskMessage {
+    /// The `scan_tasks` row this message mirrors, and what a worker claims.
     pub task_id: ScanTaskId,
+    /// The run that dispatched it.
     pub run_id: ScanRunId,
+    /// The provider to crawl.
     pub provider_id: ProviderId,
+    /// Its slug, which is also the last token of the subject this was published on.
     pub provider_slug: String,
+    /// The run's cadence, which decides which adapter entry point the worker calls.
     pub mode: ScanMode,
+    /// Which entry point, and therefore how `target` is read.
     pub kind: TaskKind,
     /// Task-specific target, e.g. `{"path":"/manga/x","page":3}`.
     pub target: serde_json::Value,
@@ -68,13 +74,21 @@ pub struct ScanTaskMessage {
 /// relayed to the console over SSE.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProgressEvent {
+    /// The run this update is about.
     pub run_id: ScanRunId,
+    /// `None` for a run covering every enabled provider.
     pub provider_id: Option<ProviderId>,
+    /// The run's cadence.
     pub mode: ScanMode,
+    /// Where the run is in its lifecycle at `at`.
     pub state: RunState,
+    /// Tasks the run dispatched.
     pub total_tasks: i32,
+    /// Tasks settled successfully so far.
     pub done_tasks: i32,
+    /// Tasks that gave up so far.
     pub failed_tasks: i32,
+    /// When the counters were read. Events can arrive out of order, so this is the tiebreak.
     #[serde(with = "time::serde::rfc3339")]
     pub at: OffsetDateTime,
 }
@@ -83,14 +97,21 @@ pub struct ProgressEvent {
 /// (fan-out to watchers) and available to the sync service.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChapterDiscovered {
+    /// The canonical series the chapter belongs to.
     pub series_id: SeriesId,
+    /// The provider page it was found on.
     pub series_source_id: SeriesSourceId,
+    /// The provider hosting that page.
     pub provider_id: ProviderId,
+    /// Its slug, carried so a consumer need not join to render the event.
     pub provider_slug: String,
+    /// Chapter number, fractional for a part release.
     pub chapter_number: f64,
+    /// Title as the provider gives it, `None` when it publishes only a number.
     pub chapter_title: Option<String>,
     /// RELATIVE path — resolve against the provider `base_url` at read time.
     pub chapter_path: String,
+    /// When the provider says it went up, `None` when it publishes no date.
     #[serde(default, with = "time::serde::rfc3339::option")]
     pub published_at: Option<OffsetDateTime>,
     /// What the provider said this chapter costs, as the ingest stored it.
@@ -105,14 +126,16 @@ pub struct ChapterDiscovered {
     /// chapter, and `None` on a locked one means no date was announced — never "already open".
     #[serde(default, with = "time::serde::rfc3339::option")]
     pub unlocks_at: Option<OffsetDateTime>,
+    /// When the ingest wrote the row, which is what makes the chapter new.
     #[serde(with = "time::serde::rfc3339")]
     pub discovered_at: OffsetDateTime,
 }
 
-/// A live per-user notification push, relayed over **core NATS** (best-effort, non-durable)
-/// to the API's `/v1/me/stream` SSE endpoint so a connected client updates its unread badge
-/// and feed in real time. The durable copy is the `notifications` row; an offline client
-/// misses the push and reconciles via [`Self::unread_count`] on reconnect.
+/// A live per-user notification push, relayed to the API's `/v1/me/stream` SSE endpoint.
+///
+/// Carried over core NATS, so delivery is best-effort and nothing is replayed. The durable copy
+/// is the `notifications` row: a client that was offline misses the push and reconciles from
+/// [`Self::unread_count`] when it reconnects.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserNotification {
     /// Recipient; also determines the [`crate::subjects::user_notify_subject`] routing.
@@ -123,6 +146,7 @@ pub struct UserNotification {
     pub kind: String,
     /// Opaque per-kind payload (mirrors `notifications.payload`).
     pub payload: serde_json::Value,
+    /// When the persisted row was written.
     #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,
     /// The recipient's unread count *including* this notification, so the client can set its
@@ -133,11 +157,17 @@ pub struct UserNotification {
 /// Emitted when a provider changes health state (drives console tiles + alerts).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderStateChanged {
+    /// The provider whose health moved.
     pub provider_id: ProviderId,
+    /// Its slug, carried so a console tile needs no join.
     pub provider_slug: String,
+    /// The state it left.
     pub previous: ProviderState,
+    /// The state it entered.
     pub current: ProviderState,
+    /// What moved it, `None` for a transition an operator made by hand.
     pub reason: Option<String>,
+    /// When the transition was recorded.
     #[serde(with = "time::serde::rfc3339")]
     pub at: OffsetDateTime,
 }

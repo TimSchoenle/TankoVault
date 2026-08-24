@@ -33,6 +33,8 @@ const CACHE_POLICY: &str = "public, max-age=300";
 pub struct Branding(Arc<BrandingConfig>);
 
 impl Branding {
+    /// Resolves the operator's configuration once, at boot. Cloning the result is an `Arc`
+    /// bump, which is what makes it cheap to hold in per-request state.
     #[must_use]
     pub fn new(config: BrandingConfig) -> Self {
         Self(Arc::new(config))

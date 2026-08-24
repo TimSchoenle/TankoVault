@@ -310,7 +310,7 @@ impl BaseHttpFetcher {
 
 #[async_trait]
 impl Fetcher for BaseHttpFetcher {
-    /// Times and counts the request around [`Self::send`].
+    /// Times and counts the request, failures included.
     ///
     /// This is the workspace's only choke point for provider traffic — every adapter, every
     /// scan tier and both solver paths come through here — so it is where "is this provider

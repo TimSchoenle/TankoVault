@@ -24,7 +24,10 @@ static SELECTOR_CACHE: LazyLock<RwLock<HashMap<String, Arc<Selector>>>> =
 /// time instead of cached: slower, never wrong.
 const SELECTOR_CACHE_CAP: usize = 4096;
 
-/// Parse a CSS selector, mapping failures to a typed error. Memoised — see [`SELECTOR_CACHE`].
+/// Parse a CSS selector, mapping failures to a typed error.
+///
+/// Memoised by source text up to `SELECTOR_CACHE_CAP` distinct selectors; past that, later
+/// selectors are parsed on every call.
 ///
 /// Returns an `Arc` so a cache hit is a refcount bump; call sites are unchanged.
 ///
@@ -386,9 +389,11 @@ pub fn map_status(text: &str) -> SeriesStatus {
     }
 }
 
-/// Parse an ISO `YYYY-MM-DD` date (a common chapter release-date shape) into an
-/// [`OffsetDateTime`] at midnight UTC. Returns `None` for any other shape, so relative
-/// labels ("7 hours ago") or empty cells leave the date simply unset.
+/// Parse an ISO `YYYY-MM-DD` date, a common chapter release-date shape, into an
+/// [`OffsetDateTime`] at midnight UTC.
+///
+/// `None` for any other shape, so a relative label ("7 hours ago") or an empty cell leaves the
+/// date unset.
 #[must_use]
 pub fn parse_ymd_date(text: &str) -> Option<OffsetDateTime> {
     let fmt = format_description!("[year]-[month]-[day]");

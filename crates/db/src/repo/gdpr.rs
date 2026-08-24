@@ -1,6 +1,7 @@
-//! The data-subject request queue (GDPR Chapter III) — for what the self-service export/erase
-//! endpoints can't handle: rectification, restriction, objection, and the Art. 12(3)
-//! deadline/compliance-record duties those require.
+//! The data-subject request queue (GDPR Chapter III).
+//!
+//! For what the self-service export and erase endpoints cannot handle: rectification,
+//! restriction, objection, and the Art. 12(3) deadline and compliance record those require.
 //!
 //! No copy of the subject's email/username is stored; `user_id` is `ON DELETE SET NULL`, so a
 //! completed erasure's row degrades into an accountability record holding no personal data.
@@ -50,9 +51,13 @@ impl RequestKind {
 #[sqlx(type_name = "gdpr_request_status", rename_all = "snake_case")]
 #[serde(rename_all = "snake_case")]
 pub enum RequestStatus {
+    /// Filed, and nobody has claimed it.
     Pending,
+    /// An operator has claimed it and is working it.
     InProgress,
+    /// Fulfilled.
     Completed,
+    /// Refused, with the Art. 12(4) reasons in `resolution_note`.
     Rejected,
     /// Withdrawn by the subject before it was resolved.
     Cancelled,
@@ -69,14 +74,21 @@ impl RequestStatus {
 /// A request as the subject sees it, and the shape the operator queue extends.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct RequestRow {
+    /// The request, which is what a resolve or a withdrawal names.
     pub id: Uuid,
+    /// Which right is being exercised.
     pub kind: RequestKind,
+    /// Where it is in its lifecycle.
     pub status: RequestStatus,
+    /// What the subject wrote when filing, `None` when they wrote nothing.
     pub detail: Option<String>,
+    /// When it was filed, which is what the Art. 12(3) deadline runs from.
     #[serde(with = "time::serde::rfc3339")]
     pub requested_at: OffsetDateTime,
+    /// The Art. 12(3) deadline. Past it with the request open is what `overdue` reports.
     #[serde(with = "time::serde::rfc3339")]
     pub due_at: OffsetDateTime,
+    /// When it settled, `None` while it is still open.
     #[serde(with = "time::serde::rfc3339::option")]
     pub resolved_at: Option<OffsetDateTime>,
     /// How it was resolved, or — for a rejection — why (Art. 12(4) requires reasons).
@@ -89,11 +101,13 @@ pub struct RequestRow {
 /// `tankovault_contracts::admin::AdminPrivacyRequestView`.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct AdminRequestRow {
+    /// The subject-facing record, exactly as the subject sees it.
     pub request: RequestRow,
     /// The subject's id, or `None` once erased.
     pub user_id: Option<Uuid>,
     /// `None` once the account is gone — expected for a completed erasure, not missing data.
     pub username: Option<String>,
+    /// The subject's address, `None` once they have been erased.
     pub email: Option<String>,
     /// Operator who claimed it, if any.
     pub claimed_by: Option<String>,

@@ -40,11 +40,18 @@ impl From<PresetRow> for PresetDefinition {
 
 /// One shipped preset, as the installer hands it over.
 pub struct NewPreset {
+    /// The catalogue key, which is also the slug of any provider installed from it.
     pub slug: String,
+    /// The display name to write onto a locked row.
     pub name: String,
+    /// The domain root to write onto a locked row.
     pub base_url: String,
+    /// The parser to write onto a locked row.
     pub adapter: AdapterKind,
+    /// The selectors and pagination to write onto a locked row.
     pub config: Json,
+    /// What a new provider from this preset starts at. Never re-applied to an
+    /// existing row.
     pub politeness: Politeness,
 }
 

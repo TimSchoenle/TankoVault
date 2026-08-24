@@ -15,9 +15,12 @@ pub struct TunableOverrideRow {
     /// The tunable key, as a string not the enum, so an override from a retired build stays
     /// visible instead of vanishing from the only page that can delete it.
     pub key: String,
+    /// The value as it was stored. Reads clamp it to the registry's range, so a bound
+    /// narrowed by a later build does not have to rewrite the rows written under the old one.
     pub value: f64,
     /// Why it was changed, if the operator said.
     pub note: Option<String>,
+    /// When it last changed. Creating the override and editing it both move this.
     #[serde(with = "time::serde::rfc3339")]
     pub updated_at: OffsetDateTime,
     /// Username of the operator who last changed it; `None` once that account is erased.

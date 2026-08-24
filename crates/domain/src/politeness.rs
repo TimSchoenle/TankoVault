@@ -1,6 +1,7 @@
-//! Per-provider crawl politeness: request rate, concurrency, crawl delay, and the browser
-//! identity presented to the provider. Operators may tune these downward only — hard
-//! ceilings bound how aggressively any configuration can crawl a provider.
+//! Per-provider crawl politeness: rate, concurrency, delay, and the identity presented.
+//!
+//! Operators may tune these downward only. The ceilings in this module bound how aggressively
+//! any configuration can crawl a provider.
 
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;

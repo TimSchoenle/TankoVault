@@ -15,6 +15,10 @@
 //! parser: the crate is a leaf whose entire purpose is to carry generated code, and adding a
 //! dependency to it to read four lines of its own manifest is a worse trade than a scanner that
 //! fails loudly if the manifest stops being formatted one-lint-per-line.
+//!
+//! One lint is exempt, by name, in [`EXEMPT`]. Recording an exemption there does not skip the
+//! check: the comparison then demands the crate carry the exempt *level*, so deleting the line
+//! fails as loudly as adding an unrecorded one.
 
 use std::path::{Path, PathBuf};
 
@@ -42,6 +46,23 @@ fn lint_block(manifest: &str, header: &str) -> Option<Vec<String>> {
     Some(entries)
 }
 
+/// Rustc lints the generated file is held to a different level at, and the level it takes.
+///
+/// `missing_docs` is the only one. `progenitor` emits 2 607 items whose sole possible
+/// documentation is the OpenAPI `description` it already writes as `#[doc = "…"]`, and the
+/// source of those descriptions is the API's own `///` comments — which is where the estate's
+/// doc-comment gate holds them, rather than on the output.
+const EXEMPT: [(&str, &str); 1] = [("missing_docs", "allow")];
+
+/// `entry` with its level replaced when [`EXEMPT`] names its lint, otherwise unchanged.
+fn exempted(entry: &str) -> String {
+    let name = entry.split_whitespace().next().unwrap_or(entry);
+    match EXEMPT.iter().find(|(lint, _)| *lint == name) {
+        Some((lint, level)) => format!("{lint} = \"{level}\""),
+        None => entry.to_owned(),
+    }
+}
+
 fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .ancestors()
@@ -66,8 +87,12 @@ fn the_rustc_lints_match_the_workspace() {
     let workspace = read(&root.join("Cargo.toml"));
     let manifest = read(&root.join("crates/api-client/Cargo.toml"));
 
-    let expected = lint_block(&workspace, "[workspace.lints.rust]")
-        .expect("`[workspace.lints.rust]` is missing from the root manifest");
+    let mut expected: Vec<String> = lint_block(&workspace, "[workspace.lints.rust]")
+        .expect("`[workspace.lints.rust]` is missing from the root manifest")
+        .iter()
+        .map(|entry| exempted(entry))
+        .collect();
+    expected.sort();
     let actual = lint_block(&manifest, "[lints.rust]")
         .expect("`[lints.rust]` is missing from crates/api-client/Cargo.toml");
 
@@ -77,7 +102,7 @@ fn the_rustc_lints_match_the_workspace() {
          is a hand-maintained copy of `[workspace.lints.rust]`. They have diverged: copy the \
          workspace's block across (only the *clippy* half is allowed to differ), or, if the new \
          lint genuinely must not apply to generated code, say so in the manifest comment and \
-         update this test to record the exemption by name."
+         add it to `EXEMPT` above."
     );
 }
 

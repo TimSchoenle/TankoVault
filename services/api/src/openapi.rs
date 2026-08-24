@@ -1,33 +1,66 @@
-//! The `OpenApi` root. Every `#[utoipa::path(..)]` handler across the crate is collected here
-//! via `utoipa_axum`, and `xtask openapi` serialises the result to `openapi.json` to
-//! regenerate the typed frontend client.
+//! The `OpenApi` root.
+//!
+//! Every `#[utoipa::path(..)]` handler across the crate is collected here via `utoipa_axum`,
+//! and `xtask openapi` serialises the result to `openapi.json` to regenerate the typed
+//! frontend client.
 
 use utoipa::openapi::security::{ApiKey, ApiKeyValue, Http, HttpAuthScheme, SecurityScheme};
 use utoipa::{Modify, OpenApi};
 
+// Not rustdoc: the sentence a *reader of the API* sees for each tag is the `description` in the
+// `tags(..)` block below, which is what `openapi.json` carries. These `///` lines answer the
+// other question — where the handlers wearing this tag live, which the tag string does not say
+// once a tag spans more than one module. Each string is also a module name in the generated
+// `crates/api-client`, so renaming one renames a frontend import.
+
+/// Tags the credential routes under `crate::auth`: register, login, refresh, logout, password,
+/// email verification, MFA and passkey enrolment.
 pub const AUTH_TAG: &str = "auth";
+/// Tags the unauthenticated catalogue routes in `crate::series`.
 pub const SERIES_TAG: &str = "series";
+/// Tags the operator-published document routes in `crate::legal`.
 pub const LEGAL_TAG: &str = "legal";
+/// Tags the deployment-identity routes in `crate::branding`.
 pub const BRANDING_TAG: &str = "branding";
+/// Tags the native client's update-channel routes in `crate::client`.
 pub const CLIENT_TAG: &str = "client";
+/// Tags `crate::me::watchlist`, plus the two `/v1/me/watchlist/{series_id}/sync` routes that live
+/// in `crate::me::progress`.
 pub const ME_WATCHLIST_TAG: &str = "me-watchlist";
+/// Tags the series-scoped progress routes in `crate::me::progress`.
 pub const ME_PROGRESS_TAG: &str = "me-progress";
+/// Tags `crate::me::dashboard`, `crate::me::recommendations`, and the feed route in
+/// `crate::me::notifications`.
 pub const ME_DASHBOARD_TAG: &str = "me-dashboard";
+/// Tags `crate::me::account` and the routes beside it that act on the signed-in user: MFA,
+/// passkeys, capabilities, content filters, source preferences and privacy requests.
 pub const ME_ACCOUNT_TAG: &str = "me-account";
+/// Tags `crate::me::notifications`, plus the delivery-channel settings in `crate::me::account`.
 pub const ME_NOTIFICATIONS_TAG: &str = "me-notifications";
+/// Tags the tracker-sync proxies in `crate::me::sync`, which forward to `services/sync`.
 pub const ME_SYNC_TAG: &str = "me-sync";
+/// Tags `crate::admin::providers`.
 pub const ADMIN_PROVIDERS_TAG: &str = "admin-providers";
+/// Tags `crate::admin::scans`.
 pub const ADMIN_SCANS_TAG: &str = "admin-scans";
+/// Tags `crate::admin::merge` and the merge half of `crate::admin::decisions`.
 pub const ADMIN_MATCHING_TAG: &str = "admin-matching";
+/// Tags `crate::admin::catalogue`.
 pub const ADMIN_CATALOGUE_TAG: &str = "admin-catalogue";
+/// Tags `crate::admin::sync` and the sync half of `crate::admin::decisions`.
 pub const ADMIN_SYNC_TAG: &str = "admin-sync";
+/// Tags every module under `crate::admin::users`.
 pub const ADMIN_USERS_TAG: &str = "admin-users";
+/// Tags `crate::admin::privacy`.
 pub const ADMIN_PRIVACY_TAG: &str = "admin-privacy";
+/// Tags `crate::admin::flags`.
 pub const ADMIN_FLAGS_TAG: &str = "admin-feature-flags";
+/// Tags `crate::admin::recommendations`.
 pub const ADMIN_RECSYS_TAG: &str = "admin-recommendations";
+/// Tags `crate::admin::system` and the operator event stream in `crate::admin::stream`.
 pub const ADMIN_OVERVIEW_TAG: &str = "admin-overview";
 
-/// The bearer-JWT `Authorization` header accepted by [`crate::state::AuthUser`].
+/// The bearer-JWT `Authorization` header every authenticated route extracts.
 pub const BEARER_AUTH: &str = "bearer_auth";
 
 /// The single-use `ticket` query parameter accepted by `GET /v1/me/stream`.
@@ -243,4 +276,10 @@ impl Modify for SecurityAddon {
     crate::error::ProblemDetails,
     crate::error::ProblemKind,
 )))]
+/// Carries the document's tags, security schemes and schema list; `ApiDoc::openapi()` builds the
+/// specification that `crate::router` merges every handler's path into.
+///
+/// The `components(schemas(..))` list has to name every type reachable from a response body that
+/// `utoipa_axum` does not already collect from a `#[utoipa::path]`. Leaving one out is not a
+/// compile error; it emits a `$ref` into `openapi.json` that points at nothing.
 pub struct ApiDoc;

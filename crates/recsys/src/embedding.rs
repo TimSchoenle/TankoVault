@@ -62,6 +62,10 @@ pub struct GramAccumulator {
 }
 
 impl GramAccumulator {
+    /// An empty accumulator over a `dim`-wide input space.
+    ///
+    /// Allocates `dim * dim` `f64` immediately, which is the one structure in the build that
+    /// scales with the vocabulary rather than with the catalogue.
     #[must_use]
     pub fn new(dim: usize) -> Self {
         Self {
@@ -71,11 +75,13 @@ impl GramAccumulator {
         }
     }
 
+    /// The input space's width, as passed to [`Self::new`].
     #[must_use]
     pub const fn dim(&self) -> usize {
         self.dim
     }
 
+    /// Rows pushed so far, including rows every entry of which fell outside `dim`.
     #[must_use]
     pub const fn rows(&self) -> u64 {
         self.rows
@@ -196,11 +202,14 @@ pub struct Basis {
 }
 
 impl Basis {
+    /// The input space this basis projects from.
     #[must_use]
     pub const fn dim(&self) -> usize {
         self.dim
     }
 
+    /// Directions solved for, and so the length of a projected vector. At most the requested
+    /// `k`, and lower when the vocabulary could not supply that many orthonormal directions.
     #[must_use]
     pub const fn width(&self) -> usize {
         self.k
@@ -217,6 +226,8 @@ impl Basis {
         (columns.len() == dim * k).then_some(Self { dim, k, columns })
     }
 
+    /// The columns as stored, column-major and `dim * k` long. The form
+    /// [`Self::from_columns`] takes back.
     #[must_use]
     pub fn as_columns(&self) -> &[f32] {
         &self.columns

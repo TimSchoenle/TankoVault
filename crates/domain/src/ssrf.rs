@@ -1,6 +1,8 @@
-//! SSRF address policy — which URLs this system will never fetch. Pure and I/O-free, so
-//! `services/render` and `services/challenge-solver` can use it without the `wreq`/`BoringSSL`
-//! fetch stack; the DNS-resolving half that closes rebinding stays behind the `dns` feature.
+//! The address policy naming which URLs this system will never fetch.
+//!
+//! Pure and I/O-free, so `services/render` and `services/challenge-solver` can use it without
+//! the `wreq`/`BoringSSL` fetch stack. The DNS-resolving half that closes rebinding stays
+//! behind the `dns` feature.
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use thiserror::Error;

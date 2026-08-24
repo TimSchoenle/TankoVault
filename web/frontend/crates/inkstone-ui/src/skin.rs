@@ -503,7 +503,7 @@ mod tests {
         );
     }
 
-    /// This module is the only one that may name a class.
+    /// Only this module may name a class.
     ///
     /// The whole abstraction is worth nothing if a component keeps one literal: that element
     /// silently ignores the skin, so a consumer's design system comes out ninety-five per cent

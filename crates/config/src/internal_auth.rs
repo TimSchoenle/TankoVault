@@ -160,6 +160,7 @@ pub const MIN_INTERNAL_TOKEN_LEN: usize = 32;
 /// This service's own identity when calling a peer.
 #[derive(Debug, Clone)]
 pub struct ResolvedCaller {
+    /// The name this service announces itself under, which a peer matches its allowlist on.
     pub name: String,
     /// `None` under `mtls`, where the client certificate is the credential.
     pub token: Option<SecretString>,
@@ -168,6 +169,7 @@ pub struct ResolvedCaller {
 /// One caller this service accepts.
 #[derive(Debug, Clone)]
 pub struct ResolvedPeer {
+    /// The name the caller announces, matched exactly.
     pub name: String,
     /// Set under `token`; `None` under `mtls`.
     pub token: Option<SecretString>,
@@ -178,17 +180,25 @@ pub struct ResolvedPeer {
 /// Certificate paths, all three present.
 #[derive(Debug, Clone)]
 pub struct ResolvedTls {
+    /// This service's own certificate, PEM.
     pub cert: PathBuf,
+    /// Its private key, PEM, unencrypted.
     pub key: PathBuf,
+    /// The authorities a client certificate is verified against, PEM, one or many.
     pub ca: PathBuf,
 }
 
 /// A validated internal-auth configuration: the mode plus exactly the material that mode needs.
 #[derive(Debug, Clone)]
 pub struct ResolvedInternalAuth {
+    /// Which of the three schemes this deployment settled on.
     pub mode: IdentityMode,
+    /// This service's outbound identity, absent for a service that calls no peer.
     pub caller: Option<ResolvedCaller>,
+    /// Who may call this service. Empty accepts nobody, which is the correct posture for a
+    /// service exposing no internal route.
     pub peers: Vec<ResolvedPeer>,
+    /// The certificate material, present under `mtls` and only there.
     pub tls: Option<ResolvedTls>,
     /// Plaintext address for the health probes, set under `mtls` only — every other mode
     /// already answers them on the main listener.

@@ -10,7 +10,9 @@ use uuid::Uuid;
 /// A row in the discover/browse list: the series plus its resolvable cover and a
 /// count of provider sources.
 pub struct SeriesListItem {
+    /// The series row, with its cover already resolvable.
     pub series: Series,
+    /// Providers carrying it.
     pub source_count: i64,
 }
 
@@ -133,9 +135,13 @@ pub enum SeriesSort {
     /// Best match for the search term. Meaningless without one, and degrades to [`Self::Updated`]
     /// when there is none rather than refusing — the sort control is shared with the browse grid.
     Relevance,
+    /// Canonical title, A to Z.
     Title,
+    /// Most chapters first.
     Chapters,
+    /// Most providers first.
     Sources,
+    /// Newest release year first.
     Year,
     /// No rating column yet; falls back to recency rather than refusing a token the frontend
     /// already offers.
@@ -196,14 +202,23 @@ pub struct ParseSeriesSortError(pub String);
 /// excludes any.
 #[derive(Debug, Default, Clone)]
 pub struct SeriesFilter {
+    /// Free text over the search vector and the title trigrams.
     pub query: Option<String>,
+    /// Keep only this medium.
     pub content_type: Option<ContentType>,
+    /// Keep only this publication status.
     pub status: Option<SeriesStatus>,
+    /// Keep only series carried by this provider.
     pub provider_slug: Option<String>,
+    /// Keep only series carrying every one of these slugs.
     pub tags: Vec<String>,
+    /// Drop series carrying any of these slugs.
     pub exclude_tags: Vec<String>,
+    /// Inclusive lower bound on the release year.
     pub year_min: Option<i32>,
+    /// Inclusive upper bound on it.
     pub year_max: Option<i32>,
+    /// Inclusive lower bound on the summed chapter count.
     pub min_chapters: Option<i32>,
     /// Whether adult-gated series may appear. `false` — the `Default` — is the safe value, and
     /// the only correct one for a caller with no authenticated reader to ask.
@@ -219,15 +234,20 @@ pub struct SeriesFilter {
     /// `Some(true)` keeps only series that reader tracks, `Some(false)` only ones they do not,
     /// `None` neither. Ignored without [`Self::tracked_by`].
     pub tracked: Option<bool>,
+    /// Which key to order the grid on.
     pub sort: SeriesSort,
+    /// Rows per page.
     pub limit: i64,
+    /// Rows to skip.
     pub offset: i64,
 }
 
 /// A page of the filtered browse list plus the total number of matching rows, so the API can
 /// render `{ items, total, next_cursor }`.
 pub struct SeriesPage {
+    /// The page, in the filter's order.
     pub items: Vec<SeriesListItem>,
+    /// Rows the filter matched, ignoring `limit` and `offset`.
     pub total: i64,
 }
 
@@ -333,8 +353,8 @@ macro_rules! browse_statement {
 ///
 /// Two page statements, not five (drift risk across near-identical `ORDER BY` copies) or one
 /// (folding every sort key into bound `CASE` expressions loses the default order's index under
-/// a generic plan), each in a search and a no-search form — see [`fetch_filtered_page`] for why
-/// the search term cannot be a bound `NULL` in one statement. The total is counted separately
+/// a generic plan), each in a search and a no-search form, because the search term cannot be
+/// a bound `NULL` in one statement. The total is counted separately
 /// from the page: a `count(*) OVER()` window forces full materialization before `LIMIT` applies,
 /// where a concurrent index-only count does not. Takes `&PgPool`, not a generic executor, so the
 /// two queries can run concurrently.
@@ -812,7 +832,9 @@ pub async fn list_tags<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<tankovaul
 
 /// A tag plus how much of the catalogue carries it.
 pub struct TagFacet {
+    /// The tag.
     pub tag: tankovault_domain::Tag,
+    /// Series carrying it, under whatever filter the facet was computed with.
     pub series_count: i64,
 }
 

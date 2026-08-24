@@ -11,10 +11,13 @@ use terrace_config::schema::Describe;
 /// Top-level render-service config.
 #[derive(Debug, Deserialize, Describe)]
 pub struct Config {
+    /// Listen address for `/v1/render`, `/v1/solve` and the probes. Internal-tier only.
     #[serde(default = "default_bind")]
     pub bind_addr: String,
+    /// Log filter, log format and Sentry reporting.
     #[config(nested)]
     pub telemetry: tankovault_config::TelemetryConfig,
+    /// How the headless browser is launched, and how long each navigation is given.
     #[serde(default)]
     #[config(nested)]
     pub render: RenderConfig,

@@ -9,10 +9,16 @@ use time::OffsetDateTime;
 /// series, so the engine can tell which side(s) actually changed since (design v2 §B.3).
 #[derive(Debug, Clone, FromRow)]
 pub struct SyncSnapshot {
+    /// Local progress as it stood when both sides last agreed, `None` before the
+    /// first reconciliation.
     pub last_synced_local_progress: Option<f64>,
+    /// Remote progress at that same moment.
     pub last_synced_remote_progress: Option<f64>,
+    /// Local watch status at that same moment.
     pub last_synced_local_status: Option<String>,
+    /// Remote watch status at that same moment.
     pub last_synced_remote_status: Option<String>,
+    /// When that agreement was recorded, `None` before the first reconciliation.
     pub last_synced_at: Option<OffsetDateTime>,
 }
 
@@ -43,11 +49,18 @@ pub async fn get_snapshot<'e, E: PgExecutor<'e>>(
 /// A struct, not positional args: two adjacent `f64`s then two adjacent `&str`s transpose silently.
 #[derive(Debug, Clone, Copy)]
 pub struct AgreedSnapshot<'a> {
+    /// The mapped series.
     pub series_id: SeriesId,
+    /// Which external tracker, as a slug.
     pub provider: &'a str,
+    /// Local progress both sides now agree on.
     pub local_progress: f64,
+    /// Remote progress both sides now agree on. Equal to the local figure unless the
+    /// tracker rounds differently.
     pub remote_progress: f64,
+    /// Local watch status both sides now agree on.
     pub local_status: &'a str,
+    /// Remote watch status both sides now agree on.
     pub remote_status: &'a str,
 }
 

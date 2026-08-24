@@ -60,19 +60,29 @@ use uuid::Uuid;
 /// One unread chapter on a watched series, with the fields needed to resolve its link.
 #[derive(Debug, Clone)]
 pub struct FeedItem {
+    /// The watched series.
     pub series_id: SeriesId,
+    /// Its canonical title.
     pub series_title: String,
+    /// The unread chapter's number, parts included.
     pub chapter_number: f64,
+    /// Its title, `None` when the provider publishes only a number.
     pub chapter_title: Option<String>,
+    /// The provider carrying it.
     pub provider_slug: String,
+    /// That provider's domain root, so the caller can resolve the link without a join.
     pub base_url: String,
+    /// The stored relative path, to resolve against `base_url`.
     pub chapter_path: String,
+    /// When the chapter was first seen, which is what the feed is ordered by.
     pub discovered_at: OffsetDateTime,
 }
 
-/// The user's "new chapters" feed (design §11 `GET /v1/me/feed`): chapters on watched
-/// series strictly above the user's read progress, most recently discovered first. Rows
-/// are per source; the caller may group across providers.
+/// The reader's new-chapter feed: what is unread on their watchlist (design §11).
+///
+/// Chapters strictly above their progress marker on a watched series, most recently discovered
+/// first. Rows are per source, so one chapter carried by three providers is three rows; grouping
+/// across providers is the caller's decision.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; empty is never evidence the account is gone.
@@ -139,12 +149,17 @@ pub async fn feed<'e, E: PgExecutor<'e>>(
 /// by the most recent chapter activity (frontend §9.3 `GET /v1/me/continue`).
 #[derive(Debug, Clone)]
 pub struct ContinueCard {
+    /// The series to resume.
     pub series_id: SeriesId,
+    /// Its canonical title.
     pub series_title: String,
+    /// Its cover, `None` when no provider supplied one.
     pub cover_url: Option<String>,
+    /// Where the reader stopped.
     pub last_read_number: f64,
     /// The lowest unread chapter number above the user's progress, if any.
     pub next_number: Option<f64>,
+    /// Chapters above that marker across every source.
     pub unread: i64,
 }
 
@@ -237,14 +252,21 @@ pub async fn continue_reading<'e, E: PgExecutor<'e>>(
         .collect())
 }
 
-/// Lifetime reading stats for the Home/Profile headline. `chapters_read` is a proxy over stored
-/// progress — there is no per-chapter read-event log, so a "streak" is omitted rather than faked.
+/// Lifetime reading figures for the Home and Profile headline.
+///
+/// Derived from stored progress markers. There is no per-chapter read-event log, so a daily
+/// streak is omitted rather than fabricated from what is left.
 #[derive(Debug, Clone, Default, serde::Serialize, FromRow)]
 pub struct MeStats {
+    /// Series on the watchlist at any status.
     pub tracking: i64,
+    /// Of those, held at `reading`.
     pub reading: i64,
+    /// Of those, held at `completed`.
     pub completed: i64,
+    /// Whole chapters below the last-read marker, summed across every tracked series.
     pub chapters_read: i64,
+    /// Whole chapters above those markers: what is waiting.
     pub unread: i64,
 }
 

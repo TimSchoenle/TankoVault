@@ -108,9 +108,11 @@ pub async fn delete_mapping<'e, E: PgExecutor<'e>>(
     Ok(result.rows_affected() > 0)
 }
 
-/// Record (or refresh) the mapping for several series in one statement — the batched form of
-/// [`upsert_mapping`]. `DISTINCT ON (series_id) … ORDER BY ord DESC` is required: two remote ids
-/// resolving to one series would otherwise abort the statement instead of letting the last win.
+/// Record or refresh the mapping for several series in one statement, the batched form of
+/// [`upsert_mapping`].
+///
+/// `DISTINCT ON (series_id) … ORDER BY ord DESC` is required: two remote ids resolving to one
+/// series would otherwise abort the statement instead of letting the last win.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; one unknown `series_id` fails the whole batch. An empty

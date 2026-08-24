@@ -53,9 +53,13 @@ pub async fn find_by_email_with_verification<'e, E: PgExecutor<'e>>(
 /// A stored email-verification token record (hash only). Mirrors
 /// [`PasswordResetRecord`](super::password_reset::PasswordResetRecord).
 pub struct EmailVerificationRecord {
+    /// Primary key of the token row, not the token.
     pub id: Uuid,
+    /// The account the token confirms.
     pub user_id: UserId,
+    /// After this instant the token is refused. Expiry is checked on use, not swept.
     pub expires_at: OffsetDateTime,
+    /// When it was redeemed. `Some` makes it single-use: a replay is refused.
     pub used_at: Option<OffsetDateTime>,
 }
 

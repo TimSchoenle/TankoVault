@@ -92,9 +92,11 @@ impl From<CardRow> for WatchlistCard {
     }
 }
 
-/// List a user's watchlist, filtered, sorted and paginated in SQL, together with the tab
-/// counts and the group-header aggregates. `unread` counts distinct whole chapters
-/// (`floor(number)`) so part releases don't inflate it.
+/// List a user's watchlist, filtered, sorted and paginated in SQL, with the tab counts and the
+/// group-header aggregates.
+///
+/// `unread` counts distinct whole chapters (`floor(number)`), so part releases do not inflate
+/// it.
 ///
 /// The unread filter is the fourth copy of the predicate documented on
 /// [`dashboard`](crate::repo::tracking::dashboard); it must stay the negation of

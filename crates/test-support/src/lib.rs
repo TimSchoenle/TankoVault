@@ -1,8 +1,8 @@
 //! Database-layer test harness for `TankoVault`.
 //!
 //! A Postgres container (via testcontainers) shared by every test binary and run;
-//! [`TestDb::spawn`] creates a freshly-migrated database inside it per test — see
-//! [`shared_container`] for why the container is reused rather than ephemeral. Also holds
+//! [`TestDb::spawn`] creates a freshly-migrated database inside it per test, inside a container
+//! reused across the whole run rather than started per test. Also holds
 //! service-agnostic in-memory doubles ([`RecordingAuditSink`], [`RecordingMailer`]) and the
 //! entity builders in [`seed`].
 //!
@@ -464,8 +464,8 @@ impl TestDb {
     /// workload — catalogue, chapters, readers and their watchlists — analysed.
     ///
     /// For suites that assert on **query plans**. Every planner choice is a cost comparison, so
-    /// an assertion is only meaningful where the fixture has the volume production has; see
-    /// [`catalogue`] for what it has to get right and what it deliberately scales down.
+    /// an assertion is only meaningful where the fixture has the volume production has. The
+    /// catalogue builder keeps production's shape and scales its volume down.
     ///
     /// The rows come from a `CREATE DATABASE … TEMPLATE` clone of a template built once per
     /// container, so the per-test cost is a file copy (~200 ms) rather than a re-seed (~15 s) —

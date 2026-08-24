@@ -7,22 +7,30 @@
 use secrecy::SecretString;
 use terrace_config::schema::Describe;
 
+/// Top-level API config.
 #[derive(Debug, serde::Deserialize, Describe)]
 pub struct Config {
+    /// Where the catalogue lives, and how many connections this service may hold open.
     #[config(nested)]
     pub database: tankovault_config::DatabaseConfig,
+    /// Log filter, log format and Sentry reporting.
     #[config(nested)]
     pub telemetry: tankovault_config::TelemetryConfig,
+    /// Token lifetimes, signing and hashing keys, and the passkey relying-party identity.
     #[config(nested)]
     pub auth: AuthConfig,
     /// The public listener. Everything a reader's browser and the native client reach is
     /// served from here, behind whatever terminates TLS.
     #[serde(default = "default_bind")]
     pub bind_addr: String,
+    /// Where the admin console's scan triggers and flag writes are forwarded, no trailing
+    /// slash. Every call to it carries the shared internal secret.
     #[serde(default = "default_control_plane")]
     pub control_plane_url: String,
+    /// Where the `/v1/me/sync/*` proxies forward to, no trailing slash.
     #[serde(default = "default_sync")]
     pub sync_url: String,
+    /// Where the admin console's provider dry-run is forwarded, no trailing slash.
     #[serde(default = "default_worker")]
     pub worker_url: String,
     /// NATS for the live SSE relay; absent or unreachable only degrades `/v1/me/stream`.
@@ -87,6 +95,7 @@ pub struct Config {
     pub metadata: tankovault_config::MetadataPriorityConfig,
 }
 
+/// Everything the API needs to issue a credential and to recognise one it issued.
 #[derive(Debug, serde::Deserialize, Describe)]
 pub struct AuthConfig {
     /// HS256 signing key for access tokens; wrapped in `SecretString` so a `tracing::debug!(?cfg)`
@@ -99,8 +108,12 @@ pub struct AuthConfig {
     #[serde(default)]
     #[config(secret)]
     pub password_pepper: SecretString,
+    /// How long an access token stays valid. Short, because nothing revokes one before it
+    /// expires; the refresh token is the revocable half.
     #[serde(default = "default_access_minutes")]
     pub access_ttl_minutes: i64,
+    /// How long a refresh token stays valid, and so how long a signed-out-of-sight session can
+    /// come back. Each use rotates the token and revokes its predecessor.
     #[serde(default = "default_refresh_days")]
     pub refresh_ttl_days: i64,
     /// Mark the refresh cookie `Secure`.

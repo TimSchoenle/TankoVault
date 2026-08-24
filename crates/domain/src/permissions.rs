@@ -1,5 +1,6 @@
-//! Fine-grained permission capabilities — the system's only authorization primitive. A
-//! principal holds an unordered set of them, with no implication between grants; see
+//! Fine-grained capabilities, which are this system's only authorization primitive.
+//!
+//! A principal holds an unordered set of them, with no implication between grants. See
 //! [`Permission`] for the invariant that protects.
 //!
 //! [`Permission::SuperUser`] is the single exception, and deliberately not a role: it is one
@@ -423,6 +424,7 @@ impl fmt::Display for Permission {
 #[derive(Debug, Clone, thiserror::Error)]
 #[error("unknown permission: {token:?}")]
 pub struct ParsePermissionError {
+    /// The token that matched no permission in this build.
     pub token: String,
 }
 
@@ -446,17 +448,26 @@ impl FromStr for Permission {
 )]
 #[serde(rename_all = "snake_case")]
 pub enum PermissionGroup {
+    /// Registering providers and editing their adapter configuration.
     Providers,
+    /// Dispatching, cancelling and inspecting scan runs.
     Scanning,
+    /// Editing series, merging duplicates and purging catalogue rows.
     Catalogue,
+    /// `AniList` account links and the conflicts they raise.
     Sync,
+    /// Accounts, their grants and their sessions.
     Users,
+    /// The export and erasure queue.
     Privacy,
+    /// Metrics, traces and the health surfaces.
     Observability,
+    /// Feature switches and the recommender tunables.
     Flags,
 }
 
 impl PermissionGroup {
+    /// The token this group serializes to, which is also its section key in the console.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -497,11 +508,13 @@ pub enum PermissionPreset {
 }
 
 impl PermissionPreset {
+    /// Every preset, weakest first.
     #[must_use]
     pub const fn all() -> &'static [Self] {
         &[Self::Reader, Self::Operator, Self::Administrator]
     }
 
+    /// The token this preset is named by in the console and in audit records.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -573,6 +586,7 @@ impl FromStr for PermissionPreset {
 pub struct PermissionSet(BTreeSet<Permission>);
 
 impl PermissionSet {
+    /// An empty set, which is what an account with no grants holds.
     #[must_use]
     pub fn new() -> Self {
         Self(BTreeSet::new())
@@ -628,16 +642,19 @@ impl PermissionSet {
         permissions.iter().any(|p| self.has(*p))
     }
 
+    /// Whether this principal holds nothing at all.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
+    /// How many distinct permissions are held.
     #[must_use]
     pub fn len(&self) -> usize {
         self.0.len()
     }
 
+    /// Grants `permission`, answering whether it was not already held.
     pub fn insert(&mut self, permission: Permission) -> bool {
         self.0.insert(permission)
     }

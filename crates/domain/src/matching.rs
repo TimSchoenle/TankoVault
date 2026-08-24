@@ -1,13 +1,16 @@
-//! Series canonicalisation: the vocabulary two layers exchange when deciding whether a scanned
-//! or imported series is one the catalogue already holds. `crates/db` owns the transaction and
-//! calls a [`Canonicaliser`] it is handed; it links no scorer and knows no threshold.
+//! The vocabulary two layers exchange to decide whether a scanned series is already held.
+//!
+//! `crates/db` owns the transaction and calls a [`Canonicaliser`] it is handed. It links no
+//! scorer and knows no threshold.
 
 use crate::{ContentType, SeriesId};
 
 /// A candidate existing series to match against (from `db::repo::matching::find_candidates`).
 #[derive(Debug, Clone)]
 pub struct Candidate {
+    /// The existing series a match would attach the incoming source to.
     pub series_id: SeriesId,
+    /// The candidate's own canonical title, already normalized.
     pub normalized_title: String,
     /// Best trigram similarity in `[0,1]` across the candidate's canonical + alternative titles.
     pub similarity: f32,
@@ -16,7 +19,9 @@ pub struct Candidate {
     /// Retrieval can match on a synonym alone; without these the scorer re-scores against a
     /// title the candidate wasn't actually found by, understating an exact alias hit.
     pub alt_normalized_titles: Vec<String>,
+    /// Medium the candidate is recorded under.
     pub content_type: ContentType,
+    /// Year the candidate is recorded under, `None` when it has none.
     pub release_year: Option<i32>,
     /// Genre/tag names attached to this series. Empty when unavailable to the caller — the
     /// tag-overlap bonus in `tankovault_matcher::score` simply never fires.
@@ -28,10 +33,15 @@ pub struct Candidate {
 /// The incoming source's identifying attributes.
 #[derive(Debug, Clone)]
 pub struct Query {
+    /// The incoming title, normalized the same way a candidate's is.
     pub normalized_title: String,
+    /// Medium the source states, `Unknown` when it states none.
     pub content_type: ContentType,
+    /// Year the source states, `None` when it states none.
     pub release_year: Option<i32>,
+    /// Genre names the source carries. Empty means no signal, not no tags.
     pub tags: Vec<String>,
+    /// Credits the source carries, under the same empty-means-no-signal rule.
     pub authors: Vec<String>,
 }
 
@@ -141,8 +151,11 @@ pub enum Decision {
     /// Carries signals as well as score — a queue row with only a number cannot be triaged,
     /// re-scored, or safely auto-resolved later.
     Ambiguous {
+        /// The existing series the incoming source resembles.
         candidate: SeriesId,
+        /// The fuzzy score that landed it in the queue, in `[0,1]`.
         score: f32,
+        /// Which rules fired, so the row can be triaged without re-running the scorer.
         signals: MatchSignals,
     },
     /// Low/no confidence: create a new canonical series.

@@ -31,7 +31,10 @@ impl From<UserRow> for User {
 
 /// A user together with the stored password hash (login verification only).
 pub struct Credentials {
+    /// The account itself, as every other read model carries it.
     pub user: User,
+    /// The argon2id PHC string. Verifying it needs the server pepper as well, so this alone
+    /// does not authenticate anyone.
     pub password_hash: String,
     /// Whether the account's email address has been confirmed. `false` blocks sign-in until
     /// the user clicks the emailed confirmation link (see `email_verification_tokens`).
@@ -170,6 +173,8 @@ pub async fn touch_last_login<'e, E: PgExecutor<'e>>(exec: E, id: UserId) -> DbR
 /// The account state the authorization layer needs on every authenticated request.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AccountState {
+    /// Suspended stops the account acting at all, its own data included, and is checked
+    /// before authorization runs.
     pub status: AccountStatus,
 }
 

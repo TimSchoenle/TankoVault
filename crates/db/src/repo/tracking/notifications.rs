@@ -16,7 +16,9 @@ use uuid::Uuid;
 
 /// A notification row the notifier just wrote, with the document as stored.
 pub struct CreatedNotification {
+    /// The recipient, which is also what the push subject is named after.
     pub user_id: UserId,
+    /// The persisted row the push mirrors, so a client can dedup against it.
     pub notification_id: NotificationId,
     /// The payload *after* any coalescing merge — what the live push has to carry, since a
     /// pushed `count: 1` for a row that now reads "12 new" is a lie the client cannot detect.
@@ -25,7 +27,9 @@ pub struct CreatedNotification {
 
 /// The display fields a notification payload snapshots, resolved once per event.
 pub struct NotificationContext {
+    /// The canonical title at the moment of the event, frozen into the payload.
     pub series_title: String,
+    /// Its cover then, `None` when no provider supplied one.
     pub cover_url: Option<String>,
     /// The provider's base, for resolving a chapter's relative path into an openable URL.
     pub base_url: String,
@@ -308,6 +312,7 @@ pub async fn notifications_mark_read<'e, E: PgExecutor<'e>>(
 /// A watcher who opted into notifications for a series, with the two things that decide whether
 /// they hear about a chapter: their preferences and their read progress.
 pub struct Watcher {
+    /// Who to notify.
     pub user_id: UserId,
     /// The watchlist status this reader has the series in — the axis their preferences filter on.
     pub status: WatchStatus,

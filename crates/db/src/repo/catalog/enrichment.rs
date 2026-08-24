@@ -25,7 +25,9 @@ pub const MIN_TAG_WEIGHT: f32 = 0.01;
 /// row lock when the answer comes back, which is seconds of upstream latency later. Resolving
 /// priority against a value read here would decide against one a concurrent scan has replaced.
 pub struct SeriesEnrichmentRow {
+    /// The series to enrich.
     pub id: SeriesId,
+    /// What to search upstream for.
     pub canonical_title: String,
 }
 
@@ -118,18 +120,26 @@ pub async fn mark_metadata_checked<'e, E: PgExecutor<'e>>(
 /// The single row of `metadata_sweep_state`: what the enrichment sweep is doing, or last did.
 #[derive(Debug, Clone, FromRow)]
 pub struct MetadataSweepState {
+    /// Whether a sweep holds the row.
     pub running: bool,
+    /// When the current or last sweep began.
     pub started_at: Option<OffsetDateTime>,
+    /// When the last one released the row, `None` while one is running.
     pub finished_at: Option<OffsetDateTime>,
+    /// Series the sweep looked up.
     pub scanned: i32,
+    /// Of those, the ones upstream had a record for.
     pub enriched: i32,
+    /// Of those, the ones that matched nothing upstream.
     pub unresolved: i32,
+    /// Why the last sweep failed, `None` when it did not.
     pub error: Option<String>,
 }
 
 /// How much of the catalogue the sweep has and has not reached.
 #[derive(Debug, Clone, Copy, FromRow)]
 pub struct MetadataSweepCoverage {
+    /// Canonical series in the catalogue.
     pub series_total: i64,
     /// Series the sweep has never attempted. These lead every work list, so a figure that never
     /// falls is the signal that the sweep is not running at all.
@@ -278,17 +288,24 @@ pub struct MetadataEnrichment<'a> {
     /// Upstream's average score, 0..100. Overwritten when present: a score drifts, and a stale
     /// one is worse than the current one.
     pub external_score: Option<f32>,
+    /// Upstream's own popularity figure, on upstream's scale. Overwritten when
+    /// present, for the same reason the score is.
     pub external_popularity: Option<i32>,
     /// What the work was adapted from (`original`, `light_novel`, …), lower-cased.
     pub external_source: Option<&'a str>,
+    /// `(title, normalized)` pairs to add. Never removes one already held.
     pub alt_titles: &'a [(String, String)],
+    /// Tag links to add, each with its own weight and provenance.
     pub tags: &'a [TagLink<'a>],
+    /// Credits to add, by name.
     pub authors: &'a [String],
 }
 
-/// Apply an enrichment batch to a series in one transaction: fold the prioritised fields in
-/// through [`merge_metadata`], record the upstream-only signals, and additively record
-/// titles/tags/authors. Idempotent.
+/// Folds an enrichment batch into a series, in one transaction.
+///
+/// The prioritised fields go through [`merge_metadata`]; the upstream-only signals are recorded
+/// as given; titles, tags and authors are added rather than replaced. Idempotent, so a retried
+/// batch writes nothing new.
 ///
 /// Also stamps `metadata_checked_at`, so a successful enrichment leaves the sweep's work list
 /// the same way a fruitless lookup does (see [`list_series_for_enrichment`]).
@@ -389,9 +406,14 @@ pub async fn add_series_titles(
 /// exists.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TagKind {
+    /// The coarse twenty-term vocabulary every provider agrees on.
     Genre,
+    /// `AniList`'s descriptive vocabulary, where the link weight carries how strongly
+    /// the term applies.
     Theme,
+    /// The audience a publisher aimed the work at.
     Demographic,
+    /// Computed here rather than stated by any provider.
     Derived,
 }
 
@@ -418,6 +440,7 @@ pub enum TagSource {
     /// literally in [`add_series_tags`]' conflict predicate — a rename must change both, or the
     /// precedence rule stops matching and silently becomes last-writer-wins.
     Provider,
+    /// `AniList`, which ranks a term as well as naming it.
     AniList,
 }
 
@@ -435,11 +458,14 @@ impl TagSource {
 /// One tag attached to a series, with the strength and provenance the link table stores.
 #[derive(Debug, Clone, Copy)]
 pub struct TagLink<'a> {
+    /// The term, which is matched by name rather than by any upstream id.
     pub name: &'a str,
+    /// Which vocabulary it belongs to, and so how the recommender weights it.
     pub kind: TagKind,
     /// `(0, 1]`. Zero is not merely discouraged — `series_tags_weight_check` rejects it, so a
     /// caller with a zero-ranked term must floor it or drop the term.
     pub weight: f32,
+    /// Who supplied it, which decides whether it may overwrite an existing link.
     pub source: TagSource,
 }
 

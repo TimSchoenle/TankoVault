@@ -80,12 +80,17 @@ pub async fn prune_older_than<'e, E: PgExecutor<'e>>(
 /// One privileged-action record enriched with the actor's username, for the console feed.
 #[derive(Debug, Clone, serde::Serialize, FromRow)]
 pub struct AuditView {
+    /// The audit row.
     pub id: Uuid,
     /// Actor username (`None` for system-originated actions or a since-deleted user).
     pub actor: Option<String>,
+    /// What was done, as a stable action key.
     pub action: String,
+    /// What it was done to, `None` for an action with no single subject.
     pub target: Option<String>,
+    /// Action-specific detail. The action owns that shape, not this type.
     pub detail: Json,
+    /// When the action was recorded.
     #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,
 }
@@ -102,14 +107,18 @@ pub struct AuditFilter<'a> {
     pub action: Option<&'a str>,
     /// Substring of the target, since a target is an opaque identifier the operator pastes.
     pub target: Option<&'a str>,
+    /// Inclusive lower bound on the record's timestamp.
     pub since: Option<OffsetDateTime>,
+    /// Exclusive upper bound on it.
     pub until: Option<OffsetDateTime>,
 }
 
 /// One page of the audit trail, plus how many records the filter matches in total.
 #[derive(Debug, Clone)]
 pub struct AuditPage {
+    /// The page, newest record first.
     pub items: Vec<AuditView>,
+    /// Records the filter matched, ignoring `limit` and `offset`.
     pub total: i64,
 }
 

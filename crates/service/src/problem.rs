@@ -20,9 +20,14 @@ pub const PROBLEM_JSON: &str = "application/problem+json";
 /// since this crate does not depend on `utoipa`. If the two disagree, the API's schema is wrong.
 #[derive(Debug, Serialize)]
 pub struct ProblemBody {
+    /// `about:blank#` followed by [`Problem::kind`].
     pub r#type: String,
+    /// [`Problem::kind`] verbatim, as RFC 9457's short summary.
     pub title: String,
+    /// The response status, echoed into the body as RFC 9457 asks.
     pub status: u16,
+    /// What went wrong on this occasion. Written for whoever called the route, so it never
+    /// carries an internal error string.
     pub detail: String,
 }
 

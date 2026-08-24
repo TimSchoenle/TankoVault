@@ -456,7 +456,15 @@ jobs:
       # And this resolves the *links*: `cargo test --doc` never looks at a `[`Foo`]`, so a broken
       # intra-doc link renders as literal bracket text and nothing notices. `crates/api-client` is
       # exempt by construction — it declares its own `[lints]` table and inherits nothing.
+      #
+      # `RUSTDOCFLAGS` is what makes the run a gate rather than a report. The rustdoc lints in
+      # `[workspace.lints.rustdoc]` only fire under `rustdoc`, never under `cargo check`, so this
+      # step is the only place they are seen at all — and a warning nobody fails on is a warning
+      # that accumulates. Set on the step rather than the job so it cannot reach `cargo test`,
+      # where it would rebuild the whole dependency graph under different flags.
       - name: rustdoc (intra-doc links)
+        env:
+          RUSTDOCFLAGS: '-D warnings'
         run: cargo doc --workspace --no-deps --all-features
 
       # Fails if a backend DTO changed without regenerating `openapi.json` and `crates/api-client`.

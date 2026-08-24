@@ -35,11 +35,19 @@ pub enum Metered {
 /// What one unit of work spent on provider traffic.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct FetchAccounting {
+    /// Requests the base layer sent, failures included: a task that spent its time on requests
+    /// that all timed out still spent it.
     pub requests: i64,
+    /// Milliseconds inside those requests, pacing excluded.
     pub fetch_ms: i64,
+    /// Milliseconds spent held back before sending: the concurrency gate, the token rate, the
+    /// crawl delay and the adaptive penalty together.
     pub pace_wait_ms: i64,
+    /// Milliseconds spent inside the challenge solver.
     pub solver_ms: i64,
+    /// Solve attempts, successful or not.
     pub solver_calls: i64,
+    /// Responses that came back carrying a throttling status.
     pub throttled: i64,
 }
 

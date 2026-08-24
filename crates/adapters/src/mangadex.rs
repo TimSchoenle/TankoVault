@@ -155,6 +155,8 @@ fn content_type_of(language: Option<&str>) -> ContentType {
 pub struct MangaDexAdapter;
 
 impl MangaDexAdapter {
+    /// Stateless: the provider's base URL and the fetch stack arrive per call in [`Ctx`], so
+    /// one instance serves every provider configured against this adapter.
     #[must_use]
     pub fn new() -> Self {
         Self

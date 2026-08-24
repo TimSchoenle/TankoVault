@@ -20,6 +20,7 @@ use super::query::{ReleaseBucket, ReleaseGroup, WatchlistCounts, WatchlistFilter
 /// filters at all.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct WatchlistSummary {
+    /// Entries per status, over the whole library.
     pub counts: WatchlistCounts,
     /// Unread chapters across every tracked series, whatever its status.
     pub unread_total: i64,
@@ -32,7 +33,7 @@ pub struct WatchlistSummary {
 /// I have typed*", while this answers "how big is my library" for surfaces with no filter state
 /// of their own — a tab badge, a More sheet, a signed-in header.
 ///
-/// One statement rather than [`fetch_counts`] with an empty filter: with no free-text arm there
+/// One statement rather than the filtered count with an empty filter: with no free-text arm there
 /// is no reason to join `series` at all, and the unread sum rides along in the same scan.
 ///
 /// # Errors

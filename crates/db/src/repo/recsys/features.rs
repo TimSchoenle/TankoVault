@@ -8,7 +8,9 @@ use uuid::Uuid;
 
 /// One series' facts, ready for [`tankovault_recsys::extract`].
 pub struct SeriesFactsRow {
+    /// The series these facts describe.
     pub series_id: SeriesId,
+    /// Its tags, authors, status, decade and length, as the extractor takes them.
     pub facts: SeriesFacts,
 }
 
@@ -122,7 +124,9 @@ struct VectorRow {
 
 /// A feature and the id it interned to.
 pub struct InternedFeature {
+    /// The feature as the extractor named it.
     pub key: FeatureKey,
+    /// Its interned id, stable for the life of the row.
     pub id: i32,
 }
 
@@ -399,9 +403,14 @@ struct FeatRow {
 
 /// A feature as the explanation surface names it.
 pub struct FeatureRow {
+    /// The interned id a vector refers to it by.
     pub id: i32,
+    /// Which axis it lives on: a tag, an author, a status, a decade, a length band.
     pub kind: String,
+    /// The term itself, which is what an explanation renders.
     pub value: String,
+    /// Inverse document frequency: how rare the feature is across the catalogue, and
+    /// so how much a shared occurrence of it is worth.
     pub idf: f32,
 }
 
@@ -481,7 +490,9 @@ struct ExactRow {
 
 /// A series matched by exact feature overlap, and how many of the asked-for features it carries.
 pub struct ExactMatch {
+    /// The series that matched.
     pub series_id: SeriesId,
+    /// How many of the asked-for features it carries.
     pub shared: i64,
 }
 

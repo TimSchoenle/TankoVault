@@ -6,11 +6,12 @@ use sqlx::PgExecutor;
 use tankovault_domain::SeriesId;
 use uuid::Uuid;
 
-/// Transactionally merge `drop_id` into `keep_id` (design §10 operator merge): re-parent
-/// the merged series' sources, union its titles and tags, migrate user watchlist/progress,
-/// sync state and external mappings, resolve any related merge candidates, then delete it. All
-/// child-table moves are idempotent (`ON CONFLICT`), and read-progress keeps the furthest
-/// point.
+/// Merges `drop_id` into `keep_id` in one transaction, and deletes it (design §10).
+///
+/// Sources are re-parented; titles, tags, watchlist entries, progress, sync state and external
+/// mappings are unioned onto the survivor; related merge candidates are resolved. Every
+/// child-table move is `ON CONFLICT`, so a retry of a partially applied merge is safe, and read
+/// progress keeps whichever side had read further.
 ///
 /// Returns the [`MergeUndo`] journal — the exact inverse of everything this transaction did.
 /// The caller is expected to persist it (see

@@ -8,12 +8,16 @@ use serde::Deserialize;
 use tankovault_config::{BrandingConfig, MetricsConfig, TelemetryConfig};
 use terrace_config::schema::Describe;
 
+/// Top-level frontend config.
 #[derive(Debug, Deserialize, Describe)]
 pub struct Config {
+    /// The public listener, serving both the SPA bundle and the `/v1/*` proxy.
     #[serde(default = "default_bind")]
     pub bind_addr: String,
+    /// Log filter, log format and Sentry reporting.
     #[config(nested)]
     pub telemetry: TelemetryConfig,
+    /// Where the bundle is read from, where `/v1/*` is forwarded, and what this hop accepts.
     #[serde(default)]
     #[config(nested)]
     pub frontend: FrontendConfig,
@@ -36,6 +40,7 @@ fn default_bind() -> String {
     "0.0.0.0:3000".to_owned()
 }
 
+/// Where the bundle is read from, where `/v1/*` is forwarded, and what this hop accepts.
 #[derive(Debug, Clone, Deserialize, Describe)]
 pub struct FrontendConfig {
     /// Directory the built SPA bundle is served from. Baked into the image at `/srv/www`.

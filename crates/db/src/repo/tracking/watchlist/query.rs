@@ -4,17 +4,26 @@
 use tankovault_domain::{ProviderState, SeriesId, SeriesSourceId, WatchStatus};
 use time::OffsetDateTime;
 
-/// A watchlist row enriched with the series title + cover, the user's progress, and the
-/// release/source facts the list sorts and groups on — so the Watchlist renders each row
-/// without an N+1 `series_detail` fetch (frontend §9.3).
+/// One watchlist row with everything the ledger needs to render and order it.
+///
+/// The series title and cover, the reader's progress, and the release and source facts the list
+/// sorts and groups on, so the Watchlist renders a page without an N+1 `series_detail` fetch
+/// (frontend §9.3).
 #[derive(Debug, Clone)]
 pub struct WatchlistCard {
+    /// The series this row tracks.
     pub series_id: SeriesId,
+    /// Its canonical title.
     pub series_title: String,
+    /// Its cover, `None` when no provider supplied one.
     pub cover_url: Option<String>,
+    /// Where the reader says they are with it.
     pub status: WatchStatus,
+    /// The per-title notification opt-in.
     pub notify: bool,
+    /// When the series entered this reader's watchlist.
     pub added_at: OffsetDateTime,
+    /// The reader's progress frontier, `None` before they have marked anything.
     pub last_read_number: Option<f64>,
     /// Distinct chapters strictly above the user's progress, across all sources.
     pub unread: i64,
@@ -102,6 +111,7 @@ pub struct NextUnread {
 pub struct WatchlistSource {
     /// The provider slug — the monogram tile's letters and a stable key for the client.
     pub code: String,
+    /// The provider's display name.
     pub name: String,
     /// The *effective* state: the series-source's own, unless the provider behind it is worse.
     ///
@@ -124,9 +134,13 @@ pub enum WatchlistSort {
     /// is meaningful under.
     #[default]
     Released,
+    /// Most unread chapters first.
     Unread,
+    /// Most recently added first.
     Added,
+    /// Canonical title, A to Z.
     Title,
+    /// Furthest through first.
     Progress,
 }
 
@@ -180,8 +194,10 @@ pub struct ParseWatchlistSortError(pub String);
 /// Ascending or descending, for whichever key [`WatchlistSort`] selected.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum WatchlistOrder {
+    /// Largest or newest first.
     #[default]
     Desc,
+    /// Smallest or oldest first.
     Asc,
 }
 
@@ -222,10 +238,12 @@ pub struct WatchlistFilter {
     /// growing a fifth hand-written copy of the unread predicate, which is the drift the
     /// `unread_predicate_agrees_everywhere` test exists to catch.
     pub series_id: Option<SeriesId>,
+    /// Narrow to one watch status, which is what the tab strip selects.
     pub status: Option<WatchStatus>,
     /// Free-text filter over the canonical title, alternative titles, tag names and author
     /// names.
     pub query: Option<String>,
+    /// Drop rows the reader is caught up on.
     pub unread_only: bool,
     /// Only rows whose newest chapter was discovered at or after this instant.
     ///
@@ -235,9 +253,13 @@ pub struct WatchlistFilter {
     pub released_since: Option<OffsetDateTime>,
     /// Only rows whose preferred source is degraded — see [`WatchlistCard::source_degraded`].
     pub source_issues: bool,
+    /// Which key to order on.
     pub sort: WatchlistSort,
+    /// Which direction to order that key in.
     pub order: WatchlistOrder,
+    /// Rows per page.
     pub limit: i64,
+    /// Rows to skip, ignored once `cursor` is set.
     pub offset: i64,
     /// Resume after this row instead of counting `offset` rows into the result.
     ///
@@ -302,6 +324,7 @@ pub struct WatchlistCursor {
     pub num: Option<f64>,
     /// The text sort key, for `title`.
     pub text: Option<String>,
+    /// The tiebreak, since a sort key is not unique across rows.
     pub series_id: SeriesId,
 }
 
@@ -321,10 +344,15 @@ impl WatchlistCursor {
 /// applied would read `0` on every tab but the active one.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct WatchlistCounts {
+    /// Entries held at `reading`.
     pub reading: i64,
+    /// Entries held at `planned`.
     pub planned: i64,
+    /// Entries held at `paused`.
     pub paused: i64,
+    /// Entries held at `completed`.
     pub completed: i64,
+    /// Entries held at `dropped`.
     pub dropped: i64,
     /// The sum of the five, i.e. the `All` tab.
     pub all: i64,
@@ -405,8 +433,11 @@ impl ReleaseBucket {
 /// chapters they carry between them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ReleaseGroup {
+    /// Which band this header covers.
     pub bucket: ReleaseBucket,
+    /// Rows falling in it.
     pub title_count: i64,
+    /// Unread chapters those rows carry between them.
     pub chapter_count: i64,
 }
 
@@ -414,9 +445,11 @@ pub struct ReleaseGroup {
 /// counts, the group-header aggregates, and the total for the pager.
 #[derive(Debug, Clone)]
 pub struct WatchlistPage {
+    /// The page, in the filter's order.
     pub items: Vec<WatchlistCard>,
     /// Rows matching the *whole* filter, `status` included — the pager's denominator.
     pub total: i64,
+    /// What each tab would show, so the strip needs no second request.
     pub counts: WatchlistCounts,
     /// Newest band first. Empty bands are omitted, so a list with nothing released this week
     /// renders `Today` then `Earlier`.

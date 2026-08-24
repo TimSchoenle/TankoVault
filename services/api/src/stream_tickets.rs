@@ -146,6 +146,8 @@ pub struct MemoryStreamTickets {
 }
 
 impl MemoryStreamTickets {
+    /// An empty store. Per-replica, so a ticket minted on one replica cannot open a stream on
+    /// another; that is why a multi-replica deployment configures Redis instead.
     #[must_use]
     pub fn new() -> Self {
         Self::default()

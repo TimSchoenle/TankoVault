@@ -13,7 +13,9 @@ use utoipa::ToSchema;
 macro_rules! str_enum {
     (
         $(#[$meta:meta])*
-        $vis:vis enum $name:ident { $( $variant:ident => $token:literal ),+ $(,)? }
+        $vis:vis enum $name:ident {
+            $( $(#[$vmeta:meta])* $variant:ident => $token:literal ),+ $(,)?
+        }
         default = $default:ident,
         sql_type = $sql_type:literal
     ) => {
@@ -26,6 +28,7 @@ macro_rules! str_enum {
         #[cfg_attr(feature = "sqlx", sqlx(type_name = $sql_type))]
         $vis enum $name {
             $(
+                $(#[$vmeta])*
                 #[serde(rename = $token)]
                 // utoipa needs telling separately: it does not read the `serde(rename)` above,
                 // so without this it publishes the container's `rename_all` applied to the
@@ -40,6 +43,7 @@ macro_rules! str_enum {
         }
 
         impl $name {
+            /// The token this variant serializes to, which is also its SQL enum label.
             #[must_use]
             $vis fn as_str(self) -> &'static str {
                 match self { $( Self::$variant => $token ),+ }
@@ -78,17 +82,24 @@ macro_rules! str_enum {
 #[derive(Debug, Clone, thiserror::Error)]
 #[error("invalid {kind} value: {value:?}")]
 pub struct ParseEnumError {
+    /// The enum that refused the value, as its Rust type name.
     pub kind: &'static str,
+    /// The string that matched no token, kept verbatim for the message.
     pub value: String,
 }
 
 str_enum! {
     /// The medium/origin classification of a work.
     pub enum ContentType {
+        /// Japanese origin.
         Manga => "manga",
+        /// Korean origin.
         Manhwa => "manhwa",
+        /// Chinese origin.
         Manhua => "manhua",
+        /// Vertical-scroll format, whatever its origin.
         Webtoon => "webtoon",
+        /// No provider carrying the series has stated one.
         Unknown => "unknown",
     }
     default = Unknown,
@@ -98,10 +109,15 @@ str_enum! {
 str_enum! {
     /// Publication status of a canonical series.
     pub enum SeriesStatus {
+        /// Still releasing.
         Ongoing => "ongoing",
+        /// Finished, and no further chapter is expected.
         Completed => "completed",
+        /// Paused by the author, with an ending still intended.
         Hiatus => "hiatus",
+        /// Abandoned before an ending.
         Cancelled => "cancelled",
+        /// No provider carrying the series has stated one.
         Unknown => "unknown",
     }
     default = Unknown,
@@ -116,11 +132,18 @@ str_enum! {
     /// site running one onboards as a single config row carrying only its deviations. `Custom`
     /// is the escape hatch, dispatched by slug.
     pub enum AdapterKind {
+        /// The Madara `WordPress` theme.
         Madara => "madara",
+        /// The `MangaThemesia` `WordPress` theme.
         MangaThemesia => "mangathemesia",
+        /// The `Manganato` family of sites.
         Manganato => "manganato",
+        /// The Keyoapp hosting platform.
         Keyoapp => "keyoapp",
+        /// A site driven entirely by the selectors in `providers.config`, with no code of its
+        /// own. What a new provider starts as.
         GenericConfig => "generic_config",
+        /// A hand-written adapter, dispatched by the provider slug.
         Custom => "custom",
     }
     default = GenericConfig,
@@ -135,7 +158,10 @@ str_enum! {
     /// unread by default tells a reader they are behind on something they cannot open, and
     /// dropping it at ingest loses the row that has to exist when the timer expires.
     pub enum ChapterAccess {
+        /// Readable by anyone, which is what a provider stating nothing is taken to mean.
         Free => "free",
+        /// Behind payment or a timer. The row exists so it can flip to `Free` when the window
+        /// closes.
         EarlyAccess => "early_access",
     }
     default = Free,
@@ -145,11 +171,17 @@ str_enum! {
 str_enum! {
     /// Live health state of a provider (drives the circuit breaker + console tiles).
     pub enum ProviderState {
+        /// Serving normally.
         Active => "active",
+        /// Erroring often enough for the breaker to have noticed, but still answering.
         Degraded => "degraded",
+        /// An interstitial was classified on the last fetch, so a solver tier is needed.
         Challenged => "challenged",
+        /// A solve is in flight for this provider.
         Solving => "solving",
+        /// The breaker opened. Nothing is dispatched until it closes.
         Blocked => "blocked",
+        /// Turned off by an operator, which no health signal reverses.
         Disabled => "disabled",
     }
     default = Active,
@@ -159,7 +191,9 @@ str_enum! {
 str_enum! {
     /// Scan cadence.
     pub enum ScanMode {
+        /// Walks the provider archive and rebuilds everything it carries.
         Full => "full",
+        /// Reads only the latest feed. The cadence that runs on a schedule.
         Fast => "fast",
     }
     default = Fast,
@@ -169,10 +203,15 @@ str_enum! {
 str_enum! {
     /// Lifecycle of a scan run.
     pub enum RunState {
+        /// Dispatched, with no task claimed yet.
         Queued => "queued",
+        /// At least one task has been claimed and the run has not settled.
         Running => "running",
+        /// Every task settled, and not all of them failed.
         Completed => "completed",
+        /// The run settled with nothing to show for it.
         Failed => "failed",
+        /// Stopped by an operator. Queued tasks under it become unclaimable.
         Cancelled => "cancelled",
     }
     default = Queued,
@@ -182,11 +221,17 @@ str_enum! {
 str_enum! {
     /// Lifecycle of an individual scan task.
     pub enum TaskState {
+        /// Waiting for a worker.
         Queued => "queued",
+        /// A worker holds it. The claim is what increments `attempts`.
         Claimed => "claimed",
+        /// The worker has begun fetching.
         Running => "running",
+        /// Finished, and the rows it found are written.
         Done => "done",
+        /// Gave up, with the reason on the row.
         Failed => "failed",
+        /// Deliberately not run: its target was unchanged, or its run was cancelled first.
         Skipped => "skipped",
     }
     default = Queued,
@@ -196,10 +241,15 @@ str_enum! {
 str_enum! {
     /// A user's tracking status for a series.
     pub enum WatchStatus {
+        /// Currently following. What an entry starts as.
         Reading => "reading",
+        /// Saved for later, not started.
         Planned => "planned",
+        /// Read to the end the user cares about.
         Completed => "completed",
+        /// Abandoned, and not coming back.
         Dropped => "dropped",
+        /// Set down with an intention to resume.
         Paused => "paused",
     }
     default = Reading,
@@ -215,7 +265,9 @@ str_enum! {
     /// account read its watchlist and refresh its session, which is not what suspension
     /// means. It is therefore an identity-level state checked before authorization runs.
     pub enum AccountStatus {
+        /// May sign in and act.
         Active => "active",
+        /// May not act at all, its own data included. Checked before authorization runs.
         Suspended => "suspended",
     }
     default = Active,

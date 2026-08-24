@@ -29,9 +29,13 @@ pub async fn find_by_email<'e, E: PgExecutor<'e>>(exec: E, email: &str) -> DbRes
 
 /// A stored password-reset token record (hash only; the plaintext lives only in the email).
 pub struct PasswordResetRecord {
+    /// Primary key of the token row, not the token.
     pub id: Uuid,
+    /// The account whose password the token resets.
     pub user_id: UserId,
+    /// After this instant the token is refused. Expiry is checked on use, not swept.
     pub expires_at: OffsetDateTime,
+    /// When it was redeemed. `Some` makes it single-use: a replay is refused.
     pub used_at: Option<OffsetDateTime>,
 }
 

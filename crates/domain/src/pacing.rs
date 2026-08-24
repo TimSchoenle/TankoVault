@@ -1,6 +1,7 @@
-//! Outbound request pacing: a minimum gap plus an adaptive penalty for provider push-back.
-//! Lives in `domain`, not `tankovault-fetch`, so callers like `services/sync` can pace
-//! requests without linking the browser-emulating crawl stack.
+//! Outbound request pacing: a minimum gap, plus an adaptive penalty for provider push-back.
+//!
+//! Lives here rather than in `tankovault-fetch` so that a caller like `services/sync` can pace
+//! its requests without linking the browser-emulating crawl stack.
 
 use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};

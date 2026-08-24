@@ -51,8 +51,14 @@ const ESSENTIAL_COOKIE_PREFIXES: [&str; 8] = [
 /// A cached solved session (cookies + UA + expiry).
 #[derive(Debug, Clone)]
 pub struct SolvedSession {
+    /// The jar the solver came back with, name and value. Empty means the solve cleared
+    /// nothing, and such a session is never replayed.
     pub cookies: Vec<(String, String)>,
+    /// The browser identity the cookies were issued to. Replaying the cookies under a different
+    /// one is what invalidates a `cf_clearance`.
     pub user_agent: String,
+    /// When this deployment stops replaying the session, from `solver.session_ttl_secs`. It is
+    /// not the cookies' own expiry.
     pub expires_at: OffsetDateTime,
 }
 
@@ -176,6 +182,8 @@ pub struct SolvingFetcher<F> {
 }
 
 impl<F> SolvingFetcher<F> {
+    /// Wraps `inner`, solving through `solver` and caching the result in `store`. Requests that
+    /// meet no challenge never touch either.
     #[must_use]
     pub fn new(inner: F, solver: Arc<dyn ChallengeSolver>, store: Arc<dyn SessionStore>) -> Self {
         Self {

@@ -14,8 +14,11 @@ use uuid::Uuid;
 
 /// What the reader has done with one series, as affinity needs it.
 pub struct ReaderInteraction {
+    /// The series the reader acted on.
     pub series_id: SeriesId,
+    /// What they did, and how far through they got.
     pub interaction: Interaction,
+    /// When, which is what the recency decay is measured from.
     pub observed_at: OffsetDateTime,
 }
 
@@ -171,14 +174,21 @@ pub async fn top_affinity<'e, E: PgExecutor<'e>>(
 
 /// The reader's taste profile, as stored.
 pub struct TasteProfile {
+    /// Interned feature ids the reader is drawn to, parallel to `weights`.
     pub feature_ids: Vec<i32>,
+    /// How strongly, one per id above.
     pub weights: Vec<f32>,
+    /// Interned feature ids the reader avoids, parallel to `neg_weights`.
     pub neg_feature_ids: Vec<i32>,
+    /// How strongly, one per id above.
     pub neg_weights: Vec<f32>,
+    /// The series this profile was built from.
     pub seeds: Vec<SeriesId>,
     /// The reader's centre of gravity, as a pgvector literal. `None` until a seed is embedded.
     pub embedding: Option<String>,
+    /// Whether an interaction has landed since `built_at`, so the next build has work.
     pub stale: bool,
+    /// When the profile was last rebuilt.
     pub built_at: OffsetDateTime,
 }
 

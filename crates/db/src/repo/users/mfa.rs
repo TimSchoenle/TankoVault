@@ -250,7 +250,9 @@ pub async fn recovery_codes_remaining<'e, E: PgExecutor<'e>>(
 /// A pending sign-in, resolved from the handle its owner holds.
 #[derive(Debug, Clone, FromRow)]
 pub struct PendingChallenge {
+    /// The challenge row, which the handle resolves to.
     pub id: Uuid,
+    /// Who is trying to sign in.
     pub user_id: UserId,
     /// How many factors have already been presented against this challenge.
     pub attempts: i32,
@@ -347,8 +349,11 @@ pub async fn prune_expired_challenges<'e, E: PgExecutor<'e>>(exec: E) -> DbResul
 /// Which factor produced a step-up grant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StepUpMethod {
+    /// A confirmed authenticator-app code.
     Totp,
+    /// A registered `WebAuthn` second factor.
     SecurityKey,
+    /// One of the single-use codes issued at enrolment.
     RecoveryCode,
     /// The fallback for an account with no factor enrolled at all — refused once one exists.
     Password,

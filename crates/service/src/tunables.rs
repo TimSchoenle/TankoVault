@@ -98,6 +98,7 @@ pub struct PostgresTunableSource {
 
 #[cfg(feature = "db")]
 impl PostgresTunableSource {
+    /// Reads overrides through `pool`, one query per refresh.
     #[must_use]
     pub fn new(pool: tankovault_db::PgPool) -> Self {
         Self { pool }

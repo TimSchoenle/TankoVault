@@ -13,12 +13,17 @@ use uuid::Uuid;
 /// to `remote_value` transposes silently and would show a user their own value as the remote one.
 #[derive(Debug, Clone, Copy)]
 pub struct NewConflict<'a> {
+    /// Whose account the conflict is on.
     pub user_id: UserId,
+    /// The series both sides disagree about.
     pub series_id: SeriesId,
+    /// Which external tracker, as a slug.
     pub provider: &'a str,
     /// The field in disagreement, `"progress"` or `"status"`.
     pub field: &'a str,
+    /// What this deployment holds for `field`, rendered as text.
     pub local_value: &'a str,
+    /// What the tracker holds for it, rendered the same way.
     pub remote_value: &'a str,
 }
 
@@ -63,14 +68,21 @@ pub async fn insert_conflict<'e, E: PgExecutor<'e>>(
 /// `Deserialize` + schema'd: `services/api` republishes this row, so it must appear in `OpenAPI`.
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct ConflictRow {
+    /// The conflict, which is what a resolve call names.
     pub id: Uuid,
+    /// The series both sides disagree about.
     pub series_id: Uuid,
+    /// Its canonical title, joined in so the list renders from one fetch.
     pub series_title: String,
+    /// Which external tracker, as a slug.
     pub provider: String,
     /// Which tracked field disagrees, e.g. `progress` or `status`.
     pub field: String,
+    /// What this deployment holds for `field`, rendered as text.
     pub local_value: String,
+    /// What the tracker holds for it.
     pub remote_value: String,
+    /// When a sync first found the two disagreeing.
     #[serde(with = "time::serde::rfc3339")]
     pub detected_at: OffsetDateTime,
 }
@@ -101,10 +113,15 @@ pub async fn list_pending_conflicts<'e, E: PgExecutor<'e>>(
 /// A pending conflict's identity + values, used to apply a user's resolution.
 #[derive(Debug, Clone, FromRow)]
 pub struct ConflictDetail {
+    /// The series the resolution writes to.
     pub series_id: Uuid,
+    /// Which external tracker, as a slug.
     pub provider: String,
+    /// Which tracked field disagrees.
     pub field: String,
+    /// The value a `remote` resolution overwrites.
     pub local_value: String,
+    /// The value a `remote` resolution writes.
     pub remote_value: String,
 }
 

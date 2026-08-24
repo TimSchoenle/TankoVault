@@ -1,6 +1,7 @@
-//! Permission grants — the persistence behind [`tankovault_domain::Permission`]. Resolved from
-//! here on every authenticated request rather than cached in an access token, so a revocation
-//! takes effect immediately.
+//! Permission grants: the persistence behind [`tankovault_domain::Permission`].
+//!
+//! Resolved from here on every authenticated request rather than cached in an access token, so a
+//! revocation takes effect on the next request rather than at the token's expiry.
 //!
 //! Unrecognised stored tokens are dropped, not rejected — see
 //! [`tankovault_domain::PermissionSet::from_tokens`].
@@ -14,7 +15,9 @@ use uuid::Uuid;
 /// Everything the authorization layer needs about a principal, in one read.
 #[derive(Debug, Clone)]
 pub struct Principal {
+    /// Whether the account may act at all. Checked before any permission is.
     pub status: AccountStatus,
+    /// Every capability the account holds, unrecognised tokens already dropped.
     pub permissions: PermissionSet,
     /// Whether this account has opted into adult content *and* attested its age.
     ///
@@ -104,6 +107,7 @@ pub struct GrantRow {
     pub permission: String,
     /// Whether this build recognises the token. `false` means the grant is inert.
     pub known: bool,
+    /// When the grant was made.
     #[serde(with = "time::serde::rfc3339")]
     pub granted_at: OffsetDateTime,
     /// `None` for a migration-era grant or an erased administrator.
@@ -225,11 +229,14 @@ pub async fn replace(
 /// permissions to X").
 #[derive(Debug, Clone, Default, serde::Serialize)]
 pub struct GrantDiff {
+    /// Permission tokens the call granted.
     pub added: Vec<String>,
+    /// Permission tokens the call revoked.
     pub removed: Vec<String>,
 }
 
 impl GrantDiff {
+    /// Whether the call changed nothing, in which case there is no audit record worth writing.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.added.is_empty() && self.removed.is_empty()
@@ -260,10 +267,11 @@ pub async fn grant<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// How many **active** accounts hold `permission`, excluding `ignoring` — the lockout guard
-/// behind every "you cannot do that" refusal: revoking/suspending/erasing the last holder of a
-/// capability would leave no way to grant anything back except editing the database directly.
-/// Suspended accounts don't count; they can't sign in.
+/// How many active accounts hold `permission`, not counting `ignoring`.
+///
+/// The lockout guard behind every refusal on this surface: revoking, suspending or erasing the
+/// last holder of a capability leaves no way to grant anything back short of editing the
+/// database. Suspended accounts do not count, because they cannot sign in to use the grant.
 ///
 /// A super user counts as a holder of everything, matching [`PermissionSet::has`]. Counting
 /// only the exact token would refuse a revocation the deployment owner could undo in a click.
@@ -314,9 +322,10 @@ pub async fn claim_super_user<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -
     Ok(result.rows_affected() > 0)
 }
 
-/// Make sure this deployment still has a super user, promoting the owner candidate when it does
-/// not. Returns who was promoted, or `None` when one already exists (the normal case) or there
-/// is no candidate.
+/// Promotes the owner candidate when this deployment has no super user left.
+///
+/// Answers who was promoted, and `None` both when one already exists, which is the normal case,
+/// and when there is no candidate to promote.
 ///
 /// [`claim_super_user`] covers the install: the first account of an empty database takes
 /// ownership. It cannot cover everything after that, and the gap is not theoretical — a

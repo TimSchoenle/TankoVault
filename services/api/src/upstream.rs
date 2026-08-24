@@ -93,7 +93,8 @@ impl Upstream {
     /// `GET path`, decoding the body as `T`.
     ///
     /// # Errors
-    /// See [`Self::send`].
+    /// A bad gateway or a gateway timeout when the peer cannot be reached, and the peer's own
+    /// not-found or conflict when it refused deliberately.
     pub async fn get<T: DeserializeOwned>(&self, path: &str) -> ApiResult<Json<T>> {
         let url = self.url(path);
         self.send(self.http.get(url)).await
@@ -102,7 +103,8 @@ impl Upstream {
     /// `POST path` with a JSON body, decoding the response as `T`.
     ///
     /// # Errors
-    /// See [`Self::send`].
+    /// A bad gateway or a gateway timeout when the peer cannot be reached, and the peer's own
+    /// not-found or conflict when it refused deliberately.
     pub async fn post<B: Serialize, T: DeserializeOwned>(
         &self,
         path: &str,
@@ -115,7 +117,8 @@ impl Upstream {
     /// `PATCH path` with a JSON body, decoding the response as `T`.
     ///
     /// # Errors
-    /// See [`Self::send`].
+    /// A bad gateway or a gateway timeout when the peer cannot be reached, and the peer's own
+    /// not-found or conflict when it refused deliberately.
     pub async fn patch<B: Serialize, T: DeserializeOwned>(
         &self,
         path: &str,
@@ -128,7 +131,8 @@ impl Upstream {
     /// `DELETE path` with a JSON body, decoding the response as `T`.
     ///
     /// # Errors
-    /// See [`Self::send`].
+    /// A bad gateway or a gateway timeout when the peer cannot be reached, and the peer's own
+    /// not-found or conflict when it refused deliberately.
     pub async fn delete<B: Serialize, T: DeserializeOwned>(
         &self,
         path: &str,
@@ -140,8 +144,8 @@ impl Upstream {
 
     /// Fire a request whose outcome the caller does not await — the targeted sync push.
     ///
-    /// Returns the builder rather than sending, so the caller owns the `tokio::spawn`. Still
-    /// goes through [`Self::prepare`], which is the point.
+    /// Returns the builder rather than sending, so the caller owns the `tokio::spawn`. The internal
+    /// token and the trace headers are still attached, which is the point.
     pub fn request(&self, method: reqwest::Method, path: &str) -> reqwest::RequestBuilder {
         self.prepare(self.http.request(method, self.url(path)))
     }

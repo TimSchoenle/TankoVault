@@ -17,16 +17,27 @@ use uuid::Uuid;
 /// [`count_pending_conflicts`](super::conflicts::count_pending_conflicts) for the user-wide count.
 #[derive(Debug, Clone, Serialize, FromRow)]
 pub struct AdminAccountRow {
+    /// The local account the link belongs to.
     pub user_id: Uuid,
+    /// Its username, joined in so the table renders from one fetch.
     pub username: String,
+    /// Which external tracker, as a slug.
     pub provider: String,
+    /// The handle on that tracker, `None` until a sync has read it.
     pub external_username: Option<String>,
+    /// When a sync last completed for this link, `None` if none has.
     #[serde(with = "time::serde::rfc3339::option")]
     pub last_synced_at: Option<OffsetDateTime>,
+    /// Why the most recent sync failed, `None` when the last one succeeded.
     pub last_error: Option<String>,
+    /// The user's own setting for scheduled syncing.
     pub auto_sync_enabled: bool,
+    /// The user's own answer to a two-sided change: which side wins.
     pub conflict_policy: String,
+    /// Two-sided changes still waiting on this user. Non-zero is what puts the link on the
+    /// operator's queue.
     pub pending_conflicts: i64,
+    /// When the link was made.
     #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,
 }
@@ -61,10 +72,15 @@ pub async fn admin_list_accounts<'e, E: PgExecutor<'e>>(
 /// One row of the admin Sync console's "Series mappings" table.
 #[derive(Debug, Clone, Serialize, FromRow)]
 pub struct AdminMappingRow {
+    /// The local series.
     pub series_id: Uuid,
+    /// Its canonical title, joined in so the table renders from one fetch.
     pub series_title: String,
+    /// Which external tracker, as a slug.
     pub provider: String,
+    /// The tracker's own id for the same work.
     pub external_id: String,
+    /// When the mapping was last written.
     #[serde(with = "time::serde::rfc3339")]
     pub updated_at: OffsetDateTime,
 }
@@ -118,7 +134,9 @@ pub async fn admin_list_mappings_for_series<'e, E: PgExecutor<'e>>(
 /// external mapping for the given provider yet, so an operator can review and assign one.
 #[derive(Debug, Clone, Serialize, FromRow)]
 pub struct UnmappedSeriesRow {
+    /// The series with no mapping for this provider.
     pub series_id: Uuid,
+    /// Its canonical title.
     pub series_title: String,
     /// How many local sources back this series (a proxy for how confident a match is worth).
     pub source_count: i64,
@@ -165,14 +183,23 @@ pub async fn admin_list_unmapped<'e, E: PgExecutor<'e>>(
 /// the auto-matcher could not confidently link to a local series.
 #[derive(Debug, Clone, Serialize, FromRow)]
 pub struct RemoteEntryRow {
+    /// Whose list the entry came off.
     pub user_id: Uuid,
+    /// That user's username.
     pub username: String,
+    /// Which external tracker, as a slug.
     pub provider: String,
+    /// The tracker's own id for the entry.
     pub external_id: String,
+    /// Title as the tracker spells it, which is what an operator matches on.
     pub title: String,
+    /// Tracking status as the tracker spells it.
     pub status: String,
+    /// Chapters read, on the tracker's scale.
     pub progress: f64,
+    /// Medium as the tracker spells it.
     pub content_type: String,
+    /// Year the tracker gives, `None` when it gives none.
     pub start_year: Option<i32>,
 }
 
@@ -212,9 +239,13 @@ pub async fn admin_list_unmatched_remote<'e, E: PgExecutor<'e>>(
 /// series without waiting for the next pull.
 #[derive(Debug, Clone, FromRow)]
 pub struct RemoteEntrySnapshot {
+    /// Title as the last pull read it.
     pub title: String,
+    /// Tracking status as the last pull read it.
     pub status: String,
+    /// Chapters read, on the tracker's scale, as the last pull read it.
     pub progress: f64,
+    /// When that pull stored the snapshot.
     pub updated_at: OffsetDateTime,
 }
 
@@ -246,11 +277,17 @@ pub async fn get_remote_entry<'e, E: PgExecutor<'e>>(
 /// similarity plus display fields for the console to rank and preview.
 #[derive(Debug, Clone, FromRow)]
 pub struct SeriesCandidateRow {
+    /// The local series being offered.
     pub series_id: Uuid,
+    /// Its canonical title, for the preview.
     pub title: String,
+    /// The key `similarity` was measured against.
     pub normalized_title: String,
+    /// Its medium, as a text-cast token, so the console can rule out a mismatch.
     pub content_type: String,
+    /// Its year, `None` when the catalogue has none.
     pub release_year: Option<i32>,
+    /// Providers carrying it, a proxy for how much a wrong match would cost.
     pub source_count: i64,
     /// Best trigram similarity in `[0,1]` across the canonical + alternative titles.
     pub similarity: f32,

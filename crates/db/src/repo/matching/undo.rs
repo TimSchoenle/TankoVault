@@ -52,8 +52,12 @@ pub const UNDO_VERSION: u16 = 1;
 /// `crates/db/tests/repo_matching.rs` pins that list against the live table.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MergeUndo {
+    /// Journal format. A restore refuses a version it does not know rather than
+    /// populating the composite types from a different shape.
     pub version: u16,
+    /// The series that absorbed the other.
     pub survivor_id: Uuid,
+    /// The series that stopped existing, and that a revert recreates under this id.
     pub absorbed_id: Uuid,
 
     /// The absorbed `series` row, whole.
@@ -61,38 +65,62 @@ pub struct MergeUndo {
 
     // The absorbed series' own child rows. All of these cascade away with the series row, so
     // they exist nowhere else once the merge commits.
+    /// The absorbed series' alternative titles.
     pub titles: Json,
+    /// Its tag links.
     pub tags: Json,
+    /// Its author links.
     pub authors: Json,
+    /// Its watchlist entries, across every reader.
     pub watchlist: Json,
+    /// Its read-progress rows.
     pub progress: Json,
+    /// Its external-tracker mappings.
     pub mappings: Json,
+    /// Its per-reader metadata overrides.
     pub overrides: Json,
+    /// Its notification dedup keys.
     pub dedup: Json,
+    /// Its recommendation feedback rows.
     pub feedback: Json,
 
     // The survivor's rows at the absorbed side's keys, as they were before the merge overwrote
     // them. Only the three tables whose union insert is a `DO UPDATE`.
+    /// The survivor's progress rows at those keys, before the union overwrote them.
     pub survivor_progress: Json,
+    /// The survivor's overrides at those keys, before the union overwrote them.
     pub survivor_overrides: Json,
+    /// The survivor's feedback at those keys, before the union overwrote them.
     pub survivor_feedback: Json,
 
     // Rows the merge created on the survivor, from each insert's `RETURNING`.
+    /// Titles the merge added to the survivor, to delete again.
     pub inserted_titles: Json,
+    /// Tag links the merge added, to delete again.
     pub inserted_tags: Json,
+    /// Author links the merge added, to delete again.
     pub inserted_authors: Json,
+    /// Watchlist entries the merge added, to delete again.
     pub inserted_watchlist: Json,
+    /// Mappings the merge added, to delete again.
     pub inserted_mappings: Json,
+    /// Dedup keys the merge added, to delete again.
     pub inserted_dedup: Json,
 
     // Rows re-pointed from the absorbed series to the survivor, by primary key.
+    /// Provider sources re-pointed at the survivor, by primary key.
     pub moved_sources: Vec<Uuid>,
+    /// Sync-history rows re-pointed, by primary key.
     pub moved_history: Vec<Uuid>,
+    /// Sync conflicts re-pointed, by primary key.
     pub moved_conflicts: Vec<Uuid>,
+    /// Sync decisions re-pointed, by primary key.
     pub moved_decisions: Vec<Uuid>,
     /// `sync_remote_entries` and `sync_match_blocks` are keyed by a composite rather than a
     /// surrogate id, so these travel as whole rows and their inverse matches on the key columns.
+    /// The `sync_remote_entries` rows as they stood, whole.
     pub moved_remote_entries: Json,
+    /// The `sync_match_blocks` rows as they stood, whole.
     pub moved_match_blocks: Json,
 
     /// Merge candidates this merge resolved, to reopen.

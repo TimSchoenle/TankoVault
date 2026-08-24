@@ -21,9 +21,11 @@ pub use tankovault_domain::ssrf::{
     SsrfError, is_forbidden_ip, resolve_checked, validate_and_resolve, validate_str, validate_url,
 };
 
-/// A [`wreq::dns::Resolve`] that filters out forbidden addresses at connect time, for
-/// the initial request and every redirect hop. Injected into the base client so no code
-/// path can connect to an internal address, even under DNS rebinding.
+/// A [`wreq::dns::Resolve`] that filters out forbidden addresses at connect time, on the
+/// initial request and on every redirect hop.
+///
+/// Injected into the base client, so no code path can connect to an internal address even
+/// under DNS rebinding.
 #[derive(Debug, Default, Clone)]
 pub struct SsrfResolver;
 

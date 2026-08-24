@@ -11,13 +11,21 @@ use utoipa::ToSchema;
 )]
 #[serde(rename_all = "snake_case")]
 pub enum TunableGroup {
+    /// How much each watch status and each depth of reading says about taste.
     Affinity,
+    /// How wide a candidate net each shelf request casts.
     Retrieval,
+    /// The weights that blend the retrieval paths into one ranking.
     Scoring,
+    /// The caps that stop a shelf being five books by one author.
     Diversity,
+    /// The popularity term a series carries before any reader is considered.
     Prior,
+    /// Parameters of the offline model build, including the embedding and index shapes.
     Build,
+    /// The "readers of X also read Y" edges, and the support a pair needs to become one.
     Cooccurrence,
+    /// Shelf size, cache lifetime and how fast explicit feedback decays.
     Serving,
     /// The automatic-merge policy the duplicate sweep applies. Served by its own endpoint and
     /// rendered beside the review queue rather than on the recommendation page.
@@ -25,6 +33,7 @@ pub enum TunableGroup {
 }
 
 impl TunableGroup {
+    /// The token this group serializes to, which is also its section key in the console.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -61,7 +70,9 @@ pub enum TunableKind {
     Weight,
     /// A whole number of things; readers round it.
     Count,
+    /// A duration in whole days.
     Days,
+    /// A duration in whole seconds.
     Seconds,
     /// On or off, stored as `1` or `0` in the same `f64` column as everything else. Readers take
     /// it through [`crate::Tunable`]'s boolean accessor, which treats any value at or above the
@@ -70,6 +81,7 @@ pub enum TunableKind {
 }
 
 impl TunableKind {
+    /// The token this kind serializes to.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -112,6 +124,7 @@ pub enum Applies {
 }
 
 impl Applies {
+    /// The token this serializes to, which the console renders next to the value.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {

@@ -9,15 +9,20 @@ use serde::Deserialize;
 use tankovault_config::DatabaseConfig;
 use terrace_config::schema::Describe;
 
+/// Top-level bootstrap config.
 #[derive(Debug, Deserialize, Describe)]
 pub struct Config {
+    /// The database the schema is applied to and the first administrator is written into.
     #[config(nested)]
     pub database: DatabaseConfig,
+    /// The one `auth` key a seeding job needs.
     #[serde(default)]
     #[config(nested)]
     pub auth: AuthConfig,
+    /// Address of the account to seed. An account already holding it is left untouched.
     #[serde(default = "default_admin_email")]
     pub seed_admin_email: String,
+    /// Name of the account to seed. An account already holding it is left untouched.
     #[serde(default = "default_admin_username")]
     pub seed_admin_username: String,
     /// No default, unlike `xtask seed`: a published image must not be able to create an account

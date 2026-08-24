@@ -61,42 +61,80 @@ impl Ctx {
 
 /// One page of the provider catalogue.
 pub struct CatalogPage {
+    /// Entries in the order the page listed them. Empty is a legitimate answer for a page past
+    /// the end.
     pub items: Vec<CatalogItem>,
+    /// Whether a page after this one exists. The full-scan walk chains one more page task while
+    /// this holds, so an adapter that cannot tell reports `false` and stops the walk rather than
+    /// re-ingesting the catalogue forever.
     pub has_next: bool,
 }
 
 /// A catalogue entry: a series' relative path + its listed title.
 pub struct CatalogItem {
+    /// Relative to [`Ctx::base_url`]. The scan fans out one series task per path.
     pub path: String,
+    /// The title as the listing printed it. It names the source stub the catalogue walk registers
+    /// before any series page is fetched, and [`SeriesMeta::title`] replaces it at enrichment.
     pub title: String,
 }
 
 /// A "latest updates" feed entry.
 pub struct LatestUpdate {
+    /// Relative series path, the only field the fast scan acts on.
     pub path: String,
+    /// The title as the feed printed it.
     pub title: String,
-    /// Newest chapter number seen on the feed (fast-scan comparison key).
+    /// Newest chapter number the feed listed, or `0.0` from an adapter whose feed states none.
+    /// Nothing compares against it: the fast scan re-ingests every entry and lets ingest decide
+    /// what is new.
     pub latest_chapter: f64,
 }
 
 /// Full metadata for one series.
+///
+/// Every text field arrives unbounded from a scraped page. `services/worker`'s `bound_series`
+/// clips each one before ingest, so a mis-scraped selector costs a truncated string rather than
+/// a megabyte in a trigram index.
 pub struct SeriesMeta {
+    /// The provider's canonical title for the series.
     pub title: String,
+    /// Alternates the provider lists, romanisations and native-script titles among them. Each one
+    /// becomes a searchable row.
     pub alt_titles: Vec<String>,
+    /// The synopsis, absent when the page publishes none.
     pub description: Option<String>,
+    /// The cover image URL, absent when the page publishes none. Adapters that read it out of
+    /// HTML resolve it against the page; those reading a provider API pass the value through, so
+    /// this is not guaranteed absolute.
     pub cover_url: Option<String>,
+    /// Genre and theme labels as the provider spells them. Normalisation and blocklist pruning
+    /// happen at ingest, not here.
     pub tags: Vec<String>,
+    /// Credited names, with no separation of author from artist: providers rarely make one.
     pub authors: Vec<String>,
+    /// Publication state, mapped from whatever label the provider prints.
     pub status: SeriesStatus,
+    /// Manga, manhwa or manhua, or [`ContentType::Unknown`] from a provider that publishes no
+    /// such label.
     pub content_type: ContentType,
+    /// Year of first publication, absent from most providers.
     pub release_year: Option<i32>,
 }
 
 /// One chapter entry: number, optional title, and the **relative** chapter-page link.
 pub struct ChapterMeta {
+    /// The chapter number, fractional for `.5` side chapters. Always finite: a listing whose
+    /// label does not parse to a finite number is skipped rather than clamped.
     pub number: f64,
+    /// The chapter's own title, absent when the provider numbers chapters and names nothing.
     pub title: Option<String>,
+    /// Relative to [`Ctx::base_url`], and the link stored for the reader to follow.
     pub path: String,
+    /// Publication timestamp when the provider states one. A relative label ("3 days ago")
+    /// resolves against a clock sampled once for the whole listing, so re-scanning the same page
+    /// yields a later value; a label in no recognised shape leaves this `None` rather than
+    /// guessing, because a wrong date reorders the release feed.
     pub published_at: Option<OffsetDateTime>,
     /// What the provider says about reading it right now.
     pub access: ChapterAccess,
@@ -113,7 +151,11 @@ pub enum ChapterAccess {
     #[default]
     Free,
     /// Behind a paywall or a timed early-access window.
-    EarlyAccess { unlocks_at: Option<OffsetDateTime> },
+    EarlyAccess {
+        /// When the provider states the chapter opens. `None` means it showed a lock and no
+        /// date, which is not the same as "opens now".
+        unlocks_at: Option<OffsetDateTime>,
+    },
 }
 
 impl ChapterAccess {

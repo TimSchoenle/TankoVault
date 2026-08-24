@@ -974,7 +974,7 @@
         "env": "TANKOVAULT_BIND_ADDR",
         "env_file": "TANKOVAULT_BIND_ADDR_FILE",
         "secrets_file": "bind_addr",
-        "docs": "",
+        "docs": "Ops listener binding: probes and the metrics scrape, no delivery contract.",
         "ty": "String",
         "values": [],
         "constraint": {
@@ -1628,6 +1628,7 @@
     "additionalProperties": false,
     "properties": {
       "bind_addr": {
+        "description": "Ops listener binding: probes and the metrics scrape, no delivery contract.",
         "type": "string"
       },
       "channels": {

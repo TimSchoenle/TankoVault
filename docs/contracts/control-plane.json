@@ -2,7 +2,7 @@
   "terrace_contract": 1,
   "app": {
     "name": "tankovault-control-plane",
-    "version": "v8.5.1",
+    "version": "v8.5.2",
     "source": "https://github.com/TimSchoenle/TankoVault"
   },
   "schema": {

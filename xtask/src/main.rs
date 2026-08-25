@@ -76,8 +76,19 @@ fn main() -> anyhow::Result<()> {
     }
 
     if cmd == "notices" {
-        let check = std::env::args().nth(2).as_deref() == Some("--check");
-        return notices::run(workspace_root(), check);
+        let mode = std::env::args().nth(2);
+        // `--json <path>` writes the structured inventory the SPA renders instead of the
+        // committed document. A separate mode rather than a second output of the default run:
+        // the JSON is not committed, so `--check` has nothing to compare it against, and a
+        // developer regenerating the artefact should not have to name a path for a file the
+        // image build owns.
+        if mode.as_deref() == Some("--json") {
+            let out = std::env::args().nth(3).ok_or_else(|| {
+                anyhow::anyhow!("usage: xtask notices --json <path/to/inventory.json>")
+            })?;
+            return notices::run_json(workspace_root(), std::path::Path::new(&out));
+        }
+        return notices::run(workspace_root(), mode.as_deref() == Some("--check"));
     }
 
     #[cfg(feature = "full")]
@@ -88,7 +99,7 @@ fn main() -> anyhow::Result<()> {
         eprintln!(
             "unknown command {cmd:?} in a --no-default-features build; usage: xtask \
              <repo-lint|install-hooks|coverage-ratchet [--integration] [report.json]|\
-             config-contract|config-docs [--check]|notices [--check]|\
+             config-contract|config-docs [--check]|notices [--check|--json <path>]|\
              release-plan <bases.json>|--all>\n\
              ci, migrate, reset, seed, prune-chapters, repair-series, openapi and sqlx-prepare \
              need the \
@@ -156,7 +167,7 @@ async fn compiled_commands(cmd: &str) -> anyhow::Result<()> {
                  <migrate|reset|seed|prune-chapters [--apply]|\
                  repair-series [--split <series-id>] [--apply]|\
                  openapi [--check]|\
-                 config-contract|config-docs [--check]|notices [--check]|\
+                 config-contract|config-docs [--check]|notices [--check|--json <path>]|\
                  sqlx-prepare [--check]|\
                  release-plan <bases.json>|--all>"
             );

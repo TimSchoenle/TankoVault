@@ -104,6 +104,7 @@ pub(crate) fn page_name(route: &Route, i18n: Translator) -> String {
         // Named generically until the document lands and publishes its own title through
         // `PageTitle` — the slug is operator configuration, so the route cannot spell it.
         Route::Legal { .. } => i18n.t("title.legal"),
+        Route::Licenses {} => i18n.t("licenses.title"),
         Route::NotFound { .. } => i18n.t("notFound.title"),
     }
 }

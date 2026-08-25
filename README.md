@@ -318,5 +318,7 @@ The dependencies are licensed separately, overwhelmingly MIT and Apache-2.0, and
 require their licence text to accompany a binary distribution, which an image and a WASM bundle
 both are. [THIRD-PARTY-NOTICES](THIRD-PARTY-NOTICES) is that text for both dependency graphs,
 generated from the lockfiles by `cargo run -p xtask -- notices`. Every image ships it at
-`/THIRD-PARTY-NOTICES`, and a running instance serves it at `/third-party-notices`, linked from
-the app's navigation, so the person whose browser ran the code can read the terms it came under.
+`/THIRD-PARTY-NOTICES`, and a running instance serves it at `/third-party-notices`. The app's
+`/licenses` screen renders the same notices grouped by licence — each distinct text once, naming
+the dependencies that ship it — so the person whose browser ran the code can read the terms it
+came under without scrolling half a megabyte of plain text.

@@ -1657,6 +1657,25 @@
     "localeNote": "Nur auf {locale} verfügbar",
     "updated": "Zuletzt aktualisiert am {date}"
   },
+  "licenses": {
+    "crates": {
+      "one": "{count} Abhängigkeit",
+      "other": "{count} Abhängigkeiten"
+    },
+    "intro": "Diese App baut auf Open Source auf. Jede Abhängigkeit, die die Dienste und das in deinem Browser laufende Bundle einbinden, ist unten aufgeführt – mit der Lizenz, unter der sie verteilt wird, und deren vollständigem Text.",
+    "note": "Eine Abhängigkeit, die mehrere Lizenzen zur Wahl stellt, erscheint unter einer davon – ausgewählt durch die Liste akzeptierter Lizenzen, aus der das Verzeichnis erzeugt wird – und erlaubt darüber hinaus Bedingungen, die hier nicht abgedruckt sind. Gleiche Lizenztexte stehen genau einmal hier und nennen jede Abhängigkeit, die sie mitliefert; zwei Texte, die sich nur in der Copyright-Zeile unterscheiden, bleiben zwei – genau diese Zeile verlangt die Lizenz wiederzugeben.",
+    "plainText": "Dokument als reiner Text",
+    "section": {
+      "backend": "Server-Dienste",
+      "frontend": "Browser-Bundle"
+    },
+    "texts": {
+      "one": "{count} Lizenztext",
+      "other": "{count} Lizenztexte"
+    },
+    "title": "Hinweise zu Drittanbieter-Lizenzen",
+    "unavailable": "Diese Installation veröffentlicht kein Lizenzverzeichnis. Das Textdokument oben enthält dieselben Hinweise."
+  },
   "nav": {
     "account": "Konto",
     "accountSettings": "Kontoeinstellungen",

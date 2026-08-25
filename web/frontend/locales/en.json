@@ -1657,6 +1657,25 @@
     "localeNote": "Only available in {locale}",
     "updated": "Last updated {date}"
   },
+  "licenses": {
+    "crates": {
+      "one": "{count} dependency",
+      "other": "{count} dependencies"
+    },
+    "intro": "This app is built on open source. Every dependency the services and the bundle running in your browser link is listed below, under the licence it is distributed with and with the full text of that licence.",
+    "note": "A dependency offering a choice of terms is attributed under one of them, chosen once by the accepted list the inventory is generated from, and also permits terms not printed here. Identical notices are reproduced once and name every dependency shipping them; two that differ only in a copyright line stay two, because that line is the part the licence asks be reproduced.",
+    "plainText": "Plain-text document",
+    "section": {
+      "backend": "Server services",
+      "frontend": "Browser bundle"
+    },
+    "texts": {
+      "one": "{count} licence text",
+      "other": "{count} licence texts"
+    },
+    "title": "Third-party notices",
+    "unavailable": "This deployment publishes no licence inventory. The plain-text document above carries the same notices."
+  },
   "nav": {
     "account": "Account",
     "accountSettings": "Account settings",

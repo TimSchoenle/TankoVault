@@ -596,6 +596,82 @@ a { color: inherit; text-decoration: none; }
 .ik-legal-meta { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; font-family: var(--font-mono); font-size: 11.5px; color: var(--faint); margin-bottom: 22px; }
 .ik-legal-locale { display: inline-flex; align-items: center; gap: 6px; color: var(--star-ink); }
 
+/* Third-party notices (/licenses) — the generated attribution screen.
+ *
+ * Wider than `.ik-legal`: that is prose at a reading measure, this is a 270-row inventory whose
+ * rows carry a dependency list and a count, and at 64ch every second one wraps. The licence
+ * texts keep their own wrapping inside a monospace block. */
+.ik-licences { max-width: 100ch; margin-inline: auto; }
+.ik-licences-intro { font-size: 15px; line-height: 1.7; color: var(--text-2); margin: 0 0 12px; max-width: 72ch; }
+.ik-licences-note { font-size: 13px; line-height: 1.65; color: var(--muted); margin: 0 0 14px; max-width: 72ch; }
+/* The icon is part of the link, not a word after it: inline-flex keeps the two on one line. */
+.ik-licences-plain { display: inline-flex; align-items: center; gap: 6px; }
+.ik-licences-part { margin-top: 38px; }
+.ik-licences-ships { font-size: 13px; color: var(--muted); margin: -4px 0 16px; }
+
+/* Which licences the graph resolves to, and how much of it each covers. */
+/* `--muted`, not `--faint`, on every count and version below. These are 11px mono, so AA
+ * wants 4.5:1 and `--faint` measures 3.2:1 against the card in both themes — and the counts
+ * are the substance of a collapsed row, not decoration on it. Measured, not guessed. */
+.ik-licence-chips { list-style: none; margin: 0 0 26px; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.ik-licence-chip {
+  display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap;
+  padding: 8px 12px; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--surface-2); font-size: 13px;
+}
+/* Monospace but never upper-cased: an SPDX identifier is spelled the way SPDX spells it, so
+ * `.ik-kicker` (which uppercases) is wrong for every mono run on this screen. */
+.ik-licence-chip-id { font-family: var(--font-mono); font-size: 12px; color: var(--acc-ink); }
+.ik-licence-chip-name { color: var(--text-2); }
+.ik-licence-chip-count { font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+
+.ik-licence-group { margin-top: 26px; }
+.ik-licence-group-head {
+  display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 6px 16px;
+  margin: 0 0 6px; padding-bottom: 7px; border-bottom: 1px solid var(--border);
+  font-family: var(--font-display); font-size: 15px; font-weight: 600; color: var(--text);
+}
+.ik-licence-group-count { font-family: var(--font-mono); font-size: 11.5px; font-weight: 400; color: var(--muted); }
+
+/* One distinct notice per row, labelled by the dependencies shipping it: collapsed, the section
+ * is an index of the graph; opened, it is the licence file verbatim. */
+.ik-licence-notice { border-bottom: 1px solid var(--border); }
+.ik-licence-notice > summary {
+  display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; gap: 4px 12px; align-items: baseline;
+  padding: 9px 2px; cursor: pointer; list-style: none; font-size: 13.5px;
+  transition: color .15s ease;
+}
+.ik-licence-notice > summary::-webkit-details-marker { display: none; }
+.ik-licence-notice > summary::before { content: "+"; color: var(--muted); }
+.ik-licence-notice[open] > summary::before { content: "2"; }
+.ik-licence-notice > summary:hover,
+.ik-licence-notice > summary:focus-visible { color: var(--acc-ink); }
+.ik-licence-notice-crates { font-family: var(--font-mono); font-size: 12px; color: var(--text-2); overflow-wrap: anywhere; }
+.ik-licence-notice-count { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+
+.ik-licence-notice-list {
+  list-style: none; margin: 2px 0 10px 26px; padding: 0;
+  display: flex; flex-wrap: wrap; gap: 4px 14px;
+  font-family: var(--font-mono); font-size: 11.5px; color: var(--text-3);
+}
+.ik-licence-notice-list li { display: flex; align-items: baseline; gap: 6px; }
+.ik-licence-notice-version { color: var(--muted); }
+
+.ik-licence-text {
+  margin: 0 0 20px 26px; padding: 14px 16px; max-height: 60vh; overflow: auto;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2);
+  font-family: var(--font-mono); font-size: 11.5px; line-height: 1.6; color: var(--text-3);
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+
+@media (max-width: 720px) {
+  /* The count drops out of the row rather than squeezing the dependency list into nothing; it is
+   * a restatement of what the names already say. */
+  .ik-licence-notice > summary { grid-template-columns: 14px minmax(0, 1fr); }
+  .ik-licence-notice-count { display: none; }
+  .ik-licence-notice-list, .ik-licence-text { margin-left: 0; }
+}
+
 .ik-prose { font-size: 15px; line-height: 1.75; color: var(--text-2); }
 .ik-prose p { margin: 0 0 16px; }
 .ik-prose-h2 { font-family: var(--font-display); font-weight: 700; font-size: 20px; line-height: 1.3; color: var(--text); margin: 30px 0 10px; }

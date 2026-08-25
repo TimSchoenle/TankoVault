@@ -118,6 +118,17 @@ the file ships at `/THIRD-PARTY-NOTICES` in every image and is served to readers
 `/third-party-notices`. If generation fails because a crate's licence is unaccepted, that is a
 decision to make in `about.toml`, not a build error to work around.
 
+The SPA's `/licenses` screen renders the same notices from a structured form of that document,
+written into the frontend image during the build by `xtask notices --json` and **not** committed —
+a second representation of half a megabyte, out of the same merge, that the plain-text `--check`
+already covers. A checkout has none, so the screen renders its unavailable state until you write
+one where the service can find it:
+
+```
+cargo run -p xtask -- notices --json target/THIRD-PARTY-NOTICES.json
+TANKOVAULT_FRONTEND__NOTICES_JSON_PATH=target/THIRD-PARTY-NOTICES.json
+```
+
 **The README.** `README.md` is rendered from `.github/templates/README.md.hbs`; edit the
 template, never the document. The numbers it quotes — the edition, the MSRV, the pinned
 toolchain, the Postgres and Redis majors — are injected from `Cargo.toml`,

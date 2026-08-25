@@ -11,6 +11,7 @@ mod console;
 mod discover;
 mod home;
 mod legal;
+mod licenses;
 // `pub(crate)` for one function: `crate::live` reuses this screen's payload-to-sentence logic
 // for the OS notification, rather than growing a second reading of the same free-form JSON.
 pub(crate) mod notifications;
@@ -28,6 +29,7 @@ pub(crate) use console::{Console, ConsoleEntity, ConsoleQuery, ConsoleSection};
 pub(crate) use discover::{Discover, DiscoverQuery};
 pub(crate) use home::Home;
 pub(crate) use legal::Legal;
+pub(crate) use licenses::Licenses;
 pub(crate) use notifications::Notifications;
 pub(crate) use password::{ForgotPassword, ResetPassword};
 pub(crate) use recommendations::Recommendations;

@@ -475,6 +475,13 @@ impl Service<Request> for FixedResponse {
 /// them equal.
 const NOTICES_ROUTE: &str = "/third-party-notices";
 
+/// Where the same notices are published as the structured inventory the SPA's `/licenses` screen
+/// fetches.
+///
+/// `web/frontend/src/views/licenses.rs` repeats this literal for the same reason as
+/// [`NOTICES_ROUTE`], and `xtask repo-lint` holds this pair equal too.
+const NOTICES_JSON_ROUTE: &str = "/third-party-notices.json";
+
 /// Assemble the router: the health probe, the licence notices, the `/v1/*` proxy, and the
 /// static bundle (with SPA fallback and hardening headers) catching everything else.
 fn build_router(frontend: &FrontendConfig, branding: &BrandingConfig, state: AppState) -> Router {
@@ -570,9 +577,30 @@ fn build_router(frontend: &FrontendConfig, branding: &BrandingConfig, state: App
         ))
         .service(ServeFile::new(&frontend.notices_path));
 
+    // The same document, structured, for the screen that renders it. A route of its own for the
+    // second of the two reasons above: `.json` would sniff correctly, but an absent file inside
+    // the bundle would still resolve to the app shell, and the screen would then be parsing HTML
+    // and reporting a corrupt inventory instead of a missing one. `ServeFile` answers 404, which
+    // is what the screen's unavailable state is keyed on.
+    //
+    // No `Cache-Control` of its own: the inventory changes only when the image does, but it is
+    // served from the same origin as a shell that is `no-store`, and a stale inventory behind a
+    // fresh bundle is exactly the drift the document exists to rule out.
+    let notices_json = ServiceBuilder::new()
+        .layer(SetResponseHeaderLayer::overriding(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/json; charset=utf-8"),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::X_CONTENT_TYPE_OPTIONS,
+            HeaderValue::from_static("nosniff"),
+        ))
+        .service(ServeFile::new(&frontend.notices_json_path));
+
     Router::new()
         .route("/healthz", get(healthz))
         .route_service(NOTICES_ROUTE, notices)
+        .route_service(NOTICES_JSON_ROUTE, notices_json)
         .route("/v1/{*rest}", any(proxy))
         .fallback_service(static_service)
         .with_state(state)
@@ -743,6 +771,7 @@ mod tests {
         // Beside the bundle here only because a test needs somewhere to put it; in the image it
         // sits at `/THIRD-PARTY-NOTICES`, outside the served directory.
         std::fs::write(dir.join(NOTICES_FILE), NOTICES).unwrap();
+        std::fs::write(dir.join(NOTICES_JSON_FILE), NOTICES_JSON).unwrap();
         clamp_timestamps(&dir);
         dir
     }
@@ -773,6 +802,11 @@ mod tests {
     const NOTICES: &str = "THIRD-PARTY NOTICES\nApache License 2.0\n";
     const NOTICES_FILE: &str = "THIRD-PARTY-NOTICES";
 
+    /// The same, as the structured inventory: the shape `xtask notices --json` writes and the
+    /// SPA's `/licenses` screen parses, cut down to one notice.
+    const NOTICES_JSON: &str = r#"{"sections":[{"slug":"backend","title":"Part 1","ships_as":"the binaries","licences":[{"id":"Apache-2.0","name":"Apache License 2.0","crates":1,"notices":[{"text":"Apache License 2.0","crates":[{"name":"anyhow","version":"1.0.0"}]}]}]}]}"#;
+    const NOTICES_JSON_FILE: &str = "THIRD-PARTY-NOTICES.json";
+
     /// The stand-in app shell: an inline boot script (which the CSP has to admit by hash) and
     /// an external one (which `'self'` already covers), matching the real shell's shape.
     const SHELL: &str = "<html><head><script>window.tv=1;</script>\
@@ -785,6 +819,7 @@ mod tests {
         FrontendConfig {
             static_dir: static_dir.to_owned(),
             notices_path: format!("{static_dir}/{NOTICES_FILE}"),
+            notices_json_path: format!("{static_dir}/{NOTICES_JSON_FILE}"),
             max_body_bytes: 1024 * 1024,
             ..FrontendConfig::default()
         }
@@ -1358,6 +1393,48 @@ mod tests {
             "nosniff"
         );
         assert_eq!(response.text().await.unwrap(), NOTICES);
+    }
+
+    /// The inventory the `/licenses` screen fetches, and the `application/json` that lets it be
+    /// parsed rather than downloaded.
+    #[tokio::test]
+    async fn the_licence_inventory_is_served_to_the_reader_as_json() {
+        let upstream = spawn_stub_upstream().await;
+        let dir = write_bundle();
+        let front = spawn_frontend(dir.to_str().unwrap(), upstream).await;
+
+        let response = reqwest::get(format!("http://{front}{NOTICES_JSON_ROUTE}"))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get("content-type").unwrap(),
+            "application/json; charset=utf-8"
+        );
+        assert_eq!(response.text().await.unwrap(), NOTICES_JSON);
+    }
+
+    /// The same trap as [`missing_notices_are_a_404_rather_than_the_app_shell`], and worse for
+    /// being silent: an image built before the inventory existed has no file here, and the SPA
+    /// fallback would hand the screen the app shell. It would parse that as JSON, fail, and
+    /// report a corrupt inventory rather than an absent one.
+    #[tokio::test]
+    async fn a_missing_inventory_is_a_404_rather_than_the_app_shell() {
+        let upstream = spawn_stub_upstream().await;
+        let dir = write_bundle();
+        let front = spawn_frontend_with(
+            FrontendConfig {
+                notices_json_path: "./no-such-inventory.json".to_owned(),
+                ..test_config(dir.to_str().unwrap())
+            },
+            upstream,
+        )
+        .await;
+
+        let response = reqwest::get(format!("http://{front}{NOTICES_JSON_ROUTE}"))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
     /// Pins why the notices are a route and not a file in the served bundle: every unmatched

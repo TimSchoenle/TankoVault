@@ -301,6 +301,11 @@ WORKDIR /app
 # Copied alone, before `rustup target add`: the base image's toolchain floats within 1.94 while
 # this file pins an exact patch, so without this order wasm32-unknown-unknown ends up missing.
 COPY rust-toolchain.toml ./
+# `cargo-about`'s binary is behind `required-features = ["cli"]`, which is not a default:
+# without `--features cli` the install compiles the library, installs no binary and exits **0**.
+# That is why the version check follows it in the same chain — the failure otherwise surfaces
+# eight minutes later in `wasm-builder`, as `error: no such command: about`, with nothing
+# pointing back at the install that silently did nothing.
 # `dx`'s version must match `dioxus` (web/frontend/Cargo.lock) or asset hashing/codegen mismatch —
 # `dx bundle` refuses outright on a mismatch, and `dx build` is not guaranteed to. The desktop
 # release job (`.github/workflows/release-please.yaml`) pins the same version; both track the
@@ -309,7 +314,9 @@ RUN --mount=type=cache,id=tankovault-wasm-cargo-registry,target=/usr/local/cargo
     --mount=type=cache,id=tankovault-wasm-cargo-git,target=/usr/local/cargo/git \
     rustup target add wasm32-unknown-unknown \
  && cargo install cargo-chef --locked --version 0.1.77 \
- && cargo install dioxus-cli@0.7.10 --locked
+ && cargo install dioxus-cli@0.7.10 --locked \
+ && cargo install cargo-about --locked --version 0.9.2 --features cli \
+ && cargo about --version
 
 # A cooked layer, not a cache mount: `type=cache` mounts aren't carried by `cache-to: type=gha`, so
 # every fresh CI runner would start empty. Must not mount a cache over the target dir it cooks
@@ -361,6 +368,36 @@ RUN --mount=type=cache,id=tankovault-wasm-cargo-registry,target=/usr/local/cargo
     mkdir -p /dist; \
     cp -r "${matches}/." /dist/; \
     test -f /dist/index.html || { echo "bundle missing index.html" >&2; exit 1; }
+
+# The structured licence inventory the SPA's `/licenses` screen renders — the same notices as the
+# committed `THIRD-PARTY-NOTICES`, out of the same merge, in a shape a browser can group and
+# collapse instead of a 500 KB wall of `text/plain`.
+#
+# **Here, and not in `builder`, because this is the only stage holding both dependency graphs.**
+# The document spans two workspaces and `cook-web` already rehydrated the host recipe alongside
+# `web/frontend`'s, so both are in this stage's registry cache. `builder` has the backend's alone
+# and would have to fetch the other from cold.
+#
+# `--no-default-features` builds `xtask` from `anyhow`/`serde`/`serde_json`/`syn` — `notices` is
+# one of the file-reading commands outside the `full` feature, and the default build would drag
+# in sqlx, progenitor and most of the backend for a command that shells out to `cargo about`.
+#
+# The `cargo fetch`es are not optional: generation runs `--frozen`, so the licence *files* have to
+# already be on disk in the extracted crate sources. Without them the run harvests nothing and
+# writes a document claiming this image depends on nothing. Same step, same reason, as `ci.yml`'s
+# `notices` job.
+#
+# cargo-about is pinned in `wasm-chef` for a reason particular to this document: it is not
+# committed, so no gate diffs it against the plain-text one, and a harvester that changed its mind
+# between the two would put different numbers on the screen and in the file with nothing to say so.
+RUN --mount=type=cache,id=tankovault-wasm-cargo-registry,target=/usr/local/cargo/registry \
+    --mount=type=cache,id=tankovault-wasm-cargo-git,target=/usr/local/cargo/git \
+    --mount=type=cache,id=tankovault-wasm-target,target=/app/web/frontend/target,from=cook-web,source=/app/web/frontend/target \
+    set -eu; \
+    cargo fetch --locked; \
+    cargo fetch --locked --manifest-path web/frontend/Cargo.toml; \
+    cargo run -q -p xtask --no-default-features -- notices --json /THIRD-PARTY-NOTICES.json; \
+    test -s /THIRD-PARTY-NOTICES.json
 
 # The warm-up target both workflows build. Nothing is published from it; it exists to be a cache.
 #
@@ -459,8 +496,12 @@ COPY --from=wasm-builder /dist /srv/www
 COPY --from=builder /app/LICENSE /LICENSE
 # This image owes them twice over: it is a binary distribution itself, and it hands the browser
 # bundle — a second dependency graph, `web/frontend`'s — to every reader who loads the page. The
-# server publishes this file at `/third-party-notices`, which is where the SPA's rail links.
+# server publishes this file at `/third-party-notices`, and the SPA's `/licenses` screen links it.
 COPY --from=builder /app/THIRD-PARTY-NOTICES /THIRD-PARTY-NOTICES
+# The same notices, structured, for that screen to render — published at
+# `/third-party-notices.json`. Only this image carries it: it is the only one that hands
+# anybody a browser; every other image's obligation is discharged by the document above.
+COPY --from=wasm-builder /THIRD-PARTY-NOTICES.json /THIRD-PARTY-NOTICES.json
 ENV TANKOVAULT_FRONTEND__STATIC_DIR=/srv/www
 # Numeric nonroot UID (scratch has no /etc/passwd); binds 3000, not the privileged port 80.
 # The contract labels; see the `runtime-browser` stage for what holds them honest.

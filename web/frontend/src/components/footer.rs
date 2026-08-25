@@ -9,7 +9,6 @@
 //! providers, shortcuts, release notes, documentation and "report an issue" are each one click
 //! away from the rail or Account, and twenty footer links on every screen is noise.
 
-use crate::components::nav::NOTICES_ROUTE;
 use crate::components::Wordmark;
 use crate::i18n::{use_i18n, Translator};
 use crate::icons::{Ic, Icon};
@@ -146,35 +145,24 @@ pub(crate) fn legal_links(i18n: Translator) -> Element {
     }
 }
 
-/// Licences and where the code is. The notices document is a plain `<a>`, not a `Link`: the
-/// target is server-rendered, and handing it to the client-side router resolves it to the app
-/// shell — which answers `200` with a page that looks like it worked.
+/// Licences and where the code is.
 ///
-/// Absolute, not the bare path. The desktop build runs off a local webview origin, so a relative
-/// href resolved against *that* — `file:///C:/third-party-notices`, a link into the reader's own
-/// drive. Every other absolute link in this column already worked for exactly this reason.
+/// The notices are an in-app `Link` now that `/licenses` renders them. It used to be a plain
+/// `<a>` at the absolute `/third-party-notices`, for two reasons that both went away with the
+/// screen: the target was server-rendered, so the client-side router would have resolved it to
+/// the app shell; and the desktop build runs off a local webview origin, where a relative href
+/// resolves against `file:///`. A route has neither problem, and the screen it opens links the
+/// plain-text document itself — including on desktop before a server is chosen, where it now
+/// says there is nothing to show rather than being withheld with no explanation.
 #[component]
 fn OpenSourceColumn() -> Element {
     let i18n = use_i18n();
     let branding = use_branding();
     let branding = branding.read();
-    let origin = crate::platform::origin();
-    let notices = format!("{}{NOTICES_ROUTE}", origin.trim_end_matches('/'));
     rsx! {
         nav { class: "ik-footer-col", "aria-label": i18n.t("footer.openSource"),
             div { class: "ik-footer-head", {i18n.t("footer.openSource")} }
-            // Withheld rather than broken while the desktop build has no server yet: before the
-            // first-run connect screen there is nothing to resolve the document against.
-            if !origin.is_empty() {
-                a {
-                    class: "ik-footer-link",
-                    href: "{notices}",
-                    target: "_blank",
-                    rel: "noopener noreferrer",
-                    {i18n.t("nav.notices")}
-                    Ic { icon: Icon::OpenInNew, size: 12 }
-                }
-            }
+            Link { to: Route::Licenses {}, class: "ik-footer-link", {i18n.t("nav.notices")} }
             // Plain text unless the operator publishes the licence somewhere: a self-hosted
             // deployment usually has nowhere to point, and a link into nothing is worse than a
             // label that does not pretend to be one.

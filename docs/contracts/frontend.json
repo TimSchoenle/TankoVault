@@ -578,6 +578,29 @@
         "reserved": false
       },
       {
+        "path": "frontend.notices_json_path",
+        "env": "TANKOVAULT_FRONTEND__NOTICES_JSON_PATH",
+        "env_file": "TANKOVAULT_FRONTEND__NOTICES_JSON_PATH_FILE",
+        "secrets_file": "frontend__notices_json_path",
+        "docs": "The same notices as the structured inventory the `/licenses` screen renders, served at\n`/third-party-notices.json`.\n\nWritten into the image by `xtask notices --json` during the build rather than committed:\nit is a second representation of the document above, and the two come out of one merge, so\ncommitting it would double the repository's generated weight for a drift gate the\nplain-text `--check` already provides. A deployment whose image predates it, or a\ndeveloper who has not run the command, serves nothing here and the screen says so.",
+        "ty": "String",
+        "values": [],
+        "constraint": {
+          "type": "string"
+        },
+        "text_form": "text",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
         "path": "frontend.api_upstream",
         "env": "TANKOVAULT_FRONTEND__API_UPSTREAM",
         "env_file": "TANKOVAULT_FRONTEND__API_UPSTREAM_FILE",
@@ -1198,6 +1221,10 @@
             "description": "Largest request body accepted on this hop.\n\nEnforced twice: the shared stack's `DefaultBodyLimit` rejects it before buffering (see\n`stack_security` in `main.rs`), and the proxy handler passes the same number to\n`to_bytes` so the two cannot drift.",
             "minimum": 0,
             "type": "integer"
+          },
+          "notices_json_path": {
+            "description": "The same notices as the structured inventory the `/licenses` screen renders, served at\n`/third-party-notices.json`.\n\nWritten into the image by `xtask notices --json` during the build rather than committed:\nit is a second representation of the document above, and the two come out of one merge, so\ncommitting it would double the repository's generated weight for a drift gate the\nplain-text `--check` already provides. A deployment whose image predates it, or a\ndeveloper who has not run the command, serves nothing here and the screen says so.",
+            "type": "string"
           },
           "notices_path": {
             "description": "The generated third-party licence notices, served at `/third-party-notices`.\n\nPoints at the image's own copy (`/THIRD-PARTY-NOTICES`, beside `/LICENSE`) rather than a\nsecond one inside the bundle: it is 300-odd KB, and two copies is the arrangement where\none of them goes stale. Configurable because the path only exists inside the image — a\ndeveloper running `dx serve` and the tests point it at their own checkout.",

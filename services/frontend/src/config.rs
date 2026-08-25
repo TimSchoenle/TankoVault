@@ -54,6 +54,16 @@ pub struct FrontendConfig {
     /// developer running `dx serve` and the tests point it at their own checkout.
     #[serde(default = "FrontendConfig::default_notices_path")]
     pub notices_path: String,
+    /// The same notices as the structured inventory the `/licenses` screen renders, served at
+    /// `/third-party-notices.json`.
+    ///
+    /// Written into the image by `xtask notices --json` during the build rather than committed:
+    /// it is a second representation of the document above, and the two come out of one merge, so
+    /// committing it would double the repository's generated weight for a drift gate the
+    /// plain-text `--check` already provides. A deployment whose image predates it, or a
+    /// developer who has not run the command, serves nothing here and the screen says so.
+    #[serde(default = "FrontendConfig::default_notices_json_path")]
+    pub notices_json_path: String,
     /// Base origin the `/v1/*` proxy targets, e.g. `http://api:8080`. No trailing slash.
     #[serde(default = "FrontendConfig::default_api_upstream")]
     pub api_upstream: String,
@@ -117,6 +127,9 @@ impl FrontendConfig {
     fn default_notices_path() -> String {
         "/THIRD-PARTY-NOTICES".to_owned()
     }
+    fn default_notices_json_path() -> String {
+        "/THIRD-PARTY-NOTICES.json".to_owned()
+    }
     fn default_api_upstream() -> String {
         "http://api:8080".to_owned()
     }
@@ -133,6 +146,7 @@ impl Default for FrontendConfig {
         Self {
             static_dir: Self::default_static_dir(),
             notices_path: Self::default_notices_path(),
+            notices_json_path: Self::default_notices_json_path(),
             api_upstream: Self::default_api_upstream(),
             max_body_bytes: Self::default_max_body_bytes(),
             connect_timeout_secs: Self::default_connect_timeout_secs(),

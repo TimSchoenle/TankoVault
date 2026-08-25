@@ -58,10 +58,17 @@ fileExistenceTests:
     shouldExist: true
   # This image owes the dependencies' terms twice: it is a binary distribution itself, and it
   # hands the WASM bundle - a second dependency graph, `web/frontend`'s - to every browser that
-  # loads the page. The server publishes this file at `/third-party-notices`, which is the URL
-  # the SPA's rail links to.
+  # loads the page. The server publishes this file at `/third-party-notices`, which the SPA's
+  # `/licenses` screen links.
   - name: "third-party licence notices ship with the image"
     path: "/THIRD-PARTY-NOTICES"
+    shouldExist: true
+  # The same notices, structured, served at `/third-party-notices.json` and rendered by that
+  # screen. Asserted separately because it is generated in a different stage from the document
+  # above: `wasm-builder` is the only one holding both dependency graphs, so an image can ship
+  # one and not the other, and the screen's absent-inventory state is quiet by design.
+  - name: "the structured licence inventory ships with the image"
+    path: "/THIRD-PARTY-NOTICES.json"
     shouldExist: true
   # What the dynamically linked musl binary resolves at load time. On `scratch` there is no
   # package manager to supply them, so a missing one is a container that exits before `main` —
@@ -95,3 +102,12 @@ fileContentTests:
       - "THIRD-PARTY NOTICES"
       - "Part 1 of 2"
       - "Part 2 of 2"
+  # The same assertion for the inventory, and for the same reason: `xtask notices --json` writes
+  # one section per graph, keyed by the slugs the screen translates, so a run that harvested only
+  # the backend still produces a well-formed document that renders half the obligation.
+  - name: "the inventory covers both dependency graphs too"
+    path: "/THIRD-PARTY-NOTICES.json"
+    expectedContents:
+      - '"slug":"backend"'
+      - '"slug":"frontend"'
+      - '"notices":'

@@ -7,9 +7,7 @@
 //! sheet, which is where the per-reader gating lives so the bar does not reflow around a
 //! permission. Signing out is the one thing that does shorten it — see `nav::tab_destinations`.
 
-use crate::components::nav::{
-    reader_destinations_visible, tab_destinations, Destination, NOTICES_ROUTE,
-};
+use crate::components::nav::{reader_destinations_visible, tab_destinations, Destination};
 use crate::components::UnreadBadge;
 use crate::i18n::{use_i18n, Translator, LOCALES};
 use crate::icons::{Ic, Icon};
@@ -96,8 +94,6 @@ fn MoreSheet(on_close: EventHandler<()>) -> Element {
     let session = use_session();
     let mut languages = use_signal(|| false);
     let current = i18n.language();
-    let notices_origin = crate::platform::origin();
-    let notices = format!("{}{NOTICES_ROUTE}", notices_origin.trim_end_matches('/'));
 
     rsx! {
         button {
@@ -144,19 +140,9 @@ fn MoreSheet(on_close: EventHandler<()>) -> Element {
             {legal_block(i18n)}
 
             div { class: "ik-sheet-head", {i18n.t("footer.openSource")} }
-            // Absolute, and withheld without an origin — see `footer::OpenSourceColumn` for why
-            // the bare path is a link into the reader's own drive on the desktop build.
-            if !notices_origin.is_empty() {
-                a {
-                    class: "ik-sheet-row",
-                    href: "{notices}",
-                    target: "_blank",
-                    rel: "noopener noreferrer",
-                    Ic { icon: Icon::Code, size: 19 }
-                    {i18n.t("nav.notices")}
-                    span { class: "val", Ic { icon: Icon::OpenInNew, size: 14 } }
-                }
-            }
+            // An in-app route now, so no origin to resolve it against and nothing to withhold
+            // on the desktop build before a server is chosen — see `footer::OpenSourceColumn`.
+            {sheet_link(Route::Licenses {}, Icon::Code, &i18n.t("nav.notices"))}
         }
     }
 }

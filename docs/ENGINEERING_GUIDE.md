@@ -129,6 +129,13 @@ distribution to carry — so it ships at `/THIRD-PARTY-NOTICES` in every image b
 and is served to readers at `/third-party-notices`. Generation is `--frozen`: no network, and the
 document is a pure function of the two lockfiles and the two `about.toml`s.
 
+`xtask notices --json <path>` writes the same merge as a structured document, which the SPA's
+`/licenses` screen renders. It is **not** committed and has no gate: it is a second
+representation of the same 500 KB, and a lockfile that would change it changes the plain-text
+document too, so `--check` on that one already covers the pair. The frontend image build writes
+it (`wasm-builder`, the only stage holding both dependency graphs) and publishes it at
+`/third-party-notices.json`.
+
 Why it is not in `xtask ci` when the other three are: that gate needs nothing but cargo and
 rustfmt, and this one needs `cargo-about` installed. Keeping the promise is worth the separate
 job.

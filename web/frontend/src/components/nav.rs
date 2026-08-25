@@ -178,16 +178,11 @@ pub(crate) fn tab_destinations(
     out
 }
 
-/// The path `services/frontend` publishes the third-party licence notices at.
-///
-/// Duplicated from that crate's `NOTICES_ROUTE` because this is a separate workspace with no
-/// compile-time relationship to it; `xtask repo-lint` holds the two literals equal.
-pub(crate) const NOTICES_ROUTE: &str = "/third-party-notices";
-
 // The rail's own notices link retired with the footer, which carries it in its Open source
 // column on every screen and in the More sheet below 820px. The reason it was in the rail at
 // all — a signed-out reader has received the same bundle and is owed the same notices — is
-// unchanged and still met: the footer renders signed out.
+// unchanged and still met: the footer renders signed out. The literals that used to live here
+// moved with the link, to `views/licenses.rs`, which is the only thing that reaches for them now.
 
 /// A kicker heading that groups rail destinations.
 #[component]

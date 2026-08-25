@@ -14,8 +14,9 @@ use crate::state::Session;
 use crate::title::PageTitle;
 use crate::views::{
     Account, AnilistCallback, Console, ConsoleEntity, ConsoleQuery, ConsoleSection, Discover,
-    DiscoverQuery, ForgotPassword, Home, Legal, Login, NotFound, Notifications, Recommendations,
-    ResetPassword, Search, SearchQuery, Series, VerifyEmail, Watchlist, WatchlistQuery,
+    DiscoverQuery, ForgotPassword, Home, Legal, Licenses, Login, NotFound, Notifications,
+    Recommendations, ResetPassword, Search, SearchQuery, Series, VerifyEmail, Watchlist,
+    WatchlistQuery,
 };
 use dioxus::prelude::*;
 
@@ -80,6 +81,10 @@ pub(crate) enum Route {
         // free string and an unconfigured one is the API's 404, not a routing miss.
         #[route("/legal/:slug")]
         Legal { slug: String },
+        // The third-party notices, rendered. `/third-party-notices` stays the plain-text
+        // document `services/frontend` publishes; this is the screen that reads it.
+        #[route("/licenses")]
+        Licenses {},
         #[route("/:..segments")]
         NotFound { segments: Vec<String> },
 }

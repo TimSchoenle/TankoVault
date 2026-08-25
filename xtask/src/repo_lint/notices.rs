@@ -81,64 +81,69 @@ pub(super) fn notices_accept_every_allowed_licence(root: &Path) -> anyhow::Resul
     Ok(findings)
 }
 
-/// **The URL the SPA links its notices at must be the one the frontend service publishes
-/// them at.** `web/frontend` is a separate workspace, so the two `NOTICES_ROUTE` literals have
-/// no compile-time relationship. Getting them out of step does not 404: every unmatched path on
-/// that server falls back to the app shell, so a stale link answers `200` with the application
-/// itself, and the reader — who is owed those notices for the bundle their browser just ran —
-/// sees a page that looks like it worked.
+/// **Every URL the SPA reaches its notices at must be one the frontend service publishes.**
+/// `web/frontend` is a separate workspace, so the literal pairs have no compile-time
+/// relationship. Getting them out of step does not 404: every unmatched path on that server
+/// falls back to the app shell, so a stale link answers `200` with the application itself, and
+/// the reader — who is owed those notices for the bundle their browser just ran — sees a page
+/// that looks like it worked. The JSON half fails worse: the screen would parse the app shell,
+/// fail, and report a corrupt inventory rather than an absent one.
 pub(super) fn the_notices_url_is_the_one_the_server_publishes(
     root: &Path,
 ) -> anyhow::Result<Vec<Finding>> {
     const RULE: &str = "notices-url-matches-the-route";
     const SERVER: &str = "services/frontend/src/main.rs";
-    const SPA: &str = "web/frontend/src/components/nav.rs";
+    const SPA: &str = "web/frontend/src/views/licenses.rs";
+    /// The plain-text document, then the structured inventory the screen renders.
+    const PAIRS: [&str; 2] = ["NOTICES_ROUTE", "NOTICES_JSON_ROUTE"];
 
-    let mut routes = Vec::new();
-    for relative in [SERVER, SPA] {
-        let path = root.join(relative);
-        let Ok(text) = std::fs::read_to_string(&path) else {
-            anyhow::bail!("repo-lint: cannot read {}", path.display());
+    let mut findings = Vec::new();
+    for name in PAIRS {
+        let mut routes = Vec::new();
+        for relative in [SERVER, SPA] {
+            let path = root.join(relative);
+            let Ok(text) = std::fs::read_to_string(&path) else {
+                anyhow::bail!("repo-lint: cannot read {}", path.display());
+            };
+            let Some((line, value)) = const_str(&text, name) else {
+                anyhow::bail!(
+                    "repo-lint: {} declares no `const {name}: &str = \"…\"`; the notices \
+                     link and the route that serves it are held together by nothing else",
+                    path.display()
+                );
+            };
+            routes.push((path, line, value));
+        }
+
+        let [
+            (server_path, server_line, server_route),
+            (spa_path, spa_line, spa_route),
+        ] = routes.as_slice()
+        else {
+            unreachable!("two files were read")
         };
-        let Some((line, value)) = const_str(&text, "NOTICES_ROUTE") else {
-            anyhow::bail!(
-                "repo-lint: {} declares no `const NOTICES_ROUTE: &str = \"…\"`; the notices \
-                 link and the route that serves it are held together by nothing else",
-                path.display()
-            );
-        };
-        routes.push((path, line, value));
-    }
 
-    let [
-        (server_path, server_line, server_route),
-        (spa_path, spa_line, spa_route),
-    ] = routes.as_slice()
-    else {
-        unreachable!("two files were read")
-    };
-
-    if server_route == spa_route {
-        return Ok(Vec::new());
-    }
-    Ok(vec![
-        Finding {
+        if server_route == spa_route {
+            continue;
+        }
+        findings.push(Finding {
             rule: RULE,
             file: spa_path.clone(),
             line: *spa_line,
             detail: format!(
-                "the SPA links `{spa_route}` but the server publishes `{server_route}` \
-                 ({SERVER}:{server_line}) — the link resolves to the app shell with a 200 \
+                "the SPA reaches `{spa_route}` but the server publishes `{server_route}` \
+                 ({SERVER}:{server_line}) — the request resolves to the app shell with a 200 \
                  rather than failing"
             ),
-        },
-        Finding {
+        });
+        findings.push(Finding {
             rule: RULE,
             file: server_path.clone(),
             line: *server_line,
             detail: format!("the other half of this disagreement is {SPA}:{spa_line}"),
-        },
-    ])
+        });
+    }
+    Ok(findings)
 }
 
 #[cfg(test)]
@@ -228,38 +233,49 @@ mod tests {
         );
     }
 
-    /// Proves the URL rule fires. It has to be proved rather than observed green, because the
-    /// failure it guards against is itself invisible: the server answers every unmatched path
-    /// with the app shell, so a stale link returns 200 and a page.
+    /// Proves the URL rule fires, for both halves. It has to be proved rather than observed
+    /// green, because the failure it guards against is itself invisible: the server answers
+    /// every unmatched path with the app shell, so a stale link returns 200 and a page.
     #[test]
     fn a_stale_notices_link_is_a_violation() {
         let root = tempdir("notices-url");
         let server = root.join("services/frontend/src");
-        let spa = root.join("web/frontend/src/components");
+        let spa = root.join("web/frontend/src/views");
         std::fs::create_dir_all(&server).unwrap();
         std::fs::create_dir_all(&spa).unwrap();
-        let write = |dir: &Path, name: &str, route: &str| {
+        let write = |dir: &Path, name: &str, route: &str, json: &str| {
             std::fs::write(
                 dir.join(name),
-                format!("const NOTICES_ROUTE: &str = \"{route}\";\n"),
+                format!(
+                    "const NOTICES_ROUTE: &str = \"{route}\";\n\
+                     const NOTICES_JSON_ROUTE: &str = \"{json}\";\n"
+                ),
             )
             .unwrap();
         };
 
-        write(&server, "main.rs", "/third-party-notices");
-        write(&spa, "nav.rs", "/third-party-notices");
+        let (text, json) = ("/third-party-notices", "/third-party-notices.json");
+        write(&server, "main.rs", text, json);
+        write(&spa, "licenses.rs", text, json);
         assert!(
             the_notices_url_is_the_one_the_server_publishes(&root)
                 .unwrap()
                 .is_empty()
         );
 
-        write(&spa, "nav.rs", "/licenses");
+        write(&spa, "licenses.rs", "/licenses", json);
         let findings = the_notices_url_is_the_one_the_server_publishes(&root).unwrap();
         // Both halves are reported: either file could be the one that moved.
         assert_eq!(findings.len(), 2);
         assert!(findings[0].detail.contains("/licenses"));
         assert!(findings[0].detail.contains("/third-party-notices"));
+
+        // The inventory URL is held to the same rule, and on its own: a link that still resolves
+        // while the document behind it does not is the case that reports a corrupt inventory.
+        write(&spa, "licenses.rs", text, "/inventory.json");
+        let findings = the_notices_url_is_the_one_the_server_publishes(&root).unwrap();
+        assert_eq!(findings.len(), 2);
+        assert!(findings[0].detail.contains("/inventory.json"));
 
         std::fs::remove_dir_all(&root).ok();
     }

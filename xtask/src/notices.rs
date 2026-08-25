@@ -17,13 +17,13 @@
 //! what makes `--check`'s comparison a statement about this repository rather than about a
 //! third-party service's mood.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::path::Path;
 use std::process::Command;
 
 use anyhow::{Context as _, Result, bail};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// The committed artefact, at the repository root beside `LICENSE`.
 ///
@@ -106,6 +106,88 @@ pub(crate) fn run(root: &Path, check: bool) -> Result<()> {
 /// Strip `\r` so a CRLF working copy and an LF render compare equal.
 fn normalise(text: &str) -> String {
     text.replace('\r', "")
+}
+
+/// Write the same harvest as JSON, for the SPA's `/licenses` screen to render.
+///
+/// **Not a committed artefact, and deliberately so.** It is a second representation of the
+/// ~500 KB already in `THIRD-PARTY-NOTICES`, and committing it would double the weight of the
+/// repository's generated files to gain a drift gate over data the plain-text `--check` already
+/// covers — the two come out of one [`merge`], so a lockfile that would change this one changes
+/// that one too. The image build runs this into the frontend image instead; a checkout that has
+/// not run it renders the screen's unavailable state.
+///
+/// # Errors
+/// When `cargo-about` is absent or fails, or when the document cannot be written.
+pub(crate) fn run_json(root: &Path, out: &Path) -> Result<()> {
+    // Both harvests first, and held: a licence's name and id are borrowed out of the harvest
+    // they came from, so a per-section loop that dropped each one would take the document's
+    // strings with it.
+    let mut harvests = Vec::with_capacity(SECTIONS.len());
+    for section in SECTIONS {
+        harvests.push(harvest(root, section)?);
+    }
+
+    let sections = SECTIONS
+        .iter()
+        .zip(&harvests)
+        .map(|(section, harvest)| DocumentSection {
+            slug: section.slug,
+            title: section.title,
+            ships_as: section.ships_as,
+            licences: merge(harvest)
+                .into_iter()
+                .map(|licence| DocumentLicence {
+                    id: licence.id,
+                    name: licence.name,
+                    crates: covered(&licence.notices),
+                    notices: licence.notices,
+                })
+                .collect(),
+        })
+        .collect();
+
+    // Compact, not pretty: nothing reads this by eye, and the indentation of a document that is
+    // four fifths licence text is four fifths of nothing.
+    let json = serde_json::to_vec(&Document { sections }).context("serialising the inventory")?;
+    if let Some(parent) = out.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("creating {}", parent.display()))?;
+    }
+    std::fs::write(out, &json).with_context(|| format!("writing {}", out.display()))?;
+    println!("wrote {} ({} bytes)", out.display(), json.len());
+    Ok(())
+}
+
+/// The structured inventory, one entry per dependency graph.
+///
+/// The schema `web/frontend/src/models.rs` mirrors — a separate workspace, so nothing but
+/// `xtask repo-lint` holds the two in step.
+#[derive(Serialize)]
+struct Document<'a> {
+    sections: Vec<DocumentSection<'a>>,
+}
+
+/// One graph: what it ships as, and the licences it resolves to.
+#[derive(Serialize)]
+struct DocumentSection<'a> {
+    /// Stable key the SPA translates — `backend` or `frontend`. The prose below is the fallback
+    /// for a locale that carries no string for it, so a new section is never nameless.
+    slug: &'a str,
+    title: &'a str,
+    ships_as: &'a str,
+    licences: Vec<DocumentLicence<'a>>,
+}
+
+/// One licence, and every distinct notice reproduced under it.
+#[derive(Serialize)]
+struct DocumentLicence<'a> {
+    id: &'a str,
+    name: &'a str,
+    /// Distinct crates covered — the number the plain-text summary line carries, from the same
+    /// [`covered`], so the page and the document cannot disagree.
+    crates: usize,
+    notices: Vec<Notice>,
 }
 
 /// What `cargo about generate --format json` reports: one entry per licence file it harvested,
@@ -194,18 +276,50 @@ fn harvest(root: &Path, section: &Section) -> Result<Harvest> {
     serde_json::from_str(&json).with_context(|| format!("parsing {}", harvested_to.display()))
 }
 
-/// A licence text and every crate that shipped that exact text.
-struct Notice {
-    text: String,
-    crates: Vec<String>,
+/// One crate, as a notice names it.
+///
+/// Name and version apart rather than one `"name version"` string, because the JSON document
+/// carries them as separate fields. Ordering is unchanged by the split: a crate name cannot
+/// contain a space, so the space that separated them sorted below every character a name can
+/// hold, and `(name, version)` orders exactly as `"name version"` did.
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+struct Covered {
+    name: String,
+    version: String,
 }
 
-/// Render one workspace's harvest.
+/// A licence text and every crate that shipped that exact text.
+#[derive(Serialize)]
+struct Notice {
+    text: String,
+    crates: Vec<Covered>,
+}
+
+/// One licence and its distinct notices, most-covered first.
 ///
-/// **Identical notices are printed once.** cargo-about hands back one entry per licence *file*,
-/// so a graph of 531 crates yields 531 copies of ~10 licences — the Apache-2.0 text alone
-/// appeared 370 times in the first draft of this file, at 11 KB a copy: 989 KB of document,\n/// against 332 KB now.\n///\n/// **Merging is on the text, not on the SPDX id.** An MIT file *is* mostly its copyright line,\n/// and the 72 distinct MIT notices in this graph name 72 different copyright holders; collapsing\n/// those to one would drop exactly the part the licence requires be reproduced. Whitespace is\n/// folded for the comparison only — two texts differing by a line wrap are the same notice — and\n/// the first copy is printed verbatim. See [`cluster`] for the near-identical case.
-fn render(harvest: &Harvest) -> String {
+/// What [`merge`] produces and both renderers consume, so the document a reader downloads and
+/// the page a reader opens are the same grouping of the same harvest. Distinct from [`Licence`],
+/// which is one harvested *file* as cargo-about reports it.
+struct LicenceNotices<'a> {
+    name: &'a str,
+    id: &'a str,
+    notices: Vec<Notice>,
+}
+
+/// Group one workspace's harvest into the distinct notices each licence covers.
+///
+/// **Identical notices are kept once.** cargo-about hands back one entry per licence *file*, so a
+/// graph of 531 crates yields 531 copies of ~10 licences — the Apache-2.0 text alone appeared
+/// 370 times in the first draft of this file, at 11 KB a copy: 989 KB of document against 332 KB
+/// now.
+///
+/// **Merging is on the text, not on the SPDX id.** An MIT file *is* mostly its copyright line,
+/// and the 72 distinct MIT notices in this graph name 72 different copyright holders; collapsing
+/// those to one would drop exactly the part the licence requires be reproduced. Whitespace is
+/// folded for the comparison only — two texts differing by a line wrap are the same notice — and
+/// the first copy is kept verbatim. See [`cluster`] for the near-identical case, which is a
+/// device of the plain-text rendering alone.
+fn merge(harvest: &Harvest) -> Vec<LicenceNotices<'_>> {
     // (name, id) -> normalised text -> the notice. `BTreeMap` throughout: the output is
     // byte-compared by `--check`, so iteration order has to be a property of the data and not of
     // a hasher.
@@ -221,18 +335,19 @@ fn render(harvest: &Harvest) -> String {
                 crates: Vec::new(),
             });
         for used_by in &licence.used_by {
-            notice
-                .crates
-                .push(format!("{} {}", used_by.krate.name, used_by.krate.version));
+            notice.crates.push(Covered {
+                name: used_by.krate.name.clone(),
+                version: used_by.krate.version.clone(),
+            });
         }
     }
 
     // Ordered by how much of the graph each licence covers, which is also the order the summary
     // is read in. Ties break on the id so the document is stable.
-    let mut licences: Vec<((&str, &str), Vec<Cluster>)> = by_licence
+    let mut licences: Vec<LicenceNotices<'_>> = by_licence
         .into_iter()
-        .map(|(key, notices)| {
-            let notices = notices
+        .map(|((name, id), notices)| {
+            let mut notices: Vec<Notice> = notices
                 .into_values()
                 .map(|mut notice| {
                     notice.crates.sort_unstable();
@@ -240,20 +355,52 @@ fn render(harvest: &Harvest) -> String {
                     notice
                 })
                 .collect();
-            (key, cluster(notices))
+            // Most-covered notice first, as the licences themselves are ordered. The text
+            // renderer re-sorts within a cluster; this is the order the JSON keeps.
+            notices.sort_by(|a, b| {
+                b.crates
+                    .len()
+                    .cmp(&a.crates.len())
+                    .then_with(|| a.crates.cmp(&b.crates))
+            });
+            LicenceNotices { name, id, notices }
         })
         .collect();
-    licences.sort_by(|((_, a_id), a), ((_, b_id), b)| {
-        crate_count(b).cmp(&crate_count(a)).then(a_id.cmp(b_id))
+    licences.sort_by(|a, b| {
+        covered(&b.notices)
+            .cmp(&covered(&a.notices))
+            .then(a.id.cmp(b.id))
     });
+    licences
+}
+
+/// Distinct crates covered by a licence's notices.
+///
+/// Distinct, not the sum over notices: a crate whose vendored files carry several notices under
+/// one licence — `ring` is the case, with fifteen ISC notices of its own — is one crate under
+/// that licence. Summing counted it once per notice, which is how the ISC summary line came to
+/// claim more crates than the section beneath it named.
+fn covered(notices: &[Notice]) -> usize {
+    notices
+        .iter()
+        .flat_map(|notice| notice.crates.iter())
+        .collect::<BTreeSet<_>>()
+        .len()
+}
+
+/// Render one workspace's merged harvest as the plain-text section.
+fn render(harvest: &Harvest) -> String {
+    let licences = merge(harvest);
 
     let mut out = String::from("Licences in this section, by number of crates:\n\n");
-    for ((name, id), clusters) in &licences {
-        let notices: usize = clusters.iter().map(|c| c.notices.len()).sum();
+    for licence in &licences {
+        let notices = licence.notices.len();
         let _ = writeln!(
             out,
-            "  {name} ({id}) — {}{}",
-            plural(crate_count(clusters), "crate"),
+            "  {} ({}) — {}{}",
+            licence.name,
+            licence.id,
+            plural(covered(&licence.notices), "crate"),
             if notices > 1 {
                 format!(", {}", plural(notices, "distinct notice"))
             } else {
@@ -262,9 +409,10 @@ fn render(harvest: &Harvest) -> String {
         );
     }
 
-    for ((name, id), clusters) in &licences {
+    for licence in licences {
+        let (name, id) = (licence.name, licence.id);
         let _ = write!(out, "\n{RULE}\n{name} ({id})\n{RULE}\n");
-        for cluster in clusters {
+        for cluster in &cluster(licence.notices) {
             let shared = cluster.opening;
             if shared > 0 {
                 let _ = write!(
@@ -283,7 +431,7 @@ fn render(harvest: &Harvest) -> String {
                     "\nApplies to:\n\n"
                 });
                 for krate in &notice.crates {
-                    let _ = writeln!(out, "  - {krate}");
+                    let _ = writeln!(out, "  - {} {}", krate.name, krate.version);
                 }
                 out.push('\n');
                 out.push_str(notice.text[shared..].trim_end());
@@ -398,11 +546,6 @@ fn cluster_crates(cluster: &Cluster) -> usize {
 /// The horizontal rule between sections.
 const RULE: &str =
     "--------------------------------------------------------------------------------";
-
-/// How many crates a licence covers across all of its distinct notices.
-fn crate_count(clusters: &[Cluster]) -> usize {
-    clusters.iter().map(cluster_crates).sum()
-}
 
 /// Fold every run of whitespace to a single space, for comparison only.
 ///

@@ -1,0 +1,60 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH matched AS ( SELECT s.id FROM series s WHERE s.normalized_title % $12 UNION SELECT s.id FROM series s WHERE s.search_vec @@ plainto_tsquery('simple', $12) UNION SELECT st.series_id FROM series_titles st WHERE st.normalized % $12 ) SELECT count(*) AS \"total!\" FROM series s JOIN matched m ON m.id = s.id WHERE ($1::content_type IS NULL OR s.content_type = $1) AND ($2::series_status IS NULL OR s.status = $2) AND ($3::int IS NULL OR s.release_year >= $3) AND ($4::int IS NULL OR s.release_year <= $4) AND ($5::text IS NULL OR EXISTS ( SELECT 1 FROM series_sources ss JOIN providers p ON p.id = ss.provider_id WHERE ss.series_id = s.id AND p.slug = $5)) AND ($6::int IS NULL OR ( SELECT COALESCE(max(ss.chapter_count),0) FROM series_sources ss WHERE ss.series_id = s.id) >= $6) AND (cardinality($7::text[]) = 0 OR NOT EXISTS ( SELECT unnest($7::text[]) EXCEPT SELECT t.slug FROM series_tags stg JOIN tags t ON t.id = stg.tag_id WHERE stg.series_id = s.id)) AND (cardinality($8::text[]) = 0 OR NOT EXISTS ( SELECT 1 FROM series_tags stg JOIN tags t ON t.id = stg.tag_id WHERE stg.series_id = s.id AND t.slug = ANY($8::text[]))) AND (NOT s.adult_gated OR $9) AND ($10::uuid IS NULL OR $11::bool IS NULL OR $11 = EXISTS ( SELECT 1 FROM watchlist_entries w WHERE w.series_id = s.id AND w.user_id = $10))",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "total!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        {
+          "Custom": {
+            "name": "content_type",
+            "kind": {
+              "Enum": [
+                "manga",
+                "manhwa",
+                "manhua",
+                "webtoon",
+                "unknown"
+              ]
+            }
+          }
+        },
+        {
+          "Custom": {
+            "name": "series_status",
+            "kind": {
+              "Enum": [
+                "ongoing",
+                "completed",
+                "hiatus",
+                "cancelled",
+                "unknown"
+              ]
+            }
+          }
+        },
+        "Int4",
+        "Int4",
+        "Text",
+        "Int4",
+        "TextArray",
+        "TextArray",
+        "Bool",
+        "Uuid",
+        "Bool",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "9f485ed8eb7ac01fd972f7999016d347f4db23db8f27ef2f7d502db6c799f9f4"
+}

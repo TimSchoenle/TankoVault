@@ -48,6 +48,7 @@
 //! Opt-in: gated behind the `integration` feature because it requires Docker.
 #![cfg(feature = "integration")]
 
+use tankovault_db::repo::matching::merge_series;
 use tankovault_db::repo::tracking::{
     PinOutcome, ReadProgress, WatchlistFilter, WatchlistPage, continue_reading,
     early_access_opted_in, feed, is_sync_excluded, me_stats, progress_get_full, progress_mark_read,
@@ -566,6 +567,69 @@ async fn add_source(
     .execute(&db.pool)
     .await
     .expect("seed extra source");
+}
+
+/// A merged series lists each chapter **once** in the feed, resolved to its preferred carrier.
+///
+/// The bug: a merge re-parents the absorbed series' sources onto the survivor, so from then on
+/// one chapter legitimately exists as two `chapters` rows carrying the same number. The feed
+/// emitted a row per source, so Home showed the merged series twice, each row claiming the full
+/// count — while the "New chapters" tile directly above them, `continue_reading`'s badge and the
+/// watchlist ledger all count `DISTINCT number_milli / 10000` and said it once, and the notifier
+/// claims one announcement per `(user, series, chapter)`. The duplicates also spent the `limit`,
+/// so a watchlist of merged series came back as half a feed.
+#[tokio::test]
+async fn a_merged_series_lists_each_chapter_once_in_the_feed() {
+    let db = TestDb::spawn().await;
+    let user = seed::user(&db, "reader").create().await;
+    let alpha = seed::provider(&db, "alpha").create().await;
+    let beta = seed::provider(&db, "beta").create().await;
+
+    // Two catalogue entries an operator judged to be one work. Deliberately unlike titles: the
+    // point is the post-merge shape, and letting the matcher fold them at ingest instead would
+    // leave nothing for `merge_series` to move.
+    let keep = a_series(&db, alpha, "Vinland Saga", &[1.0, 2.0, 3.0]).await;
+    let absorbed = a_series(&db, beta, "Historie", &[2.0, 3.0, 4.0]).await;
+    assert_ne!(keep, absorbed, "the fixture needs two series to merge");
+    merge_series(&db.pool, keep, absorbed, None, "merged")
+        .await
+        .expect("merge");
+
+    // Beta is the richer carrier, so it is the source the ledger's `preferred_source_name`
+    // names — and therefore the one whose link every shared chapter must resolve to.
+    prefer_source(&db, keep, beta, 99).await;
+    prefer_source(&db, keep, alpha, 3).await;
+
+    watchlist_upsert(&db.pool, user, keep, WatchStatus::Reading, true)
+        .await
+        .expect("watchlist");
+
+    // Both the shape and the carrier in one assertion: chapter 1 exists only on alpha, and the
+    // two both sources hold resolve to beta because beta is the preferred one.
+    let items = feed(&db.pool, user, 100).await.expect("feed");
+    let mut carried: Vec<(f64, &str)> = items
+        .iter()
+        .map(|item| (item.chapter_number, item.provider_slug.as_str()))
+        .collect();
+    carried.sort_unstable_by(|left, right| left.0.total_cmp(&right.0));
+    assert_eq!(
+        carried,
+        vec![(1.0, "alpha"), (2.0, "beta"), (3.0, "beta"), (4.0, "beta")],
+        "one row per chapter, each opening on the preferred source that holds it"
+    );
+}
+
+/// Rank one of a series' sources by giving it a chapter count, as a scan does.
+async fn prefer_source(db: &TestDb, series: SeriesId, provider: ProviderId, chapter_count: i32) {
+    sqlx::query(
+        "UPDATE series_sources SET chapter_count = $3 WHERE series_id = $1 AND provider_id = $2",
+    )
+    .bind(series.as_uuid())
+    .bind(provider.as_uuid())
+    .bind(chapter_count)
+    .execute(&db.pool)
+    .await
+    .expect("rank a source");
 }
 
 /// The notifier's "already read?" filter must be [`ReadProgress::covers`], not a comparison

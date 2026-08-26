@@ -1,0 +1,103 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH unread AS ( SELECT s.id AS series_id, s.canonical_title AS series_title, c.number_milli, c.title AS chapter_title, p.slug AS provider_slug, p.base_url AS base_url, chapter_url_path(ss.source_path, c.path) AS chapter_path, min(c.discovered_at) OVER (PARTITION BY s.id, c.number_milli) AS discovered_at, row_number() OVER (PARTITION BY s.id, c.number_milli ORDER BY ss.chapter_count DESC, ss.last_scanned_at DESC NULLS LAST, p.slug, ss.id) AS carrier_rank FROM watchlist_entries w JOIN series s ON s.id = w.series_id JOIN series_sources ss ON ss.series_id = w.series_id JOIN providers p ON p.id = ss.provider_id JOIN chapters c ON c.series_source_id = ss.id LEFT JOIN read_progress rp ON rp.user_id = w.user_id AND rp.series_id = w.series_id WHERE w.user_id = $1 AND c.number_milli >= (floor(COALESCE(rp.last_read_whole_number, 0))::bigint + 1) * 10000 AND NOT (c.number_milli % 10000 <> 0 AND rp.last_read_part_number IS NOT NULL AND c.number_milli <= (rp.last_read_part_number * 10000)::bigint) AND (c.access = 'free' OR c.unlocks_at <= now() OR ss.provider_id = ANY(ARRAY( SELECT e.provider_id FROM user_provider_early_access e WHERE e.user_id = $1))) ) SELECT series_id AS \"series_id!\", series_title AS \"series_title!\", number_milli AS \"chapter_number!\", chapter_title, provider_slug AS \"provider_slug!\", base_url AS \"base_url!\", chapter_path AS \"chapter_path!\", discovered_at AS \"discovered_at!\" FROM unread WHERE carrier_rank = 1 ORDER BY discovered_at DESC, series_id, number_milli DESC LIMIT $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "series_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "series_title!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "canonical_title"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "chapter_number!",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "chapters",
+            "name": "number_milli"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "chapter_title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "chapters",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "provider_slug!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "providers",
+            "name": "slug"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "base_url!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "providers",
+            "name": "base_url"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "chapter_path!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "discovered_at!",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "262471afeb481ce8dcf1e27b34f777b8ed2e7b39cac0d2cc564c317431a58e2e"
+}

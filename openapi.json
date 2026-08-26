@@ -1473,6 +1473,7 @@
             "type": "string"
           },
           "provider_slug": {
+            "description": "The source this chapter is resolved to: the preferred carrier among those holding it.",
             "type": "string"
           },
           "series_id": {
@@ -14301,7 +14302,7 @@
     },
     "/v1/me/feed": {
       "get": {
-        "description": "Unread chapters across the watchlist (the reading dashboard).",
+        "description": "Unread chapters across the watchlist (the reading dashboard), one entry per chapter: a series\ncarried by several sources — which is what a merge leaves behind — contributes each chapter\nonce, resolved to that series' preferred carrier.",
         "operationId": "feed",
         "responses": {
           "200": {
@@ -14315,7 +14316,7 @@
                 }
               }
             },
-            "description": "Up to 100 most recent unread chapters"
+            "description": "Up to 100 most recently discovered unread chapters"
           },
           "401": {
             "content": {

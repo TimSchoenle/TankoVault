@@ -20,6 +20,11 @@
 //! installer from `main` at the *next* start, which is why an unattended update never interrupts
 //! a reading session with an elevation prompt.
 //!
+//! That start is also where the reader finally sees any of it: [`adopt_applied`] notices that the
+//! version has changed and opens the "what's new" panel over the app with the release notes of
+//! the version now running (`components::whats_new`). It is keyed to the version rather than to
+//! the hand-off, so an installer the reader ran themselves opens it too.
+//!
 //! ## What is trusted
 //!
 //! Nothing that did not arrive inside a manifest signed by a key compiled into this binary. That
@@ -52,6 +57,7 @@ use crate::i18n::Translator;
 use dioxus::prelude::*;
 use std::time::Duration;
 
+pub(crate) use discover::ReleaseNotes;
 pub(crate) use install::{apply_staged, flavour, run_as_relauncher};
 
 /// Which release policy the reader chose.
@@ -67,6 +73,12 @@ const STAGED_KEY: &str = "tv-update-staged";
 /// The version an installer was handed off for, written immediately before the hand-off and
 /// read once by the run that follows it. See [`adopt_applied`].
 const APPLIED_KEY: &str = "tv-update-applied";
+/// The version the last start was running.
+///
+/// Compared against this build rather than against [`APPLIED_KEY`], so an installer the reader
+/// double-clicked themselves is noticed as well as one this app handed off to. See
+/// [`version_change`].
+const SEEN_VERSION_KEY: &str = "tv-update-seen-version";
 
 /// The default hold-back window: a release is not offered until it is this many days old.
 ///
@@ -84,6 +96,15 @@ const STARTUP_DELAY_MS: u32 = 20_000;
 /// Between checks, and the floor on how often one may run — a reader who restarts the app ten
 /// times in an evening causes one check, not ten.
 const CHECK_INTERVAL_MS: u32 = 6 * 60 * 60 * 1_000;
+/// How soon a *failed* check is tried again.
+///
+/// A refused request is usually a machine that woke up before its network did, and waiting out
+/// the full interval for that turns a thirty-second outage into six hours of not looking.
+const RETRY_INTERVAL_MS: u32 = 30 * 60 * 1_000;
+/// How many consecutive failures are retried at [`RETRY_INTERVAL_MS`] before the loop returns to
+/// its ordinary cadence. A laptop that is simply offline must not ask twelve times a day for as
+/// long as it stays that way.
+const MAX_QUICK_RETRIES: u32 = 4;
 
 /// Connect timeout, and the ceiling on the two small metadata requests. The installer download
 /// deliberately has neither: it is on the order of a hundred megabytes.
@@ -250,22 +271,69 @@ pub(crate) enum Status {
     Failed(&'static str),
 }
 
-/// The updater's state, provided once at the app root and read by the settings sheet and the
-/// title bar.
+/// What the reader can be shown about a release, and whether it is still on its way.
+///
+/// Separate from [`Status`] because the two answer different questions: the status is what the
+/// updater is *doing*, and this is what the release it found *is*. They also move at different
+/// times — a check that finds nothing clears the notes without the panel changing what it shows.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) enum Notes {
+    /// Nothing to show — not asked for, or the release list could not be reached.
+    #[default]
+    None,
+    Fetching,
+    Ready(ReleaseNotes),
+}
+
+/// The updater's state, provided once at the app root and read by the settings sheet, the title
+/// bar and the "what's new" panel.
 #[derive(Clone, Copy, PartialEq)]
-pub(crate) struct UpdateState(Signal<Status>);
+pub(crate) struct UpdateState {
+    status: Signal<Status>,
+    notes: Signal<Notes>,
+    /// Whether the "what's new" panel is on screen.
+    panel: Signal<bool>,
+}
 
 impl UpdateState {
     pub(crate) fn new() -> Self {
-        Self(Signal::new(Status::Idle))
+        Self {
+            status: Signal::new(Status::Idle),
+            notes: Signal::new(Notes::None),
+            panel: Signal::new(false),
+        }
     }
 
     pub(crate) fn status(self) -> Status {
-        self.0.read().clone()
+        self.status.read().clone()
     }
 
     fn set(mut self, status: Status) {
-        self.0.set(status);
+        self.status.set(status);
+    }
+
+    /// What the release currently in view says about itself.
+    pub(crate) fn notes(self) -> Notes {
+        self.notes.read().clone()
+    }
+
+    fn set_notes(mut self, notes: Notes) {
+        self.notes.set(notes);
+    }
+
+    pub(crate) fn panel_open(self) -> bool {
+        *self.panel.read()
+    }
+
+    /// Put the "what's new" panel on screen. Called at a start that changed version, and by the
+    /// settings sheet for a release on offer. Closing goes through [`close_panel`], which has a
+    /// receipt to retire as well.
+    pub(crate) fn open_panel(mut self) {
+        self.panel.set(true);
+    }
+
+    fn set_panel(mut self, open: bool) {
+        self.panel.set(open);
     }
 
     /// Whether the title bar should draw its dot: there is something the reader has not seen and
@@ -288,32 +356,105 @@ impl UpdateState {
     }
 }
 
-/// Report an update this app applied to itself at the previous start.
+/// Report an update this installation has taken, at the first start that is running it.
 ///
-/// The hand-off in [`install::apply_staged`] records the version and then replaces this process
-/// with an installer, so the run that comes back is a *different build* with no memory of any of
-/// it. Without this the whole automatic path is invisible: the reader starts the app, it
-/// disappears, something reopens a minute later, and the settings sheet says no check has ever
-/// run.
+/// Two things happen here, and they are deliberately independent.
 ///
-/// Cleared as it is read, so the confirmation is shown once rather than at every start until the
-/// next update.
+/// **The receipt.** The hand-off in [`install::apply_staged`] records the version and then
+/// replaces this process with an installer, so the run that comes back is a *different build*
+/// with no memory of any of it. Without [`APPLIED_KEY`] the whole automatic path is invisible:
+/// the reader starts the app, it disappears, something reopens a minute later, and nothing ever
+/// says why. It is read once and cleared, so a receipt cannot be claimed by a later start.
+///
+/// **The version change.** [`SEEN_VERSION_KEY`] is compared against this build, which catches an
+/// installer the reader ran themselves as well as one this app handed off to — it is the same
+/// event either way, and only one of the two leaves a receipt. That is what opens the "what's
+/// new" panel. The notification stays tied to the receipt: a reader who has just double-clicked
+/// an installer does not need to be told that an installer ran.
 pub(crate) fn adopt_applied(state: UpdateState, i18n: Translator) {
-    let Some(version) = crate::platform::store_get(APPLIED_KEY) else {
+    let handed_off = crate::platform::store_get(APPLIED_KEY);
+    if handed_off.is_some() {
+        crate::platform::store_remove(APPLIED_KEY);
+    }
+    // A build the release workflow did not stamp has no version to compare. Recording the
+    // placeholder would make the next real build look like an update from 0.1.0, and every
+    // developer start after it look like a downgrade.
+    let Some(current) = running_version() else {
         return;
     };
-    crate::platform::store_remove(APPLIED_KEY);
+    let version = current.to_string();
     // Anything but the version this build reports means the installer did not produce what it
     // said it would — a failed install, or a downgrade someone arranged by hand. Saying "updated
     // to 2.4.0" while running 2.3.0 is worse than saying nothing.
-    if crate::build_info::VERSION != version {
+    let confirmed = handed_off.as_deref() == Some(version.as_str());
+    if confirmed {
+        crate::platform::notify(
+            &i18n.t("settings.update.notify.appliedTitle"),
+            &i18n.args("settings.update.notify.applied", &[("version", &version)]),
+        );
+    }
+    // Its own statement, not an operand: the version has to be recorded whatever is decided
+    // here, or the *next* start reads the one before this and greets the reader twice.
+    let changed = note_running_version(&current).is_some();
+    // Either is an update. A confirmed receipt with nothing recorded is the reader who updated
+    // *into* the first build that keeps this record, and telling them by notification while the
+    // app itself says nothing is the gap all of this exists to close.
+    if !confirmed && !changed {
         return;
     }
-    crate::platform::notify(
-        &i18n.t("settings.update.notify.appliedTitle"),
-        &i18n.args("settings.update.notify.applied", &[("version", &version)]),
-    );
     state.set(Status::Applied { version });
+    state.open_panel();
+    state.set_notes(Notes::Fetching);
+    spawn(async move {
+        let notes = running_notes(&current).await;
+        state.set_notes(notes.map_or(Notes::None, Notes::Ready));
+    });
+}
+
+/// Record `current` as the version this installation is on, and report the one it replaced.
+fn note_running_version(current: &semver::Version) -> Option<semver::Version> {
+    let previous = version_change(
+        crate::platform::store_get(SEEN_VERSION_KEY).as_deref(),
+        current,
+    );
+    crate::platform::store_set(SEEN_VERSION_KEY, &current.to_string());
+    previous
+}
+
+/// The version this start replaced, given what the last start recorded.
+///
+/// `None` unless the stored value parses **and** is genuinely older. A first run has recorded
+/// nothing and has replaced nothing, so treating it as an update would meet every reader at
+/// their first launch with the changelog of a version they have never not been on; and a
+/// downgrade — a reader reinstalling an older build on purpose — is not an update to announce.
+fn version_change(stored: Option<&str>, current: &semver::Version) -> Option<semver::Version> {
+    let previous = semver::Version::parse(stored?.trim()).ok()?;
+    (previous < *current).then_some(previous)
+}
+
+/// What the release this build came from says about itself.
+///
+/// [`Policy::Off`] is honoured here as everywhere else: a reader who chose it asked for no
+/// request to github.com, and the panel still names the version it is about — it simply has no
+/// notes under the heading.
+async fn running_notes(version: &semver::Version) -> Option<ReleaseNotes> {
+    if policy() == Policy::Off {
+        return None;
+    }
+    let client = client().ok()?;
+    let releases = discover::releases(&client, &channel::current().repo)
+        .await
+        .ok()?;
+    discover::notes_for(&releases, version)
+}
+
+/// Close the "what's new" panel, and retire the receipt it was showing.
+///
+/// The panel is the one surface an unattended update is certain to have been seen through, so
+/// dismissing it is what clears [`Status::Applied`] and with it the title bar's dot.
+pub(crate) fn close_panel(state: UpdateState) {
+    state.set_panel(false);
+    acknowledge_applied(state);
 }
 
 /// Whether the reader has declined `version`.
@@ -350,12 +491,42 @@ pub(crate) async fn run(state: UpdateState, api: crate::api::Api, i18n: Translat
         return;
     }
     crate::platform::sleep_ms(STARTUP_DELAY_MS).await;
+    let mut failures = 0_u32;
     loop {
         if policy() != Policy::Off && due() {
             check(state, api, i18n).await;
+            failures = if matches!(state.status(), Status::Failed(_)) {
+                failures.saturating_add(1)
+            } else {
+                0
+            };
         }
-        crate::platform::sleep_ms(CHECK_INTERVAL_MS).await;
+        crate::platform::sleep_ms(wait_after(failures)).await;
     }
+}
+
+/// How long to wait before looking again, given how many checks in a row have failed.
+///
+/// Split from the loop so the escalation is testable without a clock. A failed check does not
+/// write [`LAST_CHECK_KEY`], so [`due`] is still true when the shorter wait elapses and the retry
+/// actually runs — the two have to agree for this to be more than a shorter sleep.
+fn wait_after(failures: u32) -> u32 {
+    if (1..=MAX_QUICK_RETRIES).contains(&failures) {
+        RETRY_INTERVAL_MS
+    } else {
+        CHECK_INTERVAL_MS
+    }
+}
+
+/// When the last check completed, as epoch milliseconds, or `None` before the first one.
+///
+/// Survives a restart, which is the point: [`Status::Idle`] is only ever about *this session*,
+/// and a sheet that says "no check has run yet" about an installation that checked an hour ago
+/// is indistinguishable from an updater that has quietly stopped working.
+pub(crate) fn last_check_ms() -> Option<f64> {
+    crate::platform::store_get(LAST_CHECK_KEY)
+        .and_then(|value| value.parse::<f64>().ok())
+        .filter(|ms| ms.is_finite() && *ms > 0.0)
 }
 
 /// Whether enough time has passed since the last check.
@@ -432,9 +603,16 @@ async fn look(
         crate::platform::now_ms(),
         &channel.supported,
     ) {
-        discover::Offer::Ready(candidate) => candidate,
-        discover::Offer::None => return Ok(Status::UpToDate),
+        discover::Offer::Ready(candidate) => {
+            offer_notes(state, Notes::Ready(candidate.notes()));
+            candidate
+        }
+        discover::Offer::None => {
+            offer_notes(state, Notes::None);
+            return Ok(Status::UpToDate);
+        }
         discover::Offer::Unsupported(version) => {
+            offer_notes(state, Notes::None);
             return Ok(Status::Unsupported {
                 version: version.to_string(),
                 // A refusal can only come from the ceiling, so there is one to name.
@@ -476,6 +654,17 @@ async fn look(
     // check in `install::stage` has passed.
     crate::platform::store_set(STAGED_KEY, &version);
     Ok(Status::Staged { version })
+}
+
+/// Hand the panel what this check found — unless it is already on screen.
+///
+/// The first check runs twenty seconds after a start, which is exactly when a reader is still
+/// reading the notes of the release they have just been updated to. Overwriting them there would
+/// swap the panel's contents for another release's under the reader's eyes.
+fn offer_notes(state: UpdateState, notes: Notes) {
+    if !state.panel_open() {
+        state.set_notes(notes);
+    }
 }
 
 /// Raise an OS notification when the outcome is new.
@@ -579,6 +768,49 @@ mod tests {
         assert_eq!(parse_min_age(Some(" 7 ")), 7);
         // Clamped rather than honoured, so a hand-edited file cannot exceed what the slider offers.
         assert_eq!(parse_min_age(Some("4000")), MAX_MIN_AGE_DAYS);
+    }
+
+    /// A first run has replaced nothing, and a downgrade is not an update.
+    ///
+    /// The first of those is the one that matters: with no stored version, treating the absence
+    /// as "you were on something older" would open the "what's new" panel at every reader's
+    /// first launch, describing a version they have never not been on. The second keeps a reader
+    /// who has deliberately reinstalled an older build from being congratulated for it.
+    #[test]
+    fn only_a_move_to_a_newer_version_counts_as_an_update() {
+        let current = semver::Version::new(2, 1, 0);
+        assert_eq!(
+            version_change(Some("2.0.5"), &current),
+            Some(semver::Version::new(2, 0, 5))
+        );
+        assert_eq!(
+            version_change(Some(" 2.0.5 "), &current),
+            Some(semver::Version::new(2, 0, 5))
+        );
+        for stored in [
+            None,
+            Some(""),
+            Some("nightly"),
+            Some("2.1.0"),
+            Some("2.2.0"),
+        ] {
+            assert_eq!(version_change(stored, &current), None, "{stored:?}");
+        }
+    }
+
+    /// A run of failures is retried quickly a few times and then left alone.
+    ///
+    /// Both halves are the point: the short retry is what stops a machine that woke before its
+    /// network from not looking again for six hours, and the fall-back is what stops one that is
+    /// simply offline from asking twelve times a day for as long as it stays that way.
+    #[test]
+    fn a_failed_check_is_retried_sooner_but_not_for_ever() {
+        assert_eq!(wait_after(0), CHECK_INTERVAL_MS);
+        for failures in 1..=MAX_QUICK_RETRIES {
+            assert_eq!(wait_after(failures), RETRY_INTERVAL_MS, "{failures}");
+        }
+        assert_eq!(wait_after(MAX_QUICK_RETRIES + 1), CHECK_INTERVAL_MS);
+        assert_eq!(wait_after(u32::MAX), CHECK_INTERVAL_MS);
     }
 
     #[test]

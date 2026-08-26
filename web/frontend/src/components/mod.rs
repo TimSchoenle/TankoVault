@@ -28,6 +28,10 @@ mod topbar;
 // reachable from the web build.
 #[cfg(feature = "desktop")]
 mod tray;
+// What a release changed, on the start that first runs it. Desktop only: a web SPA is updated by
+// reloading it, and there is nothing to have missed.
+#[cfg(feature = "desktop")]
+mod whats_new;
 mod wordmark;
 
 pub(crate) use bottombar::BottomTabs;
@@ -55,6 +59,8 @@ pub(crate) use tabs::{TabBar, TabKind};
 pub(crate) use titlebar::TitleBar;
 #[cfg(feature = "desktop")]
 pub(crate) use tray::{CloseToTray, TrayHost};
+#[cfg(feature = "desktop")]
+pub(crate) use whats_new::WhatsNew;
 pub(crate) use wordmark::Wordmark;
 
 use dioxus::prelude::*;

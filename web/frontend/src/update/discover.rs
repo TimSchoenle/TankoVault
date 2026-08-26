@@ -76,6 +76,9 @@ pub(crate) struct Release {
     draft: bool,
     #[serde(default)]
     prerelease: bool,
+    /// The release notes, as the Markdown whoever cut the release wrote. Absent for a release
+    /// published with an empty body.
+    body: Option<String>,
     #[serde(default)]
     assets: Vec<Asset>,
 }
@@ -98,6 +101,9 @@ pub(crate) struct Candidate {
     /// manifest existed. Such a release is announced and never installed — see
     /// [`Candidate::is_installable`].
     signed: Option<Signed>,
+    /// What the release says about itself. Carried from the release list rather than fetched,
+    /// so offering the reader the notes costs no request of its own.
+    notes: Option<String>,
     assets: Vec<Asset>,
 }
 
@@ -108,7 +114,34 @@ struct Signed {
     signature: String,
 }
 
+/// Ceiling on how much of a release body is kept.
+///
+/// The notes are rendered as `rsx!` nodes, one per inline run, so length is paid for in DOM
+/// nodes rather than in a string. A `release-please` changelog section is a few kilobytes; this
+/// is the bound that stops a release with a pathological body from being a way to make the
+/// panel unusable.
+const MAX_NOTES_BYTES: usize = 16 * 1024;
+
+/// What a release says about itself, for the panel that shows it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ReleaseNotes {
+    pub(crate) version: String,
+    /// The release page, for the reader who wants the rest of it.
+    pub(crate) page: String,
+    /// The body as Markdown, or `None` for a release published without one.
+    pub(crate) body: Option<String>,
+}
+
 impl Candidate {
+    /// What this release says about itself.
+    pub(crate) fn notes(&self) -> ReleaseNotes {
+        ReleaseNotes {
+            version: self.version.to_string(),
+            page: self.page.clone(),
+            body: self.notes.clone(),
+        }
+    }
+
     /// Whether this release carries the signed manifest an unattended install needs.
     pub(crate) fn is_installable(&self) -> bool {
         self.signed.is_some()
@@ -235,6 +268,7 @@ pub(crate) fn eligible(
                 version,
                 page: release.html_url.clone(),
                 signed: signed_urls(release),
+                notes: body_of(release),
                 assets: release.assets.clone(),
             })
         })
@@ -258,6 +292,41 @@ pub(crate) fn eligible(
     newest(beyond).map_or(Offer::None, |candidate| {
         Offer::Unsupported(candidate.version)
     })
+}
+
+/// What the release *at* `version` says about itself.
+///
+/// A lookup by exact version rather than by [`eligible`], because the one caller asks about the
+/// version it is already running: the release that produced this build is never a candidate to
+/// move to, so nothing in the offer path can answer it.
+pub(crate) fn notes_for(releases: &[Release], version: &semver::Version) -> Option<ReleaseNotes> {
+    let release = releases
+        .iter()
+        .find(|release| version_of(release).as_ref() == Some(version))?;
+    Some(ReleaseNotes {
+        version: version.to_string(),
+        page: release.html_url.clone(),
+        body: body_of(release),
+    })
+}
+
+/// A release body worth rendering: present, not blank, and no longer than [`MAX_NOTES_BYTES`].
+///
+/// Truncation is on a character boundary, so a body cut mid-glyph is impossible rather than
+/// merely unlikely — `String::truncate` panics on anything else.
+fn body_of(release: &Release) -> Option<String> {
+    let body = release.body.as_deref()?.trim();
+    if body.is_empty() {
+        return None;
+    }
+    if body.len() <= MAX_NOTES_BYTES {
+        return Some(body.to_owned());
+    }
+    let cut = (0..=MAX_NOTES_BYTES)
+        .rev()
+        .find(|at| body.is_char_boundary(*at))
+        .unwrap_or(0);
+    Some(body[..cut].to_owned())
 }
 
 /// A release's version, or `None` if the tag is not a plain `vX.Y.Z`.
@@ -419,6 +488,7 @@ y/rUw2y8/hOUYjZU71eHp/Wo1KZ40fGy2VJEDl34XMJM+TX48Ss/17u3IvIfbVR1FkZZSNCisQbuQY+b
             published_at: published_at.map(str::to_owned),
             draft: false,
             prerelease: false,
+            body: Some(format!("### What changed in {tag}\n\n- something")),
             assets: assets
                 .iter()
                 .map(|name| Asset {
@@ -714,6 +784,43 @@ y/rUw2y8/hOUYjZU71eHp/Wo1KZ40fGy2VJEDl34XMJM+TX48Ss/17u3IvIfbVR1FkZZSNCisQbuQY+b
             .expect("the entry");
         assert_eq!(target.file, "T.msi");
         assert_eq!(target.size, 12);
+    }
+
+    /// The notes are looked up by the *exact* version, because the caller asks about the release
+    /// it is already running — which `eligible` can never return, since it only ever offers
+    /// something newer than the running build.
+    #[test]
+    fn the_notes_of_the_running_release_are_found_by_exact_version() {
+        let releases = [signed("v2.1.0", 1.0), signed("v2.0.5", 30.0)];
+        let found = notes_for(&releases, &semver::Version::new(2, 0, 5)).expect("that release");
+        assert_eq!(found.version, "2.0.5");
+        assert!(found.body.is_some_and(|body| body.contains("v2.0.5")));
+        assert!(notes_for(&releases, &semver::Version::new(9, 9, 9)).is_none());
+    }
+
+    /// A body is cut on a character boundary, never through one.
+    ///
+    /// `str` slicing panics mid-glyph, so a release whose notes run past the cap with a
+    /// multi-byte character straddling it would abort the app rather than truncate.
+    #[test]
+    fn an_oversized_body_is_cut_on_a_character_boundary() {
+        let mut release = release("v9.0.0", Some("2020-01-01T00:00:00Z"), &[]);
+        // Three bytes each, so no multiple of the length lands on the cap.
+        release.body = Some("\u{2014}".repeat(MAX_NOTES_BYTES));
+        let body = body_of(&release).expect("a body");
+        assert!(body.len() <= MAX_NOTES_BYTES);
+        assert!(body.ends_with('\u{2014}'));
+    }
+
+    /// A release published with an empty or whitespace-only body has no notes to show, rather
+    /// than notes that are a blank panel.
+    #[test]
+    fn a_blank_body_is_no_notes_at_all() {
+        let mut release = release("v9.0.0", Some("2020-01-01T00:00:00Z"), &[]);
+        for blank in [None, Some(String::new()), Some("   \n  ".to_owned())] {
+            release.body.clone_from(&blank);
+            assert!(body_of(&release).is_none(), "{blank:?}");
+        }
     }
 
     #[test]

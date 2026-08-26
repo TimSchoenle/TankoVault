@@ -21,7 +21,7 @@
 use crate::components::{CloseToTray, Field, SegControl, SliderRow, TabBar, TabKind};
 use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
-use crate::update::{self, Policy, Status, UpdateState};
+use crate::update::{self, Notes, Policy, Status, UpdateState};
 use dioxus::prelude::*;
 use inkstone_ui::{Button, Tone};
 /// One group of settings. See the module note on why this is a division rather than a fold.
@@ -383,6 +383,13 @@ fn UpdateSection() -> Element {
     let flavour = use_hook(update::flavour);
     let status = state.status();
     let busy = matches!(status, Status::Checking | Status::Downloading { .. });
+    // "No check has run yet" is only ever true of *this session*, and the recorded time outlives
+    // it. Where there is one it therefore replaces that line rather than sitting under it saying
+    // the opposite; everywhere else it sits under, answering "as of when".
+    let (state_line, recorded_line) = match (&status, last_check_text(i18n)) {
+        (Status::Idle, Some(recorded)) => (recorded, None),
+        (_, recorded) => (state_text(&status, i18n), recorded),
+    };
 
     let api = crate::api::use_api();
     let check = move |()| {
@@ -434,7 +441,10 @@ fn UpdateSection() -> Element {
                 p { class: "ik-muted", style: "font-size:12.5px;margin:10px 0 0;",
                     {i18n.t("settings.update.source")}
                 }
-                p { style: "font-size:12.5px;margin:10px 0 0;", {state_text(&status, i18n)} }
+                p { style: "font-size:12.5px;margin:10px 0 0;", {state_line} }
+                if let Some(recorded) = recorded_line {
+                    p { class: "ik-muted", style: "font-size:11.5px;margin:4px 0 0;", {recorded} }
+                }
                 // The one state with a number behind it. A percentage in a sentence is easy to
                 // miss on a long download, and this is the whole of the feedback an automatic
                 // update gives before it goes quiet again.
@@ -480,6 +490,14 @@ fn UpdateActions(
                 disabled: busy,
                 on_click: move |_| on_check.call(()),
                 {i18n.t("settings.update.check")}
+            }
+            // Only once a check has actually found something to describe: the same panel the
+            // reader is shown after an update, asked the other way round.
+            if matches!(state.notes(), Notes::Ready(_)) {
+                Button {
+                    on_click: move |_| state.open_panel(),
+                    {i18n.t("settings.update.notes.action")}
+                }
             }
             match status {
                 Status::Available { installable: true, .. } => rsx! {
@@ -529,6 +547,15 @@ fn UpdateActions(
             }
         }
     }
+}
+
+/// When the last check completed, in the reader's words, or `None` before the first one.
+fn last_check_text(i18n: crate::i18n::Translator) -> Option<String> {
+    let iso = update::last_check_ms().and_then(crate::platform::format_timestamp_iso)?;
+    Some(i18n.args(
+        "settings.update.lastChecked",
+        &[("when", &crate::util::rel_time(i18n, Some(&iso)))],
+    ))
 }
 
 /// The one-line description of what the updater is doing. `Failed` carries a catalogue key, so it

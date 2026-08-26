@@ -471,7 +471,7 @@ fn MergeEvidence(decision: Signal<MergeDecision>) -> Element {
             if terms.is_empty() {
                 p { class: "ik-muted", {i18n.t("console.decisions.noTerms")} }
             } else {
-                div { class: "ik-tablewrap",
+                div { class: "ik-tablewrap scroll",
                     table { class: "ik-table ik-table-compact",
                         thead {
                             tr {

@@ -60,7 +60,7 @@ pub(super) fn ProviderRow(
                 HealthPill { state: Some(provider.state) }
                 if let Some((glyph, label)) = preset_mark {
                     span {
-                        style: "font-size:10px;line-height:1;opacity:0.75;",
+                        style: "font-size:11px;line-height:1;opacity:0.75;",
                         role: "img",
                         "aria-label": i18n.t(label),
                         title: i18n.t(label),
@@ -68,7 +68,7 @@ pub(super) fn ProviderRow(
                     }
                 }
             }
-            div { class: "ik-mono", style: "font-size:10.5px;color:var(--muted);margin-top:3px;word-break:break-word;",
+            div { class: "ik-mono", style: "font-size:12.5px;color:var(--muted);margin-top:3px;word-break:break-word;",
                 "{meta}"
             }
             if let Some(percent) = healthy {

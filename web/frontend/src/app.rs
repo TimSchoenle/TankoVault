@@ -13,10 +13,10 @@ use crate::state::source_order::SourceOrder;
 use crate::state::Session;
 use crate::title::PageTitle;
 use crate::views::{
-    Account, AnilistCallback, Console, ConsoleEntity, ConsoleQuery, ConsoleSection, Discover,
-    DiscoverQuery, ForgotPassword, Home, Legal, Licenses, Login, NotFound, Notifications,
-    Recommendations, ResetPassword, Search, SearchQuery, Series, VerifyEmail, Watchlist,
-    WatchlistQuery,
+    Account, AccountPanel, AccountSection, AnilistCallback, Console, ConsoleEntity, ConsoleQuery,
+    ConsoleSection, Discover, DiscoverQuery, ForgotPassword, Home, Legal, Licenses, Login,
+    NotFound, Notifications, NotificationsQuery, Recommendations, ResetPassword, Search,
+    SearchQuery, Series, VerifyEmail, Watchlist, WatchlistQuery,
 };
 use dioxus::prelude::*;
 
@@ -44,14 +44,25 @@ pub(crate) enum Route {
         // is shareable and back-button-able; see `views::watchlist::query`.
         #[route("/watchlist?:..query")]
         Watchlist { query: WatchlistQuery },
-        #[route("/notifications")]
-        Notifications {},
+        // Filter tab *and* page ride in the query string, so a notification opened and backed
+        // out of returns to the row it was found on; see `views::notifications`.
+        #[route("/notifications?:..query")]
+        Notifications { query: NotificationsQuery },
+        // `/account` is the way in: it resolves the panel this reader can open and replaces
+        // itself with the addressable form below, so no settings panel is unlinkable.
         #[route("/account")]
         Account {},
         // AniList's OAuth redirect target (the sync service's `redirect_uri`); reads `?code=`
-        // and exchanges it via the bearer-authenticated callback endpoint.
+        // and exchanges it via the bearer-authenticated callback endpoint. Declared ahead of
+        // `/account/:panel` so its literal segment wins the match.
         #[route("/account/anilist-callback?:code")]
         AnilistCallback { code: String },
+        #[route("/account/:panel")]
+        AccountSection { panel: AccountPanel },
+        // A panel slug this build has dropped lands on the settings rather than on a 404 — the
+        // strip is capability-filtered anyway, so "no such panel" and "not for you" already
+        // resolve the same way.
+        #[redirect("/account/:_panel", |_panel: String| Route::Account {})]
         // The term *and* its options ride in the query string, so a search worth sending to
         // someone arrives narrowed the way its sender narrowed it; see `views::search::query`.
         #[route("/search?:..query")]

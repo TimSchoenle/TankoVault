@@ -42,6 +42,22 @@ const STATE_FILTERS: [(&str, WireRunState); 5] = [
     ("cancelled", WireRunState::Cancelled),
 ];
 
+/// The ring class encoding a run state as *shape*: hollow while the run is in flight, filled
+/// once it has settled.
+///
+/// The colour modifier is the health scale and nothing else. A console row carries several axes
+/// at once, and giving run state hues of its own is what made one blue mean four unrelated
+/// things; see the role-token block in `input.css`.
+pub(super) fn run_state_ring(state: RunState) -> &'static str {
+    match state {
+        RunState::Queued => "ik-ring inert",
+        RunState::Running => "ik-ring ok",
+        RunState::Completed => "ik-ring settled ok",
+        RunState::Failed => "ik-ring settled bad",
+        RunState::Cancelled => "ik-ring settled inert",
+    }
+}
+
 /// Parse a `?status=` token into the run state it names.
 fn parse_state(token: &str) -> Option<WireRunState> {
     STATE_FILTERS

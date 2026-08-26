@@ -169,17 +169,30 @@ fn SeriesPage(id: String) -> Element {
     });
 
     let loaded = match &*detail.read() {
+        // Shaped like the loaded screen, not like a placeholder: the back button, the hero band
+        // and *both* columns of the body grid. Anything this skeleton leaves out is a jump when
+        // the detail lands, and the sidebar column is the tallest thing it could leave out.
         None => {
             return rsx! {
-                div { class: "ik-hero",
-                    div { class: "ik-skeleton ik-skel-cover" }
-                    div {
-                        div { class: "ik-skeleton", style: "height:38px;width:60%;margin-bottom:12px;" }
-                        div { class: "ik-skeleton", style: "height:14px;width:90%;margin-bottom:6px;" }
-                        div { class: "ik-skeleton", style: "height:14px;width:80%;" }
+                div { class: "ik-hero-wrap",
+                    div { style: "margin-bottom:16px;",
+                        SkeletonBlock { height: 34, width: "84px" }
+                    }
+                    div { class: "ik-hero",
+                        div { class: "ik-skeleton ik-skel-cover" }
+                        div {
+                            div { class: "ik-skeleton", style: "height:38px;width:60%;margin-bottom:12px;" }
+                            div { class: "ik-skeleton", style: "height:14px;width:90%;margin-bottom:6px;" }
+                            div { class: "ik-skeleton", style: "height:14px;width:80%;" }
+                        }
                     }
                 }
-                SkeletonBlock { height: 320 }
+                div { class: "ik-body-grid", style: "margin-top:8px;",
+                    SkeletonBlock { height: 320 }
+                    div { class: "ik-panel",
+                        SkeletonBlock { height: 360 }
+                    }
+                }
             }
         }
         Some(Err(message)) => {
@@ -198,6 +211,10 @@ fn SeriesPage(id: String) -> Element {
         Some(Ok(rows)) => rows.clone(),
         _ => Vec::new(),
     };
+    // The rail below the sidebar holds its own fetch until this one has answered: it is the
+    // furthest below the fold of the screen's requests, and the fan-out above it is one request
+    // per source.
+    let chapters_ready = per_source.read().is_some();
     let ranked_sources = rank_sources(&loaded.sources, pin, &source_order.slugs());
     let ordered: SourceChapters = ranked_sources
         .iter()
@@ -293,7 +310,7 @@ fn SeriesPage(id: String) -> Element {
                     reload_wl,
                     reload_progress,
                 }
-                similar::SimilarRail { series_id: id }
+                similar::SimilarRail { series_id: id, ready: chapters_ready }
             }
         }
     }
@@ -372,18 +389,15 @@ fn Hero(
                 div { style: "min-width:0;",
                     div { class: "ik-flex", style: "margin-bottom:8px;flex-wrap:wrap;",
                         Pill {
-                            style: "color:{detail.content_type.color()};border-color:color-mix(in srgb,{detail.content_type.color()} 50%,transparent);background:color-mix(in srgb,{detail.content_type.color()} 12%,transparent);",
+                            style: "color:{detail.content_type.color()};",
+                            span { class: "ik-typemark", {detail.content_type.initial()} }
                             {i18n.t(detail.content_type.label_key())}
                         }
-                        span { class: "ik-flex ik-mono", style: "gap:6px;font-size:12px;color:{detail.status.color()};",
-                            span {
-                                class: "ik-status-dot",
-                                style: "width:7px;height:7px;background:{detail.status.color()};",
-                            }
+                        span { class: "ik-mono", style: "font-size:12px;color:{detail.status.color()};",
                             {i18n.t(detail.status.label_key())}
                         }
                         if let Some(year) = detail.release_year {
-                            span { class: "ik-mono", style: "font-size:12px;color:var(--faint);", "{year}" }
+                            span { class: "ik-mono", style: "font-size:12px;color:var(--muted);", "{year}" }
                         }
                     }
                     h1 { class: "ik-hero-title", "{detail.title}" }

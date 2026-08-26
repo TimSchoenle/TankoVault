@@ -4,6 +4,7 @@
 //! silent refresh in [`crate::components::Shell`] to restore a token before calling the
 //! bearer-authenticated link endpoint — otherwise the exchange always 401s on a cold return.
 
+use super::AccountPanel;
 use crate::api;
 use crate::components::EmptyBox;
 use crate::i18n::use_i18n;
@@ -45,7 +46,11 @@ pub(crate) fn AnilistCallback(code: String) -> Element {
             let succeeded = result.is_ok();
             outcome.set(Some(result));
             if succeeded {
-                nav.push(Route::Account {});
+                // The Sync panel, not the settings front door: it is the panel that just
+                // gained a link, and it is what the reader left to consent.
+                nav.push(Route::AccountSection {
+                    panel: AccountPanel::Sync,
+                });
             }
         });
     });
@@ -60,7 +65,9 @@ pub(crate) fn AnilistCallback(code: String) -> Element {
         Some(message) => rsx! {
             div { class: "ik-empty",
                 p { {i18n.args("account.callback.failed", &[("message", &message)])} }
-                Link { to: Route::Account {}, class: button_class(Tone::Primary, Size::Md, false),
+                Link {
+                    to: Route::AccountSection { panel: AccountPanel::Sync },
+                    class: button_class(Tone::Primary, Size::Md, false),
                     {i18n.t("account.callback.back")}
                 }
             }

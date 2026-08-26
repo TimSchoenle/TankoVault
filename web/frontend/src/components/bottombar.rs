@@ -15,9 +15,11 @@ use crate::models::LegalKind;
 use crate::state::capabilities::use_capabilities;
 use crate::state::legal::{legal_title, use_legal_index};
 use crate::state::use_session;
+use crate::views::AccountPanel;
 use crate::wire::types::Feature;
 use crate::Route;
 use dioxus::prelude::*;
+use std::rc::Rc;
 
 #[component]
 pub(crate) fn BottomTabs() -> Element {
@@ -27,6 +29,10 @@ pub(crate) fn BottomTabs() -> Element {
     let route: Route = use_route();
     let unread = *use_context::<UnreadBadge>().0.read();
     let mut sheet = use_signal(|| false);
+    // The sheet is a modal, so dismissing it has to put the keyboard back where it came from —
+    // and the element it came from is this button. A mounted handle rather than a DOM id
+    // because the desktop build has no `web-sys`; see `components::focus`.
+    let mut more_tab = use_signal(|| Option::<Rc<MountedData>>::None);
 
     // A route change has to close the sheet: every row in it navigates, and a sheet left open
     // over the screen it just opened covers the thing the reader asked for.
@@ -41,7 +47,7 @@ pub(crate) fn BottomTabs() -> Element {
     let personal = reader_destinations_visible(session.is_authenticated(), session.is_settled());
     let tabs = tab_destinations(i18n, &caps, unread, personal);
     rsx! {
-        nav { class: "ik-tabbar", "aria-label": i18n.t("nav.railLabel"),
+        nav { class: "ik-tabbar", "aria-label": i18n.t("nav.tabbarLabel"),
             for tab in tabs {
                 {tab_link(&tab, &route)}
             }
@@ -50,6 +56,7 @@ pub(crate) fn BottomTabs() -> Element {
                 r#type: "button",
                 "aria-haspopup": "dialog",
                 "aria-expanded": if *sheet.read() { "true" } else { "false" },
+                onmounted: move |event| more_tab.set(Some(event.data())),
                 onclick: move |_| {
                     let next = !*sheet.peek();
                     sheet.set(next);
@@ -59,7 +66,20 @@ pub(crate) fn BottomTabs() -> Element {
             }
         }
         if *sheet.read() {
-            MoreSheet { on_close: move |()| sheet.set(false) }
+            MoreSheet {
+                on_close: move |()| {
+                    sheet.set(false);
+                    // The sheet held the focus, and it is about to stop existing. Only the
+                    // dismissals come through here — a row that navigates closes the sheet
+                    // through the route effect above instead, and that reader wants the screen
+                    // they asked for, not this button.
+                    if let Some(element) = more_tab.peek().clone() {
+                        spawn(async move {
+                            let _ = element.set_focus(true).await;
+                        });
+                    }
+                },
+            }
         }
     }
 }
@@ -94,6 +114,7 @@ fn MoreSheet(on_close: EventHandler<()>) -> Element {
     let session = use_session();
     let mut languages = use_signal(|| false);
     let current = i18n.language();
+    let personal = reader_destinations_visible(session.is_authenticated(), session.is_settled());
 
     rsx! {
         button {
@@ -101,18 +122,43 @@ fn MoreSheet(on_close: EventHandler<()>) -> Element {
             "aria-label": i18n.t("common.close"),
             onclick: move |_| on_close.call(()),
         }
-        div { class: "ik-sheet", role: "dialog", "aria-modal": "true", "aria-label": i18n.t("nav.more"),
+        div {
+            class: "ik-sheet",
+            role: "dialog",
+            "aria-modal": "true",
+            "aria-label": i18n.t("nav.more"),
+            // Focusable so `Escape` reaches the sheet with nothing else focused, and so the
+            // first `Tab` lands on the first row rather than back in the page behind — the
+            // step-up dialog's treatment, which this claimed with `aria-modal` and never had.
+            tabindex: "-1",
+            onmounted: move |event| {
+                let element = event.data();
+                spawn(async move {
+                    let _ = element.set_focus(true).await;
+                });
+            },
+            onkeydown: move |event| {
+                if event.key() == Key::Escape {
+                    on_close.call(());
+                }
+            },
             div { class: "ik-sheet-grip" }
 
             if caps.has_feature(Feature::CatalogueSearch) {
                 {sheet_link(Route::Search { query: crate::views::SearchQuery::default() }, Icon::Search, &i18n.t("nav.search"))}
+            }
+            // In the sheet rather than the bar, which is fixed at five: this is per-reader
+            // gating, which is what the sheet is for. Without the row `/for-you` had no
+            // small-viewport entry point but the CTA below two lists at the foot of Home.
+            if personal && caps.has_feature(Feature::CatalogueRecommendations) {
+                {sheet_link(Route::Recommendations {}, Icon::AutoAwesome, &i18n.t("nav.recommendations"))}
             }
             if caps.is_staff() {
                 {sheet_link(Route::Console {}, Icon::Console, &i18n.t("nav.console"))}
             }
             if session.is_authenticated() {
                 {sheet_link(Route::Account {}, Icon::Account, &i18n.t("nav.account"))}
-                {sheet_link(Route::Account {}, Icon::Tune, &i18n.t("account.tab.appearance"))}
+                {sheet_link(Route::AccountSection { panel: AccountPanel::Appearance }, Icon::Tune, &i18n.t("account.tab.appearance"))}
             } else {
                 {sheet_link(Route::Login {}, Icon::Account, &i18n.t("common.signIn"))}
             }

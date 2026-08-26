@@ -344,6 +344,19 @@ pub(super) fn use_console_nav() -> ConsoleNav {
     use_context::<ConsoleNav>()
 }
 
+/// The selection a master–detail panel has to write back into the URL, or `None` to leave the
+/// URL as it stands.
+///
+/// A panel resolves its own landing row when the URL names none, so the inspector is never
+/// empty — but `sel` stays absent, and `/console/providers` then addresses "whichever row sorts
+/// first under whatever filter is applied" rather than the row on screen. Only that landing case
+/// is written back. A `sel` the operator chose is left alone even when the current filters
+/// exclude it, so widening the filter brings their row back rather than finding it overwritten;
+/// and returning `None` once `sel` is set is what stops the write from re-triggering itself.
+pub(super) fn landing_selection(sel: Option<&str>, resolved: Option<String>) -> Option<String> {
+    resolved.filter(|_| sel.is_none())
+}
+
 /// One rail count: the number, and the tone that says whether it needs attention.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum CountTone {
@@ -622,7 +635,7 @@ pub(crate) fn ConsoleSection(entity: ConsoleEntity, query: ConsoleQuery) -> Elem
                     if current.auto_refreshes() {
                         controls::LiveControls { tick, auto, state: live.state }
                     } else {
-                        span { class: "ik-mono", style: "font-size:11.5px;color:var(--faint);",
+                        span { class: "ik-mono", style: "font-size:11.5px;color:var(--muted);",
                             {i18n.t("console.noAutoRefresh")}
                         }
                     }
@@ -738,8 +751,41 @@ pub(super) fn config_editor_text(v: &serde_json::Value) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{adapter_label_key, ConsoleEntity, ADAPTER_KINDS, RAIL};
+    use super::{adapter_label_key, landing_selection, ConsoleEntity, ADAPTER_KINDS, RAIL};
     use crate::models::AdapterKind;
+
+    /// Providers and Users resolved a landing row so the inspector was never empty, but left
+    /// `sel` out of the URL: `/console/providers` addressed whichever row sorted first under
+    /// whatever filter was applied, so a shared link opened a different provider than the one
+    /// its sender was looking at.
+    ///
+    /// The other two arms are the loop guards. Returning the resolved row again once `sel` is
+    /// set would have the write re-trigger on the render it caused; and overwriting an operator's
+    /// own `sel` because the current filters exclude it would lose the row they picked, so
+    /// widening the filter could never bring it back.
+    #[test]
+    fn the_landing_row_is_written_into_the_url_once() {
+        assert_eq!(
+            landing_selection(None, Some("first".to_owned())),
+            Some("first".to_owned()),
+            "a landing with rows must put the resolved row in the URL"
+        );
+        assert_eq!(
+            landing_selection(Some("first"), Some("first".to_owned())),
+            None,
+            "a URL that already names the resolved row must not be rewritten"
+        );
+        assert_eq!(
+            landing_selection(Some("filtered-out"), Some("first".to_owned())),
+            None,
+            "a selection the operator made outlives a filter that hides it"
+        );
+        assert_eq!(
+            landing_selection(None, None),
+            None,
+            "an empty list has nothing to select; `NoSelection` is the right answer"
+        );
+    }
 
     /// `ConsoleEntity::ALL` is what the palette enumerates and what the slug round-trip test
     /// covers; `RAIL` is what the operator can actually click. An entity in one and not the

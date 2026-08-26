@@ -223,7 +223,7 @@
     }
   },
   "auth": {
-    "acceptance": "Mit dem Erstellen eines Kontos akzeptieren Sie die {terms} und den {privacy}.",
+    "acceptance": "Mit dem Erstellen eines Kontos akzeptierst du die {terms} und den {privacy}.",
     "badCredentials": "E-Mail/Benutzername und Passwort passen zu keinem Konto. Bitte prüfe deine Eingaben und versuch es erneut.",
     "confirmFirst": "Bitte bestätige deine E-Mail-Adresse, bevor du dich anmeldest. Sieh in deinem Posteingang nach dem Bestätigungslink.",
     "field": {
@@ -266,6 +266,7 @@
     "close": "Schließen",
     "downloadCancelled": "Speichern abgebrochen — es wurde nichts geschrieben.",
     "downloadRefused": "Der Download konnte nicht gespeichert werden.",
+    "loading": "Wird geladen…",
     "markRead": "Als gelesen markieren",
     "markUnread": "Als ungelesen markieren",
     "next": "Weiter",
@@ -767,7 +768,7 @@
         "privacy": "Datenschutz",
         "scanning": "Scans",
         "sync": "Externe Synchronisierung",
-        "tracking": "Tracking"
+        "tracking": "Verfolgung"
       },
       "intro": "Alle schaltbaren Funktionen dieser Installation. Änderungen wirken hier sofort und erreichen andere Replikate binnen weniger Sekunden.",
       "locked": "Immer an",
@@ -805,10 +806,10 @@
     },
     "listKeys": "↑↓ bewegen · ↵ öffnen",
     "live": {
-      "connecting": "Verbindung wird aufgebaut",
+      "connecting": "Verbinde…",
       "detached": "Getrennt",
       "pause": "Pausieren",
-      "reconnecting": "Neuverbindung",
+      "reconnecting": "Verbinde neu…",
       "refresh": "Aktualisieren",
       "resume": "Fortsetzen",
       "streaming": "Live"
@@ -1607,9 +1608,9 @@
     "openSource": "Open Source",
     "privacy": "Datenschutz",
     "source": "Quellcode",
-    "tagline": "Verfolgen Sie, was Sie lesen — über jede Quelle hinweg, die es führt.",
+    "tagline": "Verfolge, was du liest — über jede Quelle hinweg, die es führt.",
     "terms": "Nutzungsbedingungen",
-    "yourData": "Ihre Daten"
+    "yourData": "Deine Daten"
   },
   "greeting": {
     "afternoon": "Guten Tag",
@@ -1629,6 +1630,12 @@
       "empty": "Du bist auf dem neuesten Stand. Neue Kapitel deiner Merkliste landen hier.",
       "range": "#{first}–{last}",
       "title": "Neu auf deiner Merkliste"
+    },
+    "firstRun": {
+      "body": "Nimm eine Serie auf deine Merkliste, und jede Quelle, die sie führt, behalten wir für dich im Blick — neue Kapitel landen hier, und du liest überall dort weiter, wo du aufgehört hast.",
+      "discover": "Katalog durchstöbern",
+      "search": "Nach einem Titel suchen",
+      "title": "Deine Merkliste ist noch leer"
     },
     "guest": {
       "browse": "Katalog durchstöbern",
@@ -1697,7 +1704,8 @@
     "recommendations": "Für dich",
     "search": "Suche",
     "skipToContent": "Zum Inhalt springen",
-    "tagline": "FINDEN · VERFOLGEN · SYNCHRONISIEREN",
+    "tabbarLabel": "Hauptnavigation",
+    "tagline": "FINDEN · VERFOLGEN · SYNC",
     "watchlist": "Merkliste"
   },
   "notFound": {
@@ -1896,6 +1904,14 @@
     "unread": "Ungelesen",
     "upTo": "bis #{number}"
   },
+  "shortcuts": {
+    "col": {
+      "action": "Aktion",
+      "keys": "Tasten"
+    },
+    "intro": "Alle Tastenkürzel, gruppiert nach der Ansicht, auf der sie wirken. Drücke ? auf dieser Ansicht, um die Übersicht wieder zu öffnen.",
+    "title": "Tastenkürzel"
+  },
   "time": {
     "daysAgo": "vor {count} T.",
     "hoursAgo": "vor {count} Std.",
@@ -1955,7 +1971,19 @@
     },
     "groupStats": "{titles} Titel · {chapters} Kapitel",
     "headline": "{titles} Titel verfolgt · {chapters} Kapitel ungelesen",
-    "keyLegend": "J/K bewegen · X auswählen · ↵ weiterlesen · S Menü · / filtern",
+    "keyLegend": "J/K bewegen · X auswählen · ↵ weiterlesen · S Menü · / filtern · ? Kürzel",
+    "keys": {
+      "clear": "Menü schließen oder Auswahl aufheben",
+      "down": "Nächster Titel",
+      "filter": "Zum Filterfeld springen",
+      "help": "Diese Übersicht anzeigen",
+      "menu": "Zeilenmenü öffnen",
+      "mute": "Titel stummschalten oder Ton anschalten",
+      "open": "Weiterlesen",
+      "select": "Titel aus- oder abwählen",
+      "selectAll": "Alle geladenen Titel auswählen",
+      "up": "Vorheriger Titel"
+    },
     "loadMore": "Mehr laden",
     "markAllRead": "Als gelesen markieren",
     "markGroupEmpty": "In dieser Gruppe gibt es nichts zu markieren.",
@@ -2004,6 +2032,7 @@
     "sourceIssues": "Quellenprobleme ({count})",
     "sourceMeta": "{source} · {count} Quellen",
     "sourceOffline": "Quelle offline",
+    "statusTabs": "Nach Status filtern",
     "sync": "AniList synchronisieren",
     "synced": "Mit AniList synchronisiert.",
     "syncedAgo": "AniList synchronisiert {when}",

@@ -23,20 +23,28 @@ const RAIL_SIZE: i64 = 6;
 ///
 /// Renders nothing when the deployment has recommendations switched off — the endpoint is gated
 /// on the same feature and would answer 404.
+///
+/// This is the furthest below the fold of the eight requests one series page issues, so `ready`
+/// holds it back until the screen above it has landed. It is a *prop*, which a `use_resource`
+/// does not react to on its own — hence `use_reactive!`.
+///
+/// The held-back state is `Ok(None)`, not `Ok(vec![])`: a resource keeps its last value while it
+/// restarts, so an empty list would render as "nothing similar" for the length of the real fetch,
+/// exactly at the moment the rail was finally allowed to run.
 #[component]
-pub(super) fn SimilarRail(series_id: SeriesId) -> Element {
+pub(super) fn SimilarRail(series_id: SeriesId, ready: bool) -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
     let caps = use_capabilities();
     let reload = use_reload();
 
     let offered = caps.has_feature(Feature::CatalogueRecommendations);
-    let similar = use_resource(move || {
+    let similar = use_resource(use_reactive!(|ready| {
         reload.track();
         let client = api.client();
         async move {
-            if !offered {
-                return Ok(Vec::new());
+            if !offered || !ready {
+                return Ok(None);
             }
             client
                 .similar()
@@ -44,10 +52,10 @@ pub(super) fn SimilarRail(series_id: SeriesId) -> Element {
                 .limit(RAIL_SIZE)
                 .send()
                 .await
-                .map(ResponseValue::into_inner)
+                .map(|items| Some(ResponseValue::into_inner(items)))
                 .map_err(|e| api::friendly_error(i18n, e))
         }
-    });
+    }));
 
     if !offered {
         return rsx! {};
@@ -60,22 +68,48 @@ pub(super) fn SimilarRail(series_id: SeriesId) -> Element {
                 async_view(
                     &similar,
                     reload,
-                    || rsx! { SkeletonBlock { height: 120 } },
-                    |items| {
-                        if items.is_empty() {
-                            return rsx! {
-                                div { class: "ik-muted", style: "font-size:12.5px;",
-                                    {i18n.t("series.similar.empty")}
-                                }
-                            };
-                        }
-                        rsx! {
+                    || rsx! { RailSkeleton {} },
+                    |items| match items {
+                        None => rsx! {
+                            RailSkeleton {}
+                        },
+                        Some(items) if items.is_empty() => rsx! {
+                            div { class: "ik-muted", style: "font-size:12.5px;",
+                                {i18n.t("series.similar.empty")}
+                            }
+                        },
+                        Some(items) => rsx! {
                             for item in items.iter().cloned() {
                                 SimilarRow { key: "{item.id}", item }
                             }
-                        }
+                        },
                     },
                 )
+            }
+        }
+    }
+}
+
+/// The rail's loading state, one placeholder per row it is about to ask for.
+///
+/// A single flat block was 120px against a loaded rail of roughly six times that, so the sidebar
+/// grew under the reader every time the neighbours landed. Reserving row-shaped boxes reserves
+/// the height as well.
+#[component]
+fn RailSkeleton() -> Element {
+    rsx! {
+        div { role: "status", "aria-busy": "true",
+            for index in 0..RAIL_SIZE {
+                div { key: "{index}", class: "ik-similar-row",
+                    div { class: "ik-similar-art",
+                        div { class: "ik-skeleton", style: "width:100%;height:100%;" }
+                    }
+                    div { style: "min-width:0;flex:1;display:flex;flex-direction:column;gap:7px;",
+                        SkeletonBlock { height: 14, width: "75%" }
+                        SkeletonBlock { height: 11, width: "40%" }
+                        SkeletonBlock { height: 11, width: "60%" }
+                    }
+                }
             }
         }
     }

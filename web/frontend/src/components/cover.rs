@@ -95,15 +95,12 @@ pub(crate) fn CardMeta(
     let i18n = use_i18n();
     rsx! {
         div { class: "ik-card-meta",
-            span {
-                style: "color:{content_type.color()};",
+            span { style: "color:{content_type.color()};",
+                span { class: "ik-typemark", {content_type.initial()} }
                 {i18n.t(content_type.label_key())}
             }
             span { class: "ik-card-dot", "·" }
-            span { class: "ik-flex", style: "gap:5px;align-items:center;color:{status.color()};",
-                span { class: "ik-status-dot", style: "width:6px;height:6px;background:{status.color()};" }
-                {i18n.t(status.label_key())}
-            }
+            span { style: "color:{status.color()};", {i18n.t(status.label_key())} }
             if let Some(year) = release_year {
                 span { class: "ik-card-dot", "·" }
                 span { class: "ik-mono", "{year}" }

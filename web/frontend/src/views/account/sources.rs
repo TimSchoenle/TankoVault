@@ -139,7 +139,7 @@ pub(crate) fn SourcesPanel() -> Element {
                     div { class: "ik-row", key: "{provider.id}",
                         span {
                             class: "ik-mono",
-                            style: "min-width:22px;color:var(--faint);font-size:11.5px;",
+                            style: "min-width:22px;color:var(--muted);font-size:11.5px;",
                             "{index + 1}"
                         }
                         div { class: "grow", "{provider.name}" }

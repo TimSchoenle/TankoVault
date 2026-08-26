@@ -21,7 +21,7 @@ mod search;
 mod series;
 mod watchlist;
 
-pub(crate) use account::{Account, AnilistCallback};
+pub(crate) use account::{Account, AccountPanel, AccountSection, AnilistCallback};
 pub(crate) use auth::{Login, VerifyEmail};
 #[cfg(feature = "desktop")]
 pub(crate) use connect::ConnectServer;
@@ -30,7 +30,7 @@ pub(crate) use discover::{Discover, DiscoverQuery};
 pub(crate) use home::Home;
 pub(crate) use legal::Legal;
 pub(crate) use licenses::Licenses;
-pub(crate) use notifications::Notifications;
+pub(crate) use notifications::{Notifications, NotificationsQuery};
 pub(crate) use password::{ForgotPassword, ResetPassword};
 pub(crate) use recommendations::Recommendations;
 pub(crate) use search::{Search, SearchQuery};

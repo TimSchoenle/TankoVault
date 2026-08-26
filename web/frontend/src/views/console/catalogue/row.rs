@@ -74,7 +74,6 @@ pub(super) fn CatalogueTableRow(
                 if entry.providers.is_empty() {
                     Pill {
                         tone: Tone::Caution,
-                        style: "font-size:9.5px;",
                         {i18n.t("console.catalogue.noProvider")}
                     }
                 } else {
@@ -82,7 +81,6 @@ pub(super) fn CatalogueTableRow(
                         for slug in entry.providers.clone() {
                             Pill {
                                 key: "{slug}",
-                                style: "font-size:9.5px;",
                                 "{slug}"
                             }
                         }

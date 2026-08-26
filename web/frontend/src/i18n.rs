@@ -332,6 +332,7 @@ pub(crate) fn has_key(key: &str) -> bool {
 mod tests {
     use super::*;
     use serde_json::Value;
+    use std::collections::{BTreeMap, BTreeSet};
 
     #[test]
     fn has_key_finds_a_leaf_and_rejects_a_branch() {
@@ -443,10 +444,229 @@ mod tests {
         }
     }
 
-    /// Every dot path that resolves to a leaf, so a key demoted to an object in one locale is
-    /// reported as a difference rather than silently matching.
-    fn key_paths(value: &Value) -> std::collections::BTreeSet<String> {
-        fn walk(value: &Value, prefix: &str, out: &mut std::collections::BTreeSet<String>) {
+    /// Messages that are deliberately the same text in every catalogue, grouped by the reason.
+    ///
+    /// The grouping is the invariant, not the membership. A flat list of keys is
+    /// indistinguishable from a list of forgotten translations — which is the state
+    /// [`identically_worded_messages_are_deliberate`] exists to keep out — so an entry earns its
+    /// place by belonging to one of these three reasons. A message that fits none of them wants
+    /// translating rather than admitting here, and a fourth reason wants arguing for in review
+    /// rather than quietly widening one of these.
+    const SHARED_MESSAGES: &[(&str, &[&str])] = &[
+        (
+            "a name — of a format, a product or a kind of comic — and names do not translate",
+            &[
+                "console.adapterKind.madara",
+                "enum.contentType.manga",
+                "enum.contentType.manhua",
+                "enum.contentType.manhwa",
+                "enum.contentType.webtoon",
+                "passkey.title",
+            ],
+        ),
+        (
+            "placeholders, punctuation and unit symbols — there is no word in it to translate",
+            &[
+                "console.flags.changedBy",
+                "console.recsys.changedBy",
+                "footer.copyright",
+                "home.feed.range",
+                "settings.notifications.test.title",
+                "time.seconds",
+                "time.unknown",
+                "title.template",
+            ],
+        ),
+        (
+            "the German word is the English word: loanwords de.json already writes untranslated \
+             in the sentences around them — \"Automatischer Sync\", \"Audit-Protokoll\"",
+            &[
+                "account.appearance.accentOption.amethyst",
+                "account.appearance.accentOption.jade",
+                "account.appearance.densityOption.standard",
+                "connect.card.title",
+                "console.decisions.tab.sync",
+                "console.group.pipeline",
+                "console.group.system",
+                "console.live.streaming",
+                "console.preset.administrator",
+                "console.preset.operator",
+                "console.providers.field.adapter",
+                "console.solver.backend",
+                "console.stats.col.adapter",
+                "console.tab.audit",
+                "console.tab.sync",
+                "console.users.status",
+                "discover.status",
+                "settings.tab.server",
+            ],
+        ),
+    ];
+
+    /// Every message that reads the same in all catalogues reads that way on purpose.
+    ///
+    /// The bug this pins: an English value copied into de.json under a German key satisfies
+    /// `locales_define_the_same_keys` perfectly — it is a well-formed string at a key that
+    /// exists, and nothing else in the build reads what it says. `console.flags.group.tracking`
+    /// shipped as "Tracking" beside seven translated siblings that way, while de.json words the
+    /// same concept "Verfolgung" everywhere else. Key parity cannot see this class of gap;
+    /// comparing the values is the only thing that can.
+    #[test]
+    fn identically_worded_messages_are_deliberate() {
+        let listed: usize = SHARED_MESSAGES.iter().map(|(_, keys)| keys.len()).sum();
+        let allowed: BTreeSet<&str> = SHARED_MESSAGES
+            .iter()
+            .flat_map(|(_, keys)| keys.iter().copied())
+            .collect();
+        assert_eq!(
+            allowed.len(),
+            listed,
+            "a key appears twice in SHARED_MESSAGES; it is the same word for one reason, not two",
+        );
+        for (reason, keys) in SHARED_MESSAGES {
+            assert!(
+                keys.is_sorted(),
+                "the SHARED_MESSAGES group `{reason}` is out of order, so a reader cannot scan it",
+            );
+        }
+
+        let catalogues: Vec<BTreeMap<String, String>> = LOCALES
+            .iter()
+            .map(|locale| leaf_messages(&serde_json::from_str(locale.messages).unwrap()))
+            .collect();
+        let (reference, others) = catalogues.split_first().expect("a catalogue is shipped");
+        let identical: BTreeSet<&str> = reference
+            .iter()
+            .filter(|(key, message)| {
+                others
+                    .iter()
+                    .all(|other| other.get(key.as_str()) == Some(*message))
+            })
+            .map(|(key, _)| key.as_str())
+            .collect();
+
+        let unexplained: Vec<_> = identical.difference(&allowed).collect();
+        assert!(
+            unexplained.is_empty(),
+            "these messages are byte-identical in every catalogue and nothing says why — \
+             translate each one, or add it to the SHARED_MESSAGES group that gives the reason it \
+             is the same text in both languages: {unexplained:?}",
+        );
+
+        // Split so the message names the actual cause: a key someone deleted reads very
+        // differently from one someone has since translated, and both land here.
+        let (absent, translated): (Vec<&str>, Vec<&str>) = allowed
+            .difference(&identical)
+            .copied()
+            .partition(|key| !has_key(key));
+        assert!(
+            absent.is_empty(),
+            "SHARED_MESSAGES lists keys that no catalogue defines — they were renamed or removed, \
+             so drop each from the list: {absent:?}",
+        );
+        assert!(
+            translated.is_empty(),
+            "these are listed in SHARED_MESSAGES but now differ between catalogues, so the reason \
+             they were the same text has lapsed — drop each from the list: {translated:?}",
+        );
+    }
+
+    /// Every catalogue key the sources name as a literal is a key the catalogues carry.
+    ///
+    /// The bug this pins: a `t("…")` in the Rust and the catalogue entry behind it have no
+    /// compile-time relationship, so a key no catalogue defines builds clean, passes every gate,
+    /// and ships the binding's `Key '…' not found for language 'en'` sentence where the message
+    /// should be — into an `aria-label` as readily as into a paragraph.
+    /// `locales_define_the_same_keys` only proves the catalogues agree with each other; until
+    /// this test, nothing looked at what the code asks them for, and `common.loading` was being
+    /// asked for by a console panel that no catalogue answered.
+    ///
+    /// Reach, deliberately limited: a literal argument only. A key assembled at runtime — the
+    /// server-owned vocabularies mapped through a `label_key()` — is out of a source scan's
+    /// reach and is covered instead by its own module asserting [`has_key`] over the values it
+    /// can produce. `t_opt` is skipped because a miss is its documented answer.
+    #[test]
+    fn every_literal_key_in_the_sources_is_worded() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut sources = Vec::new();
+        collect_rust_sources(&root, &mut sources);
+        assert!(
+            sources.len() > 20,
+            "the walk found only {} source files, so it is looking somewhere other than the app",
+            sources.len(),
+        );
+
+        let mut missing: BTreeMap<String, String> = BTreeMap::new();
+        for path in &sources {
+            let text = std::fs::read_to_string(path).expect("a source file reads");
+            for (key, is_plural) in literal_keys(&text) {
+                let wanted = if is_plural {
+                    vec![format!("{key}.one"), format!("{key}.other")]
+                } else {
+                    vec![key]
+                };
+                for want in wanted {
+                    if !has_key(&want) {
+                        let at = path.strip_prefix(&root).unwrap_or(path);
+                        missing.insert(want, at.display().to_string());
+                    }
+                }
+            }
+        }
+        assert!(
+            missing.is_empty(),
+            "the sources ask for keys no catalogue defines, so the binding renders \
+             `Key '…' not found` in place of the message — word each one in every \
+             locales/*.json: {missing:?}",
+        );
+    }
+
+    /// Every `.rs` file under `dir`, recursively.
+    fn collect_rust_sources(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+        for entry in std::fs::read_dir(dir).expect("the source tree is readable") {
+            let path = entry.expect("a directory entry reads").path();
+            if path.is_dir() {
+                collect_rust_sources(&path, out);
+            } else if path.extension().is_some_and(|extension| extension == "rs") {
+                out.push(path);
+            }
+        }
+    }
+
+    /// The catalogue keys `text` names as literals, each flagged as a plural key or not.
+    ///
+    /// A call whose argument is not a string literal is skipped rather than guessed at: the
+    /// alternative is a scan that reports its own parsing gaps as missing translations.
+    fn literal_keys(text: &str) -> Vec<(String, bool)> {
+        let mut found = Vec::new();
+        for (call, is_plural) in [
+            (".t(", false),
+            (".args(", false),
+            ("translate_offline(", false),
+            (".plural(", true),
+        ] {
+            for (at, _) in text.match_indices(call) {
+                let Some(rest) = text[at + call.len()..].trim_start().strip_prefix('"') else {
+                    continue;
+                };
+                let Some(key) = rest.split('"').next() else {
+                    continue;
+                };
+                if !key.is_empty()
+                    && key
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_')
+                {
+                    found.push((key.to_owned(), is_plural));
+                }
+            }
+        }
+        found
+    }
+
+    /// Every dot path that resolves to a leaf, paired with the message at it.
+    fn leaf_messages(value: &Value) -> BTreeMap<String, String> {
+        fn walk(value: &Value, prefix: &str, out: &mut BTreeMap<String, String>) {
             match value {
                 Value::Object(fields) => {
                     for (name, child) in fields {
@@ -458,13 +678,22 @@ mod tests {
                         walk(child, &path, out);
                     }
                 }
-                _ => {
-                    out.insert(prefix.to_owned());
+                Value::String(message) => {
+                    out.insert(prefix.to_owned(), message.clone());
+                }
+                other => {
+                    out.insert(prefix.to_owned(), other.to_string());
                 }
             }
         }
-        let mut out = std::collections::BTreeSet::new();
+        let mut out = BTreeMap::new();
         walk(value, "", &mut out);
         out
+    }
+
+    /// Every dot path that resolves to a leaf, so a key demoted to an object in one locale is
+    /// reported as a difference rather than silently matching.
+    fn key_paths(value: &Value) -> BTreeSet<String> {
+        leaf_messages(value).into_keys().collect()
     }
 }

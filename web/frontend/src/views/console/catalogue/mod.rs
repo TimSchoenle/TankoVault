@@ -244,7 +244,7 @@ pub(super) fn CatalogueEntity() -> Element {
                             }
                             let ids = page_ids.clone();
                             rsx! {
-                                div { class: "ik-tablewrap",
+                                div { class: "ik-tablewrap scroll",
                                     table { class: "ik-table ik-table-compact",
                                         thead {
                                             tr {

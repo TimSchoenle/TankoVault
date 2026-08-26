@@ -88,8 +88,12 @@ pub(crate) trait ContentTypeExt {
     /// The catalogue key of this variant's display name (see [`crate::i18n`]).
     fn label_key(&self) -> &'static str;
     fn token(&self) -> &'static str;
-    /// The accent colour that encodes this type across cards and the series hero.
+    /// The ink this type is set in. Deliberately the same muted stop for every variant: colour
+    /// encodes health across the app, and [`ContentTypeExt::initial`] is what tells the types
+    /// apart.
     fn color(&self) -> &'static str;
+    /// The two-letter mono mark that identifies this type without spending a hue on it.
+    fn initial(&self) -> &'static str;
     fn all() -> &'static [ContentType];
 }
 
@@ -121,6 +125,17 @@ impl ContentTypeExt for ContentType {
             Self::Unknown => "var(--muted)",
         }
     }
+    // Manhwa and manhua both begin "manh", so their marks are taken from the syllable that
+    // differs rather than from the first two letters, which would collide.
+    fn initial(&self) -> &'static str {
+        match self {
+            Self::Manga => "MG",
+            Self::Manhwa => "HW",
+            Self::Manhua => "HU",
+            Self::Webtoon => "WT",
+            Self::Unknown => "??",
+        }
+    }
     fn all() -> &'static [ContentType] {
         &[
             ContentType::Manga,
@@ -135,7 +150,8 @@ pub(crate) trait SeriesStatusExt {
     /// The catalogue key of this variant's display name (see [`crate::i18n`]).
     fn label_key(&self) -> &'static str;
     fn token(&self) -> &'static str;
-    /// The dot colour that encodes this status.
+    /// The ink this status is set in — muted for every variant, because series status is prose
+    /// about a title rather than a signal an operator scans for.
     fn color(&self) -> &'static str;
     fn all() -> &'static [SeriesStatus];
 }
@@ -519,6 +535,55 @@ mod tests {
         tokens.dedup();
         assert_eq!(tokens.len(), listed, "two watch statuses share a token");
         assert_eq!(listed, 5, "a status is missing from WatchStatus::all()");
+    }
+
+    /// The role tokens once drew twenty values across four axes from five literal hues, so
+    /// `#6fa8dc` was `manga`, `completed`, `solving` and `running` at the same time and a console
+    /// row's colour could not be read without the label beside it. Colour encodes health alone
+    /// now: every role token points at a `--color-health-*` stop or at `--muted`, and shape and
+    /// letter carry the other three axes. A token re-pointed at a literal of its own — the
+    /// obvious way to "tell them apart" again — is that bug returning.
+    #[test]
+    fn no_role_token_carries_a_colour_of_its_own() {
+        const SHEET: &str = include_str!("../input.css");
+        const AXES: [&str; 4] = [
+            "--color-type-",
+            "--color-status-",
+            "--color-state-",
+            "--color-run-",
+        ];
+
+        let mut seen = 0;
+        for line in SHEET.lines() {
+            let line = line.trim();
+            let Some((name, value)) = line.split_once(':') else {
+                continue;
+            };
+            if !AXES.iter().any(|axis| name.starts_with(axis)) {
+                continue;
+            }
+            seen += 1;
+            assert!(
+                value.contains("var(--"),
+                "{name} carries a colour of its own; point it at a --color-health-* stop or at \
+                 --muted instead"
+            );
+        }
+        assert_eq!(seen, 18, "a role token was added or dropped without review");
+    }
+
+    /// Content types are told apart by their mark, not by a hue, so two sharing one mark would
+    /// make them indistinguishable rather than merely hard to tell apart.
+    #[test]
+    fn every_content_type_has_a_distinct_mark() {
+        let mut marks: Vec<&str> = ContentType::all()
+            .iter()
+            .map(super::ContentTypeExt::initial)
+            .collect();
+        let listed = marks.len();
+        marks.sort_unstable();
+        marks.dedup();
+        assert_eq!(marks.len(), listed, "two content types share a mark");
     }
 
     /// The policy picker must offer every policy the server accepts.

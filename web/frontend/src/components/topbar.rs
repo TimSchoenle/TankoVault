@@ -72,7 +72,7 @@ pub(crate) fn TopBar() -> Element {
                     LanguageButton {}
                     if signed_in {
                         Link {
-                            to: Route::Notifications {},
+                            to: Route::Notifications { query: crate::views::NotificationsQuery::default() },
                             // The bell leaves the bar below 820px — `/notifications` is a tab there.
                             class: "ik-bell wide-only",
                             title: i18n.t("nav.notifications"),

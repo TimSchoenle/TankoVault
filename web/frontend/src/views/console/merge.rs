@@ -713,6 +713,7 @@ pub(super) fn SeriesMiniCard(series_id: SeriesId) -> Element {
                         div { style: "font-weight:600;", "{d.title}" }
                         div { class: "ik-flex", style: "gap:6px;margin-top:4px;flex-wrap:wrap;",
                             Pill {
+                                span { class: "ik-typemark", {d.content_type.initial()} }
                                 {i18n.t(d.content_type.label_key())}
                             }
                             Pill {

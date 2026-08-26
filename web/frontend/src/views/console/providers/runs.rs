@@ -7,6 +7,7 @@ use crate::i18n::use_i18n;
 use crate::models::{ProviderId, RunStateExt as _, ScanRun};
 use crate::util::rel_time;
 use crate::views::console::run_state_pill;
+use crate::views::console::scans::run_state_ring;
 use dioxus::prelude::*;
 use progenitor_client::ResponseValue;
 
@@ -50,7 +51,8 @@ pub(super) fn RunsTab(provider_id: ProviderId) -> Element {
                 div { class: "ik-listbox",
                     for run in mine.into_iter().take(12) {
                         div { key: "{run.id}", class: "ik-listrow",
-                            span { class: run_state_pill(run.state), style: "font-size:9.5px;",
+                            span { class: run_state_ring(run.state) }
+                            span { class: run_state_pill(run.state),
                                 {i18n.t(run.state.label_key())}
                             }
                             span { class: "ik-mono", style: "font-size:11.5px;color:var(--muted);",
@@ -66,7 +68,7 @@ pub(super) fn RunsTab(provider_id: ProviderId) -> Element {
                                     }
                                 }
                             }
-                            span { class: "ik-mono", style: "margin-left:auto;font-size:11px;color:var(--faint);",
+                            span { class: "ik-mono", style: "margin-left:auto;font-size:11px;color:var(--muted);",
                                 {rel_time(i18n, run.started_at.as_deref())}
                             }
                         }

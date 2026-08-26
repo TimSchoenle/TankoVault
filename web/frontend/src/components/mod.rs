@@ -18,6 +18,7 @@ mod recommend;
 #[cfg(feature = "desktop")]
 mod settings;
 mod shell;
+mod shortcuts;
 mod step_up;
 mod tabs;
 #[cfg(feature = "desktop")]
@@ -47,6 +48,7 @@ pub(crate) use recommend::RecCard;
 #[cfg(feature = "desktop")]
 pub(crate) use settings::SettingsSheet;
 pub(crate) use shell::Shell;
+pub(crate) use shortcuts::{ShortcutGroup, ShortcutRow, ShortcutsOverlay};
 pub(crate) use step_up::{use_step_up_gate, StepUpGate, StepUpGuard};
 pub(crate) use tabs::{TabBar, TabKind};
 #[cfg(feature = "desktop")]

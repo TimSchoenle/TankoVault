@@ -752,7 +752,8 @@
       "title": "Automatic decisions",
       "undo": "Undo",
       "wasFlagged": "Flagged wrong",
-      "wasReverted": "Reverted"
+      "wasReverted": "Reverted",
+      "openInMerges": "Open in Merges"
     },
     "flags": {
       "changed": "Changed from default",
@@ -1349,7 +1350,8 @@
       "recommendations": "Recommendations",
       "solver": "Challenge & solver",
       "sync": "Sync",
-      "users": "Users"
+      "users": "Users",
+      "merges": "Merges done"
     },
     "table": {
       "columns": "Columns",
@@ -1436,6 +1438,101 @@
       "day": "Last 24 hours",
       "hour": "Last hour",
       "week": "Last 7 days"
+    },
+    "merges": {
+      "filter": "Find a merge — either title, or a series id",
+      "hits": {
+        "one": "{count} match",
+        "other": "{count} matches"
+      },
+      "count": "{shown} shown · {reversible} reversible",
+      "empty": "No merges match this view.",
+      "pick": "Pick a merge to see why it happened and what undoing it would put back.",
+      "lens": {
+        "all": "All",
+        "reverted": "Reverted",
+        "flagged": "Flagged",
+        "byOperator": "By operator"
+      },
+      "badge": {
+        "merged": "merged",
+        "reverted": "reverted",
+        "flagged": "flagged"
+      },
+      "absorbedVerb": "absorbed",
+      "putBack": "put back",
+      "byOperator": "by an operator",
+      "bySweep": "auto · sweep",
+      "restoredRows": "{rows} restored",
+      "pendingRows": "{rows} rows",
+      "undoSpent": "undo spent",
+      "mergeId": "merge {id}",
+      "idGone": "— that id no longer resolves",
+      "idResolvesAgain": "— that id resolves again",
+      "openSeries": "Open series",
+      "tab": {
+        "why": "Why it merged",
+        "evidence": "Evidence",
+        "trail": "Audit trail"
+      },
+      "threshold": "auto threshold {value}",
+      "bothRecords": "The two records, as they were",
+      "kept": "kept",
+      "absorbedRole": "absorbed",
+      "sourceTally": {
+        "one": "{count} source",
+        "other": "{count} sources"
+      },
+      "chapterTally": {
+        "one": "{count} chapter",
+        "other": "{count} chapters"
+      },
+      "watcherTally": {
+        "one": "{count} reader",
+        "other": "{count} readers"
+      },
+      "putsBack": "What unmerging puts back",
+      "journalIntact": "undo journal intact",
+      "noInventory": "This decision recorded no undo journal, so there is nothing to put back.",
+      "restoredTotal": "Restored as a separate series",
+      "trail": {
+        "decided": "decided",
+        "sweep": "sweep",
+        "flagged": "flagged",
+        "reverted": "reverted"
+      },
+      "unmergeBody": "Puts the absorbed series back under its original id with its {rows} rows. Reading recorded against the kept series since the merge stays with it — progress written after the merge does not follow the split.",
+      "spentBody": "This merge has no undo journal left, so nothing can be put back. It can still be recorded as wrong, which stops the sweep proposing the pair again.",
+      "reasonLabel": "reason — required, lands in the audit trail",
+      "unmergeCta": "Unmerge · restore {rows} rows",
+      "flagCta": "Keep merged, mark wrong",
+      "suppressionNote": "Both outcomes also record “not a duplicate”, so the sweep will not re-propose this pair.",
+      "wasReverted": "Undone {when}. Reason: {reason}",
+      "wasFlagged": "Marked wrong {when}. Reason: {reason}",
+      "noReason": "none recorded",
+      "segment": {
+        "series": "The absorbed series row",
+        "titles": "Titles & aliases",
+        "tags": "Tag links",
+        "authors": "Author links",
+        "watchlist": "Watchlist entries",
+        "progress": "Progress rows",
+        "mappings": "Tracker mappings",
+        "overrides": "Metadata overrides",
+        "dedup": "Notification dedup keys",
+        "feedback": "Recommendation feedback",
+        "survivor_progress": "Progress the merge overwrote on the survivor",
+        "survivor_overrides": "Overrides the merge overwrote on the survivor",
+        "survivor_feedback": "Feedback the merge overwrote on the survivor",
+        "inserted_titles": "Titles the merge added",
+        "inserted_tags": "Tag links the merge added",
+        "inserted_authors": "Author links the merge added",
+        "inserted_watchlist": "Watchlist entries the merge added",
+        "inserted_mappings": "Tracker mappings the merge added",
+        "inserted_dedup": "Dedup keys the merge added",
+        "moved_sources": "Source links",
+        "moved_history": "Sync history rows"
+      }
     }
   },
   "discover": {
@@ -1889,7 +1986,29 @@
       "take": "Take {value}",
       "trackers": "Trackers",
       "trustNewest": "Trust newest",
-      "unlink": "Unlink"
+      "unlink": "Unlink",
+      "shelf": "Shelf",
+      "trackedFor": "tracked {when}",
+      "change": "change",
+      "shelfNote": "Moving to Completed does not mark chapters read.",
+      "markAll": "Mark all {count} read",
+      "unreadCount": {
+        "one": "{count} unread",
+        "other": "{count} unread"
+      },
+      "opensOn": "Opens on",
+      "pinnedHere": "pinned for this series",
+      "followingOrder": "following your source order",
+      "fallback": "fallback {sources}",
+      "sourceOrder": "Source order",
+      "remove": "Remove from watchlist",
+      "removeBody": "Drops the entry, the shelf, the source pin and the alert. {read} read chapters and any tracker mapping stay — re-adding restores them.",
+      "entryAge": "entry {when}",
+      "notTracked": "Not tracked yet",
+      "notTrackedBody": "Shelf, source pin and alerts appear once there is an entry to hang them on. Progress and history stay visible — they are read state, not membership.",
+      "mergedRecord": "Merged record — operators only",
+      "absorbed": "This series absorbed {title} {when}.",
+      "whyMerged": "Why"
     },
     "tracking": "Tracking",
     "unpinSource": "Unpin — follow my source order",

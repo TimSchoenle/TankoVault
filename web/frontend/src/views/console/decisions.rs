@@ -1,10 +1,14 @@
-//! The decision journals: what the automatic merge and the automatic sync did, why, and the two
-//! answers to "that was wrong" — undo it, and say so durably.
+//! The decision journals: what the automatic merge and the automatic sync did, and why.
 //!
 //! Both halves render the same shape because the operator's question is the same one: a headline
 //! naming what happened, the rule that decided it, and an expander holding the itemised evidence.
 //! The evidence is the point — a score and a bag of signal names say *that* two things matched,
 //! and only the terms say which title matched and what each rule contributed.
+//!
+//! The **merge** half is a read surface only. Its rows include every verdict the sweep reached,
+//! most of which merged nothing, so taking a merge back lives in [`super::merges`] where the row
+//! is a merge and the inventory of what a revert would restore sits beside the button. The sync
+//! half still carries its own revert, because a sync decision *is* the write it made.
 
 use crate::api;
 use crate::components::{
@@ -17,7 +21,7 @@ use crate::util::rel_time;
 use crate::views::console::{signal_label, use_console_nav, RefreshTick};
 use crate::wire::types::Permission;
 use dioxus::prelude::*;
-use inkstone_ui::{Button, Pill, Size, ToggleButton, Tone};
+use inkstone_ui::{button_class, Button, Pill, Size, ToggleButton, Tone};
 use progenitor_client::ResponseValue;
 /// Rows per page. The server clamps regardless; this is the number that fits a screen without
 /// paging becoming the primary interaction.
@@ -117,10 +121,6 @@ fn MergeJournal(tick: RefreshTick) -> Element {
     let can_revert = caps.can(Permission::MergeRevert);
     let mut outcome = use_signal(String::new);
     let mut blocked_only = use_signal(|| false);
-    let notice = use_signal(String::new);
-    // One gate for the journal, shared with every row: the rows report through the same
-    // `notice`, so the prompt belongs beside it rather than duplicated per decision.
-    let gate = use_step_up_gate();
 
     let filter_outcome = outcome.read().clone();
     let only_blocked = *blocked_only.read();
@@ -193,10 +193,6 @@ fn MergeJournal(tick: RefreshTick) -> Element {
                 span { {i18n.t("console.decisions.filter.blockedOnly")} }
             }
         }
-        StepUpGuard { gate, intro: Some(i18n.t("console.stepUp.intro")) }
-        if !notice.read().is_empty() {
-            div { class: "ik-note", style: "margin-bottom:10px;", "{notice}" }
-        }
         {
             async_view(
                 &rows,
@@ -230,9 +226,6 @@ fn MergeJournal(tick: RefreshTick) -> Element {
                                         key: "{decision.id}",
                                         decision: Signal::new(decision),
                                         can_revert,
-                                        notice,
-                                        tick,
-                                        gate,
                                     }
                                 }
                             }
@@ -285,77 +278,14 @@ fn search_hits(i18n: Translator, shown: usize, loaded: usize, searching: bool) -
 #[component]
 fn MergeDecisionRow(
     decision: Signal<MergeDecision>,
+    /// Whether this reader may take a merge back. Decides only whether the row offers the way
+    /// through to Console · Merges — the action itself lives there.
     can_revert: bool,
-    notice: Signal<String>,
-    tick: RefreshTick,
-    /// The journal's gate, so a refusal opens the one prompt beside the notice.
-    gate: StepUpGate,
 ) -> Element {
-    let api = api::use_api();
     let i18n = use_i18n();
     let mut open = use_signal(|| false);
-    let mut busy = use_signal(|| false);
-    let mut reason = use_signal(String::new);
     let d = decision.read();
     let expanded = *open.read();
-    let id = d.id;
-
-    // Two calls, one shape: the only difference an operator cares about is whether the catalogue
-    // is put back, and both write the same durable "not a duplicate" judgement.
-    let judge = use_callback(move |revert: bool| {
-        let text = reason.peek().trim().to_owned();
-        if text.is_empty() {
-            notice.set(i18n.t("console.decisions.reasonRequired"));
-            return;
-        }
-        if *busy.peek() {
-            return;
-        }
-        busy.set(true);
-        let mut notice = notice;
-        spawn(async move {
-            let client = gate.client(api);
-            let outcome = if revert {
-                client
-                    .revert_merge_decision()
-                    .id(id)
-                    .body_map(|body| body.reason(text.clone()))
-                    .send()
-                    .await
-                    .map(|response| {
-                        let r = response.into_inner();
-                        i18n.args(
-                            "console.decisions.reverted",
-                            &[("rows", &r.rows_restored.to_string())],
-                        )
-                    })
-            } else {
-                client
-                    .flag_merge_decision()
-                    .id(id)
-                    .body_map(|body| body.reason(text.clone()))
-                    .send()
-                    .await
-                    .map(|_| i18n.t("console.decisions.flagged"))
-            };
-            match outcome {
-                Ok(message) => {
-                    notice.set(message);
-                    reason.set(String::new());
-                    tick.bump();
-                }
-                Err(e) => {
-                    if !gate.refused(api::Refusal::of(&e)) {
-                        notice.set(i18n.args(
-                            "console.decisions.actionFailed",
-                            &[("message", &api::guarded_error(i18n, e))],
-                        ));
-                    }
-                }
-            }
-            busy.set(false);
-        });
-    });
 
     rsx! {
         article { class: "ik-card", style: "padding:12px;margin-bottom:10px;",
@@ -418,36 +348,18 @@ fn MergeDecisionRow(
                         {i18n.t("console.decisions.showEvidence")}
                     }
                 }
-                if can_revert && d.flagged_at.is_none() {
-                    input {
-                        class: "ik-input",
-                        style: "flex:1;min-width:20ch;",
-                        r#type: "text",
-                        placeholder: i18n.t("console.decisions.reasonPlaceholder"),
-                        "aria-label": i18n.t("console.decisions.reasonPlaceholder"),
-                        value: "{reason}",
-                        oninput: move |event: FormEvent| reason.set(event.value()),
-                    }
-                    // Offered only while an undo journal is unspent. A decision that queued a
-                    // pair rather than merging one has nothing to put back, and a button that
-                    // always errors is worse than no button.
-                    if d.revertible {
-                        Button {
-                            size: Size::Xs,
-                            tone: Tone::Accent,
-                            disabled: *busy.read(),
-                            on_click: move |_| gate.attempt(move || judge.call(true)),
-                            {i18n.args(
-                            "console.decisions.revert",
-                            &[("rows", &d.undo_rows.to_string())],
-                            )}
-                        }
-                    }
-                    Button {
-                        size: Size::Xs,
-                        disabled: *busy.read(),
-                        on_click: move |_| gate.attempt(move || judge.call(false)),
-                        {i18n.t("console.decisions.flag")}
+                // The journal is a read surface: it lists every verdict, including the many
+                // that merged nothing. Reverting is a decision about a merge, so it lives on
+                // the screen whose rows *are* merges, with the inventory of what a revert
+                // would put back beside the button — which is what this row cannot show.
+                if can_revert && d.outcome == "merged" {
+                    Link {
+                        to: crate::Route::ConsoleSection {
+                            entity: super::ConsoleEntity::Merges,
+                            query: super::ConsoleQuery::fresh().with_selection(Some(d.id.to_string())),
+                        },
+                        class: button_class(Tone::Neutral, Size::Xs, false),
+                        {i18n.t("console.decisions.openInMerges")}
                     }
                 }
             }
@@ -899,23 +811,23 @@ fn outcome_tone(outcome: &str) -> &'static str {
 }
 
 /// The catalogue wording for a decision's reason slug, falling back to the slug.
-fn reason_label(i18n: Translator, slug: &str) -> String {
+pub(super) fn reason_label(i18n: Translator, slug: &str) -> String {
     i18n.t_opt(&format!("console.decisions.reason.{slug}"))
         .unwrap_or_else(|| slug.to_owned())
 }
 
 /// A score as a whole-number percentage, matching how the merge queue renders one.
-fn percent(score: f32) -> String {
+pub(super) fn percent(score: f32) -> String {
     format!("{:.0}", score * 100.0)
 }
 
 /// A score term with its sign always shown: the point of the column is which way each rule moved
 /// the number, and a bare `0.10` beside a bare `0.15` hides that one of them was a penalty.
-fn signed(delta: f64) -> String {
+pub(super) fn signed(delta: f64) -> String {
     format!("{delta:+.3}")
 }
 
 /// Pretty-printed JSON, or the value as-is when it will not render.
-fn pretty(value: &serde_json::Value) -> String {
+pub(super) fn pretty(value: &serde_json::Value) -> String {
     serde_json::to_string_pretty(value).unwrap_or_else(|_| value.to_string())
 }

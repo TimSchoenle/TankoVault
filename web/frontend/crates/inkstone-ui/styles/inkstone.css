@@ -62,11 +62,14 @@
   --ik-pad-pill: 3px 9px;
   --ik-pad-chip: 5px 12px;
   --ik-pad-tab: 8px 14px;
+  --ik-pad-tab-count: 1px 7px;
   --ik-pad-panel: 16px;
   --ik-pad-tile: 14px;
   --ik-pad-row: 12px 14px;
   --ik-pad-cell: 10px 12px;
   --ik-pad-cell-compact: 8px 10px;
+  /* How tall a scrolling table (`.ik-tablewrap.scroll`) gets before its body scrolls. */
+  --ik-table-max-h: 60vh;
   --ik-pad-empty: 40px;
   --ik-pad-modal: 20px;
 
@@ -85,6 +88,7 @@
   --ik-font-select: 13px;
   --ik-font-pill: 11px;
   --ik-font-chip: 13px;
+  --ik-font-tab-count: 11px;
   --ik-font-label: 13px;
   --ik-font-cell: 14px;
   --ik-font-cell-compact: 13px;
@@ -110,6 +114,7 @@
   --ik-tint-chip: 16%;
   --ik-tint-chip-warn: 14%;
   --ik-tint-tab: 12%;
+  --ik-tint-tab-count: 22%;
   --ik-tint-row: 8%;
   --ik-edge: 45%;
   --ik-edge-strong: 55%;
@@ -153,11 +158,35 @@
 
 .ik-btn:focus-visible, .ik-chip:focus-visible, .ik-tab:focus-visible { outline: var(--ik-focus-ring) solid var(--acc); outline-offset: var(--ik-focus-offset); }
 
-/* Tabs (notifications / console / settings). */
-.ik-tabs { display: flex; gap: 6px; flex-wrap: wrap; border-bottom: var(--ik-border) solid var(--border); margin-bottom: 18px; }
-.ik-tab { font: inherit; font-size: var(--ik-font-chip); color: var(--muted); background: transparent; border: var(--ik-border) solid transparent; border-radius: var(--ik-radius-tab); padding: var(--ik-pad-tab); cursor: pointer; }
+/* Tabs (notifications / console / settings / watchlist).
+ *
+ * One treatment for "which one am I looking at": a folder tab whose active member drops its
+ * bottom border into the strip's rule, so the tab merges into whatever it opens rather than
+ * sitting in a closed box above it. The count and the scrolling shell below are part of the
+ * same treatment on purpose — a strip that carries counts, or is too long to wrap, must not be
+ * a reason to grow a second tab idiom somewhere else. */
+.ik-tabs { display: flex; gap: 6px; flex-wrap: wrap; align-items: flex-end; border-bottom: var(--ik-border) solid var(--border); margin-bottom: 18px; }
+.ik-tab { font: inherit; font-size: var(--ik-font-chip); color: var(--muted); background: transparent; border: var(--ik-border) solid transparent; border-radius: var(--ik-radius-tab); padding: var(--ik-pad-tab); margin-bottom: calc(-1 * var(--ik-border)); cursor: pointer; display: inline-flex; align-items: center; gap: 7px; }
 .ik-tab:hover { color: var(--text); }
-.ik-tab.active { color: var(--acc3); border-color: var(--acc); background: color-mix(in srgb, var(--acc) var(--ik-tint-tab), transparent); }
+.ik-tab.active { color: var(--acc3); border-color: var(--acc); border-bottom-color: transparent; background: color-mix(in srgb, var(--acc) var(--ik-tint-tab), transparent); }
+/* Set off from the tabs before it — an entry that is a different kind of choice from its
+ * neighbours, such as an "All" beside a set of shelves. */
+.ik-tab.apart { margin-left: auto; }
+
+.ik-tab-count { font-family: var(--font-mono); font-size: var(--ik-font-tab-count); padding: var(--ik-pad-tab-count); border-radius: var(--ik-radius-pill); background: var(--surface-2); color: var(--muted); }
+.ik-tab.active .ik-tab-count { background: color-mix(in srgb, var(--acc) var(--ik-tint-tab-count), transparent); color: var(--acc3); }
+
+/* One row that scrolls, for strips too long to wrap gracefully. The fade marks that there is
+ * more to the right: a scroll container with a hidden scrollbar and no edge treatment reads as
+ * a list that simply stops. It fades to `--bg`, so a strip placed on a raised surface wants
+ * that property re-pointed for the region rather than a second rule here. */
+.ik-tabs-scroll { position: relative; margin-bottom: 18px; }
+/* Here the strip itself is the scroller, so its rule has to be an inset shadow: a border paints
+ * outside the padding box, which is where `overflow` clips, and the active tab could never
+ * reach over it. Inside the padding box the tab covers it exactly as in a wrapping strip. */
+.ik-tabs-scroll > .ik-tabs { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; margin-bottom: 0; border-bottom: none; box-shadow: inset 0 calc(-1 * var(--ik-border)) 0 var(--border); scrollbar-width: thin; scroll-snap-type: x proximity; }
+.ik-tabs-scroll .ik-tab { flex: none; white-space: nowrap; scroll-snap-align: start; margin-bottom: 0; }
+.ik-tabs-scroll::after { content: ""; position: absolute; right: 0; top: 0; bottom: var(--ik-border); width: 28px; pointer-events: none; background: linear-gradient(to right, transparent, var(--bg)); }
 
 .ik-panel { background: var(--surface-2); border: var(--ik-border) solid var(--border); border-radius: var(--radius); padding: var(--ik-pad-panel); margin-bottom: var(--ik-gap-lg); }
 
@@ -188,8 +217,24 @@
 
 table.ik-table { width: 100%; border-collapse: collapse; }
 .ik-table th, .ik-table td { text-align: left; padding: var(--ik-pad-cell); border-bottom: var(--ik-border) solid var(--border-row); font-size: var(--ik-font-cell); }
-.ik-table th { color: var(--muted); font-weight: 600; }
-.ik-tablewrap { width: 100%; overflow-x: auto; }
+/* The header row is sticky, and three things about that are load-bearing:
+ *
+ * - it needs an opaque fill, or fifty rows of dense mono scroll through it;
+ * - the hairline is an inset shadow, not the `border-bottom` above. A collapsed border belongs
+ *   to the table rather than the cell, so it stays behind when the cell detaches;
+ * - `.ik-tablewrap` is a scroll container in both axes (an `auto` on one axis computes the
+ *   other from `visible` to `auto`), so it — not the page — is the scrollport this sticks to.
+ *   That is why it does nothing until the wrapper's height is bounded: `.scroll` below, or a
+ *   consumer's own `max-height`. Removing either half leaves a rule that looks right and
+ *   silently never fires. */
+.ik-table th {
+  color: var(--muted); font-weight: 600;
+  position: sticky; top: 0; z-index: 1;
+  background: var(--surface-2);
+  box-shadow: inset 0 calc(-1 * var(--ik-border)) 0 var(--border-row);
+}
+.ik-tablewrap { width: 100%; overflow: auto; }
+.ik-tablewrap.scroll { max-height: var(--ik-table-max-h); }
 /* These two selectors are specificity 0-2-1, so a single-class utility cannot override a cell's
  * padding or font-size here. That is why the console's compact tables carry inline `style:`
  * attributes on cells rather than utilities: converting them silently regresses every cell,
@@ -222,7 +267,11 @@ table.ik-table { width: 100%; border-collapse: collapse; }
 .ik-btn.bare { background: none; border-color: transparent; color: var(--muted); font-weight: var(--ik-weight-btn-bare); padding-left: 4px; padding-right: 4px; }
 .ik-btn.bare:hover { background: none; border-color: transparent; color: var(--acc3); }
 
-.ik-sec-lbl { font-family: var(--font-mono); font-weight: 500; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); }
+/* 11px and `--muted`, not 10px and `--faint`. This is text, and small tracked-out uppercase mono
+ * is the hardest text in the kit to read: `--faint` measures 3.2:1 in both themes, under the 4.5:1
+ * AA wants, and 10px is below the console's type floor. `--faint` stays for hairlines, inert icons
+ * and placeholder glyphs — things that are not read. */
+.ik-sec-lbl { font-family: var(--font-mono); font-weight: 500; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
 
 /* A bordered stack of rows with hairline rules between them, no rule on the last. */
 .ik-listbox { border: var(--ik-border) solid var(--border); border-radius: var(--ik-radius-listbox); overflow: hidden; }
@@ -230,7 +279,9 @@ table.ik-table { width: 100%; border-collapse: collapse; }
 .ik-listbox > *:last-child { border-bottom: none; }
 .ik-listrow { display: flex; align-items: center; gap: var(--ik-gap-md); padding: var(--ik-pad-cell); }
 
+/* Flush strips do the overlap on the strip, so the tabs must not repeat it. */
 .ik-tabs.flush { margin-bottom: -1px; border-bottom: none; gap: 4px; }
+.ik-tabs.flush .ik-tab { margin-bottom: 0; }
 
 /* Label/field rows in the inspector. */
 .ik-kv { display: grid; grid-template-columns: 96px 1fr; align-items: center; gap: 10px; }
@@ -268,7 +319,9 @@ table.ik-table { width: 100%; border-collapse: collapse; }
 /* Chrome-free but still a hit target, unlike `.bare` which also gives up its padding. */
 .ik-btn.ghost { background: none; border-color: transparent; color: var(--muted); }
 .ik-btn.ghost:hover { border-color: var(--border-ctl); color: var(--text); }
-.ik-pill.ghost { color: var(--faint); border-color: var(--border-row); }
+/* The border is what makes this pill recessive; `--muted` is the floor its 11px label has to
+ * clear. */
+.ik-pill.ghost { color: var(--muted); border-color: var(--border-row); }
 /* `Tone::Positive` and `Tone::Caution` had no button until this line, so they resolved to the
  * unmodified base and a confirm read exactly like a cancel. `--star-ink` rather than `--star`
  * for the caution ink: the raw token is a mid-yellow that fails contrast on the light theme's
@@ -355,7 +408,8 @@ table.ik-table { width: 100%; border-collapse: collapse; }
   flex: 1; min-width: 0; background: none; border: none; outline: none;
   color: var(--text); font: inherit; font-size: 12.5px;
 }
-.ik-searchfield-hits { font-size: 11px; color: var(--faint); flex: none; }
+/* A hit count is read, unlike the icon above it, so it takes `--muted` rather than `--faint`. */
+.ik-searchfield-hits { font-size: 11px; color: var(--muted); flex: none; }
 
 /* ============================================================================
  * States

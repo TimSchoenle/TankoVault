@@ -135,21 +135,30 @@ pub(super) fn TrackingCard(
         }
     });
 
+    // The bottom of the card and the furthest below the fold, so it waits on the frontier above
+    // it instead of competing with it. Reading `progress` here is what subscribes this resource
+    // to it. `None` means "not asked yet" and must not render as "no history".
     let history = use_resource(move || {
         reload_sync.track();
         reload_progress.track();
+        let above_the_fold_landed = progress.read().is_some();
         let client = api.client();
         async move {
             if !authed {
-                return Vec::new();
+                return Some(Vec::new());
             }
-            client
-                .sync_history()
-                .series_id(series_id.0)
-                .send()
-                .await
-                .map(ResponseValue::into_inner)
-                .unwrap_or_default()
+            if !above_the_fold_landed {
+                return None;
+            }
+            Some(
+                client
+                    .sync_history()
+                    .series_id(series_id.0)
+                    .send()
+                    .await
+                    .map(ResponseValue::into_inner)
+                    .unwrap_or_default(),
+            )
         }
     });
 
@@ -166,9 +175,11 @@ pub(super) fn TrackingCard(
     }
 
     let open_conflicts = conflicts.read_unchecked().as_ref().map_or(0, Vec::len);
-    let tracker_rows = trackers.read_unchecked().clone().unwrap_or_default();
-    let history_rows = history.read_unchecked().clone().unwrap_or_default();
     let conflict_rows = conflicts.read_unchecked().clone().unwrap_or_default();
+    // Both keep their `None`: an in-flight list flattened to an empty one renders as "there are
+    // none", which is both a lie and a block that then resizes when the truth arrives.
+    let tracker_rows = trackers.read_unchecked().clone();
+    let history_rows = history.read_unchecked().clone().flatten();
 
     rsx! {
         div { class: "ik-panel",
@@ -206,35 +217,41 @@ pub(super) fn TrackingCard(
 
             div { class: "ik-track-sec",
                 div { class: "ik-sec-lbl", style: "margin-bottom:8px;", {i18n.t("series.track.trackers")} }
-                if tracker_rows.is_empty() {
-                    p { class: "ik-muted", style: "font-size:12.5px;margin:0;",
-                        {i18n.t("account.sync.noProviders")}
-                    }
-                } else {
-                    div { class: "ik-listbox",
-                        for tracker in tracker_rows {
-                            TrackerRow { key: "{tracker.slug}", tracker, reload_sync, gate }
+                match tracker_rows {
+                    None => rsx! {
+                        SkeletonBlock { height: 54 }
+                    },
+                    Some(rows) if rows.is_empty() => rsx! {
+                        p { class: "ik-muted", style: "font-size:12.5px;margin:0;",
+                            {i18n.t("account.sync.noProviders")}
                         }
-                        if let Some(entry) = entry.clone() {
-                            SyncOptOut { entry, reload_wl }
-                        }
-                        if let Some(anilist_id) = anilist_id.clone() {
-                            div { class: "ik-listfoot",
-                                span {
-                                    {i18n.t("series.track.mappedTo")}
-                                    " "
-                                    a {
-                                        class: "ik-mono ik-icon-link",
-                                        style: "color:var(--muted);",
-                                        href: "https://anilist.co/manga/{anilist_id}",
-                                        target: "_blank",
-                                        rel: "noopener",
-                                        "#{anilist_id}"
+                    },
+                    Some(rows) => rsx! {
+                        div { class: "ik-listbox",
+                            for tracker in rows {
+                                TrackerRow { key: "{tracker.slug}", tracker, reload_sync, gate }
+                            }
+                            if let Some(entry) = entry.clone() {
+                                SyncOptOut { entry, reload_wl }
+                            }
+                            if let Some(anilist_id) = anilist_id.clone() {
+                                div { class: "ik-listfoot",
+                                    span {
+                                        {i18n.t("series.track.mappedTo")}
+                                        " "
+                                        a {
+                                            class: "ik-mono ik-icon-link",
+                                            style: "color:var(--muted);",
+                                            href: "https://anilist.co/manga/{anilist_id}",
+                                            target: "_blank",
+                                            rel: "noopener",
+                                            "#{anilist_id}"
+                                        }
                                     }
                                 }
                             }
                         }
-                    }
+                    },
                 }
             }
 
@@ -244,21 +261,27 @@ pub(super) fn TrackingCard(
 
             div {
                 div { class: "ik-sec-lbl", style: "margin-bottom:6px;", {i18n.t("series.track.history")} }
-                if history_rows.is_empty() {
-                    p { class: "ik-muted", style: "font-size:12.5px;margin:0;",
-                        {i18n.t("series.track.historyEmpty")}
-                    }
-                } else {
-                    div { class: "ik-timeline",
-                        for row in history_rows.iter().take(6) {
-                            div { key: "{row.id}",
-                                span { class: "val", "{row.action}" }
-                                " · "
-                                {rel_time(i18n, Some(&row.created_at))}
-                                " · {row.provider}"
+                match history_rows {
+                    None => rsx! {
+                        SkeletonBlock { height: 84 }
+                    },
+                    Some(rows) if rows.is_empty() => rsx! {
+                        p { class: "ik-muted", style: "font-size:12.5px;margin:0;",
+                            {i18n.t("series.track.historyEmpty")}
+                        }
+                    },
+                    Some(rows) => rsx! {
+                        div { class: "ik-timeline",
+                            for row in rows.iter().take(6) {
+                                div { key: "{row.id}",
+                                    span { class: "val", "{row.action}" }
+                                    " · "
+                                    {rel_time(i18n, Some(&row.created_at))}
+                                    " · {row.provider}"
+                                }
                             }
                         }
-                    }
+                    },
                 }
             }
         }

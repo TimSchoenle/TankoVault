@@ -215,13 +215,13 @@ fn OpensOn(sources: Vec<RankedSource>, pinned: Pinned) -> Element {
 
     rsx! {
         div { class: "ik-opens",
-            div { class: "ik-mono", style: "font-size:11.5px;color:var(--faint);",
+            div { class: "ik-mono", style: "font-size:11.5px;color:var(--muted);",
                 {i18n.t("series.opensOn")}
             }
             div { class: "ik-flex", style: "gap:7px;margin-top:3px;justify-content:flex-end;",
                 span { style: "font-weight:600;font-size:13.5px;", "{lead.source.provider_name}" }
                 if let Some(backup) = backup {
-                    span { class: "ik-mono", style: "font-size:11.5px;color:var(--faint);",
+                    span { class: "ik-mono", style: "font-size:11.5px;color:var(--muted);",
                         "→ {backup}"
                     }
                 }
@@ -595,7 +595,7 @@ fn SourceMenu(
                         {i18n.t("series.pinNeedsTracking")}
                     }
                 }
-                span { class: "ik-mono", style: "margin-left:auto;font-size:10.5px;color:var(--faint);",
+                span { class: "ik-mono", style: "margin-left:auto;font-size:10.5px;color:var(--muted);",
                     {i18n.t("series.enterHint")}
                 }
             }

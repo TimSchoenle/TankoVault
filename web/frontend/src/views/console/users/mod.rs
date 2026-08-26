@@ -24,7 +24,7 @@ use crate::models::AccountStatusExt as _;
 use crate::state::capabilities::use_capabilities;
 use crate::state::use_session;
 use crate::util::{initial, iso_date, rel_time, thousands};
-use crate::views::console::{use_console_nav, ConsoleQuery};
+use crate::views::console::{landing_selection, use_console_nav, ConsoleQuery};
 use crate::wire::types::{
     AccountStatus, AdminProfileUpdate, DirectoryRow, GrantRow, Permission, SetPermissions,
     SetUserStatus, UserDetailResponse,
@@ -237,6 +237,20 @@ pub(super) fn UsersEntity() -> Element {
         .clone()
         .filter(|id| rows.iter().any(|row| &row.id == id))
         .or_else(|| rows.first().map(|r| r.id.clone()));
+
+    // …and the fallback goes into the URL, so the address names the account on screen rather
+    // than whichever one this page of the directory happens to start with. It replaces rather
+    // than pushes — the operator did not choose this row and must not have to back out of it —
+    // and the next query is built out here rather than inside the effect, because reading
+    // `nav.query()` in there would subscribe the effect to the memo the write changes.
+    let landing = landing_selection(view.sel.as_deref(), current.clone())
+        .map(|sel| view.with_selection(Some(sel)));
+    use_effect(use_reactive!(|landing| {
+        if let Some(next) = landing {
+            nav.filter(next);
+        }
+    }));
+
     let window = Window {
         offset: page * PAGE_SIZE,
         page_len,
@@ -566,11 +580,10 @@ fn UserEditor(
                         if owner {
                             Pill {
                                 class: "star",
-                                style: "font-size:10px;",
                                 {i18n.t("console.users.role.owner")}
                             }
                         } else {
-                            span { class: if staff { "ik-pill acc" } else { "ik-pill" }, style: "font-size:10px;",
+                            span { class: if staff { "ik-pill acc" } else { "ik-pill" },
                                 if staff {
                                     {i18n.t("console.users.role.staff")}
                                 } else {
@@ -579,7 +592,7 @@ fn UserEditor(
                             }
                         }
                         if user.status == AccountStatus::Suspended {
-                            span { class: user.status.pill_class(), style: "font-size:10px;",
+                            span { class: user.status.pill_class(),
                                 {i18n.t(user.status.label_key())}
                             }
                         }
@@ -760,7 +773,7 @@ fn UserEditor(
             },
             Tab::Sessions => rsx! {
                 div { class: "ik-cons-inspbody",
-                    div { class: "ik-cons-col", style: "grid-column:1 / -1;max-width:620px;",
+                    div { class: "ik-cons-col", style: "max-width:620px;",
                         Section { label: i18n.t("console.users.sessions"),
                             div { class: "ik-listbox",
                                 div { class: "ik-listrow",
@@ -806,7 +819,7 @@ fn UserEditor(
             },
             Tab::Library => rsx! {
                 div { class: "ik-cons-inspbody",
-                    div { class: "ik-cons-col", style: "grid-column:1 / -1;",
+                    div { class: "ik-cons-col",
                         div { class: "ik-kpis",
                             Kpi {
                                 label: i18n.t("console.users.stat.tracked"),
@@ -829,7 +842,7 @@ fn UserEditor(
             },
             Tab::Privacy => rsx! {
                 div { class: "ik-cons-inspbody",
-                    div { class: "ik-cons-col", style: "grid-column:1 / -1;max-width:620px;",
+                    div { class: "ik-cons-col", style: "max-width:620px;",
                         Section { label: i18n.t("console.users.tab.privacy"),
                             p { class: "ik-muted", style: "font-size:12px;line-height:1.5;margin:0 0 12px;",
                                 {
@@ -891,7 +904,7 @@ fn UserEditor(
             },
             Tab::Activity => rsx! {
                 div { class: "ik-cons-inspbody",
-                    div { class: "ik-cons-col", style: "grid-column:1 / -1;max-width:620px;",
+                    div { class: "ik-cons-col", style: "max-width:620px;",
                         RecentActions { user_id: user.id.clone() }
                     }
                 }

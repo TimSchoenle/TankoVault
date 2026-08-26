@@ -209,7 +209,7 @@ pub(super) fn GrantRowView(
                 "{token}"
             }
             if let Some(by) = by {
-                span { style: "margin-left:auto;font-size:11px;color:var(--faint);flex:none;", "{by}" }
+                span { style: "margin-left:auto;font-size:11px;color:var(--muted);flex:none;", "{by}" }
             }
         }
     }

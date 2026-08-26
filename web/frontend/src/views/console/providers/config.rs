@@ -34,7 +34,6 @@ pub(super) fn DryRunResult(result: Option<Result<serde_json::Value, String>>) ->
                     trailing: rsx! {
                         Pill {
                             tone: Tone::Positive,
-                            style: "font-size:9.5px;",
                             match parsed {
                             Some(count) => {
                             i18n.plural(

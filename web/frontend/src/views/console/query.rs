@@ -200,11 +200,11 @@ impl ConsoleQuery {
         Self::default()
     }
 
-    /// The same view with a different row selected, and the page reset.
+    /// The same view with a different row selected.
     ///
-    /// Paging is dropped deliberately: a `sel` from page 4 pasted into a link that also carries
-    /// `page=4` re-selects correctly, but every *other* way of arriving at a selection means the
-    /// operator picked a visible row, and keeping a stale page would scroll it out of the list.
+    /// The page is kept, not reset: every caller selects a row that is on the page in front of
+    /// them — an operator's click, and the landing write that resolves the first row of the
+    /// current page — so resetting would scroll the selection out of the list it was picked from.
     pub(crate) fn with_selection(&self, sel: Option<String>) -> Self {
         Self {
             sel,

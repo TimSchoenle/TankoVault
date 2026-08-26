@@ -4,14 +4,15 @@
 
 mod bulk;
 mod grid;
+mod keys;
 mod query;
 mod row;
 mod toolbar;
 
 use crate::api;
 use crate::components::{
-    unmeasured, use_grid_fit, AuthRequired, ErrorBox, FocusTargets, GridFit, GridFitProbe,
-    OutcomeLine, SkeletonRows,
+    unmeasured, use_grid_fit, AuthRequired, ErrorBox, GridFit, GridFitProbe, OutcomeLine,
+    ShortcutsOverlay, SkeletonRows,
 };
 use crate::hooks::{use_busy, use_outcome, use_reload};
 use crate::i18n::{use_i18n, Translator};
@@ -29,6 +30,7 @@ pub(crate) use query::WatchlistQuery;
 use query::{Order, Released, Sort, View};
 use row::{GroupHeader, RowCtx, WatchRow};
 use std::collections::HashSet;
+use std::rc::Rc;
 use tankovault_api_client::Client;
 use toolbar::{FilterBar, StatusTabs};
 /// Rows fetched per page in the list view. The list pages on a scroll sentinel, so this is the
@@ -247,6 +249,10 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
     let mut selected = use_signal(HashSet::<SeriesId>::new);
     let mut focus = use_signal(|| 0usize);
     let menu_for = use_signal(|| Option::<SeriesId>::None);
+    let mut help = use_signal(|| false);
+    // The list element itself, so closing the shortcut reference hands the keyboard back to the
+    // thing that answers it. A mounted handle rather than a DOM id — see `components::focus`.
+    let mut list_element = use_signal(|| Option::<Rc<MountedData>>::None);
     let focus_targets = crate::components::use_focus_targets();
     // Only the cover grid has columns to fill; the list view is one row per title at any width.
     let fit = use_grid_fit(PAGE_ROWS);
@@ -528,6 +534,7 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
                 role: "grid",
                 tabindex: "0",
                 "aria-label": i18n.t("nav.watchlist"),
+                onmounted: move |event| list_element.set(Some(event.data())),
                 // What the spacer above is derived from. Safe on this element because nothing
                 // inside it observes its own size — a resize event bubbles in the desktop build,
                 // so a nested observer would report its box as this one's (see `GridFitProbe`).
@@ -542,7 +549,10 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
                     .items
                     .get(*focus.read())
                     .map_or_else(String::new, |item| format!("wl-row-{}", item.series_id)),
-                onkeydown: move |event| on_key(&event, board, selected, focus, menu_for, ctx, focus_targets),
+                onkeydown: move |event| {
+                    let state = keys::Keyboard { board, selected, focus, menu_for, help };
+                    keys::on_key(&event, state, ctx, focus_targets);
+                },
                 for entry in entries {
                     match entry {
                         Entry::Band(band) => {
@@ -620,6 +630,16 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
                     }
                 }
                 span { class: "ik-wl-legend", {i18n.t("watchlist.keyLegend")} }
+            }
+        }
+
+        // Outside the list on purpose: rendered inside it, the dialog's `Escape` would also
+        // bubble into the list's own handler and clear the selection behind the overlay.
+        if *help.read() {
+            ShortcutsOverlay {
+                groups: vec![keys::shortcut_group(i18n)],
+                return_focus: Some(list_element),
+                on_close: move |()| help.set(false),
             }
         }
 
@@ -863,115 +883,6 @@ fn empty_state(
                 {i18n.t("watchlist.resetFilters")}
             }
         }
-    }
-}
-
-/// The list's keyboard contract (§3.5).
-///
-/// `J`/`K` alongside the arrow keys (hands stay on the home row while triaging). Every key is
-/// inert under any modifier but `Shift`, so the browser's own `⌘K`/`Ctrl+F` keep working.
-#[expect(
-    clippy::large_types_passed_by_value,
-    reason = "`RowCtx` reaches a spawned future through the actions this dispatches to; see \
-              its doc comment in `row.rs`"
-)]
-fn on_key(
-    event: &Event<KeyboardData>,
-    board: Signal<Board>,
-    mut selected: Signal<HashSet<SeriesId>>,
-    mut focus: Signal<usize>,
-    mut menu_for: Signal<Option<SeriesId>>,
-    ctx: RowCtx,
-    focus_targets: FocusTargets,
-) {
-    let modifiers = event.modifiers();
-    if modifiers.ctrl() || modifiers.alt() || modifiers.meta() {
-        if modifiers.ctrl() || modifiers.meta() {
-            if let Key::Character(c) = event.key() {
-                if c.eq_ignore_ascii_case("a") {
-                    event.prevent_default();
-                    let ids: HashSet<SeriesId> = board
-                        .read()
-                        .items
-                        .iter()
-                        .take(BULK_LIMIT)
-                        .map(|i| i.series_id)
-                        .collect();
-                    selected.set(ids);
-                }
-            }
-        }
-        return;
-    }
-
-    let items = board.read().items.clone();
-    if items.is_empty() {
-        return;
-    }
-    let last = items.len() - 1;
-    let current = (*focus.read()).min(last);
-    let extend = modifiers.shift();
-
-    let mut step = |to: usize, selected: &mut Signal<HashSet<SeriesId>>| {
-        if extend {
-            // Shift-stepping selects the landing row, sweeping a range without tracking an anchor.
-            selected.write().insert(items[to].series_id);
-        }
-        focus.set(to);
-    };
-
-    match event.key() {
-        Key::ArrowDown => {
-            event.prevent_default();
-            step(current.saturating_add(1).min(last), &mut selected);
-        }
-        Key::ArrowUp => {
-            event.prevent_default();
-            step(current.saturating_sub(1), &mut selected);
-        }
-        Key::Escape => {
-            if menu_for.peek().is_some() {
-                menu_for.set(None);
-            } else {
-                selected.write().clear();
-            }
-        }
-        Key::Enter => {
-            event.prevent_default();
-            row::continue_reading(&items[current]);
-        }
-        Key::Character(c) => match c.to_ascii_lowercase().as_str() {
-            "j" => {
-                event.prevent_default();
-                step(current.saturating_add(1).min(last), &mut selected);
-            }
-            "k" => {
-                event.prevent_default();
-                step(current.saturating_sub(1), &mut selected);
-            }
-            "x" => {
-                event.prevent_default();
-                let id = items[current].series_id;
-                let mut selection = selected.write();
-                if !selection.remove(&id) && selection.len() < BULK_LIMIT {
-                    selection.insert(id);
-                }
-            }
-            "s" => {
-                event.prevent_default();
-                menu_for.set(Some(items[current].series_id));
-            }
-            "m" => {
-                event.prevent_default();
-                row::toggle_mute(&items[current], board, ctx);
-            }
-            "/" => {
-                event.prevent_default();
-                crate::components::focus_and_select(focus_targets.filter);
-            }
-            _ => {}
-        },
-        _ => {}
     }
 }
 

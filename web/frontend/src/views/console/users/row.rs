@@ -35,7 +35,7 @@ pub(super) fn UserRow(row: DirectoryRow, selected: bool, on_pick: EventHandler<S
                 }
                 span { style: "min-width:0;",
                     span { style: "display:block;font-weight:600;font-size:13px;", "{row.username}" }
-                    span { class: "ik-mono", style: "display:block;font-size:10.5px;color:var(--muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;",
+                    span { class: "ik-mono", style: "display:block;font-size:12.5px;color:var(--muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;",
                         "{row.email} · "
                         {
                             i18n.args(
@@ -47,15 +47,15 @@ pub(super) fn UserRow(row: DirectoryRow, selected: bool, on_pick: EventHandler<S
                 }
                 span { style: "margin-left:auto;flex:none;display:flex;gap:6px;align-items:center;",
                     if owner {
-                        Pill { class: "star ik-pill-tiny",
+                        Pill { class: "star",
                             {i18n.t("console.users.role.owner")}
                         }
                     } else if staff && !suspended {
-                        Pill { tone: Tone::Accent, class: "ik-pill-tiny",
+                        Pill { tone: Tone::Accent,
                             {i18n.t("console.users.role.staff")}
                         }
                     }
-                    span { class: row.status.pill_class(), style: "font-size:9.5px;",
+                    span { class: row.status.pill_class(),
                         {i18n.t(row.status.label_key())}
                     }
                 }

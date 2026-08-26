@@ -12,6 +12,39 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [8.6.0](https://github.com/TimSchoenle/TankoVault/compare/v8.5.2...v8.6.0) (2026-08-26)
+
+
+### Features
+
+* **api:** track a series when a chapter is marked read ([#289](https://github.com/TimSchoenle/TankoVault/issues/289)) ([1f4f5dc](https://github.com/TimSchoenle/TankoVault/commit/1f4f5dc77cf662973c55b49c619afbaa4251e46c))
+* **frontend:** close the design audit's improvement backlog ([#290](https://github.com/TimSchoenle/TankoVault/issues/290)) ([1be25f3](https://github.com/TimSchoenle/TankoVault/commit/1be25f37d1ea85e950552d51b7e1de568b112ae7))
+* **frontend:** render the third-party notices as a screen ([#285](https://github.com/TimSchoenle/TankoVault/issues/285)) ([42b4078](https://github.com/TimSchoenle/TankoVault/commit/42b4078501f3c1b795df38e94eb74e4feb71b7b6))
+* reverse a merge from its own console section, act on a series from Tracking ([#291](https://github.com/TimSchoenle/TankoVault/issues/291)) ([3acd61b](https://github.com/TimSchoenle/TankoVault/commit/3acd61b0e4980f9470bc06ba57fa8e66a639291c))
+
+
+### Bug Fixes
+
+* **adapters:** read the coin badge as a chapter lock on rokaricomics ([#292](https://github.com/TimSchoenle/TankoVault/issues/292)) ([dd93805](https://github.com/TimSchoenle/TankoVault/commit/dd938056c3111fe6153edfff47b96f775e51b8a2))
+* **adapters:** read the table-shaped mangathemesia info block ([#293](https://github.com/TimSchoenle/TankoVault/issues/293)) ([299c12b](https://github.com/TimSchoenle/TankoVault/commit/299c12bfc0f3389a9ee1a0b1603a48c962897a00))
+
+
+### Documentation
+
+* bring the workspace onto the doc-comment standard ([#283](https://github.com/TimSchoenle/TankoVault/issues/283)) ([aa021d1](https://github.com/TimSchoenle/TankoVault/commit/aa021d142c74138fa8885adb977bd1facdac3da1))
+
+
+### Miscellaneous
+
+* **deps:** update taiki-e/install-action action to v2.86.5 ([#286](https://github.com/TimSchoenle/TankoVault/issues/286)) ([7571982](https://github.com/TimSchoenle/TankoVault/commit/75719823ed5589ebc26752368422bb9546e1c70e))
+* **deps:** update taiki-e/install-action action to v2.86.6 ([#288](https://github.com/TimSchoenle/TankoVault/issues/288)) ([3bb7890](https://github.com/TimSchoenle/TankoVault/commit/3bb7890c952e57e2da44071ae8dfb92959ddf0aa))
+* **deps:** update timschoenle/actions/actions/common/commit-changes to vactions-common-commit-changes-v1.3.3 ([#287](https://github.com/TimSchoenle/TankoVault/issues/287)) ([1a0555b](https://github.com/TimSchoenle/TankoVault/commit/1a0555be68d24c94824f3f9e6e56a11c3396dea7))
+
+
+### Dependencies
+
+* **deps:** lock file maintenance ([#282](https://github.com/TimSchoenle/TankoVault/issues/282)) ([0da1105](https://github.com/TimSchoenle/TankoVault/commit/0da11054a6614cbf76d154fc7d191d9a341c7431))
+
 ## [8.5.2](https://github.com/TimSchoenle/TankoVault/compare/v8.5.1...v8.5.2) (2026-08-24)
 
 

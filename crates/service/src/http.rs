@@ -191,6 +191,10 @@ fn failure_level(class: &ServerErrorsFailureClass) -> Level {
 ///
 /// Recorded against the request span, so the line keeps the method and URI the trace layer put
 /// there.
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "the by-value class is tower_http's OnFailure blanket impl over FnMut"
+)]
 fn on_response_failure(class: ServerErrorsFailureClass, latency: Duration, span: &Span) {
     let latency_ms = u64::try_from(latency.as_millis()).unwrap_or(u64::MAX);
     if failure_level(&class) == Level::ERROR {

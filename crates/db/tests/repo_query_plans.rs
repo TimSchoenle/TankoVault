@@ -362,8 +362,9 @@ const BUDGETS: &[Budget] = &[Budget {
     reason: "the optional *filters*, not the search term — the trigram disjunction these \
              statements used to carry is gone, and their search-branch twins plan at ~31 000. \
              `GENERIC_PLAN` cannot fold `$n IS NULL`, so every optional filter's subquery is \
-             charged against every row of `series`: the `min_chapters` sum and the require-all \
-             tag `EXCEPT` are ~17 cost units per row between them, and the sort-token variant \
+             charged against every row of `series`: the `min_chapters` chapter-count aggregate \
+             and the require-all tag `EXCEPT` are ~17 cost units per row between them, and the \
+             sort-token variant \
              adds the `ORDER BY CASE` aggregates on top. Folding the parameters in as literals, \
              which is what a custom plan does with real binds, gives cost 210/422 and \
              0.2–1.1 ms — the same plan, to the decimal, as the statement this branch replaced. \
@@ -669,7 +670,7 @@ async fn the_reading_surfaces_stay_in_the_chapter_indexes() {
         has_column(q, "chapters_read!") && has_column(q, "tracking!")
     });
     let feed = find(&queries, "dashboard::feed", |q| {
-        has_column(q, "chapter_number!") && has_column(q, "provider_slug")
+        has_column(q, "chapter_number!") && has_column(q, "provider_slug!")
     });
 
     for (label, query) in [

@@ -81,8 +81,28 @@ pub struct FeedItem {
 /// The reader's new-chapter feed: what is unread on their watchlist (design §11).
 ///
 /// Chapters strictly above their progress marker on a watched series, most recently discovered
-/// first. Rows are per source, so one chapter carried by three providers is three rows; grouping
-/// across providers is the caller's decision.
+/// first — **one row per chapter, not per source**.
+///
+/// # Why the dedupe is here and not left to the caller
+///
+/// A merge unions the absorbed series' sources onto the survivor, so from then on one chapter
+/// legitimately exists as two or three `chapters` rows carrying the same number. Emitted per
+/// source, that chapter was two or three rows of the reader's Home feed, counted two or three
+/// times in the "N new chapters" a row claims — and contradicted by every other surface, because
+/// [`continue_reading`], [`me_stats`] and the watchlist badge have always counted
+/// `DISTINCT number_milli / 10000`, and the notifier claims one announcement per
+/// `(user, series, chapter)`. It also spent the `limit` on duplicates: a reader whose watchlist
+/// is mostly merged series saw half a feed.
+///
+/// The survivor of each duplicate set is the source the watchlist ledger's
+/// `preferred_source_name` would name — most chapters, then the most recent scan, then the slug —
+/// so the row's link opens the same carrier the rest of the product calls this series' best one.
+/// `ss.id` closes the ordering because one provider may hold a series under several paths.
+///
+/// `discovered_at` is the **earliest** sighting across those sources, which is what the field has
+/// always claimed to be. Taking the surviving row's own value instead would re-date a chapter to
+/// the day the preferred source happened to pick it up, resurfacing weeks-old chapters as today's
+/// news whenever a merge attaches a slower carrier.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; empty is never evidence the account is gone.
@@ -104,26 +124,39 @@ pub async fn feed<'e, E: PgExecutor<'e>>(
     }
     let rows = sqlx::query_as!(
         Row,
-        "SELECT s.id AS series_id, s.canonical_title AS series_title, \
-                c.number_milli AS \"chapter_number!\", c.title AS chapter_title, \
-                p.slug AS provider_slug, p.base_url AS base_url, \
-                chapter_url_path(ss.source_path, c.path) AS \"chapter_path!\", c.discovered_at \
-         FROM watchlist_entries w \
-         JOIN series s ON s.id = w.series_id \
-         JOIN series_sources ss ON ss.series_id = w.series_id \
-         JOIN providers p ON p.id = ss.provider_id \
-         JOIN chapters c ON c.series_source_id = ss.id \
-         LEFT JOIN read_progress rp ON rp.user_id = w.user_id AND rp.series_id = w.series_id \
-         WHERE w.user_id = $1 \
-           AND c.number_milli >= (floor(COALESCE(rp.last_read_whole_number, 0))::bigint + 1) * 10000 \
-           AND NOT (c.number_milli % 10000 <> 0 \
-                    AND rp.last_read_part_number IS NOT NULL \
-                    AND c.number_milli <= (rp.last_read_part_number * 10000)::bigint) \
-           AND (c.access = 'free' OR c.unlocks_at <= now() \
-                OR ss.provider_id = ANY(ARRAY( \
-                     SELECT e.provider_id FROM user_provider_early_access e \
-                     WHERE e.user_id = $1))) \
-         ORDER BY c.discovered_at DESC \
+        "WITH unread AS ( \
+           SELECT s.id AS series_id, s.canonical_title AS series_title, \
+                  c.number_milli, c.title AS chapter_title, \
+                  p.slug AS provider_slug, p.base_url AS base_url, \
+                  chapter_url_path(ss.source_path, c.path) AS chapter_path, \
+                  min(c.discovered_at) OVER (PARTITION BY s.id, c.number_milli) AS discovered_at, \
+                  row_number() OVER (PARTITION BY s.id, c.number_milli \
+                                     ORDER BY ss.chapter_count DESC, \
+                                              ss.last_scanned_at DESC NULLS LAST, \
+                                              p.slug, ss.id) AS carrier_rank \
+           FROM watchlist_entries w \
+           JOIN series s ON s.id = w.series_id \
+           JOIN series_sources ss ON ss.series_id = w.series_id \
+           JOIN providers p ON p.id = ss.provider_id \
+           JOIN chapters c ON c.series_source_id = ss.id \
+           LEFT JOIN read_progress rp ON rp.user_id = w.user_id AND rp.series_id = w.series_id \
+           WHERE w.user_id = $1 \
+             AND c.number_milli >= (floor(COALESCE(rp.last_read_whole_number, 0))::bigint + 1) * 10000 \
+             AND NOT (c.number_milli % 10000 <> 0 \
+                      AND rp.last_read_part_number IS NOT NULL \
+                      AND c.number_milli <= (rp.last_read_part_number * 10000)::bigint) \
+             AND (c.access = 'free' OR c.unlocks_at <= now() \
+                  OR ss.provider_id = ANY(ARRAY( \
+                       SELECT e.provider_id FROM user_provider_early_access e \
+                       WHERE e.user_id = $1))) \
+         ) \
+         SELECT series_id AS \"series_id!\", series_title AS \"series_title!\", \
+                number_milli AS \"chapter_number!\", chapter_title, \
+                provider_slug AS \"provider_slug!\", base_url AS \"base_url!\", \
+                chapter_path AS \"chapter_path!\", discovered_at AS \"discovered_at!\" \
+         FROM unread \
+         WHERE carrier_rank = 1 \
+         ORDER BY discovered_at DESC, series_id, number_milli DESC \
          LIMIT $2",
         user_id.as_uuid(),
         limit,

@@ -288,6 +288,23 @@ struct CountRow {
 /// that will be missing from the seventh statement somebody adds. `$10`/`$11` are the tracking
 /// filter, there for the same reason and for one more: the count and the page have to agree about
 /// it, or the pager offers a page that comes back empty.
+///
+/// # Why the chapter-count filter (`$6`) and the `chapters` sort read `max`, not `sum`
+///
+/// `series_sources.chapter_count` is *one source's* scanned-row count, and a series carried by
+/// several sources — which is what every merge leaves behind — has one row per carrier. Summed,
+/// a 200-chapter work mirrored on three sites filtered and sorted as a 600-chapter one, above
+/// every genuinely longer series and through a "min. chapters" floor it does not meet, while the
+/// card rendered beside it read 200: `SeriesSummary::page` has always taken that number from
+/// `chapter_stats_for_series`, which counts `DISTINCT number_milli / 10000` across the union.
+///
+/// `max` is the richest carrier's count. It is exact whenever one source's catalogue covers the
+/// others', which is the ordinary shape for one work mirrored across sites, and it can never
+/// over-claim; disjoint carriers make it an undercount. It is **not** the card's figure, because
+/// that one is only reachable by joining `chapters` per candidate row: measured on the
+/// 20 000-series plan fixture, that takes the `min_chapters` probe from 52 ms to 178 ms, and it
+/// is charged against every row of `series` under a generic plan. Closing that last gap wants a
+/// series-level count maintained at ingest, not a hotter filter.
 macro_rules! browse_statement {
     (page $cte:literal, $join:literal, $tail:literal, $($args:tt)*) => {
         browse_statement!(
@@ -328,7 +345,7 @@ macro_rules! browse_statement {
                            SELECT 1 FROM series_sources ss JOIN providers p ON p.id = ss.provider_id \
                            WHERE ss.series_id = s.id AND p.slug = $5)) \
                      AND ($6::int IS NULL OR ( \
-                           SELECT COALESCE(sum(ss.chapter_count),0) FROM series_sources ss \
+                           SELECT COALESCE(max(ss.chapter_count),0) FROM series_sources ss \
                            WHERE ss.series_id = s.id) >= $6) \
                      AND (cardinality($7::text[]) = 0 OR NOT EXISTS ( \
                            SELECT unnest($7::text[]) \
@@ -569,7 +586,7 @@ async fn fetch_page_by_sort_token(
                 CASE WHEN $14 = 'title' THEN s.canonical_title END ASC NULLS LAST, \
                 CASE WHEN $14 = 'year' THEN s.release_year END DESC NULLS LAST, \
                 CASE WHEN $14 = 'chapters' THEN ( \
-                      SELECT COALESCE(sum(ss.chapter_count),0)::int8 FROM series_sources ss \
+                      SELECT COALESCE(max(ss.chapter_count),0)::int8 FROM series_sources ss \
                       WHERE ss.series_id = s.id) END DESC NULLS LAST, \
                 CASE WHEN $14 = 'sources' THEN ( \
                       SELECT count(DISTINCT ss.provider_id)::int8 FROM series_sources ss \
@@ -602,7 +619,7 @@ async fn fetch_page_by_sort_token(
                 CASE WHEN $14 = 'title' THEN s.canonical_title END ASC NULLS LAST, \
                 CASE WHEN $14 = 'year' THEN s.release_year END DESC NULLS LAST, \
                 CASE WHEN $14 = 'chapters' THEN ( \
-                      SELECT COALESCE(sum(ss.chapter_count),0)::int8 FROM series_sources ss \
+                      SELECT COALESCE(max(ss.chapter_count),0)::int8 FROM series_sources ss \
                       WHERE ss.series_id = s.id) END DESC NULLS LAST, \
                 CASE WHEN $14 = 'sources' THEN ( \
                       SELECT count(DISTINCT ss.provider_id)::int8 FROM series_sources ss \

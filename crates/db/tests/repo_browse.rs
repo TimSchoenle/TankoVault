@@ -413,6 +413,51 @@ async fn each_filter_narrows_to_exactly_its_rows() {
     }
 }
 
+/// A series carried by several sources is not as long as its carriers added together.
+///
+/// The bug: `min_chapters` and `sort=chapters` read `sum(series_sources.chapter_count)`, and that
+/// column is *one carrier's* scanned-row count. A merge leaves the survivor holding every
+/// absorbed source, so a work mirrored on two sites filtered and sorted as though it had both
+/// catalogues end to end. Solo Leveling is 200 chapters on `alpha` and 20 on `beta`: it passed a
+/// 220-chapter floor and outranked everything shorter than that phantom — while the card beside
+/// it read 200, because `chapter_stats_for_series` counts the union.
+#[tokio::test]
+async fn a_series_on_two_sources_is_not_as_long_as_its_carriers_added_up() {
+    let db = TestDb::spawn().await;
+    seed_corpus(&db).await;
+
+    let at_the_ceiling = list_series_filtered(
+        &db.pool,
+        &all_of(SeriesFilter {
+            min_chapters: Some(200),
+            ..SeriesFilter::default()
+        }),
+    )
+    .await
+    .expect("browse at 200");
+    assert_eq!(
+        sorted_titles(&at_the_ceiling),
+        ["Solo Leveling"],
+        "its richest carrier holds 200"
+    );
+
+    let past_it = list_series_filtered(
+        &db.pool,
+        &all_of(SeriesFilter {
+            min_chapters: Some(201),
+            ..SeriesFilter::default()
+        }),
+    )
+    .await
+    .expect("browse past 200");
+    assert!(
+        sorted_titles(&past_it).is_empty(),
+        "nothing in the corpus is longer than 200 chapters; the 220 this used to answer with is \
+         Solo Leveling's two carriers added together: {:?}",
+        sorted_titles(&past_it),
+    );
+}
+
 /// A year bound must not swallow a series with no year: `release_year <= $5` is NULL for it,
 /// so it drops out — `COALESCE(release_year, 0)` would wrongly make it sort as 1 BC.
 #[tokio::test]

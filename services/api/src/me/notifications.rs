@@ -256,6 +256,7 @@ pub struct FeedEntry {
     pub series_title: String,
     pub chapter_number: f64,
     pub chapter_title: Option<String>,
+    /// The source this chapter is resolved to: the preferred carrier among those holding it.
     pub provider_slug: String,
     /// Ready-to-open absolute URL, resolved from the provider base + relative path.
     pub url: String,
@@ -266,14 +267,16 @@ pub struct FeedEntry {
 
 /// Get the unread-chapters feed
 ///
-/// Unread chapters across the watchlist (the reading dashboard).
+/// Unread chapters across the watchlist (the reading dashboard), one entry per chapter: a series
+/// carried by several sources — which is what a merge leaves behind — contributes each chapter
+/// once, resolved to that series' preferred carrier.
 #[utoipa::path(
     get,
     path = "/v1/me/feed",
     tag = ME_DASHBOARD_TAG,
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Up to 100 most recent unread chapters", body = Vec<FeedEntry>),
+        (status = 200, description = "Up to 100 most recently discovered unread chapters", body = Vec<FeedEntry>),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
     )
 )]

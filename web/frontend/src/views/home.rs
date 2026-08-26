@@ -386,6 +386,8 @@ fn ContinueCard(item: ContinueItem) -> Element {
 pub(crate) struct Release {
     pub(crate) series_id: SeriesId,
     pub(crate) series_title: String,
+    /// The carrier of the newest chapter in the group — the one `url` opens, so it moves with
+    /// `url` rather than being fixed by whichever entry happened to open the group.
     pub(crate) provider_slug: String,
     /// Lowest chapter number in the group.
     pub(crate) first: f64,
@@ -404,22 +406,27 @@ pub(crate) struct Release {
 /// Anything less is a duplicate key among siblings, and dioxus's keyed diff answers that by
 /// diffing one old node twice: the second pass reads a mount the first already took and panics
 /// `invalid key` inside `dioxus-core`, aborting the whole app rather than returning an error.
-/// See [`tests::two_sources_carrying_one_chapter_do_not_share_a_row_key`].
+/// See [`tests::a_series_carried_by_two_sources_is_one_row_with_one_key`].
 fn feed_row_key(release: &Release) -> String {
-    format!("{}-{}", release.series_id, release.provider_slug)
+    release.series_id.to_string()
 }
 
 /// Fold one day's entries into one row per series, newest chapter first.
 ///
 /// The server's ordering inside a day is by discovery, which is not chapter order, so this takes
-/// the extremes rather than the ends. Grouping is by series *and* provider: the same chapter
-/// carried by two sources is two links, and merging them would silently pick one.
+/// the extremes rather than the ends.
+///
+/// Grouping is by series alone. It used to be by series *and* provider, on the reasoning that the
+/// same chapter carried by two sources is two links and folding them would silently pick one —
+/// but a merge unions the absorbed series' sources onto the survivor, so that reasoning turned
+/// every merged series into two identical rows claiming twice the chapters, on the one screen
+/// whose stat tile counts each chapter once. Nothing is picked silently any more either: the feed
+/// now arrives one row per chapter, already resolved to the carrier the ledger calls this series'
+/// preferred source, so `provider_slug` names where this row's Open button actually goes.
 fn group_by_series(entries: &[FeedEntry]) -> Vec<Release> {
     let mut out: Vec<Release> = Vec::new();
     for entry in entries {
-        let existing = out
-            .iter_mut()
-            .find(|r| r.series_id == entry.series_id && r.provider_slug == entry.provider_slug);
+        let existing = out.iter_mut().find(|r| r.series_id == entry.series_id);
         match existing {
             Some(release) => {
                 release.first = release.first.min(entry.chapter_number);
@@ -427,6 +434,7 @@ fn group_by_series(entries: &[FeedEntry]) -> Vec<Release> {
                 if entry.chapter_number > release.last {
                     release.last = entry.chapter_number;
                     release.url.clone_from(&entry.url);
+                    release.provider_slug.clone_from(&entry.provider_slug);
                     release.chapter_title.clone_from(&entry.chapter_title);
                 }
             }
@@ -608,28 +616,51 @@ mod tests {
         assert!(grouped[0].url.ends_with("/12"), "the link opens the newest");
     }
 
-    /// Two providers carrying the same chapter are two links, and picking one of them silently
-    /// is the wrong kind of tidiness — the row's Open button would take the reader somewhere they
-    /// did not choose.
+    /// The bug: a merge unions the absorbed series' sources onto the survivor, so from then on
+    /// one series is carried by several providers. Folding by series *and* provider therefore
+    /// split every merged series into one row per carrier, each claiming its own count — on the
+    /// one screen whose "New chapters" tile counts each chapter exactly once, because every
+    /// server-side unread count is `DISTINCT` over the chapter number. The fold is by series
+    /// alone, and the row names the carrier its Open button actually goes to.
     #[test]
-    fn the_same_series_on_two_providers_stays_two_rows() {
+    fn a_merged_series_is_one_row_whichever_source_carried_each_chapter() {
         let id = "018f4c2a-0000-7000-8000-000000000001";
-        let day = vec![entry(id, "kunmanga", 7.0), entry(id, "mangadex", 7.0)];
-        assert_eq!(group_by_series(&day).len(), 2);
+        let day = vec![
+            entry(id, "mangadex", 8.0),
+            entry(id, "kunmanga", 7.0),
+            entry(id, "mangadex", 6.0),
+        ];
+
+        let grouped = group_by_series(&day);
+        assert_eq!(grouped.len(), 1, "a merged series is one row");
+        assert_eq!(grouped[0].count, 3);
+        assert_eq!(grouped[0].first, 6.0);
+        assert_eq!(grouped[0].last, 8.0);
+        assert!(grouped[0].url.ends_with("/8"), "the link opens the newest");
+        assert_eq!(
+            grouped[0].provider_slug, "mangadex",
+            "the named provider must be the one the link opens"
+        );
     }
 
-    /// The bug that crashed the desktop app (7.3.0): the row key was
-    /// `"{series_id}-{last}"`, which is the grouping identity *minus the provider* — so the two
-    /// rows the test above insists on were siblings carrying one key. Dioxus's keyed diff maps
-    /// both new nodes onto the same old node, the second pass reads a mount the first already
-    /// took, and `dioxus-core` panics `invalid key`, aborting the process.
+    /// The bug that crashed the desktop app (7.3.0): the row key was `"{series_id}-{last}"`,
+    /// which was the grouping identity *minus the provider* — so a series that grouped into two
+    /// rows produced two siblings carrying one key. Dioxus's keyed diff maps both new nodes onto
+    /// the same old node, the second pass reads a mount the first already took, and
+    /// `dioxus-core` panics `invalid key`, aborting the process.
     ///
-    /// The keys have to differ for the case that produces two rows, which is why this asserts
-    /// against `group_by_series` rather than against two hand-built `Release`s.
+    /// The key and the grouping identity have to stay the same thing, whatever that identity is,
+    /// which is why this asserts against `group_by_series` rather than against hand-built
+    /// `Release`s.
     #[test]
-    fn two_sources_carrying_one_chapter_do_not_share_a_row_key() {
-        let id = "018f4c2a-0000-7000-8000-000000000001";
-        let day = vec![entry(id, "kunmanga", 7.0), entry(id, "mangadex", 7.0)];
+    fn a_series_carried_by_two_sources_is_one_row_with_one_key() {
+        let one = "018f4c2a-0000-7000-8000-000000000001";
+        let two = "018f4c2a-0000-7000-8000-000000000002";
+        let day = vec![
+            entry(one, "kunmanga", 7.0),
+            entry(one, "mangadex", 8.0),
+            entry(two, "kunmanga", 3.0),
+        ];
 
         let keys: Vec<String> = group_by_series(&day).iter().map(feed_row_key).collect();
         let unique: std::collections::HashSet<&String> = keys.iter().collect();

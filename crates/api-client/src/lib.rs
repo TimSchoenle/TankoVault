@@ -3319,6 +3319,7 @@ pub mod types {
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
     #[doc = "    \"provider_slug\": {"]
+    #[doc = "      \"description\": \"The source this chapter is resolved to: the preferred carrier among those holding it.\","]
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
     #[doc = "    \"series_id\": {"]
@@ -3341,6 +3342,7 @@ pub mod types {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub chapter_title: ::std::option::Option<::std::string::String>,
         pub discovered_at: ::std::string::String,
+        #[doc = "The source this chapter is resolved to: the preferred carrier among those holding it."]
         pub provider_slug: ::std::string::String,
         pub series_id: SeriesId,
         pub series_title: ::std::string::String,
@@ -35040,7 +35042,7 @@ impl Client {
     pub fn export_data(&self) -> builder::ExportData<'_> {
         builder::ExportData::new(self)
     }
-    #[doc = "Get the unread-chapters feed\n\nUnread chapters across the watchlist (the reading dashboard).\n\nSends a `GET` request to `/v1/me/feed`\n\n```ignore\nlet response = client.feed()\n    .send()\n    .await;\n```"]
+    #[doc = "Get the unread-chapters feed\n\nUnread chapters across the watchlist (the reading dashboard), one entry per chapter: a series\ncarried by several sources — which is what a merge leaves behind — contributes each chapter\nonce, resolved to that series' preferred carrier.\n\nSends a `GET` request to `/v1/me/feed`\n\n```ignore\nlet response = client.feed()\n    .send()\n    .await;\n```"]
     pub fn feed(&self) -> builder::Feed<'_> {
         builder::Feed::new(self)
     }

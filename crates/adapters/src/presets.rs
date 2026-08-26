@@ -182,11 +182,18 @@ fn mangathemesia_family() -> Vec<BuiltinPreset> {
             }),
             politeness: Politeness::default(),
         },
-        // The 2026-08 expansion: the ex-Asura scanlator sites. Two things vary across them
-        // and nothing else does: the theme's listing directory (`themesia_in`) and the series
-        // template's info block (`themesia_infotable`). Catalogue, feed and chapter list are
-        // the stock markup on every one of them.
-        themesia_infotable("akazascans", "Akaza Scans", "https://akazascans.org"),
+        // The 2026-08 expansion: the ex-Asura scanlator sites, all on the theme itself. Three
+        // things vary across them and nothing else does: a `catalog`/`latest` pair where the
+        // install renamed the theme's listing directory (`themesia_in`), the series template's
+        // info block (`infotable_series`), and the coin plugin's lock selector where the site
+        // sells early access (`coin_gated_chapters`). They are independent, so a site carrying
+        // two of them says so at the call site rather than in a helper named after the pair.
+        themesia(
+            "akazascans",
+            "Akaza Scans",
+            "https://akazascans.org",
+            json!({ "series": infotable_series(), "chapters": coin_gated_chapters() }),
+        ),
         // This one and `kingofshojo` below serve the same catalogue from two domains. Both are
         // kept, for the reason the Manganato clones are: each has its own rate limit, health
         // state and reader-facing links, and the matcher collapses the duplicated series into
@@ -198,15 +205,30 @@ fn mangathemesia_family() -> Vec<BuiltinPreset> {
             THEMESIA,
         ),
         plain("ragescans", "Rage Scans", "https://ragescans.com", THEMESIA),
-        themesia_infotable("rokaricomics", "Rokari Comics", "https://rokaricomics.com"),
-        themesia_infotable("kingofshojo", "King of Shojo", "https://kingofshojo.com"),
+        themesia(
+            "rokaricomics",
+            "Rokari Comics",
+            "https://rokaricomics.com",
+            json!({ "series": infotable_series(), "chapters": coin_gated_chapters() }),
+        ),
+        themesia(
+            "kingofshojo",
+            "King of Shojo",
+            "https://kingofshojo.com",
+            json!({ "series": infotable_series() }),
+        ),
         plain(
             "noxenscans",
             "Noxen Scans",
             "https://noxenscan.com",
             THEMESIA,
         ),
-        themesia_infotable("mangatrend", "Manga Trend", "https://mangatrend.org"),
+        themesia(
+            "mangatrend",
+            "Manga Trend",
+            "https://mangatrend.org",
+            json!({ "series": infotable_series() }),
+        ),
         themesia_in(
             "violetscans",
             "Violet Scans",
@@ -221,6 +243,43 @@ fn mangathemesia_family() -> Vec<BuiltinPreset> {
         ),
         themesia_in("razure", "Razure", "https://razure.org", "series"),
     ]
+}
+
+/// A `MangaThemesia` preset carrying `config` verbatim, for a site whose deviations do not fit
+/// one named helper. The fragments below are the deviations, and they compose because each owns
+/// a different top-level section.
+fn themesia(
+    slug: &'static str,
+    name: &'static str,
+    base_url: &'static str,
+    config: Value,
+) -> BuiltinPreset {
+    BuiltinPreset {
+        slug,
+        name,
+        base_url,
+        adapter: THEMESIA,
+        config,
+        politeness: Politeness::default(),
+    }
+}
+
+/// The `chapters` fragment for an install running the coin plugin that sells early access.
+///
+/// The plugin adds one `span.text-gold` — a coin glyph and the price — to a paid row and leaves
+/// the rest of the row alone, so the theme defaults still read it and that badge is the only
+/// thing separating a paid chapter from a free one. Without the selector every paid chapter
+/// ingested as free, and readers were sent to a paywall as the next unread page.
+///
+/// No `unlock` selector, because the badge states a price and never a date: a locked row keeps
+/// an unknown unlock time and stays locked until a scan sees the badge gone. Same policy as
+/// `keyoapp`.
+///
+/// Not every install of the plugin has this shape. `violetscans` and `thunderscans` render a
+/// paid row as a modal trigger with no `href` at all, so the row has no chapter URL to store
+/// and is dropped before access is ever read — a different bug that this selector cannot fix.
+fn coin_gated_chapters() -> Value {
+    json!({ "locked": "span.text-gold" })
 }
 
 /// A `MangaThemesia` install that renamed the theme's listing directory. That one rename moves
@@ -244,7 +303,7 @@ fn themesia_in(
     }
 }
 
-/// A `MangaThemesia` install whose series template renders the info block as a two-column
+/// The `series` fragment for an install whose template renders the info block as a two-column
 /// `table.infotable` and the genres as `div.seriestugenre`, in place of the theme's
 /// `div.imptdt` rows and `span.mgen` list.
 ///
@@ -257,11 +316,7 @@ fn themesia_in(
 /// The table also carries a `Type` row (Manga/Manhwa/Manhua) that stays unread:
 /// `GenericConfigAdapter` publishes `ContentType::Unknown` unconditionally and there is no
 /// config field to point at it.
-fn themesia_infotable(
-    slug: &'static str,
-    name: &'static str,
-    base_url: &'static str,
-) -> BuiltinPreset {
+fn infotable_series() -> Value {
     /// One labelled row of `table.infotable`, matched by the label cell's text.
     fn row(label: &str) -> Value {
         json!({
@@ -283,32 +338,22 @@ fn themesia_infotable(
         })
     }
 
-    BuiltinPreset {
-        slug,
-        name,
-        base_url,
-        adapter: THEMESIA,
-        config: json!({
-            "series": {
-                "tags": "div.seriestugenre a",
-                "status": row("Status"),
-                "alt": row("Alternative"),
-                // Only some of these installs fill an `Author` row; the rest publish credits
-                // nowhere, and the row is absent rather than empty. What they all publish is
-                // `Posted By` — the WordPress account that uploaded the post, never the
-                // creator. Matching it would write a site handle into `series` credits, where
-                // the recommender treats a name shared by hundreds of unrelated series as a
-                // strong signal.
-                "author": row("Author"),
-                // Cleared, not repointed. The defaults name `div.imptdt` positions that do not
-                // exist here, and the only date rows this table has — `Posted On`, `Updated
-                // On` — are WordPress post timestamps, not the year of first publication.
-                "artist": null,
-                "release": null
-            }
-        }),
-        politeness: Politeness::default(),
-    }
+    json!({
+        "tags": "div.seriestugenre a",
+        "status": row("Status"),
+        "alt": row("Alternative"),
+        // Only some of these installs fill an `Author` row; the rest publish credits nowhere,
+        // and the row is absent rather than empty. What they all publish is `Posted By` — the
+        // WordPress account that uploaded the post, never the creator. Matching it would write
+        // a site handle into `series` credits, where the recommender treats a name shared by
+        // hundreds of unrelated series as a strong signal.
+        "author": row("Author"),
+        // Cleared, not repointed. The defaults name `div.imptdt` positions that do not exist
+        // here, and the only date rows this table has — `Posted On`, `Updated On` — are
+        // WordPress post timestamps, not the year of first publication.
+        "artist": null,
+        "release": null
+    })
 }
 
 /// Providers on the Keyoapp platform: hosted, so every install is the stock layout and each

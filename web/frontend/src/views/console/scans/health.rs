@@ -148,7 +148,7 @@ fn ProviderHealthTable(providers: Vec<ProviderScanHealthView>, filter: ScanFilte
     rsx! {
         div { style: "margin-top:16px;",
             div { class: "ik-subhead", {i18n.t("console.scan.health.byProvider")} }
-            div { class: "ik-tablewrap",
+            div { class: "ik-tablewrap scroll",
                 table { class: "ik-table ik-table-compact",
                     thead {
                         tr {

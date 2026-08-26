@@ -63,7 +63,7 @@ pub(crate) fn TypeToConfirm(
             div { class: "ttl", "{title}" }
             div { class: "why", "{body}" }
             div { class: "ik-confirm",
-                span { class: "ik-mono", style: "font-size:11.5px;color:var(--faint);",
+                span { class: "ik-mono", style: "font-size:11.5px;color:var(--muted);",
                     {i18n.t("console.confirm.type")}
                 }
                 span { class: "slug", "{expect}" }

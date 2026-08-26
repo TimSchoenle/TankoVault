@@ -175,7 +175,7 @@ pub(super) fn AuditPanel(tick: RefreshTick) -> Element {
                             };
                         }
                         rsx! {
-                            div { class: "ik-tablewrap",
+                            div { class: "ik-tablewrap scroll",
                                 table { class: "ik-table ik-table-compact",
                                     thead {
                                         tr {

@@ -176,7 +176,7 @@ pub(super) fn SyncLinkRow(
             span { class: "ik-mono-tile lg jade", {monogram(&account.provider)} }
             div { style: "min-width:0;",
                 div { style: "font-weight:600;font-size:12.5px;", "{account.provider} · {external}" }
-                div { class: "ik-mono", style: "font-size:10.5px;color:var(--muted);margin-top:1px;",
+                div { class: "ik-mono", style: "font-size:12.5px;color:var(--muted);margin-top:1px;",
                     {
                         i18n.args(
                             "console.users.syncMeta",

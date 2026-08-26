@@ -90,8 +90,10 @@ pub(crate) fn page_name(route: &Route, i18n: Translator) -> String {
         Route::Recommendations {} => i18n.t("nav.recommendations"),
         Route::Series { .. } => i18n.t("title.series"),
         Route::Watchlist { .. } => i18n.t("nav.watchlist"),
-        Route::Notifications {} => i18n.t("nav.notifications"),
-        Route::Account {} | Route::AnilistCallback { .. } => i18n.t("nav.account"),
+        Route::Notifications { .. } => i18n.t("nav.notifications"),
+        Route::Account {} | Route::AccountSection { .. } | Route::AnilistCallback { .. } => {
+            i18n.t("nav.account")
+        }
         Route::Search { query } if !query.q.trim().is_empty() => {
             i18n.args("title.search", &[("query", query.q.trim())])
         }
@@ -137,10 +139,10 @@ mod tests {
             Some("Blame!")
         );
         assert_eq!(claimed_for(Some(&published), &series("def")), None);
-        assert_eq!(
-            claimed_for(Some(&published), &Route::Notifications {}),
-            None
-        );
+        let elsewhere = Route::Notifications {
+            query: crate::views::NotificationsQuery::default(),
+        };
+        assert_eq!(claimed_for(Some(&published), &elsewhere), None);
         assert_eq!(claimed_for(None, &series("abc")), None);
     }
 }

@@ -7,7 +7,7 @@ use crate::state::branding::use_branding;
 use crate::state::capabilities::{use_capabilities, CapabilitySet};
 use crate::state::use_session;
 use crate::util::initial;
-use crate::views::{DiscoverQuery, WatchlistQuery};
+use crate::views::{DiscoverQuery, NotificationsQuery, WatchlistQuery};
 use crate::wire::types::Feature;
 use crate::Route;
 use dioxus::prelude::*;
@@ -74,7 +74,7 @@ pub(crate) fn Rail() -> Element {
             }
             if show_notifications {
                 NavLink {
-                    to: Route::Notifications {},
+                    to: Route::Notifications { query: NotificationsQuery::default() },
                     label: i18n.t("nav.notifications"),
                     icon: Icon::Notifications,
                     current: route.clone(),
@@ -169,7 +169,9 @@ pub(crate) fn tab_destinations(
     }
     if personal && caps.has_feature(Feature::NotificationsInApp) {
         out.push(Destination {
-            route: Route::Notifications {},
+            route: Route::Notifications {
+                query: NotificationsQuery::default(),
+            },
             short: i18n.t("nav.alerts"),
             icon: Icon::Notifications,
             badge: unread,
@@ -230,11 +232,17 @@ fn NavLink(
 /// its parent entry lit.
 fn same_screen(a: &Route, b: &Route) -> bool {
     use std::mem::discriminant;
-    // Series detail lives under Discover in the rail's mental model.
+    // The comparison below is by discriminant, so every addressable sub-route folds onto the
+    // entry that leads to it or the rail goes dark under the reader's feet: `/console/providers`
+    // and `/account/security` are their own variants, not the `Console {}` and `Account {}` the
+    // rail links to. A section route added without a line here is the same bug again.
     let normalise = |route: &Route| match route {
+        // Series detail lives under Discover in the rail's mental model.
         Route::Series { .. } => Route::Discover {
             query: DiscoverQuery::default(),
         },
+        Route::ConsoleSection { .. } => Route::Console {},
+        Route::AccountSection { .. } => Route::Account {},
         other => other.clone(),
     };
     discriminant(&normalise(a)) == discriminant(&normalise(b))
@@ -284,7 +292,8 @@ fn UserFooter() -> Element {
 
 #[cfg(test)]
 mod tests {
-    use super::reader_destinations_visible;
+    use super::{reader_destinations_visible, same_screen, Route};
+    use crate::views::{AccountPanel, ConsoleEntity, ConsoleQuery, DiscoverQuery};
 
     /// Both halves of the rule, because either one alone is a defect.
     ///
@@ -304,5 +313,34 @@ mod tests {
             !reader_destinations_visible(false, true),
             "a settled sign-out is the one state that withdraws them"
         );
+    }
+
+    /// An addressable sub-route keeps its parent rail entry lit.
+    ///
+    /// `same_screen` compares `std::mem::discriminant`s, and `/console` replaces itself with
+    /// `/console/:entity` on arrival — so the Console entry went dark the instant the operator
+    /// landed on the console, and the rail claimed they were nowhere. `/account/:panel` arrived
+    /// later with the same shape and would have repeated it.
+    #[test]
+    fn an_addressable_sub_route_keeps_its_parent_entry_lit() {
+        let console = Route::ConsoleSection {
+            entity: ConsoleEntity::Overview,
+            query: ConsoleQuery::fresh(),
+        };
+        assert!(same_screen(&Route::Console {}, &console));
+
+        let panel = Route::AccountSection {
+            panel: AccountPanel::Appearance,
+        };
+        assert!(same_screen(&Route::Account {}, &panel));
+
+        // Still discriminating: folding must not make every entry light at once.
+        assert!(!same_screen(&Route::Account {}, &console));
+        assert!(!same_screen(
+            &Route::Discover {
+                query: DiscoverQuery::default(),
+            },
+            &panel
+        ));
     }
 }

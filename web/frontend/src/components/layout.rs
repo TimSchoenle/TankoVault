@@ -21,7 +21,7 @@ pub(crate) fn ListFooter(count: String, #[props(default = true)] keys: bool) -> 
     }
 }
 
-/// The empty inspector: shown until a row is chosen.
+/// The empty inspector: shown when the list beside it has nothing to open.
 #[component]
 pub(crate) fn NoSelection(message: String) -> Element {
     rsx! {

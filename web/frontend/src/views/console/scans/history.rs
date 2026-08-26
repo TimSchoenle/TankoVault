@@ -1,6 +1,6 @@
 //! The run history table and the drawer one row opens.
 
-use super::{duration_label, elapsed_seconds, percent, scope_label};
+use super::{duration_label, elapsed_seconds, percent, run_state_ring, scope_label};
 use crate::api;
 use crate::components::{CompactPager, Window};
 use crate::hooks::use_reload;
@@ -63,7 +63,7 @@ pub(super) fn RunHistory(
                     }
                 }
             } else {
-                div { class: "ik-tablewrap",
+                div { class: "ik-tablewrap scroll",
                     table { class: "ik-table ik-table-compact",
                         thead {
                             tr {
@@ -130,7 +130,12 @@ fn RunHistoryRow(run: ScanRun) -> Element {
                 let next = if selected { None } else { Some(run_id.to_string()) };
                 nav.select(nav.query().with_selection(next));
             },
-            td { span { class: run_state_pill(run.state), {i18n.t(run.state.label_key())} } }
+            td {
+                div { class: "ik-flex", style: "gap:7px;align-items:center;",
+                    span { class: run_state_ring(run.state) }
+                    span { class: run_state_pill(run.state), {i18n.t(run.state.label_key())} }
+                }
+            }
             td { class: "ik-mono", "{run.mode:?}" }
             td { class: "ik-mono ik-muted", "{scope_label(i18n, &run)}" }
             td {
@@ -212,6 +217,7 @@ fn RunDrawer() -> Element {
         div { class: "ik-tile", style: "margin-top:12px;",
             div { class: "ik-flex", style: "justify-content:space-between;align-items:center;gap:10px;",
                 div { class: "ik-flex", style: "gap:8px;align-items:center;flex-wrap:wrap;",
+                    span { class: run_state_ring(run.state) }
                     span { class: run_state_pill(run.state), {i18n.t(run.state.label_key())} }
                     span { class: "ik-mono", style: "font-size:12px;", "{run.mode:?}" }
                     span { class: "ik-mono ik-muted", style: "font-size:12px;",

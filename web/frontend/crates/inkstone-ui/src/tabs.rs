@@ -3,11 +3,14 @@
 use crate::skin::{use_skin, Flag, Part, Variant};
 use dioxus::prelude::*;
 
-/// One tab: the value selecting it writes back, and the already-translated word for it.
+/// One tab: the value selecting it writes back, the already-translated word for it, and the
+/// optional count and trailing placement some strips need.
 #[derive(Clone, PartialEq, Debug)]
 pub struct TabItem<T> {
     pub value: T,
     pub label: String,
+    pub count: Option<String>,
+    pub apart: bool,
 }
 
 impl<T> TabItem<T> {
@@ -15,7 +18,23 @@ impl<T> TabItem<T> {
         Self {
             value,
             label: label.into(),
+            count: None,
+            apart: false,
         }
+    }
+
+    /// A count beside the label, already formatted — the kit has no locale.
+    #[must_use]
+    pub fn count(mut self, count: impl Into<String>) -> Self {
+        self.count = Some(count.into());
+        self
+    }
+
+    /// Push it to the trailing edge, set off from the tabs before it.
+    #[must_use]
+    pub fn apart(mut self) -> Self {
+        self.apart = true;
+        self
     }
 }
 
@@ -35,12 +54,17 @@ pub fn TabBar<T: Clone + PartialEq + 'static>(
     /// Flush against an inspector's edge rather than a page's.
     #[props(default = false)]
     flush: bool,
+    /// Keep the strip on one row that scrolls sideways, with a fade at the trailing edge, for
+    /// a set too long to wrap gracefully.
+    #[props(default = false)]
+    scroll: bool,
 ) -> Element {
     let skin = use_skin();
     let index = items.iter().position(|item| item.value == selected);
     let keyed = items.clone();
+    let shell = skin.class(Part::TabsScroll, &[]);
 
-    rsx! {
+    let strip = rsx! {
         div {
             class: skin.class(Part::Tabs, &[Variant::flag(flush, Flag::Flush)]),
             role: "tablist",
@@ -67,7 +91,13 @@ pub fn TabBar<T: Clone + PartialEq + 'static>(
             // would yield one, so the safe key is no key.
             for item in items {
                 button {
-                    class: skin.class(Part::Tab, &[Variant::flag(item.value == selected, Flag::Active)]),
+                    class: skin.class(
+                        Part::Tab,
+                        &[
+                            Variant::flag(item.value == selected, Flag::Active),
+                            Variant::flag(item.apart, Flag::Apart),
+                        ],
+                    ),
                     r#type: "button",
                     role: "tab",
                     "aria-selected": if item.value == selected { "true" } else { "false" },
@@ -75,8 +105,37 @@ pub fn TabBar<T: Clone + PartialEq + 'static>(
                     tabindex: if item.value == selected { "0" } else { "-1" },
                     onclick: move |_| on_select.call(item.value.clone()),
                     "{item.label}"
+                    if let Some(count) = item.count {
+                        span { class: skin.class(Part::TabCount, &[]), "{count}" }
+                    }
                 }
             }
+        }
+    };
+
+    if scroll {
+        rsx! {
+            div { class: shell, {strip} }
+        }
+    } else {
+        strip
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// The kit's tabs grew a count and a scrolling shell so the watchlist's `.ik-wl-tabcount`
+    /// and Account's `.ik-subnav` could stop being a second and third tab idiom. A modifier the
+    /// stylesheet never defines is the failure this kit exists to prevent — it compiles,
+    /// renders, and draws the count as a bare number in the label's own type.
+    #[test]
+    fn the_tab_extras_are_drawn() {
+        let css = include_str!("../styles/inkstone.css");
+        for class in [".ik-tab-count", ".ik-tabs-scroll", ".ik-tab.apart"] {
+            assert!(
+                css.contains(class),
+                "`{class}` is emitted by `TabBar` but no rule defines it"
+            );
         }
     }
 }

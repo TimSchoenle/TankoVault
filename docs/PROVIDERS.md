@@ -85,10 +85,10 @@ are named per provider in the job's output.
 | MangaRead | `www.mangaread.org` | Madara | **Config only** | Madara + overrides |
 | Manhua Plus | `manhuaplus.com` | Madara | **Config only** | Madara + overrides |
 | Rizz Fables | `rizzfables.com` | MangaThemesia | **Config only** | family defaults |
-| Akaza Scans | `akazascans.org` | MangaThemesia | **Config only** | family + `table.infotable` |
+| Akaza Scans | `akazascans.org` | MangaThemesia | **Config only** | family + `table.infotable` + coin lock |
 | Arena Scans | `arenascan.com` | MangaThemesia | **Config only** | family defaults |
 | Rage Scans | `ragescans.com` | MangaThemesia | **Config only** | family defaults |
-| Rokari Comics | `rokaricomics.com` | MangaThemesia | **Config only** | family + `table.infotable` |
+| Rokari Comics | `rokaricomics.com` | MangaThemesia | **Config only** | family + `table.infotable` + coin lock |
 | King of Shojo | `kingofshojo.com` | MangaThemesia | **Config only** | family + `table.infotable` |
 | Noxen Scans | `noxenscan.com` | MangaThemesia | **Config only** | family defaults |
 | Manga Trend | `mangatrend.org` | MangaThemesia | **Config only** | family + `table.infotable` |
@@ -144,6 +144,7 @@ Where each provider publishes the fact:
 | Hive Toons | `isLocked` / `isTimeLocked` in the series island | `unlockAt`, on the **chapter** page — fetched per locked chapter, because the listing omits it and the window is per-chapter configurable |
 | Toonily and other Madara sites | `chapters.locked` selector in the provider config | `chapters.unlock`, where rendered |
 | Keyoapp sites | the coin-price badge on the chapter card (`img[alt="Coin"]`) | none — the platform states a price, never a date, so such a chapter stays locked |
+| Rokari Comics, Akaza Scans | the coin plugin's price badge on the chapter row (`span.text-gold`), which the stock MangaThemesia theme does not render | none — the badge states a price, never a date, so such a chapter stays locked |
 | Iken sites | `isLocked` in the chapter JSON | `unlockAt`, null on a permanently paid chapter |
 | WitchToons | `isLocked` in the flight payload's chapter row | `earlyAccessUntil` / `becomesFreeAt`; `becomesFreeOnNextRelease` is a rule, not a date, so it leaves the chapter locked |
 | WEBTOON | none: Fast Pass episodes are not rendered to an anonymous visitor at all | n/a |
@@ -207,7 +208,7 @@ cleanly, returned nothing, reported no error.
 | MangaThemesia `latest` = the home page's `div.utao` slider | `rizzfables` | every other install, which drops that widget | the catalogue listing re-sorted (`?order=update`), so a working catalogue implies a working feed |
 | MangaThemesia `chapters.link: div.eph-num a` | `rizzfables` | forks that wrap the row in the anchor instead | the row's first anchor, which both shapes place first |
 | Keyoapp `latest.path: /latest/` | `asmotoon` | eight of the nine installs, in production only | the home page's `#latest` strip |
-| MangaThemesia `series` = `div.imptdt` rows + `span.mgen` genres | `rizzfables` and every install still on the stock template | four installs whose series template renders `table.infotable` label/value rows and a `div.seriestugenre` list instead | a `series` override shared by those four (`themesia_infotable`), matching the table rows by label |
+| MangaThemesia `series` = `div.imptdt` rows + `span.mgen` genres | `rizzfables` and every install still on the stock template | four installs whose series template renders `table.infotable` label/value rows and a `div.seriestugenre` list instead | a `series` override shared by those four (`infotable_series`), matching the table rows by label |
 
 The Keyoapp one is worth reading twice, because it hid behind an environment. `/latest/` answers
 `200` from a developer's network on every install and `404` from the production host on eight of

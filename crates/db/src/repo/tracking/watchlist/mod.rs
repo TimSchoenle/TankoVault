@@ -12,7 +12,7 @@ mod summary;
 pub use entries::{
     BULK_ID_LIMIT, PinOutcome, watchlist_bulk_remove, watchlist_bulk_update, watchlist_list,
     watchlist_remove, watchlist_set_pinned_source, watchlist_set_status, watchlist_status_get,
-    watchlist_statuses_for_user, watchlist_upsert,
+    watchlist_statuses_for_user, watchlist_track_if_absent, watchlist_upsert,
 };
 pub use page::{watchlist_card, watchlist_page};
 pub use query::{

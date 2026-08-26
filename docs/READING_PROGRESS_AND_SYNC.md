@@ -198,6 +198,16 @@ reports `41`..`45` unread while `46.1` reads as read — and since §B.5 pushes
 `last_read_whole_number` and nothing else, the external provider keeps receiving `40`. The part
 frontier is for reading *ahead*; it is not a place to park whole chapters that were read.
 
+**Marking read also tracks the series.** Reading a chapter is the statement that you follow
+the title, so every write that advances a frontier — `PUT /v1/me/progress/:series_id`, marking
+one chapter read, "mark read to here" — adds the series to the caller's watchlist when it is
+not there yet, at the same defaults a manual add uses (`reading`, notify on). An entry that
+already exists is left exactly as it stands: status, notify flag and sync exclusion survive,
+so reading one more chapter of a `dropped` series does not resurrect it as `reading`. Marking
+unread never removes an entry — untracking stays an explicit act. Without this, progress on a
+series opened from Discover or Search was recorded against a title the reader could not find
+anywhere in Library.
+
 **Mark chapter `number` unread** (only sensible at or behind the current frontier):
 ```
 if is_whole(number):

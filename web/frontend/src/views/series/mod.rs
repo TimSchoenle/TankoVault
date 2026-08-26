@@ -138,6 +138,10 @@ fn SeriesPage(id: String) -> Element {
     // response, and the page would falsely offer "Add to watchlist" for a tracked title.
     let watchlist = use_resource(move || {
         reload_wl.track();
+        // Marking a chapter read now tracks the series server-side, so a progress write is one
+        // of the things that can create this entry. Without this second subscription the
+        // sidebar kept offering "Add to watchlist" for a series already on it.
+        reload_progress.track();
         let client = api.client();
         let authed = session.is_authenticated();
         async move {

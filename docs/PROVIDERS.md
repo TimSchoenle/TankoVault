@@ -128,10 +128,10 @@ are named per provider in the job's output.
 | Kayn Scans | `kaynscan.org` | Iken JSON | **Custom code** | `IkenAdapter` |
 | Hijala Scans | `en-hijala.com` | Iken JSON | **Custom code** | `IkenAdapter` |
 
-### The 2026-08-26 expansion — 57 more
+### The 2026-08-26 expansion — 58 more
 
 Grouped by what it cost to add them, which is the number worth reading: **thirty-two** are a
-family row, **twenty-three** are selectors with no Rust, and **two** are an existing custom adapter
+family row, **twenty-four** are selectors with no Rust, and **two** are an existing custom adapter
 pointed at another install of the platform it already drives. No new `AdapterKind`, no migration.
 
 One capability was added along the way — `chapters.number`, an optional selector for the element
@@ -186,6 +186,7 @@ scrambled, with nothing failing. It was found on `kaliscan` only after a full in
 | Mangago | `www.mangago.me` | Bespoke | **Config only** | |
 | MangaKatana | `mangakatana.com` | Bespoke | **Config only** | |
 | MangaNow | `manganow.to` | MangaReader | **Config only** | whole chapter list server-rendered |
+| ReiManga | `reimanga.net` | Bespoke | **Config only** | card *is* the anchor; rows keyed by id |
 | MangaTown | `www.mangatown.com` | Bespoke | **Config only** | chapter labels carry no marker |
 | Manhuaplus Mirror | `manhuaplus.org` | Liliana | **Config only** | unrelated to `manhuaplus.com` |
 | MangaGeko | `www.mgeko.cc` | Bespoke | **Config only** | chapters from `all-chapters/` |
@@ -263,11 +264,15 @@ an error, a 200 with somebody else's cards is not an error, and an empty parse i
 Only counting how many series each page *adds* — and then asking for a page far past the end —
 separates a walk that terminates from one that re-ingests page 1 until the planner's cap.
 
-Two candidates were rejected for reasons specific enough to be worth naming. `grabber.zone`
+Three candidates were rejected for reasons specific enough to be worth naming. `grabber.zone`
 renders a chapter row whose *first* anchor is the thumbnail, so the row's number is read from
 empty link text and every chapter is discarded — no selector expressible here picks the second
 anchor. `drakecomic.net` appends `?ref=browse` to every catalogue link, so the same series would
-be stored under two paths depending on which listing found it.
+be stored under two paths depending on which listing found it. And `readcomiconline.xyz` parses
+perfectly — 766 chapter rows on a long-running title — but its feed ignores `?order=update` and
+returns a slice of the alphabetical listing, so a live fast scan saw thirty series and ingested
+zero chapters; its one-shots are also labelled `<Title> #Full`, which stores `.357!` as chapter
+357. Parsing is not the bar.
 
 ## Early-access (paid) chapters
 

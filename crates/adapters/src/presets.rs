@@ -424,6 +424,12 @@ fn mangathemesia_family() -> Vec<BuiltinPreset> {
             "comics",
         ),
         themesia_in("razure", "Razure", "https://razure.org", "series"),
+        // `readcomiconline.xyz` was probed and rejected. It parses — 766 chapter rows on a
+        // long-running title — but two things make it worse than no source. Its feed ignores
+        // `?order=update` and returns a slice of the alphabetical listing, so a fast scan reads
+        // thirty arbitrary stubs and ingests nothing; and its one-shots are labelled `<Title>
+        // #Full`, so `parse_chapter_number`'s bare-number fallback stores `.357!` as chapter
+        // 357. A live fast scan confirmed it: 30 series seen, zero chapters.
         // The 2026-08-26 expansion.
         // Runs the coin plugin, and deliberately carries **no** `locked` selector: this install
         // renders a paid row as a modal trigger whose anchor has no `href` at all, so the row has
@@ -940,6 +946,7 @@ fn aggregators() -> Vec<BuiltinPreset> {
         mgeko(),
         projectsuki(),
         readcomicsonline(),
+        reimanga(),
         saymanhwa(),
         xoxocomics(),
     ]
@@ -1481,6 +1488,53 @@ fn readcomicsonline() -> BuiltinPreset {
                 // Rows read "<Series Title (2026-)>#205"; `#` is a chapter marker, so the number
                 // after it is what parses — not the year in the title.
                 "number_from": "text"
+            }
+        }),
+        politeness: bulk_budget(),
+    }
+}
+
+fn reimanga() -> BuiltinPreset {
+    BuiltinPreset {
+        slug: "reimanga",
+        name: "ReiManga",
+        base_url: "https://reimanga.net",
+        adapter: GENERIC,
+        config: json!({
+            "catalog": {
+                "path": "/advanced-search?page={page}",
+                // The card *is* the anchor on this template, so `self` — a nested link selector
+                // finds nothing and the listing parses to zero items.
+                "item": "a.group",
+                "link": "self",
+                "title": "h3",
+                "next": null
+            },
+            "latest": {
+                "path": "/latest-update",
+                "item": "a.group",
+                "link": "self",
+                "title": "h3",
+                "chapter": "div.text-blue-400"
+            },
+            "series": {
+                "title": "h1",
+                "desc": "p.line-clamp-4",
+                "cover": "img.shadow-lg@src",
+                "tags": "a.bg-gray-700[href*='genre=']",
+                "alt": "p.leading-relaxed.line-clamp-2",
+                "status": "span.inline-flex.font-medium"
+            },
+            "chapters": {
+                // Keyed on the row id prefix rather than a utility class: this template's
+                // classes are Tailwind, and the id is the only stable thing on the row.
+                "container": "a[id^='chapter-']",
+                "link": "self",
+                "number_from": "text",
+                // Rendered as a coarse relative label ("7mo ago") that `parse_date_label` does
+                // not recognise, so dates come back absent rather than wrong. Kept pointed at
+                // the element so a switch to an absolute date starts working on its own.
+                "date": "span.text-gray-500"
             }
         }),
         politeness: bulk_budget(),

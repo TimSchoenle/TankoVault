@@ -83,10 +83,10 @@ are named per provider in the job's output.
 | MangaRead | `www.mangaread.org` | Madara | **Config only** | Madara + overrides |
 | Manhua Plus | `manhuaplus.com` | Madara | **Config only** | Madara + overrides |
 | Rizz Fables | `rizzfables.com` | MangaThemesia | **Config only** | family defaults |
-| Akaza Scans | `akazascans.org` | MangaThemesia | **Config only** | family defaults |
+| Akaza Scans | `akazascans.org` | MangaThemesia | **Config only** | family + coin lock |
 | Arena Scans | `arenascan.com` | MangaThemesia | **Config only** | family defaults |
 | Rage Scans | `ragescans.com` | MangaThemesia | **Config only** | family defaults |
-| Rokari Comics | `rokaricomics.com` | MangaThemesia | **Config only** | family defaults |
+| Rokari Comics | `rokaricomics.com` | MangaThemesia | **Config only** | family + coin lock |
 | King of Shojo | `kingofshojo.com` | MangaThemesia | **Config only** | family defaults |
 | Noxen Scans | `noxenscan.com` | MangaThemesia | **Config only** | family defaults |
 | Manga Trend | `mangatrend.org` | MangaThemesia | **Config only** | family defaults |
@@ -142,6 +142,7 @@ Where each provider publishes the fact:
 | Hive Toons | `isLocked` / `isTimeLocked` in the series island | `unlockAt`, on the **chapter** page — fetched per locked chapter, because the listing omits it and the window is per-chapter configurable |
 | Toonily and other Madara sites | `chapters.locked` selector in the provider config | `chapters.unlock`, where rendered |
 | Keyoapp sites | the coin-price badge on the chapter card (`img[alt="Coin"]`) | none — the platform states a price, never a date, so such a chapter stays locked |
+| Rokari Comics, Akaza Scans | the coin plugin's price badge on the chapter row (`span.text-gold`), which the stock MangaThemesia theme does not render | none — the badge states a price, never a date, so such a chapter stays locked |
 | Iken sites | `isLocked` in the chapter JSON | `unlockAt`, null on a permanently paid chapter |
 | WitchToons | `isLocked` in the flight payload's chapter row | `earlyAccessUntil` / `becomesFreeAt`; `becomesFreeOnNextRelease` is a rule, not a date, so it leaves the chapter locked |
 | WEBTOON | none: Fast Pass episodes are not rendered to an anonymous visitor at all | n/a |

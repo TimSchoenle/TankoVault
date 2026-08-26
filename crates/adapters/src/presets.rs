@@ -182,15 +182,11 @@ fn mangathemesia_family() -> Vec<BuiltinPreset> {
             }),
             politeness: Politeness::default(),
         },
-        // The 2026-08 expansion: the ex-Asura scanlator sites, all on the stock theme. Where
-        // one appears with a `catalog`/`latest` override it is the same one thing — the install
-        // renamed the theme's listing directory — and nothing else about the layout differs.
-        plain(
-            "akazascans",
-            "Akaza Scans",
-            "https://akazascans.org",
-            THEMESIA,
-        ),
+        // The 2026-08 expansion: the ex-Asura scanlator sites, all on the theme itself. The
+        // overrides below are two things and no more: a `catalog`/`latest` pair where the
+        // install renamed the theme's listing directory, and the coin plugin's lock selector
+        // where it sells early access. Nothing else about the layout differs.
+        themesia_coin_gated("akazascans", "Akaza Scans", "https://akazascans.org"),
         // This one and `kingofshojo` below serve the same catalogue from two domains. Both are
         // kept, for the reason the Manganato clones are: each has its own rate limit, health
         // state and reader-facing links, and the matcher collapses the duplicated series into
@@ -202,12 +198,7 @@ fn mangathemesia_family() -> Vec<BuiltinPreset> {
             THEMESIA,
         ),
         plain("ragescans", "Rage Scans", "https://ragescans.com", THEMESIA),
-        plain(
-            "rokaricomics",
-            "Rokari Comics",
-            "https://rokaricomics.com",
-            THEMESIA,
-        ),
+        themesia_coin_gated("rokaricomics", "Rokari Comics", "https://rokaricomics.com"),
         plain(
             "kingofshojo",
             "King of Shojo",
@@ -240,6 +231,35 @@ fn mangathemesia_family() -> Vec<BuiltinPreset> {
         ),
         themesia_in("razure", "Razure", "https://razure.org", "series"),
     ]
+}
+
+/// A `MangaThemesia` install running the coin plugin that sells early access.
+///
+/// The plugin adds one `span.text-gold` — a coin glyph and the price — to a paid row and leaves
+/// the rest of the row alone, so the theme defaults still read it and that badge is the only
+/// thing separating a paid chapter from a free one. Without the selector every paid chapter
+/// ingested as free, and readers were sent to a paywall as the next unread page.
+///
+/// No `unlock` selector, because the badge states a price and never a date: a locked row keeps
+/// an unknown unlock time and stays locked until a scan sees the badge gone. Same policy as
+/// `keyoapp`.
+///
+/// Not every install of the plugin has this shape. `violetscans` and `thunderscans` render a
+/// paid row as a modal trigger with no `href` at all, so the row has no chapter URL to store
+/// and is dropped before access is ever read — a different bug that this selector cannot fix.
+fn themesia_coin_gated(
+    slug: &'static str,
+    name: &'static str,
+    base_url: &'static str,
+) -> BuiltinPreset {
+    BuiltinPreset {
+        slug,
+        name,
+        base_url,
+        adapter: THEMESIA,
+        config: json!({ "chapters": { "locked": "span.text-gold" } }),
+        politeness: Politeness::default(),
+    }
 }
 
 /// A `MangaThemesia` install that renamed the theme's listing directory. That one rename moves

@@ -93,6 +93,8 @@ fn preset_adapter(slug: &str, fetcher: SiteFetcher) -> (Box<dyn SourceAdapter>, 
 
 const THEMESIA_CATALOG: &str = include_str!("../fixtures/mangathemesia/catalog.html");
 const THEMESIA_SERIES: &str = include_str!("../fixtures/mangathemesia/series.html");
+/// A `rokaricomics` series page: same theme, plus the coin plugin's price badge on a paid row.
+const ROKARI_SERIES: &str = include_str!("../fixtures/mangathemesia/rokari-series.html");
 
 #[tokio::test]
 async fn mangathemesia_catalogue_reads_the_full_title_from_the_anchor() {
@@ -187,6 +189,64 @@ async fn mangathemesia_chapters_carry_number_title_and_date() {
             .iter()
             .all(|c| c.access == tankovault_adapters::ChapterAccess::Free),
         "no lock selector configured means every chapter is free"
+    );
+}
+
+/// Regression: `rokaricomics` sells early access through a coin plugin the stock theme knows
+/// nothing about, and its preset carried no `locked` selector — so every paid chapter ingested
+/// as free, and the reader's next unread page was a paywall. A paid row keeps a working chapter
+/// link and differs from a free one by one `span.text-gold` carrying the coin glyph and price,
+/// which is why that badge, and not the link, has to be what decides access.
+#[tokio::test]
+async fn rokari_reads_the_coin_badge_as_a_lock() {
+    let (adapter, ctx) = preset_adapter(
+        "rokaricomics",
+        SiteFetcher {
+            series: ROKARI_SERIES,
+            ..SiteFetcher::default()
+        },
+    );
+    let chapters = adapter
+        .fetch_chapters(&ctx, "/manga/the-heavenly-demon-cults-strongest-maid/")
+        .await
+        .expect("chapters parse");
+
+    // The badge decorates the row; it must not cost the row its link, or the chapter would
+    // vanish from the list instead of appearing as locked.
+    assert_eq!(chapters.len(), 3);
+    assert!(
+        chapters.iter().all(|c| !c.path.is_empty()),
+        "every row keeps its chapter link: {:?}",
+        chapters.iter().map(|c| &c.path).collect::<Vec<_>>()
+    );
+
+    let badged = chapters
+        .iter()
+        .find(|c| (c.number - 37.0).abs() < f64::EPSILON)
+        .expect("chapter 37 is in the fixture");
+    // The badge prices the chapter and never dates it, so the unlock time stays unknown — which
+    // keeps the chapter locked rather than freeing it on a date nobody published.
+    assert_eq!(
+        badged.access,
+        tankovault_adapters::ChapterAccess::EarlyAccess { unlocks_at: None },
+        "the priced row is early access: {:?}",
+        chapters
+            .iter()
+            .map(|c| (c.number, c.access))
+            .collect::<Vec<_>>()
+    );
+    // And the unbadged rows stay free: a marker that matched every row would empty the unread
+    // count for the whole provider.
+    assert!(
+        chapters
+            .iter()
+            .filter(|c| (c.number - 37.0).abs() >= f64::EPSILON)
+            .all(|c| c.access == tankovault_adapters::ChapterAccess::Free),
+        "rows with no badge are free: {:?}",
+        chapters
+            .iter()
+            .map(|c| (c.number, c.access))
+            .collect::<Vec<_>>()
     );
 }
 

@@ -12,6 +12,7 @@
 //! cargo run -p tankovault-adapters --example probe -- <slug> --config candidate.json \
 //!     --base-url https://example.org --adapter madara
 //! cargo run -p tankovault-adapters --example probe -- <slug> --dump /manga/some-series/
+//! cargo run -p tankovault-adapters --example probe -- <slug> --series-path /manga/some-series/
 //! ```
 
 use std::collections::HashSet;
@@ -29,7 +30,8 @@ type Failure = Box<dyn std::error::Error>;
 
 const USAGE: &str = "usage: probe <slug> [--config <file>] [--base-url <url>] \
                      [--adapter madara|mangathemesia|manganato|keyoapp|generic_config|custom] \
-                     [--page <n>] [--series <n>] [--walk <n>] [--chapters] [--dump <path>]";
+                     [--page <n>] [--series <n>] [--series-path <path>] [--walk <n>] \
+                     [--chapters] [--dump <path>]";
 
 /// What to probe: a shipped preset by slug, or a candidate config not yet committed to one.
 struct Target {
@@ -52,6 +54,10 @@ struct Args {
     walk: Option<u32>,
     /// Fetch this relative path and print the body instead of probing (selector recon).
     dump: Option<String>,
+    /// Report this one series instead of sampling the catalogue. A selector that fires on a
+    /// minority of rows — a paywall badge above all — is unreachable from a sample: the
+    /// catalogue's first entries are whatever the site sorts first, not the ones carrying it.
+    series_path: Option<String>,
 }
 
 fn main() -> Result<(), Failure> {
@@ -64,7 +70,7 @@ fn parse_args() -> Result<Args, Failure> {
     let slug = rest.next().ok_or(USAGE)?;
     let (mut config, mut base_url, mut adapter) = (None::<PathBuf>, None::<String>, None::<String>);
     let (mut page, mut series, mut all_chapters, mut dump) = (1, 2, false, None);
-    let mut walk = None;
+    let (mut walk, mut series_path) = (None, None);
 
     while let Some(flag) = rest.next() {
         let mut value = || rest.next().ok_or_else(|| format!("{flag} needs a value"));
@@ -77,6 +83,7 @@ fn parse_args() -> Result<Args, Failure> {
             "--walk" => walk = Some(value()?.parse()?),
             "--chapters" => all_chapters = true,
             "--dump" => dump = Some(value()?),
+            "--series-path" => series_path = Some(value()?),
             other => return Err(format!("unknown flag {other}\n{USAGE}").into()),
         }
     }
@@ -100,6 +107,7 @@ fn parse_args() -> Result<Args, Failure> {
         all_chapters,
         walk,
         dump,
+        series_path,
     })
 }
 
@@ -164,6 +172,11 @@ async fn run(args: Args) -> Result<(), Failure> {
     }
 
     println!("== {} ({})", args.target.slug, args.target.base_url);
+    if let Some(path) = args.series_path {
+        println!("\n-- named series");
+        series_report(adapter.as_ref(), &ctx, &path, args.all_chapters).await;
+        return Ok(());
+    }
     let feed_head = fast_scan(adapter.as_ref(), &ctx).await;
     match args.walk {
         Some(pages) => catalogue_walk(adapter.as_ref(), &ctx, pages).await,

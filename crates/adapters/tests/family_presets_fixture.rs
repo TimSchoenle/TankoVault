@@ -191,6 +191,123 @@ async fn mangathemesia_chapters_carry_number_title_and_date() {
 }
 
 // -----------------------------------------------------------------------------------------
+// MangaThemesia — the `table.infotable` installs (rokaricomics, akazascans, kingofshojo,
+// mangatrend)
+// -----------------------------------------------------------------------------------------
+
+const THEMESIA_TABLE_SERIES: &str = include_str!("../fixtures/mangathemesia/series_infotable.html");
+const THEMESIA_TABLE_AUTHOR: &str =
+    include_str!("../fixtures/mangathemesia/series_infotable_author.html");
+
+/// Four installs in this family render the series info block as a two-column `table.infotable`
+/// and the genres as `div.seriestugenre`, so the theme's `div.imptdt` / `span.mgen` defaults
+/// selected nothing on them: every series ingested with `Unknown` status, no genres, no
+/// alternative titles and no year, while title, cover and description parsed perfectly. Nothing
+/// reported it, because an unmatched selector is also how the theme's genuinely *optional* rows
+/// are meant to read.
+#[tokio::test]
+async fn mangathemesia_infotable_install_reads_the_table_rows() {
+    let (adapter, ctx) = preset_adapter(
+        "rokaricomics",
+        SiteFetcher {
+            series: THEMESIA_TABLE_SERIES,
+            ..SiteFetcher::default()
+        },
+    );
+    let meta = adapter
+        .fetch_series(&ctx, "/manga/the-heavenly-demon-cults-strongest-maid/")
+        .await
+        .expect("series parses");
+
+    assert_eq!(
+        meta.title,
+        "The Heavenly Demon Cult\u{2019}s Strongest Maid"
+    );
+    assert_eq!(meta.status, SeriesStatus::Ongoing);
+    assert_eq!(meta.tags, vec!["Fantasy".to_owned(), "Romance".to_owned()]);
+    assert_eq!(meta.alt_titles, vec!["천마신교 최강하녀".to_owned()]);
+    // The only credit-shaped row this install renders is `Posted By`, and it holds the
+    // WordPress account that uploaded the post — `enegma` here, the site's own name on the
+    // sibling installs. Storing it would put one handle on every series the site carries, which
+    // is both wrong and the strongest signal the recommender would then see.
+    assert!(
+        meta.authors.is_empty(),
+        "the uploader is not a credit: {:?}",
+        meta.authors
+    );
+    // `Posted On` and `Updated On` are WordPress post timestamps, not the year of first
+    // publication, so this shape has no release year to read at all.
+    assert_eq!(meta.release_year, None);
+    // Unchanged from the stock template, and asserted here because the override touches
+    // `series` alone — a merge that clobbered the section would take these with it.
+    assert!(
+        meta.cover_url
+            .as_deref()
+            .is_some_and(|u| u.starts_with("https://rokaricomics.com/wp-content/uploads/")),
+        "{:?}",
+        meta.cover_url
+    );
+    assert!(
+        meta.description
+            .as_deref()
+            .is_some_and(|d| d.contains("martial arts novel")),
+        "{:?}",
+        meta.description
+    );
+}
+
+/// The trap the whole labelled-row shape exists for: `value` must name the row's *second* cell.
+/// `td` selects the first one, so the config that looks right stores `Status`, `Alternative
+/// Names` and `Author` as the values themselves — and `alt` feeds `series_titles`, whose
+/// `normalized` column the trigram matcher and catalogue search both score against.
+///
+/// Run against akazascans because it is the install in this shape that fills an `Author` row;
+/// the others render only `Posted By`, so nothing there would fail if the cell were wrong.
+#[tokio::test]
+async fn mangathemesia_infotable_reads_the_value_cell_not_the_label_cell() {
+    let (adapter, ctx) = preset_adapter(
+        "akazascans",
+        SiteFetcher {
+            series: THEMESIA_TABLE_AUTHOR,
+            ..SiteFetcher::default()
+        },
+    );
+    let meta = adapter
+        .fetch_series(&ctx, "/manga/coin-revenge/")
+        .await
+        .expect("series parses");
+
+    assert_eq!(meta.authors, vec!["Park seong-hyun".to_owned()]);
+    assert!(
+        !meta
+            .authors
+            .iter()
+            .any(|a| a.eq_ignore_ascii_case("author") || a.eq_ignore_ascii_case("akazascans")),
+        "neither the label nor the uploader may survive as a credit: {:?}",
+        meta.authors
+    );
+    assert!(
+        meta.alt_titles
+            .iter()
+            .all(|t| !t.to_ascii_lowercase().starts_with("alternative")),
+        "the label must not survive as an alternative title: {:?}",
+        meta.alt_titles
+    );
+    assert!(
+        meta.alt_titles.iter().any(|t| t.contains("코인 리벤지")),
+        "{:?}",
+        meta.alt_titles
+    );
+    // This install spells the row `Alternative Names` and `kingofshojo` spells it
+    // `Alternative`, which is why the preset matches the label as a prefix and not for equality.
+    assert_eq!(meta.status, SeriesStatus::Ongoing);
+    assert_eq!(
+        meta.tags,
+        vec!["Action".to_owned(), "Drama".to_owned(), "Seinen".to_owned()]
+    );
+}
+
+// -----------------------------------------------------------------------------------------
 // Manganato — natomanga
 // -----------------------------------------------------------------------------------------
 

@@ -23,9 +23,11 @@ that way in `AdapterKind`, alongside three more (`mangathemesia`, `manganato`, `
 on a family theme is a config row carrying only its deviations, exactly like a Madara one.
 
 That is where the leverage is, and the second half of the expansion (2026-08-11, thirty sites)
-spent it: twenty-one of the thirty are a family row with **no** deviation at all, and the nine
-that are not share one adapter between them. Deriving a family's defaults from one site is what
-made the first half fragile — see [Deriving a family's defaults](#deriving-a-familys-defaults).
+spent it: twenty-one of the thirty went in as a family row with **no** deviation at all, and the
+nine that did not share one adapter between them. Four of those twenty-one have since needed a
+`series` override — the last row of the table below. Deriving a family's defaults from one
+site is what made the first half fragile — see
+[Deriving a family's defaults](#deriving-a-familys-defaults).
 
 ## Managed presets
 
@@ -83,13 +85,13 @@ are named per provider in the job's output.
 | MangaRead | `www.mangaread.org` | Madara | **Config only** | Madara + overrides |
 | Manhua Plus | `manhuaplus.com` | Madara | **Config only** | Madara + overrides |
 | Rizz Fables | `rizzfables.com` | MangaThemesia | **Config only** | family defaults |
-| Akaza Scans | `akazascans.org` | MangaThemesia | **Config only** | family defaults |
+| Akaza Scans | `akazascans.org` | MangaThemesia | **Config only** | family + `table.infotable` |
 | Arena Scans | `arenascan.com` | MangaThemesia | **Config only** | family defaults |
 | Rage Scans | `ragescans.com` | MangaThemesia | **Config only** | family defaults |
-| Rokari Comics | `rokaricomics.com` | MangaThemesia | **Config only** | family defaults |
-| King of Shojo | `kingofshojo.com` | MangaThemesia | **Config only** | family defaults |
+| Rokari Comics | `rokaricomics.com` | MangaThemesia | **Config only** | family + `table.infotable` |
+| King of Shojo | `kingofshojo.com` | MangaThemesia | **Config only** | family + `table.infotable` |
 | Noxen Scans | `noxenscan.com` | MangaThemesia | **Config only** | family defaults |
-| Manga Trend | `mangatrend.org` | MangaThemesia | **Config only** | family defaults |
+| Manga Trend | `mangatrend.org` | MangaThemesia | **Config only** | family + `table.infotable` |
 | Violet Scans | `violetscans.org` | MangaThemesia | **Config only** | family + `/comics/` |
 | Thunder Scans | `en-thunderscans.com` | MangaThemesia | **Config only** | family + `/comics/` |
 | Razure | `razure.org` | MangaThemesia | **Config only** | family + `/series/` |
@@ -205,6 +207,7 @@ cleanly, returned nothing, reported no error.
 | MangaThemesia `latest` = the home page's `div.utao` slider | `rizzfables` | every other install, which drops that widget | the catalogue listing re-sorted (`?order=update`), so a working catalogue implies a working feed |
 | MangaThemesia `chapters.link: div.eph-num a` | `rizzfables` | forks that wrap the row in the anchor instead | the row's first anchor, which both shapes place first |
 | Keyoapp `latest.path: /latest/` | `asmotoon` | eight of the nine installs, in production only | the home page's `#latest` strip |
+| MangaThemesia `series` = `div.imptdt` rows + `span.mgen` genres | `rizzfables` and every install still on the stock template | four installs whose series template renders `table.infotable` label/value rows and a `div.seriestugenre` list instead | a `series` override shared by those four (`themesia_infotable`), matching the table rows by label |
 
 The Keyoapp one is worth reading twice, because it hid behind an environment. `/latest/` answers
 `200` from a developer's network on every install and `404` from the production host on eight of

@@ -182,15 +182,11 @@ fn mangathemesia_family() -> Vec<BuiltinPreset> {
             }),
             politeness: Politeness::default(),
         },
-        // The 2026-08 expansion: the ex-Asura scanlator sites, all on the stock theme. Where
-        // one appears with a `catalog`/`latest` override it is the same one thing — the install
-        // renamed the theme's listing directory — and nothing else about the layout differs.
-        plain(
-            "akazascans",
-            "Akaza Scans",
-            "https://akazascans.org",
-            THEMESIA,
-        ),
+        // The 2026-08 expansion: the ex-Asura scanlator sites. Two things vary across them
+        // and nothing else does: the theme's listing directory (`themesia_in`) and the series
+        // template's info block (`themesia_infotable`). Catalogue, feed and chapter list are
+        // the stock markup on every one of them.
+        themesia_infotable("akazascans", "Akaza Scans", "https://akazascans.org"),
         // This one and `kingofshojo` below serve the same catalogue from two domains. Both are
         // kept, for the reason the Manganato clones are: each has its own rate limit, health
         // state and reader-facing links, and the matcher collapses the duplicated series into
@@ -202,30 +198,15 @@ fn mangathemesia_family() -> Vec<BuiltinPreset> {
             THEMESIA,
         ),
         plain("ragescans", "Rage Scans", "https://ragescans.com", THEMESIA),
-        plain(
-            "rokaricomics",
-            "Rokari Comics",
-            "https://rokaricomics.com",
-            THEMESIA,
-        ),
-        plain(
-            "kingofshojo",
-            "King of Shojo",
-            "https://kingofshojo.com",
-            THEMESIA,
-        ),
+        themesia_infotable("rokaricomics", "Rokari Comics", "https://rokaricomics.com"),
+        themesia_infotable("kingofshojo", "King of Shojo", "https://kingofshojo.com"),
         plain(
             "noxenscans",
             "Noxen Scans",
             "https://noxenscan.com",
             THEMESIA,
         ),
-        plain(
-            "mangatrend",
-            "Manga Trend",
-            "https://mangatrend.org",
-            THEMESIA,
-        ),
+        themesia_infotable("mangatrend", "Manga Trend", "https://mangatrend.org"),
         themesia_in(
             "violetscans",
             "Violet Scans",
@@ -258,6 +239,73 @@ fn themesia_in(
         config: json!({
             "catalog": { "path": format!("/{directory}/?page={{page}}") },
             "latest": { "path": format!("/{directory}/?page=1&order=update") }
+        }),
+        politeness: Politeness::default(),
+    }
+}
+
+/// A `MangaThemesia` install whose series template renders the info block as a two-column
+/// `table.infotable` and the genres as `div.seriestugenre`, in place of the theme's
+/// `div.imptdt` rows and `span.mgen` list.
+///
+/// Four of the family's presets ship it and the rest ship the stock block, so it is a `series`
+/// override rather than a family: catalogue, feed, title, cover, description and chapter list
+/// are the theme's own markup either way. On the stock defaults these installs parsed a title, a
+/// cover and a description and nothing else — no status, no genres, no credits, and no error,
+/// because a selector that matches nothing is how the theme's optional rows are meant to read.
+///
+/// The table also carries a `Type` row (Manga/Manhwa/Manhua) that stays unread:
+/// `GenericConfigAdapter` publishes `ContentType::Unknown` unconditionally and there is no
+/// config field to point at it.
+fn themesia_infotable(
+    slug: &'static str,
+    name: &'static str,
+    base_url: &'static str,
+) -> BuiltinPreset {
+    /// One labelled row of `table.infotable`, matched by the label cell's text.
+    fn row(label: &str) -> Value {
+        json!({
+            "row": "table.infotable tr",
+            // Explicitly null, not omitted: the family default's `author` is itself a labelled
+            // row and the config merge is per-key, so an omitted `label` inherits its
+            // `div.imptdt` selector, finds nothing, and the row never matches.
+            //
+            // Null is also the shape that works here. A `label` selector is compared for
+            // equality, and these installs disagree on the wording — `Alternative` on one,
+            // `Alternative Names` on the others. With no `label` the row's own text is matched
+            // as a prefix, which covers both spellings.
+            "label": null,
+            "match": label,
+            // The *second* cell. `td` alone selects the label and stores it as the value; that
+            // is the trap `tests/family_presets_fixture.rs` pins for every family with a
+            // labelled block.
+            "value": "td:nth-of-type(2)"
+        })
+    }
+
+    BuiltinPreset {
+        slug,
+        name,
+        base_url,
+        adapter: THEMESIA,
+        config: json!({
+            "series": {
+                "tags": "div.seriestugenre a",
+                "status": row("Status"),
+                "alt": row("Alternative"),
+                // Only some of these installs fill an `Author` row; the rest publish credits
+                // nowhere, and the row is absent rather than empty. What they all publish is
+                // `Posted By` — the WordPress account that uploaded the post, never the
+                // creator. Matching it would write a site handle into `series` credits, where
+                // the recommender treats a name shared by hundreds of unrelated series as a
+                // strong signal.
+                "author": row("Author"),
+                // Cleared, not repointed. The defaults name `div.imptdt` positions that do not
+                // exist here, and the only date rows this table has — `Posted On`, `Updated
+                // On` — are WordPress post timestamps, not the year of first publication.
+                "artist": null,
+                "release": null
+            }
         }),
         politeness: Politeness::default(),
     }

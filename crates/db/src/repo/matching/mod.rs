@@ -59,7 +59,7 @@ pub(super) const MAX_KEY_FANOUT: i64 = 16;
 
 pub use candidates::{find_candidates, find_candidates_multi};
 pub use decisions::{
-    MergeDecisionFilter, MergeDecisionRow, NewMergeDecision, flag_merge_decision,
+    MergeDecisionFilter, MergeDecisionRow, NewMergeDecision, UndoSegment, flag_merge_decision,
     list_merge_decisions, record_merge_decisions, revert_merge_decision,
 };
 pub use full_sweep::{

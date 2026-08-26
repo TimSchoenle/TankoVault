@@ -1033,6 +1033,20 @@ pub struct ScanTriggeredView {
     pub run_ids: Vec<ScanRunId>,
 }
 
+/// One segment of a merge's undo journal.
+///
+/// `kind` is the journal's own field name rather than a display string: a later journal version
+/// can add a segment without the console needing a release to render it, and the wording lives
+/// on the reading side where the reader's language is known.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[schema(as = UndoSegment)]
+pub struct UndoSegmentView {
+    /// The journal key, which is the table the rows belong to.
+    pub kind: String,
+    /// How many rows that key holds.
+    pub rows: i64,
+}
+
 /// One row of the automatic-merge decision journal.
 ///
 /// The journal answers the question a score cannot: *why*. `terms` itemises how the number was
@@ -1091,6 +1105,8 @@ pub struct MergeDecisionView {
     pub revertible: bool,
     /// How many rows a revert would restore or move back.
     pub undo_rows: i64,
+    /// Those rows itemised by journal key, largest segment first, empty segments dropped.
+    pub undo_breakdown: Vec<UndoSegmentView>,
     /// When the merge was undone, `null` while it stands.
     #[serde(with = "time::serde::rfc3339::option")]
     #[schema(value_type = Option<String>)]

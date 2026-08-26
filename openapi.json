@@ -2243,6 +2243,13 @@
             "description": "`sweep_new` | `sweep_requeue` | `sweep_recheck` | `operator`.",
             "type": "string"
           },
+          "undo_breakdown": {
+            "description": "Those rows itemised by journal key, largest segment first, empty segments dropped.",
+            "items": {
+              "$ref": "#/components/schemas/UndoSegment"
+            },
+            "type": "array"
+          },
           "undo_rows": {
             "description": "How many rows a revert would restore or move back.",
             "format": "int64",
@@ -2272,7 +2279,8 @@
           "evidence",
           "policy",
           "revertible",
-          "undo_rows"
+          "undo_rows",
+          "undo_breakdown"
         ],
         "type": "object"
       },
@@ -6747,6 +6755,25 @@
           "max",
           "overridden",
           "privacy_floor"
+        ],
+        "type": "object"
+      },
+      "UndoSegment": {
+        "description": "One segment of a merge's undo journal.\n\n`kind` is the journal's own field name rather than a display string: a later journal version\ncan add a segment without the console needing a release to render it, and the wording lives\non the reading side where the reader's language is known.",
+        "properties": {
+          "kind": {
+            "description": "The journal key, which is the table the rows belong to.",
+            "type": "string"
+          },
+          "rows": {
+            "description": "How many rows that key holds.",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "kind",
+          "rows"
         ],
         "type": "object"
       },

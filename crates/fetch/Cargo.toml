@@ -22,6 +22,8 @@ secrecy = { workspace = true }
 async-trait = { workspace = true }
 wreq = { workspace = true }
 wreq-util = { workspace = true }
+# Multi-member gzip decoding, which `wreq`'s own decoder does not do (`base.rs::decode_gzip`).
+flate2 = { workspace = true }
 url = { workspace = true }
 governor = { workspace = true }
 tokio = { workspace = true }

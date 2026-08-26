@@ -18,7 +18,9 @@ use crate::identity::{BrowserIdentity, BrowserPlatform};
 use crate::ssrf::{self, SsrfResolver};
 use crate::types::{FetchRequest, FetchResponse};
 use async_trait::async_trait;
+use flate2::read::MultiGzDecoder;
 use futures::StreamExt;
+use std::io::Read;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use tankovault_domain::BrowserEmulation;
@@ -189,7 +191,10 @@ fn build_client(
         .dns_resolver(Arc::new(SsrfResolver))
         .redirect(redirect)
         .connect_timeout(policy.connect_timeout)
-        .timeout(policy.request_timeout);
+        .timeout(policy.request_timeout)
+        // Decoded here instead, by [`decode_gzip`], which is the only one of the two that reads
+        // a whole multi-member stream. `send` compensates for what this turns off.
+        .gzip(false);
     if let Some(emulation) = emulation {
         builder = builder.emulation(emulation);
     }
@@ -367,7 +372,13 @@ impl BaseHttpFetcher {
                     wreq::header::ACCEPT,
                     "text/html,application/xhtml+xml,application/xml;q=0.9,application/json;q=0.8,*/*;q=0.5",
                 )
-                .header(wreq::header::ACCEPT_LANGUAGE, "en-US,en;q=0.8");
+                .header(wreq::header::ACCEPT_LANGUAGE, "en-US,en;q=0.8")
+                // Spelled out because the client no longer offers gzip on its own: with its
+                // gzip decoding off, the header `wreq` would synthesise omits gzip, and an
+                // identifiable bot that refuses the web's default encoding is both slower and
+                // more conspicuous than one that takes it. Under emulation the profile owns
+                // this header and neither this branch nor `wreq` touches it.
+                .header(wreq::header::ACCEPT_ENCODING, "gzip, deflate, br, zstd");
         }
         for (k, v) in &req.headers {
             builder = builder.header(k, v);
@@ -377,6 +388,20 @@ impl BaseHttpFetcher {
 
         let status = resp.status().as_u16();
         let final_url = resp.uri().to_string();
+        // `wreq` decodes brotli, zstd and deflate and strips both headers as it does; gzip it
+        // leaves to [`decode_gzip`], so the announcement is still here and has to be removed
+        // once the body is decoded — a caller reading `content-encoding` off decoded text would
+        // otherwise be told it is still compressed, and `content-length` counts the compressed
+        // bytes, which no longer describes anything the caller holds.
+        let gzipped = resp
+            .headers()
+            .get(wreq::header::CONTENT_ENCODING)
+            .is_some_and(|v| {
+                // `x-gzip` is the pre-RFC-2616 spelling and still reaches us from older
+                // origins; it names the same stream format.
+                v.as_bytes().eq_ignore_ascii_case(b"gzip")
+                    || v.as_bytes().eq_ignore_ascii_case(b"x-gzip")
+            });
         // Every header is materialised, deliberately not an allowlist of the few call sites
         // happen to read: `FetchResponse::headers` is documented as "response headers", and
         // narrowing it would make that a silent lie for whatever a future reader adds.
@@ -387,6 +412,12 @@ impl BaseHttpFetcher {
                 v.to_str().unwrap_or_default().to_owned(),
             )
         }));
+        if gzipped {
+            headers.retain(|(name, _)| {
+                !name.eq_ignore_ascii_case("content-encoding")
+                    && !name.eq_ignore_ascii_case("content-length")
+            });
+        }
 
         // Pre-size from `Content-Length` when declared, clamped to the cap so a hostile header
         // cannot force an 8 MiB allocation for a 200-byte body.
@@ -408,6 +439,9 @@ impl BaseHttpFetcher {
             }
             buf.extend_from_slice(&chunk);
         }
+        if gzipped {
+            buf = decode_gzip(&buf)?;
+        }
         // `from_utf8` first so the happy path *moves* the buffer instead of copying up to
         // 8 MiB; `from_utf8_lossy` handles the rare body with a bad byte.
         let body = String::from_utf8(buf)
@@ -421,6 +455,36 @@ impl BaseHttpFetcher {
             from_cache: false,
         })
     }
+}
+
+/// Decode a `gzip` body across **every** member of the stream.
+///
+/// The client's own gzip decoding is off ([`build_client`]) because it reads one member: it
+/// stops at the first member's end-of-stream marker, reports the body as finished, and drops
+/// whatever follows. An origin that flushes mid-document emits a member per flush, so the body
+/// arrives cut at the first flush — a `200`, the headers intact, and on a `WordPress` origin
+/// that flushes after `wp_head()` the `<head>` and nothing after it. Nothing downstream can
+/// tell that from a short page: the adapter reports the title selector it could not find, and a
+/// truncated transfer reads as a site redesign.
+///
+/// # Errors
+/// [`FetchError::Transport`] if the stream is not valid gzip — including a member cut in half,
+/// which is what makes a genuinely truncated transfer loud here rather than silent — and
+/// [`FetchError::BodyTooLarge`] if it inflates past [`MAX_BODY_BYTES`]. The cap is re-applied
+/// because the bytes counted while streaming were the compressed ones.
+fn decode_gzip(raw: &[u8]) -> Result<Vec<u8>, FetchError> {
+    let cap = u64::try_from(MAX_BODY_BYTES).unwrap_or(u64::MAX);
+    let mut out = Vec::new();
+    // One byte past the cap, so a body landing exactly on it stays distinguishable from one
+    // that ran over.
+    MultiGzDecoder::new(raw)
+        .take(cap.saturating_add(1))
+        .read_to_end(&mut out)
+        .map_err(|e| FetchError::Transport(format!("gzip decode failed: {e}")))?;
+    if out.len() > MAX_BODY_BYTES {
+        return Err(FetchError::BodyTooLarge);
+    }
+    Ok(out)
 }
 
 /// Fold a status into one of five label values.
@@ -569,5 +633,60 @@ mod tests {
             let _ = profile_for(browser);
             assert!(build(Some(browser)).bot_user_agent.is_none());
         }
+    }
+
+    /// One gzip member per fragment, which is what an origin flushing mid-document emits.
+    fn gzip_members(fragments: &[&str]) -> Vec<u8> {
+        use flate2::Compression;
+        use flate2::write::GzEncoder;
+        use std::io::Write;
+
+        let mut out = Vec::new();
+        for fragment in fragments {
+            let mut encoder = GzEncoder::new(Vec::new(), Compression::fast());
+            encoder.write_all(fragment.as_bytes()).expect("encodes");
+            out.extend_from_slice(&encoder.finish().expect("finishes"));
+        }
+        out
+    }
+
+    /// A body flushed as several gzip members decodes whole, not down to the first one.
+    ///
+    /// The bug: `wreq` decompresses with a decoder that stops at the first member's
+    /// end-of-stream marker and reports the body finished, so a `WordPress` origin that flushes
+    /// after `wp_head()` answered with a `200` carrying its `<head>` and nothing else. Four
+    /// providers' series pages parsed to "required element not found: series title" against
+    /// markup none of them had changed.
+    #[test]
+    fn a_gzip_body_decodes_past_its_first_member() {
+        let head = "<html><head><title>Series</title></head>";
+        let rest = "<body><h1 class=\"entry-title\">Series</h1></body></html>";
+        let decoded = decode_gzip(&gzip_members(&[head, rest])).expect("decodes");
+        assert_eq!(
+            String::from_utf8(decoded).expect("utf-8"),
+            format!("{head}{rest}")
+        );
+    }
+
+    /// A member cut in half is an error rather than the bytes that did arrive: a partial
+    /// document accepted as a success is exactly the failure this decoder replaced.
+    #[test]
+    fn a_half_written_gzip_member_is_an_error() {
+        let whole = gzip_members(&["<html><head><title>Series</title></head>"]);
+        let cut = &whole[..whole.len() - 8];
+        assert!(matches!(
+            decode_gzip(cut),
+            Err(FetchError::Transport(_) | FetchError::BodyTooLarge)
+        ));
+    }
+
+    /// The size cap counts inflated bytes: the streaming loop only ever saw the compressed ones.
+    #[test]
+    fn the_size_cap_applies_to_the_inflated_body() {
+        let bomb = "a".repeat(MAX_BODY_BYTES + 1);
+        assert!(matches!(
+            decode_gzip(&gzip_members(&[&bomb])),
+            Err(FetchError::BodyTooLarge)
+        ));
     }
 }

@@ -19,7 +19,8 @@ pub struct ProgressUpdate {
 
 /// Set the read-progress frontier
 ///
-/// Set the whole-chapter frontier outright (design v2 §A.6).
+/// Set the whole-chapter frontier outright (design v2 §A.6). A series the caller does not track
+/// yet is added to their watchlist.
 #[utoipa::path(
     put,
     path = "/v1/me/progress/{series_id}",
@@ -47,6 +48,7 @@ pub async fn put_progress(
         body.last_read_whole_number,
     )
     .await?;
+    track_read_series(&state, user.user_id, series_id).await?;
     spawn_targeted_push(&state, user.user_id, series_id);
     Ok(Json(serde_json::json!({ "ok": true })))
 }
@@ -95,6 +97,9 @@ pub struct ChapterRead {
 /// Apply the §A.3 mark-read/mark-unread rule for one chapter number. Unmarking an older
 /// (non-frontier) chapter retreats progress past it too; the client must confirm with the user
 /// first in that case (design v2 §A.6).
+///
+/// Marking read also adds a series the caller does not track yet to their watchlist; marking
+/// unread never removes it.
 #[utoipa::path(
     put,
     path = "/v1/me/progress/{series_id}/chapters/{number}",
@@ -127,6 +132,7 @@ pub async fn put_chapter_progress(
             number,
         )
         .await?;
+        track_read_series(&state, user.user_id, series_id).await?;
     } else {
         tankovault_db::repo::tracking::progress_mark_unread(
             &state.pool,
@@ -147,7 +153,8 @@ pub struct MarkReadTo {
 
 /// Mark read up to a chapter
 ///
-/// "Mark read to here" (design v2 §A.6); equivalent to marking `number` read.
+/// "Mark read to here" (design v2 §A.6); equivalent to marking `number` read, watchlist
+/// side effect included.
 #[utoipa::path(
     post,
     path = "/v1/me/progress/{series_id}/mark-read-to",
@@ -175,6 +182,7 @@ pub async fn mark_read_to(
         body.number,
     )
     .await?;
+    track_read_series(&state, user.user_id, series_id).await?;
     spawn_targeted_push(&state, user.user_id, series_id);
     Ok(Json(serde_json::json!({ "ok": true })))
 }
@@ -290,6 +298,31 @@ pub async fn bulk_mark_read(
             .await?;
     spawn_targeted_push_many(&state, user.user_id, applied.clone());
     Ok(Json(BulkResult::new(&body.series_ids, applied)))
+}
+
+/// Put `series_id` on the caller's watchlist if it is not there already, because reading a
+/// chapter is itself the statement that they follow the series. An entry that already exists is
+/// left untouched, status and notify flag included.
+///
+/// Runs *after* the progress write, and its failure is reported rather than swallowed: the
+/// mark-read endpoints are idempotent, so a caller that retries a `500` lands both writes,
+/// whereas tracking first would leave a watchlist entry behind for a progress write that never
+/// happened.
+///
+/// Gated on [`Feature::TrackingWatchlist`], which is independent of the [`Feature`] guarding
+/// these routes: with the watchlist switched off, marking read must keep working *and* must not
+/// write to a surface the operator disabled.
+async fn track_read_series(
+    state: &AppState,
+    user_id: UserId,
+    series_id: SeriesId,
+) -> ApiResult<()> {
+    if !state.features.is_enabled(Feature::TrackingWatchlist) {
+        return Ok(());
+    }
+    tankovault_db::repo::tracking::watchlist_track_if_absent(&state.pool, user_id, series_id)
+        .await?;
+    Ok(())
 }
 
 /// Best-effort background push of every id, sequentially in one task rather than one task per

@@ -7,7 +7,7 @@
 
 use super::explain::ExplainPanel;
 use super::stages::stage_label;
-use super::{age_seconds, duration_label, elapsed_seconds, percent, scope_label};
+use super::{age_seconds, duration_label, elapsed_seconds, percent, run_state_ring, scope_label};
 use crate::api;
 use crate::components::use_step_up_gate;
 use crate::i18n::use_i18n;
@@ -195,7 +195,8 @@ fn RunCard(run: ScanRun, activity: Option<RunActivity>, tick: RefreshTick) -> El
     rsx! {
         div { class: "ik-tile", style: "padding:12px;",
             div { class: "ik-flex", style: "justify-content:space-between;gap:10px;flex-wrap:wrap;",
-                div { class: "ik-flex", style: "gap:8px;flex-wrap:wrap;",
+                div { class: "ik-flex", style: "gap:8px;flex-wrap:wrap;align-items:center;",
+                    span { class: run_state_ring(run.state) }
                     span { class: run_state_pill(run.state), {i18n.t(run.state.label_key())} }
                     span { class: "ik-mono", style: "font-size:12px;", "{run.mode:?}" }
                     span { class: "ik-mono ik-muted", style: "font-size:12px;",
@@ -364,9 +365,9 @@ fn ActivityTail(events: Vec<TaskEvent>) -> Element {
                         span {
                             class: "dot",
                             style: match event.state {
-                                TaskState::Failed => "background:var(--vermilion);",
-                                TaskState::Done => "background:var(--jade-bright);",
-                                _ => "background:var(--muted);",
+                                TaskState::Failed => "background:var(--color-health-bad);",
+                                TaskState::Done => "background:var(--color-health-ok);",
+                                _ => "background:var(--color-health-inert);",
                             },
                         }
                         span { class: "ik-mono ik-muted", style: "font-size:11.5px;min-width:7ch;",
@@ -380,7 +381,7 @@ fn ActivityTail(events: Vec<TaskEvent>) -> Element {
                             "{target_label(&event.target)}"
                         }
                         if event.state.is_failure() {
-                            span { style: "font-size:11.5px;color:var(--vermilion);",
+                            span { style: "font-size:11.5px;color:var(--color-health-bad);",
                                 {
                                     event
                                         .error

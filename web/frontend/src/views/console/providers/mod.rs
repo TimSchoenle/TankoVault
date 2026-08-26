@@ -25,7 +25,7 @@ use crate::icons::{Ic, Icon};
 use crate::models::*;
 use crate::state::capabilities::use_capabilities;
 use crate::util::{monogram, rel_time, thousands};
-use crate::views::console::{config_editor_text, use_console_nav};
+use crate::views::console::{config_editor_text, landing_selection, use_console_nav};
 use crate::wire::types::Permission;
 use config::DryRunResult;
 use coverage::CoverageTab;
@@ -177,6 +177,19 @@ pub(super) fn ProvidersEntity() -> Element {
         .and_then(|id| rows.iter().find(|p| p.id.to_string() == id).map(|p| p.id))
         .or_else(|| rows.first().map(|p| p.id));
     let chosen = current.and_then(|id| rows.iter().find(|p| p.id == id).cloned());
+
+    // …and the fallback goes into the URL, so the address names the provider on screen rather
+    // than whichever one sorts first under the filter that happens to be applied. It replaces
+    // rather than pushes — the operator did not choose this row and must not have to back out
+    // of it — and the next query is built out here rather than inside the effect, because
+    // reading `nav.query()` in there would subscribe the effect to the memo the write changes.
+    let landing = landing_selection(view.sel.as_deref(), current.map(|id| id.to_string()))
+        .map(|sel| view.with_selection(Some(sel)));
+    use_effect(use_reactive!(|landing| {
+        if let Some(next) = landing {
+            nav.filter(next);
+        }
+    }));
 
     rsx! {
         div { class: "ik-cons-list",
@@ -765,7 +778,9 @@ fn ProviderInspector(
             }
             match tab {
                 Tab::Config => rsx! {
-                    div { class: "ik-cons-inspbody",
+                    // Two-up: the dry-run result is the answer to the config beside it, and
+                    // stacking it under a 168px textarea puts it off screen while you edit.
+                    div { class: "ik-cons-inspbody two-up",
                         div { class: "ik-cons-col",
                             if let Some(link) = link.clone() {
                                 PresetBanner {
@@ -847,7 +862,7 @@ fn ProviderInspector(
                                 trailing: rsx! {
                                     span {
                                         class: "ik-mono",
-                                        style: if config_valid { "font-size:11px;color:var(--faint);" } else { "font-size:11px;color:var(--star);" },
+                                        style: if config_valid { "font-size:11px;color:var(--muted);" } else { "font-size:11px;color:var(--star);" },
                                         if config_valid {
                                             {i18n.t("console.providers.jsonValid")}
                                         } else {
@@ -881,7 +896,7 @@ fn ProviderInspector(
                                         on_click: format_config,
                                         {i18n.t("console.providers.format")}
                                     }
-                                    span { class: "ik-mono", style: "margin-left:auto;align-self:center;font-size:11.5px;color:var(--faint);",
+                                    span { class: "ik-mono", style: "margin-left:auto;align-self:center;font-size:11.5px;color:var(--muted);",
                                         {i18n.t("console.providers.saveGate")}
                                     }
                                 }
@@ -1009,21 +1024,21 @@ fn ProviderInspector(
                 },
                 Tab::Coverage => rsx! {
                     div { class: "ik-cons-inspbody",
-                        div { class: "ik-cons-col", style: "grid-column:1 / -1;",
+                        div { class: "ik-cons-col",
                             CoverageTab { stat: stat.clone() }
                         }
                     }
                 },
                 Tab::Runs => rsx! {
                     div { class: "ik-cons-inspbody",
-                        div { class: "ik-cons-col", style: "grid-column:1 / -1;",
+                        div { class: "ik-cons-col",
                             RunsTab { provider_id: id }
                         }
                     }
                 },
                 Tab::Danger => rsx! {
                     div { class: "ik-cons-inspbody",
-                        div { class: "ik-cons-col", style: "grid-column:1 / -1;max-width:620px;",
+                        div { class: "ik-cons-col", style: "max-width:620px;",
                             DangerTab {
                                 provider: provider.clone(),
                                 stat: stat.clone(),

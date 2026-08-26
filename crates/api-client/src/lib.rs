@@ -35144,15 +35144,15 @@ impl Client {
     pub fn get_progress(&self) -> builder::GetProgress<'_> {
         builder::GetProgress::new(self)
     }
-    #[doc = "Set the read-progress frontier\n\nSet the whole-chapter frontier outright (design v2 §A.6).\n\nSends a `PUT` request to `/v1/me/progress/{series_id}`\n\nArguments:\n- `series_id`: Series id\n- `body`\n```ignore\nlet response = client.put_progress()\n    .series_id(series_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Set the read-progress frontier\n\nSet the whole-chapter frontier outright (design v2 §A.6). A series the caller does not track\nyet is added to their watchlist.\n\nSends a `PUT` request to `/v1/me/progress/{series_id}`\n\nArguments:\n- `series_id`: Series id\n- `body`\n```ignore\nlet response = client.put_progress()\n    .series_id(series_id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn put_progress(&self) -> builder::PutProgress<'_> {
         builder::PutProgress::new(self)
     }
-    #[doc = "Mark a single chapter read or unread\n\nApply the §A.3 mark-read/mark-unread rule for one chapter number. Unmarking an older\n(non-frontier) chapter retreats progress past it too; the client must confirm with the user\nfirst in that case (design v2 §A.6).\n\nSends a `PUT` request to `/v1/me/progress/{series_id}/chapters/{number}`\n\nArguments:\n- `series_id`: Series id\n- `number`: Chapter number\n- `body`\n```ignore\nlet response = client.put_chapter_progress()\n    .series_id(series_id)\n    .number(number)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Mark a single chapter read or unread\n\nApply the §A.3 mark-read/mark-unread rule for one chapter number. Unmarking an older\n(non-frontier) chapter retreats progress past it too; the client must confirm with the user\nfirst in that case (design v2 §A.6).\n\nMarking read also adds a series the caller does not track yet to their watchlist; marking\nunread never removes it.\n\nSends a `PUT` request to `/v1/me/progress/{series_id}/chapters/{number}`\n\nArguments:\n- `series_id`: Series id\n- `number`: Chapter number\n- `body`\n```ignore\nlet response = client.put_chapter_progress()\n    .series_id(series_id)\n    .number(number)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn put_chapter_progress(&self) -> builder::PutChapterProgress<'_> {
         builder::PutChapterProgress::new(self)
     }
-    #[doc = "Mark read up to a chapter\n\n\"Mark read to here\" (design v2 §A.6); equivalent to marking `number` read.\n\nSends a `POST` request to `/v1/me/progress/{series_id}/mark-read-to`\n\nArguments:\n- `series_id`: Series id\n- `body`\n```ignore\nlet response = client.mark_read_to()\n    .series_id(series_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Mark read up to a chapter\n\n\"Mark read to here\" (design v2 §A.6); equivalent to marking `number` read, watchlist\nside effect included.\n\nSends a `POST` request to `/v1/me/progress/{series_id}/mark-read-to`\n\nArguments:\n- `series_id`: Series id\n- `body`\n```ignore\nlet response = client.mark_read_to()\n    .series_id(series_id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn mark_read_to(&self) -> builder::MarkReadTo<'_> {
         builder::MarkReadTo::new(self)
     }

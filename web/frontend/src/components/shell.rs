@@ -141,7 +141,10 @@ fn is_compact(route: &Route) -> bool {
 fn measure_for(route: &Route) -> &'static str {
     match route {
         Route::Home {} | Route::Discover { .. } | Route::Search { .. } => "1760px",
-        Route::Account {} | Route::AnilistCallback { .. } | Route::Legal { .. } => "1120px",
+        Route::Account {}
+        | Route::AccountSection { .. }
+        | Route::AnilistCallback { .. }
+        | Route::Legal { .. } => "1120px",
         Route::Console {} => "none",
         _ => "1600px",
     }
@@ -384,7 +387,9 @@ fn use_unread_count() {
 #[cfg(test)]
 mod tests {
     use super::{is_reachable_signed_out, Route};
-    use crate::views::{ConsoleQuery, DiscoverQuery, SearchQuery, WatchlistQuery};
+    use crate::views::{
+        ConsoleQuery, DiscoverQuery, NotificationsQuery, SearchQuery, WatchlistQuery,
+    };
 
     /// Every screen the API's `account_gate` also lets through, so a private deployment still
     /// has a way in. A screen dropped from this list is a reader bounced off the very form they
@@ -431,7 +436,9 @@ mod tests {
             Route::Watchlist {
                 query: WatchlistQuery::default(),
             },
-            Route::Notifications {},
+            Route::Notifications {
+                query: NotificationsQuery::default(),
+            },
             Route::Account {},
             Route::Console {},
             Route::NotFound {

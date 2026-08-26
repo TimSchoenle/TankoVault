@@ -37,6 +37,38 @@ pub async fn watchlist_upsert<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
+/// Start tracking `series_id` unless the user already does, leaving an existing entry exactly
+/// as it stands.
+///
+/// Backs "reading a chapter means following the series": the read-progress writes call this so
+/// a series marked read is on the watchlist. The `DO NOTHING` half is the point — a reader who
+/// set `dropped`, muted the notify bell or excluded the series from external sync must not have
+/// any of that undone by reading one more chapter, so this is deliberately not
+/// [`watchlist_upsert`] with default arguments.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only — no other variant is reachable. As in [`watchlist_upsert`], a
+/// `series_id` that does not exist is a foreign-key violation and so a 500 rather than a 404.
+pub async fn watchlist_track_if_absent<'e, E: PgExecutor<'e>>(
+    exec: E,
+    user_id: UserId,
+    series_id: SeriesId,
+) -> DbResult<()> {
+    // Status and notify match what `PUT /v1/me/watchlist/{series_id}` defaults to, so an entry
+    // that appeared this way is indistinguishable from one the reader added by hand.
+    sqlx::query!(
+        "INSERT INTO watchlist_entries (user_id, series_id, status, notify) \
+         VALUES ($1,$2,$3,true) \
+         ON CONFLICT (user_id, series_id) DO NOTHING",
+        user_id.as_uuid(),
+        series_id.as_uuid(),
+        WatchStatus::Reading as WatchStatus,
+    )
+    .execute(exec)
+    .await?;
+    Ok(())
+}
+
 /// What [`watchlist_set_pinned_source`] did, so the caller can answer with the right status.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PinOutcome {

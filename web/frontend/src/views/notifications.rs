@@ -5,6 +5,9 @@
 //! the display fields ([`Notification`]), so this screen renders rather than parses: it used to
 //! read a free-form payload looking for a `series_title` no writer ever set, which is why every
 //! row said, literally, "new chapter".
+//!
+//! Tab and page live in the URL (see [`NotificationsQuery`]) rather than in signals, so opening a
+//! notification and coming back returns to the row it was found on.
 
 use crate::api;
 use crate::components::{
@@ -16,15 +19,17 @@ use crate::i18n::{use_i18n, Translator};
 use crate::icons::{Ic, Icon};
 use crate::models::*;
 use crate::state::use_session;
-use crate::util::{chapter_number, rel_time};
+use crate::util::{chapter_number, decode_component, rel_time};
 use crate::Route;
 use dioxus::prelude::*;
 use inkstone_ui::{button_class, Button, Pill, Size, Tone};
 use progenitor_client::ResponseValue;
+use std::fmt;
 /// Filter tabs (`DESIGN_SPEC` §7.5). Applied server-side: filtering the one loaded page is what
 /// let "Unread" render empty while unread rows sat on page two.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Tab {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum Tab {
+    #[default]
     All,
     Unread,
     Chapters,
@@ -56,6 +61,81 @@ impl Tab {
             Self::Chapters => Some("new_chapter"),
             Self::All | Self::Unread => None,
         }
+    }
+
+    /// The URL token. `All` is the absence of the parameter, not a value.
+    fn token(self) -> &'static str {
+        match self {
+            Self::All => "",
+            Self::Unread => "unread",
+            Self::Chapters => "chapters",
+        }
+    }
+
+    /// An unrecognised token widens to `All` rather than refusing the link — a hand-edited URL
+    /// should show more, never an error.
+    fn parse(token: &str) -> Self {
+        Self::all()
+            .iter()
+            .copied()
+            .find(|tab| tab.token() == token)
+            .unwrap_or_default()
+    }
+}
+
+/// The inbox's view state, encoded as a URL query string, so a reader triaging fifty rows keeps
+/// their filter and their place when they open one and come back.
+///
+/// Follows `views::watchlist::query` — `Default`, `From<&str>`, `Display` and a round-trip test —
+/// because two encoders that disagree about defaults is a filter that silently resets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) struct NotificationsQuery {
+    pub(crate) tab: Tab,
+    /// Zero-based, like the console's.
+    pub(crate) page: usize,
+}
+
+impl NotificationsQuery {
+    /// The inbox on `tab`, at page one.
+    ///
+    /// A constructor rather than the `with_*` method its neighbours use: those preserve the
+    /// fields they do not name, and this query has none — switching tab changes the row set, so
+    /// the page it carries has to reset and nothing of the old query survives.
+    fn on_tab(tab: Tab) -> Self {
+        Self { tab, page: 0 }
+    }
+}
+
+/// Parse the query string. Unknown keys and unparseable values fall back to the default for that
+/// field: a URL is user-editable, and half-understanding one beats a blank inbox.
+impl From<&str> for NotificationsQuery {
+    fn from(query: &str) -> Self {
+        let mut out = Self::default();
+        for pair in query.split('&').filter(|s| !s.is_empty()) {
+            let (key, raw) = pair.split_once('=').unwrap_or((pair, ""));
+            let value = decode_component(raw);
+            match key {
+                "tab" => out.tab = Tab::parse(&value),
+                "page" => out.page = value.parse().unwrap_or(0),
+                _ => {}
+            }
+        }
+        out
+    }
+}
+
+/// Write only what differs from the default, so the rail's link stays `/notifications` and a
+/// shared URL names exactly what its sender changed.
+impl fmt::Display for NotificationsQuery {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut parts: Vec<String> = Vec::new();
+        if self.tab != Tab::default() {
+            parts.push(format!("tab={}", self.tab.token()));
+        }
+        if self.page != 0 {
+            parts.push(format!("page={}", self.page));
+        }
+        write!(f, "{}", parts.join("&"))
     }
 }
 
@@ -94,11 +174,15 @@ impl Kind {
         }
     }
 
+    /// The tile's ink. The icon is what tells the kinds apart, so the ordinary inbox events all
+    /// share the accent; only the one kind that is a health signal — a sync conflict the reader
+    /// has to resolve — spends a hue, and it spends the health scale's rather than one of its
+    /// own. `SourceAdded` used to borrow `--color-type-manga`, a content-type token on an axis
+    /// that is not content type.
     fn color(self) -> &'static str {
         match self {
-            Self::NewChapter => "var(--acc)",
-            Self::SourceAdded => "var(--color-type-manga)",
-            Self::Completed | Self::Sync => "var(--jade-bright)",
+            Self::NewChapter | Self::SourceAdded | Self::Completed => "var(--acc)",
+            Self::Sync => "var(--color-health-warn)",
             Self::Unknown => "var(--muted)",
         }
     }
@@ -109,21 +193,45 @@ impl Kind {
 const PAGE_SIZE: usize = 50;
 
 #[component]
-pub(crate) fn Notifications() -> Element {
+pub(crate) fn Notifications(query: NotificationsQuery) -> Element {
     let session = use_session();
     let i18n = use_i18n();
     let api = api::use_api();
     let badge = use_context::<UnreadBadge>();
     let reload = use_reload();
-    let mut tab = use_signal(|| Tab::All);
-    let mut page = use_signal(|| 0usize);
+    let navigator = navigator();
+
+    // The route is the read side of both the tab and the page; a memo rather than signals,
+    // because a signal here would be a second copy the back button cannot reach.
+    let routed = use_memo(use_reactive!(|query| query));
+
+    // `Pagination` is a `Signal<usize>` chrome and the page lives in the URL, so this mirror is
+    // the bridge: the pager writes it, the second effect turns that write into a navigation, and
+    // the first re-seeds it from the route on the way back. Each effect compares before it
+    // writes, which is what stops the two from ping-ponging.
+    let mut picked = use_signal(|| query.page);
+    use_effect(move || {
+        let page = routed.read().page;
+        if *picked.peek() != page {
+            picked.set(page);
+        }
+    });
+    use_effect(move || {
+        let page = *picked.read();
+        let current = *routed.peek();
+        if page != current.page {
+            navigator.push(Route::Notifications {
+                query: NotificationsQuery { page, ..current },
+            });
+        }
+    });
 
     let notifications = use_resource(move || {
         reload.track();
         let client = api.client();
         let authed = session.is_authenticated();
-        let current = *tab.read();
-        let offset = i64::try_from(*page.read() * PAGE_SIZE).unwrap_or(0);
+        let current = routed.read().tab;
+        let offset = i64::try_from(routed.read().page * PAGE_SIZE).unwrap_or(0);
         async move {
             if !authed {
                 return Ok(NotificationsView {
@@ -206,11 +314,9 @@ pub(crate) fn Notifications() -> Element {
             }
         }
         TabBar {
-            selected: *tab.read(),
-            on_select: move |next| {
-                tab.set(next);
-                // The filter changes the row set, so page 2 of the old one means nothing.
-                page.set(0);
+            selected: query.tab,
+            on_select: move |next: Tab| {
+                navigator.push(Route::Notifications { query: NotificationsQuery::on_tab(next) });
             },
         }
         {
@@ -220,7 +326,7 @@ pub(crate) fn Notifications() -> Element {
                 || rsx! { SkeletonRows { count: 5 } },
                 |view| {
                     if view.items.is_empty() {
-                        let key = if *tab.read() == Tab::All {
+                        let key = if query.tab == Tab::All {
                             "notifications.empty"
                         } else {
                             "notifications.emptyFilter"
@@ -234,7 +340,7 @@ pub(crate) fn Notifications() -> Element {
                             NotifRow { key: "{notification.id}", notification }
                         }
                         if pages > 1 {
-                            Pagination { page, pages, has_next: *page.read() + 1 < pages }
+                            Pagination { page: picked, pages, has_next: query.page + 1 < pages }
                         }
                     }
                 },
@@ -473,6 +579,67 @@ mod tests {
             chapter_title: None,
             chapter_url: None,
             payload: serde_json::Value::Null,
+        }
+    }
+
+    /// Tab and page used to be `use_signal` against a bare `/notifications`, so opening a
+    /// notification and coming back dropped the reader on page 1 of All. Both have to survive the
+    /// query string, or that reset is back.
+    #[test]
+    fn tab_and_page_round_trip_through_the_query_string() {
+        let cases = [
+            NotificationsQuery::default(),
+            NotificationsQuery {
+                tab: Tab::Unread,
+                page: 4,
+            },
+            NotificationsQuery {
+                tab: Tab::Chapters,
+                page: 0,
+            },
+            NotificationsQuery {
+                tab: Tab::All,
+                page: 12,
+            },
+        ];
+        for case in cases {
+            let encoded = case.to_string();
+            assert_eq!(
+                NotificationsQuery::from(encoded.as_str()),
+                case,
+                "round trip failed for {encoded:?}"
+            );
+        }
+    }
+
+    /// The default state must not name itself in the URL, or every rail click rewrites the
+    /// address bar with parameters the reader did not choose.
+    #[test]
+    fn the_default_query_is_empty() {
+        assert_eq!(NotificationsQuery::default().to_string(), "");
+        assert_eq!(NotificationsQuery::from(""), NotificationsQuery::default());
+    }
+
+    /// A hand-edited URL must widen rather than break: an unknown tab is All, and a nonsense page
+    /// is page one.
+    #[test]
+    fn unparseable_parameters_fall_back_to_the_default() {
+        assert_eq!(NotificationsQuery::from("tab=nonsense").tab, Tab::All);
+        assert_eq!(NotificationsQuery::from("tab=").tab, Tab::All);
+        assert_eq!(NotificationsQuery::from("page=nonsense").page, 0);
+        assert_eq!(NotificationsQuery::from("page=-1").page, 0);
+        assert_eq!(NotificationsQuery::from("tab=unread&page=3").page, 3);
+    }
+
+    /// Switching tab has to reset the page: the filter changes the row set, so page 4 of the old
+    /// one is very likely past the end of the new one.
+    #[test]
+    fn changing_tab_returns_to_page_one() {
+        for tab in [Tab::All, Tab::Unread, Tab::Chapters] {
+            assert_eq!(
+                NotificationsQuery::on_tab(tab),
+                NotificationsQuery { tab, page: 0 }
+            );
         }
     }
 

@@ -22,7 +22,7 @@ use crate::components::{
 use crate::hooks::use_reload;
 use crate::i18n::use_i18n;
 use crate::models::*;
-use crate::views::console::{use_console_nav, RefreshTick};
+use crate::views::console::{landing_selection, use_console_nav, RefreshTick};
 use dioxus::prelude::*;
 use inkstone_ui::{Size, ToggleButton};
 use inspect::MergeInspector;
@@ -148,6 +148,19 @@ pub(super) fn MergesEntity(tick: RefreshTick) -> Element {
         .or_else(|| shown.first())
         .cloned();
     let selected = chosen.as_ref().map(|d| d.id);
+
+    // …and the fallback goes into the URL, so the address names the merge on screen rather than
+    // whichever one is newest under the filter that happens to be applied. It replaces rather
+    // than pushes — the operator did not choose this row and must not have to back out of it —
+    // and the next query is built out here rather than inside the effect, because reading
+    // `nav.query()` in there would subscribe the effect to the memo the write changes.
+    let landing = landing_selection(view.sel.as_deref(), selected.map(|id| id.to_string()))
+        .map(|sel| view.with_selection(Some(sel)));
+    use_effect(use_reactive!(|landing| {
+        if let Some(next) = landing {
+            nav.filter(next);
+        }
+    }));
 
     rsx! {
         div { class: "ik-cons-list",

@@ -1,7 +1,7 @@
 //! The native client, advertised from the browser it would replace.
 //!
-//! **Web only** — `Panel::is_visible` gates it — because the one reader who does not need this
-//! panel is the one already reading it in the desktop app.
+//! **Web only** — `AccountPanel::is_visible` gates it — because the one reader who does not
+//! need this panel is the one already reading it in the desktop app.
 //!
 //! Every link here goes to the releases page rather than to a versioned asset, and that is a
 //! constraint rather than a shortcut: nothing in the browser build knows which release is

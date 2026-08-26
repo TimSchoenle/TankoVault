@@ -185,7 +185,7 @@ pub(super) fn ProviderStatsTable(tick: RefreshTick) -> Element {
                         let rows = rows.to_vec();
                         let columns = shown.clone();
                         rsx! {
-                            div { class: "ik-tablewrap",
+                            div { class: "ik-tablewrap scroll",
                                 table { class: "{table_class}",
                                     thead {
                                         tr {

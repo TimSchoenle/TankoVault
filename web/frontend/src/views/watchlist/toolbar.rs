@@ -8,6 +8,7 @@ use crate::i18n::use_i18n;
 use crate::icons::{Ic, Icon};
 use crate::models::*;
 use dioxus::prelude::*;
+use inkstone_ui::{TabBar, TabItem};
 
 /// The filter input's DOM id. Focusing it goes through [`crate::components::FocusTargets`]
 /// rather than this — the id is kept because it is a stable hook for the field in the rendered
@@ -24,6 +25,9 @@ const DEBOUNCE_MS: u32 = 200;
 /// count derived from it would read `60` on every tab. They come from a query that applies
 /// every filter **except** status, which is what makes "Plan to read · 21" the answer to "what
 /// would I see if I clicked this".
+///
+/// The kit's strip rather than the app wrapper: the selection here is `Option<WatchStatus>`,
+/// which is not a `TabKind`.
 #[component]
 pub(super) fn StatusTabs(
     query: WatchlistQuery,
@@ -43,42 +47,39 @@ pub(super) fn StatusTabs(
         })
     };
 
-    // `All` last and set off by a rule, because it is a different kind of choice from the five
-    // shelves beside it.
-    let tabs: Vec<Option<WatchStatus>> = WatchStatus::all()
+    // `All` last and set apart, because it is a different kind of choice from the five shelves
+    // beside it.
+    let items: Vec<TabItem<Option<WatchStatus>>> = WatchStatus::all()
         .iter()
         .copied()
         .map(Some)
         .chain(std::iter::once(None))
+        .map(|status| {
+            let label =
+                status.map_or_else(|| i18n.t("watchlist.tab.all"), |s| i18n.t(s.label_key()));
+            let mut item = TabItem::new(status, label);
+            if let Some(count) = count_for(status) {
+                item = item.count(count.to_string());
+            }
+            if status.is_none() {
+                item = item.apart();
+            }
+            item
+        })
         .collect();
 
+    let selected = query.status;
     rsx! {
-        div { class: "ik-wl-tabs", role: "tablist",
-            for status in tabs {
-                {
-                    let active = query.status == status;
-                    let label = status.map_or_else(
-                        || i18n.t("watchlist.tab.all"),
-                        |s| i18n.t(s.label_key()),
-                    );
-                    let query = query.clone();
-                    rsx! {
-                        button {
-                            key: "{status.map_or(\"all\", |s| s.token())}",
-                            class: if status.is_none() {
-                                if active { "ik-wl-tab all active" } else { "ik-wl-tab all" }
-                            } else if active { "ik-wl-tab active" } else { "ik-wl-tab" },
-                            r#type: "button",
-                            role: "tab",
-                            "aria-selected": if active { "true" } else { "false" },
-                            onclick: move |_| on_change.call(WatchlistQuery { status, ..query.clone() }),
-                            "{label}"
-                            if let Some(count) = count_for(status) {
-                                span { class: "ik-wl-tabcount", "{count}" }
-                            }
-                        }
-                    }
-                }
+        // The wrapper carries nothing but the margin: the strip sits straight on the sticky
+        // toolbar, where the kit's own 18px gap would open a band of page between them.
+        div { class: "ik-wl-tabstrip",
+            TabBar {
+                items,
+                selected,
+                label: i18n.t("watchlist.statusTabs"),
+                on_select: move |status: Option<WatchStatus>| {
+                    on_change.call(WatchlistQuery { status, ..query.clone() });
+                },
             }
         }
     }

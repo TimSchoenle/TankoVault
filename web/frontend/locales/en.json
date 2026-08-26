@@ -266,6 +266,7 @@
     "close": "Close",
     "downloadCancelled": "Save cancelled — nothing was written.",
     "downloadRefused": "The download could not be saved.",
+    "loading": "Loading…",
     "markRead": "Mark read",
     "markUnread": "Mark unread",
     "next": "Next",
@@ -1727,6 +1728,12 @@
       "range": "#{first}–{last}",
       "title": "New in your watchlist"
     },
+    "firstRun": {
+      "body": "Add a series to your watchlist and every source that carries it gets watched for you — new chapters land here, and your place in each one travels with you.",
+      "discover": "Browse the catalogue",
+      "search": "Search for a title",
+      "title": "Your watchlist is still empty"
+    },
     "guest": {
       "browse": "Browse the catalogue",
       "subtitle": "Sign in to track chapters across every source that carries them, hear about new ones, and pick up where you left off.",
@@ -1790,10 +1797,11 @@
     "more": "More",
     "notices": "Open-source notices",
     "notifications": "Notifications",
-    "railLabel": "Main",
+    "railLabel": "Main navigation",
     "recommendations": "For you",
     "search": "Search",
     "skipToContent": "Skip to content",
+    "tabbarLabel": "Main navigation",
     "tagline": "SOURCE · TRACK · SYNC",
     "watchlist": "Watchlist"
   },
@@ -2015,6 +2023,14 @@
     "unread": "Unread",
     "upTo": "up to #{number}"
   },
+  "shortcuts": {
+    "col": {
+      "action": "Action",
+      "keys": "Keys"
+    },
+    "intro": "Every shortcut, grouped by the screen it works on. Press ? on that screen to bring this back.",
+    "title": "Keyboard shortcuts"
+  },
   "time": {
     "daysAgo": "{count}d ago",
     "hoursAgo": "{count}h ago",
@@ -2074,7 +2090,19 @@
     },
     "groupStats": "{titles} titles · {chapters} chapters",
     "headline": "{titles} titles tracked · {chapters} chapters unread",
-    "keyLegend": "J/K move · X select · ↵ continue · S menu · / filter",
+    "keyLegend": "J/K move · X select · ↵ continue · S menu · / filter · ? shortcuts",
+    "keys": {
+      "clear": "Close the menu, or clear the selection",
+      "down": "Next title",
+      "filter": "Jump to the filter box",
+      "help": "Show this list",
+      "menu": "Open the row menu",
+      "mute": "Mute or unmute the title",
+      "open": "Continue reading",
+      "select": "Select or deselect the title",
+      "selectAll": "Select every loaded title",
+      "up": "Previous title"
+    },
     "loadMore": "Load more",
     "markAllRead": "Mark read",
     "markGroupEmpty": "Nothing in this group to mark read.",
@@ -2123,6 +2151,7 @@
     "sourceIssues": "Source issues ({count})",
     "sourceMeta": "{source} · {count} sources",
     "sourceOffline": "source offline",
+    "statusTabs": "Filter by status",
     "sync": "Sync AniList",
     "synced": "Synced with AniList.",
     "syncedAgo": "AniList synced {when}",

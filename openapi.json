@@ -15850,7 +15850,7 @@
         ]
       },
       "put": {
-        "description": "Set the whole-chapter frontier outright (design v2 §A.6).",
+        "description": "Set the whole-chapter frontier outright (design v2 §A.6). A series the caller does not track\nyet is added to their watchlist.",
         "operationId": "put_progress",
         "parameters": [
           {
@@ -15919,7 +15919,7 @@
     },
     "/v1/me/progress/{series_id}/chapters/{number}": {
       "put": {
-        "description": "Apply the §A.3 mark-read/mark-unread rule for one chapter number. Unmarking an older\n(non-frontier) chapter retreats progress past it too; the client must confirm with the user\nfirst in that case (design v2 §A.6).",
+        "description": "Apply the §A.3 mark-read/mark-unread rule for one chapter number. Unmarking an older\n(non-frontier) chapter retreats progress past it too; the client must confirm with the user\nfirst in that case (design v2 §A.6).\n\nMarking read also adds a series the caller does not track yet to their watchlist; marking\nunread never removes it.",
         "operationId": "put_chapter_progress",
         "parameters": [
           {
@@ -15998,7 +15998,7 @@
     },
     "/v1/me/progress/{series_id}/mark-read-to": {
       "post": {
-        "description": "\"Mark read to here\" (design v2 §A.6); equivalent to marking `number` read.",
+        "description": "\"Mark read to here\" (design v2 §A.6); equivalent to marking `number` read, watchlist\nside effect included.",
         "operationId": "mark_read_to",
         "parameters": [
           {

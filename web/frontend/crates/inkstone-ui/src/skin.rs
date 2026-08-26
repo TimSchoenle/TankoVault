@@ -92,7 +92,9 @@ pub enum Part {
     ModalFoot,
     // Navigation
     Tabs,
+    TabsScroll,
     Tab,
+    TabCount,
     // Typography
     Mono,
 }
@@ -115,6 +117,10 @@ pub enum Flag {
     Flush,
     /// Denser than the default.
     Compact,
+    /// Bounded rather than growing, and scrolled in place.
+    Scroll,
+    /// At the trailing edge, set off from the rest.
+    Apart,
     /// A narrower key column.
     Narrow,
     /// Rendered in the monospace face.
@@ -252,7 +258,9 @@ impl Skin for Inkstone {
             Part::ModalBody => "ik-modal-body",
             Part::ModalFoot => "ik-modal-foot",
             Part::Tabs => "ik-tabs",
+            Part::TabsScroll => "ik-tabs-scroll",
             Part::Tab => "ik-tab",
+            Part::TabCount => "ik-tab-count",
             Part::Mono => "ik-mono",
         }
     }
@@ -347,7 +355,9 @@ impl Inkstone {
             (Part::Chip, Flag::Warn) => "warn",
             (Part::SegItem, Flag::Selected) => "on",
             (Part::Tabs, Flag::Flush) => "flush",
+            (Part::Tab, Flag::Apart) => "apart",
             (Part::Table, Flag::Compact) => "ik-table-compact",
+            (Part::TableWrap, Flag::Scroll) => "scroll",
             (Part::DefinitionList, Flag::Narrow) => "narrow",
             (Part::Input | Part::Select, Flag::Mono) => "ik-mono",
             (Part::Modal, Flag::Wide) => "wide",

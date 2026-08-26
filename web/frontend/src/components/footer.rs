@@ -6,8 +6,10 @@
 //! groups with the page's right-hand actions.
 //!
 //! Deliberately light. Cookies & storage folds into the Data Policy; notification settings,
-//! providers, shortcuts, release notes, documentation and "report an issue" are each one click
-//! away from the rail or Account, and twenty footer links on every screen is noise.
+//! providers, release notes, documentation and "report an issue" are each one click away from
+//! the rail or Account, and twenty footer links on every screen is noise. Keyboard shortcuts are
+//! not here either: `?` on a screen that binds any opens the reference over it
+//! ([`ShortcutsOverlay`](super::ShortcutsOverlay)).
 
 use crate::components::Wordmark;
 use crate::i18n::{use_i18n, Translator};
@@ -16,6 +18,7 @@ use crate::models::LegalKind;
 use crate::state::branding::use_branding;
 use crate::state::legal::{legal_title, use_legal_index};
 use crate::state::use_session;
+use crate::views::AccountPanel;
 use crate::{build_info, Route};
 use dioxus::prelude::*;
 
@@ -204,6 +207,10 @@ fn OpenSourceColumn() -> Element {
 
 /// The reader's own data. Every entry links the Account panel that owns it — the footer never
 /// repeats a destructive action, so "Delete account" here is a route, not a button.
+///
+/// All three land on Privacy because that panel owns all three controls; before the panel was a
+/// route segment they landed on Profile instead, which is three labels promising three
+/// destinations and delivering a fourth.
 #[component]
 fn YourDataColumn() -> Element {
     let i18n = use_i18n();
@@ -211,12 +218,15 @@ fn YourDataColumn() -> Element {
     if !session.is_authenticated() {
         return rsx! {};
     }
+    let privacy = Route::AccountSection {
+        panel: AccountPanel::Privacy,
+    };
     rsx! {
         nav { class: "ik-footer-col", "aria-label": i18n.t("footer.yourData"),
             div { class: "ik-footer-head", {i18n.t("footer.yourData")} }
-            Link { to: Route::Account {}, class: "ik-footer-link", {i18n.t("footer.export")} }
-            Link { to: Route::Account {}, class: "ik-footer-link", {i18n.t("footer.dataRequests")} }
-            Link { to: Route::Account {}, class: "ik-footer-link", {i18n.t("footer.deleteAccount")} }
+            Link { to: privacy.clone(), class: "ik-footer-link", {i18n.t("footer.export")} }
+            Link { to: privacy.clone(), class: "ik-footer-link", {i18n.t("footer.dataRequests")} }
+            Link { to: privacy, class: "ik-footer-link", {i18n.t("footer.deleteAccount")} }
         }
     }
 }

@@ -1,7 +1,8 @@
 //! Home dashboard (`DESIGN_SPEC` §7.1) — the signed-in reader's landing screen. Greeting +
 //! lifetime stat tiles, a continue-reading rail and a day-grouped "New in your watchlist" feed.
-//! Signed out, the same route is [`GuestHome`] instead: every section here is derived from a
-//! watchlist that does not exist yet.
+//! Signed out, the same route is [`GuestHome`] instead, and signed in with an empty watchlist it
+//! is [`FirstRun`]: every section here is derived from a watchlist, so until one exists there is
+//! nothing to show and the screen has to say what it is for instead. [`home_shape`] picks.
 //!
 //! Recommendations used to close this screen and now live at [`crate::Route::Recommendations`].
 //! They were the fourth section down, so they got whatever room was left: a short shelf below
@@ -19,8 +20,8 @@ use crate::models::*;
 use crate::state::capabilities::use_capabilities;
 use crate::state::use_session;
 use crate::util::{chapter_number, greeting_key, iso_date};
-use crate::views::DiscoverQuery;
-use crate::wire::types::Feature;
+use crate::views::{DiscoverQuery, SearchQuery};
+use crate::wire::types::{Feature, MeStats};
 use crate::Route;
 use dioxus::prelude::*;
 use inkstone_ui::{button_class, Button, Pill, Size, Tone};
@@ -108,15 +109,18 @@ pub(crate) fn Home() -> Element {
         .username()
         .unwrap_or_else(|| i18n.t("common.readerFallback"));
 
-    // Tile values show an em dash until resolved, not a provisional zero. "New chapters" comes
-    // from stats' uncapped `unread` total, not the feed length, which caps at 100 rows.
+    let shape = home_shape(stats.read_unchecked().as_ref());
+    // A shimmer while the lookup is in flight, the number once it lands, an em dash only if it
+    // failed — never a provisional zero. "New chapters" comes from stats' uncapped `unread`
+    // total, not the feed length, which caps at 100 rows.
     let (new_chapters, reading, chapters_read) = match &*stats.read_unchecked() {
         Some(Ok(Some(stats))) => (
-            stats.unread.to_string(),
-            stats.reading.to_string(),
-            stats.chapters_read.to_string(),
+            TileValue::Known(stats.unread.to_string()),
+            TileValue::Known(stats.reading.to_string()),
+            TileValue::Known(stats.chapters_read.to_string()),
         ),
-        _ => ("—".to_owned(), "—".to_owned(), "—".to_owned()),
+        None => (TileValue::Pending, TileValue::Pending, TileValue::Pending),
+        Some(_) => (TileValue::Unknown, TileValue::Unknown, TileValue::Unknown),
     };
 
     rsx! {
@@ -127,73 +131,141 @@ pub(crate) fn Home() -> Element {
                     {i18n.args("home.welcome", &[("name", &name)])}
                 }
             }
-            div { class: "ik-stat-row",
-                StatTile { icon: Icon::Bolt, label: i18n.t("home.stat.newChapters"), value: new_chapters, tone: "acc" }
-                StatTile { icon: Icon::MenuBook, label: i18n.t("home.stat.reading"), value: reading, tone: "" }
-                StatTile { icon: Icon::Check, label: i18n.t("home.stat.chaptersRead"), value: chapters_read, tone: "jade" }
+            // Three tiles that can only read zero are noise on the one screen that has to
+            // explain itself, so a first run does without them entirely.
+            if shape != HomeShape::FirstRun {
+                div { class: "ik-stat-row",
+                    StatTile { icon: Icon::Bolt, label: i18n.t("home.stat.newChapters"), value: new_chapters, tone: "acc" }
+                    StatTile { icon: Icon::MenuBook, label: i18n.t("home.stat.reading"), value: reading, tone: "" }
+                    StatTile { icon: Icon::Check, label: i18n.t("home.stat.chaptersRead"), value: chapters_read, tone: "jade" }
+                }
             }
         }
 
-        div { class: "ik-section-head",
-            Ic { icon: Icon::PlayCircle, size: 20 }
-            h2 { {i18n.t("home.continue.title")} }
-        }
-        {
-            async_list(
-                &continuing,
-                reload,
-                || rsx! { SkeletonBlock { height: 96 } },
-                &i18n.t("home.continue.empty"),
-                |items| rsx! {
-                    div { class: "ik-grid",
-                        for item in items.iter().cloned() {
-                            ContinueCard { key: "{item.series_id}", item }
+        if shape == HomeShape::FirstRun {
+            FirstRun {}
+        } else {
+            div { class: "ik-section-head",
+                Ic { icon: Icon::PlayCircle, size: 20 }
+                h2 { {i18n.t("home.continue.title")} }
+            }
+            {
+                async_list(
+                    &continuing,
+                    reload,
+                    || rsx! { SkeletonBlock { height: 96 } },
+                    &i18n.t("home.continue.empty"),
+                    |items| rsx! {
+                        div { class: "ik-grid",
+                            for item in items.iter().cloned() {
+                                ContinueCard { key: "{item.series_id}", item }
+                            }
                         }
-                    }
-                },
-            )
-        }
+                    },
+                )
+            }
 
-        div { class: "ik-section-head",
-            Ic { icon: Icon::Bolt, size: 20 }
-            h2 { {i18n.t("home.feed.title")} }
-            Link { to: Route::Notifications {}, class: "more", {i18n.t("common.seeAll")} }
-        }
-        {
-            async_list(
-                &feed,
-                reload,
-                || rsx! { SkeletonRows { count: 3 } },
-                &i18n.t("home.feed.empty"),
-                |items| rsx! {
-                    for (day , entries) in group_by_day(items) {
-                        div { class: "ik-daygroup", key: "{day}",
-                            div { class: "ik-dayhead", "{day}" }
-                            for release in group_by_series(&entries) {
-                                FeedRow {
-                                    key: "{feed_row_key(&release)}",
-                                    release,
-                                    reload,
+            div { class: "ik-section-head",
+                Ic { icon: Icon::Bolt, size: 20 }
+                h2 { {i18n.t("home.feed.title")} }
+                Link { to: Route::Notifications { query: crate::views::NotificationsQuery::default() }, class: "more", {i18n.t("common.seeAll")} }
+            }
+            {
+                async_list(
+                    &feed,
+                    reload,
+                    || rsx! { SkeletonRows { count: 3 } },
+                    &i18n.t("home.feed.empty"),
+                    |items| rsx! {
+                        for (day , entries) in group_by_day(items) {
+                            div { class: "ik-daygroup", key: "{day}",
+                                div { class: "ik-dayhead", "{day}" }
+                                for release in group_by_series(&entries) {
+                                    FeedRow {
+                                        key: "{feed_row_key(&release)}",
+                                        release,
+                                        reload,
+                                    }
                                 }
                             }
                         }
-                    }
-                },
-            )
-        }
+                    },
+                )
+            }
 
-        // A pointer, not the shelf. The screen no longer carries recommendations, and a reader
-        // who only ever lands here would otherwise never learn the surface exists.
-        if caps.has_feature(Feature::CatalogueRecommendations) {
-            Link { to: Route::Recommendations {}, class: "ik-cta-row",
-                span { class: "ik-flex", style: "gap:9px;align-items:center;",
-                    Ic { icon: Icon::AutoAwesome, size: 18 }
-                    span { style: "font-weight:600;", {i18n.t("home.recommendations.title")} }
+            // A pointer, not the shelf. The screen no longer carries recommendations, and a
+            // reader who only ever lands here would otherwise never learn the surface exists.
+            if caps.has_feature(Feature::CatalogueRecommendations) {
+                Link { to: Route::Recommendations {}, class: "ik-cta-row",
+                    span { class: "ik-flex", style: "gap:9px;align-items:center;",
+                        Ic { icon: Icon::AutoAwesome, size: 18 }
+                        span { style: "font-weight:600;", {i18n.t("home.recommendations.title")} }
+                    }
+                    span { class: "ik-muted", style: "font-size:13px;",
+                        {i18n.t("home.recommendations.cta")}
+                    }
+                    Ic { icon: Icon::ArrowForward, size: 16 }
                 }
-                span { class: "ik-muted", style: "font-size:13px;",
-                    {i18n.t("home.recommendations.cta")}
+            }
+        }
+    }
+}
+
+/// Which of the three screens Home is, decided by the stats resource alone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HomeShape {
+    /// The stats lookup has not answered yet.
+    Pending,
+    /// It answered, and the reader tracks nothing.
+    FirstRun,
+    /// There is something to count.
+    Tracking,
+}
+
+/// Decide Home's shape from the stats resource.
+///
+/// Every section of this screen derives from the watchlist, so `tracking == 0` is exactly the
+/// condition under which all of them are guaranteed empty — and the only one that earns
+/// [`FirstRun`]. The distinction a refactor must not lose is *not answered yet* versus
+/// *answered, nothing tracked*: flashing "your watchlist is empty" at a reader who has a hundred
+/// series is a worse screen than the one this replaces. A failed lookup is not evidence of an
+/// empty watchlist either, so it keeps the normal body.
+fn home_shape(stats: Option<&Result<Option<MeStats>, String>>) -> HomeShape {
+    match stats {
+        None => HomeShape::Pending,
+        Some(Ok(Some(stats))) if stats.tracking == 0 => HomeShape::FirstRun,
+        Some(_) => HomeShape::Tracking,
+    }
+}
+
+/// What Home is on an account's first day: what a watchlist is for, and the two moves that fill
+/// one.
+///
+/// Deliberately [`GuestHome`]'s shape — the two are the same screen at two moments, and the
+/// reader who actually signed up must not be given less than the one who did not.
+#[component]
+fn FirstRun() -> Element {
+    let i18n = use_i18n();
+    let caps = use_capabilities();
+    rsx! {
+        div { class: "ik-auth", style: "margin:18px auto 0;",
+            h1 { {i18n.t("home.firstRun.title")} }
+            p { class: "ik-muted", {i18n.t("home.firstRun.body")} }
+            if caps.has_feature(Feature::CatalogueBrowse) {
+                Link {
+                    to: Route::Discover { query: DiscoverQuery::default() },
+                    class: button_class(Tone::Primary, Size::Md, true),
+                    style: "margin-top:20px;",
+                    {i18n.t("home.firstRun.discover")}
                 }
-                Ic { icon: Icon::ArrowForward, size: 16 }
+            }
+            if caps.has_feature(Feature::CatalogueSearch) {
+                Link {
+                    to: Route::Search { query: SearchQuery::default() },
+                    class: button_class(Tone::Neutral, Size::Md, true),
+                    style: "margin-top:10px;",
+                    {i18n.t("home.firstRun.search")}
+                }
             }
         }
     }
@@ -232,16 +304,39 @@ fn GuestHome() -> Element {
     }
 }
 
+/// A stat tile's value: the number, a shimmer while the lookup is in flight, or an em dash once
+/// it has failed.
+#[derive(Clone, PartialEq)]
+enum TileValue {
+    Pending,
+    Known(String),
+    Unknown,
+}
+
 /// One lifetime-stat tile in the header row.
 #[component]
-fn StatTile(icon: Icon, label: String, value: String, tone: &'static str) -> Element {
+fn StatTile(icon: Icon, label: String, value: TileValue, tone: &'static str) -> Element {
     rsx! {
         div { class: "ik-stat",
             div { class: "lbl",
                 Ic { icon, size: 13 }
                 "{label}"
             }
-            div { class: "val {tone}", "{value}" }
+            match value {
+                // A shimmer rather than the em dash this used to show while loading: the dash is
+                // set in the 26px display face, so three tiles resized around their real numbers
+                // and re-flowed the header in the first second of every visit.
+                TileValue::Pending => rsx! {
+                    span { class: "val skel", "aria-hidden": "true" }
+                },
+                TileValue::Known(value) => rsx! {
+                    div { class: "val {tone}", "{value}" }
+                },
+                // Resolved and unknown. A dash is honest here; a zero would be a claim.
+                TileValue::Unknown => rsx! {
+                    div { class: "val {tone}", "—" }
+                },
+            }
         }
     }
 }
@@ -450,7 +545,34 @@ fn group_by_day(items: &[FeedEntry]) -> Vec<(String, Vec<FeedEntry>)> {
               not against a computed value"
 )]
 mod tests {
-    use super::{feed_row_key, group_by_series, FeedEntry};
+    use super::{feed_row_key, group_by_series, home_shape, FeedEntry, HomeShape, MeStats};
+
+    fn stats(tracking: i64) -> MeStats {
+        MeStats {
+            chapters_read: 0,
+            completed: 0,
+            reading: tracking,
+            tracking,
+            unread: 0,
+        }
+    }
+
+    /// The bug: every section of Home derives from the watchlist, so an account on its first day
+    /// got three em dashes, two empty sections and no action anywhere — less than the signed-out
+    /// screen offers. The first-run block that replaces them keys off *resolved and nothing
+    /// tracked*; keying it off "no numbers to show" instead would flash "your watchlist is empty"
+    /// at a reader who has a hundred series, every time the stats request is in flight.
+    #[test]
+    fn first_run_needs_stats_resolved_not_merely_absent() {
+        assert_eq!(home_shape(None), HomeShape::Pending);
+        assert_eq!(home_shape(Some(&Ok(Some(stats(0))))), HomeShape::FirstRun);
+        assert_eq!(home_shape(Some(&Ok(Some(stats(7))))), HomeShape::Tracking);
+        // A lookup that fell over is not evidence of an empty watchlist.
+        assert_eq!(
+            home_shape(Some(&Err("offline".to_owned()))),
+            HomeShape::Tracking
+        );
+    }
 
     fn entry(series: &str, provider: &str, number: f64) -> FeedEntry {
         FeedEntry {

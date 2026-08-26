@@ -28,9 +28,16 @@ pub(crate) fn TabBar<T: TabKind + Clone + PartialEq + 'static>(
     selected: T,
     on_select: EventHandler<T>,
     #[props(default)] visible: Option<Vec<T>>,
+    /// Names the strip for a screen reader; the kit puts it on the tablist itself.
+    #[props(default)]
+    label: Option<String>,
     /// `ik-tabs flush` + the console's top margin, for strips that sit inside an inspector.
     #[props(default = false)]
     flush: bool,
+    /// One row that scrolls sideways with a trailing fade, for a strip too long to wrap
+    /// gracefully.
+    #[props(default = false)]
+    scroll: bool,
 ) -> Element {
     let i18n = use_i18n();
     let items = visible
@@ -40,6 +47,6 @@ pub(crate) fn TabBar<T: TabKind + Clone + PartialEq + 'static>(
         .collect();
 
     rsx! {
-        inkstone_ui::TabBar { items, selected, on_select, flush }
+        inkstone_ui::TabBar { items, selected, on_select, label, flush, scroll }
     }
 }

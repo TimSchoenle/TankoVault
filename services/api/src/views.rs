@@ -350,6 +350,14 @@ impl IntoView for repo::matching::MergeDecisionRow {
             policy: self.policy,
             revertible: self.revertible,
             undo_rows: self.undo_rows,
+            undo_breakdown: self
+                .undo_breakdown
+                .into_iter()
+                .map(|segment| admin::UndoSegmentView {
+                    kind: segment.kind,
+                    rows: segment.rows,
+                })
+                .collect(),
             reverted_at: self.reverted_at,
             reverted_by: self.reverted_by,
             revert_reason: self.revert_reason,

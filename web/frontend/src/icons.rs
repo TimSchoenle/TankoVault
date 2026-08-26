@@ -42,6 +42,10 @@ pub(crate) enum Icon {
     // console
     Radar,
     Merge,
+    /// A merge that was performed and could still be taken back. Distinct from [`Icon::Merge`],
+    /// which is the queue of pairs still awaiting a verdict, and from [`Icon::History`], which is
+    /// the record of what people did.
+    Unmerge,
     Group,
     History,
     ShieldLock,
@@ -179,6 +183,9 @@ fn path_for(icon: Icon) -> &'static str {
         }
         Icon::Merge => {
             r#"<path d="M6 3v6a6 6 0 0 0 6 6h6"/><path d="m15 12 3 3-3 3"/><path d="M18 3v3"/>"#
+        }
+        Icon::Unmerge => {
+            r#"<path d="M18 3v6a6 6 0 0 1-6 6H6"/><path d="m9 12-3 3 3 3"/><path d="M6 3v3"/>"#
         }
         Icon::Group => {
             r#"<circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0"/><path d="M16 6a3 3 0 0 1 0 6"/><path d="M18 20a6 6 0 0 0-3-5"/>"#

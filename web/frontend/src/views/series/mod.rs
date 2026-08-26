@@ -11,8 +11,11 @@
 //! a direct sequel is still something this screen cannot name.
 
 mod chapters;
+mod membership;
 mod model;
+mod opens_on;
 mod pin;
+mod shelf;
 mod similar;
 mod tracking;
 
@@ -30,8 +33,8 @@ use chapters::{ChapterSection, OpenControl};
 use dioxus::prelude::*;
 use inkstone_ui::{Button, IconButton, Pill, Size, Tone};
 use model::{
-    merge_chapters, next_unread, rank_sources, source_ceiling, ChapterKey, MergedChapter,
-    RankedSource,
+    merge_chapters, next_unread, rank_sources, source_ceiling, source_freshest, ChapterKey,
+    MergedChapter, RankedSource,
 };
 use progenitor_client::ResponseValue;
 /// Every source's chapter list, in the order the API returned the sources.
@@ -232,12 +235,16 @@ fn SeriesPage(id: String) -> Element {
     let merged = merge_chapters(&ordered);
     let sources: Vec<RankedSource> = ranked_sources
         .iter()
-        .map(|source| RankedSource {
-            source: source.clone(),
-            ceiling: ordered
+        .map(|source| {
+            let list = ordered
                 .iter()
                 .find(|(fetched, _)| fetched.id == source.id)
-                .and_then(|(_, list)| source_ceiling(list)),
+                .map(|(_, list)| list.as_slice());
+            RankedSource {
+                source: source.clone(),
+                ceiling: list.and_then(source_ceiling),
+                freshest: list.and_then(source_freshest),
+            }
         })
         .collect();
 
@@ -311,6 +318,8 @@ fn SeriesPage(id: String) -> Element {
                     entry,
                     authed: session.is_authenticated(),
                     total_chapters: i64::try_from(total_chapters).unwrap_or(i64::MAX),
+                    sources: sources.clone(),
+                    pinned,
                     reload_wl,
                     reload_progress,
                 }

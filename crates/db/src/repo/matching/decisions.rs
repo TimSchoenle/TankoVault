@@ -157,11 +157,25 @@ fn decision_row(id: Uuid, decision: &NewMergeDecision<'_>) -> DbResult<Json> {
     }))
 }
 
+/// One segment of an undo journal: a table the revert would write to, and how many rows.
+///
+/// The key is the journal's own field name (`watchlist`, `moved_sources`, …) rather than a
+/// display string, because the console must not need a release to name a segment a later journal
+/// version adds.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct UndoSegment {
+    /// The journal key, which is the table the rows belong to.
+    pub kind: String,
+    /// How many rows that key holds.
+    pub rows: i64,
+}
+
 /// One decision as the console renders it.
 ///
 /// The undo journal is deliberately absent: it is the largest column in the table by an order of
 /// magnitude (it carries every row of the absorbed series) and no list view needs it. `undo_rows`
-/// carries the one fact a list *does* need from it — how much a revert would put back.
+/// carries the one fact a list *does* need from it — how much a revert would put back — and
+/// `undo_breakdown` the itemisation an operator needs before deciding to spend it.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct MergeDecisionRow {
     /// The journal row, which is what a revert or a flag names.
@@ -211,6 +225,8 @@ pub struct MergeDecisionRow {
     pub revertible: bool,
     /// How many rows a revert would restore or move back.
     pub undo_rows: i64,
+    /// Those rows itemised by journal key, largest segment first, empty segments dropped.
+    pub undo_breakdown: Vec<UndoSegment>,
     /// When the merge was undone, `None` while it stands.
     #[serde(with = "time::serde::rfc3339::option")]
     pub reverted_at: Option<OffsetDateTime>,
@@ -243,85 +259,46 @@ pub struct MergeDecisionFilter {
     pub blocked_only: bool,
 }
 
-/// A page of the journal, newest first.
+/// One row of the projection above, before the domain newtypes are put back on.
 ///
-/// # Errors
-/// [`DbError::Sqlx`] only; no match is an empty `Vec`.
-pub async fn list_merge_decisions<'e, E: PgExecutor<'e>>(
-    exec: E,
-    filter: &MergeDecisionFilter,
-    limit: i64,
-    offset: i64,
-) -> DbResult<Vec<MergeDecisionRow>> {
-    struct Row {
-        id: Uuid,
-        decided_at: OffsetDateTime,
-        sweep_id: Option<Uuid>,
-        trigger: String,
-        actor: Option<Uuid>,
-        left_id: Uuid,
-        right_id: Uuid,
-        left_title: String,
-        right_title: String,
-        verdict: String,
-        reason: String,
-        blocked_by: Vec<String>,
-        outcome: String,
-        survivor_id: Option<Uuid>,
-        absorbed_id: Option<Uuid>,
-        score: f32,
-        base_score: f32,
-        signals: Vec<String>,
-        terms: Json,
-        evidence: Json,
-        policy: Json,
-        revertible: bool,
-        undo_rows: i64,
-        reverted_at: Option<OffsetDateTime>,
-        reverted_by: Option<Uuid>,
-        revert_reason: Option<String>,
-        flagged_at: Option<OffsetDateTime>,
-        flagged_by: Option<Uuid>,
-        flag_reason: Option<String>,
-    }
-    // `undo_rows` is counted in the database rather than by deserialising the journal: the point
-    // of leaving `undo` out of the projection is not to ship it to the caller at all.
-    let rows = sqlx::query_as!(
-        Row,
-        "SELECT d.id, d.decided_at, d.sweep_id, d.trigger, d.actor_id AS actor, \
-                d.left_id, d.right_id, d.left_title, d.right_title, \
-                d.verdict, d.reason, d.blocked_by, d.outcome, d.survivor_id, d.absorbed_id, \
-                d.score, d.base_score, d.signals, d.terms, d.evidence, d.policy, \
-                (d.undo IS NOT NULL AND d.reverted_at IS NULL) AS \"revertible!\", \
-                COALESCE(( \
-                  SELECT sum(jsonb_array_length(v)) \
-                    FROM jsonb_each(COALESCE(d.undo, '{}'::jsonb)) AS e(k, v) \
-                   WHERE jsonb_typeof(v) = 'array' \
-                ), 0)::bigint AS \"undo_rows!\", \
-                d.reverted_at, d.reverted_by, d.revert_reason, \
-                d.flagged_at, d.flagged_by, d.flag_reason \
-           FROM merge_decisions d \
-          WHERE ($3::text IS NULL OR d.outcome = $3) \
-            AND ($4::uuid IS NULL OR d.left_id = $4 OR d.right_id = $4) \
-            AND (NOT $5::boolean OR (d.undo IS NOT NULL AND d.reverted_at IS NULL)) \
-            AND (NOT $6::boolean OR d.flagged_at IS NOT NULL) \
-            AND (NOT $7::boolean OR cardinality(d.blocked_by) > 0) \
-          ORDER BY d.decided_at DESC \
-          LIMIT $1 OFFSET $2",
-        limit,
-        offset,
-        filter.outcome.as_deref(),
-        filter.series_id.map(SeriesId::as_uuid),
-        filter.revertible_only,
-        filter.flagged_only,
-        filter.blocked_only,
-    )
-    .fetch_all(exec)
-    .await?;
+/// At module level rather than inside the query function because `query_as!` needs a named
+/// struct and the conversion back is long enough to be worth its own item.
+struct Row {
+    id: Uuid,
+    decided_at: OffsetDateTime,
+    sweep_id: Option<Uuid>,
+    trigger: String,
+    actor: Option<Uuid>,
+    left_id: Uuid,
+    right_id: Uuid,
+    left_title: String,
+    right_title: String,
+    verdict: String,
+    reason: String,
+    blocked_by: Vec<String>,
+    outcome: String,
+    survivor_id: Option<Uuid>,
+    absorbed_id: Option<Uuid>,
+    score: f32,
+    base_score: f32,
+    signals: Vec<String>,
+    terms: Json,
+    evidence: Json,
+    policy: Json,
+    revertible: bool,
+    undo_rows: i64,
+    undo_breakdown: Json,
+    reverted_at: Option<OffsetDateTime>,
+    reverted_by: Option<Uuid>,
+    revert_reason: Option<String>,
+    flagged_at: Option<OffsetDateTime>,
+    flagged_by: Option<Uuid>,
+    flag_reason: Option<String>,
+}
 
-    Ok(rows
-        .into_iter()
-        .map(|r| MergeDecisionRow {
+impl From<Row> for MergeDecisionRow {
+    fn from(r: Row) -> Self {
+        Self {
             id: r.id,
             decided_at: r.decided_at,
             sweep_id: r.sweep_id,
@@ -345,14 +322,74 @@ pub async fn list_merge_decisions<'e, E: PgExecutor<'e>>(
             policy: r.policy,
             revertible: r.revertible,
             undo_rows: r.undo_rows,
+            // The aggregate is built by the statement above, so a shape it cannot parse is a
+            // bug in this file rather than bad data; an empty itemisation degrades to the
+            // total, which the row already carries.
+            undo_breakdown: serde_json::from_value(r.undo_breakdown).unwrap_or_default(),
             reverted_at: r.reverted_at,
             reverted_by: r.reverted_by,
             revert_reason: r.revert_reason,
             flagged_at: r.flagged_at,
             flagged_by: r.flagged_by,
             flag_reason: r.flag_reason,
-        })
-        .collect())
+        }
+    }
+}
+
+/// A page of the journal, newest first.
+///
+/// # Errors
+/// [`DbError::Sqlx`] only; no match is an empty `Vec`.
+pub async fn list_merge_decisions<'e, E: PgExecutor<'e>>(
+    exec: E,
+    filter: &MergeDecisionFilter,
+    limit: i64,
+    offset: i64,
+) -> DbResult<Vec<MergeDecisionRow>> {
+    // `undo_rows` is counted in the database rather than by deserialising the journal: the point
+    // of leaving `undo` out of the projection is not to ship it to the caller at all.
+    let rows = sqlx::query_as!(
+        Row,
+        "SELECT d.id, d.decided_at, d.sweep_id, d.trigger, d.actor_id AS actor, \
+                d.left_id, d.right_id, d.left_title, d.right_title, \
+                d.verdict, d.reason, d.blocked_by, d.outcome, d.survivor_id, d.absorbed_id, \
+                d.score, d.base_score, d.signals, d.terms, d.evidence, d.policy, \
+                (d.undo IS NOT NULL AND d.reverted_at IS NULL) AS \"revertible!\", \
+                COALESCE(( \
+                  SELECT sum(jsonb_array_length(v)) \
+                    FROM jsonb_each(COALESCE(d.undo, '{}'::jsonb)) AS e(k, v) \
+                   WHERE jsonb_typeof(v) = 'array' \
+                ), 0)::bigint AS \"undo_rows!\", \
+                COALESCE(( \
+                  SELECT jsonb_agg( \
+                           jsonb_build_object('kind', e.k, 'rows', jsonb_array_length(e.v)) \
+                           ORDER BY jsonb_array_length(e.v) DESC, e.k \
+                         ) \
+                    FROM jsonb_each(COALESCE(d.undo, '{}'::jsonb)) AS e(k, v) \
+                   WHERE jsonb_typeof(e.v) = 'array' AND jsonb_array_length(e.v) > 0 \
+                ), '[]'::jsonb) AS \"undo_breakdown!\", \
+                d.reverted_at, d.reverted_by, d.revert_reason, \
+                d.flagged_at, d.flagged_by, d.flag_reason \
+           FROM merge_decisions d \
+          WHERE ($3::text IS NULL OR d.outcome = $3) \
+            AND ($4::uuid IS NULL OR d.left_id = $4 OR d.right_id = $4) \
+            AND (NOT $5::boolean OR (d.undo IS NOT NULL AND d.reverted_at IS NULL)) \
+            AND (NOT $6::boolean OR d.flagged_at IS NOT NULL) \
+            AND (NOT $7::boolean OR cardinality(d.blocked_by) > 0) \
+          ORDER BY d.decided_at DESC \
+          LIMIT $1 OFFSET $2",
+        limit,
+        offset,
+        filter.outcome.as_deref(),
+        filter.series_id.map(SeriesId::as_uuid),
+        filter.revertible_only,
+        filter.flagged_only,
+        filter.blocked_only,
+    )
+    .fetch_all(exec)
+    .await?;
+
+    Ok(rows.into_iter().map(MergeDecisionRow::from).collect())
 }
 
 /// Undo the merge a decision performed, and suppress the pair so the sweep cannot re-make it.

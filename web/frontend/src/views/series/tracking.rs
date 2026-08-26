@@ -1,6 +1,11 @@
 //! The Tracking sidebar: conflict resolution, the progress editor, external trackers, the
 //! per-series alert switch and the sync history for this title.
 //!
+//! Every watchlist action lands here: the shelf, the source pin, progress, alerts and membership
+//! itself. The row menu on the watchlist page carries the same five, written the same optimistic
+//! way — a reader who reaches a title from search rather than from their list must not have to go
+//! find the list to change anything about it.
+//!
 //! Everything here is fetched, never assumed. Two blocks the design calls for have no endpoint
 //! and are therefore **absent rather than stubbed**:
 //!
@@ -11,6 +16,11 @@
 //!   not three, so only the switch that is real is rendered.
 //!   TODO(api): needs per-kind notification opt-ins on the watchlist entry.
 
+use super::membership::{MembershipFooter, MergedRecordNote, NotTrackedNote};
+use super::model::RankedSource;
+use super::opens_on::OpensOnSection;
+use super::pin::Pinned;
+use super::shelf::ShelfSection;
 use crate::api;
 use crate::components::{async_view, use_step_up_gate, SkeletonBlock, StepUpGate, StepUpGuard};
 use crate::hooks::{use_busy, use_outcome, use_reload, Reload};
@@ -44,6 +54,10 @@ pub(super) fn TrackingCard(
     authed: bool,
     /// Whole chapters indexed, for the `read / total` line above the stepper.
     total_chapters: i64,
+    /// Every source in resolution order, for the *Opens on* picker.
+    sources: Vec<RankedSource>,
+    /// The series-level source pin the picker writes.
+    pinned: Pinned,
     /// Bumped after a watchlist write.
     reload_wl: Reload,
     /// The screen's shared read-state signal (owned by [`super::Series`]): a private `Reload`
@@ -194,6 +208,10 @@ pub(super) fn TrackingCard(
                 }
             }
 
+            if let Some(entry) = entry.clone() {
+                ShelfSection { entry, reload_wl }
+            }
+
             div { class: "ik-track-sec",
                 {
                     async_view(
@@ -213,7 +231,17 @@ pub(super) fn TrackingCard(
                         },
                     )
                 }
+                if let Some(entry) = entry.clone() {
+                    MarkAllRow {
+                        entry,
+                        total: total_chapters,
+                        reload_wl,
+                        reload_progress,
+                    }
+                }
             }
+
+            OpensOnSection { sources, pinned, entry: entry.clone() }
 
             div { class: "ik-track-sec",
                 div { class: "ik-sec-lbl", style: "margin-bottom:8px;", {i18n.t("series.track.trackers")} }
@@ -284,8 +312,70 @@ pub(super) fn TrackingCard(
                     },
                 }
             }
+
+            match entry.clone() {
+                Some(entry) => rsx! { MembershipFooter { entry, reload_wl } },
+                None => rsx! { NotTrackedNote { series_id, reload_wl } },
+            }
+
+            MergedRecordNote { series_id }
         }
         StepUpGuard { gate }
+    }
+}
+
+/// Mark every chapter of this series read, with the unread count that says what it would move.
+///
+/// The bulk endpoint with a single id, not a second "everything" path: the watchlist row menu
+/// already spells this action, and two definitions of *all* is how they drift.
+#[component]
+fn MarkAllRow(
+    entry: WatchlistItem,
+    /// Whole chapters indexed, which is what the button names.
+    total: i64,
+    reload_wl: Reload,
+    reload_progress: Reload,
+) -> Element {
+    let api = api::use_api();
+    let i18n = use_i18n();
+    let busy = use_busy();
+    let series_id = entry.series_id;
+    let unread = entry.unread;
+
+    let mark_all = move |_| {
+        if !busy.claim() {
+            return;
+        }
+        let client = api.client();
+        spawn(async move {
+            if client
+                .bulk_mark_read()
+                .body(WatchlistBulkIds {
+                    series_ids: vec![series_id],
+                })
+                .send()
+                .await
+                .is_ok()
+            {
+                reload_progress.bump();
+                reload_wl.bump();
+            }
+            busy.release();
+        });
+    };
+
+    rsx! {
+        div { class: "ik-flex", style: "gap:8px;margin-top:8px;",
+            Button {
+                size: Size::Sm,
+                disabled: busy.is_busy() || unread == 0,
+                on_click: mark_all,
+                {i18n.args("series.track.markAll", &[("count", &total.to_string())])}
+            }
+            span { class: "ik-mono", style: "margin-left:auto;font-size:11px;color:var(--faint);",
+                {i18n.plural("series.track.unreadCount", unread, &[])}
+            }
+        }
     }
 }
 

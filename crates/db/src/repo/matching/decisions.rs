@@ -348,6 +348,14 @@ pub async fn list_merge_decisions<'e, E: PgExecutor<'e>>(
 ) -> DbResult<Vec<MergeDecisionRow>> {
     // `undo_rows` is counted in the database rather than by deserialising the journal: the point
     // of leaving `undo` out of the projection is not to ship it to the caller at all.
+    //
+    // The segment sizes go through a `CASE` rather than a `WHERE jsonb_typeof(...) = 'array'`
+    // guard, and that is load-bearing: Postgres orders the clauses of one qual by cost, so a
+    // guard standing beside `jsonb_array_length(e.v) > 0` in the same `WHERE` was planned
+    // *behind* it and the statement died with `cannot get array length of a non-array` on the
+    // journal's first non-array field. Nothing can reorder around a `CASE`. Reading both
+    // aggregates out of one lateral also detoasts `undo` — by far the widest column in the
+    // table — once per row rather than once per subquery.
     let rows = sqlx::query_as!(
         Row,
         "SELECT d.id, d.decided_at, d.sweep_id, d.trigger, d.actor_id AS actor, \
@@ -355,22 +363,23 @@ pub async fn list_merge_decisions<'e, E: PgExecutor<'e>>(
                 d.verdict, d.reason, d.blocked_by, d.outcome, d.survivor_id, d.absorbed_id, \
                 d.score, d.base_score, d.signals, d.terms, d.evidence, d.policy, \
                 (d.undo IS NOT NULL AND d.reverted_at IS NULL) AS \"revertible!\", \
-                COALESCE(( \
-                  SELECT sum(jsonb_array_length(v)) \
-                    FROM jsonb_each(COALESCE(d.undo, '{}'::jsonb)) AS e(k, v) \
-                   WHERE jsonb_typeof(v) = 'array' \
-                ), 0)::bigint AS \"undo_rows!\", \
-                COALESCE(( \
-                  SELECT jsonb_agg( \
-                           jsonb_build_object('kind', e.k, 'rows', jsonb_array_length(e.v)) \
-                           ORDER BY jsonb_array_length(e.v) DESC, e.k \
-                         ) \
-                    FROM jsonb_each(COALESCE(d.undo, '{}'::jsonb)) AS e(k, v) \
-                   WHERE jsonb_typeof(e.v) = 'array' AND jsonb_array_length(e.v) > 0 \
-                ), '[]'::jsonb) AS \"undo_breakdown!\", \
+                u.undo_rows AS \"undo_rows!\", u.undo_breakdown AS \"undo_breakdown!\", \
                 d.reverted_at, d.reverted_by, d.revert_reason, \
                 d.flagged_at, d.flagged_by, d.flag_reason \
            FROM merge_decisions d \
+           CROSS JOIN LATERAL ( \
+             SELECT COALESCE(sum(s.rows), 0)::bigint AS undo_rows, \
+                    COALESCE(jsonb_agg( \
+                               jsonb_build_object('kind', s.kind, 'rows', s.rows) \
+                               ORDER BY s.rows DESC, s.kind \
+                             ) FILTER (WHERE s.rows > 0), '[]'::jsonb) AS undo_breakdown \
+               FROM ( \
+                 SELECT e.k AS kind, \
+                        CASE WHEN jsonb_typeof(e.v) = 'array' \
+                             THEN jsonb_array_length(e.v) ELSE 0 END AS rows \
+                   FROM jsonb_each(COALESCE(d.undo, '{}'::jsonb)) AS e(k, v) \
+               ) AS s \
+           ) AS u \
           WHERE ($3::text IS NULL OR d.outcome = $3) \
             AND ($4::uuid IS NULL OR d.left_id = $4 OR d.right_id = $4) \
             AND (NOT $5::boolean OR (d.undo IS NOT NULL AND d.reverted_at IS NULL)) \

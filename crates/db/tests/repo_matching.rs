@@ -2862,3 +2862,107 @@ async fn a_batch_refuses_the_same_pair_twice() {
         "a duplicated pair is a caller error, not a driver error",
     );
 }
+
+/// **Reading the journal must survive a decision that carries an undo journal.**
+///
+/// `undo_breakdown` sized each segment with `jsonb_array_length(e.v)` and guarded it with
+/// `jsonb_typeof(e.v) = 'array'` in the same `WHERE`. Postgres orders the clauses of one qual by
+/// cost and planned the guard *behind* the call it was guarding, so the statement died with
+/// `cannot get array length of a non-array` on the journal's `version` — every page of the
+/// console's default view (`revertible`) 500ed, and so did any page holding one merged decision.
+/// Nothing caught it because every other test in this file journals `undo: None`, which is the
+/// one shape the broken expression could read.
+#[tokio::test]
+async fn the_journal_lists_a_decision_that_carries_an_undo() {
+    use tankovault_db::repo::matching::{
+        MergeDecisionFilter, NewMergeDecision, list_merge_decisions, record_merge_decisions,
+    };
+
+    let db = TestDb::spawn().await;
+    let alpha = seed::provider(&db, "alpha").create().await;
+    let beta = seed::provider(&db, "beta").create().await;
+    let reader = seed::user(&db, "reader").create().await;
+    let keep = ingest(&db, alpha, &BERSERK, &[1.0, 2.0]).await;
+    let drop = ingest(&db, beta, &VINLAND, &[1.0]).await;
+
+    // Rows the merge moves, so the journal carries segments of more than one size.
+    watchlist_upsert(&db.pool, reader, drop, WatchStatus::Reading, true)
+        .await
+        .expect("absorbed watchlist");
+    progress_set(&db.pool, reader, drop, 1.0)
+        .await
+        .expect("absorbed progress");
+
+    let undo = merge_series(&db.pool, keep, drop, None, "auto_merged")
+        .await
+        .expect("merge");
+    assert!(undo.row_count() > 0, "sanity: the journal carries rows");
+
+    let empty = serde_json::json!({});
+    record_merge_decisions(
+        &db.pool,
+        &[NewMergeDecision {
+            sweep_id: None,
+            trigger: "sweep_new",
+            actor: None,
+            pair: (keep, drop),
+            titles: (BERSERK.title, VINLAND.title),
+            verdict: "auto",
+            reason: "compact_identity",
+            blocked_by: &[],
+            outcome: "merged",
+            survivor_id: Some(keep),
+            absorbed_id: Some(drop),
+            score: 1.0,
+            base_score: 0.9,
+            signals: &["compact_identity"],
+            terms: &empty,
+            evidence: &empty,
+            policy: &empty,
+            undo: Some(&undo),
+        }],
+    )
+    .await
+    .expect("journal the merge");
+
+    let rows = list_merge_decisions(&db.pool, &MergeDecisionFilter::default(), 10, 0)
+        .await
+        .expect("a journal page holding an undo must be readable");
+    let row = rows.first().expect("the merge decision");
+    assert!(row.revertible, "an unspent journal is revertible");
+    assert!(
+        row.undo_rows >= i64::try_from(undo.row_count()).expect("row count fits"),
+        "undo_rows counts every array segment: {} < {}",
+        row.undo_rows,
+        undo.row_count(),
+    );
+    assert_eq!(
+        row.undo_breakdown.iter().map(|s| s.rows).sum::<i64>(),
+        row.undo_rows,
+        "the itemisation must account for the total it is itemising",
+    );
+    assert!(
+        row.undo_breakdown.iter().all(|s| s.rows > 0),
+        "empty segments are dropped rather than listed at zero",
+    );
+    assert!(
+        row.undo_breakdown
+            .windows(2)
+            .all(|w| w[0].rows >= w[1].rows),
+        "largest segment first",
+    );
+
+    // The same page read through the filter the console opens on.
+    let revertible = list_merge_decisions(
+        &db.pool,
+        &MergeDecisionFilter {
+            revertible_only: true,
+            ..MergeDecisionFilter::default()
+        },
+        10,
+        0,
+    )
+    .await
+    .expect("the revertible filter is the console's default view");
+    assert_eq!(revertible.len(), 1);
+}

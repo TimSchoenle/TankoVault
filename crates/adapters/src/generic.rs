@@ -521,8 +521,14 @@ impl SourceAdapter for GenericConfigAdapter {
                 let Some(href) = anchor.value().attr(link_attr) else {
                     continue;
                 };
-                let text: String = anchor.text().collect();
-                let Some(number) = parse_chapter_number(&text) else {
+                // `chapters.number` where the row nests its date *inside* the anchor: the
+                // anchor's own text then reads "Chapter 1" + "7 days ago" as `Chapter 17 days
+                // ago`, and the number parses as 17. See `ChaptersCfg::number`.
+                let label = match cfg.number.as_deref() {
+                    Some(spec) => extract_first(el, spec)?,
+                    None => Some(anchor.text().collect()),
+                };
+                let Some(number) = label.as_deref().and_then(parse_chapter_number) else {
                     continue;
                 };
                 let published_at = cfg

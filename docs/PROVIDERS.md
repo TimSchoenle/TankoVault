@@ -128,6 +128,147 @@ are named per provider in the job's output.
 | Kayn Scans | `kaynscan.org` | Iken JSON | **Custom code** | `IkenAdapter` |
 | Hijala Scans | `en-hijala.com` | Iken JSON | **Custom code** | `IkenAdapter` |
 
+### The 2026-08-26 expansion — 57 more
+
+Grouped by what it cost to add them, which is the number worth reading: **thirty-two** are a
+family row, **twenty-three** are selectors with no Rust, and **two** are an existing custom adapter
+pointed at another install of the platform it already drives. No new `AdapterKind`, no migration.
+
+One capability was added along the way — `chapters.number`, an optional selector for the element
+carrying a row's chapter label. It exists for a single markup shape that corrupts data *silently*:
+a row that nests its update time **inside** the chapter anchor renders
+`<a><strong>Chapter 1</strong><time>7 days ago</time></a>`, whose concatenated text is
+`Chapter 17 days ago`. Every number then parses to a plausible wrong value and reading order is
+scrambled, with nothing failing. It was found on `kaliscan` only after a full ingest — 2 453 of
+2 467 rows wrong — and the same shape is why two otherwise-healthy mangahub clones were rejected.
+
+| Provider | Domain | Layout | Onboarding | Notes |
+|---|---|---|---|---|
+| Athrea Scans | `athreascans.com` | MangaThemesia | family + `series` | `table.infotable`; coin plugin, see below |
+| CulturedWorks | `culturedworks.com` | MangaThemesia | family defaults | |
+| Eva Scans | `evascans.org` | MangaThemesia | family + listing | `manga-card-v` grid at `/series/` |
+| Galaxy Manga | `galaxymanga.io` | MangaThemesia | family defaults | |
+| Lagoon Scans | `lagoonscans.com` | MangaThemesia | family + `series` | `table.infotable` |
+| Madara Scans | `madarascans.org` | MangaThemesia | family + listing/chapters | **sells early access** |
+| MangaTX | `mangatx.cc` | MangaThemesia | family defaults | |
+| Rackus Reads | `rackusreads.com` | MangaThemesia | family + `series` | `table.infotable` |
+| Raven Scans | `ravenscans.net` | MangaThemesia | family + `/series/` | |
+| Scythe Scans | `scythescans.com` | MangaThemesia | family defaults | |
+| Silent Quill | `www.silentquill.net` | MangaThemesia | family + title | |
+| Brainrot Comics | `brainrotcomics.com` | Madara | family defaults | |
+| Bun Manga | `bunmanga.com` | Madara | family defaults | |
+| DragonTea | `dragontea.ink` | Madara | family defaults | |
+| Gourmet Supremacy | `gourmetsupremacy.com` | Madara | family + `/project/` | |
+| LinkManga | `linkmanga.com` | Madara | family defaults | |
+| MadaraDex | `madaradex.org` | Madara | family + `/title/` | |
+| Manga District | `mangadistrict.com` | Madara | family + `/series/` | |
+| MangaHe | `mangahe.com` | Madara | family defaults | |
+| Zin Manga | `mangazin.org` | Madara | family defaults | |
+| ManhuaHot | `manhuahot.com` | Madara | family defaults | |
+| Manhuarm | `manhuarmtl.com` | Madara | family + listing/series | feed and catalogue use different cards |
+| S2Manga | `s2read.com` | Madara | family defaults | |
+| Setsu Scans | `setsuscans.com` | Madara | family + title | |
+| ToonGod | `www.toongod.org` | Madara | family + `/webtoon/` | feed is the archive, not `/` |
+| WebtoonScan | `webtoonscan.com` | Madara | family + `/manhwa/` | |
+| Webtoon XYZ | `www.webtoon.xyz` | Madara | family + `/read/` | |
+| Zazamanga | `www.zazamanga.com` | Madara | family + chapters | rows are `div`, not `li` |
+| Eris Scans | `erisscans.com` | Keyoapp | family defaults | **sells early access** |
+| Mangabat | `www.mangabats.com` | Manganato | `ManganatoAdapter` | |
+| Manganato | `manganato.gg` | Manganato | `ManganatoAdapter` | |
+| MangaKakaLove | `www.mangakakalove.com` | Manganato | `ManganatoAdapter` | |
+| Zinmanga | `www.zinmanga.net` | Zinmanga platform | `KunMangaAdapter` | sitemap walk + JSON chapters |
+| Kun Manga Online | `www.kunmanga.online` | Zinmanga platform | `KunMangaAdapter` | sitemap walk + JSON chapters |
+| MangaFox | `fanfox.net` | Bespoke | **Config only** | one application, two domains |
+| MangaHere | `www.mangahere.cc` | Bespoke | **Config only** | |
+| Hades Scans | `hadesscans.com` | Bespoke WordPress | **Config only** | chapter row *is* the anchor |
+| KaliScan | `kaliscan.io` | Bespoke | **Config only** | full list, not the preview strip |
+| Mangafreak | `ww3.mangafreak.me` | Bespoke | **Config only** | |
+| Mangago | `www.mangago.me` | Bespoke | **Config only** | |
+| MangaKatana | `mangakatana.com` | Bespoke | **Config only** | |
+| MangaNow | `manganow.to` | MangaReader | **Config only** | whole chapter list server-rendered |
+| MangaTown | `www.mangatown.com` | Bespoke | **Config only** | chapter labels carry no marker |
+| Manhuaplus Mirror | `manhuaplus.org` | Liliana | **Config only** | unrelated to `manhuaplus.com` |
+| MangaGeko | `www.mgeko.cc` | Bespoke | **Config only** | chapters from `all-chapters/` |
+| Project Suki | `projectsuki.com` | Bespoke | **Config only** | title only in the Open Graph tag |
+| Read Comics Online | `readcomicsonline.ru` | Bespoke | **Config only** | chapter list scoped past the "Read First" button |
+| SayManhwa | `saymanhwa.com` | Bespoke | **Config only** | |
+| XOXO Comics | `xoxocomic.com` | WPComics | **Config only** | |
+| Read Attack on Titan | `readsnk.com` | MangaCatalog | **Config only** | sitemap enumeration |
+| Read Tokyo Ghoul | `tokyoghoulre.com` | MangaCatalog | **Config only** | |
+| Read Jujutsu Kaisen | `readjujutsukaisen.com` | MangaCatalog | **Config only** | |
+| Read Seven Deadly Sins | `read7deadlysins.com` | MangaCatalog | **Config only** | |
+| Read Solo Leveling | `readsololeveling.org` | MangaCatalog | **Config only** | |
+| Read Fairy Tail | `readfairytail.com` | MangaCatalog | **Config only** | |
+| Read Kingdom | `readkingdom.com` | MangaCatalog | **Config only** | |
+| Read One Piece | `readonepiece.com` | MangaCatalog | **Config only** | 1 207 chapters |
+
+Every row above was derived from live markup and verified end to end against the running site
+with `cargo run -p tankovault-adapters --example probe -- <slug>` — feed, catalogue page, series
+metadata and chapter list — before it was written down. The selectors that a plausible-looking
+alternative gets *silently* wrong are pinned by
+[`tests/expansion_presets_fixture.rs`](../crates/adapters/tests/expansion_presets_fixture.rs).
+
+#### What the survey rejected, and why it is the interesting half
+
+Roughly 130 English-language candidates were probed to land these 46. The rejections cluster, and
+each cluster is a rule worth keeping:
+
+- **~50 Madara installs render no chapter list at all.** This is the AJAX limitation documented
+  below, and it is the family's dominant failure: such a site parses a perfect catalogue and a
+  perfect feed and ingests zero chapters, silently. Checking for a server-rendered
+  `li.wp-manga-chapter` is now the *first* question asked of a Madara candidate, not the last.
+  Lifting it needs the fetch stack to gain a POST, which is a policy decision about provider
+  egress rather than a patch — see [the limitation](#a-limitation-worth-stating-madaras-ajax-chapter-list).
+- **A dozen origins are simply gone or permanently 5xx** (`crowscans`, `nexcomic`, `nikatoons`,
+  `vanillascans`, `gojoscans`, `comicasura`, `manhuascan.us` …). Liveness was re-checked hours
+  apart before any was dropped.
+- **Eight of nine remaining Keyoapp installs are unreachable**, three of them answering `/` with
+  an origin nginx `404` through a fully solved browser over *both* address families — the
+  platform's soft-ban shape, not a routing problem — and distinct from the per-address-family
+  behaviour [documented below](#an-origin-can-answer-differently-per-address-family), which was
+  ruled out by checking both families.
+- **Several sites render their chapter list client-side** from a bespoke JSON API (`philiascans`,
+  `valirscans`, `divascans`, `duskscans`, `stonescape`, `webdexscans`, `kappabeast`). Each is one
+  adapter's worth of work and none shares an API with another, so none is cheap.
+- **A few truncate.** `likemanga` serves twenty chapter rows and paginates the rest over AJAX;
+  a config row for it would ingest the newest twenty of every series and never the rest. Dropped
+  rather than shipped, because the shortfall is invisible downstream.
+- **Adult-only catalogues were left out** as a judgement call rather than a technical one; a
+  dozen otherwise-healthy MangaThemesia and Madara installs are hentai aggregators.
+
+#### Eleven of these terminated only after the walk was run
+
+Every preset above passed a single-page probe — feed, catalogue page 1, series, chapters — before
+anything else was done to it. Eleven of them still had a catalogue walk that **never ends**, and a
+single-page sample cannot see any of it. This is the second time this repository has learned that
+lesson, so the rule is now: `--walk` before shipping, not after.
+
+| Site | What page 1 showed | What the walk showed | Fix |
+|---|---|---|---|
+| `mangatx` | 40 series | every page number, `?page=` and `/page/N/` alike, returns the byte-identical page 1 | `pages: 1` |
+| `hadesscans` | 30 series | `?page=` ignored; pages 2-6 re-served page 1 | paginate on the path — which also took the catalogue from 30 series to 76 |
+| `manhuaplusorg` | 20 series | `/manga-list` is a static legacy page that ignores `?page=` | the site's own pager route — 659 series, matching its sitemap exactly |
+| `mgeko` | 50 series | server clamps every page above 5 and keeps serving it | a `next` marker testing the chevron's `href`, which degrades to `javascript:void(0)` on the last page |
+| `linkmanga` | 10 series | a page past the end renders a *popular titles* grid in the archive's own container, so "this page yielded items" stays true forever | `link[rel=next]` |
+| `saymanhwa` | 24 series | a page past the end keeps serving 24 cards | `link[rel=next]` |
+| `brainrotcomics` | 16 series | the page after the last answers a hard **404**, so the request that should end the walk *fails* and the task is retried forever | `div.nav-previous` — WordPress names its paginator by chronology, so "previous" is the page further into the archive |
+| `setsuscans` | 12 series | same hard 404 | `link[rel=next]` |
+| `mangago` | 44 series | a page past the end serves 44 series it has *never* served before — deterministic per page number, disjoint from the real ones, so neither count nor novelty can stop it | the paginator's current-page marker, which is simply absent past page 455 |
+| `zazamanga` | 24 series (12 real) | the listing is clamped at page 100 on every route and sort, while the paginator advertises ~7 000 — so no marker and no content test can ever fire | `pages: 100`, the site's own ceiling |
+| `mgeko` (again) | — | `ul.novel-list li.novel-item` also matched a 24-card promo carousel, so consecutive pages overlapped | scope the item selector to the grid |
+| `zazamanga` (again) | — | every page renders its twelve cards **twice**, and only one copy carries a title, so half the harvested items were title-less | select the copy that has one |
+
+The shape they share is the dangerous one: **every request succeeded**. A clamped paginator is not
+an error, a 200 with somebody else's cards is not an error, and an empty parse is a valid answer.
+Only counting how many series each page *adds* — and then asking for a page far past the end —
+separates a walk that terminates from one that re-ingests page 1 until the planner's cap.
+
+Two candidates were rejected for reasons specific enough to be worth naming. `grabber.zone`
+renders a chapter row whose *first* anchor is the thumbnail, so the row's number is read from
+empty link text and every chapter is discarded — no selector expressible here picks the second
+anchor. `drakecomic.net` appends `?ref=browse` to every catalogue link, so the same series would
+be stored under two paths depending on which listing found it.
+
 ## Early-access (paid) chapters
 
 Several of these sites sell chapters before releasing them free. Such a chapter is stored like
@@ -145,9 +286,20 @@ Where each provider publishes the fact:
 | Toonily and other Madara sites | `chapters.locked` selector in the provider config | `chapters.unlock`, where rendered |
 | Keyoapp sites | the coin-price badge on the chapter card (`img[alt="Coin"]`) | none — the platform states a price, never a date, so such a chapter stays locked |
 | Rokari Comics, Akaza Scans | the coin plugin's price badge on the chapter row (`span.text-gold`), which the stock MangaThemesia theme does not render | none — the badge states a price, never a date, so such a chapter stays locked |
+| Madara Scans | a lock glyph (`i.fa-lock`) inside the chapter row's number cell, rendered on paid rows only | none — same as the coin plugin above |
 | Iken sites | `isLocked` in the chapter JSON | `unlockAt`, null on a permanently paid chapter |
 | WitchToons | `isLocked` in the flight payload's chapter row | `earlyAccessUntil` / `becomesFreeAt`; `becomesFreeOnNextRelease` is a rule, not a date, so it leaves the chapter locked |
 | WEBTOON | none: Fast Pass episodes are not rendered to an anonymous visitor at all | n/a |
+
+There is a fourth way a provider can gate a chapter, and it needs naming because it looks like
+success: **the paid row carries no link at all.** `violetscans`, `thunderscans` and — found in the
+2026-08-26 survey — `athreascans` render a paid chapter as a modal trigger whose anchor has no
+`href`, so the row yields no chapter URL and is dropped before access is ever read. The outcome is
+safe (a chapter that is never stored is never offered) but it is safe by accident, and it is
+one-directional: the day such an install links its paid rows, they begin ingesting as **free** and
+go straight into unread counts. Those presets therefore carry *no* `chapters.locked` selector —
+a rule that can never fire reads as a live one — and a fixture test pins the row shape so the
+change fails a test instead of a reader.
 
 A locked chapter does **not** count as unread. It starts counting when either its stated unlock
 time passes — no rescan needed, the predicate compares the stored timestamp against `now()` — or

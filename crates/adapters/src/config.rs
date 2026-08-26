@@ -144,6 +144,17 @@ pub struct ChaptersCfg {
     /// Where to read the number from (`"text"` = the link text). Reserved for future modes.
     #[serde(default)]
     pub number_from: Option<String>,
+    /// Optional selector (relative to row) for the element carrying the chapter *label*, when
+    /// the anchor's own text is not it.
+    ///
+    /// Needed only for one markup shape, and it corrupts data silently rather than failing:
+    /// a row that nests its update time **inside** the chapter anchor renders
+    /// `<a><strong>Chapter 1</strong><time>7 days ago</time></a>`, whose concatenated text is
+    /// `Chapter 17 days ago` — so the number parses as 17, every row gets a plausible wrong
+    /// number, and reading order is scrambled. Absent, the anchor's full text is used, which is
+    /// right everywhere the date sits outside the link.
+    #[serde(default)]
+    pub number: Option<String>,
     /// Optional selector (relative to row) for the published date.
     #[serde(default)]
     pub date: Option<String>,

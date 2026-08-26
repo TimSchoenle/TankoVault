@@ -52,7 +52,8 @@ use tankovault_db::repo::tracking::{
     PinOutcome, ReadProgress, WatchlistFilter, WatchlistPage, continue_reading,
     early_access_opted_in, feed, is_sync_excluded, me_stats, progress_get_full, progress_mark_read,
     progress_mark_unread, progress_set, set_sync_excluded, watchers_for_series, watchlist_card,
-    watchlist_page, watchlist_set_pinned_source, watchlist_upsert,
+    watchlist_list, watchlist_page, watchlist_set_pinned_source, watchlist_track_if_absent,
+    watchlist_upsert,
 };
 use tankovault_db::repo::users::set_notification_prefs;
 use tankovault_domain::{
@@ -1663,4 +1664,62 @@ async fn marking_a_group_read_stops_at_the_last_chapter_the_reader_can_open() {
         1,
         "the chapter the reader waited for is unread, not swallowed"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Reading a chapter means following the series
+// ---------------------------------------------------------------------------
+
+/// A series the reader has never tracked is on the watchlist after `watchlist_track_if_absent`.
+///
+/// The bug: marking a chapter read wrote `read_progress` and nothing else, so a series opened
+/// from Discover or Search stayed off the watchlist. Progress was recorded against a series the
+/// reader could not see anywhere in Library — no unread badge, no notifications, no continue
+/// card — and the only way to find it again was to search for it a second time.
+#[tokio::test]
+async fn tracking_an_untracked_series_adds_it_at_the_defaults_a_manual_add_uses() {
+    let db = TestDb::spawn().await;
+    let user = seed::user(&db, "reader").create().await;
+    let provider = seed::provider(&db, "alpha").create().await;
+    let series = a_series(&db, provider, "Berserk", CHAPTERS).await;
+
+    watchlist_track_if_absent(&db.pool, user, series)
+        .await
+        .expect("track");
+
+    let entries = watchlist_list(&db.pool, user).await.expect("list");
+    let [entry] = entries.as_slice() else {
+        panic!("expected exactly one entry, got {}", entries.len())
+    };
+    assert_eq!(entry.series_id, series);
+    assert_eq!(entry.status, WatchStatus::Reading);
+    assert!(entry.notify, "notify defaults on, as a manual add does");
+}
+
+/// An entry that already exists survives untouched — status and notify flag included.
+///
+/// The `DO NOTHING` half is the whole reason this is not `watchlist_upsert` with default
+/// arguments. A reader who set `dropped` and muted the bell, then reads one more chapter out of
+/// curiosity, would otherwise find the series back at `reading` with notifications re-armed, and
+/// nothing in the UI would explain why.
+#[tokio::test]
+async fn tracking_a_series_already_on_the_watchlist_changes_nothing() {
+    let db = TestDb::spawn().await;
+    let user = seed::user(&db, "reader").create().await;
+    let provider = seed::provider(&db, "alpha").create().await;
+    let series = a_series(&db, provider, "Berserk", CHAPTERS).await;
+    watchlist_upsert(&db.pool, user, series, WatchStatus::Dropped, false)
+        .await
+        .expect("watchlist");
+
+    watchlist_track_if_absent(&db.pool, user, series)
+        .await
+        .expect("track");
+
+    let entries = watchlist_list(&db.pool, user).await.expect("list");
+    let [entry] = entries.as_slice() else {
+        panic!("expected exactly one entry, got {}", entries.len())
+    };
+    assert_eq!(entry.status, WatchStatus::Dropped);
+    assert!(!entry.notify, "the muted bell stays muted");
 }

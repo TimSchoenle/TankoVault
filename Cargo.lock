@@ -5859,6 +5859,7 @@ name = "tankovault-fetch"
 version = "8.6.0"
 dependencies = [
  "async-trait",
+ "flate2",
  "futures",
  "governor",
  "metrics",

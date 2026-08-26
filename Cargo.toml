@@ -225,6 +225,10 @@ wreq = { version = "6.0.0-rc.29", features = ["json", "stream", "gzip", "brotli"
 # must keep not calling — a random profile per client is the opposite of the stable
 # per-provider identity the fetch stack needs.
 wreq-util = { version = "3.0.0-rc.14", default-features = false, features = ["emulation"] }
+# `crates/fetch` decodes `Content-Encoding: gzip` itself, because `wreq`'s decoder stops at the
+# first member of a multi-member stream and reports EOF — see `base.rs::decode_gzip`. Already in
+# the graph as `wreq-util`'s own dependency, so naming it here adds an edge, not a crate.
+flate2 = "1"
 scraper = "0.27"
 governor = "0.10"
 url = "2.5"

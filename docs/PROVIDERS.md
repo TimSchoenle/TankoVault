@@ -287,6 +287,7 @@ Where each provider publishes the fact:
 | Keyoapp sites | the coin-price badge on the chapter card (`img[alt="Coin"]`) | none — the platform states a price, never a date, so such a chapter stays locked |
 | Rokari Comics, Akaza Scans | the coin plugin's price badge on the chapter row (`span.text-gold`), which the stock MangaThemesia theme does not render | none — the badge states a price, never a date, so such a chapter stays locked |
 | Madara Scans | a lock glyph (`i.fa-lock`) inside the chapter row's number cell, rendered on paid rows only | none — same as the coin plugin above |
+| Eva Scans | a *different* coin-plugin skin (`div.locked-badge`: coin glyph, price, padlock). `span.text-gold` does not match it, so the two skins need separate selectors | none — the badge states a price |
 | Iken sites | `isLocked` in the chapter JSON | `unlockAt`, null on a permanently paid chapter |
 | WitchToons | `isLocked` in the flight payload's chapter row | `earlyAccessUntil` / `becomesFreeAt`; `becomesFreeOnNextRelease` is a rule, not a date, so it leaves the chapter locked |
 | WEBTOON | none: Fast Pass episodes are not rendered to an anonymous visitor at all | n/a |

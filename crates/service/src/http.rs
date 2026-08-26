@@ -14,11 +14,13 @@ use std::time::Duration;
 use tankovault_config::SecurityConfig;
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
+use tower_http::classify::ServerErrorsFailureClass;
 use tower_http::compression::CompressionLayer;
 use tower_http::cors::CorsLayer;
 use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer};
 use tower_http::timeout::TimeoutLayer;
 use tower_http::trace::TraceLayer;
+use tracing::{Level, Span};
 
 /// Header carrying the per-request correlation id.
 const REQUEST_ID: HeaderName = HeaderName::from_static("x-request-id");
@@ -160,8 +162,41 @@ impl HttpStack {
             // other one writes onto the hub it binds.
             .layer(tower::util::option_layer(sentry_http))
             .layer(tower::util::option_layer(sentry_hub))
-            .layer(TraceLayer::new_for_http())
+            .layer(TraceLayer::new_for_http().on_failure(on_response_failure))
             .layer(SetRequestIdLayer::new(REQUEST_ID, MakeRequestUuid))
+    }
+}
+
+/// The severity a failed response is logged at.
+///
+/// `ERROR` is what [`crate::sentry`] turns into a Sentry issue, so only a status meaning *this*
+/// process faulted earns it. `502`, `503` and `504` are declared answers about a dependency —
+/// the challenge solver's "cannot serve right now", a handler whose upstream is down — and the
+/// code that chose them has already logged the cause at the level it meant. `DefaultOnFailure`
+/// logged all of them at `ERROR`, which filed one issue per occurrence, every one carrying the
+/// same `tower_http` frame and naming no route.
+fn failure_level(class: &ServerErrorsFailureClass) -> Level {
+    match class {
+        ServerErrorsFailureClass::StatusCode(status)
+            if *status == StatusCode::INTERNAL_SERVER_ERROR =>
+        {
+            Level::ERROR
+        }
+        // A body that stopped mid-stream is, on the SSE routes, a reader closing the tab.
+        _ => Level::WARN,
+    }
+}
+
+/// `DefaultOnFailure` with [`failure_level`] choosing the severity instead of a fixed `ERROR`.
+///
+/// Recorded against the request span, so the line keeps the method and URI the trace layer put
+/// there.
+fn on_response_failure(class: ServerErrorsFailureClass, latency: Duration, span: &Span) {
+    let latency_ms = u64::try_from(latency.as_millis()).unwrap_or(u64::MAX);
+    if failure_level(&class) == Level::ERROR {
+        tracing::error!(parent: span, classification = %class, latency_ms, "response failed");
+    } else {
+        tracing::warn!(parent: span, classification = %class, latency_ms, "response failed");
     }
 }
 
@@ -555,6 +590,32 @@ async fn project_peer_identity(
 mod tests {
     use super::*;
     use tankovault_config::CorsConfig;
+
+    /// `DefaultOnFailure` logs every 5xx at `ERROR` and the Sentry layer captures every
+    /// `ERROR` as an issue, so a `503` a service returns on purpose — the challenge solver
+    /// answering "unavailable" once per blocked fetch — filed an unbounded stream of issues
+    /// that all shared the one `tower_http` stack trace and named no route. Only a status
+    /// meaning this process faulted may reach `ERROR`.
+    #[test]
+    fn only_a_500_is_reported_at_error() {
+        let level = |status| failure_level(&ServerErrorsFailureClass::StatusCode(status));
+        assert_eq!(level(StatusCode::INTERNAL_SERVER_ERROR), Level::ERROR);
+        for status in [
+            StatusCode::NOT_IMPLEMENTED,
+            StatusCode::BAD_GATEWAY,
+            StatusCode::SERVICE_UNAVAILABLE,
+            StatusCode::GATEWAY_TIMEOUT,
+        ] {
+            assert_eq!(level(status), Level::WARN, "{status}");
+        }
+        // A severed response body is the peer's doing, not a fault of this process.
+        assert_eq!(
+            failure_level(&ServerErrorsFailureClass::Error(
+                "connection reset".to_owned()
+            )),
+            Level::WARN
+        );
+    }
 
     #[test]
     fn cors_is_off_until_an_origin_is_named() {

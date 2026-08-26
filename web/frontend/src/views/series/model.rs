@@ -167,11 +167,22 @@ pub(super) struct RankedSource {
     pub(super) source: SourceDto,
     /// Highest chapter number this source returned, or `None` when it returned nothing.
     pub(super) ceiling: Option<f64>,
+    /// When this source last published anything, or `None` when it returned nothing or dated
+    /// nothing it returned.
+    pub(super) freshest: Option<String>,
 }
 
 /// The highest chapter number a source carries, for the source menu's "only up to ch N".
 pub(super) fn source_ceiling(chapters: &[ChapterDto]) -> Option<f64> {
     chapters.iter().map(|c| c.number).max_by(f64::total_cmp)
+}
+
+/// The newest publication date a source carries, for the series-level source picker.
+///
+/// Compared as strings because the API dates are RFC 3339 in UTC, where lexical and
+/// chronological order agree — parsing here would buy nothing and add a failure mode.
+pub(super) fn source_freshest(chapters: &[ChapterDto]) -> Option<String> {
+    chapters.iter().filter_map(|c| c.published_at.clone()).max()
 }
 
 /// A title that is present *and* not blank; a blank title is the same as none.

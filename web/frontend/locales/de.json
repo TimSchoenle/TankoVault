@@ -753,7 +753,8 @@
       "title": "Automatische Entscheidungen",
       "undo": "Rückgängig",
       "wasFlagged": "Als falsch markiert",
-      "wasReverted": "Zurückgenommen"
+      "wasReverted": "Zurückgenommen",
+      "openInMerges": "In Zusammenführungen öffnen"
     },
     "flags": {
       "changed": "Vom Standard abweichend",
@@ -1350,7 +1351,8 @@
       "recommendations": "Empfehlungen",
       "solver": "Challenge & Solver",
       "sync": "Sync",
-      "users": "Benutzer"
+      "users": "Benutzer",
+      "merges": "Zusammenführungen"
     },
     "table": {
       "columns": "Spalten",
@@ -1437,6 +1439,101 @@
       "day": "Letzte 24 Stunden",
       "hour": "Letzte Stunde",
       "week": "Letzte 7 Tage"
+    },
+    "merges": {
+      "filter": "Zusammenführung suchen — Titel oder Serien-ID",
+      "hits": {
+        "one": "{count} Treffer",
+        "other": "{count} Treffer"
+      },
+      "count": "{shown} angezeigt · {reversible} rücknehmbar",
+      "empty": "Keine Zusammenführung passt zu dieser Ansicht.",
+      "pick": "Wähle eine Zusammenführung, um zu sehen, warum sie geschah und was ein Rückgängigmachen wiederherstellen würde.",
+      "lens": {
+        "all": "Alle",
+        "reverted": "Rückgängig",
+        "flagged": "Markiert",
+        "byOperator": "Von Betreiber"
+      },
+      "badge": {
+        "merged": "zusammengeführt",
+        "reverted": "rückgängig",
+        "flagged": "markiert"
+      },
+      "absorbedVerb": "übernahm",
+      "putBack": "zurückgestellt",
+      "byOperator": "von einem Betreiber",
+      "bySweep": "automatisch · Lauf",
+      "restoredRows": "{rows} wiederhergestellt",
+      "pendingRows": "{rows} Zeilen",
+      "undoSpent": "Rücknahme verbraucht",
+      "mergeId": "Zusammenführung {id}",
+      "idGone": "— diese ID löst nicht mehr auf",
+      "idResolvesAgain": "— diese ID löst wieder auf",
+      "openSeries": "Serie öffnen",
+      "tab": {
+        "why": "Warum zusammengeführt",
+        "evidence": "Belege",
+        "trail": "Prüfprotokoll"
+      },
+      "threshold": "Automatikschwelle {value}",
+      "bothRecords": "Die beiden Datensätze, wie sie waren",
+      "kept": "behalten",
+      "absorbedRole": "übernommen",
+      "sourceTally": {
+        "one": "{count} Quelle",
+        "other": "{count} Quellen"
+      },
+      "chapterTally": {
+        "one": "{count} Kapitel",
+        "other": "{count} Kapitel"
+      },
+      "watcherTally": {
+        "one": "{count} Leser",
+        "other": "{count} Leser"
+      },
+      "putsBack": "Was ein Rückgängigmachen wiederherstellt",
+      "journalIntact": "Rücknahmejournal vorhanden",
+      "noInventory": "Für diese Entscheidung wurde kein Rücknahmejournal aufgezeichnet, es gibt also nichts wiederherzustellen.",
+      "restoredTotal": "Als eigene Serie wiederhergestellt",
+      "trail": {
+        "decided": "entschieden",
+        "sweep": "Lauf",
+        "flagged": "markiert",
+        "reverted": "rückgängig gemacht"
+      },
+      "unmergeBody": "Stellt die übernommene Serie unter ihrer ursprünglichen ID mit ihren {rows} Zeilen wieder her. Lesefortschritt, der seit der Zusammenführung auf der behaltenen Serie entstanden ist, bleibt dort — er folgt der Trennung nicht.",
+      "spentBody": "Für diese Zusammenführung gibt es kein Rücknahmejournal mehr, es lässt sich nichts wiederherstellen. Sie kann weiterhin als falsch vermerkt werden, was den Lauf daran hindert, das Paar erneut vorzuschlagen.",
+      "reasonLabel": "Begründung — erforderlich, landet im Prüfprotokoll",
+      "unmergeCta": "Trennen · {rows} Zeilen wiederherstellen",
+      "flagCta": "Zusammengeführt lassen, als falsch vermerken",
+      "suppressionNote": "Beide Ausgänge vermerken zusätzlich „kein Duplikat“, sodass der Lauf dieses Paar nicht erneut vorschlägt.",
+      "wasReverted": "Rückgängig gemacht {when}. Begründung: {reason}",
+      "wasFlagged": "Als falsch vermerkt {when}. Begründung: {reason}",
+      "noReason": "keine angegeben",
+      "segment": {
+        "series": "Die übernommene Serienzeile",
+        "titles": "Titel & Aliasse",
+        "tags": "Tag-Verknüpfungen",
+        "authors": "Autoren-Verknüpfungen",
+        "watchlist": "Merklisteneinträge",
+        "progress": "Fortschrittszeilen",
+        "mappings": "Tracker-Zuordnungen",
+        "overrides": "Metadaten-Überschreibungen",
+        "dedup": "Benachrichtigungs-Dedup-Schlüssel",
+        "feedback": "Empfehlungs-Feedback",
+        "survivor_progress": "Fortschritt, den die Zusammenführung überschrieb",
+        "survivor_overrides": "Überschreibungen, die die Zusammenführung überschrieb",
+        "survivor_feedback": "Feedback, das die Zusammenführung überschrieb",
+        "inserted_titles": "Von der Zusammenführung ergänzte Titel",
+        "inserted_tags": "Von der Zusammenführung ergänzte Tag-Verknüpfungen",
+        "inserted_authors": "Von der Zusammenführung ergänzte Autoren-Verknüpfungen",
+        "inserted_watchlist": "Von der Zusammenführung ergänzte Merklisteneinträge",
+        "inserted_mappings": "Von der Zusammenführung ergänzte Tracker-Zuordnungen",
+        "inserted_dedup": "Von der Zusammenführung ergänzte Dedup-Schlüssel",
+        "moved_sources": "Quellverknüpfungen",
+        "moved_history": "Sync-Verlaufszeilen"
+      }
     }
   },
   "discover": {
@@ -1897,7 +1994,29 @@
       "take": "{value} übernehmen",
       "trackers": "Tracker",
       "trustNewest": "Neuester gewinnt",
-      "unlink": "Trennen"
+      "unlink": "Trennen",
+      "shelf": "Regal",
+      "trackedFor": "verfolgt {when}",
+      "change": "ändern",
+      "shelfNote": "Ein Wechsel auf Abgeschlossen markiert keine Kapitel als gelesen.",
+      "markAll": "Alle {count} als gelesen markieren",
+      "unreadCount": {
+        "one": "{count} ungelesen",
+        "other": "{count} ungelesen"
+      },
+      "opensOn": "Öffnet auf",
+      "pinnedHere": "für diese Serie angeheftet",
+      "followingOrder": "folgt deiner Quellenreihenfolge",
+      "fallback": "Ausweich {sources}",
+      "sourceOrder": "Quellenreihenfolge",
+      "remove": "Von der Merkliste entfernen",
+      "removeBody": "Entfernt den Eintrag, das Regal, die angeheftete Quelle und die Benachrichtigung. {read} gelesene Kapitel und eine Tracker-Zuordnung bleiben — ein erneutes Hinzufügen stellt sie wieder her.",
+      "entryAge": "Eintrag {when}",
+      "notTracked": "Noch nicht verfolgt",
+      "notTrackedBody": "Regal, angeheftete Quelle und Benachrichtigungen erscheinen, sobald es einen Eintrag gibt, an dem sie hängen. Fortschritt und Verlauf bleiben sichtbar — sie sind Lesezustand, keine Mitgliedschaft.",
+      "mergedRecord": "Zusammengeführter Datensatz — nur für Betreiber",
+      "absorbed": "Diese Serie übernahm {title} {when}.",
+      "whyMerged": "Warum"
     },
     "tracking": "Verfolgung",
     "unpinSource": "Lösen — meiner Quellenreihenfolge folgen",

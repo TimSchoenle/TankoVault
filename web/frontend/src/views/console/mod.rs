@@ -15,6 +15,7 @@ mod decisions;
 mod flags;
 mod live;
 mod merge;
+mod merges;
 mod overview;
 mod privacy;
 mod providers;
@@ -80,6 +81,7 @@ pub(crate) enum ConsoleEntity {
     Overview,
     Catalogue,
     Merge,
+    Merges,
     Decisions,
     Recommendations,
     Providers,
@@ -101,6 +103,7 @@ const RAIL: &[(&str, &[ConsoleEntity])] = &[
         &[
             ConsoleEntity::Catalogue,
             ConsoleEntity::Merge,
+            ConsoleEntity::Merges,
             ConsoleEntity::Decisions,
             ConsoleEntity::Recommendations,
         ],
@@ -129,10 +132,11 @@ const RAIL: &[(&str, &[ConsoleEntity])] = &[
 impl ConsoleEntity {
     /// Every entity, in rail order. Kept in step with [`RAIL`] by
     /// `the_rail_and_the_entity_list_hold_the_same_entities`.
-    pub(crate) const ALL: [ConsoleEntity; 14] = [
+    pub(crate) const ALL: [ConsoleEntity; 15] = [
         Self::Overview,
         Self::Catalogue,
         Self::Merge,
+        Self::Merges,
         Self::Decisions,
         Self::Recommendations,
         Self::Providers,
@@ -152,6 +156,7 @@ impl ConsoleEntity {
             Self::Overview => "console.tab.overview",
             Self::Catalogue => "console.tab.catalogue",
             Self::Merge => "console.tab.merge",
+            Self::Merges => "console.tab.merges",
             Self::Decisions => "console.tab.decisions",
             Self::Recommendations => "console.tab.recommendations",
             Self::Providers => "console.tab.providers",
@@ -173,6 +178,9 @@ impl ConsoleEntity {
             // The catalogue itself, as opposed to the queues that groom it.
             Self::Catalogue => Icon::MenuBook,
             Self::Merge => Icon::Merge,
+            // The merges that were performed, as opposed to the queue of ones awaiting a
+            // verdict: the same glyph would say the two screens hold the same rows.
+            Self::Merges => Icon::Unmerge,
             // A judgement surface for two automatic engines, not a queue to work — and
             // distinct from Audit, which records what *people* did.
             Self::Decisions => Icon::Gavel,
@@ -197,6 +205,7 @@ impl ConsoleEntity {
             Self::Overview => "overview",
             Self::Catalogue => "catalogue",
             Self::Merge => "merge-queue",
+            Self::Merges => "merges",
             Self::Decisions => "decisions",
             Self::Recommendations => "recommendations",
             Self::Providers => "providers",
@@ -222,8 +231,10 @@ impl ConsoleEntity {
             Self::Providers | Self::Solver => (Permission::ProvidersRead, Feature::AdminProviders),
             Self::AdapterTest => (Permission::ProvidersTest, Feature::AdminAdapterTest),
             Self::Merge => (Permission::MergeRead, Feature::ScanningMergeQueue),
-            // The *merge* half of the pair; `is_visible` widens it to either journal.
-            Self::Decisions => (Permission::MergeAudit, Feature::AdminAudit),
+            // Both read the merge journal. `Decisions` is the one entity backed by two
+            // journals, so `is_visible` widens *it* to either audit permission; `Merges` shows
+            // merges only and stays on this one.
+            Self::Merges | Self::Decisions => (Permission::MergeAudit, Feature::AdminAudit),
             Self::Recommendations => (Permission::RecsysRead, Feature::AdminRecommendations),
             Self::Sync => (Permission::SyncAdminRead, Feature::AdminSync),
             Self::Users => (Permission::UsersRead, Feature::AdminUsers),
@@ -248,7 +259,7 @@ impl ConsoleEntity {
 
     /// Whether this entity owns both the list and the inspector pane, or renders one wide panel.
     fn is_master_detail(self) -> bool {
-        matches!(self, Self::Providers | Self::Users)
+        matches!(self, Self::Providers | Self::Users | Self::Merges)
     }
 
     /// Whether this entity refetches from the shared tick. Work surfaces opt out — see the
@@ -587,6 +598,7 @@ pub(crate) fn ConsoleSection(entity: ConsoleEntity, query: ConsoleQuery) -> Elem
                 merge::MergeQueue {}
             }
         },
+        ConsoleEntity::Merges => rsx! { merges::MergesEntity { tick } },
         ConsoleEntity::Decisions => rsx! {
             div { class: "ik-cons-pane",
                 decisions::DecisionsPanel { tick }

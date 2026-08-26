@@ -4687,6 +4687,7 @@ pub mod types {
     #[doc = "    \"signals\","]
     #[doc = "    \"terms\","]
     #[doc = "    \"trigger\","]
+    #[doc = "    \"undo_breakdown\","]
     #[doc = "    \"undo_rows\","]
     #[doc = "    \"verdict\""]
     #[doc = "  ],"]
@@ -4829,6 +4830,13 @@ pub mod types {
     #[doc = "      \"description\": \"`sweep_new` | `sweep_requeue` | `sweep_recheck` | `operator`.\","]
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
+    #[doc = "    \"undo_breakdown\": {"]
+    #[doc = "      \"description\": \"Those rows itemised by journal key, largest segment first, empty segments dropped.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/UndoSegment\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
     #[doc = "    \"undo_rows\": {"]
     #[doc = "      \"description\": \"How many rows a revert would restore or move back.\","]
     #[doc = "      \"type\": \"integer\","]
@@ -4901,6 +4909,8 @@ pub mod types {
         pub terms: Value,
         #[doc = "`sweep_new` | `sweep_requeue` | `sweep_recheck` | `operator`."]
         pub trigger: ::std::string::String,
+        #[doc = "Those rows itemised by journal key, largest segment first, empty segments dropped."]
+        pub undo_breakdown: ::std::vec::Vec<UndoSegment>,
         #[doc = "How many rows a revert would restore or move back."]
         pub undo_rows: i64,
         #[doc = "`auto` | `review` | `distinct`."]
@@ -14435,6 +14445,44 @@ pub mod types {
             Default::default()
         }
     }
+    #[doc = "One segment of a merge's undo journal.\n\n`kind` is the journal's own field name rather than a display string: a later journal version\ncan add a segment without the console needing a release to render it, and the wording lives\non the reading side where the reader's language is known."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One segment of a merge's undo journal.\\n\\n`kind` is the journal's own field name rather than a display string: a later journal version\\ncan add a segment without the console needing a release to render it, and the wording lives\\non the reading side where the reader's language is known.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"kind\","]
+    #[doc = "    \"rows\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"kind\": {"]
+    #[doc = "      \"description\": \"The journal key, which is the table the rows belong to.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"rows\": {"]
+    #[doc = "      \"description\": \"How many rows that key holds.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct UndoSegment {
+        #[doc = "The journal key, which is the table the rows belong to."]
+        pub kind: ::std::string::String,
+        #[doc = "How many rows that key holds."]
+        pub rows: i64,
+    }
+    impl UndoSegment {
+        pub fn builder() -> builder::UndoSegment {
+            Default::default()
+        }
+    }
     #[doc = "One row of the admin Sync console's \"Assign queue\" — a canonical series that has **no**\nexternal mapping for the given provider yet, so an operator can review and assign one."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -21017,6 +21065,8 @@ pub mod types {
                 ::std::result::Result<::std::option::Option<::uuid::Uuid>, ::std::string::String>,
             terms: ::std::result::Result<super::Value, ::std::string::String>,
             trigger: ::std::result::Result<::std::string::String, ::std::string::String>,
+            undo_breakdown:
+                ::std::result::Result<::std::vec::Vec<super::UndoSegment>, ::std::string::String>,
             undo_rows: ::std::result::Result<i64, ::std::string::String>,
             verdict: ::std::result::Result<::std::string::String, ::std::string::String>,
         }
@@ -21050,6 +21100,7 @@ pub mod types {
                     sweep_id: Ok(Default::default()),
                     terms: Err("no value supplied for terms".to_string()),
                     trigger: Err("no value supplied for trigger".to_string()),
+                    undo_breakdown: Err("no value supplied for undo_breakdown".to_string()),
                     undo_rows: Err("no value supplied for undo_rows".to_string()),
                     verdict: Err("no value supplied for verdict".to_string()),
                 }
@@ -21326,6 +21377,16 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for trigger: {e}"));
                 self
             }
+            pub fn undo_breakdown<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::UndoSegment>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.undo_breakdown = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for undo_breakdown: {e}")
+                });
+                self
+            }
             pub fn undo_rows<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<i64>,
@@ -21380,6 +21441,7 @@ pub mod types {
                     sweep_id: value.sweep_id?,
                     terms: value.terms?,
                     trigger: value.trigger?,
+                    undo_breakdown: value.undo_breakdown?,
                     undo_rows: value.undo_rows?,
                     verdict: value.verdict?,
                 })
@@ -21415,6 +21477,7 @@ pub mod types {
                     sweep_id: Ok(value.sweep_id),
                     terms: Ok(value.terms),
                     trigger: Ok(value.trigger),
+                    undo_breakdown: Ok(value.undo_breakdown),
                     undo_rows: Ok(value.undo_rows),
                     verdict: Ok(value.verdict),
                 }
@@ -32855,6 +32918,60 @@ pub mod types {
                     updated_at: Ok(value.updated_at),
                     updated_by: Ok(value.updated_by),
                     value: Ok(value.value),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct UndoSegment {
+            kind: ::std::result::Result<::std::string::String, ::std::string::String>,
+            rows: ::std::result::Result<i64, ::std::string::String>,
+        }
+        impl ::std::default::Default for UndoSegment {
+            fn default() -> Self {
+                Self {
+                    kind: Err("no value supplied for kind".to_string()),
+                    rows: Err("no value supplied for rows".to_string()),
+                }
+            }
+        }
+        impl UndoSegment {
+            pub fn kind<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.kind = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for kind: {e}"));
+                self
+            }
+            pub fn rows<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.rows = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for rows: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<UndoSegment> for super::UndoSegment {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: UndoSegment,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    kind: value.kind?,
+                    rows: value.rows?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::UndoSegment> for UndoSegment {
+            fn from(value: super::UndoSegment) -> Self {
+                Self {
+                    kind: Ok(value.kind),
+                    rows: Ok(value.rows),
                 }
             }
         }

@@ -1403,6 +1403,18 @@ a { color: inherit; text-decoration: none; }
 .ik-switch.sm::after { width: 15px; height: 15px; }
 .ik-switch.sm.on::after { transform: translateX(17px); }
 
+/* The pickers the tracking card opens into (shelf, source). One row shape for both: the rule on
+ * the chosen row is an inset shadow rather than a border so choosing does not reflow the text. */
+.ik-pickrow { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 12px; border: none; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.ik-pickrow:hover:not(:disabled) { background: var(--surface-2); }
+.ik-pickrow:disabled { opacity: .55; cursor: not-allowed; }
+.ik-pickrow.on { background: color-mix(in srgb, var(--acc) 10%, transparent); box-shadow: inset 3px 0 0 var(--acc); }
+.ik-pickrow .nm { font-weight: 600; font-size: 12.5px; color: var(--text); }
+.ik-pickrow .why { font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); margin-top: 1px; }
+.ik-pickrow .why.pref { color: var(--acc3); }
+.ik-pickrow .why.warn { color: var(--star); }
+.ik-pickrow .cnt { margin-left: auto; font-family: var(--font-mono); font-size: 11px; color: var(--faint); flex: none; }
+
 /* Left-ruled event timeline (progress history, audit trail). */
 .ik-timeline { border-left: 1px solid var(--border-ctl); padding-left: 12px; }
 .ik-timeline > div { padding: 5px 0; font-family: var(--font-mono); font-size: 11.5px; line-height: 1.5; color: var(--muted); }

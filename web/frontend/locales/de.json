@@ -367,6 +367,16 @@
       "holdBack": "Zurückhalten",
       "holdBackHint": "Eine Version muss so alt sein, bevor sie angeboten wird — eine kurz nach der Veröffentlichung zurückgezogene Version erreicht dich damit nie. Ohne Wartezeit wird jede Version sofort übernommen.",
       "install": "Herunterladen und installieren",
+      "lastChecked": "Zuletzt geprüft {when}.",
+      "notes": {
+        "action": "Neuerungen",
+        "appliedIntro": "{brand} läuft jetzt in dieser Version.",
+        "empty": "Zu dieser Version wurden keine Anmerkungen veröffentlicht.",
+        "fetching": "Die Anmerkungen zur Version werden geladen…",
+        "offeredIntro": "Diese Version ist noch nicht installiert.",
+        "title": "Neu in {version}",
+        "unavailable": "Die Anmerkungen zur Version konnten nicht geladen werden."
+      },
       "notify": {
         "applied": "Du bist jetzt auf Version {version}.",
         "appliedTitle": "{brand} wurde aktualisiert",

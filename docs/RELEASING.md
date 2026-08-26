@@ -159,7 +159,13 @@ not indistinguishable from the app failing to open:
 - the version is recorded before the hand-off and read once by the run that follows, which
   confirms it in the settings sheet and in a second notification — but only if the version that
   came back is the one that was promised, so a cancelled or failed install says nothing rather
-  than something false.
+  than something false;
+- **a "what's new" panel opens at that start**, carrying the release notes of the version now
+  running, fetched from the release list and rendered as `rsx!` rather than as HTML. It is keyed
+  to the version *changing* rather than to the hand-off receipt, so an installer the reader
+  double-clicked themselves opens it too — the notification stays tied to the receipt, since
+  someone who has just run an installer does not need to be told one ran. Dismissing the panel is
+  what clears the title bar's dot.
 
 ### Why minisign for the client, when the images use cosign
 

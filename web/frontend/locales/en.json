@@ -367,6 +367,16 @@
       "holdBack": "Hold back",
       "holdBackHint": "A release has to be this old before it is offered, so one withdrawn soon after publication never reaches you. Set it to no delay to take every release as it appears.",
       "install": "Download and install",
+      "lastChecked": "Last checked {when}.",
+      "notes": {
+        "action": "What's new",
+        "appliedIntro": "{brand} is now running this version.",
+        "empty": "This release was published without release notes.",
+        "fetching": "Fetching the release notes…",
+        "offeredIntro": "You have not installed this version yet.",
+        "title": "What's new in {version}",
+        "unavailable": "The release notes could not be fetched."
+      },
       "notify": {
         "applied": "You are now on version {version}.",
         "appliedTitle": "{brand} was updated",

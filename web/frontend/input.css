@@ -689,6 +689,13 @@ a { color: inherit; text-decoration: none; }
 .ik-prose-b, .ik-prose-bi { font-weight: 600; color: var(--text); }
 .ik-prose-i, .ik-prose-bi { font-style: italic; }
 
+/* Release notes inside the "what's new" panel. Capped and scrolled here rather than left to grow:
+   `.ik-modal` scrolls as a whole, so a long changelog would carry the panel's buttons off the
+   bottom of the dialog instead of scrolling under them. */
+.ik-update-notes { max-height: 46vh; overflow-y: auto; font-size: 14px; }
+.ik-update-notes > :first-child { margin-top: 0; }
+.ik-update-notes > :last-child { margin-bottom: 0; }
+
 .ik-page-title { font-family: var(--font-display); font-size: 28px; font-weight: 700; letter-spacing: -.01em; margin: 4px 0 18px; }
 .ik-kicker { font-family: var(--font-mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
 

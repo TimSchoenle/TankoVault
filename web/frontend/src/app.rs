@@ -2,7 +2,7 @@
 //! font faces.
 
 #[cfg(feature = "desktop")]
-use crate::components::{CloseToTray, SettingsSheet, TitleBar, TrayHost};
+use crate::components::{CloseToTray, SettingsSheet, TitleBar, TrayHost, WhatsNew};
 use crate::components::{FocusTargets, Shell, UnreadBadge};
 use crate::i18n::I18nRoot;
 use crate::state::account_wall::AccountWall;
@@ -271,6 +271,11 @@ fn AppRoot(children: Element) -> Element {
             div { class: "ik-desktop-body", if fitted() { {children} } }
             if settings_open() {
                 SettingsSheet { on_close: move |()| settings_open.set(false) }
+            }
+            // After the sheet, so the panel the sheet can open renders above it. Both are inline
+            // scrims sharing one stacking context, so the order here is the z-order.
+            if update.panel_open() {
+                WhatsNew {}
             }
         }
     }

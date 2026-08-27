@@ -11,6 +11,11 @@ enum Step {
     Cargo {
         dir: &'static str,
         args: &'static [&'static str],
+        /// Environment CI sets for this step. A gate that runs CI's command without CI's
+        /// environment is not CI's gate: `cargo doc` reports a broken link as a *warning* and
+        /// exits 0, so without `RUSTDOCFLAGS=-D warnings` this gate passed on a workspace that
+        /// then failed the job of the same name.
+        env: &'static [(&'static str, &'static str)],
     },
     /// Called in-process: cargo rebuilds the xtask binary before running it, and on Windows
     /// the running `xtask.exe` is locked, so a gate that shelled back out to it would die with
@@ -32,6 +37,7 @@ const GATES: &[Gate] = &[
         step: Step::Cargo {
             dir: "",
             args: &["fmt", "--all", "--check"],
+            env: &[],
         },
     },
     Gate {
@@ -47,6 +53,7 @@ const GATES: &[Gate] = &[
                 "-D",
                 "warnings",
             ],
+            env: &[],
         },
     },
     Gate {
@@ -54,6 +61,7 @@ const GATES: &[Gate] = &[
         step: Step::Cargo {
             dir: "",
             args: &["test", "--workspace"],
+            env: &[],
         },
     },
     // `--all-targets` silently excludes doc tests; a separate invocation is the only way to run
@@ -63,6 +71,7 @@ const GATES: &[Gate] = &[
         step: Step::Cargo {
             dir: "",
             args: &["test", "--workspace", "--doc"],
+            env: &[],
         },
     },
     // `cargo test --doc` runs the examples and says nothing about whether a `[`Foo`]` link
@@ -73,6 +82,7 @@ const GATES: &[Gate] = &[
         step: Step::Cargo {
             dir: "",
             args: &["doc", "--workspace", "--no-deps", "--all-features"],
+            env: &[("RUSTDOCFLAGS", "-D warnings")],
         },
     },
     Gate {
@@ -107,6 +117,7 @@ const GATES: &[Gate] = &[
         step: Step::Cargo {
             dir: "web/frontend",
             args: &["fmt", "--check"],
+            env: &[],
         },
     },
     Gate {
@@ -114,6 +125,7 @@ const GATES: &[Gate] = &[
         step: Step::Cargo {
             dir: "web/frontend",
             args: &["test"],
+            env: &[],
         },
     },
     Gate {
@@ -121,6 +133,7 @@ const GATES: &[Gate] = &[
         step: Step::Cargo {
             dir: "web/frontend",
             args: &["clippy", "--all-targets", "--", "-D", "warnings"],
+            env: &[],
         },
     },
     Gate {
@@ -128,6 +141,7 @@ const GATES: &[Gate] = &[
         step: Step::Cargo {
             dir: "web/frontend",
             args: &["check", "--target", "wasm32-unknown-unknown"],
+            env: &[],
         },
     },
     Gate {
@@ -135,6 +149,7 @@ const GATES: &[Gate] = &[
         step: Step::Cargo {
             dir: "web/frontend",
             args: &["test", "--no-default-features", "--features", "desktop"],
+            env: &[],
         },
     },
     Gate {
@@ -151,6 +166,7 @@ const GATES: &[Gate] = &[
                 "-D",
                 "warnings",
             ],
+            env: &[],
         },
     },
 ];
@@ -166,8 +182,9 @@ pub(crate) fn run(workspace_root: &std::path::Path) -> anyhow::Result<()> {
     for (i, gate) in GATES.iter().enumerate() {
         println!("[{}/{}] {}", i + 1, GATES.len(), gate.name);
         let outcome = match &gate.step {
-            Step::Cargo { dir, args } => Command::new(&cargo)
+            Step::Cargo { dir, args, env } => Command::new(&cargo)
                 .args(*args)
+                .envs(env.iter().copied())
                 .current_dir(workspace_root.join(dir))
                 .status()
                 .map_err(|e| anyhow::anyhow!("could not run `cargo {}`: {e}", args.join(" ")))
@@ -229,10 +246,15 @@ mod tests {
             Step::Cargo { args, .. } => args.first() == Some(&"doc"),
             Step::InProcess(_) => false,
         });
-        let args = match &doc_gate.expect("the rustdoc gate exists").step {
-            Step::Cargo { args, .. } => *args,
+        let (args, env) = match &doc_gate.expect("the rustdoc gate exists").step {
+            Step::Cargo { args, env, .. } => (*args, *env),
             Step::InProcess(_) => unreachable!("matched as Cargo above"),
         };
+        assert!(
+            env.contains(&("RUSTDOCFLAGS", "-D warnings")),
+            "`cargo doc` exits 0 on a broken or private intra-doc link and only warns, so without \
+             CI's RUSTDOCFLAGS this gate green-lights a workspace CI then rejects"
+        );
         assert!(
             args.contains(&"--no-deps"),
             "a dependency's broken link is not ours to fix; the gate must stay `--no-deps`"

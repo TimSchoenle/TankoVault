@@ -411,16 +411,17 @@ pub async fn list_merge_decisions<'e, E: PgExecutor<'e>>(
 /// three things have to happen together or the operator's judgement does not survive the next
 /// hour:
 ///
-/// 1. [`revert_merge_in`] moves back exactly what the merge moved.
+/// 1. The inverse — [`revert_merge`](super::revert_merge)'s statements — moves back exactly what
+///    the merge moved.
 /// 2. [`suppress_pair`](super::suppress_pair) records the durable dismissal — the same one the
 ///    console's "not a duplicate" button writes, and the one all three sweep shortlists exclude.
 ///    Without it the titles still agree, the score is still above the threshold, and the very
 ///    next sweep merges them again.
-/// 3. [`disentangle`] takes the names the two rows share off the survivor and returns the sources
-///    those names attracted. Suppression only binds the *sweep*; the create-time attach path
-///    consults `series_titles` and nothing else, so a shared alias left in place has the next
-///    scan re-attaching what the operator just separated — and the sources already filed under it
-///    stay put, which is what makes a bare revert look like it did nothing at all.
+/// 3. The `disentangle` module takes the names the two rows share off the survivor and returns
+///    the sources those names attracted. Suppression only binds the *sweep*; the create-time
+///    attach path consults `series_titles` and nothing else, so a shared alias left in place has
+///    the next scan re-attaching what the operator just separated — and the sources already filed
+///    under it stay put, which is what makes a bare revert look like it did nothing at all.
 ///
 /// # One transaction
 ///

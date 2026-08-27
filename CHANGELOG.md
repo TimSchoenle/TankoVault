@@ -12,6 +12,22 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [8.7.0](https://github.com/TimSchoenle/TankoVault/compare/v8.6.0...v8.7.0) (2026-08-27)
+
+
+### Features
+
+* **adapters:** add 58 provider presets, verified end to end ([#300](https://github.com/TimSchoenle/TankoVault/issues/300)) ([ec916b0](https://github.com/TimSchoenle/TankoVault/commit/ec916b0887585e12e8fe797c1ba894887ea87310))
+* **frontend:** show what a release changed when the desktop client updates ([#297](https://github.com/TimSchoenle/TankoVault/issues/297)) ([a944257](https://github.com/TimSchoenle/TankoVault/commit/a9442578c365ac9ab00d0feddfd2d268475d0ed9))
+
+
+### Bug Fixes
+
+* **api:** count a merged series once on Home and in Discover ([#295](https://github.com/TimSchoenle/TankoVault/issues/295)) ([f239ba4](https://github.com/TimSchoenle/TankoVault/commit/f239ba4a0045c7a9e3b4444d71728333a2d8f8a5))
+* **db:** stop the merge journal failing on a decision that carries an undo ([#298](https://github.com/TimSchoenle/TankoVault/issues/298)) ([051c5dd](https://github.com/TimSchoenle/TankoVault/commit/051c5dd76d87d3b9f760c27b48300a27fdf25e76))
+* **fetch:** decode every gzip member, not just the first ([#299](https://github.com/TimSchoenle/TankoVault/issues/299)) ([b3be476](https://github.com/TimSchoenle/TankoVault/commit/b3be476e8cad9b777d6a92b5ac00ea9267885dfb))
+* **service:** stop a declared 5xx from filing a sentry issue ([#294](https://github.com/TimSchoenle/TankoVault/issues/294)) ([c0b5ba8](https://github.com/TimSchoenle/TankoVault/commit/c0b5ba8588bd1ee544a18549768115055dd0ca0d))
+
 ## [8.6.0](https://github.com/TimSchoenle/TankoVault/compare/v8.5.2...v8.6.0) (2026-08-26)
 
 

@@ -12,6 +12,18 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [8.7.1](https://github.com/TimSchoenle/TankoVault/compare/v8.7.0...v8.7.1) (2026-08-27)
+
+
+### Bug Fixes
+
+* **db:** disentangle the survivor when an operator unmerges ([#301](https://github.com/TimSchoenle/TankoVault/issues/301)) ([a7314a9](https://github.com/TimSchoenle/TankoVault/commit/a7314a97a9e7fa8afb613658709e27adebf45d89))
+
+
+### Miscellaneous
+
+* **deps:** update taiki-e/install-action action to v2.86.7 ([#303](https://github.com/TimSchoenle/TankoVault/issues/303)) ([2369ddd](https://github.com/TimSchoenle/TankoVault/commit/2369dddce7d53bf04bf54fa42615c39a1e313aa9))
+
 ## [8.7.0](https://github.com/TimSchoenle/TankoVault/compare/v8.6.0...v8.7.0) (2026-08-27)
 
 

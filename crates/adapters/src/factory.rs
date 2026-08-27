@@ -70,11 +70,12 @@ pub fn build_adapter(
         }
         AdapterKind::Custom => match slug {
             "demonicscans" => Ok(Box::new(DemonicScansAdapter::new())),
-            // Hybrid: Madara-shaped HTML for catalogue/series, JSON API for chapters.
-            "kunmanga" => Ok(Box::new(KunMangaAdapter::new(family_config(
-                madara_default_config(),
-                config,
-            )?))),
+            // Hybrid: Madara-shaped HTML for catalogue/series, JSON API for chapters. Three
+            // installs of one hosted platform, told apart only by host — the adapter is
+            // identical for all of them, so the slug list is the whole registration.
+            "kunmanga" | "zinmanga" | "kunmangaonline" => Ok(Box::new(KunMangaAdapter::new(
+                family_config(madara_default_config(), config)?,
+            ))),
             // First-party JSON API. It splits the reader host from the API host, which is why
             // it is not a config row: the requests go somewhere the `base_url` does not.
             "mangadex" => Ok(Box::new(MangaDexAdapter::new())),

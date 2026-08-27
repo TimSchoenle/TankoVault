@@ -44,9 +44,11 @@ pub fn builtin() -> Vec<BuiltinPreset> {
     all
 }
 
-/// Shorthands for the two families that name most of the presets below.
+/// Shorthands for the families that name most of the presets below.
+const MADARA: AdapterKind = AdapterKind::Madara;
 const THEMESIA: AdapterKind = AdapterKind::MangaThemesia;
 const KEYOAPP: AdapterKind = AdapterKind::Keyoapp;
+const GENERIC: AdapterKind = AdapterKind::GenericConfig;
 
 /// A site that runs a family theme with no deviation from its defaults at all.
 ///
@@ -70,6 +72,11 @@ fn plain(
 }
 
 /// Providers on the Madara `WordPress` theme: config only, overriding just what differs.
+#[expect(
+    clippy::too_many_lines,
+    reason = "one entry per site, and the family's list is the point: splitting it by \
+              expansion batch would put half the family somewhere nobody adding a site looks"
+)]
 fn madara_family() -> Vec<BuiltinPreset> {
     vec![
         // Standard Madara; covers are the only deviation from the defaults.
@@ -156,10 +163,185 @@ fn madara_family() -> Vec<BuiltinPreset> {
             }),
             politeness: Politeness::default(),
         },
+        // The 2026-08-26 expansion. Every entry here was checked for a **server-rendered**
+        // chapter list before it was written down, because the AJAX limitation above is the
+        // family's real filter: of ~70 live English installs surveyed, three in four render no
+        // `wp-manga-chapter` at all and would have ingested a perfect catalogue and zero
+        // chapters. The ones that survived are below.
+        BuiltinPreset {
+            slug: "brainrotcomics",
+            name: "Brainrot Comics",
+            base_url: "https://brainrotcomics.com",
+            adapter: MADARA,
+            // Must name a marker: this install answers the page after its last with a hard
+            // **404**, not the 200 error-shell the family default's yielded-items fallback
+            // relies on, so the request that should end the walk fails instead and the scan
+            // task is retried forever after ingesting the catalogue correctly.
+            //
+            // `div.nav-previous` and not `link[rel=next]`, which this theme never emits.
+            // WordPress names its paginator by chronology, so "previous" is the *older* page —
+            // the one further into the archive. Present on pages 1 and 2, absent on the last.
+            config: json!({ "catalog": { "next": "div.nav-previous" } }),
+            politeness: Politeness::default(),
+        },
+        plain("bunmanga", "Bun Manga", "https://bunmanga.com", MADARA),
+        plain("dragontea", "DragonTea", "https://dragontea.ink", MADARA),
+        madara_in(
+            "gourmetscans",
+            "Gourmet Supremacy",
+            "https://gourmetsupremacy.com",
+            "project",
+        ),
+        BuiltinPreset {
+            slug: "linkmanga",
+            name: "LinkManga",
+            base_url: "https://linkmanga.com",
+            adapter: MADARA,
+            // A page past the end answers `200` and renders a *popular-titles* grid in the
+            // archive's own container, so the yielded-items fallback sees twenty items and
+            // never stops. The `<head>` marker is the one thing that does go away there.
+            config: json!({ "catalog": { "next": "link[rel=\"next\"]" } }),
+            politeness: Politeness::default(),
+        },
+        madara_in("madaradex", "MadaraDex", "https://madaradex.org", "title"),
+        madara_in(
+            "mangadistrict",
+            "Manga District",
+            "https://mangadistrict.com",
+            "series",
+        ),
+        plain("mangahe", "MangaHe", "https://mangahe.com", MADARA),
+        plain("mangazin", "Zin Manga", "https://mangazin.org", MADARA),
+        plain("manhuahot", "ManhuaHot", "https://manhuahot.com", MADARA),
+        // Stock Madara chapter rows under a wholly rewritten listing and series template, so
+        // only the selectors that name the *theme's* markup survive. Worth the overrides: the
+        // chapter list, which is the part no config can substitute for, is the theme's own.
+        BuiltinPreset {
+            slug: "manhuarm",
+            name: "Manhuarm",
+            base_url: "https://manhuarmtl.com",
+            adapter: MADARA,
+            config: json!({
+                "catalog": {
+                    "item": "li.mrm-r-item",
+                    "link": "a.mrm-r-item__link",
+                    "title": "span.mrm-r-item__title"
+                },
+                // The home page uses a *different* card class from the archive; inheriting the
+                // catalogue's `li.mrm-r-item` here read an empty feed on every fast scan.
+                "latest": {
+                    "item": "div.manga-card",
+                    "link": "a",
+                    "title": "div.manga-title a",
+                    "chapter": "div.chapter a"
+                },
+                "series": {
+                    "title": "h1.mrm-hero__title",
+                    "alt": "p.mrm-hero__alt@title",
+                    "cover": "div.mrm-hero__cover img@src"
+                }
+            }),
+            politeness: Politeness::default(),
+        },
+        plain("s2manga", "S2Manga", "https://s2read.com", MADARA),
+        BuiltinPreset {
+            slug: "setsuscans",
+            name: "Setsu Scans",
+            base_url: "https://setsuscans.com",
+            adapter: MADARA,
+            config: json!({
+                // Same hard-404 past the last page as `brainrotcomics`, so the walk needs a
+                // marker rather than the family default's yielded-items fallback. This install
+                // does emit the WordPress `<head>` marker, present on every page but the last.
+                "catalog": { "next": "link[rel=\"next\"]" },
+                // The theme's `div.post-title` wrapper is renamed here, and the `<h1>` also
+                // carries a NEW/HOT badge span — so the id, not the bare tag, not the default.
+                "series": { "title": "#manga-title h1" }
+            }),
+            politeness: Politeness::default(),
+        },
+        BuiltinPreset {
+            slug: "toongod",
+            name: "ToonGod",
+            base_url: "https://www.toongod.org",
+            adapter: MADARA,
+            config: json!({
+                "catalog": { "path": "/webtoon/page/{page}/" },
+                // The one install here whose home page renders no card at all; the archive's
+                // first page is the feed instead.
+                "latest": { "path": "/webtoon/" }
+            }),
+            politeness: Politeness::default(),
+        },
+        madara_in(
+            "webtoonscan",
+            "WebtoonScan",
+            "https://webtoonscan.com",
+            "manhwa",
+        ),
+        madara_in(
+            "webtoonxyz",
+            "Webtoon XYZ",
+            "https://www.webtoon.xyz",
+            "read",
+        ),
+        BuiltinPreset {
+            slug: "zazamanga",
+            name: "Zazamanga",
+            base_url: "https://www.zazamanga.com",
+            adapter: MADARA,
+            // Same platform as `zinmanga`/`kunmangaonline` (shared cover CDN), but this install
+            // still server-renders the whole chapter list — as `div`, not the theme's `li` — so
+            // it stays a config row rather than taking their sitemap adapter, whose JSON chapter
+            // API this host answers with a 404.
+            config: json!({
+                "catalog": {
+                    // Each page renders its twelve cards **twice**, as a grid copy and a list
+                    // copy. Only the list copy carries `h3 a`, so on the family default half the
+                    // harvested items had no title at all. This class is the list copy's.
+                    "item": "div.page-item-detail.manga",
+                    // The listing is clamped server-side at page 100 — every higher page number
+                    // returns the byte-identical page-100 document, on every route and every
+                    // sort — while the paginator advertises ~7 000 pages, so the theme's own
+                    // next-marker is still enabled there and no content test can tell the
+                    // difference. The cap is the only thing that ends this walk. It bounds the
+                    // reachable catalogue at 1 200 of the site's ~78 000 series; the rest are
+                    // not addressable through any listing this host serves.
+                    "pages": 100
+                },
+                "chapters": { "container": "div.wp-manga-chapter" }
+            }),
+            politeness: Politeness::default(),
+        },
     ]
 }
 
+/// A Madara install that renamed the theme's archive directory.
+///
+/// Only the catalogue moves: every install here still renders its updates on the home page, so
+/// the family's `latest` block is untouched — unlike `MangaThemesia`, where the feed *is* the
+/// renamed listing re-sorted.
+fn madara_in(
+    slug: &'static str,
+    name: &'static str,
+    base_url: &'static str,
+    directory: &str,
+) -> BuiltinPreset {
+    BuiltinPreset {
+        slug,
+        name,
+        base_url,
+        adapter: MADARA,
+        config: json!({ "catalog": { "path": format!("/{directory}/page/{{page}}/") } }),
+        politeness: Politeness::default(),
+    }
+}
+
 /// Providers on the `MangaThemesia` theme.
+#[expect(
+    clippy::too_many_lines,
+    reason = "one entry per site; same reason as `madara_family`"
+)]
 fn mangathemesia_family() -> Vec<BuiltinPreset> {
     vec![
         BuiltinPreset {
@@ -242,7 +424,158 @@ fn mangathemesia_family() -> Vec<BuiltinPreset> {
             "comics",
         ),
         themesia_in("razure", "Razure", "https://razure.org", "series"),
+        // `readcomiconline.xyz` was probed and rejected. It parses — 766 chapter rows on a
+        // long-running title — but two things make it worse than no source. Its feed ignores
+        // `?order=update` and returns a slice of the alphabetical listing, so a fast scan reads
+        // thirty arbitrary stubs and ingests nothing; and its one-shots are labelled `<Title>
+        // #Full`, so `parse_chapter_number`'s bare-number fallback stores `.357!` as chapter
+        // 357. A live fast scan confirmed it: 30 series seen, zero chapters.
+        // The 2026-08-26 expansion.
+        // Runs the coin plugin, and deliberately carries **no** `locked` selector: this install
+        // renders a paid row as a modal trigger whose anchor has no `href` at all, so the row has
+        // no chapter URL and is dropped before access is ever read — the shape `violetscans` and
+        // `thunderscans` already have. A `span.text-gold` rule here could never fire, and a rule
+        // that cannot fire reads as a live one. `tests/expansion_presets_fixture.rs` pins the
+        // reason, so a future install that *does* link its paid rows fails a test rather than
+        // silently ingesting them as free.
+        themesia(
+            "athreascans",
+            "Athrea Scans",
+            "https://athreascans.com",
+            json!({ "series": infotable_series() }),
+        ),
+        plain(
+            "culturedworks",
+            "CulturedWorks",
+            "https://culturedworks.com",
+            THEMESIA,
+        ),
+        themesia(
+            "evascans",
+            "Eva Scans",
+            "https://evascans.org",
+            card_v_series(),
+        ),
+        themesia(
+            "galaxymanga",
+            "Galaxy Manga",
+            "https://galaxymanga.io",
+            // Scoped to the list's own id. This install ships a Handlebars *template* row for
+            // its reading-history widget — `<li data-num="{{number}}">`, outside the chapter
+            // list — and the family's bare `li[data-num]` matched it on every series page.
+            json!({ "chapters": { "container": "#chapterlist li[data-num]" } }),
+        ),
+        themesia(
+            "lagoonscans",
+            "Lagoon Scans",
+            "https://lagoonscans.com",
+            json!({ "series": infotable_series() }),
+        ),
+        madarascans(),
+        themesia(
+            "mangatx",
+            "MangaTX",
+            "https://mangatx.cc",
+            // This install's paginator is clamped server-side: `/manga/page/3/`, `?page=3` and
+            // `?page=9999` all return the byte-identical page-1 document, 40 cards, and the
+            // theme still renders a next control. Without `pages: 1` the yielded-items fallback
+            // never goes false and the walk re-ingests page 1 until the planner's cap — 20 000
+            // requests for 40 series, with every one of them "succeeding".
+            json!({ "catalog": { "pages": 1 } }),
+        ),
+        themesia(
+            "rackusreads",
+            "Rackus Reads",
+            "https://rackusreads.com",
+            json!({ "series": infotable_series() }),
+        ),
+        themesia_in(
+            "ravenscans",
+            "Raven Scans",
+            "https://ravenscans.net",
+            "series",
+        ),
+        plain(
+            "scythescans",
+            "Scythe Scans",
+            "https://scythescans.com",
+            THEMESIA,
+        ),
+        themesia(
+            "silentquill",
+            "Silent Quill",
+            "https://www.silentquill.net",
+            // Only the heading is renamed; the info block, chapter rows and listing are stock.
+            json!({ "series": { "title": "h1.kdt8-left-title" } }),
+        ),
     ]
+}
+
+/// The `catalog`/`latest`/`series` fragment for the two installs that replaced the theme's
+/// `div.bsx` grid with a `manga-card-v` one and renamed the archive to `/series/`.
+///
+/// The chapter list is deliberately *not* overridden: both still render the theme's own
+/// `li[data-num]` rows with `span.chapternum`/`span.chapterdate`, which is what makes them worth
+/// a config row rather than an adapter.
+fn card_v_listing() -> Value {
+    json!({
+        "catalog": {
+            "path": "/series/?page={page}",
+            "item": "div.manga-card-v",
+            "link": "a",
+            "title": "h3.card-v-title a"
+        },
+        "latest": {
+            "path": "/series/?page=1&order=update",
+            "item": "div.manga-card-v",
+            "link": "a",
+            "title": "h3.card-v-title a",
+            "chapter": "div.card-v-chapters a"
+        }
+    })
+}
+
+/// `card_v_listing`, the `series` heading `evascans` renames, and its paywall marker.
+///
+/// The coin plugin here is a *different skin* from the one `akazascans`/`rokaricomics` run:
+/// it renders a price-and-padlock block rather than the `span.text-gold` those installs use, so
+/// [`coin_gated_chapters`] would never fire. Found by sampling twenty series — thirteen carried
+/// locked rows and the site's first page carried none, which is why a single-series probe missed
+/// it and every paid chapter had been ingesting as free.
+///
+/// No `unlock`: the badge states a coin price and never a date, so a locked row keeps an unknown
+/// unlock time and stays locked. Same policy as the rest of the family.
+fn card_v_series() -> Value {
+    let mut cfg = card_v_listing();
+    cfg["series"] = json!({ "title": "h1.series-title-main" });
+    cfg["chapters"] = json!({ "locked": "div.locked-badge" });
+    cfg
+}
+
+/// `madarascans.org`: the `card_v_listing` shell, its own heading, and — the reason it is spelled
+/// out rather than folded into a helper — a chapter list that is neither the theme's nor another
+/// install's.
+///
+/// Rows are keyed by a `data-ch` attribute with the link one level in, and a paid row is marked
+/// by a lock glyph inside the number cell. That glyph is rendered on locked rows only, which is
+/// what `chapters.locked` requires: a selector matching a container that is always present would
+/// mark the whole catalogue early-access. No `unlock`, because the row states no date — so a
+/// locked chapter stays locked until a scan sees the glyph gone.
+fn madarascans() -> BuiltinPreset {
+    let mut config = card_v_listing();
+    config["series"] = json!({ "title": "h1.lh-title" });
+    config["chapters"] = json!({
+        "container": "[data-ch]",
+        "link": "a.ch-main-anchor",
+        "number_from": "text",
+        "locked": "i.fa-lock"
+    });
+    themesia(
+        "madarascans",
+        "Madara Scans",
+        "https://madarascans.org",
+        config,
+    )
 }
 
 /// A `MangaThemesia` preset carrying `config` verbatim, for a site whose deviations do not fit
@@ -388,7 +721,11 @@ fn keyoapp_family() -> Vec<BuiltinPreset> {
             "https://writerscans.com",
             KEYOAPP,
         ),
-        plain("nyanukafe", "Nyanu Kafe", "https://nyanukafe.com", KEYOAPP),
+        // The 2026-08-26 expansion added exactly one. Nine further Keyoapp installs were
+        // surveyed and eight are unreachable: three answer `/` with an origin nginx 404 through
+        // a fully solved browser over both address families (the soft-ban shape this platform
+        // uses), and five have moved off it. The platform is worth watching, not mining.
+        plain("erisscans", "Eris Scans", "https://erisscans.com", KEYOAPP),
     ]
 }
 
@@ -437,7 +774,42 @@ fn manganato_family() -> Vec<BuiltinPreset> {
                 ..Politeness::default()
             },
         },
+        // Two more of the same application found in the 2026-08-26 survey. Sized like their
+        // siblings above, and kept separate for the same reason.
+        manganato("mangabats", "Mangabat", "https://www.mangabats.com"),
+        manganato("manganatogg", "Manganato", "https://manganato.gg"),
+        manganato(
+            "mangakakalove",
+            "MangaKakaLove",
+            "https://www.mangakakalove.com",
+        ),
     ]
+}
+
+/// One domain of the Manganato application, at the catalogue-scale crawl budget the family
+/// shares. Per worker *process*, so at the shipped two replicas this is the policy ceiling.
+fn manganato(slug: &'static str, name: &'static str, base_url: &'static str) -> BuiltinPreset {
+    BuiltinPreset {
+        slug,
+        name,
+        base_url,
+        adapter: AdapterKind::Manganato,
+        config: json!({}),
+        politeness: bulk_budget(),
+    }
+}
+
+/// The crawl budget for a catalogue in the tens of thousands of series.
+///
+/// Double the default, half the policy ceiling: enforced per worker process, so at the shipped
+/// two replicas this is exactly `MAX_RPS`/`MAX_CONCURRENCY` aggregate. Raising the replica count
+/// without lowering these silently exceeds the ceiling.
+fn bulk_budget() -> Politeness {
+    Politeness {
+        rps: 4.0,
+        concurrency: 8,
+        ..Politeness::default()
+    }
 }
 
 /// Bespoke layouts that still reduce to selectors, so they need no Rust of their own.
@@ -445,7 +817,809 @@ fn selector_only() -> Vec<BuiltinPreset> {
     let mut all = vec![tcbscans()];
     all.push(weebcentral());
     all.push(mangapill());
+    all.extend(aggregators());
+    all.extend(single_series_readers());
     all
+}
+
+/// The `MangaCatalog` theme: eight sites, one popular series each, identical markup.
+///
+/// Small catalogues, but each carries the full run of a series people actually track — one of
+/// them lists 1 207 chapters — so they are worth a row apiece. Every one is `single_series_site`
+/// with nothing but identity, which is what a hosted theme should cost.
+///
+/// Two siblings are deliberately absent. `readberserk` and `readopm` moved to a `WordPress`
+/// theme whose chapter rows put the number in a `<td>` and give every anchor the text `Read`;
+/// `chapters.number_from` reads link text, so no selector set can number those rows — a schema
+/// limit, not a missing selector. `readblackclover`'s domain has expired.
+fn single_series_readers() -> Vec<BuiltinPreset> {
+    vec![
+        single_series_site("readsnk", "Read Attack on Titan", "https://readsnk.com"),
+        single_series_site(
+            "tokyoghoulre",
+            "Read Tokyo Ghoul",
+            "https://tokyoghoulre.com",
+        ),
+        single_series_site(
+            "readjujutsu",
+            "Read Jujutsu Kaisen",
+            "https://readjujutsukaisen.com",
+        ),
+        single_series_site(
+            "read7ds",
+            "Read Seven Deadly Sins",
+            "https://read7deadlysins.com",
+        ),
+        single_series_site(
+            "readsololeveling",
+            "Read Solo Leveling",
+            "https://readsololeveling.org",
+        ),
+        single_series_site(
+            "readfairytail",
+            "Read Fairy Tail",
+            "https://readfairytail.com",
+        ),
+        single_series_site("readkingdom", "Read Kingdom", "https://readkingdom.com"),
+        single_series_site("readonepiece", "Read One Piece", "https://readonepiece.com"),
+    ]
+}
+
+/// A site on the `MangaCatalog` theme.
+///
+/// `base_url` is the **bare** domain on purpose. Each of these serves from a rotating `wwN.`
+/// host and redirects the bare domain to whichever prefix is current, so naming the prefix would
+/// pin the preset to a hostname the operator rotates without notice.
+fn single_series_site(
+    slug: &'static str,
+    name: &'static str,
+    base_url: &'static str,
+) -> BuiltinPreset {
+    BuiltinPreset {
+        slug,
+        name,
+        base_url,
+        adapter: GENERIC,
+        config: json!({
+            "catalog": {
+                // The sitemap, not the home page. The home page's section headers list one to
+                // six of the seven-to-twenty-five series each site actually hosts, so an HTML
+                // walk would silently enumerate a fraction of the catalogue. `pages: 1` is what
+                // ends the walk: there is one shard, and without it the yielded-items fallback
+                // re-fetches it forever.
+                "mode": "sitemap",
+                "path": "/sitemap.xml",
+                "item": "/manga/",
+                "link": "",
+                "title": "",
+                "pages": 1,
+                "next": null
+            },
+            "latest": {
+                "path": "/",
+                "item": "div.gap-3.my-3",
+                "link": "a.bg-bg-action",
+                "title": "h3",
+                "chapter": null
+            },
+            "series": {
+                // Not a bare `h1`: the page banner ("Read X Manga Online") is an `h1` too and
+                // comes first in the DOM, so the site name would be stored as the series title
+                // — and the title is what the matching key is built from.
+                "title": "h1.my-3",
+                "desc": "div.py-2 > div.text-text-muted",
+                "cover": "img.rounded-full@src"
+            },
+            "chapters": {
+                "container": "div.bg-bg-secondary.p-3.rounded.mb-3.shadow",
+                "link": "a[href*=\"/chapter/\"]",
+                "number_from": "text",
+                // No `date`: the `div.text-xs` beside each link is the chapter's subtitle, and
+                // the theme publishes no per-chapter timestamp at all.
+                "title": "div.text-xs.text-text-muted"
+            }
+        }),
+        politeness: Politeness::default(),
+    }
+}
+
+/// The 2026-08-26 expansion's selector-only rows: general-purpose readers, each with a layout of
+/// its own and none of them on a theme this repository already parses.
+///
+/// They are grouped because they share a property the scanlator sites do not — catalogues in the
+/// tens of thousands of series — and so they all take [`bulk_budget`]. Everything else about them
+/// is per-site, which is why each is spelled out rather than folded into a family.
+fn aggregators() -> Vec<BuiltinPreset> {
+    vec![
+        // Two domains of one application, selector for selector. Kept as two rows for the reason
+        // the Manganato clones are: each has its own rate limit, health state and reader links.
+        fmreader("fanfox", "MangaFox", "https://fanfox.net"),
+        fmreader("mangahere", "MangaHere", "https://www.mangahere.cc"),
+        hadesscans(),
+        kaliscan(),
+        mangafreak(),
+        mangago(),
+        mangakatana(),
+        manganow(),
+        mangatown(),
+        manhuaplus_mirror(),
+        mgeko(),
+        projectsuki(),
+        readcomicsonline(),
+        reimanga(),
+        saymanhwa(),
+        xoxocomics(),
+    ]
+}
+
+/// `fanfox.net` and `mangahere.cc`: the same application on two domains.
+fn fmreader(slug: &'static str, name: &'static str, base_url: &'static str) -> BuiltinPreset {
+    BuiltinPreset {
+        slug,
+        name,
+        base_url,
+        adapter: GENERIC,
+        config: json!({
+            "catalog": {
+                "path": "/directory/{page}.htm",
+                "item": "ul.manga-list-1-list li",
+                "link": "a",
+                // The visible title is clipped; the anchor's `title` carries it in full.
+                "title": "a@title",
+                "next": null
+            },
+            // The same directory with one query flag, which is what re-sorts it by update time.
+            "latest": {
+                "path": "/directory/1.htm?latest",
+                "item": "ul.manga-list-1-list li",
+                "link": "a",
+                "title": "a@title",
+                "chapter": null
+            },
+            "series": {
+                "title": "span.detail-info-right-title-font",
+                "desc": "p.fullcontent",
+                "cover": "img.detail-info-cover-img@src",
+                "tags": "p.detail-info-right-tag-list a",
+                "author": "p.detail-info-right-say a",
+                "status": "span.detail-info-right-title-tip"
+            },
+            "chapters": {
+                "container": "ul.detail-main-list li",
+                "link": "a",
+                "number_from": "text",
+                "title": "p.title3",
+                "date": "p.title2"
+            }
+        }),
+        politeness: bulk_budget(),
+    }
+}
+
+/// A `WordPress` scanlator site on a bespoke theme — Madara's URL shape, none of its markup.
+fn hadesscans() -> BuiltinPreset {
+    BuiltinPreset {
+        slug: "hadesscans",
+        name: "Hades Scans",
+        base_url: "https://hadesscans.com",
+        adapter: GENERIC,
+        config: json!({
+            "catalog": {
+                // The path, not `?page=`: this theme keeps Madara's URL shape and *ignores* the
+                // query parameter, so `?page=2` re-served page 1 and the walk re-ingested the
+                // same thirty series until the planner's cap without failing once.
+                "path": "/manga/page/{page}/",
+                "item": "article.cx-poster-card",
+                "link": "a.cx-poster-card__cover-link",
+                "title": "h3.cx-poster-card__title",
+                // No marker: `link[rel=next]` is rendered on every page here, including past
+                // the end. The page after the last answers 200 with zero cards, which is
+                // exactly what the yielded-items fallback needs.
+                "next": null
+            },
+            "latest": {
+                "path": "/manga/?page=1&m_orderby=latest",
+                "item": "article.cx-poster-card",
+                "link": "a.cx-poster-card__cover-link",
+                "title": "h3.cx-poster-card__title",
+                "chapter": "span.cx-poster-card__chapter"
+            },
+            "series": {
+                "title": "h1.cx-single-hero__title",
+                "desc": "div.cx-single-hero__synopsis",
+                "cover": "div.cx-single-hero__cover img@src",
+                "tags": "a.cx-single-hero__genre"
+            },
+            "chapters": {
+                // The row *is* the anchor here, so `self` — a nested `link` selector finds
+                // nothing and the whole list parses to zero rows without failing.
+                "container": "a.cx-chapter-item",
+                "link": "self",
+                "number_from": "text",
+                "title": "span.cx-chapter-item__title",
+                "date": "span.cx-chapter-item__date"
+            }
+        }),
+        politeness: Politeness::default(),
+    }
+}
+
+fn kaliscan() -> BuiltinPreset {
+    BuiltinPreset {
+        slug: "kaliscan",
+        name: "KaliScan",
+        base_url: "https://kaliscan.io",
+        adapter: GENERIC,
+        config: json!({
+            "catalog": {
+                "path": "/az-list?page={page}",
+                "item": "div.book-detailed-item",
+                "link": "div.thumb a",
+                "title": "div.thumb a@title",
+                "next": null
+            },
+            "latest": {
+                "path": "/latest?page=1",
+                "item": "div.book-detailed-item",
+                "link": "div.thumb a",
+                "title": "div.thumb a@title",
+                "chapter": "span.latest-chapter"
+            },
+            "series": {
+                "title": "div.name h1",
+                "desc": "div.section-body p",
+                // Covers are lazy-loaded; `src` is a shared placeholder GIF.
+                "cover": "div.img-cover img@data-src",
+                "alt": "div.name h2",
+                "tags": "div.meta a[href*=\"/genre\"]"
+            },
+            "chapters": {
+                // The id, not the visible "LATEST CHAPTERS" strip above it, which is a preview
+                // of the newest few and would have truncated every series to three rows.
+                "container": "#chapter-list li",
+                "link": "a",
+                "number_from": "text",
+                // The row nests its update time inside the anchor, so the anchor's own text
+                // reads `Chapter 17 days ago` for chapter 1 and the number parses as 17. This
+                // scrambled 99% of the numbers on the first ingest — plausible values, wrong
+                // reading order, and nothing failed. Read the label element instead.
+                "number": "strong.chapter-title",
+                "date": "time.chapter-update"
+            }
+        }),
+        politeness: bulk_budget(),
+    }
+}
+
+fn mangafreak() -> BuiltinPreset {
+    BuiltinPreset {
+        slug: "mangafreak",
+        name: "Mangafreak",
+        base_url: "https://ww3.mangafreak.me",
+        adapter: GENERIC,
+        config: json!({
+            "catalog": {
+                "path": "/Genre/All/{page}",
+                "item": "div.ranking_item",
+                "link": "a",
+                "title": "a@title",
+                "next": "a.next_p"
+            },
+            "latest": {
+                "path": "/Latest_Releases",
+                "item": "div.latest_releases_item",
+                "link": "a",
+                "title": "a@title",
+                "chapter": null
+            },
+            "series": {
+                "title": "div.manga_series_data h1",
+                "desc": "div.manga_series_description p",
+                "cover": "div.manga_series_image img@src",
+                "tags": "div.series_sub_genre_list a"
+                // No credits or status: the info block is a run of unlabelled `div`s
+                // distinguished only by position, which no `TextSource` shape can address.
+            },
+            "chapters": {
+                "container": "div.manga_series_list tr",
+                "link": "a",
+                "number_from": "text",
+                "date": "td:nth-of-type(2)"
+            }
+        }),
+        politeness: bulk_budget(),
+    }
+}
+
+fn mangago() -> BuiltinPreset {
+    BuiltinPreset {
+        slug: "mangago",
+        name: "Mangago",
+        base_url: "https://www.mangago.me",
+        adapter: GENERIC,
+        config: json!({
+            "catalog": {
+                "path": "/list/directory/all/{page}/",
+                "item": "div.updatesli",
+                "link": "a.thm-effect",
+                "title": "a.thm-effect@title",
+                // 455 pages, and past the end the site answers 200 with a full 44-card page of
+                // series it has not served before — deterministic per page number, disjoint from
+                // the real ones. Neither item count nor novelty can stop the walk; the only
+                // thing that changes is that the paginator stops marking a current page.
+                "next": "div.pagination li.current + li > a"
+            },
+            "latest": {
+                "path": "/list/directory/all/1/",
+                "item": "div.updatesli",
+                "link": "a.thm-effect",
+                "title": "a.thm-effect@title",
+                "chapter": null
+            },
+            "series": {
+                "title": "div.w-title h1",
+                "desc": "div.manga_summary",
+                "cover": "div.left.cover img@src",
+                "tags": "td a[href*=\"/genre/\"]"
+            },
+            "chapters": {
+                "container": "table#chapter_table tr",
+                "link": "a.chico",
+                "number_from": "text",
+                "date": "td:nth-of-type(3)"
+            }
+        }),
+        politeness: bulk_budget(),
+    }
+}
+
+fn mangakatana() -> BuiltinPreset {
+    BuiltinPreset {
+        slug: "mangakatana",
+        name: "MangaKatana",
+        base_url: "https://mangakatana.com",
+        adapter: GENERIC,
+        config: json!({
+            "catalog": {
+                "path": "/manga/page/{page}",
+                "item": "div#book_list > div.item",
+                "link": "div.text h3 a",
+                "title": "div.text h3 a",
+                "next": "a.next.page-numbers"
+            },
+            // `/page/{n}` is the site-wide newest-updates listing, rendered by the same template.
+            "latest": {
+                "path": "/page/1",
+                "item": "div#book_list > div.item",
+                "link": "div.text h3 a",
+                "title": "div.text h3 a",
+                "chapter": null
+            },
+            "series": {
+                "title": "h1.heading",
+                "desc": "div.summary p",
+                "cover": "div.media div.cover img@src",
+                "tags": "div.genres a",
+                "status": "div.value.status",
+                "alt": "div.alt_name",
+                "author": "a.author"
+            },
+            "chapters": {
+                "container": "div.chapters table tr",
+                "link": "div.chapter a",
+                "number_from": "text",
+                "date": "div.update_time"
+            }
+        }),
+        politeness: bulk_budget(),
+    }
+}
+
+/// The `MangaReader` theme: ~2 860 series over 179 A-Z pages, whole chapter list server-rendered.
+fn manganow() -> BuiltinPreset {
+    BuiltinPreset {
+        slug: "manganow",
+        name: "MangaNow",
+        base_url: "https://manganow.to",
+        adapter: GENERIC,
+        config: json!({
+            "catalog": {
+                "path": "/az-list?page={page}",
+                "item": "div.mls-wrap div.item",
+                "link": "a.manga-poster",
+                "title": "h3.manga-name",
+                "next": "ul.pagination a[rel=\"next\"]"
+            },
+            "latest": {
+                "path": "/filter?sort=latest-updated",
+                "item": "div.mls-wrap div.item",
+                "link": "a.manga-poster",
+                "title": "h3.manga-name",
+                "chapter": "div.fd-list div.chapter a"
+            },
+            "series": {
+                "title": "h2.manga-name",
+                "alt": "div.manga-name-or",
+                "desc": "div.description",
+                "cover": "div.manga-poster img.manga-poster-img@src",
+                "tags": "div.sort-desc div.genres a",
+                "status": { "row": "div.anisc-info div.item-title", "label": "span.item-head",
+                            "match": "Status", "value": "span.name" },
+                "author": { "row": "div.anisc-info div.item-title", "label": "span.item-head",
+                            "match": "Authors", "value": "a" },
+                "artist": { "row": "div.anisc-info div.item-title", "label": "span.item-head",
+                            "match": "Artists", "value": "a" },
+                "release": { "row": "div.anisc-info div.item-title", "label": "span.item-head",
+                             "match": "Published", "value": "span.name" }
+            },
+            "chapters": {
+                "container": "ul.reading-list li.chapter-item",
+                "link": "a.item-link",
+                "number_from": "text",
+                "title": "span.name"
+                // No `date`: this theme publishes no per-chapter timestamp at all, and an
+                // invented one reorders the release feed.
+            }
+        }),
+        politeness: bulk_budget(),
+    }
+}
+
+fn mangatown() -> BuiltinPreset {
+    BuiltinPreset {
+        slug: "mangatown",
+        name: "MangaTown",
+        base_url: "https://www.mangatown.com",
+        adapter: GENERIC,
+        config: json!({
+            "catalog": {
+                // The zeroed segments are the directory's own "no filter" form.
+                "path": "/directory/0-0-0-0-0-0/{page}.htm",
+                "item": "ul.manga_pic_list li",
+                "link": "a.manga_cover",
+                "title": "p.title a",
+                "next": null
+            },
+            "latest": {
+                "path": "/latest/1.htm",
+                "item": "ul.manga_pic_list li",
+                "link": "a.manga_cover",
+                "title": "p.title a",
+                "chapter": null
+            },
+            "series": {
+                "title": "h1.title-top",
+                "desc": "span#show",
+                "cover": "div.detail_info img@src",
+                "tags": "li a[href*=\"/directory/\"]"
+            },
+            "chapters": {
+                "container": "ul.chapter_list li",
+                "link": "a",
+                // Rows read "<Series Title> 526" with no chapter marker at all, so the number
+                // comes from `parse_chapter_number`'s bare-number fallback — the *first* digit
+                // run in the label. That is wrong whenever the series title carries digits of
+                // its own, and one title here does: "The Dark Magician Transmigrates After
+                // 66666 Years" stores 66666 for every chapter. No selector fixes it, because
+                // the theme wraps the title and number in one text node with nothing to select
+                // between them; `chapters.number` needs an element and there is none.
+                //
+                // Kept at one known-bad series in ~3 500 chapters, and the implausible-number
+                // guard bounds the damage rather than removing it. If that ratio moves, this
+                // site needs an adapter that reads the number from the chapter path.
+                "number_from": "text",
+                "date": "span.time"
+            }
+        }),
+        politeness: bulk_budget(),
+    }
+}
+
+/// `manhuaplus.org` — an unrelated site to the shipped `manhuaplus` (`manhuaplus.com`), sharing
+/// only a name. Distinct slug, distinct row, and the console shows both domains.
+fn manhuaplus_mirror() -> BuiltinPreset {
+    BuiltinPreset {
+        slug: "manhuaplusorg",
+        name: "Manhuaplus Mirror",
+        base_url: "https://manhuaplus.org",
+        adapter: GENERIC,
+        config: json!({
+            "catalog": {
+                // `/manga-list` is a static legacy page that ignores `?page=` entirely and
+                // re-serves the same twenty cards forever; this is the site's own pager route,
+                // and it uses a different card than `/home` does. The sort is pinned rather
+                // than left to a server default so consecutive pages stay consistent.
+                "path": "/all-manga/{page}/?sort=last_update&status=0",
+                "item": "div.b-img.i-mage",
+                "link": "a.block.pt-140p",
+                "title": "a.block.pt-140p@title",
+                // The pager marks the current page `span.pagecurrent` and every link
+                // `span.displaypageNum` — backward links included, so a bare class test never
+                // goes false. The adjacent sibling does: on the last page `span.pagecurrent`
+                // is the pager's final child. Walks all 28 pages and enumerates 659 series,
+                // which is exactly what `manga_sitemap.xml` lists.
+                "next": "span.pagecurrent + span.displaypageNum"
+            },
+            "latest": {
+                "path": "/home",
+                "item": "figure.sac",
+                "link": "a.block",
+                "title": "figcaption a",
+                "chapter": null
+            },
+            "series": {
+                "title": "h1",
+                "desc": "div.summary",
+                // The cover is a lazy-loaded `data-src` on a separate host; the Open Graph tag
+                // is the one attribute-shaped copy that is already resolved.
+                "cover": "meta[property=\"og:image\"]@content"
+            },
+            "chapters": {
+                "container": "li.chapter",
+                "link": "a",
+                "number_from": "text",
+                "date": "time"
+            }
+        }),
+        politeness: bulk_budget(),
+    }
+}
+
+fn mgeko() -> BuiltinPreset {
+    BuiltinPreset {
+        slug: "mgeko",
+        name: "MangaGeko",
+        base_url: "https://www.mgeko.cc",
+        adapter: GENERIC,
+        config: json!({
+            "catalog": {
+                // `results` is this listing's page parameter, oddly named but 1-based.
+                "path": "/jumbo/manga/?results={page}&filter=All",
+                // Scoped to the grid: the page also renders a 24-card `ul.swiper-wrapper`
+                // carousel of `li.novel-item`, so the unscoped selector mixed a rotating
+                // promo strip into the catalogue and made consecutive pages overlap.
+                "item": "ul.novel-list.grid > li.novel-item",
+                "link": "a.list-body",
+                "title": "a.list-body@title",
+                // Past the last page the server clamps to page 5 and keeps serving it, so the
+                // yielded-items fallback never terminates. The next chevron survives there but
+                // degrades to `href="javascript:void(0)"` — testing the attribute, not the
+                // class, is what makes it disappear.
+                "next": "div.mg-pagination-table + a.mg-pagination-chev[href*=\"results=\"]"
+            },
+            "latest": {
+                "path": "/jumbo/manga/?results=1&filter=All",
+                "item": "ul.novel-list.grid > li.novel-item",
+                "link": "a.list-body",
+                "title": "a.list-body@title",
+                "chapter": "h5.chapter-title"
+            },
+            "series": {
+                "title": "h1.novel-title",
+                "desc": "div.description",
+                "cover": "figure.cover img@data-src",
+                "tags": "div.categories a",
+                "alt": "h2.alternative-title"
+            },
+            "chapters": {
+                // The series page renders the newest rows behind a "Load All Chapters" control
+                // and this is where that control points. Reading the series page instead
+                // truncates every series to its first screen, silently.
+                "path": "{path}all-chapters/",
+                "container": "ul.chapter-list li",
+                "link": "a",
+                "number_from": "text"
+            }
+        }),
+        politeness: bulk_budget(),
+    }
+}
+
+fn projectsuki() -> BuiltinPreset {
+    BuiltinPreset {
+        slug: "projectsuki",
+        name: "Project Suki",
+        base_url: "https://projectsuki.com",
+        adapter: GENERIC,
+        config: json!({
+            "catalog": {
+                "path": "/browse?page={page}",
+                "item": "div.browse",
+                "link": "h5 a",
+                "title": "h5 a",
+                "next": null
+            },
+            "latest": {
+                "path": "/browse?page=1",
+                "item": "div.browse",
+                "link": "h5 a",
+                "title": "h5 a",
+                "chapter": null
+            },
+            "series": {
+                // This template renders no heading for the title at all — the only copy on the
+                // page outside the JSON-LD block is the Open Graph tag.
+                "title": "meta[property=\"og:title\"]@content",
+                "desc": "meta[name=\"description\"]@content",
+                "cover": "img.book@src"
+            },
+            "chapters": {
+                "container": "tbody tr",
+                "link": "a[href*=\"/read/\"]",
+                "number_from": "text"
+            }
+        }),
+        politeness: Politeness::default(),
+    }
+}
+
+fn readcomicsonline() -> BuiltinPreset {
+    BuiltinPreset {
+        slug: "readcomicsonline",
+        name: "Read Comics Online",
+        base_url: "https://readcomicsonline.ru",
+        adapter: GENERIC,
+        config: json!({
+            "catalog": {
+                "path": "/comic-list?page={page}",
+                "item": "div.group",
+                "link": "a.line-clamp-2",
+                "title": "a.line-clamp-2",
+                "next": null
+            },
+            // `/latest-release` exists and renders none of these cards; `/` is the updates grid.
+            "latest": {
+                "path": "/",
+                "item": "div.group",
+                "link": "a.line-clamp-2",
+                "title": "a.line-clamp-2",
+                "chapter": null
+            },
+            "series": {
+                "title": "h1",
+                "desc": "div.prose",
+                "cover": "meta[property=\"og:image\"]@content"
+            },
+            "chapters": {
+                // Scoped to the list section: the "Read First" button above it is the same
+                // anchor shape and would be stored as a duplicate of chapter 1.
+                "container": "section div.divide-y a",
+                "link": "self",
+                // Rows read "<Series Title (2026-)>#205"; `#` is a chapter marker, so the number
+                // after it is what parses — not the year in the title.
+                "number_from": "text"
+            }
+        }),
+        politeness: bulk_budget(),
+    }
+}
+
+fn reimanga() -> BuiltinPreset {
+    BuiltinPreset {
+        slug: "reimanga",
+        name: "ReiManga",
+        base_url: "https://reimanga.net",
+        adapter: GENERIC,
+        config: json!({
+            "catalog": {
+                "path": "/advanced-search?page={page}",
+                // The card *is* the anchor on this template, so `self` — a nested link selector
+                // finds nothing and the listing parses to zero items.
+                "item": "a.group",
+                "link": "self",
+                "title": "h3",
+                "next": null
+            },
+            "latest": {
+                "path": "/latest-update",
+                "item": "a.group",
+                "link": "self",
+                "title": "h3",
+                "chapter": "div.text-blue-400"
+            },
+            "series": {
+                "title": "h1",
+                "desc": "p.line-clamp-4",
+                "cover": "img.shadow-lg@src",
+                "tags": "a.bg-gray-700[href*='genre=']",
+                "alt": "p.leading-relaxed.line-clamp-2",
+                "status": "span.inline-flex.font-medium"
+            },
+            "chapters": {
+                // Keyed on the row id prefix rather than a utility class: this template's
+                // classes are Tailwind, and the id is the only stable thing on the row.
+                "container": "a[id^='chapter-']",
+                "link": "self",
+                "number_from": "text",
+                // Rendered as a coarse relative label ("7mo ago") that `parse_date_label` does
+                // not recognise, so dates come back absent rather than wrong. Kept pointed at
+                // the element so a switch to an absolute date starts working on its own.
+                "date": "span.text-gray-500"
+            }
+        }),
+        politeness: bulk_budget(),
+    }
+}
+
+fn saymanhwa() -> BuiltinPreset {
+    BuiltinPreset {
+        slug: "saymanhwa",
+        name: "SayManhwa",
+        base_url: "https://saymanhwa.com",
+        adapter: GENERIC,
+        config: json!({
+            "catalog": {
+                // The language prefix is part of every path this site serves.
+                "path": "/en/series?page={page}",
+                "item": "article.series-card",
+                "link": "a.series-card-cover",
+                "title": "div.series-card-body h2 a",
+                // A page past the end keeps serving twenty-four cards, so the yielded-items
+                // fallback never terminates; this marker is absent there and present before it.
+                "next": "link[rel=\"next\"]"
+            },
+            "latest": {
+                "path": "/en/series?page=1",
+                "item": "article.series-card",
+                "link": "a.series-card-cover",
+                "title": "div.series-card-body h2 a",
+                "chapter": null
+            },
+            "series": {
+                "title": "h1",
+                "desc": "div.series-v72-synopsis",
+                "cover": "meta[property=\"og:image\"]@content",
+                "alt": "div.series-v72-alt"
+            },
+            "chapters": {
+                // The card class, not `a[href*="/chapter-"]`: the series page also renders
+                // "first chapter" and "latest chapter" action buttons pointing at real chapter
+                // URLs, and the href test swept those in as two extra rows per series.
+                "container": "a.series-chapter-card",
+                "link": "self",
+                "number_from": "text"
+            }
+        }),
+        politeness: bulk_budget(),
+    }
+}
+
+fn xoxocomics() -> BuiltinPreset {
+    BuiltinPreset {
+        slug: "xoxocomics",
+        name: "XOXO Comics",
+        base_url: "https://xoxocomic.com",
+        adapter: GENERIC,
+        config: json!({
+            "catalog": {
+                "path": "/comic-list?page={page}",
+                "item": "div.box_li",
+                "link": "div.box_img a",
+                "title": "div.title",
+                "next": "a.next-page, a[rel=\"next\"]"
+            },
+            "latest": {
+                "path": "/comic-update?page=1",
+                "item": "div.box_li",
+                "link": "div.box_img a",
+                "title": "div.title",
+                "chapter": null
+            },
+            "series": {
+                "title": "h1.title-detail",
+                "desc": "div.detail-content p",
+                "cover": "div.col-image img@src",
+                "tags": "li.kind a"
+            },
+            "chapters": {
+                "container": "div.list-chapter li.row",
+                "link": "a",
+                "number_from": "text",
+                "date": "div.col-xs-4"
+            }
+        }),
+        politeness: bulk_budget(),
+    }
 }
 
 /// Nineteen series, all weekly and high-demand, with no theme underneath.
@@ -620,6 +1794,10 @@ fn iken_platform() -> Vec<BuiltinPreset> {
 }
 
 /// Providers driven by a bespoke adapter, each for a reason selectors cannot express.
+#[expect(
+    clippy::too_many_lines,
+    reason = "one entry per site; same reason as `madara_family`"
+)]
 fn custom_code() -> Vec<BuiltinPreset> {
     vec![
         // Bespoke PHP layout, driven by `DemonicScansAdapter`, dispatched on this slug.
@@ -672,6 +1850,18 @@ fn custom_code() -> Vec<BuiltinPreset> {
                 ..Politeness::default()
             },
         },
+        // Two more installs of the platform `kunmanga` runs on, found by the shape of their
+        // sitemap index (`sitemap-comic-{n}.xml`) and confirmed by the chapter API answering.
+        // Same adapter, same reasons: the HTML listing is server-clamped and the series page
+        // renders only the newest rows, so both the walk and the chapter list come from
+        // elsewhere. `zazamanga` is the same platform and is *not* here — that install still
+        // server-renders its whole chapter list, so it stays a Madara config row.
+        zinmanga_platform("zinmanga", "Zinmanga", "https://www.zinmanga.net"),
+        zinmanga_platform(
+            "kunmangaonline",
+            "Kun Manga Online",
+            "https://www.kunmanga.online",
+        ),
         // The reader host and the API host differ; `base_url` is the reader one so stored paths
         // stay openable, and the adapter names the API absolutely.
         BuiltinPreset {
@@ -758,6 +1948,32 @@ fn custom_code() -> Vec<BuiltinPreset> {
             politeness: Politeness::default(),
         },
     ]
+}
+
+/// A site on the platform `kunmanga` runs on: Madara-shaped series markup, a JSON chapter API,
+/// and a catalogue reachable only through the sitemap.
+///
+/// The config mirrors `kunmanga`'s because the platform is the same one; see that preset for why
+/// each override exists.
+fn zinmanga_platform(
+    slug: &'static str,
+    name: &'static str,
+    base_url: &'static str,
+) -> BuiltinPreset {
+    BuiltinPreset {
+        slug,
+        name,
+        base_url,
+        adapter: AdapterKind::Custom,
+        config: json!({
+            // No `latest` override, unlike `kunmanga`: these two installs render the theme's own
+            // `div.page-item-detail` cards on the home page, where kunmanga.co.uk renders a
+            // bespoke slider. Inheriting kunmanga's override here read an empty feed on every
+            // fast scan — a valid parse of the wrong markup, which nothing reports.
+            "series": { "release": "a[href*=\"manga-release\"]" }
+        }),
+        politeness: bulk_budget(),
+    }
 }
 
 #[cfg(test)]

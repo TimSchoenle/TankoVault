@@ -742,6 +742,7 @@
       "revert": "Zusammenführung rückgängig ({rows} Zeilen)",
       "reverted": "Zusammenführung rückgängig gemacht: {rows} Zeilen wiederhergestellt, das Paar wird nicht erneut zusammengeführt.",
       "revertedBecause": "Zurückgenommen: {reason}",
+      "revertedCleaned": "Zusammenführung rückgängig gemacht: {rows} Zeilen wiederhergestellt. {titles} gemeinsame Alternativtitel von der behaltenen Serie entfernt und {sources} Quellen ({chapters} Kapitel) an die wiederhergestellte zurückgegeben. Das Paar wird nicht erneut zusammengeführt.",
       "search": {
         "hits": "{count} von {loaded} geladenen",
         "merges": "Titel, Ergebnisse, Gründe suchen…",
@@ -1512,12 +1513,12 @@
         "flagged": "markiert",
         "reverted": "rückgängig gemacht"
       },
-      "unmergeBody": "Stellt die übernommene Serie unter ihrer ursprünglichen ID mit ihren {rows} Zeilen wieder her. Lesefortschritt, der seit der Zusammenführung auf der behaltenen Serie entstanden ist, bleibt dort — er folgt der Trennung nicht.",
+      "unmergeBody": "Stellt die übernommene Serie unter ihrer ursprünglichen ID mit ihren {rows} Zeilen wieder her, entfernt anschließend die Namen, auf die beide Serien hörten, von der behaltenen und gibt die danach benannten Quellen samt ihrer Kapitel zurück. Sonst hängt der nächste Scan sie wieder an. Die behaltene Serie verliert nie ihren eigenen Titel, und Lesefortschritt, der auf ihr entstanden ist, bleibt dort — er folgt der Trennung nicht.",
       "spentBody": "Für diese Zusammenführung gibt es kein Rücknahmejournal mehr, es lässt sich nichts wiederherstellen. Sie kann weiterhin als falsch vermerkt werden, was den Lauf daran hindert, das Paar erneut vorzuschlagen.",
       "reasonLabel": "Begründung — erforderlich, landet im Prüfprotokoll",
       "unmergeCta": "Trennen · {rows} Zeilen wiederherstellen",
       "flagCta": "Zusammengeführt lassen, als falsch vermerken",
-      "suppressionNote": "Beide Ausgänge vermerken zusätzlich „kein Duplikat“, sodass der Lauf dieses Paar nicht erneut vorschlägt.",
+      "suppressionNote": "Beide Ausgänge vermerken zusätzlich „kein Duplikat“, sodass der Lauf dieses Paar nicht erneut vorschlägt. Nur das Trennen löst die gemeinsamen Titel und Quellen auf.",
       "wasReverted": "Rückgängig gemacht {when}. Begründung: {reason}",
       "wasFlagged": "Als falsch vermerkt {when}. Begründung: {reason}",
       "noReason": "keine angegeben",

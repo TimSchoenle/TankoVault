@@ -5250,22 +5250,30 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "What undoing an automatic merge put back."]
+    #[doc = "What undoing an automatic merge put back, and what it took off the survivor.\n\nThe last three counts are not part of the merge's inverse. A revert is an operator saying the\ntwo rows are different works, and it acts on that: the names both rows answered to come off\nthe survivor, and the sources those names attracted go back with their chapters. Reported\nbecause it happens without review — the survivor loses rows nobody listed first."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"What undoing an automatic merge put back.\","]
+    #[doc = "  \"description\": \"What undoing an automatic merge put back, and what it took off the survivor.\\n\\nThe last three counts are not part of the merge's inverse. A revert is an operator saying the\\ntwo rows are different works, and it acts on that: the names both rows answered to come off\\nthe survivor, and the sources those names attracted go back with their chapters. Reported\\nbecause it happens without review — the survivor loses rows nobody listed first.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
+    #[doc = "    \"chapters_returned\","]
     #[doc = "    \"decision_id\","]
     #[doc = "    \"pair_suppressed\","]
     #[doc = "    \"restored_id\","]
     #[doc = "    \"rows_restored\","]
-    #[doc = "    \"survivor_id\""]
+    #[doc = "    \"sources_returned\","]
+    #[doc = "    \"survivor_id\","]
+    #[doc = "    \"titles_removed\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
+    #[doc = "    \"chapters_returned\": {"]
+    #[doc = "      \"description\": \"Chapters that travelled with those sources. Chapters hang off sources, so this is what an\\noperator sees change on the survivor's page.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
     #[doc = "    \"decision_id\": {"]
     #[doc = "      \"description\": \"The journal row that was undone.\","]
     #[doc = "      \"type\": \"string\","]
@@ -5283,8 +5291,18 @@ pub mod types {
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
+    #[doc = "    \"sources_returned\": {"]
+    #[doc = "      \"description\": \"Sources moved off the survivor and back onto the restored series, because their provider\\ntitle *is* one of those shared names.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
     #[doc = "    \"survivor_id\": {"]
     #[doc = "      \"$ref\": \"#/components/schemas/SeriesId\""]
+    #[doc = "    },"]
+    #[doc = "    \"titles_removed\": {"]
+    #[doc = "      \"description\": \"Alternative titles removed from the survivor because the restored series answers to them\\ntoo. Left in place, these have the next scan re-attaching what the revert just separated:\\nsuppression binds the duplicate sweep, not the create-time attach path.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -5292,6 +5310,8 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct MergeReverted {
+        #[doc = "Chapters that travelled with those sources. Chapters hang off sources, so this is what an\noperator sees change on the survivor's page."]
+        pub chapters_returned: i64,
         #[doc = "The journal row that was undone."]
         pub decision_id: ::uuid::Uuid,
         #[doc = "Always true: a revert also suppresses the pair, or the next sweep would merge it again."]
@@ -5299,7 +5319,11 @@ pub mod types {
         pub restored_id: SeriesId,
         #[doc = "Rows restored or moved back off the survivor."]
         pub rows_restored: i64,
+        #[doc = "Sources moved off the survivor and back onto the restored series, because their provider\ntitle *is* one of those shared names."]
+        pub sources_returned: i64,
         pub survivor_id: SeriesId,
+        #[doc = "Alternative titles removed from the survivor because the restored series answers to them\ntoo. Left in place, these have the next scan re-attaching what the revert just separated:\nsuppression binds the duplicate sweep, not the create-time attach path."]
+        pub titles_removed: i64,
     }
     impl MergeReverted {
         pub fn builder() -> builder::MergeReverted {
@@ -22046,24 +22070,40 @@ pub mod types {
         }
         #[derive(Clone, Debug)]
         pub struct MergeReverted {
+            chapters_returned: ::std::result::Result<i64, ::std::string::String>,
             decision_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
             pair_suppressed: ::std::result::Result<bool, ::std::string::String>,
             restored_id: ::std::result::Result<super::SeriesId, ::std::string::String>,
             rows_restored: ::std::result::Result<i64, ::std::string::String>,
+            sources_returned: ::std::result::Result<i64, ::std::string::String>,
             survivor_id: ::std::result::Result<super::SeriesId, ::std::string::String>,
+            titles_removed: ::std::result::Result<i64, ::std::string::String>,
         }
         impl ::std::default::Default for MergeReverted {
             fn default() -> Self {
                 Self {
+                    chapters_returned: Err("no value supplied for chapters_returned".to_string()),
                     decision_id: Err("no value supplied for decision_id".to_string()),
                     pair_suppressed: Err("no value supplied for pair_suppressed".to_string()),
                     restored_id: Err("no value supplied for restored_id".to_string()),
                     rows_restored: Err("no value supplied for rows_restored".to_string()),
+                    sources_returned: Err("no value supplied for sources_returned".to_string()),
                     survivor_id: Err("no value supplied for survivor_id".to_string()),
+                    titles_removed: Err("no value supplied for titles_removed".to_string()),
                 }
             }
         }
         impl MergeReverted {
+            pub fn chapters_returned<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.chapters_returned = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for chapters_returned: {e}")
+                });
+                self
+            }
             pub fn decision_id<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::uuid::Uuid>,
@@ -22104,6 +22144,16 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for rows_restored: {e}"));
                 self
             }
+            pub fn sources_returned<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.sources_returned = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for sources_returned: {e}")
+                });
+                self
+            }
             pub fn survivor_id<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<super::SeriesId>,
@@ -22114,6 +22164,16 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for survivor_id: {e}"));
                 self
             }
+            pub fn titles_removed<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.titles_removed = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for titles_removed: {e}")
+                });
+                self
+            }
         }
         impl ::std::convert::TryFrom<MergeReverted> for super::MergeReverted {
             type Error = super::error::ConversionError;
@@ -22121,22 +22181,28 @@ pub mod types {
                 value: MergeReverted,
             ) -> ::std::result::Result<Self, super::error::ConversionError> {
                 Ok(Self {
+                    chapters_returned: value.chapters_returned?,
                     decision_id: value.decision_id?,
                     pair_suppressed: value.pair_suppressed?,
                     restored_id: value.restored_id?,
                     rows_restored: value.rows_restored?,
+                    sources_returned: value.sources_returned?,
                     survivor_id: value.survivor_id?,
+                    titles_removed: value.titles_removed?,
                 })
             }
         }
         impl ::std::convert::From<super::MergeReverted> for MergeReverted {
             fn from(value: super::MergeReverted) -> Self {
                 Self {
+                    chapters_returned: Ok(value.chapters_returned),
                     decision_id: Ok(value.decision_id),
                     pair_suppressed: Ok(value.pair_suppressed),
                     restored_id: Ok(value.restored_id),
                     rows_restored: Ok(value.rows_restored),
+                    sources_returned: Ok(value.sources_returned),
                     survivor_id: Ok(value.survivor_id),
+                    titles_removed: Ok(value.titles_removed),
                 }
             }
         }
@@ -34706,7 +34772,7 @@ impl Client {
     pub fn flag_merge_decision(&self) -> builder::FlagMergeDecision<'_> {
         builder::FlagMergeDecision::new(self)
     }
-    #[doc = "Revert a merge\n\nUndo one automatic merge: the absorbed series exists again under its **original id**, every\nrow that moved is moved back, and every row the merge created on the survivor is removed.\n\nThe pair is suppressed as part of the same action. Reverting alone changes nothing about why\nthe two were merged — the titles still agree and the score is still above the threshold — so\nthe next sweep would simply merge them again.\n\nSends a `POST` request to `/v1/admin/merge-decisions/{id}/revert`\n\nArguments:\n- `id`: The merge decision to undo\n- `body`\n```ignore\nlet response = client.revert_merge_decision()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Revert a merge\n\nUndo one automatic merge: the absorbed series exists again under its **original id**, every\nrow that moved is moved back, and every row the merge created on the survivor is removed.\n\nTwo things happen alongside, in the same transaction, because a bare inverse does not survive\nthe next hour. The pair is **suppressed**, or the next sweep merges it again on the same score\nagainst the same titles. And the survivor is **disentangled**: the names both rows answered to\nare removed from it, and the sources whose provider title is one of those names go back to the\nrestored series, taking their chapters with them. Without that second half the create-time\nattach path — which reads `series_titles` and knows nothing of the suppression — re-attaches\non the next scan, and the chapters that prompted the revert never move at all.\n\nThe survivor's own canonical title is never removed, and no reader's watchlist entry or read\nprogress moves; see `MergeReverted` for the counts this reports.\n\nSends a `POST` request to `/v1/admin/merge-decisions/{id}/revert`\n\nArguments:\n- `id`: The merge decision to undo\n- `body`\n```ignore\nlet response = client.revert_merge_decision()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn revert_merge_decision(&self) -> builder::RevertMergeDecision<'_> {
         builder::RevertMergeDecision::new(self)
     }

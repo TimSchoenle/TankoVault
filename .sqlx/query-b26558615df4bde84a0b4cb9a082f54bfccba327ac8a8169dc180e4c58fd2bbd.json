@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM series_titles WHERE series_id = $1 AND normalized = ANY($2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b26558615df4bde84a0b4cb9a082f54bfccba327ac8a8169dc180e4c58fd2bbd"
+}

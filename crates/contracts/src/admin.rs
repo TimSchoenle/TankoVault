@@ -1125,7 +1125,12 @@ pub struct MergeDecisionView {
     pub flag_reason: Option<String>,
 }
 
-/// What undoing an automatic merge put back.
+/// What undoing an automatic merge put back, and what it took off the survivor.
+///
+/// The last three counts are not part of the merge's inverse. A revert is an operator saying the
+/// two rows are different works, and it acts on that: the names both rows answered to come off
+/// the survivor, and the sources those names attracted go back with their chapters. Reported
+/// because it happens without review — the survivor loses rows nobody listed first.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[schema(as = MergeReverted)]
 pub struct MergeRevertedView {
@@ -1139,6 +1144,16 @@ pub struct MergeRevertedView {
     pub rows_restored: i64,
     /// Always true: a revert also suppresses the pair, or the next sweep would merge it again.
     pub pair_suppressed: bool,
+    /// Alternative titles removed from the survivor because the restored series answers to them
+    /// too. Left in place, these have the next scan re-attaching what the revert just separated:
+    /// suppression binds the duplicate sweep, not the create-time attach path.
+    pub titles_removed: i64,
+    /// Sources moved off the survivor and back onto the restored series, because their provider
+    /// title *is* one of those shared names.
+    pub sources_returned: i64,
+    /// Chapters that travelled with those sources. Chapters hang off sources, so this is what an
+    /// operator sees change on the survivor's page.
+    pub chapters_returned: i64,
 }
 
 /// One row of the automatic-sync decision journal.

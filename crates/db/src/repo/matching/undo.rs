@@ -287,13 +287,32 @@ pub(super) async fn capture(
 /// other than this revert has already put it back). Otherwise [`crate::DbError::Sqlx`] from any
 /// statement, which rolls the whole revert back: a half-restored series is worse than a merged
 /// one, because nothing downstream is prepared for it.
+pub async fn revert_merge(pool: &sqlx::PgPool, undo: &MergeUndo) -> DbResult<()> {
+    let mut tx = pool.begin().await?;
+    revert_merge_in(&mut tx, undo).await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+/// [`revert_merge`], inside a transaction the caller owns.
+///
+/// The operator-facing revert has more to do than the inverse — it suppresses the pair and
+/// disentangles the survivor — and all of it has to land or none of it. Splitting the commit out
+/// is what lets those share one transaction; the pool-taking form above is the whole operation
+/// for a caller that only wants the inverse.
+///
+/// # Errors
+/// As [`revert_merge`].
 #[expect(
     clippy::too_many_lines,
     reason = "one statement per table, in the order the foreign keys require. Splitting it to \
               satisfy a line count would hide that order, which is the only thing about this \
               function that is easy to get wrong"
 )]
-pub async fn revert_merge(pool: &sqlx::PgPool, undo: &MergeUndo) -> DbResult<()> {
+pub(super) async fn revert_merge_in(
+    tx: &mut Transaction<'_, Postgres>,
+    undo: &MergeUndo,
+) -> DbResult<()> {
     if undo.version != UNDO_VERSION {
         return Err(crate::error::DbError::Conflict(format!(
             "undo journal version {} cannot be applied by this build (expected {UNDO_VERSION})",
@@ -306,7 +325,6 @@ pub async fn revert_merge(pool: &sqlx::PgPool, undo: &MergeUndo) -> DbResult<()>
         ));
     };
 
-    let mut tx = pool.begin().await?;
     let keep = undo.survivor_id;
     let drop = undo.absorbed_id;
 
@@ -314,7 +332,7 @@ pub async fn revert_merge(pool: &sqlx::PgPool, undo: &MergeUndo) -> DbResult<()>
         "SELECT count(*) AS \"count!\" FROM series WHERE id = $1",
         drop,
     )
-    .fetch_one(&mut *tx)
+    .fetch_one(&mut **tx)
     .await?;
     if live > 0 {
         return Err(crate::error::DbError::Conflict(
@@ -339,7 +357,7 @@ pub async fn revert_merge(pool: &sqlx::PgPool, undo: &MergeUndo) -> DbResult<()>
            FROM jsonb_populate_record(NULL::series, $1)",
         undo.series,
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
 
     // Sources go back by id, so a source added to the survivor since the merge stays put.
@@ -348,7 +366,7 @@ pub async fn revert_merge(pool: &sqlx::PgPool, undo: &MergeUndo) -> DbResult<()>
         drop,
         &undo.moved_sources,
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
 
     // Rows the merge created on the survivor, and only those.
@@ -357,21 +375,21 @@ pub async fn revert_merge(pool: &sqlx::PgPool, undo: &MergeUndo) -> DbResult<()>
          WHERE t.series_id = x.series_id AND t.normalized = x.normalized",
         undo.inserted_titles,
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
     sqlx::query!(
         "DELETE FROM series_tags t USING jsonb_populate_recordset(NULL::series_tags, $1) x \
          WHERE t.series_id = x.series_id AND t.tag_id = x.tag_id",
         undo.inserted_tags,
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
     sqlx::query!(
         "DELETE FROM series_authors t USING jsonb_populate_recordset(NULL::series_authors, $1) x \
          WHERE t.series_id = x.series_id AND t.author_id = x.author_id",
         undo.inserted_authors,
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
     sqlx::query!(
         "DELETE FROM watchlist_entries t \
@@ -379,14 +397,14 @@ pub async fn revert_merge(pool: &sqlx::PgPool, undo: &MergeUndo) -> DbResult<()>
          WHERE t.series_id = x.series_id AND t.user_id = x.user_id",
         undo.inserted_watchlist,
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
     sqlx::query!(
         "DELETE FROM sync_mappings t USING jsonb_populate_recordset(NULL::sync_mappings, $1) x \
          WHERE t.series_id = x.series_id AND t.provider = x.provider",
         undo.inserted_mappings,
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
     sqlx::query!(
         "DELETE FROM notification_dedup t \
@@ -395,7 +413,7 @@ pub async fn revert_merge(pool: &sqlx::PgPool, undo: &MergeUndo) -> DbResult<()>
            AND t.chapter_number = x.chapter_number",
         undo.inserted_dedup,
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
 
     // The three overwritten tables: clear the survivor at every key the absorbed side carried,
@@ -409,14 +427,14 @@ pub async fn revert_merge(pool: &sqlx::PgPool, undo: &MergeUndo) -> DbResult<()>
         keep,
         undo.progress,
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
     sqlx::query!(
         "INSERT INTO read_progress \
          SELECT * FROM jsonb_populate_recordset(NULL::read_progress, $1)",
         undo.survivor_progress,
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
 
     sqlx::query!(
@@ -428,14 +446,14 @@ pub async fn revert_merge(pool: &sqlx::PgPool, undo: &MergeUndo) -> DbResult<()>
         keep,
         undo.overrides,
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
     sqlx::query!(
         "INSERT INTO series_sync_overrides \
          SELECT * FROM jsonb_populate_recordset(NULL::series_sync_overrides, $1)",
         undo.survivor_overrides,
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
 
     sqlx::query!(
@@ -446,14 +464,14 @@ pub async fn revert_merge(pool: &sqlx::PgPool, undo: &MergeUndo) -> DbResult<()>
         keep,
         undo.feedback,
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
     sqlx::query!(
         "INSERT INTO recommendation_feedback \
          SELECT * FROM jsonb_populate_recordset(NULL::recommendation_feedback, $1)",
         undo.survivor_feedback,
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
 
     // The absorbed series' own children, which cascaded away with it.
@@ -461,59 +479,59 @@ pub async fn revert_merge(pool: &sqlx::PgPool, undo: &MergeUndo) -> DbResult<()>
         "INSERT INTO series_titles SELECT * FROM jsonb_populate_recordset(NULL::series_titles, $1)",
         undo.titles,
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
     sqlx::query!(
         "INSERT INTO series_tags SELECT * FROM jsonb_populate_recordset(NULL::series_tags, $1)",
         undo.tags,
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
     sqlx::query!(
         "INSERT INTO series_authors SELECT * FROM jsonb_populate_recordset(NULL::series_authors, $1)",
         undo.authors,
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
     sqlx::query!(
         "INSERT INTO watchlist_entries \
          SELECT * FROM jsonb_populate_recordset(NULL::watchlist_entries, $1)",
         undo.watchlist,
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
     sqlx::query!(
         "INSERT INTO read_progress SELECT * FROM jsonb_populate_recordset(NULL::read_progress, $1)",
         undo.progress,
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
     sqlx::query!(
         "INSERT INTO sync_mappings SELECT * FROM jsonb_populate_recordset(NULL::sync_mappings, $1)",
         undo.mappings,
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
     sqlx::query!(
         "INSERT INTO series_sync_overrides \
          SELECT * FROM jsonb_populate_recordset(NULL::series_sync_overrides, $1)",
         undo.overrides,
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
     sqlx::query!(
         "INSERT INTO notification_dedup \
          SELECT * FROM jsonb_populate_recordset(NULL::notification_dedup, $1)",
         undo.dedup,
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
     sqlx::query!(
         "INSERT INTO recommendation_feedback \
          SELECT * FROM jsonb_populate_recordset(NULL::recommendation_feedback, $1)",
         undo.feedback,
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
 
     // Re-pointed rows, by the primary keys the merge recorded.
@@ -522,7 +540,7 @@ pub async fn revert_merge(pool: &sqlx::PgPool, undo: &MergeUndo) -> DbResult<()>
         drop,
         &undo.moved_history,
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
     sqlx::query!(
         "UPDATE sync_remote_entries e SET series_id = $1 \
@@ -533,21 +551,21 @@ pub async fn revert_merge(pool: &sqlx::PgPool, undo: &MergeUndo) -> DbResult<()>
         undo.moved_remote_entries,
         keep,
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
     sqlx::query!(
         "UPDATE sync_conflicts SET series_id = $1 WHERE id = ANY($2)",
         drop,
         &undo.moved_conflicts,
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
     sqlx::query!(
         "UPDATE sync_decisions SET series_id = $1 WHERE id = ANY($2)",
         drop,
         &undo.moved_decisions,
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
     sqlx::query!(
         "UPDATE sync_match_blocks b SET series_id = $1 \
@@ -557,7 +575,7 @@ pub async fn revert_merge(pool: &sqlx::PgPool, undo: &MergeUndo) -> DbResult<()>
         undo.moved_match_blocks,
         keep,
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
 
     // The candidates this merge closed go back to open. Guarded on the outcome so a pair an
@@ -569,7 +587,7 @@ pub async fn revert_merge(pool: &sqlx::PgPool, undo: &MergeUndo) -> DbResult<()>
           WHERE id = ANY($1) AND outcome IN ('merged', 'auto_merged')",
         &undo.resolved_candidates,
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
 
     // Undo the path compression, then remove the forwarding address itself — in that order, so
@@ -579,14 +597,14 @@ pub async fn revert_merge(pool: &sqlx::PgPool, undo: &MergeUndo) -> DbResult<()>
         drop,
         &undo.recompressed,
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
     sqlx::query!(
         "DELETE FROM series_merges WHERE merged_id = $1 AND survivor_id = $2",
         drop,
         keep,
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
 
     // Both series' feature digests have changed again, and every affected taste profile is
@@ -598,7 +616,7 @@ pub async fn revert_merge(pool: &sqlx::PgPool, undo: &MergeUndo) -> DbResult<()>
         keep,
         drop,
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
     sqlx::query!(
         "UPDATE user_taste_profile p SET stale = true \
@@ -607,9 +625,8 @@ pub async fn revert_merge(pool: &sqlx::PgPool, undo: &MergeUndo) -> DbResult<()>
         keep,
         drop,
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
 
-    tx.commit().await?;
     Ok(())
 }

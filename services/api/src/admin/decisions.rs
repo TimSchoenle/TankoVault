@@ -129,9 +129,16 @@ pub struct JudgementRequest {
 /// Undo one automatic merge: the absorbed series exists again under its **original id**, every
 /// row that moved is moved back, and every row the merge created on the survivor is removed.
 ///
-/// The pair is suppressed as part of the same action. Reverting alone changes nothing about why
-/// the two were merged — the titles still agree and the score is still above the threshold — so
-/// the next sweep would simply merge them again.
+/// Two things happen alongside, in the same transaction, because a bare inverse does not survive
+/// the next hour. The pair is **suppressed**, or the next sweep merges it again on the same score
+/// against the same titles. And the survivor is **disentangled**: the names both rows answered to
+/// are removed from it, and the sources whose provider title is one of those names go back to the
+/// restored series, taking their chapters with them. Without that second half the create-time
+/// attach path — which reads `series_titles` and knows nothing of the suppression — re-attaches
+/// on the next scan, and the chapters that prompted the revert never move at all.
+///
+/// The survivor's own canonical title is never removed, and no reader's watchlist entry or read
+/// progress moves; see `MergeReverted` for the counts this reports.
 #[utoipa::path(
     post,
     path = "/v1/admin/merge-decisions/{id}/revert",
@@ -156,7 +163,7 @@ pub async fn revert_merge_decision(
 ) -> ApiResult<Json<MergeRevertedView>> {
     user.require(Permission::MergeRevert).await?;
     check_reason(&req.reason)?;
-    let undo = tankovault_db::repo::matching::revert_merge_decision(
+    let (undo, cleaned) = tankovault_db::repo::matching::revert_merge_decision(
         &state.pool,
         id,
         Some(user.user_id),
@@ -170,6 +177,9 @@ pub async fn revert_merge_decision(
         survivor_id: SeriesId::from_uuid(undo.survivor_id),
         rows_restored: i64::try_from(undo.row_count()).unwrap_or(i64::MAX),
         pair_suppressed: true,
+        titles_removed: cleaned.titles_removed,
+        sources_returned: cleaned.sources_returned,
+        chapters_returned: cleaned.chapters_returned,
     };
     audit(
         &state,
@@ -180,6 +190,12 @@ pub async fn revert_merge_decision(
             "restored": view.restored_id,
             "survivor": view.survivor_id,
             "rows": view.rows_restored,
+            // Recorded separately from `rows`: these came off the survivor rather than going back
+            // onto the restored series, and an audit trail that conflated them would not show
+            // that a revert had shrunk a row nobody asked it to touch.
+            "titles_removed": view.titles_removed,
+            "sources_returned": view.sources_returned,
+            "chapters_returned": view.chapters_returned,
             "reason": req.reason.trim(),
         }),
     )

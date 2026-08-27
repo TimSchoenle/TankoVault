@@ -2493,8 +2493,13 @@
         "type": "object"
       },
       "MergeReverted": {
-        "description": "What undoing an automatic merge put back.",
+        "description": "What undoing an automatic merge put back, and what it took off the survivor.\n\nThe last three counts are not part of the merge's inverse. A revert is an operator saying the\ntwo rows are different works, and it acts on that: the names both rows answered to come off\nthe survivor, and the sources those names attracted go back with their chapters. Reported\nbecause it happens without review — the survivor loses rows nobody listed first.",
         "properties": {
+          "chapters_returned": {
+            "description": "Chapters that travelled with those sources. Chapters hang off sources, so this is what an\noperator sees change on the survivor's page.",
+            "format": "int64",
+            "type": "integer"
+          },
           "decision_id": {
             "description": "The journal row that was undone.",
             "format": "uuid",
@@ -2513,9 +2518,19 @@
             "format": "int64",
             "type": "integer"
           },
+          "sources_returned": {
+            "description": "Sources moved off the survivor and back onto the restored series, because their provider\ntitle *is* one of those shared names.",
+            "format": "int64",
+            "type": "integer"
+          },
           "survivor_id": {
             "$ref": "#/components/schemas/SeriesId",
             "description": "The series the rows went back off."
+          },
+          "titles_removed": {
+            "description": "Alternative titles removed from the survivor because the restored series answers to them\ntoo. Left in place, these have the next scan re-attaching what the revert just separated:\nsuppression binds the duplicate sweep, not the create-time attach path.",
+            "format": "int64",
+            "type": "integer"
           }
         },
         "required": [
@@ -2523,7 +2538,10 @@
           "restored_id",
           "survivor_id",
           "rows_restored",
-          "pair_suppressed"
+          "pair_suppressed",
+          "titles_removed",
+          "sources_returned",
+          "chapters_returned"
         ],
         "type": "object"
       },
@@ -8826,7 +8844,7 @@
     },
     "/v1/admin/merge-decisions/{id}/revert": {
       "post": {
-        "description": "Undo one automatic merge: the absorbed series exists again under its **original id**, every\nrow that moved is moved back, and every row the merge created on the survivor is removed.\n\nThe pair is suppressed as part of the same action. Reverting alone changes nothing about why\nthe two were merged — the titles still agree and the score is still above the threshold — so\nthe next sweep would simply merge them again.",
+        "description": "Undo one automatic merge: the absorbed series exists again under its **original id**, every\nrow that moved is moved back, and every row the merge created on the survivor is removed.\n\nTwo things happen alongside, in the same transaction, because a bare inverse does not survive\nthe next hour. The pair is **suppressed**, or the next sweep merges it again on the same score\nagainst the same titles. And the survivor is **disentangled**: the names both rows answered to\nare removed from it, and the sources whose provider title is one of those names go back to the\nrestored series, taking their chapters with them. Without that second half the create-time\nattach path — which reads `series_titles` and knows nothing of the suppression — re-attaches\non the next scan, and the chapters that prompted the revert never move at all.\n\nThe survivor's own canonical title is never removed, and no reader's watchlist entry or read\nprogress moves; see `MergeReverted` for the counts this reports.",
         "operationId": "revert_merge_decision",
         "parameters": [
           {

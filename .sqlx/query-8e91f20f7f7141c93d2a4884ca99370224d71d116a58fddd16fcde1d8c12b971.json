@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH names AS ( SELECT id AS series_id, normalized_title AS key FROM series WHERE id IN ($1, $2) UNION SELECT series_id, normalized FROM series_titles WHERE series_id IN ($1, $2) ) SELECT n.key AS \"key!\" FROM names n WHERE n.series_id = $1 AND n.key <> '' AND EXISTS (SELECT 1 FROM names o WHERE o.series_id = $2 AND o.key = n.key) AND n.key IS DISTINCT FROM (SELECT normalized_title FROM series WHERE id = $1)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "key!",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "8e91f20f7f7141c93d2a4884ca99370224d71d116a58fddd16fcde1d8c12b971"
+}

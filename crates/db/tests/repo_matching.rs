@@ -2966,3 +2966,372 @@ async fn the_journal_lists_a_decision_that_carries_an_undo() {
     .expect("the revertible filter is the console's default view");
     assert_eq!(revertible.len(), 1);
 }
+
+// ---------------------------------------------------------------------------
+// Reverting: the half that is not the merge's inverse
+// ---------------------------------------------------------------------------
+
+/// A source filed under a series it does not belong to, carrying `titled` as its provider title.
+///
+/// Ingested through the real path so it carries real chapters, then re-parented — the shape an
+/// alias over-attach leaves behind, and the shape no journal records.
+///
+/// `seed` must be a title nothing else in the fixture matches, and the assertion below is what
+/// keeps that true: seeding with the *shared* title instead let the canonicaliser attach it to one
+/// of the pair on its own, whereupon this helper re-parented and deleted a series under the test.
+/// That is the bug this file is about, reached by accident from the fixture.
+async fn plant_stray(
+    db: &TestDb,
+    provider_id: ProviderId,
+    seed: &Seed,
+    chapters: &[f64],
+    titled: &str,
+    onto: SeriesId,
+) {
+    let own = ingest(db, provider_id, seed, chapters).await;
+    assert_ne!(
+        own, onto,
+        "the stray must start life as a series of its own"
+    );
+    sqlx::query(
+        "UPDATE series_sources SET series_id = $1, provider_title = $2 WHERE series_id = $3",
+    )
+    .bind(onto.as_uuid())
+    .bind(titled)
+    .bind(own.as_uuid())
+    .execute(&db.pool)
+    .await
+    .expect("re-parent the stray source");
+    sqlx::query("DELETE FROM series WHERE id = $1")
+        .bind(own.as_uuid())
+        .execute(&db.pool)
+        .await
+        .expect("drop the emptied row");
+}
+
+/// Journal one merge as the sweep would, and hand back the decision id a revert names.
+async fn journal_merge(
+    db: &TestDb,
+    pair: (SeriesId, SeriesId),
+    undo: &tankovault_db::repo::matching::MergeUndo,
+) -> uuid::Uuid {
+    use tankovault_db::repo::matching::{NewMergeDecision, record_merge_decisions};
+    let empty = serde_json::json!({});
+    let ids = record_merge_decisions(
+        &db.pool,
+        &[NewMergeDecision {
+            sweep_id: None,
+            trigger: "sweep_new",
+            actor: None,
+            pair,
+            titles: ("left", "right"),
+            verdict: "auto",
+            reason: "structural_identity_above_threshold",
+            blocked_by: &[],
+            outcome: "merged",
+            survivor_id: Some(pair.0),
+            absorbed_id: Some(pair.1),
+            score: 1.0,
+            base_score: 0.75,
+            signals: &["alias_identity"],
+            terms: &empty,
+            evidence: &empty,
+            policy: &empty,
+            undo: Some(undo),
+        }],
+    )
+    .await
+    .expect("journal the merge");
+    *ids.first().expect("one decision id")
+}
+
+/// How many chapters a series reaches through its sources.
+async fn chapter_count(db: &TestDb, series_id: SeriesId) -> i64 {
+    sqlx::query_scalar(
+        "SELECT count(*) FROM chapters c JOIN series_sources ss ON ss.id = c.series_source_id \
+          WHERE ss.series_id = $1",
+    )
+    .bind(series_id.as_uuid())
+    .fetch_one(&db.pool)
+    .await
+    .expect("count chapters")
+}
+
+/// **An unmerge must take back the sources the shared name attracted, not only the merge's rows.**
+///
+/// The reported case: an operator unmerged a pair and the wrong chapters were still on the page.
+/// The merge itself had moved nothing — the absorbed row had been hollowed out by an earlier
+/// over-attach and had no sources left — so the exact inverse was a no-op over chapters, which
+/// hang off `series_sources` rather than off `series`. Everything wrong predated the merge: the
+/// survivor answered to the other work's name and held the sources that name had pulled in, and a
+/// revert that ran only the inverse left both exactly where they were. Suppressing the pair did
+/// not help either, because it binds the duplicate sweep and the create-time attach path reads
+/// `series_titles`.
+#[tokio::test]
+async fn an_unmerge_returns_the_sources_the_shared_name_attracted() {
+    use tankovault_db::repo::matching::revert_merge_decision;
+
+    // The name both rows answer to: the absorbed one because it is that work, the survivor
+    // because absorbing a source files the source's own titles under it.
+    const GHOST: &str = "Star Armor Soul General";
+    const KEEP: Seed = Seed {
+        title: "Berserk",
+        content_type: ContentType::Manhua,
+        release_year: Some(2023),
+        tags: &["Action"],
+        authors: &["Joooker"],
+        alt_titles: &[GHOST],
+    };
+    const DROP: Seed = Seed {
+        title: "Vinland Saga",
+        content_type: ContentType::Manhua,
+        release_year: Some(2021),
+        tags: &["Action"],
+        authors: &["Joooker"],
+        alt_titles: &[GHOST],
+    };
+
+    let db = TestDb::spawn().await;
+    let alpha = seed::provider(&db, "alpha").create().await;
+    let beta = seed::provider(&db, "beta").create().await;
+    let gamma = seed::provider(&db, "gamma").create().await;
+
+    let keep = ingest(&db, alpha, &KEEP, &[1.0, 2.0]).await;
+    let drop = ingest(&db, beta, &DROP, &[1.0]).await;
+    plant_stray(&db, gamma, &MONSTER, &[1.0, 2.0, 3.0], GHOST, keep).await;
+
+    assert_eq!(
+        chapter_count(&db, keep).await,
+        5,
+        "sanity: the survivor holds its own two chapters and the stray's three",
+    );
+
+    let undo = merge_series(&db.pool, keep, drop, None, "auto_merged")
+        .await
+        .expect("merge");
+    let decision = journal_merge(&db, (keep, drop), &undo).await;
+
+    let (_, cleaned) = revert_merge_decision(&db.pool, decision, None, "different works")
+        .await
+        .expect("revert");
+
+    assert_eq!(
+        cleaned.sources_returned, 1,
+        "the stray source is the one the shared name attracted",
+    );
+    assert_eq!(
+        cleaned.chapters_returned, 3,
+        "its chapters travel with it, and are what the operator was complaining about",
+    );
+    assert_eq!(
+        chapter_count(&db, keep).await,
+        2,
+        "the survivor keeps only its own chapters",
+    );
+    assert_eq!(
+        chapter_count(&db, drop).await,
+        4,
+        "the restored series gets its own chapter back plus the stray's three",
+    );
+}
+
+/// **An unmerge must take the shared name off the survivor, or the next scan re-attaches.**
+///
+/// Suppressing the pair stops the *duplicate sweep* re-proposing it and nothing else.
+/// `find_candidates` — the create-time path a scan runs through — searches `series_titles` and has
+/// never heard of `merge_candidates`, so a shared alias left on the survivor re-files the same
+/// source under it on the next scan and the operator's judgement lasts until then. The restored
+/// series keeps its own copy: it is the row the revert vindicated, not the one that acquired names
+/// by absorbing.
+#[tokio::test]
+async fn an_unmerge_takes_the_shared_name_off_the_survivor_only() {
+    use tankovault_db::repo::matching::revert_merge_decision;
+
+    const SHARED: &str = "Star Armor Soul General";
+    const KEEP: Seed = Seed {
+        title: "Berserk",
+        content_type: ContentType::Manga,
+        release_year: Some(1989),
+        tags: &["Action"],
+        authors: &["Kentaro Miura"],
+        alt_titles: &[SHARED],
+    };
+    const DROP: Seed = Seed {
+        title: "Vinland Saga",
+        content_type: ContentType::Manga,
+        release_year: Some(2005),
+        tags: &["Historical"],
+        authors: &["Makoto Yukimura"],
+        alt_titles: &[SHARED],
+    };
+
+    let db = TestDb::spawn().await;
+    let alpha = seed::provider(&db, "alpha").create().await;
+    let beta = seed::provider(&db, "beta").create().await;
+    let keep = ingest(&db, alpha, &KEEP, &[1.0]).await;
+    let drop = ingest(&db, beta, &DROP, &[1.0]).await;
+
+    let undo = merge_series(&db.pool, keep, drop, None, "auto_merged")
+        .await
+        .expect("merge");
+    let decision = journal_merge(&db, (keep, drop), &undo).await;
+
+    let (_, cleaned) = revert_merge_decision(&db.pool, decision, None, "different works")
+        .await
+        .expect("revert");
+
+    assert_eq!(cleaned.titles_removed, 1, "the shared alias, and only it");
+    let survivor_titles = list_series_titles(&db.pool, keep).await.expect("titles");
+    assert!(
+        !survivor_titles.iter().any(|t| t == SHARED),
+        "the survivor must stop answering to the other work's name: {survivor_titles:?}",
+    );
+    let restored_titles = list_series_titles(&db.pool, drop).await.expect("titles");
+    assert!(
+        restored_titles.iter().any(|t| t == SHARED),
+        "the restored series keeps its own name: {restored_titles:?}",
+    );
+
+    // The scan path is the one this is protecting, so ask it directly.
+    let candidates = find_candidates(&db.pool, &normalize_title(SHARED), 10)
+        .await
+        .expect("candidates");
+    assert!(
+        !candidates.iter().any(|c| c.series_id == keep),
+        "a scan of the shared name must no longer reach the survivor",
+    );
+}
+
+/// **A revert must never strip a series of its own canonical title.**
+///
+/// Two rows colliding on a canonical title are a same-name case, not alias contamination, and the
+/// rule that removes shared names would otherwise take the survivor's own — leaving a live series
+/// answering to nothing and unreachable by any later scan. The sources named after it stay too:
+/// they are indistinguishable from the survivor's own by the only evidence this step uses.
+#[tokio::test]
+async fn an_unmerge_never_takes_the_survivors_own_title() {
+    use tankovault_db::repo::matching::revert_merge_decision;
+
+    const KEEP: Seed = Seed {
+        title: "Berserk",
+        content_type: ContentType::Manga,
+        release_year: Some(1989),
+        tags: &["Action"],
+        authors: &["Kentaro Miura"],
+        alt_titles: &[],
+    };
+    // The absorbed row answers to the survivor's canonical title as an alternative of its own.
+    const DROP: Seed = Seed {
+        title: "Vinland Saga",
+        content_type: ContentType::Manga,
+        release_year: Some(2005),
+        tags: &["Historical"],
+        authors: &["Makoto Yukimura"],
+        alt_titles: &[KEEP.title],
+    };
+
+    let db = TestDb::spawn().await;
+    let alpha = seed::provider(&db, "alpha").create().await;
+    let beta = seed::provider(&db, "beta").create().await;
+    let keep = ingest(&db, alpha, &KEEP, &[1.0, 2.0]).await;
+    let drop = ingest(&db, beta, &DROP, &[1.0]).await;
+
+    let undo = merge_series(&db.pool, keep, drop, None, "auto_merged")
+        .await
+        .expect("merge");
+    let decision = journal_merge(&db, (keep, drop), &undo).await;
+
+    let (_, cleaned) = revert_merge_decision(&db.pool, decision, None, "different works")
+        .await
+        .expect("revert");
+
+    assert!(
+        cleaned.is_empty(),
+        "the only shared name is the survivor's own, which is never taken: {cleaned:?}",
+    );
+    let normalized: String =
+        sqlx::query_scalar("SELECT normalized_title FROM series WHERE id = $1")
+            .bind(keep.as_uuid())
+            .fetch_one(&db.pool)
+            .await
+            .expect("the survivor still has its key");
+    assert_eq!(normalized, normalize_title(KEEP.title));
+    assert_eq!(
+        chapter_count(&db, keep).await,
+        2,
+        "and keeps the sources named after it",
+    );
+}
+
+/// **A pair that shares no name is disentangled by doing nothing at all.**
+///
+/// The common case, and the one that must stay a pure inverse: two rows merged on their canonical
+/// titles agreeing have no alias to take back, and a revert that removed or moved anything here
+/// would be destroying rows on no evidence.
+#[tokio::test]
+async fn an_unmerge_of_an_unrelated_pair_changes_nothing_extra() {
+    use tankovault_db::repo::matching::revert_merge_decision;
+
+    let db = TestDb::spawn().await;
+    let alpha = seed::provider(&db, "alpha").create().await;
+    let beta = seed::provider(&db, "beta").create().await;
+    let keep = ingest(&db, alpha, &BERSERK, &[1.0, 2.0]).await;
+    let drop = ingest(&db, beta, &VINLAND, &[1.0]).await;
+
+    let undo = merge_series(&db.pool, keep, drop, None, "auto_merged")
+        .await
+        .expect("merge");
+    let decision = journal_merge(&db, (keep, drop), &undo).await;
+
+    let (_, cleaned) = revert_merge_decision(&db.pool, decision, None, "precaution")
+        .await
+        .expect("revert");
+
+    assert!(
+        cleaned.is_empty(),
+        "nothing shared, nothing taken: {cleaned:?}"
+    );
+    assert_eq!(chapter_count(&db, keep).await, 2);
+    assert_eq!(chapter_count(&db, drop).await, 1);
+}
+
+/// **A failed revert must leave the decision unreverted, not half-applied.**
+///
+/// The stamp used to follow a committed revert, so a failure between them left a restored
+/// catalogue with a decision row still marked revertible — and the retry then died on the live
+/// absorbed id with no way forward but SQL. One transaction is what makes the retry the operator
+/// reaches for actually work; this pins the observable half, that a second revert is refused and
+/// the first one's stamp is there.
+#[tokio::test]
+async fn an_unmerge_is_stamped_and_refuses_a_second() {
+    use tankovault_db::repo::matching::{
+        MergeDecisionFilter, list_merge_decisions, revert_merge_decision,
+    };
+
+    let db = TestDb::spawn().await;
+    let alpha = seed::provider(&db, "alpha").create().await;
+    let beta = seed::provider(&db, "beta").create().await;
+    let keep = ingest(&db, alpha, &BERSERK, &[1.0]).await;
+    let drop = ingest(&db, beta, &VINLAND, &[1.0]).await;
+
+    let undo = merge_series(&db.pool, keep, drop, None, "auto_merged")
+        .await
+        .expect("merge");
+    let decision = journal_merge(&db, (keep, drop), &undo).await;
+
+    revert_merge_decision(&db.pool, decision, None, "different works")
+        .await
+        .expect("first revert");
+    let again = revert_merge_decision(&db.pool, decision, None, "again").await;
+    assert!(
+        matches!(again, Err(DbError::Conflict(_))),
+        "a second revert must be a clean conflict: {again:?}",
+    );
+
+    let rows = list_merge_decisions(&db.pool, &MergeDecisionFilter::default(), 10, 0)
+        .await
+        .expect("journal");
+    let row = rows.first().expect("the decision");
+    assert!(row.reverted_at.is_some(), "the revert is stamped");
+    assert!(!row.revertible, "and is no longer offered");
+}

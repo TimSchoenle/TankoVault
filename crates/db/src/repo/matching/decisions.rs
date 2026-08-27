@@ -7,7 +7,8 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::error::{DbError, DbResult};
-use crate::repo::matching::undo::{MergeUndo, revert_merge};
+use crate::repo::matching::disentangle::{Disentangled, disentangle};
+use crate::repo::matching::undo::{MergeUndo, revert_merge_in};
 use tankovault_domain::{SeriesId, UserId};
 
 /// A decision to record. Borrowed throughout: every field comes from a value the caller already
@@ -401,26 +402,42 @@ pub async fn list_merge_decisions<'e, E: PgExecutor<'e>>(
     Ok(rows.into_iter().map(MergeDecisionRow::from).collect())
 }
 
-/// Undo the merge a decision performed, and suppress the pair so the sweep cannot re-make it.
+/// Undo the merge a decision performed, suppress the pair, and take back what made the two look
+/// like one.
 ///
-/// # Why the suppression is part of the revert
+/// # Why the revert is more than the inverse
 ///
-/// Reverting alone puts the two series back and changes nothing about why they were merged: the
-/// titles still agree, the score is still above the threshold, and the very next sweep merges
-/// them again. An operator undoing a merge is stating that the two are different works, so the
-/// revert records that as a durable dismissal — the same one the console's "not a duplicate"
-/// button writes, and the one all three sweep shortlists exclude.
+/// Reverting alone puts the two series back and changes nothing about why they were merged, so
+/// three things have to happen together or the operator's judgement does not survive the next
+/// hour:
+///
+/// 1. [`revert_merge_in`] moves back exactly what the merge moved.
+/// 2. [`suppress_pair`](super::suppress_pair) records the durable dismissal — the same one the
+///    console's "not a duplicate" button writes, and the one all three sweep shortlists exclude.
+///    Without it the titles still agree, the score is still above the threshold, and the very
+///    next sweep merges them again.
+/// 3. [`disentangle`] takes the names the two rows share off the survivor and returns the sources
+///    those names attracted. Suppression only binds the *sweep*; the create-time attach path
+///    consults `series_titles` and nothing else, so a shared alias left in place has the next
+///    scan re-attaching what the operator just separated — and the sources already filed under it
+///    stay put, which is what makes a bare revert look like it did nothing at all.
+///
+/// # One transaction
+///
+/// All four writes, the journal stamp included. The stamp used to follow a committed revert, so a
+/// failure between them left a restored catalogue with an unreverted decision row — and the retry
+/// then failed on the live absorbed id, with no way forward but SQL.
 ///
 /// # Errors
 /// [`DbError::NotFound`] when no such decision exists. [`DbError::Conflict`] when it carries no
 /// undo journal (it merged nothing), when it has already been reverted, or when the absorbed id
-/// is live again — see [`revert_merge`]. Otherwise [`DbError::Sqlx`].
+/// is live again — see [`revert_merge`](super::revert_merge). Otherwise [`DbError::Sqlx`].
 pub async fn revert_merge_decision(
     pool: &sqlx::PgPool,
     id: Uuid,
     actor: Option<UserId>,
     reason: &str,
-) -> DbResult<MergeUndo> {
+) -> DbResult<(MergeUndo, Disentangled)> {
     let row = sqlx::query!(
         "SELECT undo, reverted_at, left_id, right_id FROM merge_decisions WHERE id = $1",
         id,
@@ -445,10 +462,14 @@ pub async fn revert_merge_decision(
             )
         })?;
 
-    revert_merge(pool, &undo).await?;
+    let survivor = SeriesId::from_uuid(undo.survivor_id);
+    let restored = SeriesId::from_uuid(undo.absorbed_id);
 
-    // Stamped after the revert commits. The other order would leave a decision marked reverted
-    // by a transaction that then failed, which reads as "already undone" and blocks the retry.
+    let mut tx = pool.begin().await?;
+    revert_merge_in(&mut tx, &undo).await?;
+    // After the revert, which is what puts the restored row's titles back for it to read.
+    let cleaned = disentangle(&mut tx, survivor, restored).await?;
+
     sqlx::query!(
         "UPDATE merge_decisions \
             SET reverted_at = now(), reverted_by = $2, revert_reason = $3 \
@@ -457,18 +478,19 @@ pub async fn revert_merge_decision(
         actor.map(UserId::as_uuid),
         reason,
     )
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
 
     super::suppress_pair(
-        pool,
+        &mut *tx,
         SeriesId::from_uuid(row.left_id),
         SeriesId::from_uuid(row.right_id),
         actor,
     )
     .await?;
+    tx.commit().await?;
 
-    Ok(undo)
+    Ok((undo, cleaned))
 }
 
 /// Mark a decision wrong, with the operator's reason, and suppress the pair.

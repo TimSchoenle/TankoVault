@@ -742,6 +742,7 @@
       "revert": "Undo merge ({rows} rows)",
       "reverted": "Merge undone: {rows} rows restored, and the pair will not be merged again.",
       "revertedBecause": "Reverted: {reason}",
+      "revertedCleaned": "Merge undone: {rows} rows restored. Took {titles} shared alternative titles off the surviving series and returned {sources} sources ({chapters} chapters) to the restored one. The pair will not be merged again.",
       "search": {
         "hits": "{count} of {loaded} loaded",
         "merges": "Search titles, outcomes, reasons…",
@@ -1512,12 +1513,12 @@
         "flagged": "flagged",
         "reverted": "reverted"
       },
-      "unmergeBody": "Puts the absorbed series back under its original id with its {rows} rows. Reading recorded against the kept series since the merge stays with it — progress written after the merge does not follow the split.",
+      "unmergeBody": "Puts the absorbed series back under its original id with its {rows} rows, then takes the names both series answered to off the kept one and returns the sources titled after them, with their chapters. Without that the next scan re-attaches them. The kept series never loses its own title, and reading recorded against it stays with it — progress written after the merge does not follow the split.",
       "spentBody": "This merge has no undo journal left, so nothing can be put back. It can still be recorded as wrong, which stops the sweep proposing the pair again.",
       "reasonLabel": "reason — required, lands in the audit trail",
       "unmergeCta": "Unmerge · restore {rows} rows",
       "flagCta": "Keep merged, mark wrong",
-      "suppressionNote": "Both outcomes also record “not a duplicate”, so the sweep will not re-propose this pair.",
+      "suppressionNote": "Both outcomes also record “not a duplicate”, so the sweep will not re-propose this pair. Only the unmerge disentangles the shared titles and sources.",
       "wasReverted": "Undone {when}. Reason: {reason}",
       "wasFlagged": "Marked wrong {when}. Reason: {reason}",
       "noReason": "none recorded",

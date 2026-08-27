@@ -57,7 +57,7 @@ pub(crate) use crate::wire::types::{
 // console calls the row, and there is no shorter name that stays distinct from `MergeCandidate`.
 pub(crate) use crate::wire::types::RemoteEntryRow as UnmatchedRemoteEntry;
 pub(crate) use crate::wire::types::UnmappedSeriesRow as UnmappedSeries;
-pub(crate) use crate::wire::types::{MergeDecision, SyncDecision};
+pub(crate) use crate::wire::types::{MergeDecision, MergeReverted, SyncDecision};
 
 /// One inbox row.
 ///

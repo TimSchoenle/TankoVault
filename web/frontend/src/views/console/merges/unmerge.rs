@@ -53,12 +53,7 @@ pub(super) fn UnmergeBlock(
                     .body_map(|body| body.reason(text.clone()))
                     .send()
                     .await
-                    .map(|response| {
-                        i18n.args(
-                            "console.decisions.reverted",
-                            &[("rows", &response.into_inner().rows_restored.to_string())],
-                        )
-                    })
+                    .map(|response| revert_notice(i18n, &response.into_inner()))
             } else {
                 client
                     .flag_merge_decision()
@@ -155,6 +150,27 @@ pub(super) fn UnmergeBlock(
             div { class: "ik-listfoot", {i18n.t("console.merges.suppressionNote")} }
         }
     }
+}
+
+/// What to tell the operator a revert did.
+///
+/// Two sentences, not one, and the longer one is not decoration: a revert also takes alternative
+/// titles and sources off the *surviving* series, which is a change to a row the operator did not
+/// name and cannot see from here. Saying so is the only place that lands before they go looking.
+fn revert_notice(i18n: crate::i18n::Translator, reverted: &MergeReverted) -> String {
+    let rows = thousands(reverted.rows_restored);
+    if reverted.titles_removed == 0 && reverted.sources_returned == 0 {
+        return i18n.args("console.decisions.reverted", &[("rows", &rows)]);
+    }
+    i18n.args(
+        "console.decisions.revertedCleaned",
+        &[
+            ("rows", &rows),
+            ("titles", &thousands(reverted.titles_removed)),
+            ("sources", &thousands(reverted.sources_returned)),
+            ("chapters", &thousands(reverted.chapters_returned)),
+        ],
+    )
 }
 
 /// The one-line record of a decision that has already been judged, or `None` while it stands.

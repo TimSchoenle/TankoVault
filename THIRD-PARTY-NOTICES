@@ -2643,14 +2643,14 @@ USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 Applies to:
 
-  - sentry 0.49.1
-  - sentry-backtrace 0.49.1
-  - sentry-core 0.49.1
-  - sentry-debug-images 0.49.1
-  - sentry-panic 0.49.1
-  - sentry-tower 0.49.1
-  - sentry-tracing 0.49.1
-  - sentry-types 0.49.1
+  - sentry 0.49.2
+  - sentry-backtrace 0.49.2
+  - sentry-core 0.49.2
+  - sentry-debug-images 0.49.2
+  - sentry-panic 0.49.2
+  - sentry-tower 0.49.2
+  - sentry-tracing 0.49.2
+  - sentry-types 0.49.2
 
 MIT License
 

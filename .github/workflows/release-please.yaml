@@ -146,7 +146,7 @@ env:
   # have to match version for version — the artifact is plain OCI — but a bump here is worth
   # checking against that repository's `justfile` rather than assumed.
   # renovate: datasource=github-releases depName=oras-project/oras
-  ORAS_VERSION: 1.3.3
+  ORAS_VERSION: 1.3.4
   # Where the deployable chart lives. It is a separate repository on purpose: the chart releases
   # on its own cadence and its version is not this workspace's version.
   HELM_REPO: TimSchoenle/helm-charts

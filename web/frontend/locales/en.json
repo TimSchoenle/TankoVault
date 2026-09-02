@@ -709,6 +709,7 @@
         "both_sides_converged": "both sides reached the same value",
         "excluded_from_sync": "excluded from sync",
         "existing_mapping": "already mapped",
+        "linked_to_the_same_remote_entry": "shares its tracker entry with another title",
         "neither_side_changed": "neither side changed",
         "no_ancestor_agreement": "first sync, both sides already agreed",
         "no_ancestor_newest_is_local": "first sync, your side was touched last",

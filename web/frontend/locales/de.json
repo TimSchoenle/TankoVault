@@ -709,6 +709,7 @@
         "both_sides_converged": "beide Seiten erreichten denselben Wert",
         "excluded_from_sync": "vom Sync ausgeschlossen",
         "existing_mapping": "bereits zugeordnet",
+        "linked_to_the_same_remote_entry": "teilt sich den Tracker-Eintrag mit einem anderen Titel",
         "neither_side_changed": "keine Seite hat sich geändert",
         "no_ancestor_agreement": "erster Abgleich, beide Seiten waren bereits einig",
         "no_ancestor_newest_is_local": "erster Abgleich, deine Seite war zuletzt geändert",

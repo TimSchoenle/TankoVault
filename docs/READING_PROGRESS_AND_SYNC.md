@@ -505,6 +505,49 @@ and the same `is_sync_excluded` check (§A.5):
   AniList has no concept of parts. This asymmetry (locally you can be "ahead" via parts
   without AniList knowing) is expected and documented, not a bug.
 
+### B.5a Linked series — one remote entry, several local ones
+
+`sync_mappings` is keyed on `(series_id, provider)`, not on the pair, so **several local series
+can map to one external id**. Catalogue duplicates routinely do: the matcher attaches one, an
+operator attaches another, and the provider still keeps a single list entry for the work. Call
+that set the **linked group**.
+
+The engine treats a group as one unit on both sides:
+
+- **Local side of the merge.** Progress is the **highest** `last_read_whole_number` any
+  non-excluded member holds, with that member's `updated_at` as the change time; status comes
+  from the member the mapping resolved to (statuses are unordered, so there is no maximum).
+  Taking the maximum is what makes the write-back below safe — settling on a lower member's
+  value would un-read chapters the reader had marked on another copy.
+- **Ancestor.** The freshest `last_synced_*` snapshot across the group, not the driven member's,
+  since the members' snapshots are written together and only diverge when a duplicate joins.
+- **Write-back ("the mirror").** Once a value is settled — by a merge, by a first push, or by
+  the targeted push a mark-read fires — every non-excluded member the reader actually holds
+  something for adopts it, and each member's ancestor snapshot is refreshed to match.
+- **The targeted push settles on the series the reader acted on, not on the group's maximum.**
+  The two rules differ because the situations do: a reconciliation has no user action to go on,
+  so a member behind the others is stale rather than a statement, and the maximum is the only
+  reading that loses nothing; a targeted push *is* the statement, and marking a chapter unread
+  has to be able to retreat the group. Neither can flip-flop against the other, because the push
+  refreshes every member's ancestor snapshot to the value it pushed — the next reconciliation
+  reads that as "neither side changed" rather than as a member to drag back up.
+- **Exclusion still wins per series.** An excluded member is neither read nor written; a group
+  whose members are all excluded is skipped whole. A member excluded while a sibling is not
+  hands the group to the sibling rather than skipping it.
+- **A member the reader never added is left alone.** The mirror keeps entries in step; it does
+  not create watchlist entries, and it does not manufacture a progress row to record a
+  zero frontier.
+- **Nothing is fanned out while a field is in conflict**, because nothing is settled: the
+  ancestor is deliberately not advanced (§B.3), and the group is left as it stands until the
+  conflict resolves.
+
+Without this, a duplicate drifted permanently. The remote-driven pass reconciled whichever
+member the mapping resolved to and the local-driven pass skipped the rest as an already-handled
+external id, so nothing ever revisited them — marking a chapter read on one copy left the other
+showing it unread, with no run that would ever correct the difference. The same skip also let
+two members of a group each *create* the remote entry from their own state during the
+local-driven pass, the second clobbering the first.
+
 ### B.6 API surface (new / changed)
 
 ```

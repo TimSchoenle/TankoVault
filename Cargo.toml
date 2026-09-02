@@ -270,7 +270,7 @@ anyhow = "1"
 # derive is — and, worse, generating a contract would then compile the whole service tree a second
 # time under a different feature set. The image build generates nine contracts from the binaries
 # it has already compiled; that only works while the schema half is always present.
-terrace-config = { git = "https://github.com/TimSchoenle/terrace-config", tag = "v0.9.1", default-features = false }
+terrace-config = { git = "https://github.com/TimSchoenle/terrace-config", tag = "v0.10.0", default-features = false }
 
 # --- auth / security ---
 # Every secret value in this workspace is a `secrecy` type — `SecretString` for text,

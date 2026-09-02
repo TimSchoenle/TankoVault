@@ -6,7 +6,7 @@
     "source": "https://github.com/TimSchoenle/TankoVault"
   },
   "schema": {
-    "schema_version": 1,
+    "schema_version": 2,
     "dialect": {
       "prefix": "TANKOVAULT_",
       "nesting_separator": "__",
@@ -1800,6 +1800,20 @@
         "ty": "BTreeMap<String, PeerConfig>",
         "values": [],
         "constraint": {
+          "additionalProperties": {
+            "properties": {
+              "san": {
+                "description": "The client-certificate subject alternative name this peer presents under\n`identity = \"mtls\"`, e.g. `api.tankovault.svc`.",
+                "type": "string"
+              },
+              "token": {
+                "description": "The token this peer presents under `identity = \"token\"`.",
+                "type": "string",
+                "writeOnly": true
+              }
+            },
+            "type": "object"
+          },
           "type": "object"
         },
         "text_constraint": {
@@ -2248,6 +2262,21 @@
             "type": "string"
           },
           "peers": {
+            "additionalProperties": {
+              "additionalProperties": false,
+              "properties": {
+                "san": {
+                  "description": "The client-certificate subject alternative name this peer presents under\n`identity = \"mtls\"`, e.g. `api.tankovault.svc`.",
+                  "type": "string"
+                },
+                "token": {
+                  "description": "The token this peer presents under `identity = \"token\"`.",
+                  "type": "string",
+                  "writeOnly": true
+                }
+              },
+              "type": "object"
+            },
             "description": "Which services may call this one, keyed by caller name.",
             "type": "object"
           },

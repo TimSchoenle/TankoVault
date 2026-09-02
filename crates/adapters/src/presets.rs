@@ -213,36 +213,6 @@ fn madara_family() -> Vec<BuiltinPreset> {
         plain("mangahe", "MangaHe", "https://mangahe.com", MADARA),
         plain("mangazin", "Zin Manga", "https://mangazin.org", MADARA),
         plain("manhuahot", "ManhuaHot", "https://manhuahot.com", MADARA),
-        // Stock Madara chapter rows under a wholly rewritten listing and series template, so
-        // only the selectors that name the *theme's* markup survive. Worth the overrides: the
-        // chapter list, which is the part no config can substitute for, is the theme's own.
-        BuiltinPreset {
-            slug: "manhuarm",
-            name: "Manhuarm",
-            base_url: "https://manhuarmtl.com",
-            adapter: MADARA,
-            config: json!({
-                "catalog": {
-                    "item": "li.mrm-r-item",
-                    "link": "a.mrm-r-item__link",
-                    "title": "span.mrm-r-item__title"
-                },
-                // The home page uses a *different* card class from the archive; inheriting the
-                // catalogue's `li.mrm-r-item` here read an empty feed on every fast scan.
-                "latest": {
-                    "item": "div.manga-card",
-                    "link": "a",
-                    "title": "div.manga-title a",
-                    "chapter": "div.chapter a"
-                },
-                "series": {
-                    "title": "h1.mrm-hero__title",
-                    "alt": "p.mrm-hero__alt@title",
-                    "cover": "div.mrm-hero__cover img@src"
-                }
-            }),
-            politeness: Politeness::default(),
-        },
         plain("s2manga", "S2Manga", "https://s2read.com", MADARA),
         BuiltinPreset {
             slug: "setsuscans",

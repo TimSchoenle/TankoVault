@@ -244,8 +244,6 @@ async fn athreascans_reads_the_infotable_metadata_block() {
 
 const ZAZAMANGA_SERIES: &str = include_str!("../fixtures/expansion/zazamanga-series.html");
 const ZINMANGA_LATEST: &str = include_str!("../fixtures/expansion/zinmanga-latest.html");
-const MANHUARM_CATALOG: &str = include_str!("../fixtures/expansion/manhuarm-catalog.html");
-const MANHUARM_LATEST: &str = include_str!("../fixtures/expansion/manhuarm-latest.html");
 
 /// Regression: `zazamanga` renders the Madara chapter list as `div`, not the theme's `li`. On the
 /// family default the site parsed a full catalogue, a full feed and **zero** chapters — and an
@@ -282,30 +280,6 @@ async fn zinmanga_reads_its_feed_from_the_madara_default_cards() {
         "every feed item needs a title: {:?}",
         items.iter().map(|i| &i.title).collect::<Vec<_>>()
     );
-}
-
-/// Regression: `manhuarm`'s archive and home page use **different** card classes. Inheriting the
-/// catalogue's `li.mrm-r-item` for the feed read an empty feed every cycle, which is the failure
-/// with no alarm attached — the full scan still worked, so the provider looked healthy.
-#[tokio::test]
-async fn manhuarm_reads_its_feed_and_catalogue_from_different_cards() {
-    let (adapter, ctx, _) = preset_adapter(
-        "manhuarm",
-        SiteFetcher {
-            catalog: MANHUARM_CATALOG,
-            latest: MANHUARM_LATEST,
-            ..SiteFetcher::default()
-        },
-    );
-
-    let page = adapter
-        .list_catalog(&ctx, 1)
-        .await
-        .expect("catalogue parses");
-    assert_eq!(page.items.len(), 3, "one item per li.mrm-r-item");
-
-    let items = adapter.list_latest(&ctx).await.expect("feed parses");
-    assert_eq!(items.len(), 3, "one item per div.manga-card");
 }
 
 // -----------------------------------------------------------------------------------------

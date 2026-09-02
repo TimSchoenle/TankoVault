@@ -140,6 +140,7 @@ pub struct InternalAuthConfig {
     #[serde(default)]
     pub caller: CallerConfig,
     /// Which services may call this one, keyed by caller name.
+    #[config(element)]
     #[serde(default)]
     pub peers: BTreeMap<String, PeerConfig>,
     /// Certificate material for `identity = "mtls"`.

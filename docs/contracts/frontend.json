@@ -6,7 +6,7 @@
     "source": "https://github.com/TimSchoenle/TankoVault"
   },
   "schema": {
-    "schema_version": 1,
+    "schema_version": 2,
     "dialect": {
       "prefix": "TANKOVAULT_",
       "nesting_separator": "__",

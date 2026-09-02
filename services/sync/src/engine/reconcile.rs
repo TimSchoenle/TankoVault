@@ -20,8 +20,9 @@ use tankovault_db::repo::{sync, tracking};
 use tankovault_domain::{SeriesId, UserId, WatchStatus};
 
 use super::accounts::AccountService;
+use super::linked::{GroupSide, LinkedMember, LinkedSeries, plan_group, plan_mirror};
 use super::metadata::MetadataWriter;
-use super::plan::{Ancestor, LocalSide, MergePlan, SeriesPlan, plan_merge, plan_series};
+use super::plan::{Ancestor, MergePlan, SeriesPlan, plan_merge, plan_series};
 use super::registry::ProviderRegistry;
 use super::resolve::{MatchOutcome, SeriesResolver};
 use super::tokens::TokenVault;
@@ -88,10 +89,16 @@ impl RunState {
 /// current in between.
 const METADATA_REFRESH_INTERVAL: time::Duration = time::Duration::WEEK;
 
+/// Why a series nobody asked about was written: it shares a remote entry with the one that was.
+/// Stable, because it is persisted and rendered in the decision journal.
+const LINKED_REASON: &str = "linked_to_the_same_remote_entry";
+
 /// One user's local sync-relevant state for one provider, read once per reconciliation run
 /// instead of per series. Sound only because a run reconciles each series **at most once**
 /// (`handled_series`/`handled_ids` in [`Reconciler::reconcile_account`] guarantee it), so no
-/// series is read here after that same run has written to it.
+/// series is read here after that same run has written to it. A linked group counts as one
+/// series for that purpose: every member is marked handled when the group is reconciled,
+/// because the mirror has already written all of them.
 struct LocalState {
     /// Series excluded from syncing with this provider.
     excluded: HashSet<SeriesId>,
@@ -110,15 +117,17 @@ impl LocalState {
         })
     }
 
-    /// This run's view of one series, in the shape the pure planner takes.
-    fn side(&self, series_id: SeriesId) -> LocalSide {
-        let state = self.progress.get(&series_id).copied();
-        LocalSide {
-            progress: state.map_or(0.0, |(p, _)| p),
-            updated_at: state.map_or(OffsetDateTime::UNIX_EPOCH, |(_, u)| u),
-            status: self.status.get(&series_id).copied(),
-            excluded: self.excluded.contains(&series_id),
-        }
+    /// This run's view of one linked group, in the shape the pure planner takes.
+    fn members(&self, series_ids: &[SeriesId]) -> Vec<LinkedMember> {
+        series_ids
+            .iter()
+            .map(|&series_id| LinkedMember {
+                series_id,
+                progress: self.progress.get(&series_id).copied(),
+                status: self.status.get(&series_id).copied(),
+                excluded: self.excluded.contains(&series_id),
+            })
+            .collect()
     }
 }
 
@@ -160,6 +169,7 @@ pub(crate) struct Reconciler {
     accounts: Arc<AccountService>,
     resolver: Arc<SeriesResolver>,
     metadata: Arc<MetadataWriter>,
+    linked: Arc<LinkedSeries>,
 }
 
 impl Reconciler {
@@ -170,6 +180,7 @@ impl Reconciler {
         accounts: Arc<AccountService>,
         resolver: Arc<SeriesResolver>,
         metadata: Arc<MetadataWriter>,
+        linked: Arc<LinkedSeries>,
     ) -> Self {
         Self {
             pool,
@@ -178,6 +189,7 @@ impl Reconciler {
             accounts,
             resolver,
             metadata,
+            linked,
         }
     }
 
@@ -311,10 +323,10 @@ impl Reconciler {
 
         self.persist_fetched(&run, &resolved).await?;
         self.enrich_matched(&run, &resolved, &mut state).await;
-        let handled_ids = self
+        let mut handled_ids = self
             .reconcile_fetched(&run, &resolved, &local, &mut state)
             .await?;
-        self.reconcile_watchlist(&run, &handled_ids, &local, &mut state)
+        self.reconcile_watchlist(&run, &mut handled_ids, &local, &mut state)
             .await?;
 
         sync::mark_synced(
@@ -468,6 +480,7 @@ impl Reconciler {
         let mut handled_ids: HashSet<String> = HashSet::new();
         // Two distinct remote ids can resolve to one local series; each series is reconciled
         // at most once per run or the clobbering flip-flop from dupes would repeat here too.
+        // Every member of a reconciled group counts, since the mirror wrote them all.
         let mut handled_series: HashSet<SeriesId> = HashSet::new();
 
         for (entry, outcome) in resolved {
@@ -491,15 +504,17 @@ impl Reconciler {
                 decision.external_id = Some(entry.external_id().to_owned());
                 continue;
             }
-            self.reconcile_series(
-                run,
-                series_id,
-                entry.external_id(),
-                Some(entry),
-                local,
-                state,
-            )
-            .await?;
+            let group = self
+                .reconcile_series(
+                    run,
+                    series_id,
+                    entry.external_id(),
+                    Some(entry),
+                    local,
+                    state,
+                )
+                .await?;
+            handled_series.extend(group);
         }
         Ok(handled_ids)
     }
@@ -509,7 +524,7 @@ impl Reconciler {
     async fn reconcile_watchlist(
         &self,
         run: &RunContext<'_>,
-        handled_ids: &HashSet<String>,
+        handled_ids: &mut HashSet<String>,
         local: &LocalState,
         state: &mut RunState,
     ) -> anyhow::Result<()> {
@@ -532,8 +547,12 @@ impl Reconciler {
                 decision.series_id = Some(wl.series_id);
                 continue;
             };
-            if handled_ids.contains(&external_id) {
-                continue; // already reconciled in the remote-driven pass
+            // Already settled — either in the remote-driven pass, or by an earlier watchlist
+            // entry linked to the same remote id. Both wrote every member of the group, and
+            // creating the same entry twice from a second member's state would have the two
+            // clobber each other on the remote.
+            if !handled_ids.insert(external_id.clone()) {
+                continue;
             }
             self.reconcile_series(run, wl.series_id, &external_id, None, local, state)
                 .await?;
@@ -541,9 +560,14 @@ impl Reconciler {
         Ok(())
     }
 
-    /// Reconcile one mapped series against the remote. `remote` is `None` when the series is not
-    /// present on the remote yet (it must be created there). Every decision is [`super::plan`]'s;
-    /// this method only performs them and counts what it did.
+    /// Reconcile the linked group behind one external id against the remote. `remote` is `None`
+    /// when the group is not present on the remote yet (it must be created there). Every decision
+    /// is [`super::plan`]'s or [`super::linked`]'s; this method only performs them and counts
+    /// what it did.
+    ///
+    /// `series_id` is the member the caller arrived at, which [`plan_group`] takes as the group's
+    /// driver unless it is excluded. Returns the whole group, so the caller can mark every member
+    /// handled rather than only that one.
     async fn reconcile_series(
         &self,
         run: &RunContext<'_>,
@@ -552,33 +576,49 @@ impl Reconciler {
         remote: Option<&RemoteEntry>,
         local: &LocalState,
         state: &mut RunState,
-    ) -> anyhow::Result<()> {
-        let side = local.side(series_id);
+    ) -> anyhow::Result<Vec<SeriesId>> {
+        let mut group = sync::mapping_linked_series(&self.pool, run.slug, external_id).await?;
+        // Both callers reach this having just written the mapping, so an empty group is a
+        // concurrent deletion rather than an unmapped series; the caller's own series is still
+        // the right thing to reconcile.
+        if group.is_empty() {
+            group.push(series_id);
+        }
+        let members = local.members(&group);
+        let GroupSide { primary, side } = plan_group(&members, series_id);
         match plan_series(&side, remote) {
             SeriesPlan::Skip => {
                 state.counts.skipped += 1;
                 let decision = state.note(run, "series", "skipped", "excluded_from_sync");
-                decision.series_id = Some(series_id);
+                decision.series_id = Some(primary);
                 decision.external_id = Some(external_id.to_owned());
-                Ok(())
             }
             SeriesPlan::CreateRemote { status, progress } => {
-                self.apply_create_remote(run, series_id, external_id, status, progress, state)
-                    .await
+                self.apply_create_remote(
+                    run,
+                    primary,
+                    external_id,
+                    status,
+                    progress,
+                    &members,
+                    state,
+                )
+                .await?;
             }
             SeriesPlan::Merge => {
                 let remote = remote.expect("plan_series only asks for a merge when remote is set");
-                let ancestor = self.load_ancestor(series_id, run.slug).await?;
+                let ancestor = self.load_ancestor(external_id, run.slug).await?;
                 let plan = plan_merge(&side, remote, &ancestor, run.policy);
-                self.apply_merge(run, series_id, external_id, &plan, state)
-                    .await
+                self.apply_merge(run, primary, external_id, &plan, &members, state)
+                    .await?;
             }
         }
+        Ok(group)
     }
 
-    /// The common ancestor recorded at the last successful reconciliation.
-    async fn load_ancestor(&self, series_id: SeriesId, slug: &str) -> anyhow::Result<Ancestor> {
-        let Some(s) = sync::get_snapshot(&self.pool, series_id, slug).await? else {
+    /// The common ancestor the linked group recorded at its last successful reconciliation.
+    async fn load_ancestor(&self, external_id: &str, slug: &str) -> anyhow::Result<Ancestor> {
+        let Some(s) = sync::get_group_snapshot(&self.pool, slug, external_id).await? else {
             return Ok(Ancestor::default());
         };
         Ok(Ancestor {
@@ -597,6 +637,11 @@ impl Reconciler {
 
     /// First push of a series the remote does not have yet: create it, then record the state
     /// both sides now agree on.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the created values, the series they were created from and the group they \
+                  settle for are each needed here; bundling them would only move the list"
+    )]
     async fn apply_create_remote(
         &self,
         run: &RunContext<'_>,
@@ -604,13 +649,22 @@ impl Reconciler {
         external_id: &str,
         status: WatchStatus,
         progress: f64,
+        members: &[LinkedMember],
         state: &mut RunState,
     ) -> anyhow::Result<()> {
         run.provider
             .save_entry(run.access, external_id, status, progress)
             .await?;
-        self.record_snapshot(run, series_id, progress, status)
-            .await?;
+        self.settle(
+            run,
+            series_id,
+            external_id,
+            members,
+            progress,
+            status,
+            state,
+        )
+        .await?;
         state.counts.pushed += 1;
         let decision = state.note(
             run,
@@ -649,6 +703,7 @@ impl Reconciler {
         series_id: SeriesId,
         external_id: &str,
         plan: &MergePlan,
+        members: &[LinkedMember],
         state: &mut RunState,
     ) -> anyhow::Result<()> {
         if let Some(status) = plan.import_status {
@@ -886,8 +941,111 @@ impl Reconciler {
         }
 
         if let Some((progress, status)) = plan.snapshot {
+            self.settle(
+                run,
+                series_id,
+                external_id,
+                members,
+                progress,
+                status,
+                state,
+            )
+            .await?;
+        }
+        Ok(())
+    }
+
+    /// Bring the whole linked group into step with what it and the remote have settled on, and
+    /// record that as each member's new common ancestor.
+    ///
+    /// This is what makes a duplicate stop drifting. The remote holds one entry for the whole
+    /// group, so a member the merge did not drive is not "unchanged" — it describes the same
+    /// work with a frontier the reader has already moved past, and nothing else in a run would
+    /// ever revisit it (the local-driven pass skips it as an already-handled external id).
+    ///
+    /// The driving series is written here too, since the settled progress may have come from a
+    /// different member, but it is not journalled here: the merge already recorded a decision
+    /// for it. Nothing is settled while a field is in conflict, so nothing is fanned out either
+    /// — [`MergePlan::snapshot`] is `None` and this is not reached.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the settled pair, the series it was settled on, its group and the journal are \
+                  each needed here; bundling them would only move the list one line up"
+    )]
+    async fn settle(
+        &self,
+        run: &RunContext<'_>,
+        series_id: SeriesId,
+        external_id: &str,
+        members: &[LinkedMember],
+        progress: f64,
+        status: WatchStatus,
+        state: &mut RunState,
+    ) -> anyhow::Result<()> {
+        let writes = plan_mirror(members, progress, status);
+        // A driving series with nothing local to keep in step is absent from the writes, so its
+        // snapshot still has to be recorded by hand.
+        if !writes.iter().any(|w| w.series_id == series_id) {
             self.record_snapshot(run, series_id, progress, status)
                 .await?;
+        }
+        if writes.is_empty() {
+            return Ok(());
+        }
+        self.linked
+            .apply(run.user_id, run.slug, &writes, (progress, status))
+            .await?;
+        for write in &writes {
+            if write.series_id == series_id {
+                continue; // journalled and counted by the merge that drove it
+            }
+            let before = members.iter().find(|m| m.series_id == write.series_id);
+            if write.progress.is_some() {
+                state.counts.pulled += 1;
+                Self::note_field(
+                    run,
+                    state,
+                    write.series_id,
+                    external_id,
+                    "progress",
+                    "pull",
+                    LINKED_REASON,
+                    (
+                        before.and_then(|m| m.progress).map(|(p, _)| p.to_string()),
+                        Some(progress.to_string()),
+                    ),
+                    (None, None),
+                    true,
+                );
+                self.append_history(
+                    run,
+                    write.series_id,
+                    "pull",
+                    &json!({
+                        "field": "progress", "to": progress, "reason": LINKED_REASON,
+                        "linked_to": series_id, "external_id": external_id
+                    }),
+                )
+                .await;
+            }
+            if write.status.is_some() {
+                state.counts.pulled += 1;
+                Self::note_field(
+                    run,
+                    state,
+                    write.series_id,
+                    external_id,
+                    "status",
+                    "pull",
+                    LINKED_REASON,
+                    (
+                        before.and_then(|m| m.status).map(|s| s.as_str().to_owned()),
+                        Some(status.as_str().to_owned()),
+                    ),
+                    (None, None),
+                    true,
+                );
+            }
         }
         Ok(())
     }

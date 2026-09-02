@@ -284,12 +284,80 @@ impl Fixture {
 
     /// Put the series on the user's watchlist at `status` with whole-chapter `progress`.
     async fn local_state(&self, status: WatchStatus, progress: f64) {
-        tracking::watchlist_upsert(&self.db.pool, self.user, self.series, status, true)
+        self.local_state_of(self.series, status, progress).await;
+    }
+
+    /// [`Self::local_state`] for any series, so a linked duplicate can be seeded too.
+    async fn local_state_of(&self, series_id: SeriesId, status: WatchStatus, progress: f64) {
+        tracking::watchlist_upsert(&self.db.pool, self.user, series_id, status, true)
             .await
             .expect("seed watchlist entry");
-        tracking::progress_set(&self.db.pool, self.user, self.series, progress)
+        tracking::progress_set(&self.db.pool, self.user, series_id, progress)
             .await
             .expect("seed local progress");
+    }
+
+    /// Ingest a second local series under its own source path, so the catalogue holds two rows
+    /// that a single remote entry can be mapped to — the duplicate the linked-group work exists
+    /// for. `title` is deliberately unlike [`TITLE`], so the matcher cannot attach the remote
+    /// entry to it by score; only an explicit mapping links it.
+    async fn duplicate_series(&self, title: &str) -> SeriesId {
+        ingest_series(
+            &self.db.pool,
+            &ScannedSeries {
+                provider_id: self.provider,
+                source_path: format!("/manga/{}", normalize_title(title).replace(' ', "-")),
+                provider_title: Some(title.to_owned()),
+                meta: SeriesUpsert {
+                    canonical_title: title.to_owned(),
+                    normalized_title: normalize_title(title),
+                    description: None,
+                    cover_url: None,
+                    content_type: ContentType::Unknown,
+                    status: SeriesStatus::Unknown,
+                    release_year: None,
+                },
+                alt_titles: Vec::new(),
+                tags: Vec::new(),
+                authors: Vec::new(),
+                chapters: Vec::new(),
+                content_hash: vec![9],
+            },
+            &MatchingConfig::default(),
+            &MetadataPriority::default(),
+            &tankovault_domain::TermBlocklist::default(),
+            &tankovault_domain::AdultTagSet::defaults(),
+        )
+        .await
+        .expect("ingest duplicate local series")
+        .series_id
+    }
+
+    /// Map any series to `external_id`, the multi-series form of [`Self::map`].
+    async fn map_series(&self, series_id: SeriesId, external_id: &str) {
+        sync::upsert_mapping(&self.db.pool, series_id, SLUG, external_id)
+            .await
+            .expect("pre-map series");
+    }
+
+    async fn progress_of(&self, series_id: SeriesId) -> Option<f64> {
+        tracking::progress_state(&self.db.pool, self.user, series_id)
+            .await
+            .expect("read local progress")
+            .map(|(p, _)| p)
+    }
+
+    async fn status_of(&self, series_id: SeriesId) -> Option<WatchStatus> {
+        tracking::watchlist_status_get(&self.db.pool, self.user, series_id)
+            .await
+            .expect("read local status")
+    }
+
+    async fn snapshot_of(&self, series_id: SeriesId) -> Option<(Option<f64>, Option<f64>)> {
+        sync::get_snapshot(&self.db.pool, series_id, SLUG)
+            .await
+            .expect("read snapshot")
+            .map(|s| (s.last_synced_local_progress, s.last_synced_remote_progress))
     }
 
     /// Record a common-ancestor snapshot, i.e. pretend a previous reconciliation agreed on
@@ -792,5 +860,148 @@ mod signals {
         );
         // A tag only the adapter knows is still added, at the only strength it can state.
         assert_eq!(weight_of("isekai"), 1.0);
+    }
+}
+
+/// Two local series mapped to one remote entry — the *linked group*.
+///
+/// The remote keeps a single entry per work, so a value settled against it is settled for every
+/// local series mapped to it. Before this module's subject existed, only one of them was ever
+/// written: the remote-driven pass reconciled whichever series the mapping resolved to, and the
+/// local-driven pass skipped the rest as an already-handled external id, so a duplicate kept a
+/// stale frontier for as long as the mapping stood.
+mod linked_entries {
+    use super::*;
+
+    /// A title the matcher cannot confuse with [`TITLE`], so the second series is linked only by
+    /// the explicit mapping the test writes.
+    const OTHER_TITLE: &str = "Beneath The Lantern Tide";
+
+    /// Marking a chapter read pushes one number to a remote entry several local series share.
+    /// Leaving the others behind showed the same chapter read on one copy and unread on the
+    /// other, with nothing that would ever reconcile the difference.
+    #[tokio::test]
+    async fn a_targeted_push_carries_every_linked_series_with_it() {
+        let f = Fixture::spawn().await;
+        let dup = f.duplicate_series(OTHER_TITLE).await;
+        f.local_state(WatchStatus::Reading, 100.0).await;
+        f.local_state_of(dup, WatchStatus::Paused, 40.0).await;
+        f.map("m1").await;
+        f.map_series(dup, "m1").await;
+
+        let outcomes = f.engine.push_series(f.user, f.series).await;
+
+        assert!(outcomes.iter().all(|o| o.ok), "{outcomes:?}");
+        assert_eq!(
+            f.remote.writes(),
+            vec![RemoteWrite {
+                external_id: "m1".to_owned(),
+                status: WatchStatus::Reading,
+                progress: 100.0,
+            }]
+        );
+        assert_eq!(f.progress_of(dup).await, Some(100.0));
+        assert_eq!(f.status_of(dup).await, Some(WatchStatus::Reading));
+        assert_eq!(
+            f.snapshot_of(dup).await,
+            Some((Some(100.0), Some(100.0))),
+            "the linked series' ancestor moves with it, or the next run re-decides it"
+        );
+    }
+
+    /// A series the reader excluded from sync stays excluded when it is reached sideways, through
+    /// a sibling's push, rather than head-on.
+    #[tokio::test]
+    async fn an_excluded_linked_series_is_still_not_written() {
+        let f = Fixture::spawn().await;
+        let dup = f.duplicate_series(OTHER_TITLE).await;
+        f.local_state(WatchStatus::Reading, 100.0).await;
+        f.local_state_of(dup, WatchStatus::Reading, 40.0).await;
+        f.map("m1").await;
+        f.map_series(dup, "m1").await;
+        tracking::set_sync_excluded(&f.db.pool, f.user, dup, true)
+            .await
+            .expect("exclude the duplicate");
+
+        f.engine.push_series(f.user, f.series).await;
+
+        assert_eq!(f.progress_of(dup).await, Some(40.0));
+    }
+
+    /// A pull reaches the remote entry once. Every local series behind it has to adopt the value,
+    /// not just the one the mapping happened to resolve to.
+    #[tokio::test]
+    async fn a_pull_reaches_every_linked_series() {
+        let f = Fixture::spawn().await;
+        let dup = f.duplicate_series(OTHER_TITLE).await;
+        f.local_state(WatchStatus::Reading, 5.0).await;
+        f.local_state_of(dup, WatchStatus::Reading, 5.0).await;
+        f.map("m1").await;
+        f.map_series(dup, "m1").await;
+        f.snapshot(5.0, WatchStatus::Reading).await;
+        f.set_list(vec![remote_entry("m1", WatchStatus::Reading, 9.0, STALE)]);
+
+        f.engine.pull(SLUG, f.user, None).await.expect("pull");
+
+        assert_eq!(f.local_progress().await, Some(9.0));
+        assert_eq!(f.progress_of(dup).await, Some(9.0));
+    }
+
+    /// The guard that makes mirroring safe at all: the group speaks with its highest frontier, so
+    /// settling a value can never un-read chapters recorded against a member the remote entry did
+    /// not resolve to. Without it, adding the mirror would have destroyed the very progress it
+    /// exists to keep in step.
+    #[tokio::test]
+    async fn a_linked_series_ahead_of_the_remote_is_pushed_not_walked_back() {
+        let f = Fixture::spawn().await;
+        let dup = f.duplicate_series(OTHER_TITLE).await;
+        f.local_state(WatchStatus::Reading, 100.0).await;
+        f.local_state_of(dup, WatchStatus::Reading, 120.0).await;
+        f.map("m1").await;
+        f.map_series(dup, "m1").await;
+        f.snapshot(100.0, WatchStatus::Reading).await;
+        f.set_list(vec![remote_entry("m1", WatchStatus::Reading, 100.0, STALE)]);
+
+        f.engine.pull(SLUG, f.user, None).await.expect("pull");
+
+        assert_eq!(
+            f.remote.writes(),
+            vec![RemoteWrite {
+                external_id: "m1".to_owned(),
+                status: WatchStatus::Reading,
+                progress: 120.0,
+            }],
+            "the highest local frontier is what the group agrees on"
+        );
+        assert_eq!(f.local_progress().await, Some(120.0));
+        assert_eq!(f.progress_of(dup).await, Some(120.0));
+    }
+
+    /// The local-driven pass walks the watchlist, so a group the remote does not have yet was
+    /// reached once per member: each created the same entry from its own state, and the last
+    /// one to run decided what the remote kept.
+    #[tokio::test]
+    async fn a_group_absent_from_the_remote_is_created_once() {
+        let f = Fixture::spawn().await;
+        let dup = f.duplicate_series(OTHER_TITLE).await;
+        f.local_state(WatchStatus::Reading, 100.0).await;
+        f.local_state_of(dup, WatchStatus::Reading, 40.0).await;
+        f.map("m1").await;
+        f.map_series(dup, "m1").await;
+        f.set_list(Vec::new());
+
+        let report = f.engine.push(SLUG, f.user, None).await.expect("push");
+
+        assert_eq!(report.considered, 2);
+        assert_eq!(report.pushed, 1, "one remote entry, one create");
+        assert_eq!(
+            f.remote.writes(),
+            vec![RemoteWrite {
+                external_id: "m1".to_owned(),
+                status: WatchStatus::Reading,
+                progress: 100.0,
+            }]
+        );
+        assert_eq!(f.progress_of(dup).await, Some(100.0));
     }
 }

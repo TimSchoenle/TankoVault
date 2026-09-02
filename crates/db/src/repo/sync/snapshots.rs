@@ -44,6 +44,35 @@ pub async fn get_snapshot<'e, E: PgExecutor<'e>>(
     Ok(row)
 }
 
+/// Fetch the freshest three-way-merge snapshot across every series mapped to `external_id` —
+/// the *linked group*'s common ancestor.
+///
+/// A group's members are one work as far as the provider is concerned, so their ancestors are
+/// written together and agree. They can still diverge across the moment a duplicate joins the
+/// group, and the newest of them is the one that describes what the group last agreed with the
+/// remote; the never-synced member's empty snapshot is not an ancestor, it is the absence of one.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only; an unmapped external id is `Ok(None)`.
+pub async fn get_group_snapshot<'e, E: PgExecutor<'e>>(
+    exec: E,
+    provider: &str,
+    external_id: &str,
+) -> DbResult<Option<SyncSnapshot>> {
+    let row = sqlx::query_as!(
+        SyncSnapshot,
+        "SELECT last_synced_local_progress, last_synced_remote_progress, \
+                last_synced_local_status, last_synced_remote_status, last_synced_at \
+         FROM sync_mappings WHERE provider = $1 AND external_id = $2 \
+         ORDER BY last_synced_at DESC NULLS LAST LIMIT 1",
+        provider,
+        external_id,
+    )
+    .fetch_optional(exec)
+    .await?;
+    Ok(row)
+}
+
 /// The state both sides are known to agree on after a reconciliation.
 ///
 /// A struct, not positional args: two adjacent `f64`s then two adjacent `&str`s transpose silently.

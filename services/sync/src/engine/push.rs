@@ -5,12 +5,14 @@
 use std::sync::Arc;
 
 use anyhow::anyhow;
+use serde_json::json;
 use time::OffsetDateTime;
 
 use tankovault_db::PgPool;
 use tankovault_db::repo::{sync, tracking};
 use tankovault_domain::{SeriesId, UserId, WatchStatus};
 
+use super::linked::{LinkedSeries, plan_mirror};
 use super::registry::ProviderRegistry;
 use super::resolve::SeriesResolver;
 use super::tokens::TokenVault;
@@ -24,6 +26,7 @@ pub(crate) struct TargetedPush {
     registry: Arc<ProviderRegistry>,
     tokens: Arc<TokenVault>,
     resolver: Arc<SeriesResolver>,
+    linked: Arc<LinkedSeries>,
 }
 
 impl TargetedPush {
@@ -32,12 +35,14 @@ impl TargetedPush {
         registry: Arc<ProviderRegistry>,
         tokens: Arc<TokenVault>,
         resolver: Arc<SeriesResolver>,
+        linked: Arc<LinkedSeries>,
     ) -> Self {
         Self {
             pool,
             registry,
             tokens,
             resolver,
+            linked,
         }
     }
 
@@ -147,6 +152,75 @@ impl TargetedPush {
             .save_entry(&access, &external_id, status, progress)
             .await?;
         sync::upsert_mapping(&self.pool, series_id, slug, &external_id).await?;
+        self.settle(user_id, slug, series_id, &external_id, progress, status)
+            .await
+    }
+
+    /// Record what this push settled, for the pushed series and for every other local series
+    /// mapped to the same remote entry.
+    ///
+    /// The reader asserted a frontier for a *work*, and the provider keeps one entry per work:
+    /// leaving a catalogue duplicate on its old number would show the same chapter read on one
+    /// copy and unread on the other, and nothing would ever correct it — a reconciliation
+    /// reconciles the remote entry once and skips the rest of the group as already handled.
+    ///
+    /// The ancestor snapshot is refreshed here too, for the same reason the reconciliation
+    /// refreshes it: both sides now hold this value, so the next run must read it as "neither
+    /// side changed" rather than re-deciding a remote that has moved since against an ancestor
+    /// from before this push.
+    ///
+    /// Only the mirrored series are journalled in `sync_history`. The pushed series' own change
+    /// is the reader's own action, already visible where they made it; a write to a series they
+    /// never touched is not, and that is what the log is for.
+    async fn settle(
+        &self,
+        user_id: UserId,
+        slug: &str,
+        series_id: SeriesId,
+        external_id: &str,
+        progress: f64,
+        status: WatchStatus,
+    ) -> anyhow::Result<()> {
+        let members = self.linked.members(user_id, slug, external_id).await?;
+        let writes = plan_mirror(&members, progress, status);
+        // A series with no local rows at all is absent from the writes, so its snapshot still
+        // has to be recorded by hand.
+        if !writes.iter().any(|w| w.series_id == series_id) {
+            sync::record_snapshot(
+                &self.pool,
+                &sync::AgreedSnapshot {
+                    series_id,
+                    provider: slug,
+                    local_progress: progress,
+                    remote_progress: progress,
+                    local_status: status.as_str(),
+                    remote_status: status.as_str(),
+                },
+            )
+            .await?;
+        }
+        self.linked
+            .apply(user_id, slug, &writes, (progress, status))
+            .await?;
+        for write in &writes {
+            if write.series_id == series_id || (write.progress.is_none() && write.status.is_none())
+            {
+                continue; // the reader's own series, or one already in step
+            }
+            let _ = sync::append_history(
+                &self.pool,
+                user_id,
+                write.series_id,
+                slug,
+                "pull",
+                &json!({
+                    "field": "progress", "to": progress, "status": status.as_str(),
+                    "reason": "linked_to_the_same_remote_entry",
+                    "linked_to": series_id, "external_id": external_id
+                }),
+            )
+            .await;
+        }
         Ok(())
     }
 }

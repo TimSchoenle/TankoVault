@@ -5,6 +5,7 @@
 mod accounts;
 mod conflicts;
 mod enrich;
+mod linked;
 mod metadata;
 mod plan;
 mod push;
@@ -37,6 +38,7 @@ pub(crate) use tankovault_contracts::sync::{
 use accounts::AccountService;
 use conflicts::ConflictService;
 use enrich::Enricher;
+use linked::LinkedSeries;
 use metadata::MetadataWriter;
 use push::TargetedPush;
 use reconcile::Reconciler;
@@ -89,6 +91,9 @@ impl SyncEngine {
             metadata_priority,
             term_blocklist,
         ));
+        // Shared by both write paths, so a targeted push and a reconciliation cannot disagree
+        // about which local series one remote entry stands for.
+        let linked = Arc::new(LinkedSeries::new(pool.clone()));
 
         Self {
             conflicts: ConflictService::new(
@@ -103,9 +108,16 @@ impl SyncEngine {
                 Arc::clone(&accounts),
                 Arc::clone(&resolver),
                 Arc::clone(&metadata),
+                Arc::clone(&linked),
             ),
             reverts: RevertService::new(pool.clone(), Arc::clone(&registry), Arc::clone(&tokens)),
-            targeted_push: TargetedPush::new(pool.clone(), Arc::clone(&registry), tokens, resolver),
+            targeted_push: TargetedPush::new(
+                pool.clone(),
+                Arc::clone(&registry),
+                tokens,
+                resolver,
+                linked,
+            ),
             enricher: Enricher::new(pool, Arc::clone(&registry), metadata),
             registry,
             accounts,

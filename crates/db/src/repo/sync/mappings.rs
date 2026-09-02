@@ -33,6 +33,11 @@ pub async fn upsert_mapping<'e, E: PgExecutor<'e>>(
 /// Resolve a provider's external id to a canonical series, if already mapped. Used to
 /// short-circuit title re-matching on subsequent syncs.
 ///
+/// Several series can map to one external id (the primary key is `(series_id, provider)`, not
+/// the pair), so this picks the most recently confirmed of them rather than an arbitrary row:
+/// which duplicate a reconciliation drives must not vary between runs. The others are not
+/// ignored — [`mapping_linked_series`] is how the sync engine reaches them.
+///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; unmapped is `Ok(None)`, sending the caller to title-matching.
 pub async fn mapping_series_for_external<'e, E: PgExecutor<'e>>(
@@ -41,13 +46,42 @@ pub async fn mapping_series_for_external<'e, E: PgExecutor<'e>>(
     external_id: &str,
 ) -> DbResult<Option<SeriesId>> {
     let id = sqlx::query_scalar!(
-        "SELECT series_id FROM sync_mappings WHERE provider = $1 AND external_id = $2",
+        "SELECT series_id FROM sync_mappings WHERE provider = $1 AND external_id = $2 \
+         ORDER BY updated_at DESC, series_id LIMIT 1",
         provider,
         external_id,
     )
     .fetch_optional(exec)
     .await?;
     Ok(id.map(SeriesId::from_uuid))
+}
+
+/// Every canonical series mapped to one external id at `provider` — the *linked group*.
+///
+/// Catalogue duplicates routinely resolve onto one remote work, and the remote holds a single
+/// entry for all of them, so a value settled for that entry is settled for every member. A
+/// caller that touches only the series it started from leaves the rest permanently stale: the
+/// remote-driven reconciliation pass drives one member and the local-driven pass skips the
+/// others as already handled.
+///
+/// Ordered so a run's choice of member is reproducible.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only; an unmapped external id is an empty `Vec`.
+pub async fn mapping_linked_series<'e, E: PgExecutor<'e>>(
+    exec: E,
+    provider: &str,
+    external_id: &str,
+) -> DbResult<Vec<SeriesId>> {
+    let ids = sqlx::query_scalar!(
+        "SELECT series_id FROM sync_mappings WHERE provider = $1 AND external_id = $2 \
+         ORDER BY updated_at DESC, series_id",
+        provider,
+        external_id,
+    )
+    .fetch_all(exec)
+    .await?;
+    Ok(ids.into_iter().map(SeriesId::from_uuid).collect())
 }
 
 /// Resolve a canonical series to its external id at `provider`, if mapped. Used by push

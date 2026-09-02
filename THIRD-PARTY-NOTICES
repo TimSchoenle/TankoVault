@@ -6370,7 +6370,7 @@ Ships as: the WebAssembly bundle the frontend image serves, which executes in th
 
 Licences in this section, by number of crates:
 
-  Apache License 2.0 (Apache-2.0) — 432 crates, 31 distinct notices
+  Apache License 2.0 (Apache-2.0) — 433 crates, 31 distinct notices
   MIT License (MIT) — 144 crates, 71 distinct notices
   Unicode License v3 (Unicode-3.0) — 19 crates, 2 distinct notices
   BSD 3-Clause "New" or "Revised" License (BSD-3-Clause) — 9 crates, 6 distinct notices
@@ -7219,6 +7219,7 @@ by the block naming that crate.
   - windows-result 0.4.1
   - windows-strings 0.4.2
   - windows-strings 0.5.1
+  - windows-sys 0.52.0
   - windows-sys 0.59.0
   - windows-sys 0.60.2
   - windows-sys 0.61.2
@@ -7664,7 +7665,7 @@ limitations under the License.
 
 … continued, for:
 
-  - keyring 4.1.6
+  - keyring 4.2.0
   - keyring-core 1.0.0
   - windows-native-keyring-store 1.1.0
   - zbus-secret-service-keyring-store 1.0.1

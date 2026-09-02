@@ -12,6 +12,36 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [8.8.0](https://github.com/TimSchoenle/TankoVault/compare/v8.7.1...v8.8.0) (2026-09-02)
+
+
+### Features
+
+* update terrace to 0.10.0 and opt in to new nested feature ([#328](https://github.com/TimSchoenle/TankoVault/issues/328)) ([8623ed6](https://github.com/TimSchoenle/TankoVault/commit/8623ed6e00d508d550eee52fe275042cc93bd55f))
+
+
+### Miscellaneous
+
+* **deps:** update anchore/sbom-action action to v0.24.1 ([#318](https://github.com/TimSchoenle/TankoVault/issues/318)) ([18ff869](https://github.com/TimSchoenle/TankoVault/commit/18ff869007160196b7d802b56d474b94d85245a1))
+* **deps:** update anchore/sbom-action action to v0.24.2 ([#323](https://github.com/TimSchoenle/TankoVault/issues/323)) ([546f7ef](https://github.com/TimSchoenle/TankoVault/commit/546f7efbc1a426d67ecb2ebd749634cfc34186a1))
+* **deps:** update debian:13-slim docker digest to d7e1218 ([#305](https://github.com/TimSchoenle/TankoVault/issues/305)) ([0abecf6](https://github.com/TimSchoenle/TankoVault/commit/0abecf60db54037b77871d236facf7cc5ad7dce3))
+* **deps:** update dependency oras-project/oras to v1.3.4 ([#319](https://github.com/TimSchoenle/TankoVault/issues/319)) ([f027bb6](https://github.com/TimSchoenle/TankoVault/commit/f027bb64850913e857239bccd534f230af292eaf))
+* **deps:** update nats:2-alpine docker digest to ad7a43e ([#316](https://github.com/TimSchoenle/TankoVault/issues/316)) ([d78ee38](https://github.com/TimSchoenle/TankoVault/commit/d78ee3827d07314762b26b33055a684187499553))
+* **deps:** update rust crate keyring to v4.2.0 ([#327](https://github.com/TimSchoenle/TankoVault/issues/327)) ([39868e6](https://github.com/TimSchoenle/TankoVault/commit/39868e64d25778d42cd2d5087a0739ca7a8a3b26))
+* **deps:** update rust crate sentry to v0.49.2 ([#307](https://github.com/TimSchoenle/TankoVault/issues/307)) ([86319d6](https://github.com/TimSchoenle/TankoVault/commit/86319d644a32215ae714ca5e9ce78f9641913b1c))
+* **deps:** update rust crate terrace-config to v0.9.1 ([#309](https://github.com/TimSchoenle/TankoVault/issues/309)) ([0040ea3](https://github.com/TimSchoenle/TankoVault/commit/0040ea3fbfeedf5dc0ddd1d9448d367f3e78dc43))
+* **deps:** update rust crate uuid to v1.26.0 ([#310](https://github.com/TimSchoenle/TankoVault/issues/310)) ([a657615](https://github.com/TimSchoenle/TankoVault/commit/a657615918b90a659b60da78291350c087dfcdf5))
+* **deps:** update taiki-e/install-action action to v2.86.8 ([#308](https://github.com/TimSchoenle/TankoVault/issues/308)) ([cff20a1](https://github.com/TimSchoenle/TankoVault/commit/cff20a10b24ccbbf28cbd15a3e6412c0d4b943fb))
+* **deps:** update taiki-e/install-action action to v2.87.0 ([#315](https://github.com/TimSchoenle/TankoVault/issues/315)) ([f7edd65](https://github.com/TimSchoenle/TankoVault/commit/f7edd65c880707af51f3813466dde7b9825b89c3))
+* **deps:** update taiki-e/install-action action to v2.87.1 ([#324](https://github.com/TimSchoenle/TankoVault/issues/324)) ([b83e70b](https://github.com/TimSchoenle/TankoVault/commit/b83e70b086c4664bdc1615e7e27912dd41e61d19))
+* **deps:** update timschoenle/actions/.github/workflows/maintenance-timed-auto-pr-approve.yaml to vworkflows-maintenance-timed-auto-pr-approve-v1.2.33 ([#317](https://github.com/TimSchoenle/TankoVault/issues/317)) ([b5635c0](https://github.com/TimSchoenle/TankoVault/commit/b5635c039975e610c62f7a2f217ecc8002270758))
+* **deps:** update timschoenle/actions/actions/common/commit-changes to vactions-common-commit-changes-v1.4.0 ([#320](https://github.com/TimSchoenle/TankoVault/issues/320)) ([b2ee1c8](https://github.com/TimSchoenle/TankoVault/commit/b2ee1c80bc7dc1424f42fd9733e4d0753197b222))
+* **deps:** update timschoenle/actions/actions/common/render-template to vactions-common-render-template-v1.1.2 ([#314](https://github.com/TimSchoenle/TankoVault/issues/314)) ([949b608](https://github.com/TimSchoenle/TankoVault/commit/949b608733f56fc39f9f9649ef0d3b02800a9dbf))
+* **deps:** update timschoenle/actions/actions/common/render-template-and-commit to vactions-common-render-template-and-commit-v1.1.4 ([#312](https://github.com/TimSchoenle/TankoVault/issues/312)) ([9b135f6](https://github.com/TimSchoenle/TankoVault/commit/9b135f62e26da44c118e4fb222a4702b92369a1c))
+* **deps:** update timschoenle/actions/actions/common/render-template-and-commit to vactions-common-render-template-and-commit-v1.1.5 ([#325](https://github.com/TimSchoenle/TankoVault/issues/325)) ([3da5ea4](https://github.com/TimSchoenle/TankoVault/commit/3da5ea4cea7d2089e58f9df19f1bfbd647628db7))
+* **deps:** update timschoenle/actions/actions/helm/update-chart-version to vactions-helm-update-chart-version-v1.6.4 ([#311](https://github.com/TimSchoenle/TankoVault/issues/311)) ([77028c5](https://github.com/TimSchoenle/TankoVault/commit/77028c507f842750b44a3ab077fb843666ddfea6))
+* **deps:** update timschoenle/actions/actions/helm/update-chart-version to vactions-helm-update-chart-version-v1.6.5 ([#326](https://github.com/TimSchoenle/TankoVault/issues/326)) ([6962e33](https://github.com/TimSchoenle/TankoVault/commit/6962e336a93bc4809e96fd86c55b060a2c07557c))
+
 ## [8.7.1](https://github.com/TimSchoenle/TankoVault/compare/v8.7.0...v8.7.1) (2026-08-27)
 
 

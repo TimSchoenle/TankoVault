@@ -165,7 +165,6 @@ scrambled, with nothing failing. It was found on `kaliscan` only after a full in
 | MangaHe | `mangahe.com` | Madara | family defaults | |
 | Zin Manga | `mangazin.org` | Madara | family defaults | |
 | ManhuaHot | `manhuahot.com` | Madara | family defaults | |
-| Manhuarm | `manhuarmtl.com` | Madara | family + listing/series | feed and catalogue use different cards |
 | S2Manga | `s2read.com` | Madara | family defaults | |
 | Setsu Scans | `setsuscans.com` | Madara | family + title | |
 | ToonGod | `www.toongod.org` | Madara | family + `/webtoon/` | feed is the archive, not `/` |

@@ -340,18 +340,35 @@ per-provider scoping of the opt-in.
 ## Novels are not comics
 
 Several platforms sell prose novels from the same catalogue, under the same URL prefix, as their
-comics — a "chapter" of one is text, so there are no pages to read and nothing to track. Each
-adapter drops them at the source, where the medium is still stated:
+comics — a "chapter" of one is text, so there are no pages to read and nothing to track. They are
+dropped from the listing, before the catalogue walk registers anything:
 
 | Provider | Signal |
 |---|---|
 | Iken sites | `isNovel`, or `seriesType == "NOVEL"` on rows that predate the flag |
 | Hive Toons | `seriesType == "NOVEL"` in the catalogue island |
+| Witch Toons | `type` on the listing row (`NOVEL`, `LIGHT_NOVEL`, `WEB_NOVEL`) |
 | Demonic Scans | the link prefix: the feed lists novels at `/novel/`, which the catalogue never yields and the site answers with a 404 |
+| every other site | a bracketed medium in the listed title — `The Former Supreme Master [Novel]` |
+
+The first four are platform fields, read by the adapter that knows the platform. The last is not:
+a site running a stock theme states the medium on the *series* page and nowhere the listing can
+see it, so its own title marker is the only signal available before registration. Thunder Scans
+is the case that shipped the guard — all seven of its novels are marked that way, its `span.type`
+badge is commented out of the template, and the rows were registered as series whose every reader
+link went to prose.
+
+Because that marker is a convention of the sites rather than of a theme, the check is applied
+once, in `build_adapter`, to every adapter it builds (`crates/adapters/src/medium.rs`). A guard
+some adapters carry is one the next provider silently does without. It matches only a whole
+bracketed tag: *The Novel's Extra* is a comic, and a substring test drops it.
 
 Dropping them at the adapter rather than at ingest matters for the walk: a catalogue's `has_next`
 is decided against the site's own collection total, and that total counts the novels. Paging on
-the *filtered* row count under-counts what each page consumed and walks past the end.
+the *filtered* row count under-counts what each page consumed and walks past the end. The shared
+guard filters what the adapter yielded and never what it concluded, for the same reason — on an
+install whose paginator is missing, `has_next` falls back to "this page yielded items", and a
+page of nothing but novels would otherwise end the walk with the rest of the catalogue unseen.
 
 ## Deriving a family's defaults
 

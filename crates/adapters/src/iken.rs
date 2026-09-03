@@ -8,6 +8,7 @@
 
 use crate::error::AdapterError;
 use crate::json::parse_json_body;
+use crate::medium::is_prose_medium;
 use crate::types::{
     CatalogItem, CatalogPage, ChapterAccess, ChapterMeta, Ctx, LatestUpdate, SeriesMeta,
     SourceAdapter,
@@ -372,7 +373,7 @@ impl SourceAdapter for IkenAdapter {
 /// Whether the platform's `seriesType` names a novel. `isNovel` is the primary flag, but rows
 /// predating it carry the fact only here.
 fn is_novel_type(series_type: Option<&str>) -> bool {
-    series_type.is_some_and(|t| t.eq_ignore_ascii_case("novel"))
+    series_type.is_some_and(is_prose_medium)
 }
 
 /// Split the platform's newline-separated alternative titles, then apply the ordinary

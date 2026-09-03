@@ -14,6 +14,7 @@ use crate::madara::madara_default_config;
 use crate::mangadex::MangaDexAdapter;
 use crate::manganato::{ManganatoAdapter, manganato_default_config};
 use crate::mangathemesia::mangathemesia_default_config;
+use crate::medium::ProseFiltered;
 use crate::mgread::{MgreadAdapter, mgread_default_config};
 use crate::types::SourceAdapter;
 use crate::webtoons::WebtoonsAdapter;
@@ -39,9 +40,22 @@ fn merge(base: &mut Value, over: &Value) {
 /// `config` as it stands, and `Custom` dispatches by slug — `kunmanga` reuses the Madara HTML
 /// selectors and overrides chapter fetching alone.
 ///
+/// Every one of them is wrapped in the prose guard (`medium::ProseFiltered`). This is the single
+/// seam every provider passes through, so it cannot be forgotten by a preset or by the next
+/// adapter added.
+///
 /// # Errors
 /// Malformed effective config, or an unregistered custom provider slug.
 pub fn build_adapter(
+    adapter: AdapterKind,
+    slug: &str,
+    config: &Value,
+) -> Result<Box<dyn SourceAdapter>, AdapterError> {
+    Ok(ProseFiltered::wrap(build_source(adapter, slug, config)?))
+}
+
+/// The provider's own adapter, before the prose guard is applied.
+fn build_source(
     adapter: AdapterKind,
     slug: &str,
     config: &Value,

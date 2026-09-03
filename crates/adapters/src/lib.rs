@@ -19,6 +19,7 @@ mod madara;
 mod mangadex;
 mod manganato;
 mod mangathemesia;
+mod medium;
 mod mgread;
 pub mod presets;
 mod types;

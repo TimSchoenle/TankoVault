@@ -12,6 +12,7 @@
 
 use crate::error::AdapterError;
 use crate::html::parse_blocking;
+use crate::medium::is_prose_medium;
 use crate::types::{
     CatalogItem, CatalogPage, ChapterAccess, ChapterMeta, Ctx, LatestUpdate, SeriesMeta,
     SourceAdapter,
@@ -178,8 +179,7 @@ fn status_of(value: &Value) -> SeriesStatus {
 /// The medium is what decides, not the URL: the platform stores prose at `/series/<slug>` like
 /// everything else.
 fn is_prose(row: &Value) -> bool {
-    first_str(row, &["type", "postType", "seriesType"])
-        .is_some_and(|t| t.eq_ignore_ascii_case("novel") || t.eq_ignore_ascii_case("light_novel"))
+    first_str(row, &["type", "postType", "seriesType"]).is_some_and(|t| is_prose_medium(&t))
         || row.get("isNovel").and_then(Value::as_bool) == Some(true)
 }
 

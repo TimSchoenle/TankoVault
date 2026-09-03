@@ -12,6 +12,18 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [8.9.2](https://github.com/TimSchoenle/TankoVault/compare/v8.9.1...v8.9.2) (2026-09-03)
+
+
+### Bug Fixes
+
+* **adapters:** drop prose novels from provider listings ([#335](https://github.com/TimSchoenle/TankoVault/issues/335)) ([113bd76](https://github.com/TimSchoenle/TankoVault/commit/113bd765eab34fc7f9a5493e3bdadc20b6b52ad1))
+
+
+### Miscellaneous
+
+* **deps:** update rust crate tower-http to v0.7.1 ([#336](https://github.com/TimSchoenle/TankoVault/issues/336)) ([37f5675](https://github.com/TimSchoenle/TankoVault/commit/37f567565f10f24be771a337f9ee14a613e3ce06))
+
 ## [8.9.1](https://github.com/TimSchoenle/TankoVault/compare/v8.9.0...v8.9.1) (2026-09-03)
 
 

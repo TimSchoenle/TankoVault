@@ -45,7 +45,7 @@ xtask = "the repository's task runner, not a service: its commands (migrate, see
 config-contract = "a build-time generator, not a service: it prints the configuration contract each image publishes and is run inside the build to produce that file"
 
 [workspace.package]
-version = "8.9.0"
+version = "8.9.1"
 edition = "2024"
 authors = ["TankoVault contributors"]
 # No member inherits this — each crate describes itself, and this describes the repository.

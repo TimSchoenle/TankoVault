@@ -12,6 +12,7 @@
 
 use crate::error::AdapterError;
 use crate::html::{absolutize, map_status, parse_blocking, text_from_fragment};
+use crate::medium::is_prose_medium;
 use crate::types::{
     CatalogItem, CatalogPage, ChapterAccess, ChapterMeta, Ctx, LatestUpdate, SeriesMeta,
     SourceAdapter,
@@ -109,11 +110,7 @@ fn field(value: &Value, key: &str) -> Option<String> {
 /// catalogue and its novels were ingested as series until the same check was added there. A novel
 /// here would be stored under [`SERIES_PREFIX`], which is not where the platform serves it.
 fn is_prose(row: &Value) -> bool {
-    field(row, "type").is_some_and(|t| {
-        t.eq_ignore_ascii_case("novel")
-            || t.eq_ignore_ascii_case("light_novel")
-            || t.eq_ignore_ascii_case("web_novel")
-    })
+    field(row, "type").is_some_and(|t| is_prose_medium(&t))
 }
 
 /// The stored path for a catalogue or feed row: `urlSlug` if the platform states one, else `slug`.

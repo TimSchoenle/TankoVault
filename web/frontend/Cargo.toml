@@ -270,7 +270,7 @@ windows-registry = { version = "0.6", optional = true }
 # both safe here, and neither needs a raw handle from `tao` — the monitor is identified by the
 # rectangle `tao` already reports, so nothing is transmuted across the two crates' notions of a
 # handle.
-winsafe = { version = "0.0.28", features = ["user"], optional = true }
+winsafe = { version = "0.0.29", features = ["user"], optional = true }
 
 # The Linux half of the same story: GDK reports the work area a compositor's panels leave, and
 # `tao` hands out the `gdk::Monitor` behind its own `MonitorHandle`. `gdk` rather than `gtk`

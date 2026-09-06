@@ -259,7 +259,7 @@ webauthn-authenticator-rs = { version = "=0.6.1-dev", features = [
 # dependencies (`windows-link`, `windows-result`, `windows-strings`) are already in this graph
 # below `keyring` and `notify-rust`. The dependency-free option was shelling out to `reg.exe` and
 # reading exit codes, which is a parser for output that is not a contract.
-windows-registry = { version = "0.6", optional = true }
+windows-registry = { version = "0.100", optional = true }
 # The monitor's *work area* behind `platform::fit_window_to_display` — what Windows leaves after
 # the taskbar, which `tao` does not expose (`MonitorHandle` offers only the whole monitor). The
 # window used to be sized to a fraction of the monitor and hope; this is the number the OS

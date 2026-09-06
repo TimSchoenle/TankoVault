@@ -99,8 +99,8 @@ when it publishes a port, so exposing one of those would put it on every interfa
 Nine images per release, each a `linux/amd64` + `linux/arm64` manifest list, on two registries:
 
 ```bash
-docker pull ghcr.io/timschoenle/tankovault/api:v8.9.2
-docker pull docker.io/timschoenle/tankovault-api:v8.9.2
+docker pull ghcr.io/timschoenle/tankovault/api:v8.9.3
+docker pull docker.io/timschoenle/tankovault-api:v8.9.3
 ```
 
 Substitute `api` for `bootstrap`, `challenge-solver`, `control-plane`, `frontend`, `notifier`,

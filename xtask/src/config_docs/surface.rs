@@ -2,9 +2,9 @@
 //! descend `#[derive(Deserialize)]` structs from each service's root `Config`, and
 //! [`direct_env_keys`] finds the keys no config struct has a field for: `std::env::var("…")`
 //! call sites that bypass the layering, and the loader-builder calls that name the variables
-//! driving it. The walker **refuses** any `serde` attribute it doesn't model
-//! (`flatten`, `rename_all`) rather than guessing, since a gate that quietly mis-derives
-//! blesses a wrong document with a green tick.
+//! driving it. The walker **refuses** any `serde` attribute it doesn't model (`alias`,
+//! `rename_all`) rather than guessing, since a gate that quietly mis-derives blesses a wrong
+//! document with a green tick.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -25,6 +25,9 @@ struct Field {
     /// The declared type, `Option`/`Box` already unwrapped. `None` for a type that cannot
     /// name a struct at all (a tuple, a reference), which is always a leaf.
     ty: Option<TypeRef>,
+    /// `#[serde(flatten)]`: the field contributes its own block's keys at *this* level, so
+    /// [`descend`] does not push [`Self::key`] onto the path.
+    flatten: bool,
 }
 
 /// A field's type path, reduced to the qualifier and the name.
@@ -116,13 +119,36 @@ fn descend(
 
     stack.push(name.to_owned());
     for field in &block.fields {
-        path.push(field.key.clone());
         // A field whose type names a struct in either table is a nested block; anything else
         // — a scalar, a `Vec`, an enum — is a value figment parses directly.
         let nested = match field.ty.as_ref() {
             Some(ty) => resolve(local, shared, &ty.name, ty.qualifier.as_deref())?.and(Some(ty)),
             None => None,
         };
+        // A flattened field owns no segment of its own: serde merges its block into this one, so
+        // its keys are derived at this level. That only holds for a block — `#[serde(flatten)]`
+        // over a map collects whatever keys the input happens to carry, which no walk can
+        // enumerate, so it is refused rather than derived as empty.
+        if field.flatten {
+            let Some(ty) = nested else {
+                bail!(
+                    "`{name}`'s field `{}` is `#[serde(flatten)]` over something that is \
+                     not a config block, so the keys it answers to cannot be derived",
+                    field.key
+                );
+            };
+            descend(
+                local,
+                shared,
+                &ty.name,
+                ty.qualifier.as_deref(),
+                path,
+                stack,
+                keys,
+            )?;
+            continue;
+        }
+        path.push(field.key.clone());
         if let Some(ty) = nested {
             descend(
                 local,
@@ -237,6 +263,7 @@ fn block_from(item: &syn::ItemStruct, origin: &str) -> Result<Option<Block>> {
         fields.push(Field {
             key: meta.rename.unwrap_or_else(|| ident.to_string()),
             ty: type_ref(&field.ty),
+            flatten: meta.flatten,
         });
     }
     Ok(Some(Block {
@@ -293,6 +320,7 @@ fn reject_container_renames(attrs: &[syn::Attribute]) -> Result<()> {
 struct FieldMeta {
     rename: Option<String>,
     skip: bool,
+    flatten: bool,
 }
 
 fn field_serde(attrs: &[syn::Attribute]) -> Result<FieldMeta> {
@@ -307,7 +335,9 @@ fn field_serde(attrs: &[syn::Attribute]) -> Result<FieldMeta> {
                 out.rename = Some(meta.value()?.parse::<syn::LitStr>()?.value());
             } else if meta.path.is_ident("skip") || meta.path.is_ident("skip_deserializing") {
                 out.skip = true;
-            } else if meta.path.is_ident("flatten") || meta.path.is_ident("alias") {
+            } else if meta.path.is_ident("flatten") {
+                out.flatten = true;
+            } else if meta.path.is_ident("alias") {
                 unsupported = meta.path.get_ident().map(ToString::to_string);
                 skip_value(&meta)?;
             } else {
@@ -537,22 +567,49 @@ mod tests {
         );
     }
 
-    /// A `flatten` lifts its fields into the parent's key space, so every key beneath it would
-    /// be derived one level too deep. Refusing is the point: a gate that mis-derives blesses a
-    /// wrong document with a green tick.
+    /// A `flatten` lifts its block's fields into the parent's key space, which is how one key
+    /// can be declared once and read by services that need different halves of a section
+    /// (`metadata.tags`). Derived one level too deep it would name keys nothing reads, and the
+    /// document would be wrong in the direction a green tick hides.
     #[test]
-    fn flatten_is_refused_rather_than_guessed_at() {
-        let mut t = Table::default();
-        let file = syn::parse_file(
-            r"
+    fn flatten_contributes_its_keys_at_the_parent_level() {
+        assert_eq!(
+            keys(
+                r"
                 #[derive(Deserialize)]
-                struct Config { #[serde(flatten)] inner: Inner }
+                struct Config { tags: TagIntakeConfig }
+                #[derive(Deserialize)]
+                struct TagIntakeConfig {
+                    #[serde(flatten)] terms: TermBlocklistConfig,
+                    #[serde(flatten)] adult: AdultTagConfig,
+                }
+                #[derive(Deserialize)]
+                struct TermBlocklistConfig { blocklist: Vec<String> }
+                #[derive(Deserialize)]
+                struct AdultTagConfig { adult_tags: Vec<String> }
+            "
+            ),
+            ["TANKOVAULT_TAGS__ADULT_TAGS", "TANKOVAULT_TAGS__BLOCKLIST"]
+        );
+    }
+
+    /// The one `flatten` that still cannot be derived: over a map it answers to whatever keys
+    /// the input carries, and a walk that treated it as contributing none would quietly shrink
+    /// the surface.
+    #[test]
+    fn flatten_over_something_that_is_not_a_block_is_refused() {
+        let err = walk(
+            &table(
+                r"
+                #[derive(Deserialize)]
+                struct Config { #[serde(flatten)] extra: HashMap<String, String> }
             ",
+            ),
+            &Table::default(),
+            "Config",
         )
-        .expect("parses");
-        let err = super::collect(&file.items, "<test>", &mut t.blocks)
-            .expect_err("flatten is not modelled");
-        assert!(format!("{err:#}").contains("flatten"), "{err:#}");
+        .expect_err("a flattened map is not modelled");
+        assert!(format!("{err:#}").contains("not a config block"), "{err:#}");
     }
 
     /// Likewise for a container-level `rename_all`, which rewrites every key at once.

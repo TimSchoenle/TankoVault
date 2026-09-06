@@ -82,10 +82,13 @@ pub struct MetadataConfig {
     #[serde(default)]
     pub priority: MetadataPriority,
     /// Which scraped "genres" intake refuses. Shared with the worker via
-    /// [`tankovault_config::TagIntakeConfig`], because both write the same `tags` vocabulary.
+    /// [`tankovault_config::TermBlocklistConfig`], because both write the same `tags` vocabulary.
+    /// The classifier half of `metadata.tags` is the worker's and the API's; the enrichment
+    /// writer takes `is_adult` from `AniList`, so declaring it here would put a key in this
+    /// image's contract that its binary never reads.
     #[serde(default)]
     #[config(nested)]
-    pub tags: tankovault_config::TagIntakeConfig,
+    pub tags: tankovault_config::TermBlocklistConfig,
     /// Whether the background enrichment worker runs. On by default.
     #[serde(default = "default_enrich_enabled")]
     pub enrich_enabled: bool,
@@ -231,7 +234,7 @@ impl Default for MetadataConfig {
     fn default() -> Self {
         Self {
             priority: MetadataPriority::default(),
-            tags: tankovault_config::TagIntakeConfig::default(),
+            tags: tankovault_config::TermBlocklistConfig::default(),
             enrich_enabled: default_enrich_enabled(),
             enrich_interval_secs: default_enrich_interval_secs(),
             enrich_batch: default_enrich_batch(),

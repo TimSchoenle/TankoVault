@@ -313,6 +313,89 @@ mod tests {
         assert_eq!(rest, ["--format", "labels", "--revision", "deadbeef"]);
     }
 
+    /// The `metadata` section, per service, because it is the one that broke the rule this
+    /// generator exists for. All three services that touch metadata embedded the *writers'*
+    /// section type, so `api`'s document asserted its image reads the seven `metadata.priority.*`
+    /// keys it has never consulted and `sync`'s claimed the adult classifier it takes from
+    /// `AniList` instead. The chart repo's binding gate reads these documents literally and
+    /// demanded a chart value for every one of them.
+    ///
+    /// Written out per service rather than derived: the point is that the sets *differ*, and a
+    /// rule computed from the same types it is checking would go on passing when they merge back.
+    #[test]
+    fn each_service_declares_only_the_metadata_keys_its_binary_reads() {
+        const PRIORITY: [&str; 7] = [
+            "metadata.priority.content_type",
+            "metadata.priority.cover",
+            "metadata.priority.default",
+            "metadata.priority.description",
+            "metadata.priority.release_year",
+            "metadata.priority.status",
+            "metadata.priority.title",
+        ];
+        let expected = |service: &str| -> Vec<String> {
+            let mut keys: Vec<String> = match service {
+                // Reads the classifier alone: it writes no metadata, and shares that one list
+                // with the worker so the genres `GET /v1/tags` withholds are the genres that
+                // close the gate.
+                "api" => vec!["metadata.tags.adult_tags".to_owned()],
+                // Writes metadata and refuses vocabulary, but classifies nothing: `is_adult`
+                // comes from `AniList`.
+                "sync" => PRIORITY
+                    .iter()
+                    .map(|key| (*key).to_owned())
+                    .chain(
+                        [
+                            "metadata.enrich_batch",
+                            "metadata.enrich_enabled",
+                            "metadata.enrich_interval_secs",
+                            "metadata.enrich_max_series",
+                            "metadata.tags.blocklist",
+                            "metadata.tags.use_defaults",
+                        ]
+                        .iter()
+                        .map(|key| (*key).to_owned()),
+                    )
+                    .collect(),
+                // The ingest path: it applies every rule in the section.
+                "worker" => PRIORITY
+                    .iter()
+                    .map(|key| (*key).to_owned())
+                    .chain(
+                        [
+                            "metadata.tags.adult_tags",
+                            "metadata.tags.blocklist",
+                            "metadata.tags.use_defaults",
+                        ]
+                        .iter()
+                        .map(|key| (*key).to_owned()),
+                    )
+                    .collect(),
+                _ => Vec::new(),
+            };
+            keys.sort();
+            keys
+        };
+
+        for service in SERVICES {
+            let document: serde_json::Value =
+                serde_json::from_str(&render(service, Format::Contract))
+                    .unwrap_or_else(|error| panic!("{service}'s contract is not JSON: {error}"));
+            let keys = document["schema"]["keys"]
+                .as_array()
+                .unwrap_or_else(|| panic!("{service}'s contract carries no keys"));
+            let mut declared: Vec<String> = keys
+                .iter()
+                .filter_map(|key| key["path"].as_str())
+                .filter(|path| path.starts_with("metadata."))
+                .map(str::to_owned)
+                .collect();
+            declared.sort();
+
+            assert_eq!(declared, expected(service), "{service}");
+        }
+    }
+
     /// `--services` and `--service` are one piece of state, and the contract that lists them is
     /// what `xtask config-contract` walks before it asks for a single document.
     #[test]

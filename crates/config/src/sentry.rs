@@ -65,6 +65,7 @@ pub struct SentryConfig {
     pub server_name: Option<String>,
     /// Fraction of captured events actually sent, `0.0`-`1.0`. A blunt volume cap — it drops
     /// whole issues, not repetitions of one — so leave it at `1.0` unless quota forces it.
+    #[config(range(min = 0.0, max = 1.0))]
     #[serde(default = "SentryConfig::default_sample_rate")]
     pub sample_rate: f32,
     /// Fraction of traces this service **starts** that are recorded, `0.0`-`1.0`.
@@ -75,13 +76,16 @@ pub struct SentryConfig {
     /// the whole tier rather than ending at the first service configured differently. Set it
     /// uniformly anyway — `0.05`-`0.2` is an ordinary production figure — since the service
     /// that *starts* a trace is the one whose rate decides whether it exists at all.
+    #[config(range(min = 0.0, max = 1.0))]
     #[serde(default)]
     pub traces_sample_rate: f32,
     /// Least severe `tracing` level reported as a Sentry **issue**.
+    #[config(values)]
     #[serde(default)]
     pub capture_level: SentryLevel,
     /// Least severe `tracing` level kept as a **breadcrumb** — the trail attached to the next
     /// issue. Records at or above [`Self::capture_level`] become issues instead.
+    #[config(values)]
     #[serde(default = "SentryConfig::default_breadcrumb_level")]
     pub breadcrumb_level: SentryLevel,
     /// How many breadcrumbs one event carries.

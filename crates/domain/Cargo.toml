@@ -28,6 +28,10 @@ sqlx = { workspace = true, optional = true, default-features = false, features =
 # validate a URL they are about to store enable `dns`; `crates/api-client` — and through it the
 # browser bundle — depends on this crate with both features off.
 tokio = { workspace = true, optional = true }
+# Optional and feature-gated for the third time, and for the same reason: `terrace-config` pulls
+# figment, which does not build for `wasm32`. Only `tankovault-config` enables `schema`, so the
+# browser bundle — which reaches this crate through `crates/api-client` — links none of it.
+terrace-config = { workspace = true, optional = true, features = ["schema"] }
 
 [features]
 # Derives `sqlx::Type` on the domain enums so repositories can bind/decode them as
@@ -37,6 +41,12 @@ sqlx = ["dep:sqlx"]
 # handler needs before *persisting* an operator-supplied URL. Enabled by `tankovault-fetch`
 # (which re-exports them) and by `services/api`, which needs them without the crawl stack.
 dns = ["dep:tokio"]
+# Derives `Describe` on the two types a *configuration* key holds — `MetadataPriority` and the
+# `MetadataSource` its lists are made of. Enabled by `tankovault-config`, which owns the
+# `metadata.priority` key: terrace-config refuses a key whose type publishes no shape, and a
+# mirror cannot stand in for a struct the way `values_from` does for an enum, so the type itself
+# has to describe itself. Gated because this crate also compiles for `wasm32`.
+schema = ["dep:terrace-config"]
 
 [dev-dependencies]
 proptest = { workspace = true }

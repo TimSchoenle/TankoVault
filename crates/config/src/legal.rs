@@ -37,12 +37,18 @@ pub struct LegalConfig {
     /// `imprint`, …).
     ///
     /// A map rather than a struct of known documents on purpose — see the module docs.
+    #[config(element)]
     pub documents: BTreeMap<String, LegalDocument>,
 }
 
 /// One published document: either files to serve, or somewhere else to send the reader.
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(default)]
+// `deny_unknown_fields` closes this level and only this level. The *slugs* stay the operator's
+// to choose — the map around this struct is open, which is the whole point of the module — but a
+// document's own four keys are this build's, and each decides whether a link the footer already
+// publishes resolves. A misspelt `sources` is otherwise a permanent 404 on a Data Policy nobody
+// notices is missing.
+#[derive(Debug, Clone, Default, Deserialize, Describe)]
+#[serde(default, deny_unknown_fields)]
 pub struct LegalDocument {
     /// Markdown file per locale, keyed by the language code the frontend uses (`en`, `de`).
     ///
@@ -157,6 +163,48 @@ impl LegalConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A document is closed, and the map of slugs around it is not.
+    ///
+    /// The bug: `updated` and `title` are the two keys nothing else validates, so a misspelt one
+    /// was accepted, dropped, and the footer published a policy with no date and the slug for a
+    /// title — with nothing anywhere saying the operator's line had been ignored. Reached
+    /// through the real loader, because what has to refuse it is the deserialiser and not a
+    /// hand-written check.
+    ///
+    /// The second half is the other direction and matters as much: closing the document must not
+    /// close the map, or an operator publishing `dmca` — a slug this build has never heard of —
+    /// would stop being able to.
+    #[test]
+    fn an_undeclared_key_inside_a_document_is_refused_and_an_unknown_slug_is_not() {
+        #[derive(Debug, serde::Deserialize)]
+        struct Sample {
+            #[serde(default)]
+            legal: LegalConfig,
+        }
+
+        let harness = || terrace_config::testing::Harness::over(crate::terrace());
+
+        harness().run(|jail| {
+            jail.config(
+                "[legal.documents.terms]\nurl = \"https://example.org/terms\"\nupdatd = \
+                 \"2026-01-01\"\n",
+            )?;
+            let error = crate::load::<Sample>().expect_err("a misspelt document key must refuse");
+            assert!(error.to_string().contains("updatd"), "{error}");
+            Ok(())
+        });
+
+        harness().run(|jail| {
+            jail.config("[legal.documents.dmca]\nurl = \"https://example.org/dmca\"\n")?;
+            let cfg: Sample = crate::load()?;
+            assert!(
+                cfg.legal.document("dmca").is_some(),
+                "the slugs are the operator's to choose"
+            );
+            Ok(())
+        });
+    }
 
     fn inline(locales: &[&str]) -> LegalDocument {
         LegalDocument {

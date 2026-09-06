@@ -58,6 +58,14 @@ TANKOVAULT_CHANNELS__EMAIL_TO='["ops@example.com"]'
 An **unknown** `TANKOVAULT_*` key is ignored, not rejected. A typo therefore fails silently —
 so does a key that has been removed (see [§8](#8-removed-keys)).
 
+**Two objects are exceptions and refuse an undeclared key at boot**: one entry of
+`internal.peers`, and one entry of `legal.documents`. Both are values inside an operator-keyed
+map, so the *names* stay open — a caller, or a document slug this build has never heard of, is
+still the operator's to choose — while the fixed keys inside one entry are this build's, and
+each of them decides whether a credential is verified or a published link resolves. The
+generated contracts say so too (`additionalProperties: false` on those two objects and nowhere
+else), so a validator reading the contract and the loader agree about which keys exist.
+
 **Every service reports its layers at boot.** The log line lists each layer in precedence order
 and, for every key that was supplied, which layer it came from — and it *warns* for a key more
 than one layer supplies. Layers 3, 4 and 5 refuse that combination outright, so what the warning
@@ -275,7 +283,7 @@ A file that disappears degrades to `404` and a warning, never a panic.
 | Key | Default | Notes |
 |---|---|---|
 | `TANKOVAULT_LEGAL__DIR` | *(unset)* | Root that relative `sources` paths resolve against. An absolute `source` wins over it, so a single absolute path in one variable works without also setting a root. |
-| `TANKOVAULT_LEGAL__DOCUMENTS` | `{}` | The published documents, **keyed by URL slug** — so an operator can publish a document this build has never heard of (`dmca`, `acceptable_use`) with no code change. Each value is `{ sources: { <locale>: <path> }, url, updated, title: { <locale>: <text> } }`. `sources` and `url` are mutually exclusive and one is required: a document with neither, or with both, is **refused at boot** naming the slug, because the alternative is a permanent 404 on a link the footer publishes from the same config. As a map it is one figment value, so it takes either a whole JSON object or the usual `__` nesting per leaf: `TANKOVAULT_LEGAL__DOCUMENTS__TERMS__SOURCES__EN=/etc/tankovault/legal/terms.en.md`. `updated` is free text shown verbatim — a file mtime is the wrong answer, since touching a file is not amending a policy. |
+| `TANKOVAULT_LEGAL__DOCUMENTS` | `{}` | The published documents, **keyed by URL slug** — so an operator can publish a document this build has never heard of (`dmca`, `acceptable_use`) with no code change. Each value is `{ sources: { <locale>: <path> }, url, updated, title: { <locale>: <text> } }`, and a key inside one document that is **not** one of those four is refused at boot rather than ignored, so a misspelt `updated` or `title` fails the deploy instead of vanishing. The slugs themselves stay open. `sources` and `url` are mutually exclusive and one is required: a document with neither, or with both, is **refused at boot** naming the slug, because the alternative is a permanent 404 on a link the footer publishes from the same config. As a map it is one figment value, so it takes either a whole JSON object or the usual `__` nesting per leaf: `TANKOVAULT_LEGAL__DOCUMENTS__TERMS__SOURCES__EN=/etc/tankovault/legal/terms.en.md`. `updated` is free text shown verbatim — a file mtime is the wrong answer, since touching a file is not amending a policy. |
 
 `deploy/legal/` holds working samples that say so in their first line, mounted read-only by the
 reference compose file. They are not legal advice and not fit for a deployment; replace them.
@@ -573,7 +581,7 @@ So a caller sets `internal.caller.*`, a callee sets `internal.peers.*`, and `wor
 | `TANKOVAULT_INTERNAL__IDENTITY` | `off` | all | `off`, `token` or `mtls`. `off` is refused under `TANKOVAULT_PROFILE=production`. |
 | `TANKOVAULT_INTERNAL__CALLER__NAME` | *(unset)* | api, worker | The name this service is known by; must match the key its peers list it under. |
 | `TANKOVAULT_INTERNAL__CALLER__TOKEN` | *(unset)* | api, worker | Required under `identity=token`. Minimum 32 characters, checked in every profile. `openssl rand -hex 32`. Ignored under `mtls`, where the client certificate is the credential. |
-| `TANKOVAULT_INTERNAL__PEERS` | *(empty)* | control-plane, worker, sync, render, challenge-solver | A **map keyed by caller name**, so the environment spelling is `TANKOVAULT_INTERNAL__PEERS__<NAME>__TOKEN` (or `__SAN`) — e.g. `TANKOVAULT_INTERNAL__PEERS__API__TOKEN`. Under `token` each entry needs a `token`; under `mtls` each needs a `san`. A peer carrying the wrong one for the active mode is refused at boot. Because the keys are dynamic, `xtask config-docs` can only see this root — the per-peer keys are documented by this row, not derived. |
+| `TANKOVAULT_INTERNAL__PEERS` | *(empty)* | control-plane, worker, sync, render, challenge-solver | A **map keyed by caller name**, so the environment spelling is `TANKOVAULT_INTERNAL__PEERS__<NAME>__TOKEN` (or `__SAN`) — e.g. `TANKOVAULT_INTERNAL__PEERS__API__TOKEN`. Under `token` each entry needs a `token`; under `mtls` each needs a `san`. A peer carrying the wrong one for the active mode is refused at boot, and so is a key inside an entry that is neither `token` nor `san`: an undeclared one is a credential written under a name nothing reads, which is an authorisation the deployment believes it configured and does not have. The caller names stay open. Because the keys are dynamic, `xtask config-docs` can only see this root — the per-peer keys are documented by this row, not derived. |
 | `TANKOVAULT_INTERNAL__TLS__CERT` | *(unset)* | all under `mtls` | PEM certificate chain this service serves and presents. |
 | `TANKOVAULT_INTERNAL__TLS__KEY` | *(unset)* | all under `mtls` | PEM private key for the above. PKCS#8, PKCS#1 and SEC1 are all accepted — cert-manager's default `privateKey.encoding` and `openssl genrsa` write PKCS#1, `openssl ecparam -genkey` writes SEC1 — and the key is re-encoded as PKCS#8 when it is read, because the outbound stacks do not agree on which forms they take. |
 | `TANKOVAULT_INTERNAL__TLS__CA` | *(unset)* | all under `mtls` | PEM bundle of the authorities a peer certificate must chain to. **Only these** — the public root store is switched off on internal clients, since a peer signed by a public CA is not a peer. |

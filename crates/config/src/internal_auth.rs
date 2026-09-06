@@ -62,7 +62,12 @@ pub struct CallerConfig {
 }
 
 /// One service permitted to call this one. Absent on a service nobody calls.
+// `deny_unknown_fields` closes the peer, not the map around it: the caller *names* stay the
+// operator's, and only these two keys carry a credential. An undeclared key here is a
+// credential written under a name nothing reads, which under `token` or `mtls` is an
+// authorisation this deployment believes it configured and does not have.
 #[derive(Debug, Clone, Default, Deserialize, Describe)]
+#[serde(deny_unknown_fields)]
 pub struct PeerConfig {
     /// The token this peer presents under `identity = "token"`.
     #[config(secret)]
@@ -420,6 +425,48 @@ mod tests {
             peers: BTreeMap::from([("api".to_owned(), peer)]),
             ..Default::default()
         }
+    }
+
+    /// A peer entry is closed, and the map of caller names around it is not.
+    ///
+    /// The bug: `TANKOVAULT_INTERNAL__PEERS__API__TOKNE` was accepted and dropped, leaving the
+    /// peer with no token. Under `identity=token` that is caught by [`InternalAuthConfig::
+    /// resolve`] — but as "api has no token", about a key the operator can see they set, which
+    /// sends them looking at the value rather than at its spelling. Refusing at the
+    /// deserialiser names the misspelling itself.
+    ///
+    /// The second half is the other direction and matters as much: closing the entry must not
+    /// close the map, or a deployment naming a caller this build does not ship would stop
+    /// booting.
+    #[test]
+    fn an_undeclared_key_inside_a_peer_is_refused_and_an_unknown_caller_name_is_not() {
+        #[derive(Debug, serde::Deserialize)]
+        struct Sample {
+            #[serde(default)]
+            internal: InternalAuthConfig,
+        }
+
+        let harness = || terrace_config::testing::Harness::over(crate::terrace());
+
+        harness().run(|jail| {
+            jail.config("[internal.peers.api]\ntokne = \"tttttttttttttttttttttttttttttttt\"\n")?;
+            let error = crate::load::<Sample>().expect_err("a misspelt peer key must refuse");
+            assert!(error.to_string().contains("tokne"), "{error}");
+            Ok(())
+        });
+
+        harness().run(|jail| {
+            jail.config(
+                "[internal.peers.some-sidecar]\ntoken = \
+                 \"tttttttttttttttttttttttttttttttt\"\n",
+            )?;
+            let cfg: Sample = crate::load()?;
+            assert!(
+                cfg.internal.peers.contains_key("some-sidecar"),
+                "the caller names are the operator's to choose"
+            );
+            Ok(())
+        });
     }
 
     /// The retired key must not be silently ignored. A deployment that upgrades while still

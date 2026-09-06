@@ -43,15 +43,19 @@ pub struct ChapterOutlierConfig {
     #[serde(default = "default_min_body")]
     pub min_body: usize,
     /// Absolute floor on a suspicious jump, in chapter numbers.
+    #[config(range(exclusive_min = 0.0))]
     #[serde(default = "default_min_gap")]
     pub min_gap: f64,
     /// Multiple of typical spacing past which a jump is suspicious.
+    #[config(range(exclusive_min = 0.0))]
     #[serde(default = "default_gap_factor")]
     pub gap_factor: f64,
     /// Multiple of typical spacing past which a trailing run is noise, not a continuation.
+    #[config(range(exclusive_min = 0.0))]
     #[serde(default = "default_sparse_factor")]
     pub sparse_factor: f64,
     /// Ceiling on the fraction of one listing a scan may reject.
+    #[config(range(min = 0.0, max = 1.0))]
     #[serde(default = "default_max_rejected_fraction")]
     pub max_rejected_fraction: f64,
 }
@@ -102,6 +106,11 @@ impl ChapterOutlierConfig {
     ///
     /// # Errors
     /// [`ConfigError::Invalid`] naming the first key that is out of range.
+    //
+    // The three factor bounds and the fraction ceiling below are also published by
+    // `#[config(range(...))]` on the fields, so a consumer of the contract sees the same
+    // interval this refuses outside of. The two must be changed together; the schema's job is
+    // to state the bound, and this one's is to be the thing that actually holds it.
     pub fn validate(&self) -> Result<(), ConfigError> {
         for (key, value) in [
             ("min_gap", self.min_gap),

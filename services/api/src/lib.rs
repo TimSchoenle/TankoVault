@@ -406,6 +406,7 @@ fn documented_router() -> OpenApiRouter<AppState> {
         .routes(routes!(series::list))
         .routes(routes!(series::detail))
         .routes(routes!(series::chapters))
+        .routes(routes!(series::chapters_by_source))
         .routes(routes!(series::similar))
         .routes(routes!(series::tags))
         // public provider list for the Discover filter (§9.3)

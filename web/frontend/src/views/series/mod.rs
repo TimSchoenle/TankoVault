@@ -37,6 +37,8 @@ use model::{
     MergedChapter, RankedSource,
 };
 use progenitor_client::ResponseValue;
+use std::collections::HashMap;
+
 /// Every source's chapter list, in the order the API returned the sources.
 type SourceChapters = Vec<(SourceDto, Vec<ChapterDto>)>;
 
@@ -105,8 +107,12 @@ fn SeriesPage(id: String) -> Element {
         }
     });
 
-    // One request per source, issued together. Reading `detail` here subscribes this resource
-    // to it, so the fan-out starts once the series lands and re-runs on `reload_progress`.
+    // Every source's list in one request. Reading `detail` here subscribes this resource to it,
+    // so the fetch starts once the series lands and re-runs on `reload_progress`.
+    //
+    // Deliberately *not* a per-source fan-out any more: one request per source, re-issued in
+    // full on every read toggle, spent the caller's rate-limit burst on a well-carried title and
+    // the screen answered its own reads with `429`.
     let per_source = use_resource(move || {
         reload_progress.track();
         let sources: Vec<SourceDto> = match &*detail.read() {
@@ -115,24 +121,28 @@ fn SeriesPage(id: String) -> Element {
         };
         let client = api.client();
         async move {
-            let fetches = sources.into_iter().map(|source| {
-                let client = client.clone();
-                async move {
-                    let list = client
-                        .chapters()
-                        .id(id)
-                        .source(source.id.to_string())
-                        .send()
-                        .await
-                        .map(ResponseValue::into_inner)
-                        .map_err(|e| api::friendly_error(i18n, e))?;
-                    Ok::<_, String>((source, list))
-                }
-            });
-            futures_util::future::join_all(fetches)
+            if sources.is_empty() {
+                return Ok(SourceChapters::new());
+            }
+            let lists = client
+                .chapters_by_source()
+                .id(id)
+                .send()
                 .await
+                .map(ResponseValue::into_inner)
+                .map_err(|e| api::friendly_error(i18n, e))?;
+            let mut by_source: HashMap<SeriesSourceId, Vec<ChapterDto>> = lists
                 .into_iter()
-                .collect::<Result<SourceChapters, String>>()
+                .map(|list| (list.source_id, list.chapters))
+                .collect();
+            // Keyed off `detail`'s sources rather than the response order, so a source the
+            // detail does not list cannot appear on the screen.
+            Ok::<_, String>(
+                sources
+                    .into_iter()
+                    .filter_map(|source| by_source.remove(&source.id).map(|list| (source, list)))
+                    .collect(),
+            )
         }
     });
 

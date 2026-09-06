@@ -629,20 +629,107 @@ pub async fn chapters(
     let chapters =
         tankovault_db::repo::catalog::list_chapters_across(&state.pool, &member_ids, user).await?;
 
-    let out = chapters
+    Ok(Json(chapter_dtos(chapters, &base_url, user, progress)?))
+}
+
+/// Project one provider group's chapters onto the wire, resolving links against that
+/// provider's `base_url`.
+///
+/// `viewer` is what distinguishes the two meanings of `read`: `None` (anonymous) omits the
+/// field, an authenticated caller with no progress row still gets `Some(false)`.
+fn chapter_dtos(
+    chapters: Vec<tankovault_domain::Chapter>,
+    base_url: &str,
+    viewer: Option<UserId>,
+    progress: Option<tankovault_db::repo::tracking::ReadProgress>,
+) -> ApiResult<Vec<ChapterDto>> {
+    chapters
         .into_iter()
         .map(|c| {
             Ok(ChapterDto {
                 number: c.number,
                 title: c.title,
-                url: resolve_link(&base_url, &c.path).map_err(|_| ApiError::Internal)?,
+                url: resolve_link(base_url, &c.path).map_err(|_| ApiError::Internal)?,
                 published_at: c.published_at,
-                read: user
+                read: viewer
                     .is_some()
                     .then(|| progress.is_some_and(|p| p.covers(c.number))),
             })
         })
-        .collect::<ApiResult<Vec<_>>>()?;
+        .collect()
+}
+
+/// One provider group's chapter list, keyed by the same `source_id` that
+/// `GET /v1/series/{id}` publishes for that group.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct SourceChaptersDto {
+    /// The group's outbound-link source, matching `SourceDto::id` in the series detail.
+    pub source_id: SeriesSourceId,
+    /// That source's chapters, newest first — identical to what `GET .../chapters?source=`
+    /// answers for it.
+    pub chapters: Vec<ChapterDto>,
+}
+
+/// List every source's chapters
+///
+/// The whole-screen counterpart to `GET /v1/series/{id}/chapters`: one entry per source of
+/// the series, in the order `GET /v1/series/{id}` lists them.
+// Exists because the series screen merges every source's list, and doing that with one
+// `.../chapters?source=` call per source made a page load cost one request per provider —
+// re-issued in full whenever a chapter was marked read. On a title carried by many providers
+// that alone exhausted the caller's rate-limit burst, so the screen answered its own reads
+// with `429`. Serving the fan-out here also collapses the per-request repeats of the source,
+// provider and progress lookups into one each. Keep the two handlers' read-state and
+// early-access filtering identical: they answer the same question for the same screen.
+#[utoipa::path(
+    get,
+    path = "/v1/series/{id}/chapters/by-source",
+    tag = SERIES_TAG,
+    params(("id" = SeriesId, Path, description = "Series id")),
+    security((), ("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Each source's chapters, newest first", body = Vec<SourceChaptersDto>),
+        (status = 404, description = "Series not found", body = crate::error::ProblemDetails),
+    )
+)]
+pub async fn chapters_by_source(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<SeriesId>,
+) -> ApiResult<Json<Vec<SourceChaptersDto>>> {
+    use tankovault_db::repo::{catalog, providers, tracking};
+
+    let sources = catalog::list_sources_for_series(&state.pool, id).await?;
+    let groups = group_sources_by_provider(&sources);
+
+    let provider_ids: Vec<ProviderId> = groups.iter().map(|g| g.provider_id).collect();
+    let base_urls: HashMap<ProviderId, String> = providers::get_many(&state.pool, &provider_ids)
+        .await?
+        .into_iter()
+        .map(|p| (p.id, p.base_url))
+        .collect();
+
+    // Read once for the whole series rather than once per source: the frontier is per series,
+    // not per provider. Both frontiers are needed — see [`chapters`].
+    let user = optional_user(&state, &headers);
+    let progress = match user {
+        Some(user_id) => tracking::progress_get_full(&state.pool, user_id, id).await?,
+        None => None,
+    };
+
+    let mut out = Vec::with_capacity(groups.len());
+    for group in &groups {
+        // Unreachable today (the foreign key guarantees it); treated as "not found" rather
+        // than unwrapped so it stays that way if the constraint ever changes.
+        let base_url = base_urls
+            .get(&group.provider_id)
+            .ok_or(ApiError::NotFound)?;
+        let chapters = catalog::list_chapters_across(&state.pool, &group.member_ids, user).await?;
+        out.push(SourceChaptersDto {
+            source_id: group.link_id,
+            chapters: chapter_dtos(chapters, base_url, user, progress)?,
+        });
+    }
     Ok(Json(out))
 }
 

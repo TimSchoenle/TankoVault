@@ -2,7 +2,7 @@
   "terrace_contract": 1,
   "app": {
     "name": "tankovault-sync",
-    "version": "v8.9.2",
+    "version": "v8.9.3",
     "source": "https://github.com/TimSchoenle/TankoVault"
   },
   "schema": {

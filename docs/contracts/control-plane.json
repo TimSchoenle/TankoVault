@@ -343,6 +343,8 @@
         "ty": "f32",
         "values": [],
         "constraint": {
+          "maximum": 1.0,
+          "minimum": 0.0,
           "type": "number"
         },
         "text_form": "unknown",
@@ -366,6 +368,8 @@
         "ty": "f32",
         "values": [],
         "constraint": {
+          "maximum": 1.0,
+          "minimum": 0.0,
           "type": "number"
         },
         "text_form": "unknown",
@@ -387,8 +391,30 @@
         "secrets_file": "telemetry__sentry__capture_level",
         "docs": "Least severe `tracing` level reported as a Sentry **issue**.",
         "ty": "SentryLevel",
-        "values": [],
-        "text_form": "unknown",
+        "values": [
+          "off",
+          "error",
+          "warn",
+          "info",
+          "debug",
+          "trace"
+        ],
+        "constraint": {
+          "enum": [
+            "off",
+            "error",
+            "warn",
+            "info",
+            "debug",
+            "trace"
+          ],
+          "type": "string"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*(off|error|warn|info|debug|trace)\\s*$",
+          "type": "string"
+        },
+        "text_form": "choice",
         "aliases": [],
         "env_aliases": [],
         "env_file_aliases": [],
@@ -407,8 +433,30 @@
         "secrets_file": "telemetry__sentry__breadcrumb_level",
         "docs": "Least severe `tracing` level kept as a **breadcrumb** — the trail attached to the next\nissue. Records at or above [`Self::capture_level`] become issues instead.",
         "ty": "SentryLevel",
-        "values": [],
-        "text_form": "unknown",
+        "values": [
+          "off",
+          "error",
+          "warn",
+          "info",
+          "debug",
+          "trace"
+        ],
+        "constraint": {
+          "enum": [
+            "off",
+            "error",
+            "warn",
+            "info",
+            "debug",
+            "trace"
+          ],
+          "type": "string"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*(off|error|warn|info|debug|trace)\\s*$",
+          "type": "string"
+        },
+        "text_form": "choice",
         "aliases": [],
         "env_aliases": [],
         "env_file_aliases": [],
@@ -1830,6 +1878,7 @@
         "values": [],
         "constraint": {
           "additionalProperties": {
+            "additionalProperties": false,
             "properties": {
               "san": {
                 "description": "The client-certificate subject alternative name this peer presents under\n`identity = \"mtls\"`, e.g. `api.tankovault.svc`.",
@@ -2610,10 +2659,28 @@
                 "type": "boolean"
               },
               "breadcrumb_level": {
-                "description": "Least severe `tracing` level kept as a **breadcrumb** — the trail attached to the next\nissue. Records at or above [`Self::capture_level`] become issues instead."
+                "description": "Least severe `tracing` level kept as a **breadcrumb** — the trail attached to the next\nissue. Records at or above [`Self::capture_level`] become issues instead.",
+                "enum": [
+                  "off",
+                  "error",
+                  "warn",
+                  "info",
+                  "debug",
+                  "trace"
+                ],
+                "type": "string"
               },
               "capture_level": {
-                "description": "Least severe `tracing` level reported as a Sentry **issue**."
+                "description": "Least severe `tracing` level reported as a Sentry **issue**.",
+                "enum": [
+                  "off",
+                  "error",
+                  "warn",
+                  "info",
+                  "debug",
+                  "trace"
+                ],
+                "type": "string"
               },
               "debug": {
                 "description": "Print the SDK's own diagnostics to stderr. For proving a DSN works, not for running.",
@@ -2647,6 +2714,8 @@
               },
               "sample_rate": {
                 "description": "Fraction of captured events actually sent, `0.0`-`1.0`. A blunt volume cap — it drops\nwhole issues, not repetitions of one — so leave it at `1.0` unless quota forces it.",
+                "maximum": 1.0,
+                "minimum": 0.0,
                 "type": "number"
               },
               "send_default_pii": {
@@ -2668,6 +2737,8 @@
               },
               "traces_sample_rate": {
                 "description": "Fraction of traces this service **starts** that are recorded, `0.0`-`1.0`.\n\n`0.0` (the default) means it starts none of its own. It does **not** mean this service\nis absent from a trace: a request or a broker message arriving with a trace already\nsampled is continued regardless, which is what keeps one reader action readable across\nthe whole tier rather than ending at the first service configured differently. Set it\nuniformly anyway — `0.05`-`0.2` is an ordinary production figure — since the service\nthat *starts* a trace is the one whose rate decides whether it exists at all.",
+                "maximum": 1.0,
+                "minimum": 0.0,
                 "type": "number"
               }
             },

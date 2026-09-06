@@ -320,6 +320,8 @@
         "ty": "f32",
         "values": [],
         "constraint": {
+          "maximum": 1.0,
+          "minimum": 0.0,
           "type": "number"
         },
         "text_form": "unknown",
@@ -343,6 +345,8 @@
         "ty": "f32",
         "values": [],
         "constraint": {
+          "maximum": 1.0,
+          "minimum": 0.0,
           "type": "number"
         },
         "text_form": "unknown",
@@ -364,8 +368,30 @@
         "secrets_file": "telemetry__sentry__capture_level",
         "docs": "Least severe `tracing` level reported as a Sentry **issue**.",
         "ty": "SentryLevel",
-        "values": [],
-        "text_form": "unknown",
+        "values": [
+          "off",
+          "error",
+          "warn",
+          "info",
+          "debug",
+          "trace"
+        ],
+        "constraint": {
+          "enum": [
+            "off",
+            "error",
+            "warn",
+            "info",
+            "debug",
+            "trace"
+          ],
+          "type": "string"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*(off|error|warn|info|debug|trace)\\s*$",
+          "type": "string"
+        },
+        "text_form": "choice",
         "aliases": [],
         "env_aliases": [],
         "env_file_aliases": [],
@@ -384,8 +410,30 @@
         "secrets_file": "telemetry__sentry__breadcrumb_level",
         "docs": "Least severe `tracing` level kept as a **breadcrumb** — the trail attached to the next\nissue. Records at or above [`Self::capture_level`] become issues instead.",
         "ty": "SentryLevel",
-        "values": [],
-        "text_form": "unknown",
+        "values": [
+          "off",
+          "error",
+          "warn",
+          "info",
+          "debug",
+          "trace"
+        ],
+        "constraint": {
+          "enum": [
+            "off",
+            "error",
+            "warn",
+            "info",
+            "debug",
+            "trace"
+          ],
+          "type": "string"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*(off|error|warn|info|debug|trace)\\s*$",
+          "type": "string"
+        },
+        "text_form": "choice",
         "aliases": [],
         "env_aliases": [],
         "env_file_aliases": [],
@@ -2200,6 +2248,7 @@
         "values": [],
         "constraint": {
           "additionalProperties": {
+            "additionalProperties": false,
             "properties": {
               "san": {
                 "description": "The client-certificate subject alternative name this peer presents under\n`identity = \"mtls\"`, e.g. `api.tankovault.svc`.",
@@ -2378,6 +2427,34 @@
         "ty": "BTreeMap<String, LegalDocument>",
         "values": [],
         "constraint": {
+          "additionalProperties": {
+            "additionalProperties": false,
+            "properties": {
+              "sources": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "description": "Markdown file per locale, keyed by the language code the frontend uses (`en`, `de`).\n\nA plain `String` key rather than a shipped-locale enum: an operator publishing French\nterms should not need this build to know about French.",
+                "type": "object"
+              },
+              "title": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "description": "Per-locale display title. A locale with no entry falls back to the frontend's own\ncatalogue for the slugs it knows, and to the slug itself for the ones it does not.",
+                "type": "object"
+              },
+              "updated": {
+                "description": "The \"last updated\" line, as the operator wants it shown (`2026-08-04`).\n\nFree text rather than a date, because it is displayed verbatim and a file mtime is the\nwrong answer — touching a file is not amending a policy.",
+                "type": "string"
+              },
+              "url": {
+                "description": "Somewhere else entirely — a corporate imprint already hosted by the operator.\n\nMutually exclusive with [`Self::sources`]; see [`LegalConfig::validate`].",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
           "type": "object"
         },
         "text_constraint": {
@@ -2742,14 +2819,232 @@
         "reserved": false
       },
       {
-        "path": "metadata.priority",
-        "env": "TANKOVAULT_METADATA__PRIORITY",
-        "env_file": "TANKOVAULT_METADATA__PRIORITY_FILE",
-        "secrets_file": "metadata__priority",
-        "docs": "Per-field source authority order (default: `AniList` before the adapters).",
-        "ty": "MetadataPriority",
+        "path": "metadata.priority.description",
+        "env": "TANKOVAULT_METADATA__PRIORITY__DESCRIPTION",
+        "env_file": "TANKOVAULT_METADATA__PRIORITY__DESCRIPTION_FILE",
+        "secrets_file": "metadata__priority__description",
+        "docs": "Priority order for the long-form series description.",
+        "ty": "Vec<MetadataSource>",
         "values": [],
-        "text_form": "unknown",
+        "constraint": {
+          "items": {
+            "enum": [
+              "anilist",
+              "adapter"
+            ],
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*[\\[\\{][\\s\\S]*[\\]\\}]\\s*$",
+          "type": "string"
+        },
+        "text_form": "structured",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "metadata.priority.title",
+        "env": "TANKOVAULT_METADATA__PRIORITY__TITLE",
+        "env_file": "TANKOVAULT_METADATA__PRIORITY__TITLE_FILE",
+        "secrets_file": "metadata__priority__title",
+        "docs": "Priority order for the canonical/display title.",
+        "ty": "Vec<MetadataSource>",
+        "values": [],
+        "constraint": {
+          "items": {
+            "enum": [
+              "anilist",
+              "adapter"
+            ],
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*[\\[\\{][\\s\\S]*[\\]\\}]\\s*$",
+          "type": "string"
+        },
+        "text_form": "structured",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "metadata.priority.cover",
+        "env": "TANKOVAULT_METADATA__PRIORITY__COVER",
+        "env_file": "TANKOVAULT_METADATA__PRIORITY__COVER_FILE",
+        "secrets_file": "metadata__priority__cover",
+        "docs": "Priority order for the cover image URL.",
+        "ty": "Vec<MetadataSource>",
+        "values": [],
+        "constraint": {
+          "items": {
+            "enum": [
+              "anilist",
+              "adapter"
+            ],
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*[\\[\\{][\\s\\S]*[\\]\\}]\\s*$",
+          "type": "string"
+        },
+        "text_form": "structured",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "metadata.priority.content_type",
+        "env": "TANKOVAULT_METADATA__PRIORITY__CONTENT_TYPE",
+        "env_file": "TANKOVAULT_METADATA__PRIORITY__CONTENT_TYPE_FILE",
+        "secrets_file": "metadata__priority__content_type",
+        "docs": "Priority order for the medium/origin classification.",
+        "ty": "Vec<MetadataSource>",
+        "values": [],
+        "constraint": {
+          "items": {
+            "enum": [
+              "anilist",
+              "adapter"
+            ],
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*[\\[\\{][\\s\\S]*[\\]\\}]\\s*$",
+          "type": "string"
+        },
+        "text_form": "structured",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "metadata.priority.status",
+        "env": "TANKOVAULT_METADATA__PRIORITY__STATUS",
+        "env_file": "TANKOVAULT_METADATA__PRIORITY__STATUS_FILE",
+        "secrets_file": "metadata__priority__status",
+        "docs": "Priority order for the publication status.",
+        "ty": "Vec<MetadataSource>",
+        "values": [],
+        "constraint": {
+          "items": {
+            "enum": [
+              "anilist",
+              "adapter"
+            ],
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*[\\[\\{][\\s\\S]*[\\]\\}]\\s*$",
+          "type": "string"
+        },
+        "text_form": "structured",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "metadata.priority.release_year",
+        "env": "TANKOVAULT_METADATA__PRIORITY__RELEASE_YEAR",
+        "env_file": "TANKOVAULT_METADATA__PRIORITY__RELEASE_YEAR_FILE",
+        "secrets_file": "metadata__priority__release_year",
+        "docs": "Priority order for the year of first publication.",
+        "ty": "Vec<MetadataSource>",
+        "values": [],
+        "constraint": {
+          "items": {
+            "enum": [
+              "anilist",
+              "adapter"
+            ],
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*[\\[\\{][\\s\\S]*[\\]\\}]\\s*$",
+          "type": "string"
+        },
+        "text_form": "structured",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "metadata.priority.default",
+        "env": "TANKOVAULT_METADATA__PRIORITY__DEFAULT",
+        "env_file": "TANKOVAULT_METADATA__PRIORITY__DEFAULT_FILE",
+        "secrets_file": "metadata__priority__default",
+        "docs": "Fallback order for any field whose list was explicitly emptied.",
+        "ty": "Vec<MetadataSource>",
+        "values": [],
+        "constraint": {
+          "items": {
+            "enum": [
+              "anilist",
+              "adapter"
+            ],
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*[\\[\\{][\\s\\S]*[\\]\\}]\\s*$",
+          "type": "string"
+        },
+        "text_form": "structured",
         "aliases": [],
         "env_aliases": [],
         "env_file_aliases": [],
@@ -3215,6 +3510,34 @@
             "type": "string"
           },
           "documents": {
+            "additionalProperties": {
+              "additionalProperties": false,
+              "properties": {
+                "sources": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "description": "Markdown file per locale, keyed by the language code the frontend uses (`en`, `de`).\n\nA plain `String` key rather than a shipped-locale enum: an operator publishing French\nterms should not need this build to know about French.",
+                  "type": "object"
+                },
+                "title": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "description": "Per-locale display title. A locale with no entry falls back to the frontend's own\ncatalogue for the slugs it knows, and to the slug itself for the ones it does not.",
+                  "type": "object"
+                },
+                "updated": {
+                  "description": "The \"last updated\" line, as the operator wants it shown (`2026-08-04`).\n\nFree text rather than a date, because it is displayed verbatim and a file mtime is the\nwrong answer — touching a file is not amending a policy.",
+                  "type": "string"
+                },
+                "url": {
+                  "description": "Somewhere else entirely — a corporate imprint already hosted by the operator.\n\nMutually exclusive with [`Self::sources`]; see [`LegalConfig::validate`].",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
             "description": "The published documents, keyed by the slug their URL uses (`terms`, `privacy`,\n`imprint`, …).\n\nA map rather than a struct of known documents on purpose — see the module docs.",
             "type": "object"
           }
@@ -3225,7 +3548,87 @@
         "additionalProperties": false,
         "properties": {
           "priority": {
-            "description": "Per-field source authority order (default: `AniList` before the adapters)."
+            "additionalProperties": false,
+            "properties": {
+              "content_type": {
+                "description": "Priority order for the medium/origin classification.",
+                "items": {
+                  "enum": [
+                    "anilist",
+                    "adapter"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "cover": {
+                "description": "Priority order for the cover image URL.",
+                "items": {
+                  "enum": [
+                    "anilist",
+                    "adapter"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "default": {
+                "description": "Fallback order for any field whose list was explicitly emptied.",
+                "items": {
+                  "enum": [
+                    "anilist",
+                    "adapter"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "description": {
+                "description": "Priority order for the long-form series description.",
+                "items": {
+                  "enum": [
+                    "anilist",
+                    "adapter"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "release_year": {
+                "description": "Priority order for the year of first publication.",
+                "items": {
+                  "enum": [
+                    "anilist",
+                    "adapter"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "status": {
+                "description": "Priority order for the publication status.",
+                "items": {
+                  "enum": [
+                    "anilist",
+                    "adapter"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "title": {
+                "description": "Priority order for the canonical/display title.",
+                "items": {
+                  "enum": [
+                    "anilist",
+                    "adapter"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "type": "object"
           },
           "tags": {
             "additionalProperties": false,
@@ -3456,10 +3859,28 @@
                 "type": "boolean"
               },
               "breadcrumb_level": {
-                "description": "Least severe `tracing` level kept as a **breadcrumb** — the trail attached to the next\nissue. Records at or above [`Self::capture_level`] become issues instead."
+                "description": "Least severe `tracing` level kept as a **breadcrumb** — the trail attached to the next\nissue. Records at or above [`Self::capture_level`] become issues instead.",
+                "enum": [
+                  "off",
+                  "error",
+                  "warn",
+                  "info",
+                  "debug",
+                  "trace"
+                ],
+                "type": "string"
               },
               "capture_level": {
-                "description": "Least severe `tracing` level reported as a Sentry **issue**."
+                "description": "Least severe `tracing` level reported as a Sentry **issue**.",
+                "enum": [
+                  "off",
+                  "error",
+                  "warn",
+                  "info",
+                  "debug",
+                  "trace"
+                ],
+                "type": "string"
               },
               "debug": {
                 "description": "Print the SDK's own diagnostics to stderr. For proving a DSN works, not for running.",
@@ -3493,6 +3914,8 @@
               },
               "sample_rate": {
                 "description": "Fraction of captured events actually sent, `0.0`-`1.0`. A blunt volume cap — it drops\nwhole issues, not repetitions of one — so leave it at `1.0` unless quota forces it.",
+                "maximum": 1.0,
+                "minimum": 0.0,
                 "type": "number"
               },
               "send_default_pii": {
@@ -3514,6 +3937,8 @@
               },
               "traces_sample_rate": {
                 "description": "Fraction of traces this service **starts** that are recorded, `0.0`-`1.0`.\n\n`0.0` (the default) means it starts none of its own. It does **not** mean this service\nis absent from a trace: a request or a broker message arriving with a trace already\nsampled is continued regardless, which is what keeps one reader action readable across\nthe whole tier rather than ending at the first service configured differently. Set it\nuniformly anyway — `0.05`-`0.2` is an ordinary production figure — since the service\nthat *starts* a trace is the one whose rate decides whether it exists at all.",
+                "maximum": 1.0,
+                "minimum": 0.0,
                 "type": "number"
               }
             },

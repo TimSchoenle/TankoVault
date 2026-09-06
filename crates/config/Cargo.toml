@@ -16,7 +16,12 @@ publish = false
 # a leaf crate over `domain`.
 tankovault-matcher = { workspace = true }
 # For the `Canonicaliser` port itself, which is domain vocabulary rather than the scorer's.
-tankovault-domain = { workspace = true }
+#
+# `schema` because `metadata.priority` is a `MetadataPriority`, and terrace-config refuses a key
+# whose type publishes no shape. A `values_from` mirror answers that for a foreign *enum*; a
+# struct has to describe itself, so the feature switches the derive on there. It is optional in
+# `tankovault-domain` for the same reason `sqlx` is: that crate also compiles for `wasm32`.
+tankovault-domain = { workspace = true, features = ["schema"] }
 serde = { workspace = true }
 # Config is where secrets enter the process, so it is where the wrapper has to start: a
 # `SecretString` field cannot be un-wrapped by the aggregate that nests it, so the DSN a

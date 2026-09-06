@@ -16,6 +16,11 @@ use serde::Deserialize;
 /// arbitrary strings — only the risk of a typo read as deliberate de-prioritisation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize)]
 #[serde(rename_all = "lowercase")]
+// `schema` on reports these two spellings as the values a `metadata.priority` list accepts.
+// Sound because the `Deserialize` above is serde's own derive: no `try_from`, no `from` and no
+// `FromStr`, so the wire form *is* the renamed variant list and the schema cannot come to
+// disagree with the loader.
+#[cfg_attr(feature = "schema", derive(terrace_config::schema::Describe))]
 // `sqlx` on maps this to the `metadata_source` Postgres enum the provenance columns are
 // declared as; off (the WASM frontend) keeps this crate free of the native sqlx stack.
 #[cfg_attr(feature = "sqlx", derive(sqlx::Type))]
@@ -110,27 +115,39 @@ impl MetadataValue for i32 {
 
 /// Per-field source authority: an ordered preference list, highest priority first. The first
 /// source that supplies a real value wins; ships with `AniList` before the adapters.
+// This type is held by a configuration key (`metadata.priority`), so it describes itself: the
+// derive refuses a key whose type publishes no shape, and a struct has no `values_from` mirror
+// to stand in for it. Gated so the WASM frontend, which reaches this crate through
+// `crates/api-client`, links none of terrace-config.
 #[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "schema", derive(terrace_config::schema::Describe))]
 pub struct MetadataPriority {
     /// Priority order for the long-form series description.
+    #[cfg_attr(feature = "schema", config(element_values))]
     #[serde(default = "MetadataPriority::default_order")]
     pub description: Vec<MetadataSource>,
     /// Priority order for the canonical/display title.
+    #[cfg_attr(feature = "schema", config(element_values))]
     #[serde(default = "MetadataPriority::default_order")]
     pub title: Vec<MetadataSource>,
     /// Priority order for the cover image URL.
+    #[cfg_attr(feature = "schema", config(element_values))]
     #[serde(default = "MetadataPriority::default_order")]
     pub cover: Vec<MetadataSource>,
     /// Priority order for the medium/origin classification.
+    #[cfg_attr(feature = "schema", config(element_values))]
     #[serde(default = "MetadataPriority::default_order")]
     pub content_type: Vec<MetadataSource>,
     /// Priority order for the publication status.
+    #[cfg_attr(feature = "schema", config(element_values))]
     #[serde(default = "MetadataPriority::default_order")]
     pub status: Vec<MetadataSource>,
     /// Priority order for the year of first publication.
+    #[cfg_attr(feature = "schema", config(element_values))]
     #[serde(default = "MetadataPriority::default_order")]
     pub release_year: Vec<MetadataSource>,
     /// Fallback order for any field whose list was explicitly emptied.
+    #[cfg_attr(feature = "schema", config(element_values))]
     #[serde(default = "MetadataPriority::default_order")]
     pub default: Vec<MetadataSource>,
 }

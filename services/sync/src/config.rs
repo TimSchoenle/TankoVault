@@ -75,9 +75,10 @@ pub struct Config {
 #[derive(Debug, Clone, Deserialize, Describe)]
 pub struct MetadataConfig {
     /// Per-field source authority order (default: `AniList` before the adapters).
-    // A leaf rather than `#[config(nested)]`, for the reason
-    // `tankovault_config::MetadataPriorityConfig::priority` gives: the type is the leaf domain
-    // crate's, and describing it would put figment there.
+    // `nested`, through `tankovault-domain`'s `schema` feature — the same subtree
+    // `tankovault_config::MetadataPriorityConfig::priority` publishes, so the two services'
+    // contracts describe one key one way.
+    #[config(nested)]
     #[serde(default)]
     pub priority: MetadataPriority,
     /// Which scraped "genres" intake refuses. Shared with the worker via
@@ -123,17 +124,46 @@ pub struct AniListConfig {
     /// Base URL the `authorize` and `token` paths hang off.
     #[serde(default = "default_oauth_base")]
     pub oauth_base: String,
-    // A leaf rather than `#[config(values)]`: the type is `tankovault-contracts`', which is a
-    // wire-shape crate and has no business linking figment. The contract publishes the key with
-    // no constraint, which says what is true — the key exists, and nothing here can check it.
     /// Which side wins a two-sided change for a reader who has expressed no preference. Each
     /// reader may override it on their own link.
+    // `values_from` rather than `values`: the type is `tankovault-contracts`', which is a
+    // wire-shape crate and has no business linking figment, so there is no `Values` impl on it
+    // to read. [`ConflictPolicyDef`] is the mirror the compiler holds to it.
+    #[config(values_from = "ConflictPolicyDef")]
     #[serde(default)]
     pub default_conflict_policy: ConflictPolicy,
     /// Shortest gap between two requests to `AniList`, in milliseconds. It paces this
     /// deployment's whole traffic, not one reader's: `AniList` rate-limits per application.
     #[serde(default = "default_min_interval_ms")]
     pub min_request_interval_ms: u64,
+}
+
+/// The four spellings [`ConflictPolicy`] accepts, published by
+/// [`AniListConfig::default_conflict_policy`].
+///
+/// A `#[serde(remote)]` mirror rather than a literal `#[config(values(…))]` list, because the
+/// two cannot drift: serde's remote derive constructs `ConflictPolicy`'s own variants, so a
+/// spelling that stopped matching the real enum would fail to compile rather than reach the
+/// contract. `ConflictPolicy` deserialises through serde's own derive — no `try_from`, no
+/// `from` — so this renamed variant list *is* the accepted set. Nothing deserialises through
+/// the mirror; the field keeps `ConflictPolicy`'s own `Deserialize`.
+#[derive(Deserialize, Describe)]
+#[serde(remote = "ConflictPolicy", rename_all = "snake_case")]
+#[expect(
+    dead_code,
+    reason = "the remote derive constructs each `ConflictPolicy` variant, which is what holds \
+              this mirror to the real enum; `values_from` reads only the names, so the \
+              constructing code is never called"
+)]
+enum ConflictPolicyDef {
+    /// Local progress/status is authoritative.
+    LocalWins,
+    /// The remote (`AniList`) value is authoritative.
+    RemoteWins,
+    /// Whichever side was updated most recently wins.
+    NewestWins,
+    /// Genuine conflicts are queued for the user to resolve rather than auto-picked.
+    AskMe,
 }
 
 fn default_bind() -> String {

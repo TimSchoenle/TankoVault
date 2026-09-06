@@ -23,10 +23,12 @@ use terrace_config::schema::Describe;
 #[derive(Debug, Clone, Default, Deserialize, Describe)]
 pub struct MetadataPriorityConfig {
     /// Per-field source authority order (default: `AniList` before the adapters).
-    // Deliberately a leaf rather than `#[config(nested)]`: the type is `tankovault-domain`'s,
-    // and describing it would put `terrace-config` — and figment with it — into the workspace's
-    // leaf crate. The contract therefore publishes `metadata.priority` with no constraint, which
-    // is the honest answer: a consumer can see the key exists and cannot check its shape.
+    // `nested`, which needs `Describe` on a `tankovault-domain` type. That crate also compiles
+    // for `wasm32`, so the derive is behind its `schema` feature and this dependency is what
+    // switches it on; the browser bundle reaches the same types through `crates/api-client` with
+    // the feature off and links no figment. The seven keys under here are one per metadata field,
+    // each a list of the two `MetadataSource` spellings.
+    #[config(nested)]
     #[serde(default)]
     pub priority: MetadataPriority,
     /// Vocabulary guard: which scraped terms intake refuses, as tags and as credits alike.

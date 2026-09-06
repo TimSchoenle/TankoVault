@@ -746,6 +746,30 @@ that crate and every service's own `Config` derives `Describe`.
 union instead would have `api`'s document assert that its image reads `anilist.client_secret`,
 and a chart believing that is a chart being told to mount a secret nothing in that pod consumes.
 
+**A key whose type publishes nothing is a compile error**, not a blank cell — which is why two
+keys are described from outside the crate that owns them. `metadata.priority` holds
+`tankovault-domain`'s `MetadataPriority`, so that type derives `Describe` behind the domain
+crate's `schema` feature: a struct has to describe itself, and the feature is what keeps
+figment out of the `wasm32` bundle that reaches the same types through `crates/api-client`.
+`anilist.default_conflict_policy` holds `tankovault-contracts`' `ConflictPolicy`, which the
+orphan rule puts out of reach, so `services/sync/src/config.rs` carries a
+`#[serde(remote = "…")]` mirror and points `#[config(values_from = "…")]` at it — a mirror
+rather than a literal list of spellings, because the compiler holds a mirror to the real enum
+and holds nothing to a list. Prefer that order when you add one.
+
+**A numeric bound needs a source, and a plausible-looking number is not one.**
+`#[config(range(…))]` on the four `chapter_outliers` thresholds restates exactly what
+`ChapterOutlierConfig::validate` refuses outside of — the two have to be changed together. The
+two Sentry sample rates are bounded on the weaker ground that a probability has no meaning
+outside `0.0`-`1.0`; sentry-rust itself saturates rather than refusing.
+
+Everything the service *clamps* stays unbounded, deliberately. `matching.*` is the one to
+understand before adding a bound there: the scores it compares against are in `[0, 1]`, but a
+threshold above `1.0` is a legitimate way to spell "never attach", every reader clamps, and the
+loader takes it — so `maximum: 1.0` would publish a schema rejecting a file that boots. Same for
+`scheduler.*`, the pool sizes and the `*_secs` intervals: `0` already means "disabled" and
+nothing has an upper end.
+
 ```
 just render api contract      # the document
 just render api labels        # NAME=value ×3

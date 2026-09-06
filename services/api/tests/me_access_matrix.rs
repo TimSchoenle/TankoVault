@@ -515,6 +515,10 @@ fn public_gates() -> Vec<(&'static str, &'static str)> {
             "/v1/series/00000000-0000-7000-8000-00000000000a/chapters",
         ),
         (
+            "/v1/series/{id}/chapters/by-source",
+            "/v1/series/00000000-0000-7000-8000-00000000000a/chapters/by-source",
+        ),
+        (
             "/v1/series/{id}/similar",
             "/v1/series/00000000-0000-7000-8000-00000000000a/similar",
         ),

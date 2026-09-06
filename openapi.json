@@ -5507,6 +5507,27 @@
         ],
         "description": "One similar series, with what it has in common."
       },
+      "SourceChaptersDto": {
+        "description": "One provider group's chapter list, keyed by the same `source_id` that\n`GET /v1/series/{id}` publishes for that group.",
+        "properties": {
+          "chapters": {
+            "description": "That source's chapters, newest first — identical to what `GET .../chapters?source=`\nanswers for it.",
+            "items": {
+              "$ref": "#/components/schemas/ChapterDto"
+            },
+            "type": "array"
+          },
+          "source_id": {
+            "$ref": "#/components/schemas/SeriesSourceId",
+            "description": "The group's outbound-link source, matching `SourceDto::id` in the series detail."
+          }
+        },
+        "required": [
+          "source_id",
+          "chapters"
+        ],
+        "type": "object"
+      },
       "SourceDto": {
         "properties": {
           "chapter_count": {
@@ -18482,6 +18503,58 @@
           }
         ],
         "summary": "List a source's chapters",
+        "tags": [
+          "series"
+        ]
+      }
+    },
+    "/v1/series/{id}/chapters/by-source": {
+      "get": {
+        "description": "The whole-screen counterpart to `GET /v1/series/{id}/chapters`: one entry per source of\nthe series, in the order `GET /v1/series/{id}` lists them.",
+        "operationId": "chapters_by_source",
+        "parameters": [
+          {
+            "description": "Series id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/SeriesId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SourceChaptersDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Each source's chapters, newest first"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Series not found"
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "List every source's chapters",
         "tags": [
           "series"
         ]

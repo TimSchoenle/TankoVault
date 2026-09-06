@@ -11725,6 +11725,44 @@ pub mod types {
             Default::default()
         }
     }
+    #[doc = "One provider group's chapter list, keyed by the same `source_id` that\n`GET /v1/series/{id}` publishes for that group."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One provider group's chapter list, keyed by the same `source_id` that\\n`GET /v1/series/{id}` publishes for that group.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"chapters\","]
+    #[doc = "    \"source_id\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"chapters\": {"]
+    #[doc = "      \"description\": \"That source's chapters, newest first — identical to what `GET .../chapters?source=`\\nanswers for it.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/ChapterDto\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"source_id\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/SeriesSourceId\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct SourceChaptersDto {
+        #[doc = "That source's chapters, newest first — identical to what `GET .../chapters?source=`\nanswers for it."]
+        pub chapters: ::std::vec::Vec<ChapterDto>,
+        pub source_id: SeriesSourceId,
+    }
+    impl SourceChaptersDto {
+        pub fn builder() -> builder::SourceChaptersDto {
+            Default::default()
+        }
+    }
     #[doc = "`SourceDto`"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -29779,6 +29817,61 @@ pub mod types {
             }
         }
         #[derive(Clone, Debug)]
+        pub struct SourceChaptersDto {
+            chapters:
+                ::std::result::Result<::std::vec::Vec<super::ChapterDto>, ::std::string::String>,
+            source_id: ::std::result::Result<super::SeriesSourceId, ::std::string::String>,
+        }
+        impl ::std::default::Default for SourceChaptersDto {
+            fn default() -> Self {
+                Self {
+                    chapters: Err("no value supplied for chapters".to_string()),
+                    source_id: Err("no value supplied for source_id".to_string()),
+                }
+            }
+        }
+        impl SourceChaptersDto {
+            pub fn chapters<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::ChapterDto>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.chapters = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for chapters: {e}"));
+                self
+            }
+            pub fn source_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::SeriesSourceId>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.source_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for source_id: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<SourceChaptersDto> for super::SourceChaptersDto {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: SourceChaptersDto,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    chapters: value.chapters?,
+                    source_id: value.source_id?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::SourceChaptersDto> for SourceChaptersDto {
+            fn from(value: super::SourceChaptersDto) -> Self {
+                Self {
+                    chapters: Ok(value.chapters),
+                    source_id: Ok(value.source_id),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
         pub struct SourceDto {
             chapter_count: ::std::result::Result<i32, ::std::string::String>,
             id: ::std::result::Result<super::SeriesSourceId, ::std::string::String>,
@@ -35383,6 +35476,10 @@ impl Client {
     #[doc = "List a source's chapters\n\nChapter list, newest first. When a valid access token is supplied the per-chapter `read`\nflag is populated from the user's progress (frontend §9.2 auth-scoped read-state);\nanonymous callers get the same list without read-state.\n\nSends a `GET` request to `/v1/series/{id}/chapters`\n\nArguments:\n- `id`: Series id\n- `source`: Which source to read chapters from. Defaults to the first source of the series.\n```ignore\nlet response = client.chapters()\n    .id(id)\n    .source(source)\n    .send()\n    .await;\n```"]
     pub fn chapters(&self) -> builder::Chapters<'_> {
         builder::Chapters::new(self)
+    }
+    #[doc = "List every source's chapters\n\nThe whole-screen counterpart to `GET /v1/series/{id}/chapters`: one entry per source of\nthe series, in the order `GET /v1/series/{id}` lists them.\n\nSends a `GET` request to `/v1/series/{id}/chapters/by-source`\n\nArguments:\n- `id`: Series id\n```ignore\nlet response = client.chapters_by_source()\n    .id(id)\n    .send()\n    .await;\n```"]
+    pub fn chapters_by_source(&self) -> builder::ChaptersBySource<'_> {
+        builder::ChaptersBySource::new(self)
     }
     #[doc = "Get similar series\n\nContent-similar series, ranked by an approximate nearest-neighbour search over the\nrecommendation model's embedding space, with the features each match shares with the seed.\n\nFalls back to the catalogue's popularity prior when the seed has no embedding yet — a series\nadded since the last model build, or a deployment that has never run one. An empty array\nmeans the model has never been built at all.\n\nSends a `GET` request to `/v1/series/{id}/similar`\n\nArguments:\n- `id`: Series id\n- `limit`: How many to return (default 12, max 50)\n```ignore\nlet response = client.similar()\n    .id(id)\n    .limit(limit)\n    .send()\n    .await;\n```"]
     pub fn similar(&self) -> builder::Similar<'_> {
@@ -48685,6 +48782,73 @@ pub mod builder {
                 .build()?;
             let info = OperationInfo {
                 operation_id: "chapters",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                404u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::chapters_by_source`]\n\n[`Client::chapters_by_source`]: super::Client::chapters_by_source"]
+    #[derive(Debug, Clone)]
+    pub struct ChaptersBySource<'a> {
+        client: &'a super::Client,
+        id: Result<types::SeriesId, String>,
+    }
+    impl<'a> ChaptersBySource<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                id: Err("id was not initialized".to_string()),
+            }
+        }
+        pub fn id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::SeriesId>,
+        {
+            self.id = value
+                .try_into()
+                .map_err(|_| "conversion to `SeriesId` for id failed".to_string());
+            self
+        }
+        #[doc = "Sends a `GET` request to `/v1/series/{id}/chapters/by-source`"]
+        pub async fn send(
+            self,
+        ) -> Result<
+            ResponseValue<::std::vec::Vec<types::SourceChaptersDto>>,
+            Error<types::ProblemDetails>,
+        > {
+            let Self { client, id } = self;
+            let id = id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/series/{}/chapters/by-source",
+                client.baseurl,
+                encode_path(&id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "chapters_by_source",
             };
             client.pre(&mut request, &info).await?;
             let result = client.exec(request, &info).await;

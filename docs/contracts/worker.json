@@ -1910,7 +1910,7 @@
         "env": "TANKOVAULT_METADATA__TAGS__ADULT_TAGS",
         "env_file": "TANKOVAULT_METADATA__TAGS__ADULT_TAGS_FILE",
         "secrets_file": "metadata__tags__adult_tags",
-        "docs": "Additional genre chips that classify a series as adult, matched on their slug.\n\nAdditions only: unlike [`Self::blocklist`] there is no switch that drops the shipped\nterms. See [`tankovault_domain::AdultTagSet`] — an emptied classifier silently stops\nclassifying, where the two supported ways to make adult content visible (the deployment\nflag and the per-reader opt-in) both leave a record of somebody deciding.",
+        "docs": "Additional genre chips that classify a series as adult, matched on their slug.\n\nAdditions only: unlike the refusal list in [`TermBlocklistConfig`] there is no switch\nthat drops the shipped terms. See [`tankovault_domain::AdultTagSet`] — an emptied classifier silently\nstops classifying, where the two supported ways to make adult content visible (the\ndeployment flag and the per-reader opt-in) both leave a record of somebody deciding.",
         "ty": "Vec<String>",
         "values": [],
         "constraint": {
@@ -2740,7 +2740,7 @@
             "additionalProperties": false,
             "properties": {
               "adult_tags": {
-                "description": "Additional genre chips that classify a series as adult, matched on their slug.\n\nAdditions only: unlike [`Self::blocklist`] there is no switch that drops the shipped\nterms. See [`tankovault_domain::AdultTagSet`] — an emptied classifier silently stops\nclassifying, where the two supported ways to make adult content visible (the deployment\nflag and the per-reader opt-in) both leave a record of somebody deciding.",
+                "description": "Additional genre chips that classify a series as adult, matched on their slug.\n\nAdditions only: unlike the refusal list in [`TermBlocklistConfig`] there is no switch\nthat drops the shipped terms. See [`tankovault_domain::AdultTagSet`] — an emptied classifier silently\nstops classifying, where the two supported ways to make adult content visible (the\ndeployment flag and the per-reader opt-in) both leave a record of somebody deciding.",
                 "items": {
                   "type": "string"
                 },

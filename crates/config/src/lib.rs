@@ -51,7 +51,10 @@ pub use loader::{
 };
 pub use matching::MatchingConfig;
 pub use messaging::{NatsConfig, RedisConfig};
-pub use metadata::{MetadataPriorityConfig, TagIntakeConfig};
+pub use metadata::{
+    AdultTagConfig, MetadataPriorityConfig, MetadataReadConfig, TagIntakeConfig,
+    TermBlocklistConfig,
+};
 pub use metrics::MetricsConfig;
 pub use ratelimit::{RateLimitBackend, RateLimitConfig, RateLimitPolicy};
 pub use security::SecurityConfig;

@@ -87,12 +87,13 @@ pub struct Config {
     #[serde(default)]
     #[config(nested)]
     pub client: tankovault_config::ClientConfig,
-    /// Metadata intake rules. The API writes no metadata; it reads this section for the adult
-    /// classifier alone, and shares it with the worker so the genres the public tag facet
-    /// withholds are exactly the ones that put a series behind the gate.
+    /// Metadata intake rules, cut to what a reader consults: the adult classifier alone, shared
+    /// with the worker so the genres the public tag facet withholds are exactly the ones that put
+    /// a series behind the gate. The API writes no metadata, so `metadata.priority` stays out of
+    /// its contract — see [`tankovault_config::MetadataReadConfig`].
     #[serde(default)]
     #[config(nested)]
-    pub metadata: tankovault_config::MetadataPriorityConfig,
+    pub metadata: tankovault_config::MetadataReadConfig,
 }
 
 /// Everything the API needs to issue a credential and to recognise one it issued.

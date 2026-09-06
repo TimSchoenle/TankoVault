@@ -1136,36 +1136,6 @@
         "reserved": false
       },
       {
-        "path": "metadata.tags.adult_tags",
-        "env": "TANKOVAULT_METADATA__TAGS__ADULT_TAGS",
-        "env_file": "TANKOVAULT_METADATA__TAGS__ADULT_TAGS_FILE",
-        "secrets_file": "metadata__tags__adult_tags",
-        "docs": "Additional genre chips that classify a series as adult, matched on their slug.\n\nAdditions only: unlike [`Self::blocklist`] there is no switch that drops the shipped\nterms. See [`tankovault_domain::AdultTagSet`] — an emptied classifier silently stops\nclassifying, where the two supported ways to make adult content visible (the deployment\nflag and the per-reader opt-in) both leave a record of somebody deciding.",
-        "ty": "Vec<String>",
-        "values": [],
-        "constraint": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "text_constraint": {
-          "pattern": "^\\s*[\\[\\{][\\s\\S]*[\\]\\}]\\s*$",
-          "type": "string"
-        },
-        "text_form": "structured",
-        "aliases": [],
-        "env_aliases": [],
-        "env_file_aliases": [],
-        "secrets_file_aliases": [],
-        "default": null,
-        "default_value": null,
-        "note": null,
-        "required": false,
-        "secret": false,
-        "reserved": false
-      },
-      {
         "path": "metadata.enrich_enabled",
         "env": "TANKOVAULT_METADATA__ENRICH_ENABLED",
         "env_file": "TANKOVAULT_METADATA__ENRICH_ENABLED_FILE",
@@ -2747,13 +2717,6 @@
           "tags": {
             "additionalProperties": false,
             "properties": {
-              "adult_tags": {
-                "description": "Additional genre chips that classify a series as adult, matched on their slug.\n\nAdditions only: unlike [`Self::blocklist`] there is no switch that drops the shipped\nterms. See [`tankovault_domain::AdultTagSet`] — an emptied classifier silently stops\nclassifying, where the two supported ways to make adult content visible (the deployment\nflag and the per-reader opt-in) both leave a record of somebody deciding.",
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
               "blocklist": {
                 "description": "Additional refused terms, matched on their slug: `N/A`, `n/a` and `n-a` are one entry.",
                 "items": {

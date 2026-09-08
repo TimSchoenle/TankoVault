@@ -518,7 +518,7 @@ by the block naming that crate.
   - structmeta 0.3.0
   - structmeta-derive 0.3.0
   - syn 2.0.119
-  - syn 3.0.4
+  - syn 3.0.5
   - sync_wrapper 1.0.2
   - tendril 0.5.1
   - testcontainers 0.27.3

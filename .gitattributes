@@ -1,69 +1,73 @@
-# Generated artifacts that are committed on purpose but should not be read as review surface.
+# Text normalisation, diff drivers, and linguist classification for this repository.
 #
-# `openapi.json` and `crates/api-client/src/lib.rs` are ~1 MB of `utoipa` → `progenitor` output
-# in a repository whose hand-written source is a fraction of that (BUILD_AND_OPS §9.3), and
-# `xtask openapi --check` is what guarantees they match the code — so a reviewer reading their
-# diff is reading the same information twice, at length.
-#
-# `-diff` suppresses the diff body, not the fact that the file changed: `git diff --stat` and
-# GitHub's file list still show it, and `git diff --text` still prints it when someone genuinely
-# wants to look. `linguist-generated` keeps them out of language statistics and collapses them
-# in pull requests.
-#
-# `Cargo.lock` keeps `linguist-generated` but *not* `-diff`: a lockfile change is exactly what a
-# reviewer should be reading, since it is how a dependency actually enters the build.
-#
-# **`eol=lf` on every one of them, because a generator writes LF and a gate compares bytes.**
-# `xtask openapi --check` reads the file and tests it against freshly rendered output for exact
-# equality (`xtask/src/main.rs`), and `std::fs::write` emits `\n`. Without `eol=lf` these check
-# out CRLF wherever `core.autocrlf` is on, so the comparison failed for every Windows developer
-# on a clean tree — and reported it as "openapi.json is out of date; run `xtask openapi`", which
-# names the wrong problem and is not fixed by doing what it says. `xtask ci` is this repository's
-# definition of done and it could not pass on the platform this repository is developed on.
-# `repo-lint`'s `generated-artefacts-eol` rule holds the whole list to this.
-openapi.json                 linguist-generated=true -diff eol=lf
-crates/api-client/src/lib.rs linguist-generated=true -diff eol=lf
-.sqlx/*.json                 linguist-generated=true -diff eol=lf
-# The nine published configuration contracts, kept `diff`-able on purpose: a removed or renamed
-# key is exactly what a reviewer of this diff should be reading, since it is what a chart
-# validating against the image will start refusing.
-docs/contracts/*.json        linguist-generated=true eol=lf
-Cargo.lock                   linguist-generated=true eol=lf
+# Every `linguist-generated=true` entry also carries `eol=lf` on the same line: xtask
+# repo-lint's `generated-artefacts-eol` rule (xtask/src/repo_lint/gitattributes.rs) enforces
+# that pairing, because the gates guarding these files compare bytes and every generator
+# writes `\n`.
 
-# The repository is developed on Windows and built on Linux. Normalise line endings in the
-# index so a checkout on either platform produces the same content hash, and keep the shell
-# scripts and Dockerfiles LF whatever the developer's `core.autocrlf` says — a CRLF shebang
-# line is a container that fails to start with `no such file or directory`, naming a file that
-# is plainly there.
 * text=auto
-*.sh          text eol=lf
-Dockerfile*   text eol=lf
-*.yml         text eol=lf
-*.yaml        text eol=lf
 
-# `THIRD-PARTY-NOTICES` is generated (`xtask notices`) and belongs with the artefacts at the top
-# of this file; it is declared *here* only for historical reasons. The placement is not
-# load-bearing, contrary to what this comment used to claim: the last matching line wins **per
-# attribute**, and `* text=auto` sets `text` and nothing else, so an `eol=lf` stated above it
-# survives. `git check-attr text eol -- THIRD-PARTY-NOTICES` reports `eol: lf` from either
-# position, which is why the artefacts at the top of this file declare theirs there. LF because
-# is copied verbatim into every image and compared by CI, so a CRLF working copy would make the
-# built layer differ by platform. Its diff is suppressed for the reason `openapi.json`'s is —
-# 300-odd KB of licence text that only ever changes because `Cargo.lock` did, and *that* diff is
-# the one worth reading.
-THIRD-PARTY-NOTICES  linguist-generated=true -diff text eol=lf
+# --- Rust workspaces (root, web/frontend, web/frontend/crates/inkstone-ui, xtask) ----------
+*.rs   text diff=rust
+*.toml text
 
-# …but a fuzzing seed is an **input**, not a text file, and `text=auto` was quietly rewriting
-# some of them. `git ls-files --eol fuzz/seeds/` reported two entries as `i/lf w/crlf`
-# (`adapters_json_body/wrapped-in-pre` and its entity-escaped sibling), so the bytes libFuzzer
-# read on Windows were not the bytes it read on Linux. For a corpus that is the one property
-# that has to hold: a crash reproducer is a byte string, and a platform that silently inserts a
-# `\r` into it produces a file that does not reproduce — while the *seed* directory quietly
-# feeds two different inputs to two different developers running what they believe is the same
-# command. `-text` disables both directions of conversion, so what is committed is what is read.
-#
-# `corpus/` is git-ignored apart from its `.gitkeep` files, and is listed anyway: the ignore
-# rule is what keeps machine output out of the tree, not a statement about how bytes should be
-# handled, and the two are free to change independently.
-fuzz/seeds/**   -text
-fuzz/corpus/**  -text
+# --- Frontend sources -----------------------------------------------------------------------
+*.css  text diff=css
+*.html text diff=html
+*.hbs  text
+
+# --- Documentation ---------------------------------------------------------------------------
+*.md              text diff=markdown
+docs/**/*.md      linguist-documentation=true
+deploy/legal/*.md linguist-documentation=true
+
+# --- Structured data, SQL, and env files ------------------------------------------------------
+*.json text eol=lf
+*.sql  text eol=lf
+*.env      text eol=lf
+*.example  text eol=lf
+
+# --- Scripts and containers: must check out LF whatever core.autocrlf says -------------------
+*.sh             text eol=lf diff=bash
+justfile         text eol=lf diff=bash
+xtask/hooks/*    text eol=lf diff=bash
+Dockerfile*      text eol=lf
+*.yml            text eol=lf
+*.yaml           text eol=lf
+
+# --- Generated artefacts: regenerate via xtask/npm/release-please, never hand-edit -----------
+openapi.json                   linguist-generated=true -diff eol=lf
+crates/api-client/src/lib.rs   linguist-generated=true -diff eol=lf
+.sqlx/*.json                   linguist-generated=true -diff eol=lf
+THIRD-PARTY-NOTICES            linguist-generated=true -diff eol=lf
+web/frontend/assets/main.css   linguist-generated=true eol=lf
+web/frontend/package-lock.json linguist-generated=true eol=lf
+README.md                      linguist-generated=true eol=lf
+.release-please-manifest.json  linguist-generated=true eol=lf
+
+# Lockfiles are generated too, but kept diff-able on purpose: a dependency change is exactly
+# what a reviewer should read, since it is how a dependency actually enters the build.
+Cargo.lock linguist-generated=true eol=lf
+
+# The published configuration contracts: diff-able on purpose, a removed or renamed key is
+# exactly what a reviewer of this diff should be reading.
+docs/contracts/*.json linguist-generated=true eol=lf
+
+# --- Binary assets: never line-ending-converted, never diffed as text ------------------------
+*.woff2 binary
+*.ico   binary
+*.png   binary
+
+# --- Adapter fixtures: captured third-party HTML/JSON/XML, not ours to author or to count
+# towards this repository's language statistics.
+crates/adapters/fixtures/** linguist-vendored=true -diff
+
+# --- Fuzzing inputs are byte-exact: `text=auto` would silently rewrite CRLF/LF on checkout,
+# so a Windows and a Linux corpus would stop being the same bytes for the same commit.
+fuzz/seeds/**            -text
+fuzz/corpus/**           -text
+fuzz/dictionaries/*.dict text eol=lf
+
+# --- proptest regression seeds: append-only failure corpus, kept diffable --------------------
+*.proptest-regressions     text eol=lf
+**/proptest-regressions/** text eol=lf

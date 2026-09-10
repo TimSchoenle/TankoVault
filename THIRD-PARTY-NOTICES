@@ -466,7 +466,7 @@ by the block naming that crate.
   - rustc_version 0.4.1
   - rusticata-macros 4.1.0
   - rustix 1.1.4
-  - rustls 0.23.43
+  - rustls 0.23.44
   - rustls-native-certs 0.8.4
   - rustls-platform-verifier 0.7.0
   - rustversion 1.0.23

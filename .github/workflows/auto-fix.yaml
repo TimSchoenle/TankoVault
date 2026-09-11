@@ -604,7 +604,7 @@ jobs:
       # that merely touched `Cargo.toml` makes no commit and no API call.
       - name: render README.md and commit it
         id: render
-        uses: TimSchoenle/actions/actions/common/render-template-and-commit@cf936b448984595778c82c079af93d0bb5d49297 # tag=actions-common-render-template-and-commit-v1.1.7
+        uses: TimSchoenle/actions/actions/common/render-template-and-commit@8097180ae2cd49922941c28c53e17c636ba5b8f2 # tag=actions-common-render-template-and-commit-v1.1.8
         with:
           template: .github/templates/README.md.hbs
           output: README.md

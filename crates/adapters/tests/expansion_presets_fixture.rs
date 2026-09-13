@@ -358,36 +358,7 @@ async fn kaliscan_reads_the_full_chapter_list_not_the_preview_strip() {
 // Selectors whose plausible alternative parses to nothing
 // -----------------------------------------------------------------------------------------
 
-const HADESSCANS_CATALOG: &str = include_str!("../fixtures/expansion/hadesscans-catalog.html");
-const HADESSCANS_SERIES: &str = include_str!("../fixtures/expansion/hadesscans-series.html");
 const MANGATOWN_SERIES: &str = include_str!("../fixtures/expansion/mangatown-series.html");
-
-/// On `hadesscans` the chapter row *is* the anchor. `link: "self"` is what reads it; a nested
-/// selector — the shape every other preset here uses — matches nothing and the list parses empty.
-#[tokio::test]
-async fn hadesscans_reads_a_chapter_row_that_is_itself_the_anchor() {
-    let (adapter, ctx, _) = preset_adapter(
-        "hadesscans",
-        SiteFetcher::new(HADESSCANS_CATALOG, HADESSCANS_SERIES),
-    );
-
-    let page = adapter
-        .list_catalog(&ctx, 1)
-        .await
-        .expect("catalogue parses");
-    assert_eq!(page.items.len(), 3, "one item per article.cx-poster-card");
-
-    let chapters = adapter
-        .fetch_chapters(&ctx, "/manga/whatever/")
-        .await
-        .expect("chapter list parses");
-    assert_eq!(chapters.len(), 3, "one chapter per a.cx-chapter-item");
-    assert!(
-        chapters.iter().all(|c| c.path.starts_with('/')),
-        "self-linked rows still store a path: {:?}",
-        chapters.iter().map(|c| &c.path).collect::<Vec<_>>()
-    );
-}
 
 /// `mangatown` labels a chapter "<Series Title> 526" — no `Chapter`, `Ch.` or `#` marker at all,
 /// so the number comes from `parse_chapter_number`'s bare-number fallback. Pinned because it is

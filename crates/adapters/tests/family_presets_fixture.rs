@@ -9,7 +9,7 @@
 use async_trait::async_trait;
 use std::sync::Arc;
 use tankovault_adapters::{Ctx, SourceAdapter, build_adapter, builtin_presets};
-use tankovault_domain::SeriesStatus;
+use tankovault_domain::{AdapterKind, SeriesStatus};
 use tankovault_fetch::{FetchError, FetchRequest, FetchResponse, Fetcher};
 
 /// Serves one fixture per URL shape. Unset fields serve an empty body, so each test supplies
@@ -87,10 +87,28 @@ fn preset_adapter(slug: &str, fetcher: SiteFetcher) -> (Box<dyn SourceAdapter>, 
     (adapter, ctx)
 }
 
+/// Build a family's adapter on its defaults alone, against the origin the fixture was taken from.
+fn family_adapter(
+    kind: AdapterKind,
+    base_url: &str,
+    fetcher: SiteFetcher,
+) -> (Box<dyn SourceAdapter>, Ctx) {
+    let adapter = build_adapter(kind, "family-defaults", &serde_json::json!({}))
+        .unwrap_or_else(|e| panic!("{kind:?} defaults failed to build: {e}"));
+    let ctx = Ctx {
+        base_url: base_url.to_owned(),
+        provider_slug: "family-defaults".to_owned(),
+        fetcher: Arc::new(fetcher),
+    };
+    (adapter, ctx)
+}
+
 // -----------------------------------------------------------------------------------------
-// MangaThemesia — rizzfables
+// MangaThemesia — family defaults
 // -----------------------------------------------------------------------------------------
 
+/// Origin of the two fixtures below; their links are absolute to it.
+const THEMESIA_ORIGIN: &str = "https://rizzfables.com";
 const THEMESIA_CATALOG: &str = include_str!("../fixtures/mangathemesia/catalog.html");
 const THEMESIA_SERIES: &str = include_str!("../fixtures/mangathemesia/series.html");
 /// A `rokaricomics` series page: the `table.infotable` info block this install renders in
@@ -99,8 +117,9 @@ const ROKARI_SERIES: &str = include_str!("../fixtures/mangathemesia/rokari-serie
 
 #[tokio::test]
 async fn mangathemesia_catalogue_reads_the_full_title_from_the_anchor() {
-    let (adapter, ctx) = preset_adapter(
-        "rizzfables",
+    let (adapter, ctx) = family_adapter(
+        AdapterKind::MangaThemesia,
+        THEMESIA_ORIGIN,
         SiteFetcher {
             catalog: THEMESIA_CATALOG,
             ..SiteFetcher::default()
@@ -128,8 +147,9 @@ async fn mangathemesia_catalogue_reads_the_full_title_from_the_anchor() {
 
 #[tokio::test]
 async fn mangathemesia_series_reads_the_labelled_info_rows() {
-    let (adapter, ctx) = preset_adapter(
-        "rizzfables",
+    let (adapter, ctx) = family_adapter(
+        AdapterKind::MangaThemesia,
+        THEMESIA_ORIGIN,
         SiteFetcher {
             series: THEMESIA_SERIES,
             ..SiteFetcher::default()
@@ -158,8 +178,9 @@ async fn mangathemesia_series_reads_the_labelled_info_rows() {
 
 #[tokio::test]
 async fn mangathemesia_chapters_carry_number_title_and_date() {
-    let (adapter, ctx) = preset_adapter(
-        "rizzfables",
+    let (adapter, ctx) = family_adapter(
+        AdapterKind::MangaThemesia,
+        THEMESIA_ORIGIN,
         SiteFetcher {
             series: THEMESIA_SERIES,
             ..SiteFetcher::default()
@@ -183,8 +204,8 @@ async fn mangathemesia_chapters_carry_number_title_and_date() {
         "chapter links are site-relative: {:?}",
         chapters.iter().map(|c| &c.path).collect::<Vec<_>>()
     );
-    // This theme sells no early access, so the shipped config carries no `locked` selector and
-    // every row must read as free. A default of "locked" here would empty the unread count.
+    // The family defaults carry no `locked` selector, so every row must read as free. A default
+    // of "locked" here would empty the unread count.
     assert!(
         chapters
             .iter()
@@ -252,8 +273,8 @@ async fn rokari_reads_the_coin_badge_as_a_lock() {
 }
 
 // -----------------------------------------------------------------------------------------
-// MangaThemesia — the `table.infotable` installs (rokaricomics, akazascans, kingofshojo,
-// mangatrend)
+// MangaThemesia — the `table.infotable` installs (rokaricomics, kingofshojo, mangatrend,
+// athreascans)
 // -----------------------------------------------------------------------------------------
 
 const THEMESIA_TABLE_AUTHOR: &str =
@@ -321,12 +342,13 @@ async fn mangathemesia_infotable_install_reads_the_table_rows() {
 /// Names` and `Author` as the values themselves — and `alt` feeds `series_titles`, whose
 /// `normalized` column the trigram matcher and catalogue search both score against.
 ///
-/// Run against akazascans because it is the install in this shape that fills an `Author` row;
-/// the others render only `Posted By`, so nothing there would fail if the cell were wrong.
+/// The fixture comes from `akazascans.org`, an install in this shape that fills an `Author` row;
+/// the shipped installs render only `Posted By`, so a fixture from one of them would not fail if
+/// the cell were wrong. Run through `mangatrend`, whose preset carries the same `series` override.
 #[tokio::test]
 async fn mangathemesia_infotable_reads_the_value_cell_not_the_label_cell() {
     let (adapter, ctx) = preset_adapter(
-        "akazascans",
+        "mangatrend",
         SiteFetcher {
             series: THEMESIA_TABLE_AUTHOR,
             ..SiteFetcher::default()
@@ -487,73 +509,6 @@ async fn manganato_chapters_come_from_the_json_endpoint_not_the_page() {
 }
 
 // -----------------------------------------------------------------------------------------
-// TCB Scans — a single-page catalogue
-// -----------------------------------------------------------------------------------------
-
-const TCB_CATALOG: &str = include_str!("../fixtures/tcbscans/catalog.html");
-const TCB_SERIES: &str = include_str!("../fixtures/tcbscans/series.html");
-
-/// The catalogue is one page, and the site answers *any* page number with it. Without the
-/// preset's `pages: 1`, `has_next` falls back to "this page yielded items" and the walk
-/// re-fetches the same page until the planner's cap, re-ingesting all 19 series each time.
-#[tokio::test]
-async fn tcb_catalogue_is_one_page_and_says_so() {
-    let (adapter, ctx) = preset_adapter(
-        "tcbscans",
-        SiteFetcher {
-            catalog: TCB_CATALOG,
-            ..SiteFetcher::default()
-        },
-    );
-    let page = adapter
-        .list_catalog(&ctx, 1)
-        .await
-        .expect("catalogue parses");
-
-    assert_eq!(page.items.len(), 4);
-    assert!(
-        !page.has_next,
-        "a declared one-page catalogue must never report another page"
-    );
-    assert!(page.items.iter().all(|i| i.path.starts_with("/mangas/")));
-    // The list item *is* the anchor here, which is what the `self` link spec exists for: a
-    // descendant selector finds nothing, and matching the parent instead would group all 19.
-    assert!(
-        page.items.iter().all(|i| !i.title.is_empty()),
-        "titles come from the cover's alt text: {:?}",
-        page.items.iter().map(|i| &i.title).collect::<Vec<_>>()
-    );
-}
-
-#[tokio::test]
-async fn tcb_series_and_chapters_parse() {
-    let (adapter, ctx) = preset_adapter(
-        "tcbscans",
-        SiteFetcher {
-            series: TCB_SERIES,
-            ..SiteFetcher::default()
-        },
-    );
-    let meta = adapter
-        .fetch_series(&ctx, "/mangas/5/one-piece")
-        .await
-        .expect("series parses");
-    assert_eq!(meta.title, "One Piece");
-    assert!(
-        meta.description
-            .is_some_and(|d| d.contains("Monkey D. Luffy")),
-        "the synopsis is the only prose block on the page"
-    );
-
-    let chapters = adapter
-        .fetch_chapters(&ctx, "/mangas/5/one-piece")
-        .await
-        .expect("chapters parse");
-    assert_eq!(chapters.len(), 4);
-    assert!(chapters.iter().all(|c| c.path.starts_with("/chapters/")));
-}
-
-// -----------------------------------------------------------------------------------------
 // Toonily — Madara with a different listing path
 // -----------------------------------------------------------------------------------------
 
@@ -630,22 +585,25 @@ async fn toonily_series_reads_the_lazy_loaded_cover() {
 
 /// Regression: a catalogue that does not paginate must say so, or the walk never terminates.
 ///
-/// Rizz Fables lists all 88 of its series on one page and answers every `?page=N` with that
-/// same document. The `MangaThemesia` family default clears `catalog.next`, so `has_next` falls
-/// back to "this page yielded items" — which is true forever on a site like this. A full scan
-/// re-fetched and re-ingested page 1 until the planner's page cap: twenty thousand requests for
-/// eighty-eight series, with no error anywhere, because every page genuinely succeeded.
+/// `mangatx` answers every page number with the byte-identical page 1. The `MangaThemesia` family
+/// default clears `catalog.next`, so `has_next` falls back to "this page yielded items" — which is
+/// true forever on a site like this. A full scan re-fetches and re-ingests page 1 until the
+/// planner's page cap: twenty thousand requests for forty series, with no error anywhere, because
+/// every page genuinely succeeded.
 ///
-/// Found by a live full scan, not by a fast scan — the fast path never calls `list_catalog`.
+/// Found only by walking the catalogue: a single-page probe and a fast scan both see a healthy
+/// page 1, and the fast path never calls `list_catalog` at all.
 #[tokio::test]
 async fn a_single_page_catalogue_reports_no_next_page() {
-    let (adapter, ctx) = preset_adapter(
-        "rizzfables",
+    let (adapter, mut ctx) = preset_adapter(
+        "mangatx",
         SiteFetcher {
             catalog: THEMESIA_CATALOG,
             ..SiteFetcher::default()
         },
     );
+    // The fixture's links are absolute to its own origin, and off-origin links are dropped.
+    THEMESIA_ORIGIN.clone_into(&mut ctx.base_url);
 
     let first = adapter.list_catalog(&ctx, 1).await.expect("page 1 parses");
     assert!(!first.items.is_empty(), "page 1 still yields the catalogue");

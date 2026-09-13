@@ -7,7 +7,7 @@
   },
   "app": {
     "name": "tankovault-worker",
-    "version": "v8.10.1",
+    "version": "v8.11.0",
     "source": "https://github.com/TimSchoenle/TankoVault"
   },
   "schema": {

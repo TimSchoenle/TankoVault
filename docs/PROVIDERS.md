@@ -76,6 +76,10 @@ are named per provider in the job's output.
 
 ## Summary
 
+Thirty-one presets were retired in 2026-09 as low quality, `WitchToonsAdapter` with them. The
+sections below that record how a site was onboarded or what its walk taught still name some of
+them; those findings stand, the presets do not.
+
 | Provider | Domain | Layout | Onboarding | Adapter |
 |---|---|---|---|---|
 | Demonic Scans | `demonicscans.org` | Bespoke PHP | **Custom code** | `DemonicScansAdapter` |
@@ -84,8 +88,6 @@ are named per provider in the job's output.
 | Toonily | `toonily.com` | Madara | **Config only** | Madara + overrides |
 | MangaRead | `www.mangaread.org` | Madara | **Config only** | Madara + overrides |
 | Manhua Plus | `manhuaplus.com` | Madara | **Config only** | Madara + overrides |
-| Rizz Fables | `rizzfables.com` | MangaThemesia | **Config only** | family defaults |
-| Akaza Scans | `akazascans.org` | MangaThemesia | **Config only** | family + `table.infotable` + coin lock |
 | Arena Scans | `arenascan.com` | MangaThemesia | **Config only** | family defaults |
 | Rage Scans | `ragescans.com` | MangaThemesia | **Config only** | family defaults |
 | Rokari Comics | `rokaricomics.com` | MangaThemesia | **Config only** | family + `table.infotable` + coin lock |
@@ -97,17 +99,10 @@ are named per provider in the job's output.
 | Razure | `razure.org` | MangaThemesia | **Config only** | family + `/series/` |
 | Asmodeus Scans | `asmotoon.com` | Keyoapp | **Config only** | family defaults |
 | Genz Toons | `genztoons.org` | Keyoapp | **Config only** | family defaults |
-| Timeless Toons | `timelesstoons.org` | Keyoapp | **Config only** | family defaults |
-| Mist Scans | `mistscans.com` | Keyoapp | **Config only** | family defaults |
-| Grim Scans | `grimscans.com` | Keyoapp | **Config only** | family defaults |
-| Kewn Scans | `kewnscans.org` | Keyoapp | **Config only** | family defaults |
-| Writer Scans | `writerscans.com` | Keyoapp | **Config only** | family defaults |
-| Nyanu Kafe | `nyanukafe.com` | Keyoapp | **Config only** | family defaults |
 | Yaksha Comics | `yakshacomics.com` | Madara | **Config only** | family defaults |
 | NatoManga | `www.natomanga.com` | Manganato | **Config + code** | `ManganatoAdapter` |
 | Mangakakalot | `www.mangakakalot.gg` | Manganato | **Config + code** | `ManganatoAdapter` |
 | NeloManga | `www.nelomanga.net` | Manganato | **Config + code** | `ManganatoAdapter` |
-| TCB Scans | `tcbonepiecechapters.com` | Bespoke | **Config only** | generic selectors |
 | Weeb Central | `weebcentral.com` | Bespoke (htmx) | **Config only** | generic selectors |
 | MangaPill | `mangapill.com` | Bespoke | **Config only** | generic, sitemap mode |
 | MangaDex | `mangadex.org` | JSON API | **Custom code** | `MangaDexAdapter` |
@@ -115,7 +110,6 @@ are named per provider in the job's output.
 | Asura Scans | `asurascans.com` | Astro islands | **Custom code** | `AstroIslandAdapter` |
 | Hive Toons | `hivetoons.org` | Astro islands | **Custom code** | `AstroIslandAdapter` |
 | Flame Comics | `flamecomics.xyz` | Next.js | **Custom code** | `FlameComicsAdapter` |
-| WitchToons | `witchtoons.net` | Next.js App Router | **Custom code** | `WitchToonsAdapter` |
 | WEBTOON | `www.webtoons.com` | Licensed, bespoke | **Custom code** | `WebtoonsAdapter` |
 | Mgread | `mgread.io` | Init Manga (WordPress) | **Config + code** | `MgreadAdapter` |
 | Vortex Scans | `vortexscans.org` | Iken JSON | **Custom code** | `IkenAdapter` |
@@ -145,20 +139,12 @@ scrambled, with nothing failing. It was found on `kaliscan` only after a full in
 | Provider | Domain | Layout | Onboarding | Notes |
 |---|---|---|---|---|
 | Athrea Scans | `athreascans.com` | MangaThemesia | family + `series` | `table.infotable`; coin plugin, see below |
-| CulturedWorks | `culturedworks.com` | MangaThemesia | family defaults | |
 | Eva Scans | `evascans.org` | MangaThemesia | family + listing | `manga-card-v` grid at `/series/` |
-| Galaxy Manga | `galaxymanga.io` | MangaThemesia | family defaults | |
-| Lagoon Scans | `lagoonscans.com` | MangaThemesia | family + `series` | `table.infotable` |
 | Madara Scans | `madarascans.org` | MangaThemesia | family + listing/chapters | **sells early access** |
 | MangaTX | `mangatx.cc` | MangaThemesia | family defaults | |
-| Rackus Reads | `rackusreads.com` | MangaThemesia | family + `series` | `table.infotable` |
 | Raven Scans | `ravenscans.net` | MangaThemesia | family + `/series/` | |
 | Scythe Scans | `scythescans.com` | MangaThemesia | family defaults | |
-| Silent Quill | `www.silentquill.net` | MangaThemesia | family + title | |
-| Brainrot Comics | `brainrotcomics.com` | Madara | family defaults | |
 | Bun Manga | `bunmanga.com` | Madara | family defaults | |
-| DragonTea | `dragontea.ink` | Madara | family defaults | |
-| Gourmet Supremacy | `gourmetsupremacy.com` | Madara | family + `/project/` | |
 | LinkManga | `linkmanga.com` | Madara | family defaults | |
 | MadaraDex | `madaradex.org` | Madara | family + `/title/` | |
 | Manga District | `mangadistrict.com` | Madara | family + `/series/` | |
@@ -166,12 +152,10 @@ scrambled, with nothing failing. It was found on `kaliscan` only after a full in
 | Zin Manga | `mangazin.org` | Madara | family defaults | |
 | ManhuaHot | `manhuahot.com` | Madara | family defaults | |
 | S2Manga | `s2read.com` | Madara | family defaults | |
-| Setsu Scans | `setsuscans.com` | Madara | family + title | |
 | ToonGod | `www.toongod.org` | Madara | family + `/webtoon/` | feed is the archive, not `/` |
 | WebtoonScan | `webtoonscan.com` | Madara | family + `/manhwa/` | |
 | Webtoon XYZ | `www.webtoon.xyz` | Madara | family + `/read/` | |
 | Zazamanga | `www.zazamanga.com` | Madara | family + chapters | rows are `div`, not `li` |
-| Eris Scans | `erisscans.com` | Keyoapp | family defaults | **sells early access** |
 | Mangabat | `www.mangabats.com` | Manganato | `ManganatoAdapter` | |
 | Manganato | `manganato.gg` | Manganato | `ManganatoAdapter` | |
 | MangaKakaLove | `www.mangakakalove.com` | Manganato | `ManganatoAdapter` | |
@@ -179,28 +163,16 @@ scrambled, with nothing failing. It was found on `kaliscan` only after a full in
 | Kun Manga Online | `www.kunmanga.online` | Zinmanga platform | `KunMangaAdapter` | sitemap walk + JSON chapters |
 | MangaFox | `fanfox.net` | Bespoke | **Config only** | one application, two domains |
 | MangaHere | `www.mangahere.cc` | Bespoke | **Config only** | |
-| Hades Scans | `hadesscans.com` | Bespoke WordPress | **Config only** | chapter row *is* the anchor |
 | KaliScan | `kaliscan.io` | Bespoke | **Config only** | full list, not the preview strip |
 | Mangafreak | `ww3.mangafreak.me` | Bespoke | **Config only** | |
-| Mangago | `www.mangago.me` | Bespoke | **Config only** | |
 | MangaKatana | `mangakatana.com` | Bespoke | **Config only** | |
-| MangaNow | `manganow.to` | MangaReader | **Config only** | whole chapter list server-rendered |
 | ReiManga | `reimanga.net` | Bespoke | **Config only** | card *is* the anchor; rows keyed by id |
 | MangaTown | `www.mangatown.com` | Bespoke | **Config only** | chapter labels carry no marker |
 | Manhuaplus Mirror | `manhuaplus.org` | Liliana | **Config only** | unrelated to `manhuaplus.com` |
 | MangaGeko | `www.mgeko.cc` | Bespoke | **Config only** | chapters from `all-chapters/` |
-| Project Suki | `projectsuki.com` | Bespoke | **Config only** | title only in the Open Graph tag |
 | Read Comics Online | `readcomicsonline.ru` | Bespoke | **Config only** | chapter list scoped past the "Read First" button |
 | SayManhwa | `saymanhwa.com` | Bespoke | **Config only** | |
 | XOXO Comics | `xoxocomic.com` | WPComics | **Config only** | |
-| Read Attack on Titan | `readsnk.com` | MangaCatalog | **Config only** | sitemap enumeration |
-| Read Tokyo Ghoul | `tokyoghoulre.com` | MangaCatalog | **Config only** | |
-| Read Jujutsu Kaisen | `readjujutsukaisen.com` | MangaCatalog | **Config only** | |
-| Read Seven Deadly Sins | `read7deadlysins.com` | MangaCatalog | **Config only** | |
-| Read Solo Leveling | `readsololeveling.org` | MangaCatalog | **Config only** | |
-| Read Fairy Tail | `readfairytail.com` | MangaCatalog | **Config only** | |
-| Read Kingdom | `readkingdom.com` | MangaCatalog | **Config only** | |
-| Read One Piece | `readonepiece.com` | MangaCatalog | **Config only** | 1 207 chapters |
 
 Every row above was derived from live markup and verified end to end against the running site
 with `cargo run -p tankovault-adapters --example probe -- <slug>` — feed, catalogue page, series
@@ -289,11 +261,10 @@ Where each provider publishes the fact:
 | Hive Toons | `isLocked` / `isTimeLocked` in the series island | `unlockAt`, on the **chapter** page — fetched per locked chapter, because the listing omits it and the window is per-chapter configurable |
 | Toonily and other Madara sites | `chapters.locked` selector in the provider config | `chapters.unlock`, where rendered |
 | Keyoapp sites | the coin-price badge on the chapter card (`img[alt="Coin"]`) | none — the platform states a price, never a date, so such a chapter stays locked |
-| Rokari Comics, Akaza Scans | the coin plugin's price badge on the chapter row (`span.text-gold`), which the stock MangaThemesia theme does not render | none — the badge states a price, never a date, so such a chapter stays locked |
+| Rokari Comics | the coin plugin's price badge on the chapter row (`span.text-gold`), which the stock MangaThemesia theme does not render | none — the badge states a price, never a date, so such a chapter stays locked |
 | Madara Scans | a lock glyph (`i.fa-lock`) inside the chapter row's number cell, rendered on paid rows only | none — same as the coin plugin above |
 | Eva Scans | a *different* coin-plugin skin (`div.locked-badge`: coin glyph, price, padlock). `span.text-gold` does not match it, so the two skins need separate selectors | none — the badge states a price |
 | Iken sites | `isLocked` in the chapter JSON | `unlockAt`, null on a permanently paid chapter |
-| WitchToons | `isLocked` in the flight payload's chapter row | `earlyAccessUntil` / `becomesFreeAt`; `becomesFreeOnNextRelease` is a rule, not a date, so it leaves the chapter locked |
 | WEBTOON | none: Fast Pass episodes are not rendered to an anonymous visitor at all | n/a |
 
 There is a fourth way a provider can gate a chapter, and it needs naming because it looks like
@@ -347,7 +318,6 @@ dropped from the listing, before the catalogue walk registers anything:
 |---|---|
 | Iken sites | `isNovel`, or `seriesType == "NOVEL"` on rows that predate the flag |
 | Hive Toons | `seriesType == "NOVEL"` in the catalogue island |
-| Witch Toons | `type` on the listing row (`NOVEL`, `LIGHT_NOVEL`, `WEB_NOVEL`) |
 | Demonic Scans | the link prefix: the feed lists novels at `/novel/`, which the catalogue never yields and the site answers with a 404 |
 | every other site | a bracketed medium in the listed title — `The Former Supreme Master [Novel]` |
 

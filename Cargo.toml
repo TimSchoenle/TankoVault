@@ -149,7 +149,7 @@ tankovault-api-client = { path = "crates/api-client" }
 # `progenitor-impl` (xtask) emits code against `progenitor-client`'s (crates/api-client)
 # runtime types, so the two must stay in lockstep — pinned together, since bumping only one
 # produces a generated crate that doesn't compile.
-progenitor-client = "0.14.0"
+progenitor-client = "0.15.0"
 progenitor-impl = "0.14.0"
 # `full` is what `syn::parse_file` needs (the config surface walker in `xtask`); pinned to the
 # major already in the tree, so it adds no `deny.toml` duplicate-version entry.

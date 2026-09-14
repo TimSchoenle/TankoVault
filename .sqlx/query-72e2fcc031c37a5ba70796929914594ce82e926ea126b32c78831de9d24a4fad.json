@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT chapter_rollup_rebuild($1)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "chapter_rollup_rebuild",
+        "type_info": "Void",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "72e2fcc031c37a5ba70796929914594ce82e926ea126b32c78831de9d24a4fad"
+}

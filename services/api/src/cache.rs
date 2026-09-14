@@ -1,21 +1,16 @@
 //! A read-through snapshot cache for read models too expensive to recompute per request.
 //!
-//! The operator console's two rollups aggregate the whole catalogue — `count(*)` over `chapters`
-//! and a group-by of every chapter row against its provider — which is a full scan of the largest
-//! table in the database each time. Measured at 5.7–7.5 s while a scan was running, and paid
-//! twice over, because the console's stats tab and its providers tab both fetch the per-provider
-//! table.
+//! The operator console's two rollups used to count `chapters` whole (5.7–48.7 s in production);
+//! their chapter figures now come from `chapter_rollup` (migration 0059), but the header still
+//! counts providers, series, sources, users and open scan work live, and the console's stats tab,
+//! providers tab and header stream all ask for the same figures. The cache keeps that to one
+//! computation per TTL however many tabs are open.
 //!
 //! [`Cached`] is *stale-while-revalidate*: a snapshot older than the TTL is still returned, and
-//! the refresh it triggers runs behind the response. That is deliberate, and it is why the
-//! numbers stay exact counts rather than becoming `reltuples` estimates — the expensive query is
-//! taken off the request path instead of being made cheaper and wrong. The cost is that a
-//! displayed figure can lag by a TTL plus one query, which for an operator dashboard is not a
-//! cost at all.
+//! the refresh it triggers runs behind the response. The cost is that a displayed figure can lag
+//! by a TTL plus one query, which for an operator dashboard is not a cost at all.
 //!
-//! Only one refresh runs at a time. Without that, the two console tabs loading together would
-//! start two full scans, and a dashboard left open in three browser tabs would keep the database
-//! permanently busy aggregating the same rows.
+//! Only one refresh runs at a time, so tabs loading together share one computation.
 
 use std::future::Future;
 use std::sync::Arc;

@@ -375,42 +375,6 @@ const BUDGETS: &[Budget] = &[
              both of which make the no-filter case do work it currently skips.",
     },
     Budget {
-        label: "console header rollup",
-        matches: |query| query.sql.contains("AS \"providers_total!\""),
-        ceiling: 90_000.0,
-        reason: "four `count(*)` over `chapters` (the total and three `discovered_at` windows). Exact \
-             counts by decision: `services/api/src/cache.rs` serves the rollup stale-while-\
-             revalidate so the scan never blocks a response, and refreshes it under its own \
-             120 s ceiling. Production measured the refresh at 7.8–48.7 s, so this is the open \
-             choice between `reltuples` estimates and a maintained rollup, not a settled cost.",
-    },
-    Budget {
-        label: "console per-provider table",
-        matches: |query| query.sql.starts_with("WITH src AS ("),
-        ceiling: 36_000.0,
-        reason: "groups every chapter by provider for the chapter total and the 24 h / 7 d counts. \
-             Served like the header rollup, and open for the same reason: a provider-stats rollup \
-             refreshed when a scan run settles would make this a read of ~100 rows.",
-    },
-    Budget {
-        label: "catalogue maintenance totals",
-        matches: |query| {
-            query.sql.contains("health AS (") && query.sql.contains("AS \"chapters_total!\"")
-        },
-        ceiling: 36_000.0,
-        reason: "the purge panel's stated blast radius counts `chapters` whole. An operator page opened \
-             before a destructive action, not a dashboard; production logged it at ~3 s. \
-             `reltuples` would do for a figure that only sizes a warning.",
-    },
-    Budget {
-        label: "chapter purge remaining count",
-        matches: |query| query.sql == "SELECT count(*) AS \"count!\" FROM chapters",
-        ceiling: 36_000.0,
-        reason: "`purge_chapters_batch` reports how many chapters are left after each batch, and the \
-             purge exists to empty the table, so the scan shrinks with every call. Operator-driven \
-             and rare.",
-    },
-    Budget {
         label: "chapter purge batch",
         matches: |query| {
             query

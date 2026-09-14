@@ -13,6 +13,10 @@ pub struct Config {
     /// Where the catalogue lives, and how many connections this service may hold open.
     #[config(nested)]
     pub database: tankovault_config::DatabaseConfig,
+    /// How long one statement may run, per route class, and the admin routes' own pool.
+    #[serde(default)]
+    #[config(nested)]
+    pub statement_timeouts: StatementTimeoutsConfig,
     /// Log filter, log format and Sentry reporting.
     #[config(nested)]
     pub telemetry: tankovault_config::TelemetryConfig,
@@ -167,6 +171,49 @@ pub struct AuthConfig {
     /// sit before the user has to start again.
     #[serde(default = "default_mfa_challenge_minutes")]
     pub mfa_challenge_ttl_minutes: i64,
+}
+
+/// Server-side statement ceilings for the two route classes.
+///
+/// A statement past its request's own deadline (`security.request_timeout_secs`) is work nobody
+/// will read, and before these existed it kept its pooled connection busy after the request had
+/// already answered `408`. Each ceiling is fixed per connection, which is why admin routes draw
+/// from a separate pool.
+#[derive(Debug, Clone, Copy, serde::Deserialize, Describe)]
+pub struct StatementTimeoutsConfig {
+    /// Seconds one statement may run on every non-admin route: `/v1/me`, the public catalogue and
+    /// sign-in. `0` removes the ceiling.
+    #[serde(default = "default_interactive_statement_secs")]
+    pub interactive_secs: u64,
+    /// Seconds one statement may run on a `/v1/admin` route or in the API's background sweeps.
+    /// `0` removes the ceiling.
+    #[serde(default = "default_admin_statement_secs")]
+    pub admin_secs: u64,
+    /// Connections the admin pool may hold, on top of `database.max_connections`.
+    #[serde(default = "default_admin_max_connections")]
+    pub admin_max_connections: u32,
+}
+
+impl Default for StatementTimeoutsConfig {
+    fn default() -> Self {
+        Self {
+            interactive_secs: default_interactive_statement_secs(),
+            admin_secs: default_admin_statement_secs(),
+            admin_max_connections: default_admin_max_connections(),
+        }
+    }
+}
+
+fn default_interactive_statement_secs() -> u64 {
+    5
+}
+
+fn default_admin_statement_secs() -> u64 {
+    15
+}
+
+fn default_admin_max_connections() -> u32 {
+    4
 }
 
 fn default_bind() -> String {

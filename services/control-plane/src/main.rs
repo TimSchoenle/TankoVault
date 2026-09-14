@@ -178,10 +178,10 @@ async fn serve_once(
     // privileged routes unauthenticated, so the production profile refuses to boot instead.
     let internal_auth = tankovault_service::internal_auth::resolve(&cfg.internal)?;
 
+    let db = &cfg.database;
     let pool = tankovault_db::connect(
-        &cfg.database.url,
-        cfg.database.max_connections,
-        cfg.database.acquire_timeout_secs,
+        &db.url,
+        tankovault_db::PoolSettings::new(db.max_connections, db.acquire_timeout_secs),
     )
     .await?;
     tankovault_service::metrics::spawn_pool_sampler(pool.clone(), shutdown.clone());

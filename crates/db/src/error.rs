@@ -30,6 +30,13 @@ impl DbError {
     pub fn is_unique_violation(&self) -> bool {
         matches!(self, Self::Sqlx(sqlx::Error::Database(db)) if db.code().as_deref() == Some("23505"))
     }
+
+    /// True when Postgres cancelled the statement (SQLSTATE 57014), which is how a
+    /// `statement_timeout` expiring reaches the caller.
+    #[must_use]
+    pub fn is_statement_cancelled(&self) -> bool {
+        matches!(self, Self::Sqlx(sqlx::Error::Database(db)) if db.code().as_deref() == Some("57014"))
+    }
 }
 
 /// Convenient result alias for the repository layer.

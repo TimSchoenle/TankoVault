@@ -16,7 +16,7 @@ pub struct DatabaseConfig {
     /// Upper bound on the connection pool.
     #[serde(default = "DatabaseConfig::default_max_connections")]
     pub max_connections: u32,
-    /// Statement/acquire timeout, seconds.
+    /// How long a caller waits for a pooled connection before failing, in seconds.
     #[serde(default = "DatabaseConfig::default_acquire_timeout_secs")]
     pub acquire_timeout_secs: u64,
 }

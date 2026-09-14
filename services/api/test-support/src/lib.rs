@@ -272,8 +272,11 @@ impl TestApp {
             adult_tags: Arc::new(tankovault_domain::AdultTagSet::defaults()),
         };
 
+        // One pool for both route classes: the harness asserts behaviour, not ceilings.
+        let admin_pool = state.pool.clone();
         let router = tankovault_api::build_router(
             state,
+            admin_pool,
             &tankovault_config::SecurityConfig::default(),
             &cfg.rate_limit,
             MetricsRegistry::disabled(),

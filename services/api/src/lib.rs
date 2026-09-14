@@ -62,7 +62,26 @@ use utoipa_scalar::{Scalar, Servable};
 /// `xtask openapi` serialises to `openapi.json`.
 #[must_use]
 pub fn full_openapi() -> utoipa::openapi::OpenApi {
-    documented_router().split_for_parts().1
+    let mut api = reader_routes().split_for_parts().1;
+    merge_admin_spec(&mut api, admin_routes().split_for_parts().1);
+    api
+}
+
+/// Fold the admin routes' specification into the readers'.
+///
+/// `OpenApi::merge` keeps the *first* schema of a given name, while the single registration chain
+/// this replaced let the *last* one win. `ScanRun` is registered by both halves under one name, so
+/// a plain merge would publish the other type's schema. Dropping the colliding names first keeps
+/// `openapi.json` byte-identical to the chain.
+fn merge_admin_spec(api: &mut utoipa::openapi::OpenApi, admin: utoipa::openapi::OpenApi) {
+    if let (Some(components), Some(admin_components)) =
+        (api.components.as_mut(), admin.components.as_ref())
+    {
+        components
+            .schemas
+            .retain(|name, _| !admin_components.schemas.contains_key(name));
+    }
+    api.merge(admin);
 }
 
 /// Which rate-limit budget each route family draws from.
@@ -233,15 +252,29 @@ pub fn route_features() -> RouteFeatures {
 ///
 /// The ops probes (`/health`, `/ready`, metrics) are merged in **outside** the middleware
 /// stack: a rate limit or body cap must never make a healthy replica look unhealthy.
+///
+/// `admin_pool` serves every `/v1/admin` route; `state.pool` serves the rest. They are separate
+/// pools because Postgres's `statement_timeout` is fixed per connection: a reader's route and an
+/// operator's aggregate cannot share a ceiling without one of them being wrong, and a console
+/// query exhausting connections must not queue a reader's Home load behind it.
 pub fn build_router(
     state: AppState,
+    admin_pool: tankovault_db::PgPool,
     security: &SecurityConfig,
     rate_limit: &RateLimitConfig,
     metrics: MetricsRegistry,
     health: Health,
     redis: Option<tankovault_service::ratelimit::RedisStoreHandle>,
 ) -> Router {
-    let (router, api) = documented_router().split_for_parts();
+    let (readers, mut api) = reader_routes().split_for_parts();
+    let (admin, admin_api) = admin_routes().split_for_parts();
+    merge_admin_spec(&mut api, admin_api);
+    let router = readers
+        .with_state(state.clone())
+        .merge(admin.with_state(AppState {
+            pool: admin_pool,
+            ..state.clone()
+        }));
 
     let limiter = RateLimiter::from_config(rate_limit, route_classifier(), redis);
     let features = FeatureLayer::new(state.features.clone(), route_features());
@@ -264,7 +297,6 @@ pub fn build_router(
         .with_principal(Some(principal))
         .apply(
             router
-                .with_state(state.clone())
                 .layer(axum::middleware::from_fn_with_state(
                     features,
                     tankovault_service::flags::enforce,
@@ -379,14 +411,10 @@ pub async fn ensure_deployment_owner(pool: &tankovault_db::PgPool) {
     }
 }
 
-/// Registers every documented endpoint, shared by [`full_openapi`] and [`build_router`] so
-/// the two can never drift apart.
-#[expect(
-    clippy::too_many_lines,
-    reason = "a route table: one line per endpoint, and splitting it would mean the \
-              registration no longer reads as a single list of what this service serves"
-)]
-fn documented_router() -> OpenApiRouter<AppState> {
+/// Every route a reader, a signed-out visitor or the native client reaches, served from the
+/// interactive pool. With [`admin_routes`], shared by [`full_openapi`] and [`build_router`] so
+/// the specification and the served routes cannot drift apart.
+fn reader_routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::with_openapi(openapi::ApiDoc::openapi())
         // auth
         .routes(routes!(auth::register))
@@ -504,6 +532,11 @@ fn documented_router() -> OpenApiRouter<AppState> {
         .routes(routes!(me::sync_conflicts))
         .routes(routes!(me::sync_resolve_conflict))
         .routes(routes!(me::sync_history))
+}
+
+/// Every `/v1/admin` route, served from the admin pool.
+fn admin_routes() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
         // admin — sync visibility + operator actions
         .routes(routes!(admin::list_sync_accounts))
         .routes(routes!(
@@ -794,6 +827,24 @@ mod tests {
                 declared.contains(feature) || enforced_elsewhere.contains(feature),
                 "{feature} is switchable but nothing enforces it"
             );
+        }
+    }
+
+    /// Every `/v1/admin` path is served from the admin pool and nothing else is.
+    ///
+    /// The pool decides a route's statement ceiling. An admin route registered in the reader
+    /// table would cancel a console aggregate at the reader's five seconds; a reader route in the
+    /// admin table would let a Home query hold a connection for fifteen.
+    #[test]
+    fn the_admin_pool_serves_exactly_the_admin_routes() {
+        let admin = admin_routes().split_for_parts().1;
+        let readers = reader_routes().split_for_parts().1;
+        assert!(!admin.paths.paths.is_empty());
+        for path in admin.paths.paths.keys() {
+            assert!(path.starts_with("/v1/admin/"), "{path} is served by the admin pool");
+        }
+        for path in readers.paths.paths.keys() {
+            assert!(!path.starts_with("/v1/admin"), "{path} is served by the reader pool");
         }
     }
 }

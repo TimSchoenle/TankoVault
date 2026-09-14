@@ -267,6 +267,12 @@ impl From<DbError> for ApiError {
         match e {
             DbError::NotFound => Self::NotFound,
             DbError::Conflict(m) => Self::Conflict(m),
+            // A statement past its ceiling is the database being slow, not this process faulting:
+            // a `504` is logged at `WARN` and files no Sentry issue per occurrence.
+            other if other.is_statement_cancelled() => {
+                tracing::warn!(error = %other, "database statement cancelled");
+                Self::GatewayTimeout
+            }
             other => {
                 tracing::error!(error = %other, "database error");
                 Self::Internal

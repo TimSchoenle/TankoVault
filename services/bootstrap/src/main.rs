@@ -28,10 +28,10 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let cfg: Config = tankovault_config::load()?;
+    let db = &cfg.database;
     let pool = tankovault_db::connect(
-        &cfg.database.url,
-        cfg.database.max_connections,
-        cfg.database.acquire_timeout_secs,
+        &db.url,
+        tankovault_db::PoolSettings::new(db.max_connections, db.acquire_timeout_secs),
     )
     .await?;
 

@@ -39,9 +39,11 @@ struct HttpCache {
 impl Api {
     /// A client carrying the session's **current** access token.
     ///
-    /// Call at the point the request is issued, not cached — see the struct-level doc.
+    /// Call at the point the request is issued, not cached — see the struct-level doc. Inside a
+    /// reactive scope it subscribes to the signed-in account, not to token renewals
+    /// ([`Session::token_value`]).
     pub(crate) fn client(&self) -> Client {
-        let token = self.session.token.read();
+        let token = self.session.token_value();
         self.client_for(token.as_deref())
     }
 
@@ -58,7 +60,7 @@ impl Api {
     /// credential in a slot the *unelevated* path also reads from — and a stale one there would
     /// attach an elevation to every request in the app.
     pub(crate) fn elevated_client(&self, step_up: &str) -> Client {
-        let token = self.session.token.read();
+        let token = self.session.token_value();
         let http = build_http_client_with(token.as_deref(), Some(step_up));
         Client::new_with_client(&self.base.read(), http)
     }

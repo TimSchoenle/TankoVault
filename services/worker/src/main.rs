@@ -685,9 +685,9 @@ fn is_retryable(err: &anyhow::Error) -> bool {
 /// scan becomes the thing that keeps it blocked.
 fn retry_delay(deliveries: u64) -> Duration {
     match deliveries {
-        0 | 1 => Duration::from_secs(60),
-        2 => Duration::from_secs(300),
-        _ => Duration::from_secs(900),
+        0 | 1 => Duration::from_mins(1),
+        2 => Duration::from_mins(5),
+        _ => Duration::from_mins(15),
     }
 }
 
@@ -1050,7 +1050,7 @@ mod tests {
 
         let worst_case: Duration = (0..MAX_TASK_DELIVERIES).map(retry_delay).sum();
         assert!(
-            worst_case <= Duration::from_secs(30 * 60),
+            worst_case <= Duration::from_mins(30),
             "a single task can now delay its run by {worst_case:?}, past the half hour the \
              ceiling was sized for"
         );

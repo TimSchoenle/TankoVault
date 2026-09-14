@@ -1,4 +1,6 @@
-# The one place the toolchain is named.
+# The toolchain everything is built with. CI reads the channel from here; the only other copies
+# are the two `FROM` tags in `deploy/docker/Dockerfile`, which Renovate's `rust toolchain` group
+# moves in the same pull request as this line.
 #
 # Before this file existed, three things disagreed about which Rust was in use: the workspace
 # claimed `rust-version = "1.85"` (verified by nothing), CI resolved
@@ -7,15 +9,13 @@
 # `ignore` key survived for so long — it worked for whoever added it and failed silently in CI.
 #
 # Pinning here means `cargo`, `rustfmt` and `clippy` agree everywhere, and a toolchain bump
-# becomes a reviewed commit rather than a Tuesday.
+# becomes a reviewed pull request rather than a Tuesday.
 #
 # `rust-version` in the workspace manifest is the *minimum supported* version and is what the
 # `msrv` CI job checks; this is the version everything is actually built with. The two are
-# separate claims with separate jobs behind them, and they happen to be the same number right
-# now: `sqlx 0.9` declares `rust-version = "1.94.0"`, which drags the workspace minimum up to
-# the channel below. They diverge again the moment the channel moves ahead of `sqlx`.
+# separate claims with separate jobs behind them and move independently.
 [toolchain]
-channel = "1.94.0"
+channel = "1.98.1"
 components = ["rustfmt", "clippy"]
 # `wasm32-unknown-unknown` for `web/frontend`, which is excluded from the host workspace but
 # built by this same toolchain.

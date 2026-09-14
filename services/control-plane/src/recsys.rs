@@ -613,8 +613,10 @@ async fn load_basis(pool: &PgPool) -> anyhow::Result<Option<Basis>> {
         return Ok(None);
     };
     let columns: Vec<f32> = bytes
-        .chunks_exact(4)
-        .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|chunk| f32::from_le_bytes(*chunk))
         .collect();
     let dim = usize::try_from(input_dim).unwrap_or(0);
     let width = usize::try_from(dims).unwrap_or(0);
@@ -868,7 +870,7 @@ fn prior_of(inputs: &recsys::PriorInputs, weights: &PriorWeights) -> f32 {
         .external_popularity
         .map(|value| saturate(i64::from(value), 20_000.0));
     let external = match (score, popularity) {
-        (Some(a), Some(b)) => 0.5 * (a + b),
+        (Some(a), Some(b)) => f32::midpoint(a, b),
         (Some(only), None) | (None, Some(only)) => only,
         (None, None) => 0.0,
     };

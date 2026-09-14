@@ -348,6 +348,10 @@ impl<T> tower_http::set_header::MakeHeaderValue<T> for CspHeader {
 
 /// Render one response's policy.
 fn header_value(policy: &Policy) -> HeaderValue {
+    #[expect(
+        clippy::unneeded_wildcard_pattern,
+        reason = "naming `cache_control` turns a rename of the field this obligation rests on into a compile error"
+    )]
     let csp_shell::Headers {
         content_security_policy,
         // The obligation this field carries — a per-response nonce served from cache is pinned

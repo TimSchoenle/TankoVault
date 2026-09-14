@@ -3,8 +3,6 @@
 # (`runtime` default, `runtime-browser` for render, `frontend` for the SPA server) and
 # `--build-arg BIN=<api|worker|control-plane|notifier|sync|challenge-solver|render|bootstrap>`.
 
-ARG RUST_VERSION=1.94
-
 # `SOURCE_DATE_EPOCH` is deliberately **not** declared here, and it must be a **constant**
 # wherever it is set. The Dockerfile frontend consumes it as a built-in build arg, so its value is
 # part of the cache key of every stage below — and there is no way to keep it out of one: buildx
@@ -18,10 +16,12 @@ ARG RUST_VERSION=1.94
 
 # Alpine, not Debian: BoringSSL (wreq's TLS backend) needs a musl C++ toolchain that Debian's
 # musl-tools lacks, so the build is native rather than cross. Pinned by digest.
-FROM lukemathwalker/cargo-chef:latest-rust-${RUST_VERSION}-alpine@sha256:5b2b5c6585c537a2795a477e93ebba85b4a2887e11ee9bddd34ad607e53ccec0 AS chef
+# The Rust version is written into both `FROM` tags rather than an `ARG`: Renovate cannot rewrite
+# a tag through `${…}`, and its `rust toolchain` group moves both tags with `rust-toolchain.toml`.
+FROM lukemathwalker/cargo-chef:latest-rust-1.98.1-alpine@sha256:db36171219e2620c93de86e074f1364f61ac8e6e7a0d91e2a3a13232343cf0c9 AS chef
 WORKDIR /app
 # Copied alone, first, exactly as `wasm-chef` does below and for a sharper version of the same
-# reason: the base image's toolchain floats within 1.94 while this file pins an exact patch.
+# reason: nothing guarantees the base image's toolchain is the exact patch this file pins.
 # Without it here, `cook` compiled against the image's rustc and `builder` — which receives this
 # file via `COPY . .` — compiled against the pinned one. Cargo's fingerprint carries the rustc
 # identity, so every one of the 523 dependency crates got a different metadata hash and `builder`
@@ -296,10 +296,10 @@ FROM scratch AS debug-symbols
 COPY --from=debug-bundler /debug/ /
 
 # `dx` needs glibc (wasm-bindgen/wasm-opt), so this half stays on Debian rather than Alpine.
-FROM rust:${RUST_VERSION}-bookworm@sha256:6ae102bdbf528294bc79ad6e1fae682f6f7c2a6e6621506ba959f9685b308a55 AS wasm-chef
+FROM rust:1.98.1-bookworm@sha256:9a73a5088750b4c95158ab26629c854c3d6fc4b173cb7bc8079ad252d8ed7bfa AS wasm-chef
 WORKDIR /app
-# Copied alone, before `rustup target add`: the base image's toolchain floats within 1.94 while
-# this file pins an exact patch, so without this order wasm32-unknown-unknown ends up missing.
+# Copied alone, before `rustup target add`: nothing guarantees the base image's toolchain is the
+# exact patch this file pins, so without this order wasm32-unknown-unknown can end up missing.
 COPY rust-toolchain.toml ./
 # `cargo-about`'s binary is behind `required-features = ["cli"]`, which is not a default:
 # without `--features cli` the install compiles the library, installs no binary and exits **0**.

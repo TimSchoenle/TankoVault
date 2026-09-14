@@ -132,12 +132,14 @@ pub(super) fn TrackingCard(
                         .provider(&provider.slug)
                         .send()
                         .await
-                        .map(ResponseValue::into_inner)
-                        .unwrap_or(SyncAccountStatus {
-                            linked: false,
-                            username: None,
-                            last_synced_at: None,
-                        });
+                        .map_or(
+                            SyncAccountStatus {
+                                linked: false,
+                                username: None,
+                                last_synced_at: None,
+                            },
+                            ResponseValue::into_inner,
+                        );
                     Tracker {
                         slug: provider.slug,
                         name: provider.name,

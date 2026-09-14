@@ -57,7 +57,7 @@ The short list. Everything else in this document is elaboration.
 
 | Tree | Toolchain | Why it is separate |
 | --- | --- | --- |
-| the root workspace | `rust-toolchain.toml` (1.94.0) | everything shipped as a server binary |
+| the root workspace | `rust-toolchain.toml` (pinned stable) | everything shipped as a server binary |
 | `web/frontend` | same toolchain; `wasm32-unknown-unknown` **and** the host triple, via `dx` | needs targets the host workspace does not build; carries its own lockfile |
 | `fuzz` | **nightly** | `libfuzzer-sys` needs `-Z sanitizer`; as a member it would drag nightly into every workspace-wide gate |
 

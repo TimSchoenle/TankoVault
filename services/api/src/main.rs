@@ -533,7 +533,7 @@ fn build_mfa_sealer(auth: &AuthConfig) -> anyhow::Result<Option<tankovault_auth:
 /// Generous: expiry is already enforced in every read (`take_ceremony`,
 /// `charge_challenge_attempt` and `renew_step_up` all filter on `expires_at`), so an unswept row
 /// is unusable, not dangerous — this only stops three tables growing without bound.
-const CREDENTIAL_SWEEP_INTERVAL: Duration = Duration::from_secs(15 * 60);
+const CREDENTIAL_SWEEP_INTERVAL: Duration = Duration::from_mins(15);
 
 /// Start the sweep over abandoned `WebAuthn` ceremonies, half-finished sign-ins and expired
 /// step-up grants.

@@ -120,7 +120,7 @@ fn container_name() -> String {
 /// Sized to be far longer than any conceivable test run and far shorter than "until the disk
 /// fills". The whole integration suite is minutes, so an hour cannot catch a live database, and
 /// a leftover survives at most one further hour of idleness.
-const STALE_DB_AFTER: StdDuration = StdDuration::from_secs(60 * 60);
+const STALE_DB_AFTER: StdDuration = StdDuration::from_hours(1);
 
 /// The catalogue-fixture template database, cloned by [`TestDb::spawn_with_catalogue`].
 ///

@@ -1,0 +1,51 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH watched AS ( SELECT count(*) AS tracking, count(*) FILTER (WHERE status = 'reading') AS reading, count(*) FILTER (WHERE status = 'completed') AS completed FROM watchlist_entries WHERE user_id = $1 ) SELECT (SELECT tracking FROM watched) AS \"tracking!\", (SELECT reading FROM watched) AS \"reading!\", (SELECT completed FROM watched) AS \"completed!\", (SELECT COALESCE(sum(floor(last_read_whole_number)),0)::int8 FROM read_progress WHERE user_id = $1) AS \"chapters_read!\", (SELECT COALESCE(sum(u.unread_count), 0)::int8 FROM watchlist_unread u WHERE u.user_id = $1) AS \"unread!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "tracking!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "reading!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "completed!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "chapters_read!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "unread!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "c33255a02bfbab5ceff30c65fd6c935934cbf904755d708a6923830e5111c85a"
+}

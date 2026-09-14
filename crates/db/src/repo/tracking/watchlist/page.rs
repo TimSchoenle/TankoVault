@@ -98,11 +98,10 @@ impl From<CardRow> for WatchlistCard {
 /// `unread` counts distinct whole chapters (`floor(number)`), so part releases do not inflate
 /// it.
 ///
-/// The unread filter is the fourth copy of the predicate documented on
-/// [`dashboard`](crate::repo::tracking::dashboard); it must stay the negation of
+/// The unread count is the stored one, and the next-unread probe is a copy of the predicate
+/// documented on [`dashboard`](crate::repo::tracking::dashboard); both must stay the negation of
 /// [`ReadProgress::covers`](crate::repo::tracking::ReadProgress::covers), or this badge disagrees with the feed
-/// that links to the same chapters. `repo_tracking`'s `unread_predicate_agrees_everywhere` test
-/// is what holds the four together.
+/// that links to the same chapters. `repo_tracking`'s differential test is what holds them together.
 ///
 /// # Why three statements
 ///
@@ -187,27 +186,13 @@ async fn attach_sources(pool: &PgPool, rows: Vec<CardRow>) -> DbResult<Vec<Watch
 /// `pattern` is already wrapped and escaped by [`search_pattern`]; binding a raw term instead
 /// would let a typed `%` or `_` act as a wildcard.
 ///
-/// # Why the expensive columns are computed after the `LIMIT`
+/// # Where the figures come from
 ///
-/// `total_chapters` and `read_count` count distinct whole chapters across *every* chapter the
-/// series has on every source; there is no predicate that narrows them, so each one reads the
-/// series' whole chapter list. Computed alongside the filters they run for every tracked
-/// series — 851 entries × ~375 chapters, measured at 570 ms warm and 4.7 s cold. Nothing reads
-/// them except the returned rows, so the statement is two stages: the `page` CTE carries only
-/// what the filters, the sort and the cursor need, and the outer query joins the per-row
-/// aggregates onto the ≤`limit` rows that survived. Same rows, same order, 95 ms warm.
-///
-/// What that leaves in the CTE is deliberately cheap: `unread` takes the unread predicate in
-/// its `WHERE`, so `floor(number) >` becomes an **index cond** on
-/// `chapters_source_number_key` and the scan stays index-only over the unread tail;
-/// `latest_chapter_at` is a scalar `max()` per source, the form that lets Postgres apply the
-/// MIN/MAX index optimisation on `chapters_source_disc_access_idx`. Both indexes carry the
-/// early-access columns as `INCLUDE` payload so those scans stay index-only — see
-/// `0052_activity_covering_index` for what a predicate column outside the index costs. The
-/// `progress` sort is the one
-/// key that genuinely needs `total_chapters` before the `LIMIT`, so it is a subquery inside the
-/// sort-key `CASE` — an untaken `CASE` arm never executes its subplan, so the other four sorts
-/// do not pay for it.
+/// `unread`, `total_chapters`, `read_count`, the latest chapter and its instant are read from
+/// `watchlist_unread` (migration 0058), kept equal to the unread predicate by triggers. What is
+/// still computed here is per-row and bounded by the page: the source rank, and the next unread
+/// chapter's title and instant, a `LIMIT 1` probe of `chapters_source_number_key` for each of
+/// the ≤`limit` rows the `page` CTE returns.
 ///
 /// The outer `ORDER BY` repeats the CTE's: a CTE's row order is not contractual, and the two
 /// lateral joins below are free to reorder it.
@@ -243,50 +228,26 @@ async fn fetch_page(
              SELECT w.series_id, s.canonical_title AS series_title, s.cover_url, w.status, \
                     w.notify, w.added_at, w.sync_excluded, w.pinned_source_id, \
                     rp.last_read_whole_number, rp.last_read_part_number, \
-                    unr.unread, la.latest_chapter_at, \
+                    COALESCE(u.unread_count, 0)::int8 AS unread, \
+                    u.latest_readable_at AS latest_chapter_at, \
+                    COALESCE(u.total_chapters, 0)::int8 AS total_chapters, \
+                    COALESCE(u.read_count, 0)::int8 AS read_count, \
+                    u.latest_milli AS latest_chapter_number, \
                     src.preferred_source_name, src.source_count, src.source_degraded, \
                     CASE $7 \
-                      WHEN 'released' THEN extract(epoch FROM la.latest_chapter_at)::float8 \
-                      WHEN 'unread'   THEN unr.unread::float8 \
+                      WHEN 'released' THEN extract(epoch FROM u.latest_readable_at)::float8 \
+                      WHEN 'unread'   THEN COALESCE(u.unread_count, 0)::float8 \
                       WHEN 'added'    THEN extract(epoch FROM w.added_at)::float8 \
-                      WHEN 'progress' THEN ( \
-                        SELECT CASE WHEN count(DISTINCT c.number_milli / 10000) > 0 \
-                                    THEN COALESCE(rp.last_read_whole_number, 0)::float8 \
-                                         / count(DISTINCT c.number_milli / 10000) END \
-                        FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
-                        WHERE ss.series_id = w.series_id \
-                          AND (c.access = 'free' OR c.unlocks_at <= now() \
-                               OR ss.provider_id = ANY(ARRAY( \
-                                    SELECT e.provider_id FROM user_provider_early_access e \
-                                    WHERE e.user_id = $1)))) \
+                      WHEN 'progress' THEN \
+                        CASE WHEN u.total_chapters > 0 \
+                             THEN COALESCE(rp.last_read_whole_number, 0)::float8 \
+                                  / u.total_chapters END \
                     END AS sort_num, \
                     CASE WHEN $7 = 'title' THEN s.canonical_title END AS sort_text \
              FROM watchlist_entries w \
              JOIN series s ON s.id = w.series_id \
              LEFT JOIN read_progress rp ON rp.user_id = w.user_id AND rp.series_id = w.series_id \
-             CROSS JOIN LATERAL ( \
-               SELECT COALESCE(count(DISTINCT c.number_milli / 10000), 0) AS unread \
-               FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
-               WHERE ss.series_id = w.series_id \
-                 AND c.number_milli >= (floor(COALESCE(rp.last_read_whole_number, 0))::bigint + 1) * 10000 \
-                 AND NOT (c.number_milli % 10000 <> 0 \
-                          AND rp.last_read_part_number IS NOT NULL \
-                          AND c.number_milli <= (rp.last_read_part_number * 10000)::bigint) \
-                 AND (c.access = 'free' OR c.unlocks_at <= now() \
-                      OR ss.provider_id = ANY(ARRAY( \
-                           SELECT e.provider_id FROM user_provider_early_access e \
-                           WHERE e.user_id = $1))) \
-             ) unr \
-             CROSS JOIN LATERAL ( \
-               SELECT max((SELECT max(c.discovered_at) FROM chapters c \
-                           WHERE c.series_source_id = ss.id \
-                             AND (c.access = 'free' OR c.unlocks_at <= now() \
-                                  OR ss.provider_id = ANY(ARRAY( \
-                                       SELECT e.provider_id FROM user_provider_early_access e \
-                                       WHERE e.user_id = $1))))) \
-                        AS latest_chapter_at \
-               FROM series_sources ss WHERE ss.series_id = w.series_id \
-             ) la \
+             LEFT JOIN watchlist_unread u ON u.user_id = w.user_id AND u.series_id = w.series_id \
              CROSS JOIN LATERAL ( \
                SELECT count(DISTINCT ss.provider_id) AS source_count, \
                       (array_agg(p.name ORDER BY ss.chapter_count DESC, \
@@ -313,8 +274,8 @@ async fn fetch_page(
                                JOIN authors a ON a.id = sa.author_id \
                                WHERE sa.series_id = w.series_id \
                                  AND a.name ILIKE $3)) \
-               AND (NOT $4::boolean OR unr.unread > 0) \
-               AND ($5::timestamptz IS NULL OR la.latest_chapter_at >= $5) \
+               AND (NOT $4::boolean OR COALESCE(u.unread_count, 0) > 0) \
+               AND ($5::timestamptz IS NULL OR u.latest_readable_at >= $5) \
                AND (NOT $6::boolean OR src.source_degraded) \
                AND ($11::uuid IS NULL OR w.series_id = $11) \
            ) q \
@@ -345,8 +306,8 @@ async fn fetch_page(
                 p.status AS \"status!: WatchStatus\", p.notify AS \"notify!\", \
                 p.added_at AS \"added_at!\", p.sync_excluded AS \"sync_excluded!\", \
                 p.last_read_whole_number::float8 AS last_read_number, \
-                p.unread AS \"unread!\", ch.read_count AS \"read_count!\", \
-                ch.total_chapters AS \"total_chapters!\", ch.latest_chapter_number, \
+                p.unread AS \"unread!\", p.read_count AS \"read_count!\", \
+                p.total_chapters AS \"total_chapters!\", p.latest_chapter_number, \
                 p.latest_chapter_at, \
                 nu.number AS \"next_unread_number?\", \
                 nu.title AS \"next_unread_title?\", \
@@ -354,20 +315,6 @@ async fn fetch_page(
                 p.source_count AS \"source_count!\", p.source_degraded AS \"source_degraded!\", \
                 p.pinned_source_id, p.sort_num, p.sort_text \
          FROM page p \
-         CROSS JOIN LATERAL ( \
-           SELECT COALESCE(count(DISTINCT c.number_milli / 10000), 0) AS total_chapters, \
-                  COALESCE(count(DISTINCT c.number_milli / 10000) FILTER ( \
-                    WHERE c.number_milli < (floor(COALESCE(p.last_read_whole_number, 0))::bigint \
-                                            + 1) * 10000 \
-                  ), 0) AS read_count, \
-                  max(c.number_milli) AS latest_chapter_number \
-           FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
-           WHERE ss.series_id = p.series_id \
-             AND (c.access = 'free' OR c.unlocks_at <= now() \
-                  OR ss.provider_id = ANY(ARRAY( \
-                       SELECT e.provider_id FROM user_provider_early_access e \
-                       WHERE e.user_id = $1))) \
-         ) ch \
          LEFT JOIN LATERAL ( \
            SELECT c.number_milli AS number, c.title, c.discovered_at \
            FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \

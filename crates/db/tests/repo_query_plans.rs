@@ -742,7 +742,51 @@ fn assert_opt_in_is_resolved_once(plan: &Value, label: &str) {
     );
 }
 
-/// The Home surfaces must read `chapters` from the index and resolve the opt-in set once.
+/// Assert a statement's plan has no node reading `chapters`.
+fn assert_never_reads_chapters(plan: &Value, label: &str) {
+    let mut chapter_scans: Vec<String> = Vec::new();
+    walk(&plan[0]["Plan"], &mut |node| {
+        if node["Relation Name"].as_str() == Some("chapters") {
+            chapter_scans.push(node["Node Type"].as_str().unwrap_or_default().to_owned());
+        }
+    });
+    let pretty = serde_json::to_string_pretty(plan).unwrap_or_default();
+    assert!(
+        chapter_scans.is_empty(),
+        "{label} reads `chapters` ({chapter_scans:?}) where it should read `watchlist_unread`. \
+         Plan:\n{pretty}"
+    );
+}
+
+/// `EXPLAIN` the stored figures' source of truth for the fixture's heaviest reader.
+///
+/// A set-returning SQL function made of one `SELECT` is inlined by the planner, so this plan is
+/// the function body's, not an opaque `Function Scan`.
+async fn live_function_plan(pool: &PgPool) -> Value {
+    let reader: uuid::Uuid = sqlx::query_scalar(
+        "SELECT user_id FROM watchlist_entries GROUP BY user_id ORDER BY count(*) DESC LIMIT 1",
+    )
+    .fetch_one(pool)
+    .await
+    .expect("read a reader with a watchlist from the catalogue fixture");
+    let series: Vec<uuid::Uuid> =
+        sqlx::query_scalar("SELECT series_id FROM watchlist_entries WHERE user_id = $1")
+            .bind(reader)
+            .fetch_all(pool)
+            .await
+            .expect("read that reader's watchlist");
+    sqlx::query_scalar::<_, Value>(
+        "EXPLAIN (FORMAT JSON) SELECT * FROM watchlist_unread_live($1, $2)",
+    )
+    .bind(reader)
+    .bind(&series)
+    .fetch_one(pool)
+    .await
+    .expect("EXPLAIN watchlist_unread_live")
+}
+
+/// The Home surfaces must read the stored figures, and the function computing those figures must
+/// read `chapters` from the index and resolve the opt-in set once.
 ///
 /// # The bug this exists to stop
 ///
@@ -780,17 +824,24 @@ async fn the_reading_surfaces_stay_in_the_chapter_indexes() {
         has_column(q, "chapter_number!") && has_column(q, "provider_slug!")
     });
 
+    // Both read the stored figures (migration 0058) and must never go back to `chapters`: that is
+    // the whole-watchlist scan the stored table exists to remove.
     for (label, query) in [
         ("dashboard::continue_reading", continue_reading),
         ("dashboard::me_stats", me_stats),
-        ("dashboard::feed", feed),
     ] {
         let plan = plan_for_reader(&db.pool, query).await;
-        assert_opt_in_is_resolved_once(&plan, label);
-        // `feed` is deliberately absent: it returns a chapter's title and path, which no index
-        // carries, so its scan is not index-only and never was.
-        if label != "dashboard::feed" {
-            assert_chapter_scans_are_index_only(&plan, label);
-        }
+        assert_never_reads_chapters(&plan, label);
     }
+
+    // `feed` returns a chapter's title and path, which no index carries, so its scans are not
+    // index-only and never were; the opt-in set must still be resolved once.
+    let plan = plan_for_reader(&db.pool, feed).await;
+    assert_opt_in_is_resolved_once(&plan, "dashboard::feed");
+
+    // The predicate itself now lives in `watchlist_unread_live`, which every stored row is
+    // computed from, so the index-only and InitPlan assertions move with it.
+    let live = live_function_plan(&db.pool).await;
+    assert_opt_in_is_resolved_once(&live, "watchlist_unread_live");
+    assert_chapter_scans_are_index_only(&live, "watchlist_unread_live");
 }

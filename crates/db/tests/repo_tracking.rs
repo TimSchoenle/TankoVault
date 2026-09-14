@@ -348,6 +348,9 @@ async fn the_sql_and_the_rust_predicate_agree_on_every_chapter() {
             "me_stats unread count ({})",
             state.name
         );
+
+        // 5. The stored figures behind 2–4 equal the live computation they are derived from.
+        assert_stored_matches_live(&db, state.name).await;
     }
 }
 
@@ -617,6 +620,7 @@ async fn a_merged_series_lists_each_chapter_once_in_the_feed() {
         vec![(1.0, "alpha"), (2.0, "beta"), (3.0, "beta"), (4.0, "beta")],
         "one row per chapter, each opening on the preferred source that holds it"
     );
+    assert_stored_matches_live(&db, "after a merge").await;
 }
 
 /// Rank one of a series' sources by giving it a chapter count, as a scan does.
@@ -1516,6 +1520,7 @@ async fn an_early_access_chapter_counts_only_once_the_reader_can_read_it() {
         2,
         "a locked chapter must not be counted as unread"
     );
+    assert_stored_matches_live(&db, "a locked chapter must not be counted as unread").await;
     assert!(
         !feed(&db.pool, user, 100)
             .await
@@ -1534,6 +1539,11 @@ async fn an_early_access_chapter_counts_only_once_the_reader_can_read_it() {
         3,
         "an opted-in reader counts the chapters they have paid for"
     );
+    assert_stored_matches_live(
+        &db,
+        "an opted-in reader counts the chapters they have paid for",
+    )
+    .await;
 
     // The opt-in is per provider, so another provider's paywall stays shut for the same reader.
     tankovault_db::repo::users::set_early_access_providers(&db.pool, user, &[])
@@ -1544,6 +1554,7 @@ async fn an_early_access_chapter_counts_only_once_the_reader_can_read_it() {
         2,
         "opting out closes it again"
     );
+    assert_stored_matches_live(&db, "opting out closes it again").await;
 
     // Route two: the timer expires. No rescan is needed — the stored unlock time is what the
     // predicate compares against, so the chapter opens on its own.
@@ -1558,6 +1569,11 @@ async fn an_early_access_chapter_counts_only_once_the_reader_can_read_it() {
         3,
         "a chapter whose unlock time has passed counts without a rescan"
     );
+    assert_stored_matches_live(
+        &db,
+        "a chapter whose unlock time has passed counts without a rescan",
+    )
+    .await;
 
     // A locked chapter with no announced date must stay locked rather than defaulting to open.
     sqlx::query("UPDATE chapters SET unlocks_at = NULL WHERE number_milli = 30000")
@@ -1569,6 +1585,11 @@ async fn an_early_access_chapter_counts_only_once_the_reader_can_read_it() {
         2,
         "no announced unlock time must read as still locked, never as already unlocked"
     );
+    assert_stored_matches_live(
+        &db,
+        "no announced unlock time must read as still locked, never as already unlocked",
+    )
+    .await;
 }
 
 /// The lookup the notifier's fan-out narrows a paywalled chapter's recipients with.
@@ -1786,4 +1807,271 @@ async fn tracking_a_series_already_on_the_watchlist_changes_nothing() {
     };
     assert_eq!(entry.status, WatchStatus::Dropped);
     assert!(!entry.notify, "the muted bell stays muted");
+}
+
+// ---------------------------------------------------------------------------
+// Stored unread state (migration 0058)
+// ---------------------------------------------------------------------------
+
+/// Every stored `watchlist_unread` row must equal `watchlist_unread_live` for its key, every
+/// watchlist entry must have one, and no row may outlive its entry.
+///
+/// The live function is the single spelling of every stored figure, and the Rust predicate is
+/// checked against the read models separately, so this closes the triangle: stored == live, and
+/// the read models built on the stored rows == `ReadProgress::covers`.
+async fn assert_stored_matches_live(db: &TestDb, context: &str) {
+    let (missing, differing): (i64, i64) = sqlx::query_as(
+        "WITH live AS ( \
+             SELECT l.* FROM ( \
+               SELECT user_id, array_agg(series_id) AS series FROM watchlist_entries GROUP BY user_id \
+             ) w CROSS JOIN LATERAL watchlist_unread_live(w.user_id, w.series) l \
+         ) \
+         SELECT \
+           (SELECT count(*) FROM watchlist_entries w \
+             WHERE NOT EXISTS (SELECT 1 FROM watchlist_unread u \
+                               WHERE u.user_id = w.user_id AND u.series_id = w.series_id)), \
+           (SELECT count(*) FROM live l \
+             FULL JOIN watchlist_unread u ON u.user_id = l.user_id AND u.series_id = l.series_id \
+             WHERE (l.user_id, l.unread_count, l.next_unread_milli, l.total_chapters, l.read_count, \
+                    l.latest_milli, l.latest_readable_at, l.next_unlock_at) \
+                   IS DISTINCT FROM \
+                   (u.user_id, u.unread_count, u.next_unread_milli, u.total_chapters, u.read_count, \
+                    u.latest_milli, u.latest_readable_at, u.next_unlock_at))",
+    )
+    .fetch_one(&db.pool)
+    .await
+    .expect("compare stored and live unread state");
+    assert_eq!(
+        (missing, differing),
+        (0, 0),
+        "stored unread state drifted from the live computation ({context}): \
+         {missing} entries without a row, {differing} rows differing"
+    );
+}
+
+/// A series' first source and its path, as the ingest path addresses it.
+async fn first_source(db: &TestDb, series: SeriesId) -> (SeriesSourceId, String) {
+    let (id, path): (uuid::Uuid, String) = sqlx::query_as(
+        "SELECT id, source_path FROM series_sources WHERE series_id = $1 ORDER BY id LIMIT 1",
+    )
+    .bind(series.as_uuid())
+    .fetch_one(&db.pool)
+    .await
+    .expect("source");
+    (SeriesSourceId::from_uuid(id), path)
+}
+
+/// **Every writer of a predicate input keeps the stored figures true.**
+///
+/// The stored table is only as good as its triggers' coverage. Each step below is a different
+/// writer from the inventory in `docs/perf/UNREAD_DENORMALISATION.md` §4, issued through its real
+/// repository function where one exists and through the statement text an operator xtask issues
+/// where it does not. A writer the triggers miss leaves the table wrong with no error anywhere,
+/// and every Home surface then shows the wrong count until the reconciler notices.
+#[tokio::test]
+async fn every_writer_of_an_unread_input_keeps_the_stored_figures_true() {
+    use tankovault_db::repo::catalog::maintenance::purge_chapters_batch;
+    use tankovault_db::repo::catalog::{ChapterUpsert, upsert_chapters};
+    use tankovault_db::repo::matching::revert_merge;
+
+    let db = TestDb::spawn().await;
+    let user = seed::user(&db, "reader").create().await;
+    let alpha = seed::provider(&db, "alpha").create().await;
+    let beta = seed::provider(&db, "beta").create().await;
+    let keep = a_series(&db, alpha, "Vinland Saga", &[1.0, 2.0, 3.0]).await;
+    let other = a_series(&db, beta, "Historie", &[2.0, 3.0, 4.0, 4.5]).await;
+
+    // Watchlist inserts.
+    watchlist_upsert(&db.pool, user, keep, WatchStatus::Reading, true)
+        .await
+        .expect("track");
+    watchlist_track_if_absent(&db.pool, user, other)
+        .await
+        .expect("track if absent");
+    assert_stored_matches_live(&db, "watchlist insert").await;
+
+    // Progress: set, mark read (parts and wholes), mark unread.
+    progress_set(&db.pool, user, keep, 1.0).await.expect("set");
+    assert_stored_matches_live(&db, "progress_set").await;
+    progress_mark_read(&db.pool, user, other, 4.5)
+        .await
+        .expect("mark part");
+    assert_stored_matches_live(&db, "progress_mark_read of a part").await;
+    progress_mark_unread(&db.pool, user, other, 2.0)
+        .await
+        .expect("mark unread");
+    assert_stored_matches_live(&db, "progress_mark_unread").await;
+
+    // Ingest: a new chapter, then a paywall change on it.
+    let (source_id, source_path) = first_source(&db, keep).await;
+    let chapter = |number: f64, access: tankovault_domain::ChapterAccess| ChapterUpsert {
+        number,
+        title: None,
+        path: format!("/c/{number}"),
+        published_at: None,
+        access,
+        unlocks_at: None,
+    };
+    upsert_chapters(
+        &db.pool,
+        source_id,
+        &source_path,
+        &[chapter(5.0, tankovault_domain::ChapterAccess::Free)],
+    )
+    .await
+    .expect("ingest a chapter");
+    assert_stored_matches_live(&db, "chapter insert").await;
+    upsert_chapters(
+        &db.pool,
+        source_id,
+        &source_path,
+        &[chapter(5.0, tankovault_domain::ChapterAccess::EarlyAccess)],
+    )
+    .await
+    .expect("paywall a chapter");
+    assert_stored_matches_live(&db, "chapter access change").await;
+
+    // A scan rewriting the source's counters changes nothing stored, and must not break anything.
+    prefer_source(&db, keep, alpha, 42).await;
+    assert_stored_matches_live(&db, "source counter rewrite").await;
+
+    // Early-access opt-in replace, in and out.
+    tankovault_db::repo::users::set_early_access_providers(&db.pool, user, &[alpha])
+        .await
+        .expect("opt in");
+    assert_stored_matches_live(&db, "early-access opt-in").await;
+    tankovault_db::repo::users::set_early_access_providers(&db.pool, user, &[])
+        .await
+        .expect("opt out");
+    assert_stored_matches_live(&db, "early-access opt-out").await;
+
+    // Merge moves sources, watchlist and progress; revert moves them back.
+    let undo = merge_series(&db.pool, keep, other, None, "merged")
+        .await
+        .expect("merge");
+    assert_stored_matches_live(&db, "merge").await;
+    revert_merge(&db.pool, &undo).await.expect("revert");
+    assert_stored_matches_live(&db, "revert").await;
+
+    // The operator repair xtask moves a source between series with this exact statement.
+    sqlx::query("UPDATE series_sources SET series_id = $1 WHERE id = ANY($2)")
+        .bind(other.as_uuid())
+        .bind(vec![source_id.as_uuid()])
+        .execute(&db.pool)
+        .await
+        .expect("repair move");
+    assert_stored_matches_live(&db, "source moved by repair").await;
+
+    // Chapter deletion: the console purge, then a provider deletion cascading through sources.
+    let mut conn = db.pool.acquire().await.expect("connection");
+    purge_chapters_batch(&mut conn, 2)
+        .await
+        .expect("purge a batch");
+    drop(conn);
+    assert_stored_matches_live(&db, "chapter purge batch").await;
+    tankovault_db::repo::providers::delete(&db.pool, beta)
+        .await
+        .expect("delete provider");
+    assert_stored_matches_live(&db, "provider delete cascade").await;
+
+    // Untracking removes the stored row with the entry.
+    tankovault_db::repo::tracking::watchlist_remove(&db.pool, user, keep)
+        .await
+        .expect("untrack");
+    assert_stored_matches_live(&db, "watchlist remove").await;
+}
+
+/// **A chapter whose unlock time passes starts counting without any write.**
+///
+/// Nothing is written when an early-access timer expires, so no trigger fires; the stored row
+/// carries the deadline and the control plane's sweeper recomputes it once it passes. Without the
+/// sweeper the chapter would stay uncounted until some unrelated write happened to touch the row.
+#[tokio::test]
+async fn an_expired_unlock_counts_once_the_sweeper_runs() {
+    use tankovault_db::repo::tracking::unread::sweep_unlocks;
+
+    let db = TestDb::spawn().await;
+    let user = seed::user(&db, "reader").create().await;
+    let provider = seed::provider(&db, "paid").create().await;
+    let series = a_series(&db, provider, "Paywalled", &[1.0, 2.0]).await;
+    sqlx::query(
+        "UPDATE chapters SET access = 'early_access', unlocks_at = now() + interval '1500 milliseconds' \
+         WHERE number_milli = 20000",
+    )
+    .execute(&db.pool)
+    .await
+    .expect("lock chapter 2 briefly");
+    watchlist_upsert(&db.pool, user, series, WatchStatus::Reading, true)
+        .await
+        .expect("track");
+    assert_eq!(
+        unread_now(&db, user, series).await,
+        1,
+        "premise: chapter 2 is locked"
+    );
+
+    tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
+    assert_eq!(
+        unread_now(&db, user, series).await,
+        1,
+        "premise: nothing has recomputed the row yet"
+    );
+
+    let due = sweep_unlocks(&db.pool, 100).await.expect("sweep");
+    assert_eq!(due, 1);
+    assert_eq!(
+        unread_now(&db, user, series).await,
+        2,
+        "the unlocked chapter counts"
+    );
+    assert_stored_matches_live(&db, "after the sweep").await;
+    assert_eq!(sweep_unlocks(&db.pool, 100).await.expect("sweep again"), 0);
+}
+
+/// **The reconciler finds and repairs a row no trigger kept true.**
+///
+/// A writer the triggers do not cover — raw SQL against the stored table, a restore, a future
+/// statement nobody wired up — leaves a wrong count with no error. The reconciler is what notices,
+/// and its drift counts are what tell an operator it happened.
+#[tokio::test]
+async fn the_reconciler_repairs_drift_and_missing_rows() {
+    use tankovault_db::repo::tracking::unread::reconcile_batch;
+
+    let db = TestDb::spawn().await;
+    let user = seed::user(&db, "reader").create().await;
+    let provider = seed::provider(&db, "alpha").create().await;
+    let first = a_series(&db, provider, "Berserk", &[1.0, 2.0, 3.0]).await;
+    let second = a_series(&db, provider, "Vagabond", &[1.0, 2.0]).await;
+    track_all(&db, user, &[first, second]).await;
+
+    let clean = reconcile_batch(&db.pool, 100).await.expect("reconcile");
+    assert_eq!(
+        (clean.checked, clean.drifted()),
+        (2, 0),
+        "a true table reports nothing"
+    );
+
+    sqlx::query("UPDATE watchlist_unread SET unread_count = 99 WHERE series_id = $1")
+        .bind(first.as_uuid())
+        .execute(&db.pool)
+        .await
+        .expect("corrupt a row");
+    sqlx::query("DELETE FROM watchlist_unread WHERE series_id = $1")
+        .bind(second.as_uuid())
+        .execute(&db.pool)
+        .await
+        .expect("lose a row");
+
+    let found = reconcile_batch(&db.pool, 100).await.expect("reconcile");
+    assert_eq!(found.missing, 1);
+    assert_eq!(found.unread_count, 1);
+    assert_stored_matches_live(&db, "after reconciliation").await;
+    assert_eq!(
+        reconcile_batch(&db.pool, 100)
+            .await
+            .expect("reconcile")
+            .drifted(),
+        0,
+        "and the repair holds"
+    );
 }

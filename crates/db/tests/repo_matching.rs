@@ -1968,6 +1968,13 @@ const SERIES_REFERENCES: &[(&str, &str, Handling)] = &[
     ),
     ("rec_repair_queue", "series_id", Handling::Folded),
     (
+        "series_browse",
+        "series_id",
+        Handling::Cascades(
+            "a projection of the series row itself; the merge's source and tag moves fire the triggers that recompute the survivor's row, and the absorbed series' row goes with it",
+        ),
+    ),
+    (
         "watchlist_unread",
         "series_id",
         Handling::Cascades(

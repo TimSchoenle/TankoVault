@@ -1,0 +1,59 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(*) AS \"total!\" FROM series_browse sb WHERE ($1::content_type IS NULL OR sb.content_type = $1) AND ($2::series_status IS NULL OR sb.status = $2) AND ($3::int IS NULL OR sb.release_year >= $3) AND ($4::int IS NULL OR sb.release_year <= $4) AND ($5::text IS NULL OR sb.provider_ids @> ARRAY[COALESCE( (SELECT p.id FROM providers p WHERE p.slug = $5), '00000000-0000-0000-0000-000000000000'::uuid)]) AND ($6::int IS NULL OR sb.max_chapters >= $6) AND (cardinality($7::text[]) = 0 OR sb.tag_ids @> ARRAY( SELECT COALESCE(t.id, '00000000-0000-0000-0000-000000000000'::uuid) FROM unnest($7::text[]) AS x(slug) LEFT JOIN tags t ON t.slug = x.slug)) AND (cardinality($8::text[]) = 0 OR NOT sb.tag_ids && ARRAY( SELECT t.id FROM tags t WHERE t.slug = ANY($8::text[]))) AND (NOT sb.adult_gated OR $9) AND ($10::uuid IS NULL OR $11::bool IS NULL OR $11 = EXISTS ( SELECT 1 FROM watchlist_entries w WHERE w.series_id = sb.series_id AND w.user_id = $10))",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "total!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        {
+          "Custom": {
+            "name": "content_type",
+            "kind": {
+              "Enum": [
+                "manga",
+                "manhwa",
+                "manhua",
+                "webtoon",
+                "unknown"
+              ]
+            }
+          }
+        },
+        {
+          "Custom": {
+            "name": "series_status",
+            "kind": {
+              "Enum": [
+                "ongoing",
+                "completed",
+                "hiatus",
+                "cancelled",
+                "unknown"
+              ]
+            }
+          }
+        },
+        "Int4",
+        "Int4",
+        "Text",
+        "Int4",
+        "TextArray",
+        "TextArray",
+        "Bool",
+        "Uuid",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "5d4cb410716bf6da90620592a2bdaf17715cba4d5144294d07a12e414ff2a8e1"
+}

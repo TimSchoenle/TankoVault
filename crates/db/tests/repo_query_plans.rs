@@ -350,42 +350,17 @@ struct Budget {
     reason: &'static str,
 }
 
-const BUDGETS: &[Budget] = &[
-    Budget {
-        label: "browse filtered page/count, no-search variants",
-        matches: |query| {
-            query
-                .sql
-                .contains("cardinality($7::text[]) = 0 OR NOT EXISTS")
-                && !query.sql.contains("plainto_tsquery")
-        },
-        ceiling: 1_600_000.0,
-        reason: "the optional *filters*, not the search term — the trigram disjunction these \
-             statements used to carry is gone, and their search-branch twins plan at ~31 000. \
-             `GENERIC_PLAN` cannot fold `$n IS NULL`, so every optional filter's subquery is \
-             charged against every row of `series`: the `min_chapters` chapter-count aggregate \
-             and the require-all tag `EXCEPT` are ~17 cost units per row between them, and the \
-             sort-token variant \
-             adds the `ORDER BY CASE` aggregates on top. Folding the parameters in as literals, \
-             which is what a custom plan does with real binds, gives cost 210/422 and \
-             0.2–1.1 ms — the same plan, to the decimal, as the statement this branch replaced. \
-             The estimate is the lens being pessimistic about a predicate that does fold; the \
-             trigram one never did, because a supplied search term is never NULL. Removing it \
-             needs hashed set-membership subqueries or a pre-aggregated `series_sources` join, \
-             both of which make the no-filter case do work it currently skips.",
+const BUDGETS: &[Budget] = &[Budget {
+    label: "chapter purge batch",
+    matches: |query| {
+        query
+            .sql
+            .starts_with("DELETE FROM chapters WHERE ctid IN (SELECT ctid FROM chapters LIMIT")
     },
-    Budget {
-        label: "chapter purge batch",
-        matches: |query| {
-            query
-                .sql
-                .starts_with("DELETE FROM chapters WHERE ctid IN (SELECT ctid FROM chapters LIMIT")
-        },
-        ceiling: 36_000.0,
-        reason: "a sequential scan that stops at its `LIMIT`: the batch is the bound, and the rule \
+    ceiling: 36_000.0,
+    reason: "a sequential scan that stops at its `LIMIT`: the batch is the bound, and the rule \
              cannot see a `Limit` above the scan node.",
-    },
-];
+}];
 
 /// The budget covering `query`, if any.
 fn budget_for(query: &CachedQuery) -> Option<&'static Budget> {
@@ -704,6 +679,50 @@ fn assert_opt_in_is_resolved_once(plan: &Value, label: &str) {
          Correlating the lookup to the outer row (`e.user_id = w.user_id` rather than the bind) is \
          what turns it into a per-row SubPlan. Plan:\n{pretty}"
     );
+}
+
+/// **Discover's statements read the browse projection, never a per-series tag or source lookup.**
+///
+/// Before `series_browse`, the include-tags filter ran an `EXCEPT` against `series_tags` and the
+/// chapter floor a `max()` over `series_sources` once for every row of `series`: 755 000 buffer
+/// touches for one count, and 1–30 s in production. Asserted on the generic plan, which is the
+/// pessimistic one: it keeps every optional filter's arm, so a filter that reaches back into
+/// those tables shows up here even when the fixture's custom plan would fold it away.
+#[tokio::test]
+async fn the_browse_statements_read_the_projection() {
+    let db = TestDb::spawn_with_catalogue().await;
+    let queries = cached_queries();
+    let browse: Vec<&CachedQuery> = queries
+        .iter()
+        .filter(|q| q.sql.contains("FROM series_browse sb") && q.sql.contains("cardinality($7"))
+        .collect();
+    assert_eq!(
+        browse.len(),
+        7,
+        "the recency, sort-token and relevance pages and the count, with and without a search"
+    );
+    for query in browse {
+        let plan = generic_plan_of(&db.pool, query).await;
+        let mut relations = Vec::new();
+        walk(&plan[0]["Plan"], &mut |node| {
+            if let Some(relation) = node["Relation Name"].as_str() {
+                relations.push(relation.to_owned());
+            }
+        });
+        let label = one_line(&query.sql, 120);
+        for forbidden in ["series_tags", "series_sources"] {
+            assert!(
+                !relations.iter().any(|r| r == forbidden),
+                "{label} reads `{forbidden}`; its filters and keys belong on `series_browse`"
+            );
+        }
+        if !query.sql.contains("matched") && query.columns.iter().any(|c| c == "total!") {
+            assert!(
+                !relations.iter().any(|r| r == "series"),
+                "the unsearched count reads `series`, the 60 MB heap it exists to avoid: {label}"
+            );
+        }
+    }
 }
 
 /// Assert a statement's plan has no node reading `chapters`.

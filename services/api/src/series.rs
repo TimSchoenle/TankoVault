@@ -344,14 +344,20 @@ pub async fn list(
         limit,
         offset: page.saturating_mul(limit),
     };
-    let out = tankovault_db::repo::catalog::list_series_filtered(&state.pool, &filter).await?;
+    let out = tankovault_db::repo::catalog::list_series_filtered(
+        &state.pool,
+        &filter,
+        tankovault_db::repo::catalog::Total::Count,
+    )
+    .await?;
 
     let mut headers = HeaderMap::new();
-    if let Ok(v) = HeaderValue::from_str(&out.total.to_string()) {
+    if let Some(total) = out.total
+        && let Ok(v) = HeaderValue::from_str(&total.to_string())
+    {
         headers.insert("X-Total-Count", v);
     }
-    let returned = i64::try_from(out.items.len()).unwrap_or(0);
-    if filter.offset + returned < out.total
+    if out.has_more
         && let Ok(v) = HeaderValue::from_str(&(page + 1).to_string())
     {
         headers.insert("X-Next-Cursor", v);

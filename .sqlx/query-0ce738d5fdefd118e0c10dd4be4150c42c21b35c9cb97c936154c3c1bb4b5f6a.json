@@ -1,0 +1,43 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH batch AS ( SELECT id FROM series WHERE $1::uuid IS NULL OR id > $1 ORDER BY id LIMIT $2 ), live AS ( SELECT s.id AS series_id, s.updated_at, s.content_type, s.status, s.release_year, s.adult_gated, s.canonical_title, COALESCE(src.max_chapters, 0) AS max_chapters, COALESCE(src.source_count, 0) AS source_count, COALESCE(src.provider_ids, '{}') AS provider_ids, COALESCE(tg.tag_ids, '{}') AS tag_ids FROM batch b JOIN series s ON s.id = b.id LEFT JOIN LATERAL ( SELECT max(chapter_count) AS max_chapters, count(DISTINCT provider_id)::int AS source_count, array_agg(DISTINCT provider_id ORDER BY provider_id) AS provider_ids FROM series_sources WHERE series_id = s.id) src ON true LEFT JOIN LATERAL ( SELECT array_agg(tag_id ORDER BY tag_id) AS tag_ids FROM series_tags WHERE series_id = s.id) tg ON true ) SELECT l.series_id AS \"series_id!\", (sb.series_id IS NULL) AS \"missing!\", (sb.series_id IS NOT NULL AND (sb.updated_at, sb.content_type, sb.status, sb.release_year, sb.adult_gated, sb.canonical_title, sb.max_chapters, sb.source_count, sb.provider_ids, sb.tag_ids) IS DISTINCT FROM (l.updated_at, l.content_type, l.status, l.release_year, l.adult_gated, l.canonical_title, l.max_chapters, l.source_count, l.provider_ids, l.tag_ids)) AS \"stale!\" FROM live l LEFT JOIN series_browse sb ON sb.series_id = l.series_id ORDER BY l.series_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "series_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "missing!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "stale!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "0ce738d5fdefd118e0c10dd4be4150c42c21b35c9cb97c936154c3c1bb4b5f6a"
+}

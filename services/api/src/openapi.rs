@@ -122,7 +122,6 @@ impl Modify for SecurityAddon {
     components(schemas(
     // --- domain entities ---
     tankovault_domain::Provider,
-    tankovault_domain::ScanRun,
     tankovault_domain::Tag,
     tankovault_domain::Author,
     tankovault_domain::Politeness,

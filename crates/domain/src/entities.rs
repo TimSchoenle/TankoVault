@@ -285,7 +285,10 @@ pub struct Notification {
 }
 
 /// A scan run (progress + audit; mirrors `JetStream` dispatch).
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+///
+/// Deliberately not `ToSchema`: the API publishes `tankovault_contracts::admin::ScanRunView` under
+/// the `ScanRun` component name, and a second registration silently replaces one with the other.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScanRun {
     /// Primary key.
     pub id: ScanRunId,
@@ -304,15 +307,12 @@ pub struct ScanRun {
     pub failed_tasks: i32,
     /// When the first task was claimed, `None` while the run is still queued.
     #[serde(with = "time::serde::rfc3339::option")]
-    #[schema(value_type = Option<String>)]
     pub started_at: Option<OffsetDateTime>,
     /// When the run settled, `None` while it is still going.
     #[serde(with = "time::serde::rfc3339::option")]
-    #[schema(value_type = Option<String>)]
     pub finished_at: Option<OffsetDateTime>,
     /// When the run was enqueued.
     #[serde(with = "time::serde::rfc3339")]
-    #[schema(value_type = String)]
     pub created_at: OffsetDateTime,
 }
 

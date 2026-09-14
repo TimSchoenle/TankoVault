@@ -1584,3 +1584,78 @@ async fn retention_keeps_the_runs_a_failure_streak_is_read_from() {
         5
     );
 }
+
+// ---------------------------------------------------------------------------
+// Per-provider health
+// ---------------------------------------------------------------------------
+
+/// What the console's per-provider health table reports, pinned before its query was rewritten
+/// from a lateral per provider to two grouped passes: which providers appear, their run and
+/// failure figures, the window, and the worst-first order.
+#[tokio::test]
+async fn provider_health_reports_runs_and_open_failures_worst_first() {
+    let db = TestDb::spawn().await;
+    let failing = seed::provider(&db, "failing").create().await;
+    let busy = seed::provider(&db, "busy").create().await;
+    let _quiet = seed::provider(&db, "quiet").create().await;
+
+    // `failing`: one old run, outside the window, with two failed tasks, one of them cleared.
+    let old = a_finished_run(&db, failing, ScanMode::Fast, RunState::Failed, 3 * DAY).await;
+    for page in 0..2 {
+        let task = a_task(&db, old, &json!({ "page": page })).await;
+        scans::fail_task(&db.pool, task, "http 503", None)
+            .await
+            .expect("fail");
+        backdate(&db, BACKDATE_TASK, task.as_uuid(), 3).await;
+    }
+    sqlx::query(
+        "UPDATE scan_tasks SET acknowledged_at = now() \
+         WHERE id = (SELECT id FROM scan_tasks WHERE run_id = $1 AND target->>'page' = '1')",
+    )
+    .bind(old.as_uuid())
+    .execute(&db.pool)
+    .await
+    .expect("clear one failure");
+
+    // `busy`: two runs inside the window, one still going, nothing failed.
+    a_finished_run(&db, busy, ScanMode::Fast, RunState::Completed, 30).await;
+    a_run_in_flight(&db, busy, ScanMode::Full).await;
+
+    let all = scans::provider_scan_health(&db.pool, None, 50)
+        .await
+        .expect("health");
+    let slugs: Vec<&str> = all.iter().map(|p| p.slug.as_str()).collect();
+    assert_eq!(
+        slugs,
+        ["failing", "busy"],
+        "open failures first, and a provider with nothing to report is left out"
+    );
+    let failing_row = &all[0];
+    assert_eq!(
+        (
+            failing_row.runs,
+            failing_row.runs_failed,
+            failing_row.failures_open
+        ),
+        (1, 1, 1),
+        "the cleared failure is not open"
+    );
+    assert_eq!(failing_row.tasks_failed, 2);
+    assert!(failing_row.last_failure_at.is_some());
+    let busy_row = &all[1];
+    assert_eq!(
+        (busy_row.runs, busy_row.runs_active, busy_row.failures_open),
+        (2, 1, 0)
+    );
+    assert!(busy_row.last_failure_at.is_none());
+
+    // A one-day window drops the old run and its failure, and with them the provider.
+    let since = time::OffsetDateTime::now_utc() - time::Duration::days(1);
+    let recent = scans::provider_scan_health(&db.pool, Some(since), 50)
+        .await
+        .expect("health");
+    assert_eq!(
+        recent.iter().map(|p| p.slug.as_str()).collect::<Vec<_>>(),
+        ["busy"]
+    );
+}

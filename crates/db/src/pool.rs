@@ -104,7 +104,7 @@ pub async fn connect(url: &SecretString, settings: PoolSettings) -> DbResult<PgP
 /// own is even sent. Under load that turns one slow aggregate into a queue of timeouts. Two
 /// pieces close it, and both are needed:
 ///
-/// - the release probe closes a connection that cannot answer within [`RELEASE_PROBE`], so no
+/// - the release probe closes a connection that cannot answer within a second, so no
 ///   caller inherits a busy one;
 /// - `client_connection_check_interval` makes the backend notice that close and abort the
 ///   statement, instead of finishing work nobody will read.

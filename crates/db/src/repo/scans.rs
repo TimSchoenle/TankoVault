@@ -1949,7 +1949,7 @@ impl HistoryPrune {
 /// `task_batch`, the run row once none are left — so a run with fifty thousand tasks takes
 /// several passes rather than one long `DELETE`. Call it until [`HistoryPrune::is_empty`].
 ///
-/// **The newest [`FAILURE_STREAK_WINDOW`] finished runs of each provider and mode are kept,
+/// **The newest 32 finished runs of each provider and mode are kept,
 /// however old.** [`failure_streak`] reads exactly that window; pruning into it would shorten a
 /// failing provider's streak and cut its backoff, which is the only thing keeping the scheduler
 /// from hammering a site that answers nothing. It also keeps every provider's latest run, which

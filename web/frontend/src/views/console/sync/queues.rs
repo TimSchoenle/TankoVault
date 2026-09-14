@@ -352,6 +352,7 @@ pub(super) fn UnmatchedRemoteRow(entry: Signal<UnmatchedRemoteEntry>, reload: Re
                     .list()
                     .query(q)
                     .limit(8)
+                    .with_total(false)
                     .send()
                     .await
                     .map(ResponseValue::into_inner)

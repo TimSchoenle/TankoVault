@@ -80,7 +80,8 @@ pub(crate) struct LiveNotification {
 #[derive(Debug, Clone)]
 pub(crate) struct SeriesPage {
     pub(crate) items: Vec<SeriesSummary>,
-    pub(crate) total: i64,
+    /// `None` when the request asked the server not to count.
+    pub(crate) total: Option<i64>,
     pub(crate) next_cursor: Option<i64>,
 }
 

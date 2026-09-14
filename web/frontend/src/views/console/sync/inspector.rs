@@ -35,6 +35,7 @@ pub(super) fn SeriesSyncInspector(reload: Reload) -> Element {
                 .list()
                 .query(q)
                 .limit(12)
+                .with_total(false)
                 .send()
                 .await
                 .map(ResponseValue::into_inner)

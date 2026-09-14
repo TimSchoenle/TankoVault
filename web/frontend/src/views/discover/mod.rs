@@ -66,6 +66,9 @@ struct Fetch {
     /// 0-based catalogue page index.
     page: usize,
     edge: Edge,
+    /// Whether the server should count the matches. Only a window's first page asks: every later
+    /// page has the same filters, so its count would be the same answer paid for again.
+    with_total: bool,
 }
 
 /// The pages one window holds, and where in the catalogue they sit.
@@ -158,6 +161,14 @@ fn released_height(heights: &HashMap<usize, f64>, from: usize, to: usize) -> f64
         .sum()
 }
 
+/// The match count a page response reports, if it reports one.
+///
+/// Absent when the request asked the server not to count, which every page after a window's
+/// first does; the window keeps the total its first page reported.
+fn header_total(value: Option<&str>) -> Option<i64> {
+    value.and_then(|v| v.parse::<i64>().ok())
+}
+
 /// Discover screen.
 #[component]
 pub(crate) fn Discover(query: DiscoverQuery) -> Element {
@@ -240,6 +251,7 @@ pub(crate) fn Discover(query: DiscoverQuery) -> Element {
             size,
             page: window.start,
             edge: Edge::Tail,
+            with_total: true,
         }));
         held.set(Some(window));
         merged.set(None);
@@ -295,15 +307,15 @@ pub(crate) fn Discover(query: DiscoverQuery) -> Element {
                 .sort(filters.sort.token())
                 .page(i64::try_from(request.page).unwrap_or(i64::MAX))
                 .limit(i64::try_from(request.size).unwrap_or(24))
+                .with_total(request.with_total)
                 .send()
                 .await
                 .map(|r| {
-                    let total = r
-                        .headers()
-                        .get("x-total-count")
-                        .and_then(|v| v.to_str().ok())
-                        .and_then(|s| s.parse::<i64>().ok())
-                        .unwrap_or_else(|| i64::try_from(r.as_ref().len()).unwrap_or(0));
+                    let total = header_total(
+                        r.headers()
+                            .get("x-total-count")
+                            .and_then(|v| v.to_str().ok()),
+                    );
                     let next_cursor = r
                         .headers()
                         .get("x-next-cursor")
@@ -366,7 +378,9 @@ pub(crate) fn Discover(query: DiscoverQuery) -> Element {
             }
         }
         merged.set(Some(answered.clone()));
-        total.set(data.total);
+        if let Some(reported) = data.total {
+            total.set(reported);
+        }
         // Only a tail page can reach the end of the result set; a head page never does.
         if answered.edge == Edge::Tail {
             exhausted.set(data.next_cursor.is_none());
@@ -436,6 +450,7 @@ pub(crate) fn Discover(query: DiscoverQuery) -> Element {
                 size: window.size,
                 page,
                 edge,
+                with_total: false,
             }
         };
         fetch.set(Some(request));
@@ -711,6 +726,16 @@ fn empty_state(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A page fetched with `with_total=false` carries no `X-Total-Count`. The count line used to
+    /// fall back to the page's own length, so the second page of a 600-match window read
+    /// "25–48 of 24".
+    #[test]
+    fn a_page_without_a_total_header_reports_no_total() {
+        assert_eq!(header_total(None), None);
+        assert_eq!(header_total(Some("600")), Some(600));
+        assert_eq!(header_total(Some("not a number")), None);
+    }
 
     /// A window of `pages` pages of 24, starting at page `start`, built at page `origin`.
     fn window(origin: usize, start: usize, pages: usize) -> Held {

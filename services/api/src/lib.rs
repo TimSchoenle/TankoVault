@@ -63,25 +63,8 @@ use utoipa_scalar::{Scalar, Servable};
 #[must_use]
 pub fn full_openapi() -> utoipa::openapi::OpenApi {
     let mut api = reader_routes().split_for_parts().1;
-    merge_admin_spec(&mut api, admin_routes().split_for_parts().1);
+    api.merge(admin_routes().split_for_parts().1);
     api
-}
-
-/// Fold the admin routes' specification into the readers'.
-///
-/// `OpenApi::merge` keeps the *first* schema of a given name, while the single registration chain
-/// this replaced let the *last* one win. `ScanRun` is registered by both halves under one name, so
-/// a plain merge would publish the other type's schema. Dropping the colliding names first keeps
-/// `openapi.json` byte-identical to the chain.
-fn merge_admin_spec(api: &mut utoipa::openapi::OpenApi, admin: utoipa::openapi::OpenApi) {
-    if let (Some(components), Some(admin_components)) =
-        (api.components.as_mut(), admin.components.as_ref())
-    {
-        components
-            .schemas
-            .retain(|name, _| !admin_components.schemas.contains_key(name));
-    }
-    api.merge(admin);
 }
 
 /// Which rate-limit budget each route family draws from.
@@ -268,7 +251,7 @@ pub fn build_router(
 ) -> Router {
     let (readers, mut api) = reader_routes().split_for_parts();
     let (admin, admin_api) = admin_routes().split_for_parts();
-    merge_admin_spec(&mut api, admin_api);
+    api.merge(admin_api);
     let router = readers
         .with_state(state.clone())
         .merge(admin.with_state(AppState {

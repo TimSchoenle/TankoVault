@@ -10,13 +10,13 @@ cache.
 
 ## Phase 1 — infrastructure and hygiene
 
-### 1.1 Postgres observability (done) and sizing (waiting on you)
+### 1.1 Postgres observability (done); sizing kept as is
 
 The compose Postgres now preloads `pg_stat_statements` and `auto_explain` (plans over 2 s, with
 rows and buffers) and sets `track_io_timing`. `deploy/README.md` documents how to read them.
-**Memory limits are unchanged.** The proposed starting point is a 4 GB limit,
-`shared_buffers=1GB`, `effective_cache_size=3GB` and `work_mem=32MB`. `feed` spills a 20 MB sort
-at today's 16 MB. It waits on the production relation sizes and your hardware budget.
+**Memory limits are unchanged, by decision (2026-09-14).** The proposal was a 4 GB limit,
+`shared_buffers=1GB`, `effective_cache_size=3GB` and `work_mem=32MB`; it stays on file for when
+the production relation sizes or the cold `feed` cost call for it.
 
 ### 1.2 Statement lifetime (done)
 
@@ -117,22 +117,60 @@ The proposal's two-phase feed rewrite turned out not to be exact and was not bui
 Custom plans apply to every console statement, so the other `$n IS NULL OR …` filters benefit
 too, the scan triage feeds included.
 
-**Not changed, waiting on you:**
+### Console chapter figures: a trigger-kept rollup (done)
 
-- `stats::system_overview` and `stats::provider_stats`. `cache.rs` records a decision to keep exact
-  counts behind a stale-while-revalidate cache. Replacing that with `reltuples` estimates or a
-  rollup updated at scan completion is your call. Locally the overview is 649 ms warm, never
-  fully cached (17 516 blocks read even warm), at cost 185 000.
-- Browse total: estimate, capped count or `has_more`. This changes the API contract and the pager
-  UX.
+Migration 0059 adds `chapter_rollup`: chapter counts per source and exact discovery instant,
+folded into one history row per source once older than a week. Triggers on `chapters` keep it
+exact, including deletes that land on folded history, moves between sources, and `TRUNCATE`. The
+header, the per-provider table, the purge panel total and the purge's remaining count sum it
+instead of counting `chapters`. A leader pass
+(`scheduler.chapter_rollup_verify_interval_secs`, default 300 s, 2 000 sources) re-counts sources
+against `chapters` in one snapshot and rebuilds any that disagree
+(`chapter_rollup_drift_total`). Totals and the 1 h / 24 h / 7 d windows stay exact. The one
+approximate figure is `last_chapter_at`: after a provider's newest chapters older than a week are
+deleted, it can name one of the deleted chapters.
+
+| statement | cold before → after | warm before → after | est. cost before → after |
+|---|---|---|---|
+| `stats::system_overview` | 1 043 → **35** ms (36 108 → 1 492 blocks) | 697 → **22** ms | 185 970 → 7 314 (JIT fired before with `jit=on`; not after) |
+| `stats::provider_stats` | 535 → **434** ms | 328 → **48** ms | 95 239 → 10 242 |
+| `maintenance::totals` | 891 → **107** ms | 213 → **64** ms | 62 253 → 14 516 |
+| `purge_chapters_batch` remaining count | 740 → **6.4** ms | 144 → **3.3** ms | 48 955 → 1 218 |
+
+- **Identical output.** All four return identical rows on the clone (`EXCEPT ALL` both ways).
+- **What is left of the provider table's cold cost.** The rollup part is 13 ms cold. The
+  remaining 409 ms is the existing `series_sources` per-provider aggregate. It walks
+  `series_sources_provider_series_idx` in provider order with a random heap fetch per source.
+  That is unchanged by this work and not budgeted by the plan audit.
+- **Backfill.** 1.3 s over 2.84 M chapters, into 53 387 rows (6.5 MB). Writers wait for it.
+- **Verifier pass.** 2 000 sources in 14–18 ms.
+- **Write cost of the triggers alone** (seven rolled-back runs each, median, with the triggers
+  enabled vs disabled):
+  - a 500-chapter ingest insert: within noise, under 1 ms;
+  - a converged 500-chapter rescan: +0.9 ms;
+  - a 3 922-chapter title rewrite: +2.3 ms;
+  - a 5 000-chapter purge batch: +10 ms.
+- **Plan audit.** The four budgets that excused these statements' whole scans of `chapters` are
+  deleted; the audit passes without them.
+- **Tests.**
+  - `repo_chapter_rollup` compares every figure with the replaced statements after each writer:
+    ingest, rescan, history insert, simulated ageing, deletes from unfolded and folded rows,
+    instant and source moves, merge/revert, purge, series and provider delete.
+  - The folded-row decrement is mutation-checked.
+  - A second test covers the verifier repairing a write made with the triggers off.
+
+### Browse total (proposal, waiting on you)
+
+[`BROWSE_REDESIGN.md`](BROWSE_REDESIGN.md) measures 31 filter shapes and proposes a trigger-kept
+browse projection that keeps exact totals for every shape, plus an additive opt-out of the count.
 
 ## Phase 5 — guardrails
 
 - `repo_query_plans` has a third rule, `whole-scan-of-growing-table`. It flags a sequential scan
   of `chapters` or `scan_tasks`, or an index scan of either with no index condition. The fixture
   now includes 300 000 scan tasks over 30 days. On its first run the rule found the five statements
-  that read those tables whole. All five are budgeted with reasons, and three are marked as open
-  decisions.
+  that read those tables whole. All five were budgeted with reasons. The chapter rollup (0059)
+  removed the scans behind four budgets, which are deleted; the chapter purge batch remains.
 - `pg_stat_statements` and `auto_explain` stay in the deployment (1.1).
 
 ## Remaining slow statements, ranked
@@ -144,13 +182,14 @@ the log and local plans, not a production measurement.
    unread tails from `chapters`, and stored counts cannot replace a list of chapters. Fix: memory
    sizing (1.1). The other Home surfaces no longer read `chapters` for counts (Phase 3); their
    remaining cold cost is the live source ranking, 0.15–0.4 s locally.
-2. **Console header rollup and provider table.** Off the request path, but each refresh reads all
-   of `chapters` every 30 s while a console is open. Fix: the estimate-or-rollup decision.
-3. **Browse total** (1–30 s). Fix: the pager decision.
+2. **Browse count and filtered pages** (1–30 s in production; locally up to 276 ms warm and
+   985 ms cold). Fix: [`BROWSE_REDESIGN.md`](BROWSE_REDESIGN.md), waiting on approval.
+3. **Console per-provider table, cold** (434 ms locally). The `series_sources` aggregate, not
+   chapters any more; served behind the 30 s cache.
 4. **Scan triage** (failure groups, failed task list, run list total). Bounded by retention and
    now custom-planned; not re-measured at production scale.
-5. **Catalogue maintenance totals and list** (~3 s). They count `chapters` whole (budgeted in the
-   plan audit); `reltuples` would do for a warning figure.
+5. **Catalogue maintenance list** (~3 s in production). The totals now read the rollup; the
+   list's per-series `series_sources` aggregate was not re-measured.
 6. **Recsys vector retrieval** (1.1–1.5 s). Not investigated; an HNSW index is memory-bound, so
    this is likely the cache first.
 7. **`DELETE FROM providers`** (1.07 s). Cascades through sources and chapters; rare and operator

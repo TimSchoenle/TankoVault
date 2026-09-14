@@ -303,9 +303,10 @@ nothing after. **Recommendation: skip it.**
 1. Triggers (§4) rather than call sites. **Approved.**
 2. A 60 s unlock sweeper with a stored deadline (§5), rather than live evaluation. **Approved**;
    `scheduler.unread_unlock_interval_secs`, default 60.
-3. Backfill path (§9). **In the migration.** The production `watchlist_entries` count was not
-   available; if it is above ~20 000, the split path in §9 is the fallback, and the migration's
-   lock window should be measured first.
+3. Backfill path (§9). **In the migration**, confirmed by production's `watchlist_entries` count
+   of 2 601 rows (2026-09-14). At the measured 0.32 ms per row that holds the writers' locks for
+   about 0.8 s warm; on a cold production cache, 4–8 s. Readers are unaffected, and ingest and
+   progress writes wait rather than fail. Deploying off-peak keeps the pause invisible.
 4. Skip the Redis cache (§11). **Approved.**
 
 ## 13. Measurements

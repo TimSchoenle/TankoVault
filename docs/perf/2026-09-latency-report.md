@@ -98,9 +98,9 @@ because stored counts do not help it.
 - **Estimates.** No estimate reaches the JIT threshold.
 - **Write cost.** A watched chapter batch or a progress write costs about +8 ms per watcher; an
   unwatched batch costs +3 ms.
-- **Backfill.** 859 rows took 274 ms. It holds the writers' locks for that long, so the
-  production `watchlist_entries` count from the diagnostics should be checked before deploying
-  (§9 of the design has the split path above ~20 000 rows).
+- **Backfill.** 859 rows took 274 ms locally. Production has 2 601 watchlist rows, well under
+  the ~20 000 where the design would split the backfill out of the migration. Expect writers to
+  wait about 0.8 s warm, or 4–8 s on a cold cache, while 0058 commits.
 
 The proposal's two-phase feed rewrite turned out not to be exact and was not built (§8).
 

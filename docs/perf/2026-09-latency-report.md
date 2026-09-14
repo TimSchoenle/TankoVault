@@ -26,10 +26,10 @@ at today's 16 MB. It waits on the production relation sizes and your hardware bu
 | No `statement_timeout` anywhere. | API readers' routes run under 5 s, `/v1/admin` and background sweeps under 15 s on a separate pool. A cancelled statement answers `504 upstream_timeout` at WARN. |
 | The two console rollups would have been cancelled by the 15 s ceiling on every refresh. | Their stale-while-revalidate refresh runs in a transaction with a local 120 s ceiling. |
 
-### 1.3 Scan history retention (done; default waiting on you)
+### 1.3 Scan history retention (done)
 
 The scheduler leader deletes settled runs older than
-`scheduler.scan_history_retention_days` (**default 30, please confirm**) and their tasks. It works
+`scheduler.scan_history_retention_days` (default 30, confirmed) and their tasks. It works
 in 5 000-row batches, spends at most 20 s per hourly pass, and always keeps the newest 32 finished
 runs of each provider and tier, because the failure backoff reads them. On the plan-audit fixture
 (300 000 tasks over 30 days) a catch-up to a 7-day retention deleted 230 000 tasks in 3.3 s of
@@ -71,13 +71,38 @@ Recommended against in [`UNREAD_DENORMALISATION.md`](UNREAD_DENORMALISATION.md) 
 invalidation matrix is Phase 3's writer inventory maintained by hand, and it would still pay the
 full computation on every miss.
 
-## Phase 3 — stored unread state (design only, waiting on you)
+## Phase 3 — stored unread state (done)
 
-[`UNREAD_DENORMALISATION.md`](UNREAD_DENORMALISATION.md): a per-(reader, series) table kept by
-statement-level triggers, a stored unlock deadline with a sweeper, a drift reconciler, the four
-read rewrites and an exact two-phase feed rewrite. Measured prototype: 0.19 ms per row to
-recompute, 0.29 ms to read what `me_stats` + `continue_reading` + `summary` cost 106 ms warm and
-1.9 s cold today. No migration has been written.
+Design, deviations and full numbers: [`UNREAD_DENORMALISATION.md`](UNREAD_DENORMALISATION.md).
+Migration 0058 adds `watchlist_unread`, one row per (reader, watched series), kept true by twelve
+statement-level triggers. It is backfilled in the migration. The control-plane leader runs two
+new passes:
+
+- a 60 s sweep for rows whose early-access unlock time has passed;
+- a 15-minute, 500-row reconciler that repairs and counts drift
+  (`watchlist_unread_drift_total`).
+
+Every Home and watchlist count now reads the stored row. The feed was restaged separately,
+because stored counts do not help it.
+
+| statement | cold before → after | warm before → after |
+|---|---|---|
+| `continue_reading` | 1 501 → 76 ms | 35.4 → 1.1 ms |
+| `me_stats` | 911 → 2.5 ms | 34.9 → 0.31 ms |
+| `watchlist::summary` | 791 → 155 ms | 41.6 → 7.0 ms |
+| `feed` | 2 470 → 1 207 ms | 369 → 119 ms, no disk sort |
+| watchlist page (released / progress) | 1 604 / 1 614 → 427 / 331 ms | 74 / 136 → 13 / 9.6 ms |
+| watchlist counts / groups | 606 / 1 249 → 206 / 182 ms | 31 / 49 → 6.9 / 5.1 ms |
+
+- **Outputs.** All eight return identical rows in identical order on the clone.
+- **Estimates.** No estimate reaches the JIT threshold.
+- **Write cost.** A watched chapter batch or a progress write costs about +8 ms per watcher; an
+  unwatched batch costs +3 ms.
+- **Backfill.** 859 rows took 274 ms. It holds the writers' locks for that long, so the
+  production `watchlist_entries` count from the diagnostics should be checked before deploying
+  (§9 of the design has the split path above ~20 000 rows).
+
+The proposal's two-phase feed rewrite turned out not to be exact and was not built (§8).
 
 ## Phase 4 — admin and catalogue aggregates
 
@@ -115,20 +140,20 @@ too, the scan triage feeds included.
 By expected production impact after these changes, highest first. The ranking is a judgment from
 the log and local plans, not a production measurement.
 
-1. **Home reading surfaces** (`continue_reading`, `feed`, `me_stats`, watchlist summary). The
-   refetch burst is gone, but each still reads the watched catalogue: 0.5–1.4 s cold locally,
-   6–30 s in production. Fix: Phase 3, plus memory sizing.
+1. **`feed`.** 119 ms warm, but still 1.2 s cold locally: it has to read the watched sources'
+   unread tails from `chapters`, and stored counts cannot replace a list of chapters. Fix: memory
+   sizing (1.1). The other Home surfaces no longer read `chapters` for counts (Phase 3); their
+   remaining cold cost is the live source ranking, 0.15–0.4 s locally.
 2. **Console header rollup and provider table.** Off the request path, but each refresh reads all
    of `chapters` every 30 s while a console is open. Fix: the estimate-or-rollup decision.
 3. **Browse total** (1–30 s). Fix: the pager decision.
-4. **`feed`, warm.** 286 ms warm with a disk sort even on a warm cache. Fix: Phase 3 §8.
-5. **Scan triage** (failure groups, failed task list, run list total). Bounded by retention and
+4. **Scan triage** (failure groups, failed task list, run list total). Bounded by retention and
    now custom-planned; not re-measured at production scale.
-6. **Catalogue maintenance totals and list** (~3 s). They count `chapters` whole (budgeted in the
+5. **Catalogue maintenance totals and list** (~3 s). They count `chapters` whole (budgeted in the
    plan audit); `reltuples` would do for a warning figure.
-7. **Recsys vector retrieval** (1.1–1.5 s). Not investigated; an HNSW index is memory-bound, so
+6. **Recsys vector retrieval** (1.1–1.5 s). Not investigated; an HNSW index is memory-bound, so
    this is likely the cache first.
-8. **`DELETE FROM providers`** (1.07 s). Cascades through sources and chapters; rare and operator
+7. **`DELETE FROM providers`** (1.07 s). Cascades through sources and chapters; rare and operator
    driven. Not investigated.
 
 ## Found in passing
@@ -150,11 +175,12 @@ Run on this branch on 2026-09-14, Windows host, `CARGO_TARGET_DIR` on a short pa
 | `cargo run -p xtask -- ci` gates 1–12 (fmt, clippy, offline tests, doc tests, rustdoc, OpenAPI drift, config contract, repo-lint, frontend fmt/test/clippy/wasm) | pass |
 | `xtask ci` gate 13, frontend desktop test | **fail, environment**: `windows-registry`/`windows-result`/`windows-strings` 0.100 require rustc 1.95 against the pinned 1.94. These Windows-only crates are not compiled on CI's Linux runners, and neither lockfile changed on this branch. |
 | `xtask ci` gate 14, frontend desktop clippy | not run (the gate stops at 13) |
-| `cargo test -p tankovault-db -p tankovault-api -p tankovault-sync --features integration` | 561 passed, 0 failed |
+| `cargo test -p tankovault-db -p tankovault-api -p tankovault-sync --features integration` | 565 passed, 0 failed (after Phase 3). Two earlier attempts failed 7 and 127 tests, all with Postgres `53100 could not resize shared memory segment`: the reused test container's 64 MB `/dev/shm` was full of shared statistics for ~780 leftover `tv_test_*` databases. They were dropped and the suite re-run. This is a test-harness issue, not part of this change. |
 | `web/frontend`: `cargo test --bin tankovault a_renewal_does_not_rerun…` | pass; fails against the previous subscription |
 | `xtask openapi --check`, `xtask config-docs --check`, `xtask config-contract` | pass (`openapi.json` unchanged) |
 | `xtask sqlx-prepare` against an empty migrated database | run for every changed query; only the entries those queries explain changed |
-| `just regenerate` | run for both config-surface changes |
+| `just regenerate` | run for all three config-surface changes |
+| `xtask ci` after Phase 3 | gates 1–12 pass; gate 13 fails on the same `windows-registry` rustc 1.95 requirement |
 
 Not run: the `docker` image jobs, `xtask notices` (no lockfile moved), and anything against
 production.

@@ -2075,3 +2075,122 @@ async fn the_reconciler_repairs_drift_and_missing_rows() {
         "and the repair holds"
     );
 }
+
+/// The feed statement before it was split into stages, kept verbatim as the oracle.
+const FEED_BEFORE_0058: &str = "WITH unread AS ( \
+   SELECT s.id AS series_id, s.canonical_title AS series_title, \
+          c.number_milli, c.title AS chapter_title, \
+          p.slug AS provider_slug, p.base_url AS base_url, \
+          chapter_url_path(ss.source_path, c.path) AS chapter_path, \
+          min(c.discovered_at) OVER (PARTITION BY s.id, c.number_milli) AS discovered_at, \
+          row_number() OVER (PARTITION BY s.id, c.number_milli \
+                             ORDER BY ss.chapter_count DESC, \
+                                      ss.last_scanned_at DESC NULLS LAST, \
+                                      p.slug, ss.id) AS carrier_rank \
+   FROM watchlist_entries w \
+   JOIN series s ON s.id = w.series_id \
+   JOIN series_sources ss ON ss.series_id = w.series_id \
+   JOIN providers p ON p.id = ss.provider_id \
+   JOIN chapters c ON c.series_source_id = ss.id \
+   LEFT JOIN read_progress rp ON rp.user_id = w.user_id AND rp.series_id = w.series_id \
+   WHERE w.user_id = $1 \
+     AND c.number_milli >= (floor(COALESCE(rp.last_read_whole_number, 0))::bigint + 1) * 10000 \
+     AND NOT (c.number_milli % 10000 <> 0 \
+              AND rp.last_read_part_number IS NOT NULL \
+              AND c.number_milli <= (rp.last_read_part_number * 10000)::bigint) \
+     AND (c.access = 'free' OR c.unlocks_at <= now() \
+          OR ss.provider_id = ANY(ARRAY( \
+               SELECT e.provider_id FROM user_provider_early_access e \
+               WHERE e.user_id = $1))) \
+ ) \
+ SELECT series_id, number_milli, provider_slug, chapter_path, discovered_at \
+ FROM unread \
+ WHERE carrier_rank = 1 \
+ ORDER BY discovered_at DESC, series_id, number_milli DESC \
+ LIMIT $2";
+
+/// **The staged feed returns exactly what the single statement did.**
+///
+/// The rewrite moved deduplication, the earliest-sighting date and the carrier choice into three
+/// stages. Each of those is a documented contract (see `feed`), and the shape most likely to break
+/// one is a merged series where a slower carrier saw a chapter later than a faster one and a
+/// paywalled carrier ranks higher than a free one. The fixture has both, plus a limit that cuts
+/// through a tie.
+#[tokio::test]
+async fn the_staged_feed_matches_the_statement_it_replaced() {
+    type Row = (uuid::Uuid, i32, String, String, time::OffsetDateTime);
+
+    let db = TestDb::spawn().await;
+    let user = seed::user(&db, "reader").create().await;
+    let fast = seed::provider(&db, "fast").create().await;
+    let slow = seed::provider(&db, "slow").create().await;
+    let paid = seed::provider(&db, "paid").create().await;
+    let keep = a_series(&db, fast, "Vinland Saga", &[1.0, 2.0, 3.0, 3.5]).await;
+    let absorbed = a_series(&db, slow, "Historie", &[2.0, 3.0, 4.0]).await;
+    let walled = a_series(&db, paid, "Kingdom", &[3.0, 4.0, 5.0]).await;
+    merge_series(&db.pool, keep, absorbed, None, "merged")
+        .await
+        .expect("merge");
+    merge_series(&db.pool, keep, walled, None, "merged")
+        .await
+        .expect("merge");
+    prefer_source(&db, keep, paid, 99).await;
+    prefer_source(&db, keep, slow, 50).await;
+    prefer_source(&db, keep, fast, 3).await;
+
+    // The slow carrier saw its chapters a week later; the paid carrier's chapter 4 is locked.
+    sqlx::query(
+        "UPDATE chapters c SET discovered_at = c.discovered_at + interval '7 days' \
+         FROM series_sources ss WHERE ss.id = c.series_source_id AND ss.provider_id = $1",
+    )
+    .bind(slow.as_uuid())
+    .execute(&db.pool)
+    .await
+    .expect("re-date the slow carrier");
+    sqlx::query(
+        "UPDATE chapters c SET access = 'early_access', unlocks_at = now() + interval '7 days' \
+         FROM series_sources ss \
+         WHERE ss.id = c.series_source_id AND ss.provider_id = $1 AND c.number_milli = 40000",
+    )
+    .bind(paid.as_uuid())
+    .execute(&db.pool)
+    .await
+    .expect("paywall one chapter");
+    watchlist_upsert(&db.pool, user, keep, WatchStatus::Reading, true)
+        .await
+        .expect("track");
+
+    for (progress, limit) in [
+        (None, 100),
+        (Some((1.0, None)), 100),
+        (Some((2.0, None)), 2),
+    ] {
+        set_frontiers(&db, user, keep, progress).await;
+        let oracle: Vec<Row> = sqlx::query_as(FEED_BEFORE_0058)
+            .bind(user.as_uuid())
+            .bind(limit)
+            .fetch_all(&db.pool)
+            .await
+            .expect("oracle feed");
+        let staged: Vec<Row> = feed(&db.pool, user, limit)
+            .await
+            .expect("feed")
+            .into_iter()
+            .map(|item| {
+                (
+                    item.series_id.as_uuid(),
+                    tankovault_domain::chapter_number::to_milli(item.chapter_number)
+                        .expect("stored numbers convert back"),
+                    item.provider_slug,
+                    item.chapter_path,
+                    item.discovered_at,
+                )
+            })
+            .collect();
+        assert!(
+            !oracle.is_empty(),
+            "premise: the fixture has unread chapters"
+        );
+        assert_eq!(staged, oracle, "progress {progress:?}, limit {limit}");
+    }
+}

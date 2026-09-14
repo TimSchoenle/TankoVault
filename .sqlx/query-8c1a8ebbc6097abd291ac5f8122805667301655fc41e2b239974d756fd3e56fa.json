@@ -1,0 +1,103 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH sightings AS ( SELECT ss.series_id, t.number_milli, t.discovered_at FROM watchlist_entries w LEFT JOIN read_progress rp ON rp.user_id = w.user_id AND rp.series_id = w.series_id JOIN series_sources ss ON ss.series_id = w.series_id CROSS JOIN LATERAL ( SELECT c.number_milli, c.discovered_at FROM chapters c WHERE c.series_source_id = ss.id AND c.number_milli >= (floor(COALESCE(rp.last_read_whole_number, 0))::bigint + 1) * 10000 AND NOT (c.number_milli % 10000 <> 0 AND rp.last_read_part_number IS NOT NULL AND c.number_milli <= (rp.last_read_part_number * 10000)::bigint) AND (c.access = 'free' OR c.unlocks_at <= now() OR ss.provider_id = ANY(ARRAY( SELECT e.provider_id FROM user_provider_early_access e WHERE e.user_id = $1))) ) t WHERE w.user_id = $1 ), newest AS ( SELECT series_id, number_milli, min(discovered_at) AS discovered_at FROM sightings GROUP BY series_id, number_milli ORDER BY min(discovered_at) DESC, series_id, number_milli DESC LIMIT $2 ) SELECT n.series_id AS \"series_id!\", s.canonical_title AS \"series_title!\", n.number_milli AS \"chapter_number!\", car.chapter_title, car.provider_slug AS \"provider_slug!\", car.base_url AS \"base_url!\", car.chapter_path AS \"chapter_path!\", n.discovered_at AS \"discovered_at!\" FROM newest n JOIN series s ON s.id = n.series_id CROSS JOIN LATERAL ( SELECT c.title AS chapter_title, p.slug AS provider_slug, p.base_url, chapter_url_path(ss.source_path, c.path) AS chapter_path FROM series_sources ss JOIN providers p ON p.id = ss.provider_id JOIN chapters c ON c.series_source_id = ss.id AND c.number_milli = n.number_milli WHERE ss.series_id = n.series_id AND (c.access = 'free' OR c.unlocks_at <= now() OR ss.provider_id = ANY(ARRAY( SELECT e.provider_id FROM user_provider_early_access e WHERE e.user_id = $1))) ORDER BY ss.chapter_count DESC, ss.last_scanned_at DESC NULLS LAST, p.slug, ss.id LIMIT 1 ) car ORDER BY n.discovered_at DESC, n.series_id, n.number_milli DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "series_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "series_sources",
+            "name": "series_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "series_title!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "canonical_title"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "chapter_number!",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "chapters",
+            "name": "number_milli"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "chapter_title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "chapters",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "provider_slug!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "providers",
+            "name": "slug"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "base_url!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "providers",
+            "name": "base_url"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "chapter_path!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "discovered_at!",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "8c1a8ebbc6097abd291ac5f8122805667301655fc41e2b239974d756fd3e56fa"
+}

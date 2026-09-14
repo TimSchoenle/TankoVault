@@ -106,6 +106,20 @@ pub struct FeedItem {
 /// the day the preferred source happened to pick it up, resurfacing weeks-old chapters as today's
 /// news whenever a merge attaches a slower carrier.
 ///
+/// # Why three stages
+///
+/// `sightings` reads each watched source's unread tail with the predicate in the lateral's
+/// `WHERE`, so it is an index condition on `chapters_source_number_key` rather than a filter over
+/// every chapter. `newest` takes each chapter's earliest sighting and keeps the top `limit`, over
+/// three narrow columns. Only those rows then look up their carrier — the row with the title and
+/// path — by primary key. The single statement this replaced joined `read_progress` above a scan
+/// of every watched chapter and window-sorted all unread rows to disk: 362 ms warm on an
+/// 859-series watchlist with 97 000 unread rows, against 126 ms, identical output.
+///
+/// The carrier lookup must apply the same early-access gate as `sightings`: the carrier is chosen
+/// among the sightings the reader can open, and a locked one with a higher `chapter_count` would
+/// otherwise win and link to a paywall.
+///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; empty is never evidence the account is gone.
 pub async fn feed<'e, E: PgExecutor<'e>>(
@@ -126,40 +140,53 @@ pub async fn feed<'e, E: PgExecutor<'e>>(
     }
     let rows = sqlx::query_as!(
         Row,
-        "WITH unread AS ( \
-           SELECT s.id AS series_id, s.canonical_title AS series_title, \
-                  c.number_milli, c.title AS chapter_title, \
-                  p.slug AS provider_slug, p.base_url AS base_url, \
-                  chapter_url_path(ss.source_path, c.path) AS chapter_path, \
-                  min(c.discovered_at) OVER (PARTITION BY s.id, c.number_milli) AS discovered_at, \
-                  row_number() OVER (PARTITION BY s.id, c.number_milli \
-                                     ORDER BY ss.chapter_count DESC, \
-                                              ss.last_scanned_at DESC NULLS LAST, \
-                                              p.slug, ss.id) AS carrier_rank \
-           FROM watchlist_entries w \
-           JOIN series s ON s.id = w.series_id \
-           JOIN series_sources ss ON ss.series_id = w.series_id \
-           JOIN providers p ON p.id = ss.provider_id \
-           JOIN chapters c ON c.series_source_id = ss.id \
-           LEFT JOIN read_progress rp ON rp.user_id = w.user_id AND rp.series_id = w.series_id \
-           WHERE w.user_id = $1 \
-             AND c.number_milli >= (floor(COALESCE(rp.last_read_whole_number, 0))::bigint + 1) * 10000 \
-             AND NOT (c.number_milli % 10000 <> 0 \
-                      AND rp.last_read_part_number IS NOT NULL \
-                      AND c.number_milli <= (rp.last_read_part_number * 10000)::bigint) \
-             AND (c.access = 'free' OR c.unlocks_at <= now() \
-                  OR ss.provider_id = ANY(ARRAY( \
-                       SELECT e.provider_id FROM user_provider_early_access e \
-                       WHERE e.user_id = $1))) \
-         ) \
-         SELECT series_id AS \"series_id!\", series_title AS \"series_title!\", \
-                number_milli AS \"chapter_number!\", chapter_title, \
-                provider_slug AS \"provider_slug!\", base_url AS \"base_url!\", \
-                chapter_path AS \"chapter_path!\", discovered_at AS \"discovered_at!\" \
-         FROM unread \
-         WHERE carrier_rank = 1 \
-         ORDER BY discovered_at DESC, series_id, number_milli DESC \
-         LIMIT $2",
+        "WITH sightings AS ( \
+            SELECT ss.series_id, t.number_milli, t.discovered_at \
+            FROM watchlist_entries w \
+            LEFT JOIN read_progress rp ON rp.user_id = w.user_id AND rp.series_id = w.series_id \
+            JOIN series_sources ss ON ss.series_id = w.series_id \
+            CROSS JOIN LATERAL ( \
+              SELECT c.number_milli, c.discovered_at \
+              FROM chapters c \
+              WHERE c.series_source_id = ss.id \
+                AND c.number_milli >= (floor(COALESCE(rp.last_read_whole_number, 0))::bigint + 1) * 10000 \
+                AND NOT (c.number_milli % 10000 <> 0 \
+                         AND rp.last_read_part_number IS NOT NULL \
+                         AND c.number_milli <= (rp.last_read_part_number * 10000)::bigint) \
+                AND (c.access = 'free' OR c.unlocks_at <= now() \
+                     OR ss.provider_id = ANY(ARRAY( \
+                          SELECT e.provider_id FROM user_provider_early_access e \
+                          WHERE e.user_id = $1))) \
+            ) t \
+            WHERE w.user_id = $1 \
+          ), newest AS ( \
+            SELECT series_id, number_milli, min(discovered_at) AS discovered_at \
+            FROM sightings \
+            GROUP BY series_id, number_milli \
+            ORDER BY min(discovered_at) DESC, series_id, number_milli DESC \
+            LIMIT $2 \
+          ) \
+          SELECT n.series_id AS \"series_id!\", s.canonical_title AS \"series_title!\", \
+                 n.number_milli AS \"chapter_number!\", car.chapter_title, \
+                 car.provider_slug AS \"provider_slug!\", car.base_url AS \"base_url!\", \
+                 car.chapter_path AS \"chapter_path!\", n.discovered_at AS \"discovered_at!\" \
+          FROM newest n \
+          JOIN series s ON s.id = n.series_id \
+          CROSS JOIN LATERAL ( \
+            SELECT c.title AS chapter_title, p.slug AS provider_slug, p.base_url, \
+                   chapter_url_path(ss.source_path, c.path) AS chapter_path \
+            FROM series_sources ss \
+            JOIN providers p ON p.id = ss.provider_id \
+            JOIN chapters c ON c.series_source_id = ss.id AND c.number_milli = n.number_milli \
+            WHERE ss.series_id = n.series_id \
+              AND (c.access = 'free' OR c.unlocks_at <= now() \
+                   OR ss.provider_id = ANY(ARRAY( \
+                        SELECT e.provider_id FROM user_provider_early_access e \
+                        WHERE e.user_id = $1))) \
+            ORDER BY ss.chapter_count DESC, ss.last_scanned_at DESC NULLS LAST, p.slug, ss.id \
+            LIMIT 1 \
+          ) car \
+          ORDER BY n.discovered_at DESC, n.series_id, n.number_milli DESC",
         user_id.as_uuid(),
         limit,
     )

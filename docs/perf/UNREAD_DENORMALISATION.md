@@ -366,3 +366,12 @@ chapters and one watcher.
 - **Recomputing all 859 rows** through `watchlist_unread_live` takes 124 ms warm (0.14 ms per row).
   The backfill in the migration took 274 ms for the same rows, including the `INSERT`. The
   reconciler's 500-row pass reads live and compares, so expect roughly 100–150 ms every 15 minutes.
+
+## 14. A race found later, fixed by 0061
+
+`refresh_watchlist_unread` computed the figures in the statement that wrote them, so its snapshot
+predated the wait for the row lock. Two chapter batches for one watched series, on different
+sources and committing close together, stored an unread count one short, which only the
+reconciler repaired and counted as drift. Migration `0061_watchlist_unread_lock_first` locks the
+rows first and computes in the next statement; `concurrent_chapter_batches_for_one_watched_series_both_count`
+fails without it.

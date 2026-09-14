@@ -1,6 +1,9 @@
 # Discover/browse latency: measured redesign proposal
 
-Status: **proposal, awaiting approval**. Nothing in this document is implemented.
+Status: **implemented** (migration `0060_series_browse`, the rewritten statements in
+`repo/catalog/browse.rs`, `with_total` on `GET /v1/series`). Sections 1–7 are the proposal as it
+was measured and approved; §8 records what shipped, where it departs from the proposal, and the
+measurements of the committed statements.
 
 Scope: `GET /v1/series` (`services/api/src/series.rs::list`) and its six statements in
 `crates/db/src/repo/catalog/browse.rs`. All numbers are local (`tv_perf`, 53 872 series, 2.84 M
@@ -404,3 +407,117 @@ Suites to run for this change (Docker): `repo_browse`, `repo_query_plans` (~13 m
   should move to a lighter endpoint instead.
 - Not measured: `SeriesSummary::page`'s three batched reads, API-level latency, pool contention with
   page and count on separate connections, and the dropping of `::int8` on the chapters/sources sort keys.
+
+## 8. What shipped
+
+All three steps of §5 are implemented; step 4 stays open.
+
+### Departures from the proposal
+
+- **Lock, then compute.** The prototype's refresh functions computed a series' aggregates in the
+  statement that wrote them. That snapshot predates the wait for the row lock, so two scans of one
+  series' sources committing close together stored a `max_chapters` missing the first scan's
+  change. Reproduced on the clone (stored 200, live 500) and pinned by
+  `concurrent_scans_of_one_series_do_not_store_a_stale_chapter_count`, which fails without the fix.
+  The functions now lock the row first and compute in the next statement.
+- **The same race in `watchlist_unread`.** `refresh_watchlist_unread` (0058) had the same shape:
+  two chapter batches for one watched series on different sources stored an unread count one
+  short. Migration `0061_watchlist_unread_lock_first` applies the same ordering, pinned by
+  `concurrent_chapter_batches_for_one_watched_series_both_count` (stored 3, live 4 without it).
+- **No `::int8` casts on the sort keys, and an index per sort key.** A custom plan folds the
+  inactive `CASE` arms, so `sort=chapters`, `sources`, `title` and `year` each walk their own
+  `series_browse_*_idx` instead of sorting: the chapters sort went from 8 ms in the prototype to
+  0.09 ms.
+- **`canonical_title` is maintained** by the series trigger's `WHEN`, which the prototype had
+  backfilled but not kept.
+- **A projection verifier.** `repo::catalog::verify_projection` recomputes 5 000 series per pass
+  (`scheduler.series_browse_verify_interval_secs`, default 300) and repairs through
+  `series_browse_rebuild`; drift is counted in `series_browse_drift_total`.
+- **The count opt-out is `with_total`** (default `true`). Discover sends `true` only for a
+  window's first page; search and both console typeaheads always send `false`. `X-Next-Cursor`
+  comes from reading `limit + 1` rows.
+- **Search counts ride on the page.** A search page selects `count(*) OVER ()` over the matched
+  set; the separate search count runs only for a page past the end. Unsearched counts stay a
+  separate concurrent statement, now against the projection.
+
+### Equivalence
+
+On `tv_perf`, the committed statements were compared with the statements they replaced for all
+46 shapes (§2's 31 plus 15 edge cases). Each comparison covered the count and the page at `LIMIT
+100000`, so the whole ordered result was compared byte for byte, with the window column dropped
+from the new page. There were **0 mismatches**. For all 9 search shapes, the window count equals
+the search count statement.
+
+### Measurements of the committed statements
+
+Same method as §2. The before figures are §2's, measured on the same database before 0060.
+
+| shape | count warm | count cold | page warm | page cold |
+|---|---|---|---|---|
+| unfiltered | 16.1 → **5.7** | 40.2 → **28.1** | 0.09 → 0.05 | 8.8 → 5.2 |
+| unfiltered, offset 2400 | | | 6.7 → **0.45** | |
+| provider_kunmanga | 16.6 → **0.56** | | 2.09 → 0.53 | |
+| provider_missing | 14.0 → **0.04** | | 24.6 → 10.7 | 849 → **186** |
+| minch_100 | **140 → 1.2** | **442 → 135** | 0.58 → 0.14 | |
+| minch_500 | 87.3 → **0.09** | | 14.7 → 0.14 | **985 → 32** |
+| tag_romance | **273 → 4.2** | **377 → 28.5** | 0.60 → 0.13 | |
+| tag_romance, offset 2400 | | | 52.1 → **7.8** | |
+| tag_rare | **253 → 0.21** | | 44.1 → 1.23 | **954 → 123** |
+| tags_two | **276 → 3.1** | | 1.99 → 0.14 | |
+| exc_romance | 25.2 → 8.5 | | 6.87 → 0.06 | |
+| tracked_no | 18.0 → 7.9 | 46.0 → 24.1 | 0.25 → 0.33 | |
+| combo_manhwa_romance_minch | 31.9 → **2.3** | **359 → 24.8** | 0.80 → 2.06 | |
+| sort_title | 15.2 → 5.9 | | 0.12 → 0.15 | |
+| sort_title, offset 2400 | | | 8.8 → **0.89** | |
+| sort_chapters | 15.1 → 7.1 | | **109 → 0.09** | **382 → 10.3** |
+| sort_sources | 14.6 → 5.8 | | **124 → 0.13** | |
+| sort_year | 15.4 → 5.9 | | 25.0 → 0.09 | |
+| sort_chapters_romance | **275 → 4.1** | | **324 → 0.11** | **790 → 16.3** |
+| q_common_love (relevance) | 43.1, no longer run | 239, no longer run | 93 → 99 | 472 → **275** |
+| q_long | 32.8, no longer run | | 33.5 → 45.9 | |
+| q_love_recency | 42.4, no longer run | | 41.8 → 49.5 | |
+| q_love_chapters | 42.2, no longer run | | 51.0 → 45.3 | |
+
+All times are ms.
+
+**Worst case**, before → after:
+
+| | warm | cold |
+|---|---|---|
+| unsearched count | 276 → 8.5 ms | 442 → 135 ms |
+| unsearched page | 324 → 10.7 ms | 985 → 186 ms |
+
+**Search requests** now run one statement instead of two. A request costs the page, 41–99 ms
+warm, where it used to cost the page plus a count, 66–136 ms.
+
+- **Size and backfill.** The projection is 12 MB, 29 MB with its seven indexes; the backfill took
+  0.8 s on 53 872 series.
+- **Plans and JIT.**
+  - Every custom-plan estimate is at most 77 549, under `jit_above_cost`.
+  - Generic plans of the unsearched pages estimate 159 503, so with `jit=on` they would pay 7–15 ms
+    of JIT. After six executions, `plan_cache_mode=auto` kept every one of them on a custom plan.
+  - The one statement `auto` moved to its generic plan is the relevance search page for "love":
+    122 ms generic against 99 ms custom.
+  - Production runs `jit=off`.
+- **Plan audit.** The browse budget in `repo_query_plans` is deleted; nothing it excused breaches a
+  rule any more. `the_browse_statements_read_the_projection` asserts on the generic plans that no
+  browse statement reads `series_tags` or `series_sources`, and that the unsearched count does not
+  read `series`.
+
+### Tests added
+
+- `repo_series_browse`:
+  - every writer: scans, adult flag, series columns, merge and revert, tag, series and provider
+    deletes;
+  - the concurrent-scan race;
+  - the verifier.
+- `repo_browse`:
+  - an unknown slug beside a known one, and a repeated slug;
+  - a chapter floor of −5, 0 and 1 with a sourceless series;
+  - `has_more` and `total` at every limit and offset, counted and uncounted, searched and not,
+    including a search page past the end.
+- `repo_tracking`: the concurrent chapter-batch race (0061).
+- `services/api/tests/series_browse_headers.rs`: both headers at every page boundary, with and
+  without `with_total`.
+- `web/frontend`: a page without `X-Total-Count` reports no total, where the count line used to
+  fall back to the page length.

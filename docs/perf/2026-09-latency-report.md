@@ -159,10 +159,32 @@ deleted, it can name one of the deleted chapters.
   - The folded-row decrement is mutation-checked.
   - A second test covers the verifier repairing a write made with the triggers off.
 
-### Browse total (proposal, waiting on you)
+### Discover browse: a trigger-kept projection (done)
 
-[`BROWSE_REDESIGN.md`](BROWSE_REDESIGN.md) measures 31 filter shapes and proposes a trigger-kept
-browse projection that keeps exact totals for every shape, plus an additive opt-out of the count.
+[`BROWSE_REDESIGN.md`](BROWSE_REDESIGN.md) §8. Migration 0060 adds `series_browse`, one narrow
+row per series holding every filter and sort key (tag and provider sets as GIN-indexed arrays),
+kept current by row triggers and re-checked by a leader pass
+(`scheduler.series_browse_verify_interval_secs`). The browse statements filter and order on it and
+read only the page's rows from `series`.
+
+- **Totals stay exact for every shape.**
+- **`GET /v1/series` gains an optional `with_total`** (default `true`, so installed clients are
+  unchanged). Discover asks for the total once per window; search and the console typeaheads never
+  do. `X-Next-Cursor` comes from reading one extra row.
+- **A search page carries its total as a window count**, so a search request is one statement.
+
+On the clone, all 46 measured shapes return identical counts and identical ordered rows.
+
+| | before | after |
+|---|---|---|
+| worst unsearched count, warm / cold | 276 / 442 ms | 8.5 / 135 ms |
+| worst unsearched page, warm / cold | 324 / 985 ms | 10.7 / 186 ms |
+| sort by chapters or sources, warm | 109–124 ms | 0.09–0.13 ms |
+| a search request (page + count), cold | 472 + 239 ms | 275 ms |
+
+Building the projection exposed a race, also present in 0058's unread refresh: a recompute that
+computes before waiting for its row lock can store a stale value. Both are fixed by locking first
+(0060, and 0061 for `watchlist_unread`), each pinned by a test that fails without the fix.
 
 ## Phase 5 — guardrails
 
@@ -182,8 +204,9 @@ the log and local plans, not a production measurement.
    unread tails from `chapters`, and stored counts cannot replace a list of chapters. Fix: memory
    sizing (1.1). The other Home surfaces no longer read `chapters` for counts (Phase 3); their
    remaining cold cost is the live source ranking, 0.15–0.4 s locally.
-2. **Browse count and filtered pages** (1–30 s in production; locally up to 276 ms warm and
-   985 ms cold). Fix: [`BROWSE_REDESIGN.md`](BROWSE_REDESIGN.md), waiting on approval.
+2. **Search** (180–360 ms cold locally). The trigram recheck of the matched set; now paid once
+   per request instead of twice. A narrow title table is the next step (`BROWSE_REDESIGN.md` §5.4),
+   worth doing only with production numbers.
 3. **Console per-provider table, cold** (434 ms locally). The `series_sources` aggregate, not
    chapters any more; served behind the 30 s cache.
 4. **Scan triage** (failure groups, failed task list, run list total). Bounded by retention and

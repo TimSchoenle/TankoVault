@@ -220,11 +220,10 @@ the log and local plans, not a production measurement.
 
 ## Found in passing
 
-- `xtask/src/prune_chapters.rs` still deletes by `chapters.id`, which migration 0055 dropped; it
-  fails at runtime (it uses unchecked `sqlx::query`, so nothing compiles against it).
-- `ScanRun` is published by two different Rust types under one schema name, and which one
-  `openapi.json` shows depends on route registration order. The router split preserves today's
-  output deliberately; the collision itself remains.
+- `xtask/src/prune_chapters.rs` deleted by `chapters.id`, which migration 0055 dropped. Fixed on
+  main by #391.
+- `ScanRun` was published by two different Rust types under one schema name. Fixed on main by #392;
+  after rebasing, the router split merges the admin specification directly.
 - The desktop frontend does not build on this Windows host: `windows-registry`/`windows-result`
   0.100 require rustc 1.95 against the pinned 1.94. The lockfile is untouched by this work.
 

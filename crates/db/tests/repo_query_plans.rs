@@ -350,16 +350,17 @@ struct Budget {
     reason: &'static str,
 }
 
-const BUDGETS: &[Budget] = &[Budget {
-    label: "browse filtered page/count, no-search variants",
-    matches: |query| {
-        query
-            .sql
-            .contains("cardinality($7::text[]) = 0 OR NOT EXISTS")
-            && !query.sql.contains("plainto_tsquery")
-    },
-    ceiling: 1_600_000.0,
-    reason: "the optional *filters*, not the search term — the trigram disjunction these \
+const BUDGETS: &[Budget] = &[
+    Budget {
+        label: "browse filtered page/count, no-search variants",
+        matches: |query| {
+            query
+                .sql
+                .contains("cardinality($7::text[]) = 0 OR NOT EXISTS")
+                && !query.sql.contains("plainto_tsquery")
+        },
+        ceiling: 1_600_000.0,
+        reason: "the optional *filters*, not the search term — the trigram disjunction these \
              statements used to carry is gone, and their search-branch twins plan at ~31 000. \
              `GENERIC_PLAN` cannot fold `$n IS NULL`, so every optional filter's subquery is \
              charged against every row of `series`: the `min_chapters` chapter-count aggregate \
@@ -372,7 +373,55 @@ const BUDGETS: &[Budget] = &[Budget {
              trigram one never did, because a supplied search term is never NULL. Removing it \
              needs hashed set-membership subqueries or a pre-aggregated `series_sources` join, \
              both of which make the no-filter case do work it currently skips.",
-}];
+    },
+    Budget {
+        label: "console header rollup",
+        matches: |query| query.sql.contains("AS \"providers_total!\""),
+        ceiling: 90_000.0,
+        reason: "four `count(*)` over `chapters` (the total and three `discovered_at` windows). Exact \
+             counts by decision: `services/api/src/cache.rs` serves the rollup stale-while-\
+             revalidate so the scan never blocks a response, and refreshes it under its own \
+             120 s ceiling. Production measured the refresh at 7.8–48.7 s, so this is the open \
+             choice between `reltuples` estimates and a maintained rollup, not a settled cost.",
+    },
+    Budget {
+        label: "console per-provider table",
+        matches: |query| query.sql.starts_with("WITH src AS ("),
+        ceiling: 36_000.0,
+        reason: "groups every chapter by provider for the chapter total and the 24 h / 7 d counts. \
+             Served like the header rollup, and open for the same reason: a provider-stats rollup \
+             refreshed when a scan run settles would make this a read of ~100 rows.",
+    },
+    Budget {
+        label: "catalogue maintenance totals",
+        matches: |query| {
+            query.sql.contains("health AS (") && query.sql.contains("AS \"chapters_total!\"")
+        },
+        ceiling: 36_000.0,
+        reason: "the purge panel's stated blast radius counts `chapters` whole. An operator page opened \
+             before a destructive action, not a dashboard; production logged it at ~3 s. \
+             `reltuples` would do for a figure that only sizes a warning.",
+    },
+    Budget {
+        label: "chapter purge remaining count",
+        matches: |query| query.sql == "SELECT count(*) AS \"count!\" FROM chapters",
+        ceiling: 36_000.0,
+        reason: "`purge_chapters_batch` reports how many chapters are left after each batch, and the \
+             purge exists to empty the table, so the scan shrinks with every call. Operator-driven \
+             and rare.",
+    },
+    Budget {
+        label: "chapter purge batch",
+        matches: |query| {
+            query
+                .sql
+                .starts_with("DELETE FROM chapters WHERE ctid IN (SELECT ctid FROM chapters LIMIT")
+        },
+        ceiling: 36_000.0,
+        reason: "a sequential scan that stops at its `LIMIT`: the batch is the bound, and the rule \
+             cannot see a `Limit` above the scan node.",
+    },
+];
 
 /// The budget covering `query`, if any.
 fn budget_for(query: &CachedQuery) -> Option<&'static Budget> {
@@ -405,6 +454,16 @@ fn audit(plan: &Value) -> Vec<Finding> {
         });
     }
 
+    for scan in whole_scans_of_growing_tables(plan) {
+        findings.push(Finding {
+            rule: "whole-scan-of-growing-table",
+            detail: format!(
+                "{scan}: reads history that only grows. Bound it by an index condition, keep a \
+                 rollup, or budget it with the reason it has to read everything."
+            ),
+        });
+    }
+
     let cost = total_cost(plan);
     if cost > COST_CEILING {
         findings.push(Finding {
@@ -414,6 +473,54 @@ fn audit(plan: &Value) -> Vec<Finding> {
     }
 
     findings
+}
+
+/// Tables that grow with the deployment's age rather than with its catalogue or readership.
+///
+/// A statement reading one of these whole is fine on the day it ships and slows every week after:
+/// `stats::system_overview`'s `count(*)` over `chapters`, the per-provider chapter totals and the
+/// triage aggregates over `scan_tasks` all passed the cost ceiling on this fixture and reached
+/// 8–49 s in production after six weeks.
+const GROWING_TABLES: [&str; 2] = ["chapters", "scan_tasks"];
+
+/// Partial indexes whose full scan is bounded by open work rather than by history.
+///
+/// `scan_tasks_queue` holds only `state = 'queued'` rows, which the workers drain; reading it whole
+/// costs the backlog, not the deployment's age.
+const BOUNDED_PARTIAL_INDEXES: [&str; 1] = ["scan_tasks_queue"];
+
+/// Every node that reads a [`GROWING_TABLES`] relation whole: a sequential scan, or an index scan
+/// with no index condition to bound it.
+fn whole_scans_of_growing_tables(plan: &Value) -> Vec<String> {
+    let mut found = Vec::new();
+    walk(&plan[0]["Plan"], &mut |node| {
+        let Some(relation) = node.get("Relation Name").and_then(Value::as_str) else {
+            return;
+        };
+        if !GROWING_TABLES.contains(&relation) {
+            return;
+        }
+        let kind = node["Node Type"].as_str().unwrap_or_default();
+        let unbounded = match kind {
+            "Seq Scan" => true,
+            "Index Scan" | "Index Only Scan" => {
+                node.get("Index Cond").is_none()
+                    && !node
+                        .get("Index Name")
+                        .and_then(Value::as_str)
+                        .is_some_and(|name| BOUNDED_PARTIAL_INDEXES.contains(&name))
+            }
+            _ => false,
+        };
+        if unbounded {
+            let index = node
+                .get("Index Name")
+                .and_then(Value::as_str)
+                .map_or_else(String::new, |name| format!(" using {name}"));
+            found.push(format!("{kind} on {relation}{index}"));
+        }
+    });
+    found
 }
 
 /// The planner's estimated total cost for the whole statement.

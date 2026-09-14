@@ -1494,3 +1494,93 @@ async fn a_run_that_never_planned_a_task_is_failed_but_only_once_it_is_old() {
         RunState::Failed
     );
 }
+
+// ---------------------------------------------------------------------------
+// History retention
+// ---------------------------------------------------------------------------
+
+const DAY: i64 = 24 * 60;
+
+/// Prune until a pass finds nothing, counting the passes.
+async fn prune_all(db: &TestDb, task_batch: i64) -> (scans::HistoryPrune, usize) {
+    let mut total = scans::HistoryPrune::default();
+    for pass in 1..=100 {
+        let step = scans::prune_scan_history(&db.pool, 30, 100, task_batch)
+            .await
+            .expect("prune");
+        if step.is_empty() {
+            return (total, pass);
+        }
+        total.tasks += step.tasks;
+        total.runs += step.runs;
+    }
+    panic!("pruning never converged");
+}
+
+async fn run_exists(db: &TestDb, run: ScanRunId) -> bool {
+    scans::get_run(&db.pool, run).await.is_ok()
+}
+
+/// Unbounded scan history is what made the triage queries grow with the deployment's age: every
+/// run and task ever planned stayed in the tables they aggregate. Retention removes settled
+/// history past the cutoff, in batches, and nothing else.
+#[tokio::test]
+async fn settled_history_past_retention_is_pruned_in_batches() {
+    let db = TestDb::spawn().await;
+    let provider = seed::provider(&db, "alpha").create().await;
+
+    // Enough newer finished runs that the two old ones fall outside the streak window.
+    for _ in 0..32 {
+        a_finished_run(&db, provider, ScanMode::Fast, RunState::Completed, DAY).await;
+    }
+    let old_completed =
+        a_finished_run(&db, provider, ScanMode::Fast, RunState::Completed, 60 * DAY).await;
+    let old_cancelled =
+        a_finished_run(&db, provider, ScanMode::Fast, RunState::Cancelled, 61 * DAY).await;
+    for page in 0..3 {
+        a_task(&db, old_completed, &json!({ "page": page })).await;
+    }
+    let old_in_flight = a_run_in_flight(&db, provider, ScanMode::Full).await;
+    backdate(&db, BACKDATE_RUN, old_in_flight.as_uuid(), 60).await;
+    let recent = a_finished_run(&db, provider, ScanMode::Fast, RunState::Failed, 10).await;
+
+    let (pruned, passes) = prune_all(&db, 2).await;
+
+    // Each run carries the task `a_run_in_flight` planned, plus the three pages above.
+    assert_eq!(pruned, scans::HistoryPrune { tasks: 5, runs: 2 });
+    assert!(
+        passes > 3,
+        "a task batch of 2 must take several passes for 5 tasks"
+    );
+    assert!(!run_exists(&db, old_completed).await);
+    assert!(!run_exists(&db, old_cancelled).await);
+    assert!(
+        run_exists(&db, old_in_flight).await,
+        "a run that has not settled is not history, however old"
+    );
+    assert!(run_exists(&db, recent).await);
+}
+
+/// **Retention must not shorten a failure streak.** The scheduler's backoff reads the newest
+/// finished runs of a provider and mode; a provider that has failed every run for longer than the
+/// retention period has *only* old runs, and pruning them would reset its streak to zero and send
+/// the sweep straight back to a site that refuses every request.
+#[tokio::test]
+async fn retention_keeps_the_runs_a_failure_streak_is_read_from() {
+    let db = TestDb::spawn().await;
+    let provider = seed::provider(&db, "alpha").create().await;
+    for ago in 40..45 {
+        a_finished_run(&db, provider, ScanMode::Fast, RunState::Failed, ago * DAY).await;
+    }
+
+    let (pruned, _) = prune_all(&db, 1_000).await;
+
+    assert!(pruned.is_empty());
+    assert_eq!(
+        scans::failure_streak(&db.pool, provider, ScanMode::Fast)
+            .await
+            .expect("query")
+            .failures,
+        5
+    );
+}

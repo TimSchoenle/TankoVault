@@ -762,6 +762,7 @@ async fn run_scheduler(
         && cfg.recsys_incremental_interval_secs == 0
         && cfg.recsys_full_interval_secs == 0
         && cfg.reconcile_interval_secs == 0
+        && (cfg.scan_history_prune_interval_secs == 0 || cfg.scan_history_retention_days == 0)
     {
         tracing::info!("scheduler disabled");
         return;
@@ -771,6 +772,11 @@ async fn run_scheduler(
     let mut merge = interval_or_never(cfg.merge_sweep_interval_secs);
     let mut merge_rotation = interval_or_never(cfg.merge_sweep_rotation_interval_secs);
     let mut repair = interval_or_never(cfg.reconcile_interval_secs);
+    let mut prune = interval_or_never(if cfg.scan_history_retention_days == 0 {
+        0
+    } else {
+        cfg.scan_history_prune_interval_secs
+    });
     let mut recsys_incremental = interval_or_never(cfg.recsys_incremental_interval_secs);
     let mut recsys_full = interval_or_never(cfg.recsys_full_interval_secs);
 
@@ -793,6 +799,9 @@ async fn run_scheduler(
                 maybe_merge_sweep(&state, &leadership, dedupe::SweepScope::Rotation).await;
             }
             () = tick(&mut repair) => maybe_reconcile(&state, &leadership).await,
+            () = tick(&mut prune) => {
+                maybe_prune_scan_history(&state, &leadership, cfg.scan_history_retention_days).await;
+            }
             () = tick(&mut recsys_incremental) => {
                 maybe_recsys_build(&state, &cfg, &leadership, false).await;
             }
@@ -900,6 +909,68 @@ async fn maybe_reconcile(state: &AppState, leadership: &leader::Leadership) {
         tracing::warn!(error = %e, "scan dispatch reconciliation failed");
     }
     metrics::histogram!("scan_reconcile_duration_seconds").record(started.elapsed().as_secs_f64());
+}
+
+/// Scan runs selected per pruning pass.
+const PRUNE_RUN_BATCH: i64 = 200;
+
+/// Task rows deleted per pruning pass: small enough that one `DELETE` holds its locks briefly.
+const PRUNE_TASK_BATCH: i64 = 5_000;
+
+/// How long one pruning tick may keep working before yielding to the scheduler's other sweeps.
+///
+/// A first pass over weeks of history is far larger than this; it catches up over later ticks.
+const PRUNE_TICK_BUDGET: Duration = Duration::from_secs(20);
+
+/// Deletes settled scan history past retention, on the leader only.
+///
+/// Not behind [`Feature::ScanningScheduler`], like [`maybe_reconcile`]: it plans no work, and an
+/// operator stopping scans is the moment the triage tables most need to stay small.
+async fn maybe_prune_scan_history(
+    state: &AppState,
+    leadership: &leader::Leadership,
+    retention_days: u32,
+) {
+    if !leadership.is_leader() {
+        tracing::debug!("skipping scan-history pruning; not scheduler leader");
+        return;
+    }
+    let started = std::time::Instant::now();
+    let mut total = tankovault_db::repo::scans::HistoryPrune::default();
+    let span = tracing::info_span!("scan_history_prune", "sentry.op" = "cron");
+    while started.elapsed() < PRUNE_TICK_BUDGET {
+        match tankovault_db::repo::scans::prune_scan_history(
+            &state.pool,
+            retention_days,
+            PRUNE_RUN_BATCH,
+            PRUNE_TASK_BATCH,
+        )
+        .instrument(span.clone())
+        .await
+        {
+            Ok(pass) if pass.is_empty() => break,
+            Ok(pass) => {
+                total.tasks += pass.tasks;
+                total.runs += pass.runs;
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "scan-history pruning failed");
+                break;
+            }
+        }
+    }
+    metrics::counter!(tankovault_service::metrics::names::SCAN_HISTORY_PRUNED, "kind" => "tasks")
+        .increment(total.tasks);
+    metrics::counter!(tankovault_service::metrics::names::SCAN_HISTORY_PRUNED, "kind" => "runs")
+        .increment(total.runs);
+    if !total.is_empty() {
+        tracing::info!(
+            tasks = total.tasks,
+            runs = total.runs,
+            retention_days,
+            "pruned scan history"
+        );
+    }
 }
 
 /// Runs a duplicate sweep only when this replica holds leadership *and* automatic

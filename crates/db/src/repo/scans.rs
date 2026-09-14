@@ -1910,6 +1910,93 @@ pub async fn fail_unplanned_runs<'e, E: PgExecutor<'e>>(
     Ok(rows.into_iter().map(ScanRunId::from_uuid).collect())
 }
 
+/// What one [`prune_scan_history`] pass deleted.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct HistoryPrune {
+    /// Task rows removed.
+    pub tasks: u64,
+    /// Run rows removed.
+    pub runs: u64,
+}
+
+impl HistoryPrune {
+    /// Whether the pass found nothing left to remove.
+    #[must_use]
+    pub const fn is_empty(self) -> bool {
+        self.tasks == 0 && self.runs == 0
+    }
+}
+
+/// Delete one bounded batch of settled scan history older than `retention_days`.
+///
+/// A run goes only once it is terminal and past the cutoff, its tasks first and in batches of
+/// `task_batch`, the run row once none are left — so a run with fifty thousand tasks takes
+/// several passes rather than one long `DELETE`. Call it until [`HistoryPrune::is_empty`].
+///
+/// **The newest [`FAILURE_STREAK_WINDOW`] finished runs of each provider and mode are kept,
+/// however old.** [`failure_streak`] reads exactly that window; pruning into it would shorten a
+/// failing provider's streak and cut its backoff, which is the only thing keeping the scheduler
+/// from hammering a site that answers nothing. It also keeps every provider's latest run, which
+/// the provider table reports.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only; nothing to prune is an empty [`HistoryPrune`].
+pub async fn prune_scan_history(
+    pool: &sqlx::PgPool,
+    retention_days: u32,
+    run_batch: i64,
+    task_batch: i64,
+) -> DbResult<HistoryPrune> {
+    let runs = sqlx::query_scalar!(
+        "SELECT r.id FROM scan_runs r \
+         WHERE r.state IN ('completed','failed','cancelled') \
+           AND r.created_at < now() - make_interval(days => $1) \
+           AND (r.provider_id IS NULL OR ( \
+                 SELECT count(*) FROM ( \
+                   SELECT 1 FROM scan_runs n \
+                   WHERE n.provider_id = r.provider_id AND n.mode = r.mode \
+                     AND n.state IN ('completed','failed') AND n.created_at > r.created_at \
+                   LIMIT $3 \
+                 ) newer) >= $3) \
+         ORDER BY r.created_at ASC \
+         LIMIT $2",
+        i32::try_from(retention_days).unwrap_or(i32::MAX),
+        run_batch,
+        FAILURE_STREAK_WINDOW,
+    )
+    .fetch_all(pool)
+    .await?;
+    if runs.is_empty() {
+        return Ok(HistoryPrune::default());
+    }
+
+    let tasks = sqlx::query!(
+        "DELETE FROM scan_tasks WHERE id IN ( \
+             SELECT id FROM scan_tasks WHERE run_id = ANY($1) LIMIT $2 \
+         )",
+        &runs,
+        task_batch,
+    )
+    .execute(pool)
+    .await?
+    .rows_affected();
+
+    let deleted_runs = sqlx::query!(
+        "DELETE FROM scan_runs r \
+         WHERE r.id = ANY($1) \
+           AND NOT EXISTS (SELECT 1 FROM scan_tasks t WHERE t.run_id = r.id)",
+        &runs,
+    )
+    .execute(pool)
+    .await?
+    .rows_affected();
+
+    Ok(HistoryPrune {
+        tasks,
+        runs: deleted_runs,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::{ErrorSelector, RunSort};

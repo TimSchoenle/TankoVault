@@ -1102,6 +1102,63 @@
         "reserved": false
       },
       {
+        "path": "scheduler.scan_history_retention_days",
+        "env": "TANKOVAULT_SCHEDULER__SCAN_HISTORY_RETENTION_DAYS",
+        "env_file": "TANKOVAULT_SCHEDULER__SCAN_HISTORY_RETENTION_DAYS_FILE",
+        "secrets_file": "scheduler__scan_history_retention_days",
+        "docs": "Days settled scan runs and their tasks are kept. 0 keeps them forever.\n\nThe triage queries aggregate this history, so without a bound they slow with every week the\ndeployment runs. The newest runs a failure backoff reads are kept regardless of age.",
+        "ty": "u32",
+        "values": [],
+        "constraint": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*\\+?[0-9]+\\s*$",
+          "type": "string"
+        },
+        "text_form": "integer",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "scheduler.scan_history_prune_interval_secs",
+        "env": "TANKOVAULT_SCHEDULER__SCAN_HISTORY_PRUNE_INTERVAL_SECS",
+        "env_file": "TANKOVAULT_SCHEDULER__SCAN_HISTORY_PRUNE_INTERVAL_SECS_FILE",
+        "secrets_file": "scheduler__scan_history_prune_interval_secs",
+        "docs": "Seconds between scan-history pruning passes. 0 disables.",
+        "ty": "u64",
+        "values": [],
+        "constraint": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*\\+?[0-9]+\\s*$",
+          "type": "string"
+        },
+        "text_form": "integer",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
         "path": "bind_addr",
         "env": "TANKOVAULT_BIND_ADDR",
         "env_file": "TANKOVAULT_BIND_ADDR_FILE",
@@ -2580,6 +2637,17 @@
           },
           "run_stale_after_secs": {
             "description": "How long an unfinished run keeps suppressing new runs of the same provider and mode.\n\nThe suppression itself has no expiry condition other than this one, so the value is the\nonly thing standing between a run that can never settle — a task persisted but never\npublished — and a provider that is never scanned again.",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "scan_history_prune_interval_secs": {
+            "description": "Seconds between scan-history pruning passes. 0 disables.",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "scan_history_retention_days": {
+            "description": "Days settled scan runs and their tasks are kept. 0 keeps them forever.\n\nThe triage queries aggregate this history, so without a bound they slow with every week the\ndeployment runs. The newest runs a failure backoff reads are kept regardless of age.",
+            "maximum": 4294967295,
             "minimum": 0,
             "type": "integer"
           }

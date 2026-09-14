@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM scan_runs r WHERE r.id = ANY($1) AND NOT EXISTS (SELECT 1 FROM scan_tasks t WHERE t.run_id = r.id)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b5fcf2d369a2013ed03a288b1e580d4dfab717109191a85db67f95e7f3b5f514"
+}

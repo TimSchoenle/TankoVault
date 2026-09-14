@@ -150,6 +150,15 @@ pub struct SchedulerConfig {
     /// next run of that mode as well.
     #[serde(default = "default_reconcile_interval")]
     pub reconcile_interval_secs: u64,
+    /// Days settled scan runs and their tasks are kept. 0 keeps them forever.
+    ///
+    /// The triage queries aggregate this history, so without a bound they slow with every week the
+    /// deployment runs. The newest runs a failure backoff reads are kept regardless of age.
+    #[serde(default = "default_scan_history_retention_days")]
+    pub scan_history_retention_days: u32,
+    /// Seconds between scan-history pruning passes. 0 disables.
+    #[serde(default = "default_scan_history_prune_interval")]
+    pub scan_history_prune_interval_secs: u64,
 }
 
 fn default_fast_interval() -> u64 {
@@ -201,6 +210,16 @@ const fn default_reconcile_interval() -> u64 {
     300
 }
 
+/// Thirty days: long past any failure an operator still triages, and a month of trend for the
+/// run list.
+const fn default_scan_history_retention_days() -> u32 {
+    30
+}
+
+const fn default_scan_history_prune_interval() -> u64 {
+    3600
+}
+
 const fn default_recsys_incremental_interval() -> u64 {
     900
 }
@@ -231,6 +250,8 @@ impl Default for SchedulerConfig {
             run_stale_after_secs: default_run_stale_after(),
             failure_backoff_max_secs: default_failure_backoff_max(),
             reconcile_interval_secs: default_reconcile_interval(),
+            scan_history_retention_days: default_scan_history_retention_days(),
+            scan_history_prune_interval_secs: default_scan_history_prune_interval(),
             recsys_incremental_interval_secs: default_recsys_incremental_interval(),
             recsys_full_interval_secs: default_recsys_full_interval(),
             recsys_batch: default_recsys_batch(),

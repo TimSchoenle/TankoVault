@@ -104,6 +104,8 @@ pub mod names {
     pub const SCAN_DISPATCH_REPAIRS: &str = "scan_dispatch_repairs_total";
     /// How long one reconciliation pass took.
     pub const SCAN_RECONCILE_DURATION: &str = "scan_reconcile_duration_seconds";
+    /// Settled scan history deleted by retention, by kind.
+    pub const SCAN_HISTORY_PRUNED: &str = "scan_history_pruned_total";
     /// How long one scheduler sweep took, by tier.
     pub const SCHEDULER_SWEEP_DURATION: &str = "scheduler_sweep_duration_seconds";
     /// `1` on the replica currently holding scheduler leadership.
@@ -390,6 +392,13 @@ pub const CATALOGUE: &[Metric] = &[
         unit: Unit::Seconds,
         emitted_by: "control-plane",
         help: "Time for one pass reconciling JetStream against the scan_tasks table. One broker call per provider lane with open work.",
+    },
+    Metric {
+        name: names::SCAN_HISTORY_PRUNED,
+        kind: Kind::Counter,
+        unit: Unit::Count,
+        emitted_by: "control-plane",
+        help: "Scan task and run rows deleted by history retention, labelled kind=tasks|runs. Flat at zero past the first weeks means retention is off or the leader is not running it.",
     },
     Metric {
         name: names::SCHEDULER_SWEEP_DURATION,

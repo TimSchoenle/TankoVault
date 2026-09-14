@@ -8,12 +8,14 @@
 //! an operator should read the list before it becomes a `DELETE`.
 
 use std::collections::BTreeMap;
+use tankovault_domain::chapter_number::from_milli;
 use tankovault_domain::chapter_outliers::{OutlierPolicy, implausible_indices};
 use uuid::Uuid;
 
 /// One stored chapter, as the rule needs to see it.
 struct Row {
-    id: Uuid,
+    /// The stored half of the `(series_source_id, number_milli)` key.
+    number_milli: i32,
     number: f64,
     path: String,
 }
@@ -62,19 +64,29 @@ pub(crate) async fn run(pool: &tankovault_db::PgPool, apply: bool) -> anyhow::Re
         return Ok(());
     }
 
-    let ids: Vec<Uuid> = findings
-        .iter()
-        .flat_map(|f| f.rejected.iter().map(|r| r.id))
-        .collect();
+    // Parallel arrays zipped by `UNNEST` below, so they must stay the same length and in step.
+    let mut sources: Vec<Uuid> = Vec::with_capacity(total);
+    let mut numbers: Vec<i32> = Vec::with_capacity(total);
+    for finding in &findings {
+        for row in &finding.rejected {
+            sources.push(finding.source_id);
+            numbers.push(row.number_milli);
+        }
+    }
 
     // One transaction and one statement: a partial prune would leave the catalogue in a state
     // no re-run reproduces, since the rule's verdict depends on the numbers still present.
     let mut tx = pool.begin().await?;
-    let deleted = sqlx::query("DELETE FROM chapters WHERE id = ANY($1)")
-        .bind(&ids)
-        .execute(&mut *tx)
-        .await?
-        .rows_affected();
+    let deleted = sqlx::query(
+        "DELETE FROM chapters c \
+          USING UNNEST($1::uuid[], $2::int[]) AS d(src, n) \
+          WHERE c.series_source_id = d.src AND c.number_milli = d.n",
+    )
+    .bind(&sources)
+    .bind(&numbers)
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
     // `chapter_count` is a stored per-source total; leaving it is a silent inconsistency the
     // next scan would only fix for sources that happen to be re-scanned.
     sqlx::query(
@@ -89,7 +101,7 @@ pub(crate) async fn run(pool: &tankovault_db::PgPool, apply: bool) -> anyhow::Re
 
     println!("deleted {deleted} chapters");
     println!(
-        "note: read_progress stores chapter *numbers*, not ids, so a reader who marked one of \
+        "note: read_progress stores chapter *numbers*, not chapter rows, so a reader who marked one of \
          these as read keeps that number as their progress."
     );
     Ok(())
@@ -97,25 +109,27 @@ pub(crate) async fn run(pool: &tankovault_db::PgPool, apply: bool) -> anyhow::Re
 
 /// Every source whose stored chapter numbers the rule rejects, ordered by provider and path.
 async fn scan(pool: &tankovault_db::PgPool) -> anyhow::Result<Vec<Finding>> {
-    let rows: Vec<(Uuid, String, String, f64, Uuid, String)> = sqlx::query_as(
-        "SELECT ss.id, p.slug, ss.source_path, c.number::float8, c.id, c.path \
+    // The stored path may be relative to `source_path`; `chapter_url_path` expands it.
+    let rows: Vec<(Uuid, String, String, i32, String)> = sqlx::query_as(
+        "SELECT ss.id, p.slug, ss.source_path, c.number_milli, \
+                chapter_url_path(ss.source_path, c.path) \
            FROM chapters c \
            JOIN series_sources ss ON ss.id = c.series_source_id \
            JOIN providers p ON p.id = ss.provider_id \
-          ORDER BY p.slug, ss.source_path, c.number",
+          ORDER BY p.slug, ss.source_path, c.number_milli",
     )
     .fetch_all(pool)
     .await?;
 
     let mut by_source: BTreeMap<Uuid, (String, String, Vec<Row>)> = BTreeMap::new();
-    for (source_id, provider, source_path, number, chapter_id, path) in rows {
+    for (source_id, provider, source_path, number_milli, path) in rows {
         by_source
             .entry(source_id)
             .or_insert_with(|| (provider, source_path, Vec::new()))
             .2
             .push(Row {
-                id: chapter_id,
-                number,
+                number_milli,
+                number: from_milli(number_milli),
                 path,
             });
     }

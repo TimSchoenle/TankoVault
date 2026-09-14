@@ -171,6 +171,10 @@ pub struct SchedulerConfig {
     /// and repair any that drifted. 0 disables.
     #[serde(default = "default_unread_reconcile_interval")]
     pub unread_reconcile_interval_secs: u64,
+    /// Seconds between passes that re-count a batch of sources' chapters and rebuild any whose
+    /// stored console totals disagree. 0 disables.
+    #[serde(default = "default_chapter_rollup_verify_interval")]
+    pub chapter_rollup_verify_interval_secs: u64,
 }
 
 fn default_fast_interval() -> u64 {
@@ -242,6 +246,11 @@ const fn default_unread_reconcile_interval() -> u64 {
     900
 }
 
+/// Five minutes, 2 000 sources a pass: a full cycle over 80 000 sources takes a few hours.
+const fn default_chapter_rollup_verify_interval() -> u64 {
+    300
+}
+
 const fn default_recsys_incremental_interval() -> u64 {
     900
 }
@@ -276,6 +285,7 @@ impl Default for SchedulerConfig {
             scan_history_prune_interval_secs: default_scan_history_prune_interval(),
             unread_unlock_interval_secs: default_unread_unlock_interval(),
             unread_reconcile_interval_secs: default_unread_reconcile_interval(),
+            chapter_rollup_verify_interval_secs: default_chapter_rollup_verify_interval(),
             recsys_incremental_interval_secs: default_recsys_incremental_interval(),
             recsys_full_interval_secs: default_recsys_full_interval(),
             recsys_batch: default_recsys_batch(),

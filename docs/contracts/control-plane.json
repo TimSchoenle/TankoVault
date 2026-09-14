@@ -1215,6 +1215,34 @@
         "reserved": false
       },
       {
+        "path": "scheduler.chapter_rollup_verify_interval_secs",
+        "env": "TANKOVAULT_SCHEDULER__CHAPTER_ROLLUP_VERIFY_INTERVAL_SECS",
+        "env_file": "TANKOVAULT_SCHEDULER__CHAPTER_ROLLUP_VERIFY_INTERVAL_SECS_FILE",
+        "secrets_file": "scheduler__chapter_rollup_verify_interval_secs",
+        "docs": "Seconds between passes that re-count a batch of sources' chapters and rebuild any whose\nstored console totals disagree. 0 disables.",
+        "ty": "u64",
+        "values": [],
+        "constraint": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*\\+?[0-9]+\\s*$",
+          "type": "string"
+        },
+        "text_form": "integer",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
         "path": "bind_addr",
         "env": "TANKOVAULT_BIND_ADDR",
         "env_file": "TANKOVAULT_BIND_ADDR_FILE",
@@ -2627,6 +2655,11 @@
       "scheduler": {
         "additionalProperties": false,
         "properties": {
+          "chapter_rollup_verify_interval_secs": {
+            "description": "Seconds between passes that re-count a batch of sources' chapters and rebuild any whose\nstored console totals disagree. 0 disables.",
+            "minimum": 0,
+            "type": "integer"
+          },
           "failure_backoff_max_secs": {
             "description": "Ceiling on how long a provider whose runs keep failing is skipped by the sweeps. 0\ndisables the backoff entirely, restoring the unconditional sweep.\n\nSix hours by default. The sweep is what turns one broken provider into a steady stream of\nrequests at a site that is answering none of them, and the cooldown is the only thing that\nstops it; the cost of the ceiling being *too high* is that a provider which recovered\nwaits up to this long to be noticed, which is why it is hours and not days.",
             "minimum": 0,

@@ -765,6 +765,7 @@ async fn run_scheduler(
         && (cfg.scan_history_prune_interval_secs == 0 || cfg.scan_history_retention_days == 0)
         && cfg.unread_unlock_interval_secs == 0
         && cfg.unread_reconcile_interval_secs == 0
+        && cfg.chapter_rollup_verify_interval_secs == 0
     {
         tracing::info!("scheduler disabled");
         return;
@@ -781,6 +782,8 @@ async fn run_scheduler(
     });
     let mut unlocks = interval_or_never(cfg.unread_unlock_interval_secs);
     let mut unread_repair = interval_or_never(cfg.unread_reconcile_interval_secs);
+    let mut rollup_verify = interval_or_never(cfg.chapter_rollup_verify_interval_secs);
+    let mut rollup_cursor = None;
     let mut recsys_incremental = interval_or_never(cfg.recsys_incremental_interval_secs);
     let mut recsys_full = interval_or_never(cfg.recsys_full_interval_secs);
 
@@ -805,6 +808,9 @@ async fn run_scheduler(
             () = tick(&mut repair) => maybe_reconcile(&state, &leadership).await,
             () = tick(&mut unlocks) => maybe_sweep_unlocks(&state, &leadership).await,
             () = tick(&mut unread_repair) => maybe_reconcile_unread(&state, &leadership).await,
+            () = tick(&mut rollup_verify) => {
+                maybe_verify_chapter_rollup(&state, &leadership, &mut rollup_cursor).await;
+            }
             () = tick(&mut prune) => {
                 maybe_prune_scan_history(&state, &leadership, cfg.scan_history_retention_days).await;
             }
@@ -919,6 +925,53 @@ async fn maybe_reconcile(state: &AppState, leadership: &leader::Leadership) {
 
 /// Stored unread rows recomputed per unlock pass; the rest wait for the next tick.
 const UNLOCK_SWEEP_BATCH: i64 = 1_000;
+
+/// Sources whose stored chapter counts are re-counted per verification pass.
+const ROLLUP_VERIFY_BATCH: i64 = 2_000;
+
+/// Re-counts the next batch of sources' chapters against `chapter_rollup`, on the leader only.
+///
+/// `cursor` walks the sources in id order across passes and wraps at the end. Drift is a writer
+/// that bypassed the triggers; it is logged at `WARN`, counted, and rebuilt in the same pass.
+async fn maybe_verify_chapter_rollup(
+    state: &AppState,
+    leadership: &leader::Leadership,
+    cursor: &mut Option<uuid::Uuid>,
+) {
+    if !leadership.is_leader() {
+        return;
+    }
+    let check = match tankovault_db::repo::catalog::rollup::verify_batch(
+        &state.pool,
+        *cursor,
+        ROLLUP_VERIFY_BATCH,
+    )
+    .instrument(tracing::info_span!(
+        "chapter_rollup_verify",
+        "sentry.op" = "cron"
+    ))
+    .await
+    {
+        Ok(check) => check,
+        Err(e) => {
+            tracing::warn!(error = %e, "chapter rollup verification failed");
+            return;
+        }
+    };
+    *cursor = check.resume_after;
+    for (field, count) in [("total", check.total), ("recent", check.recent)] {
+        metrics::counter!(tankovault_service::metrics::names::CHAPTER_ROLLUP_DRIFT, "field" => field)
+            .increment(count);
+    }
+    if check.drifted() > 0 {
+        tracing::warn!(
+            checked = check.checked,
+            total = check.total,
+            recent = check.recent,
+            "stored chapter counts had drifted from the chapters table; rebuilt"
+        );
+    }
+}
 
 /// Stored unread rows re-verified per reconciliation pass.
 const UNREAD_RECONCILE_BATCH: i64 = 500;

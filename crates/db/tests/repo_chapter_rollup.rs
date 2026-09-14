@@ -163,7 +163,7 @@ async fn without_triggers(db: &TestDb, statements: &[&str]) {
         sqlx::query(sqlx::AssertSqlSafe(*statement))
             .execute(&mut *conn)
             .await
-            .expect(statement);
+            .expect("statement run with triggers off");
     }
     sqlx::query("SET session_replication_role = origin")
         .execute(&mut *conn)

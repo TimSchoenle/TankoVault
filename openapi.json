@@ -18224,7 +18224,7 @@
     },
     "/v1/series": {
       "get": {
-        "description": "Filter/sort/paginate the public series list (frontend §9.1). The body remains a plain\n`SeriesSummary[]`; pagination metadata rides on the `X-Total-Count` (rows matching the\nfilter) and `X-Next-Cursor` (next page index, absent on the last page) headers so existing\narray-decoding clients keep working.",
+        "description": "Filter/sort/paginate the public series list (frontend §9.1). The body remains a plain\n`SeriesSummary[]`; pagination metadata rides on the `X-Total-Count` (rows matching the\nfilter, omitted when `with_total=false`) and `X-Next-Cursor` (next page index, absent on the\nlast page) headers so existing array-decoding clients keep working.",
         "operationId": "list",
         "parameters": [
           {
@@ -18356,6 +18356,15 @@
               "format": "int64",
               "type": "integer"
             }
+          },
+          {
+            "description": "`false` skips counting the matching rows, and `X-Total-Count` is then omitted. For a client\nthat already holds the total for this filter, or never shows one. Defaults to `true`.",
+            "in": "query",
+            "name": "with_total",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -18380,7 +18389,7 @@
                 }
               },
               "X-Total-Count": {
-                "description": "Total rows matching the filter",
+                "description": "Total rows matching the filter; omitted when `with_total=false`",
                 "schema": {
                   "format": "int64",
                   "type": "integer"

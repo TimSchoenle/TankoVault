@@ -1243,6 +1243,34 @@
         "reserved": false
       },
       {
+        "path": "scheduler.series_browse_verify_interval_secs",
+        "env": "TANKOVAULT_SCHEDULER__SERIES_BROWSE_VERIFY_INTERVAL_SECS",
+        "env_file": "TANKOVAULT_SCHEDULER__SERIES_BROWSE_VERIFY_INTERVAL_SECS_FILE",
+        "secrets_file": "scheduler__series_browse_verify_interval_secs",
+        "docs": "Seconds between passes that recompute a batch of series' browse keys and repair any whose\nstored projection disagrees. 0 disables.",
+        "ty": "u64",
+        "values": [],
+        "constraint": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*\\+?[0-9]+\\s*$",
+          "type": "string"
+        },
+        "text_form": "integer",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
         "path": "bind_addr",
         "env": "TANKOVAULT_BIND_ADDR",
         "env_file": "TANKOVAULT_BIND_ADDR_FILE",
@@ -2737,6 +2765,11 @@
           "scan_history_retention_days": {
             "description": "Days settled scan runs and their tasks are kept. 0 keeps them forever.\n\nThe triage queries aggregate this history, so without a bound they slow with every week the\ndeployment runs. The newest runs a failure backoff reads are kept regardless of age.",
             "maximum": 4294967295,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "series_browse_verify_interval_secs": {
+            "description": "Seconds between passes that recompute a batch of series' browse keys and repair any whose\nstored projection disagrees. 0 disables.",
             "minimum": 0,
             "type": "integer"
           },

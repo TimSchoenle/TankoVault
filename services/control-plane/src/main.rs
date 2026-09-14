@@ -766,6 +766,7 @@ async fn run_scheduler(
         && cfg.unread_unlock_interval_secs == 0
         && cfg.unread_reconcile_interval_secs == 0
         && cfg.chapter_rollup_verify_interval_secs == 0
+        && cfg.series_browse_verify_interval_secs == 0
     {
         tracing::info!("scheduler disabled");
         return;
@@ -784,6 +785,8 @@ async fn run_scheduler(
     let mut unread_repair = interval_or_never(cfg.unread_reconcile_interval_secs);
     let mut rollup_verify = interval_or_never(cfg.chapter_rollup_verify_interval_secs);
     let mut rollup_cursor = None;
+    let mut browse_verify = interval_or_never(cfg.series_browse_verify_interval_secs);
+    let mut browse_cursor = None;
     let mut recsys_incremental = interval_or_never(cfg.recsys_incremental_interval_secs);
     let mut recsys_full = interval_or_never(cfg.recsys_full_interval_secs);
 
@@ -810,6 +813,9 @@ async fn run_scheduler(
             () = tick(&mut unread_repair) => maybe_reconcile_unread(&state, &leadership).await,
             () = tick(&mut rollup_verify) => {
                 maybe_verify_chapter_rollup(&state, &leadership, &mut rollup_cursor).await;
+            }
+            () = tick(&mut browse_verify) => {
+                maybe_verify_series_browse(&state, &leadership, &mut browse_cursor).await;
             }
             () = tick(&mut prune) => {
                 maybe_prune_scan_history(&state, &leadership, cfg.scan_history_retention_days).await;
@@ -969,6 +975,54 @@ async fn maybe_verify_chapter_rollup(
             total = check.total,
             recent = check.recent,
             "stored chapter counts had drifted from the chapters table; rebuilt"
+        );
+    }
+}
+
+/// Series whose browse projection is recomputed per verification pass.
+const BROWSE_VERIFY_BATCH: i64 = 5_000;
+
+/// Recomputes the next batch of series' browse keys against `series_browse`, on the leader only.
+///
+/// `cursor` walks the series in id order across passes and wraps at the end. Drift is a writer
+/// the projection's triggers do not see; it is logged at `WARN`, counted, and repaired in the same
+/// pass.
+async fn maybe_verify_series_browse(
+    state: &AppState,
+    leadership: &leader::Leadership,
+    cursor: &mut Option<uuid::Uuid>,
+) {
+    if !leadership.is_leader() {
+        return;
+    }
+    let check = match tankovault_db::repo::catalog::verify_projection(
+        &state.pool,
+        *cursor,
+        BROWSE_VERIFY_BATCH,
+    )
+    .instrument(tracing::info_span!(
+        "series_browse_verify",
+        "sentry.op" = "cron"
+    ))
+    .await
+    {
+        Ok(check) => check,
+        Err(e) => {
+            tracing::warn!(error = %e, "series browse verification failed");
+            return;
+        }
+    };
+    *cursor = check.resume_after;
+    for (field, count) in [("missing", check.missing), ("stale", check.stale)] {
+        metrics::counter!(tankovault_service::metrics::names::SERIES_BROWSE_DRIFT, "field" => field)
+            .increment(count);
+    }
+    if check.drifted() > 0 {
+        tracing::warn!(
+            checked = check.checked,
+            missing = check.missing,
+            stale = check.stale,
+            "stored browse keys had drifted from the catalogue; repaired"
         );
     }
 }

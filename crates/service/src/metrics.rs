@@ -112,6 +112,8 @@ pub mod names {
     pub const UNREAD_DRIFT: &str = "watchlist_unread_drift_total";
     /// Sources whose stored chapter counts the verifier found disagreeing, by field.
     pub const CHAPTER_ROLLUP_DRIFT: &str = "chapter_rollup_drift_total";
+    /// Series whose stored browse keys the verifier found missing or disagreeing, by field.
+    pub const SERIES_BROWSE_DRIFT: &str = "series_browse_drift_total";
     /// How long one scheduler sweep took, by tier.
     pub const SCHEDULER_SWEEP_DURATION: &str = "scheduler_sweep_duration_seconds";
     /// `1` on the replica currently holding scheduler leadership.
@@ -426,6 +428,13 @@ pub const CATALOGUE: &[Metric] = &[
         unit: Unit::Count,
         emitted_by: "control-plane",
         help: "Sources whose stored chapter counts (the console's chapter totals and discovery windows) disagreed with a live count, labelled by field (total, recent). A healthy deployment never increments it: any rise is a write that bypassed the database triggers, rebuilt in the same pass.",
+    },
+    Metric {
+        name: names::SERIES_BROWSE_DRIFT,
+        kind: Kind::Counter,
+        unit: Unit::Count,
+        emitted_by: "control-plane",
+        help: "Series whose stored browse keys (the Discover filters, sorts and total) were missing or disagreed with a recomputation from the catalogue, labelled by field (missing, stale). A healthy deployment never increments it: any rise is a write the database triggers do not cover, repaired in the same pass.",
     },
     Metric {
         name: names::SCHEDULER_SWEEP_DURATION,

@@ -175,6 +175,10 @@ pub struct SchedulerConfig {
     /// stored console totals disagree. 0 disables.
     #[serde(default = "default_chapter_rollup_verify_interval")]
     pub chapter_rollup_verify_interval_secs: u64,
+    /// Seconds between passes that recompute a batch of series' browse keys and repair any whose
+    /// stored projection disagrees. 0 disables.
+    #[serde(default = "default_series_browse_verify_interval")]
+    pub series_browse_verify_interval_secs: u64,
 }
 
 fn default_fast_interval() -> u64 {
@@ -251,6 +255,11 @@ const fn default_chapter_rollup_verify_interval() -> u64 {
     300
 }
 
+/// Five minutes, 5 000 series a pass: a full cycle over 54 000 series takes under an hour.
+const fn default_series_browse_verify_interval() -> u64 {
+    300
+}
+
 const fn default_recsys_incremental_interval() -> u64 {
     900
 }
@@ -286,6 +295,7 @@ impl Default for SchedulerConfig {
             unread_unlock_interval_secs: default_unread_unlock_interval(),
             unread_reconcile_interval_secs: default_unread_reconcile_interval(),
             chapter_rollup_verify_interval_secs: default_chapter_rollup_verify_interval(),
+            series_browse_verify_interval_secs: default_series_browse_verify_interval(),
             recsys_incremental_interval_secs: default_recsys_incremental_interval(),
             recsys_full_interval_secs: default_recsys_full_interval(),
             recsys_batch: default_recsys_batch(),

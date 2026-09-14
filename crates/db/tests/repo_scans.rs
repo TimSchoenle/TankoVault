@@ -1494,3 +1494,168 @@ async fn a_run_that_never_planned_a_task_is_failed_but_only_once_it_is_old() {
         RunState::Failed
     );
 }
+
+// ---------------------------------------------------------------------------
+// History retention
+// ---------------------------------------------------------------------------
+
+const DAY: i64 = 24 * 60;
+
+/// Prune until a pass finds nothing, counting the passes.
+async fn prune_all(db: &TestDb, task_batch: i64) -> (scans::HistoryPrune, usize) {
+    let mut total = scans::HistoryPrune::default();
+    for pass in 1..=100 {
+        let step = scans::prune_scan_history(&db.pool, 30, 100, task_batch)
+            .await
+            .expect("prune");
+        if step.is_empty() {
+            return (total, pass);
+        }
+        total.tasks += step.tasks;
+        total.runs += step.runs;
+    }
+    panic!("pruning never converged");
+}
+
+async fn run_exists(db: &TestDb, run: ScanRunId) -> bool {
+    scans::get_run(&db.pool, run).await.is_ok()
+}
+
+/// Unbounded scan history is what made the triage queries grow with the deployment's age: every
+/// run and task ever planned stayed in the tables they aggregate. Retention removes settled
+/// history past the cutoff, in batches, and nothing else.
+#[tokio::test]
+async fn settled_history_past_retention_is_pruned_in_batches() {
+    let db = TestDb::spawn().await;
+    let provider = seed::provider(&db, "alpha").create().await;
+
+    // Enough newer finished runs that the two old ones fall outside the streak window.
+    for _ in 0..32 {
+        a_finished_run(&db, provider, ScanMode::Fast, RunState::Completed, DAY).await;
+    }
+    let old_completed =
+        a_finished_run(&db, provider, ScanMode::Fast, RunState::Completed, 60 * DAY).await;
+    let old_cancelled =
+        a_finished_run(&db, provider, ScanMode::Fast, RunState::Cancelled, 61 * DAY).await;
+    for page in 0..3 {
+        a_task(&db, old_completed, &json!({ "page": page })).await;
+    }
+    let old_in_flight = a_run_in_flight(&db, provider, ScanMode::Full).await;
+    backdate(&db, BACKDATE_RUN, old_in_flight.as_uuid(), 60).await;
+    let recent = a_finished_run(&db, provider, ScanMode::Fast, RunState::Failed, 10).await;
+
+    let (pruned, passes) = prune_all(&db, 2).await;
+
+    // Each run carries the task `a_run_in_flight` planned, plus the three pages above.
+    assert_eq!(pruned, scans::HistoryPrune { tasks: 5, runs: 2 });
+    assert!(
+        passes > 3,
+        "a task batch of 2 must take several passes for 5 tasks"
+    );
+    assert!(!run_exists(&db, old_completed).await);
+    assert!(!run_exists(&db, old_cancelled).await);
+    assert!(
+        run_exists(&db, old_in_flight).await,
+        "a run that has not settled is not history, however old"
+    );
+    assert!(run_exists(&db, recent).await);
+}
+
+/// **Retention must not shorten a failure streak.** The scheduler's backoff reads the newest
+/// finished runs of a provider and mode; a provider that has failed every run for longer than the
+/// retention period has *only* old runs, and pruning them would reset its streak to zero and send
+/// the sweep straight back to a site that refuses every request.
+#[tokio::test]
+async fn retention_keeps_the_runs_a_failure_streak_is_read_from() {
+    let db = TestDb::spawn().await;
+    let provider = seed::provider(&db, "alpha").create().await;
+    for ago in 40..45 {
+        a_finished_run(&db, provider, ScanMode::Fast, RunState::Failed, ago * DAY).await;
+    }
+
+    let (pruned, _) = prune_all(&db, 1_000).await;
+
+    assert!(pruned.is_empty());
+    assert_eq!(
+        scans::failure_streak(&db.pool, provider, ScanMode::Fast)
+            .await
+            .expect("query")
+            .failures,
+        5
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Per-provider health
+// ---------------------------------------------------------------------------
+
+/// What the console's per-provider health table reports, pinned before its query was rewritten
+/// from a lateral per provider to two grouped passes: which providers appear, their run and
+/// failure figures, the window, and the worst-first order.
+#[tokio::test]
+async fn provider_health_reports_runs_and_open_failures_worst_first() {
+    let db = TestDb::spawn().await;
+    let failing = seed::provider(&db, "failing").create().await;
+    let busy = seed::provider(&db, "busy").create().await;
+    let _quiet = seed::provider(&db, "quiet").create().await;
+
+    // `failing`: one old run, outside the window, with two failed tasks, one of them cleared.
+    let old = a_finished_run(&db, failing, ScanMode::Fast, RunState::Failed, 3 * DAY).await;
+    for page in 0..2 {
+        let task = a_task(&db, old, &json!({ "page": page })).await;
+        scans::fail_task(&db.pool, task, "http 503", None)
+            .await
+            .expect("fail");
+        backdate(&db, BACKDATE_TASK, task.as_uuid(), 3).await;
+    }
+    sqlx::query(
+        "UPDATE scan_tasks SET acknowledged_at = now() \
+         WHERE id = (SELECT id FROM scan_tasks WHERE run_id = $1 AND target->>'page' = '1')",
+    )
+    .bind(old.as_uuid())
+    .execute(&db.pool)
+    .await
+    .expect("clear one failure");
+
+    // `busy`: two runs inside the window, one still going, nothing failed.
+    a_finished_run(&db, busy, ScanMode::Fast, RunState::Completed, 30).await;
+    a_run_in_flight(&db, busy, ScanMode::Full).await;
+
+    let all = scans::provider_scan_health(&db.pool, None, 50)
+        .await
+        .expect("health");
+    let slugs: Vec<&str> = all.iter().map(|p| p.slug.as_str()).collect();
+    assert_eq!(
+        slugs,
+        ["failing", "busy"],
+        "open failures first, and a provider with nothing to report is left out"
+    );
+    let failing_row = &all[0];
+    assert_eq!(
+        (
+            failing_row.runs,
+            failing_row.runs_failed,
+            failing_row.failures_open
+        ),
+        (1, 1, 1),
+        "the cleared failure is not open"
+    );
+    assert_eq!(failing_row.tasks_failed, 2);
+    assert!(failing_row.last_failure_at.is_some());
+    let busy_row = &all[1];
+    assert_eq!(
+        (busy_row.runs, busy_row.runs_active, busy_row.failures_open),
+        (2, 1, 0)
+    );
+    assert!(busy_row.last_failure_at.is_none());
+
+    // A one-day window drops the old run and its failure, and with them the provider.
+    let since = time::OffsetDateTime::now_utc() - time::Duration::days(1);
+    let recent = scans::provider_scan_health(&db.pool, Some(since), 50)
+        .await
+        .expect("health");
+    assert_eq!(
+        recent.iter().map(|p| p.slug.as_str()).collect::<Vec<_>>(),
+        ["busy"]
+    );
+}

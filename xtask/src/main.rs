@@ -135,7 +135,7 @@ async fn compiled_commands(cmd: &str) -> anyhow::Result<()> {
     let url = SecretString::from(
         std::env::var("DATABASE_URL").map_err(|_| anyhow::anyhow!("DATABASE_URL must be set"))?,
     );
-    let pool = tankovault_db::connect(&url, 5, 10).await?;
+    let pool = tankovault_db::connect(&url, tankovault_db::PoolSettings::new(5, 10)).await?;
 
     match cmd {
         "migrate" => {

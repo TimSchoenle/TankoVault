@@ -38,6 +38,14 @@ pub(crate) fn username(token: &str) -> Option<String> {
         .map(str::to_owned)
 }
 
+/// The `sub` claim: which account the token speaks for, unchanged across renewals.
+pub(crate) fn subject(token: &str) -> Option<String> {
+    payload(token)?
+        .get("sub")
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+}
+
 /// The `exp` claim as unix seconds.
 pub(crate) fn expires_at(token: &str) -> Option<i64> {
     payload(token)?.get("exp").and_then(Value::as_i64)
@@ -83,9 +91,19 @@ mod tests {
     }
 
     #[test]
+    fn the_subject_is_read_from_sub_alone() {
+        assert_eq!(
+            subject(&token(r#"{"username":"kaz","sub":"uuid"}"#)).as_deref(),
+            Some("uuid")
+        );
+        assert_eq!(subject(&token(r#"{"username":"kaz"}"#)), None);
+    }
+
+    #[test]
     fn malformed_tokens_decode_to_nothing_rather_than_panicking() {
         for bad in ["", "not-a-jwt", "a.!!!.c", "a.eyJib2d1cw.c"] {
             assert!(username(bad).is_none());
+            assert!(subject(bad).is_none());
             assert!(expires_at(bad).is_none());
         }
     }

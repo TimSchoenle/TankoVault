@@ -141,16 +141,13 @@ pub async fn admin_stream(
                         // table, and one query per connected operator per tick is the outage
                         // this endpoint exists to avoid.
                         let pool = stats_state.pool.clone();
-                        let snapshot =
-                            stats_state
-                                .system_stats
-                                .get(move || {
-                                    let pool = pool.clone();
-                                    async move {
-                                        tankovault_db::repo::stats::system_overview(&pool).await
-                                    }
-                                })
-                                .await;
+                        let snapshot = stats_state
+                            .system_stats
+                            .get(move || {
+                                let pool = pool.clone();
+                                crate::cache::load_system_overview(pool)
+                            })
+                            .await;
                         match snapshot {
                             Ok(overview) => Ok(named("stats", overview.into_view())),
                             // A failed aggregate skips this tick rather than ending the stream:

@@ -1,8 +1,9 @@
 //! The console header rollup and the per-provider crawl table (design §17.2.7).
 //!
-//! Read-only aggregates over the catalogue, scan and user tables, computed per request. There
-//! is no denormalised counter to keep in sync, so a figure here cannot drift from the rows it
-//! counts. Every query is a single static statement, which `SQLx` 0.9 requires.
+//! Read-only aggregates over the catalogue, scan and user tables. Chapter figures are sums over
+//! `chapter_rollup` (migration 0059), which triggers keep exact and
+//! [`rollup::verify_batch`](super::catalog::rollup::verify_batch) re-checks; everything else is
+//! counted live. Every query is a single static statement, which `SQLx` 0.9 requires.
 
 use crate::error::DbResult;
 use serde::Serialize;
@@ -76,6 +77,9 @@ pub struct ProviderStat {
     /// Chapters first seen here in the last 7 days.
     pub chapters_7d: i64,
     /// When a chapter was last discovered here, `None` for a provider with no chapters.
+    ///
+    /// Folded history keeps only its newest instant, so after deleting a provider's newest
+    /// chapters older than a week this can name a chapter that is gone.
     #[serde(with = "time::serde::rfc3339::option")]
     pub last_chapter_at: Option<OffsetDateTime>,
     /// The most recent scan across this provider's sources, `None` until one finishes.
@@ -108,10 +112,13 @@ pub async fn system_overview<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<SystemS
               WHERE state IN ('degraded','challenged','solving','blocked')) AS \"providers_unhealthy!\", \
            (SELECT count(*) FROM series) AS \"series_total!\", \
            (SELECT count(*) FROM series_sources) AS \"sources_total!\", \
-           (SELECT count(*) FROM chapters) AS \"chapters_total!\", \
-           (SELECT count(*) FROM chapters WHERE discovered_at > now() - interval '1 hour') AS \"chapters_1h!\", \
-           (SELECT count(*) FROM chapters WHERE discovered_at > now() - interval '24 hours') AS \"chapters_24h!\", \
-           (SELECT count(*) FROM chapters WHERE discovered_at > now() - interval '7 days') AS \"chapters_7d!\", \
+           (SELECT COALESCE(sum(chapters), 0)::int8 FROM chapter_rollup) AS \"chapters_total!\", \
+           (SELECT COALESCE(sum(chapters), 0)::int8 FROM chapter_rollup \
+              WHERE discovered_at > now() - interval '1 hour') AS \"chapters_1h!\", \
+           (SELECT COALESCE(sum(chapters), 0)::int8 FROM chapter_rollup \
+              WHERE discovered_at > now() - interval '24 hours') AS \"chapters_24h!\", \
+           (SELECT COALESCE(sum(chapters), 0)::int8 FROM chapter_rollup \
+              WHERE discovered_at > now() - interval '7 days') AS \"chapters_7d!\", \
            (SELECT count(*) FROM users) AS \"users_total!\", \
            (SELECT count(*) FROM merge_candidates WHERE NOT resolved) AS \"pending_merges!\", \
            (SELECT count(*) FROM scan_runs WHERE state IN ('queued','running')) AS \"runs_active!\", \
@@ -142,13 +149,15 @@ pub async fn provider_stats<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<Prov
                    max(last_scanned_at) AS last_scanned_at \
             FROM series_sources GROUP BY provider_id \
          ), ch AS ( \
-            SELECT ss.provider_id, \
-                   count(*) AS chapter_count, \
-                   count(*) FILTER (WHERE c.discovered_at > now() - interval '24 hours') AS chapters_24h, \
-                   count(*) FILTER (WHERE c.discovered_at > now() - interval '7 days') AS chapters_7d, \
-                   max(c.discovered_at) AS last_chapter_at \
-            FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
-            GROUP BY ss.provider_id \
+            SELECT provider_id, \
+                   sum(chapters)::int8 AS chapter_count, \
+                   COALESCE(sum(chapters) FILTER ( \
+                     WHERE discovered_at > now() - interval '24 hours'), 0)::int8 AS chapters_24h, \
+                   COALESCE(sum(chapters) FILTER ( \
+                     WHERE discovered_at > now() - interval '7 days'), 0)::int8 AS chapters_7d, \
+                   max(last_discovered_at) AS last_chapter_at \
+            FROM chapter_rollup \
+            GROUP BY provider_id \
          ), lr AS ( \
             SELECT DISTINCT ON (provider_id) provider_id, \
                    state AS run_state, created_at AS run_at \

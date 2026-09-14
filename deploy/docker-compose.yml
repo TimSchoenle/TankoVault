@@ -120,6 +120,12 @@ services:
     # `shm_size` is raised because parallel workers allocate their exchange buffers in /dev/shm,
     # which Docker caps at 64 MB by default — the failure is "could not resize shared memory
     # segment" mid-query, not a slowdown.
+    #
+    # `pg_stat_statements`, `auto_explain` and `track_io_timing` are what separates a query that
+    # is slow because its plan is wrong from one that is slow because it read from disk; the slow
+    # log alone cannot, and the September 2026 latency investigation had nothing else to go on.
+    # `auto_explain.log_timing=off` keeps row counts and buffers while dropping the per-node clock
+    # reads that make instrumenting every statement expensive. Reading them: `deploy/README.md`.
     command:
       - postgres
       - -c
@@ -136,6 +142,24 @@ services:
       - effective_io_concurrency=200
       - -c
       - jit=off
+      - -c
+      - shared_preload_libraries=pg_stat_statements,auto_explain
+      - -c
+      - pg_stat_statements.max=5000
+      - -c
+      - pg_stat_statements.track=top
+      - -c
+      - track_io_timing=on
+      - -c
+      - auto_explain.log_min_duration=2s
+      - -c
+      - auto_explain.log_analyze=on
+      - -c
+      - auto_explain.log_buffers=on
+      - -c
+      - auto_explain.log_timing=off
+      - -c
+      - auto_explain.log_nested_statements=on
     shm_size: 256mb
     environment:
       POSTGRES_USER: tankovault

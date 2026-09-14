@@ -1,0 +1,215 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id, s.canonical_title, s.normalized_title, s.description, s.cover_url, s.content_type AS \"content_type: ContentType\", s.status AS \"status: SeriesStatus\", s.release_year, s.created_at, s.updated_at, p.source_count::int8 AS \"source_count!\", p.window_total AS \"window_total?\" FROM (SELECT sb.series_id, sb.updated_at, sb.source_count, NULL::int8 AS window_total, CASE WHEN $14 = 'title' THEN sb.canonical_title END AS k_title, CASE WHEN $14 = 'year' THEN sb.release_year END AS k_year, CASE WHEN $14 = 'chapters' THEN sb.max_chapters END AS k_chapters, CASE WHEN $14 = 'sources' THEN sb.source_count END AS k_sources FROM series_browse sb WHERE ($1::content_type IS NULL OR sb.content_type = $1) AND ($2::series_status IS NULL OR sb.status = $2) AND ($3::int IS NULL OR sb.release_year >= $3) AND ($4::int IS NULL OR sb.release_year <= $4) AND ($5::text IS NULL OR sb.provider_ids @> ARRAY[COALESCE( (SELECT p.id FROM providers p WHERE p.slug = $5), '00000000-0000-0000-0000-000000000000'::uuid)]) AND ($6::int IS NULL OR sb.max_chapters >= $6) AND (cardinality($7::text[]) = 0 OR sb.tag_ids @> ARRAY( SELECT COALESCE(t.id, '00000000-0000-0000-0000-000000000000'::uuid) FROM unnest($7::text[]) AS x(slug) LEFT JOIN tags t ON t.slug = x.slug)) AND (cardinality($8::text[]) = 0 OR NOT sb.tag_ids && ARRAY( SELECT t.id FROM tags t WHERE t.slug = ANY($8::text[]))) AND (NOT sb.adult_gated OR $9) AND ($10::uuid IS NULL OR $11::bool IS NULL OR $11 = EXISTS ( SELECT 1 FROM watchlist_entries w WHERE w.series_id = sb.series_id AND w.user_id = $10)) ORDER BY CASE WHEN $14 = 'title' THEN sb.canonical_title END ASC NULLS LAST, CASE WHEN $14 = 'year' THEN sb.release_year END DESC NULLS LAST, CASE WHEN $14 = 'chapters' THEN sb.max_chapters END DESC NULLS LAST, CASE WHEN $14 = 'sources' THEN sb.source_count END DESC NULLS LAST, sb.updated_at DESC, sb.series_id DESC LIMIT $12 OFFSET $13) p JOIN series s ON s.id = p.series_id ORDER BY p.k_title ASC NULLS LAST, p.k_year DESC NULLS LAST, p.k_chapters DESC NULLS LAST, p.k_sources DESC NULLS LAST, p.updated_at DESC, p.series_id DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "canonical_title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "canonical_title"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "normalized_title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "normalized_title"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "description",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "description"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "cover_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "cover_url"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "content_type: ContentType",
+        "type_info": {
+          "Custom": {
+            "name": "content_type",
+            "kind": {
+              "Enum": [
+                "manga",
+                "manhwa",
+                "manhua",
+                "webtoon",
+                "unknown"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "content_type"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "status: SeriesStatus",
+        "type_info": {
+          "Custom": {
+            "name": "series_status",
+            "kind": {
+              "Enum": [
+                "ongoing",
+                "completed",
+                "hiatus",
+                "cancelled",
+                "unknown"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "release_year",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "release_year"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "updated_at"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "source_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 11,
+        "name": "window_total?",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        {
+          "Custom": {
+            "name": "content_type",
+            "kind": {
+              "Enum": [
+                "manga",
+                "manhwa",
+                "manhua",
+                "webtoon",
+                "unknown"
+              ]
+            }
+          }
+        },
+        {
+          "Custom": {
+            "name": "series_status",
+            "kind": {
+              "Enum": [
+                "ongoing",
+                "completed",
+                "hiatus",
+                "cancelled",
+                "unknown"
+              ]
+            }
+          }
+        },
+        "Int4",
+        "Int4",
+        "Text",
+        "Int4",
+        "TextArray",
+        "TextArray",
+        "Bool",
+        "Uuid",
+        "Bool",
+        "Int8",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      true,
+      false,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "f5b82e952ee245f696c608b8e2249dbefe09c8f579097047cd112f645193a3de"
+}

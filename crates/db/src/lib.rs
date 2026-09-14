@@ -6,5 +6,7 @@ pub mod pool;
 pub mod repo;
 
 pub use error::{DbError, DbResult};
-pub use pool::{MIGRATOR, connect, migrate, reset};
+pub use pool::{
+    MIGRATOR, PoolSettings, begin_with_statement_timeout, connect, connect_with, migrate, reset,
+};
 pub use sqlx::PgPool;

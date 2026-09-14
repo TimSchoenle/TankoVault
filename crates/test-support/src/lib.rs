@@ -135,7 +135,7 @@ const STALE_DB_AFTER: StdDuration = StdDuration::from_secs(60 * 60);
 ///
 /// The name deliberately does not match the `tv_test_%` pattern [`sweep_stale_dbs`] drops: it is
 /// meant to outlive a run.
-const CATALOGUE_TEMPLATE: &str = "tv_catalogue_template_v20";
+const CATALOGUE_TEMPLATE: &str = "tv_catalogue_template_v26";
 
 /// Advisory-lock key serialising catalogue-template creation and cloning across test binaries.
 ///
@@ -202,7 +202,19 @@ async fn shared_container() -> &'static PgContainer {
             .start()
             .await
             .expect("start ephemeral postgres container (is Docker running?)");
-        let host = container.get_host().await.expect("container host");
+        // The port below is the IPv4 mapping, so the host must be too: `localhost` resolves to
+        // `::1` first on Windows, and each new connection then waits ~21 s for that attempt to
+        // time out before falling back.
+        let host = container
+            .get_host()
+            .await
+            .expect("container host")
+            .to_string();
+        let host = if host == "localhost" {
+            "127.0.0.1".to_owned()
+        } else {
+            host
+        };
         let port = container
             .get_host_port_ipv4(5432)
             .await

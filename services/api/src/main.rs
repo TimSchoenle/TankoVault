@@ -223,12 +223,7 @@ async fn serve_once(
     // the same config that omitted it. Refusing to boot names the slug, which is the fix.
     cfg.legal.validate()?;
 
-    let pool = tankovault_db::connect(
-        &cfg.database.url,
-        cfg.database.max_connections,
-        cfg.database.acquire_timeout_secs,
-    )
-    .await?;
+    let (pool, admin_pool) = connect_pools(&cfg).await?;
     tankovault_service::metrics::spawn_pool_sampler(pool.clone(), shutdown.clone());
 
     // Awaited before anything serves: a deployment with no super user has no account that
@@ -256,7 +251,7 @@ async fn serve_once(
     let mailer = tankovault_email::build(&cfg.email);
 
     let audit = build_audit_sink(&pool, &cfg.audit);
-    spawn_audit_retention(&pool, &cfg.audit, shutdown.clone());
+    spawn_audit_retention(&admin_pool, &cfg.audit, shutdown.clone());
 
     // Awaited: the listener must not accept a request until the gate reflects the operator's
     // stored decisions, or a restart would briefly re-enable everything switched off.
@@ -287,7 +282,7 @@ async fn serve_once(
     // Abandoned ceremonies — a user who closed the tab at the authenticator prompt — are
     // already unusable, so this reclaims rows rather than enforcing anything. The same sweep
     // clears expired sign-in challenges and step-up grants, which have the same shape.
-    spawn_credential_sweep(&pool, shutdown.clone());
+    spawn_credential_sweep(&admin_pool, shutdown.clone());
 
     let state = AppState {
         pool: pool.clone(),
@@ -348,6 +343,7 @@ async fn serve_once(
 
     let app = tankovault_api::build_router(
         state,
+        admin_pool,
         &cfg.security,
         &cfg.rate_limit,
         metrics,
@@ -357,6 +353,33 @@ async fn serve_once(
 
     tankovault_service::serve(&cfg.bind_addr, app, shutdown).await?;
     Ok(())
+}
+
+/// The interactive pool and the admin pool; see `tankovault_api::build_router` for the split.
+async fn connect_pools(
+    cfg: &Config,
+) -> anyhow::Result<(tankovault_db::PgPool, tankovault_db::PgPool)> {
+    let interactive = tankovault_db::connect(
+        &cfg.database.url,
+        tankovault_db::PoolSettings::new(
+            cfg.database.max_connections,
+            cfg.database.acquire_timeout_secs,
+        )
+        .with_statement_timeout_secs(cfg.statement_timeouts.interactive_secs),
+    )
+    .await?;
+    let admin = tankovault_db::connect(
+        &cfg.database.url,
+        tankovault_db::PoolSettings::new(
+            cfg.statement_timeouts.admin_max_connections.max(1),
+            cfg.database.acquire_timeout_secs,
+        )
+        .with_statement_timeout_secs(cfg.statement_timeouts.admin_secs)
+        // Console statements filter on optional parameters; see `PoolSettings::with_custom_plans`.
+        .with_custom_plans(),
+    )
+    .await?;
+    Ok((interactive, admin))
 }
 
 /// The audit sink named by configuration; returned as a trait object so the toggle is

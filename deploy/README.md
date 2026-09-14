@@ -187,6 +187,49 @@ provisioned dashboard now live in the chart that actually deploys them,
 where they are gated by that repository's own tests. Keeping a second copy here meant two sets
 of rules to edit and only one of them deployed.
 
+### Slow queries: `pg_stat_statements` and `auto_explain`
+
+The compose `postgres` service preloads both, with `track_io_timing` on. The API's own slow log
+(sqlx, 1 s threshold) says *which* statement was slow; these say *why*. The library is loaded at
+start-up, but the `pg_stat_statements` view needs its extension created once per database:
+
+```bash
+docker compose -f deploy/docker-compose.yml exec -T postgres \
+  psql -U tankovault -d tankovault -c 'CREATE EXTENSION IF NOT EXISTS pg_stat_statements'
+```
+
+**Where the time goes, aggregated.** Worst total cost first; `read_ms` against `total_s` is the
+share spent waiting on disk, and a high `mean_ms` with a low `stddev_ms` is a plan problem rather
+than cache pressure:
+
+```sql
+SELECT calls, round(total_exec_time::numeric / 1000, 1) AS total_s,
+       round(mean_exec_time::numeric, 1) AS mean_ms, round(stddev_exec_time::numeric, 1) AS stddev_ms,
+       shared_blks_hit, shared_blks_read, round(shared_blk_read_time::numeric, 1) AS read_ms,
+       temp_blks_written, left(regexp_replace(query, '\s+', ' ', 'g'), 160) AS query
+  FROM pg_stat_statements ORDER BY total_exec_time DESC LIMIT 25;
+```
+
+`SELECT pg_stat_statements_reset();` starts a fresh window — do it before measuring a change.
+
+**One slow execution, explained.** Any statement running longer than 2 s is logged with its
+plan, actual row counts and buffer usage:
+
+```bash
+docker compose -f deploy/docker-compose.yml logs postgres | grep -A40 'duration:'
+```
+
+Read three things off each plan. `Buffers: shared read=` large relative to `hit=` means the
+pages were not cached: memory, not the query. `Rows Removed by Filter` in the thousands on a node
+reading `chapters` means the predicate did not reach the index. `temp read/written` or
+`external merge` means a sort spilled past `work_mem`. Per-node timings are off
+(`auto_explain.log_timing=off`) to keep instrumentation cheap; `EXPLAIN (ANALYZE, BUFFERS)` the
+statement by hand when you need them. `docs/perf/2026-09-prod-diagnostics.sql` is the full
+evidence-gathering script.
+
+Running your own Postgres: add `pg_stat_statements,auto_explain` to `shared_preload_libraries`
+(a restart) and the same `auto_explain.*` settings; both ship with every Postgres distribution.
+
 ## Kubernetes
 
 **Not implemented.** Tracked as design §19.

@@ -351,27 +351,15 @@ struct Budget {
 }
 
 const BUDGETS: &[Budget] = &[Budget {
-    label: "browse filtered page/count, no-search variants",
+    label: "chapter purge batch",
     matches: |query| {
         query
             .sql
-            .contains("cardinality($7::text[]) = 0 OR NOT EXISTS")
-            && !query.sql.contains("plainto_tsquery")
+            .starts_with("DELETE FROM chapters WHERE ctid IN (SELECT ctid FROM chapters LIMIT")
     },
-    ceiling: 1_600_000.0,
-    reason: "the optional *filters*, not the search term — the trigram disjunction these \
-             statements used to carry is gone, and their search-branch twins plan at ~31 000. \
-             `GENERIC_PLAN` cannot fold `$n IS NULL`, so every optional filter's subquery is \
-             charged against every row of `series`: the `min_chapters` chapter-count aggregate \
-             and the require-all tag `EXCEPT` are ~17 cost units per row between them, and the \
-             sort-token variant \
-             adds the `ORDER BY CASE` aggregates on top. Folding the parameters in as literals, \
-             which is what a custom plan does with real binds, gives cost 210/422 and \
-             0.2–1.1 ms — the same plan, to the decimal, as the statement this branch replaced. \
-             The estimate is the lens being pessimistic about a predicate that does fold; the \
-             trigram one never did, because a supplied search term is never NULL. Removing it \
-             needs hashed set-membership subqueries or a pre-aggregated `series_sources` join, \
-             both of which make the no-filter case do work it currently skips.",
+    ceiling: 36_000.0,
+    reason: "a sequential scan that stops at its `LIMIT`: the batch is the bound, and the rule \
+             cannot see a `Limit` above the scan node.",
 }];
 
 /// The budget covering `query`, if any.
@@ -405,6 +393,16 @@ fn audit(plan: &Value) -> Vec<Finding> {
         });
     }
 
+    for scan in whole_scans_of_growing_tables(plan) {
+        findings.push(Finding {
+            rule: "whole-scan-of-growing-table",
+            detail: format!(
+                "{scan}: reads history that only grows. Bound it by an index condition, keep a \
+                 rollup, or budget it with the reason it has to read everything."
+            ),
+        });
+    }
+
     let cost = total_cost(plan);
     if cost > COST_CEILING {
         findings.push(Finding {
@@ -414,6 +412,54 @@ fn audit(plan: &Value) -> Vec<Finding> {
     }
 
     findings
+}
+
+/// Tables that grow with the deployment's age rather than with its catalogue or readership.
+///
+/// A statement reading one of these whole is fine on the day it ships and slows every week after:
+/// `stats::system_overview`'s `count(*)` over `chapters`, the per-provider chapter totals and the
+/// triage aggregates over `scan_tasks` all passed the cost ceiling on this fixture and reached
+/// 8–49 s in production after six weeks.
+const GROWING_TABLES: [&str; 2] = ["chapters", "scan_tasks"];
+
+/// Partial indexes whose full scan is bounded by open work rather than by history.
+///
+/// `scan_tasks_queue` holds only `state = 'queued'` rows, which the workers drain; reading it whole
+/// costs the backlog, not the deployment's age.
+const BOUNDED_PARTIAL_INDEXES: [&str; 1] = ["scan_tasks_queue"];
+
+/// Every node that reads a [`GROWING_TABLES`] relation whole: a sequential scan, or an index scan
+/// with no index condition to bound it.
+fn whole_scans_of_growing_tables(plan: &Value) -> Vec<String> {
+    let mut found = Vec::new();
+    walk(&plan[0]["Plan"], &mut |node| {
+        let Some(relation) = node.get("Relation Name").and_then(Value::as_str) else {
+            return;
+        };
+        if !GROWING_TABLES.contains(&relation) {
+            return;
+        }
+        let kind = node["Node Type"].as_str().unwrap_or_default();
+        let unbounded = match kind {
+            "Seq Scan" => true,
+            "Index Scan" | "Index Only Scan" => {
+                node.get("Index Cond").is_none()
+                    && !node
+                        .get("Index Name")
+                        .and_then(Value::as_str)
+                        .is_some_and(|name| BOUNDED_PARTIAL_INDEXES.contains(&name))
+            }
+            _ => false,
+        };
+        if unbounded {
+            let index = node
+                .get("Index Name")
+                .and_then(Value::as_str)
+                .map_or_else(String::new, |name| format!(" using {name}"));
+            found.push(format!("{kind} on {relation}{index}"));
+        }
+    });
+    found
 }
 
 /// The planner's estimated total cost for the whole statement.
@@ -635,7 +681,95 @@ fn assert_opt_in_is_resolved_once(plan: &Value, label: &str) {
     );
 }
 
-/// The Home surfaces must read `chapters` from the index and resolve the opt-in set once.
+/// **Discover's statements read the browse projection, never a per-series tag or source lookup.**
+///
+/// Before `series_browse`, the include-tags filter ran an `EXCEPT` against `series_tags` and the
+/// chapter floor a `max()` over `series_sources` once for every row of `series`: 755 000 buffer
+/// touches for one count, and 1–30 s in production. Asserted on the generic plan, which is the
+/// pessimistic one: it keeps every optional filter's arm, so a filter that reaches back into
+/// those tables shows up here even when the fixture's custom plan would fold it away.
+#[tokio::test]
+async fn the_browse_statements_read_the_projection() {
+    let db = TestDb::spawn_with_catalogue().await;
+    let queries = cached_queries();
+    let browse: Vec<&CachedQuery> = queries
+        .iter()
+        .filter(|q| q.sql.contains("FROM series_browse sb") && q.sql.contains("cardinality($7"))
+        .collect();
+    assert_eq!(
+        browse.len(),
+        7,
+        "the recency, sort-token and relevance pages and the count, with and without a search"
+    );
+    for query in browse {
+        let plan = generic_plan_of(&db.pool, query).await;
+        let mut relations = Vec::new();
+        walk(&plan[0]["Plan"], &mut |node| {
+            if let Some(relation) = node["Relation Name"].as_str() {
+                relations.push(relation.to_owned());
+            }
+        });
+        let label = one_line(&query.sql, 120);
+        for forbidden in ["series_tags", "series_sources"] {
+            assert!(
+                !relations.iter().any(|r| r == forbidden),
+                "{label} reads `{forbidden}`; its filters and keys belong on `series_browse`"
+            );
+        }
+        if !query.sql.contains("matched") && query.columns.iter().any(|c| c == "total!") {
+            assert!(
+                !relations.iter().any(|r| r == "series"),
+                "the unsearched count reads `series`, the 60 MB heap it exists to avoid: {label}"
+            );
+        }
+    }
+}
+
+/// Assert a statement's plan has no node reading `chapters`.
+fn assert_never_reads_chapters(plan: &Value, label: &str) {
+    let mut chapter_scans: Vec<String> = Vec::new();
+    walk(&plan[0]["Plan"], &mut |node| {
+        if node["Relation Name"].as_str() == Some("chapters") {
+            chapter_scans.push(node["Node Type"].as_str().unwrap_or_default().to_owned());
+        }
+    });
+    let pretty = serde_json::to_string_pretty(plan).unwrap_or_default();
+    assert!(
+        chapter_scans.is_empty(),
+        "{label} reads `chapters` ({chapter_scans:?}) where it should read `watchlist_unread`. \
+         Plan:\n{pretty}"
+    );
+}
+
+/// `EXPLAIN` the stored figures' source of truth for the fixture's heaviest reader.
+///
+/// A set-returning SQL function made of one `SELECT` is inlined by the planner, so this plan is
+/// the function body's, not an opaque `Function Scan`.
+async fn live_function_plan(pool: &PgPool) -> Value {
+    let reader: uuid::Uuid = sqlx::query_scalar(
+        "SELECT user_id FROM watchlist_entries GROUP BY user_id ORDER BY count(*) DESC LIMIT 1",
+    )
+    .fetch_one(pool)
+    .await
+    .expect("read a reader with a watchlist from the catalogue fixture");
+    let series: Vec<uuid::Uuid> =
+        sqlx::query_scalar("SELECT series_id FROM watchlist_entries WHERE user_id = $1")
+            .bind(reader)
+            .fetch_all(pool)
+            .await
+            .expect("read that reader's watchlist");
+    sqlx::query_scalar::<_, Value>(
+        "EXPLAIN (FORMAT JSON) SELECT * FROM watchlist_unread_live($1, $2)",
+    )
+    .bind(reader)
+    .bind(&series)
+    .fetch_one(pool)
+    .await
+    .expect("EXPLAIN watchlist_unread_live")
+}
+
+/// The Home surfaces must read the stored figures, and the function computing those figures must
+/// read `chapters` from the index and resolve the opt-in set once.
 ///
 /// # The bug this exists to stop
 ///
@@ -673,17 +807,24 @@ async fn the_reading_surfaces_stay_in_the_chapter_indexes() {
         has_column(q, "chapter_number!") && has_column(q, "provider_slug!")
     });
 
+    // Both read the stored figures (migration 0058) and must never go back to `chapters`: that is
+    // the whole-watchlist scan the stored table exists to remove.
     for (label, query) in [
         ("dashboard::continue_reading", continue_reading),
         ("dashboard::me_stats", me_stats),
-        ("dashboard::feed", feed),
     ] {
         let plan = plan_for_reader(&db.pool, query).await;
-        assert_opt_in_is_resolved_once(&plan, label);
-        // `feed` is deliberately absent: it returns a chapter's title and path, which no index
-        // carries, so its scan is not index-only and never was.
-        if label != "dashboard::feed" {
-            assert_chapter_scans_are_index_only(&plan, label);
-        }
+        assert_never_reads_chapters(&plan, label);
     }
+
+    // `feed` returns a chapter's title and path, which no index carries, so its scans are not
+    // index-only and never were; the opt-in set must still be resolved once.
+    let plan = plan_for_reader(&db.pool, feed).await;
+    assert_opt_in_is_resolved_once(&plan, "dashboard::feed");
+
+    // The predicate itself now lives in `watchlist_unread_live`, which every stored row is
+    // computed from, so the index-only and InitPlan assertions move with it.
+    let live = live_function_plan(&db.pool).await;
+    assert_opt_in_is_resolved_once(&live, "watchlist_unread_live");
+    assert_chapter_scans_are_index_only(&live, "watchlist_unread_live");
 }

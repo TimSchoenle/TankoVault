@@ -3,8 +3,10 @@
 //! Recommendations used to live here as a tag-overlap query that scored the whole catalogue on
 //! every request. They are now a model — see `repo::recsys` and `docs/RECOMMENDATIONS.md`.
 //!
-//! The unread predicate is spelled out 8× (3 here, 5 in [`watchlist`](super::watchlist)) as the
-//! negation of [`ReadProgress::covers`](super::ReadProgress::covers), because `sqlx` macros need
+//! The unread predicate is spelled out as the negation of
+//! [`ReadProgress::covers`](super::ReadProgress::covers) in three places: [`feed`] here, the page's
+//! next-unread probe in [`watchlist`](super::watchlist), and the `watchlist_unread_live` SQL function
+//! (migration 0058) that every stored count in `watchlist_unread` is computed from. `sqlx` macros need
 //! a string literal and cannot share it via `concat!`; `crates/db/tests/repo_tracking.rs` is what
 //! catches a copy drifting:
 //!
@@ -104,6 +106,20 @@ pub struct FeedItem {
 /// the day the preferred source happened to pick it up, resurfacing weeks-old chapters as today's
 /// news whenever a merge attaches a slower carrier.
 ///
+/// # Why three stages
+///
+/// `sightings` reads each watched source's unread tail with the predicate in the lateral's
+/// `WHERE`, so it is an index condition on `chapters_source_number_key` rather than a filter over
+/// every chapter. `newest` takes each chapter's earliest sighting and keeps the top `limit`, over
+/// three narrow columns. Only those rows then look up their carrier — the row with the title and
+/// path — by primary key. The single statement this replaced joined `read_progress` above a scan
+/// of every watched chapter and window-sorted all unread rows to disk: 362 ms warm on an
+/// 859-series watchlist with 97 000 unread rows, against 126 ms, identical output.
+///
+/// The carrier lookup must apply the same early-access gate as `sightings`: the carrier is chosen
+/// among the sightings the reader can open, and a locked one with a higher `chapter_count` would
+/// otherwise win and link to a paywall.
+///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; empty is never evidence the account is gone.
 pub async fn feed<'e, E: PgExecutor<'e>>(
@@ -124,40 +140,53 @@ pub async fn feed<'e, E: PgExecutor<'e>>(
     }
     let rows = sqlx::query_as!(
         Row,
-        "WITH unread AS ( \
-           SELECT s.id AS series_id, s.canonical_title AS series_title, \
-                  c.number_milli, c.title AS chapter_title, \
-                  p.slug AS provider_slug, p.base_url AS base_url, \
-                  chapter_url_path(ss.source_path, c.path) AS chapter_path, \
-                  min(c.discovered_at) OVER (PARTITION BY s.id, c.number_milli) AS discovered_at, \
-                  row_number() OVER (PARTITION BY s.id, c.number_milli \
-                                     ORDER BY ss.chapter_count DESC, \
-                                              ss.last_scanned_at DESC NULLS LAST, \
-                                              p.slug, ss.id) AS carrier_rank \
-           FROM watchlist_entries w \
-           JOIN series s ON s.id = w.series_id \
-           JOIN series_sources ss ON ss.series_id = w.series_id \
-           JOIN providers p ON p.id = ss.provider_id \
-           JOIN chapters c ON c.series_source_id = ss.id \
-           LEFT JOIN read_progress rp ON rp.user_id = w.user_id AND rp.series_id = w.series_id \
-           WHERE w.user_id = $1 \
-             AND c.number_milli >= (floor(COALESCE(rp.last_read_whole_number, 0))::bigint + 1) * 10000 \
-             AND NOT (c.number_milli % 10000 <> 0 \
-                      AND rp.last_read_part_number IS NOT NULL \
-                      AND c.number_milli <= (rp.last_read_part_number * 10000)::bigint) \
-             AND (c.access = 'free' OR c.unlocks_at <= now() \
-                  OR ss.provider_id = ANY(ARRAY( \
-                       SELECT e.provider_id FROM user_provider_early_access e \
-                       WHERE e.user_id = $1))) \
-         ) \
-         SELECT series_id AS \"series_id!\", series_title AS \"series_title!\", \
-                number_milli AS \"chapter_number!\", chapter_title, \
-                provider_slug AS \"provider_slug!\", base_url AS \"base_url!\", \
-                chapter_path AS \"chapter_path!\", discovered_at AS \"discovered_at!\" \
-         FROM unread \
-         WHERE carrier_rank = 1 \
-         ORDER BY discovered_at DESC, series_id, number_milli DESC \
-         LIMIT $2",
+        "WITH sightings AS ( \
+            SELECT ss.series_id, t.number_milli, t.discovered_at \
+            FROM watchlist_entries w \
+            LEFT JOIN read_progress rp ON rp.user_id = w.user_id AND rp.series_id = w.series_id \
+            JOIN series_sources ss ON ss.series_id = w.series_id \
+            CROSS JOIN LATERAL ( \
+              SELECT c.number_milli, c.discovered_at \
+              FROM chapters c \
+              WHERE c.series_source_id = ss.id \
+                AND c.number_milli >= (floor(COALESCE(rp.last_read_whole_number, 0))::bigint + 1) * 10000 \
+                AND NOT (c.number_milli % 10000 <> 0 \
+                         AND rp.last_read_part_number IS NOT NULL \
+                         AND c.number_milli <= (rp.last_read_part_number * 10000)::bigint) \
+                AND (c.access = 'free' OR c.unlocks_at <= now() \
+                     OR ss.provider_id = ANY(ARRAY( \
+                          SELECT e.provider_id FROM user_provider_early_access e \
+                          WHERE e.user_id = $1))) \
+            ) t \
+            WHERE w.user_id = $1 \
+          ), newest AS ( \
+            SELECT series_id, number_milli, min(discovered_at) AS discovered_at \
+            FROM sightings \
+            GROUP BY series_id, number_milli \
+            ORDER BY min(discovered_at) DESC, series_id, number_milli DESC \
+            LIMIT $2 \
+          ) \
+          SELECT n.series_id AS \"series_id!\", s.canonical_title AS \"series_title!\", \
+                 n.number_milli AS \"chapter_number!\", car.chapter_title, \
+                 car.provider_slug AS \"provider_slug!\", car.base_url AS \"base_url!\", \
+                 car.chapter_path AS \"chapter_path!\", n.discovered_at AS \"discovered_at!\" \
+          FROM newest n \
+          JOIN series s ON s.id = n.series_id \
+          CROSS JOIN LATERAL ( \
+            SELECT c.title AS chapter_title, p.slug AS provider_slug, p.base_url, \
+                   chapter_url_path(ss.source_path, c.path) AS chapter_path \
+            FROM series_sources ss \
+            JOIN providers p ON p.id = ss.provider_id \
+            JOIN chapters c ON c.series_source_id = ss.id AND c.number_milli = n.number_milli \
+            WHERE ss.series_id = n.series_id \
+              AND (c.access = 'free' OR c.unlocks_at <= now() \
+                   OR ss.provider_id = ANY(ARRAY( \
+                        SELECT e.provider_id FROM user_provider_early_access e \
+                        WHERE e.user_id = $1))) \
+            ORDER BY ss.chapter_count DESC, ss.last_scanned_at DESC NULLS LAST, p.slug, ss.id \
+            LIMIT 1 \
+          ) car \
+          ORDER BY n.discovered_at DESC, n.series_id, n.number_milli DESC",
         user_id.as_uuid(),
         limit,
     )
@@ -199,23 +228,9 @@ pub struct ContinueCard {
 /// Continue-reading cards: watched series with at least one unread chapter, freshest activity
 /// first (no cap, for a stable rail). `unread` counts distinct whole chapters.
 ///
-/// Both aggregates must use the module's unread predicate — filtering on the whole frontier
-/// alone leaves a card that can never be cleared (badge stuck on an already-read part).
-///
-/// **Two laterals, and they must stay two.** `agg` carries the predicate in its `WHERE`, which
-/// is what lets `floor(number) > …` reach `chapters_source_number_key` as an index
-/// condition and read only the unread tail. Folding `max(discovered_at)` back in would push the
-/// predicate into a `FILTER` and the scan back over every chapter of every watched series —
-/// 268 k rows, 280 ms, and an estimated cost high enough to buy 190 ms of JIT nothing needed.
-/// `act` keeps that `max` exact by asking one source at a time, so each answer is a one-row
-/// backward scan of `chapters_source_disc_access_idx`. Ordering by the newest *unread* chapter
-/// would collapse the two into one, and is measurably slower: `discovered_at` is not in the
-/// unread index, so that scan cannot stay index-only.
-///
-/// Both indexes carry `access`/`unlocks_at` as `INCLUDE` payload, and the early-access clause is
-/// why: a column this predicate reads that its index does not carry costs a heap fetch per row
-/// inspected, which is what `0052_activity_covering_index` was written to undo. A new column in
-/// the predicate needs a new payload, not just a new clause.
+/// Read from `watchlist_unread`, which migration 0058's triggers keep equal to the unread
+/// predicate documented above; "freshest activity" is the newest sighting of a chapter the reader
+/// can open. This used to be two laterals over every watched source's chapters on every request.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; nothing left is an empty `Vec`.
@@ -236,38 +251,15 @@ pub async fn continue_reading<'e, E: PgExecutor<'e>>(
         Row,
         "SELECT w.series_id, s.canonical_title AS series_title, s.cover_url, \
                 COALESCE(rp.last_read_whole_number, 0)::float8 AS \"last_read_number!\", \
-                agg.next_number AS next_number, \
-                agg.unread AS \"unread!\" \
+                u.next_unread_milli AS next_number, \
+                u.unread_count::int8 AS \"unread!\" \
          FROM watchlist_entries w \
+         JOIN watchlist_unread u ON u.user_id = w.user_id AND u.series_id = w.series_id \
          JOIN series s ON s.id = w.series_id \
          LEFT JOIN read_progress rp ON rp.user_id = w.user_id AND rp.series_id = w.series_id \
-         CROSS JOIN LATERAL ( \
-           SELECT min(c.number_milli) AS next_number, \
-                  count(DISTINCT c.number_milli / 10000) AS unread \
-           FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
-           WHERE ss.series_id = w.series_id \
-             AND c.number_milli >= (floor(COALESCE(rp.last_read_whole_number, 0))::bigint + 1) * 10000 \
-             AND NOT (c.number_milli % 10000 <> 0 \
-                      AND rp.last_read_part_number IS NOT NULL \
-                      AND c.number_milli <= (rp.last_read_part_number * 10000)::bigint) \
-             AND (c.access = 'free' OR c.unlocks_at <= now() \
-                  OR ss.provider_id = ANY(ARRAY( \
-                       SELECT e.provider_id FROM user_provider_early_access e \
-                       WHERE e.user_id = $1))) \
-         ) agg \
-         CROSS JOIN LATERAL ( \
-           SELECT max((SELECT max(c2.discovered_at) FROM chapters c2 \
-                       WHERE c2.series_source_id = ss2.id \
-                         AND (c2.access = 'free' OR c2.unlocks_at <= now() \
-                              OR ss2.provider_id = ANY(ARRAY( \
-                                   SELECT e.provider_id FROM user_provider_early_access e \
-                                   WHERE e.user_id = $1))))) \
-                    AS last_activity \
-           FROM series_sources ss2 WHERE ss2.series_id = w.series_id \
-         ) act \
          WHERE w.user_id = $1 AND w.status IN ('reading','planned','paused') \
-           AND agg.unread > 0 \
-         ORDER BY act.last_activity DESC NULLS LAST, w.series_id",
+           AND u.unread_count > 0 \
+         ORDER BY u.latest_readable_at DESC NULLS LAST, w.series_id",
         user_id.as_uuid(),
     )
     .fetch_all(exec)
@@ -310,13 +302,9 @@ pub struct MeStats {
 /// more than once and therefore materialised — three scalar subqueries over the same rows were
 /// three scans of them.
 ///
-/// `unread` sums a per-series lateral, the same shape as [`continue_reading`]'s: the predicate
-/// sits in the lateral's `WHERE`, so `floor(number) > …` becomes an index condition on
-/// `chapters_source_number_key` and the scan reads only unread rows. The global `DISTINCT`
-/// this replaced could not — `last_read_whole_number` arrived from a join *above* the chapter
-/// scan, so every chapter of every watched series was read and then filtered (319 k rows for 851
-/// entries). Summing per series equals that `DISTINCT` only because `watchlist_entries` is keyed
-/// on `(user_id, series_id)`: one row per series, so no series is counted twice.
+/// `unread` sums the stored per-series counts in `watchlist_unread`. Summing per series equals a
+/// distinct count over the whole watchlist only because `watchlist_entries` is keyed on
+/// `(user_id, series_id)`: one row per series, so no series is counted twice.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; tracking nothing gets zeros, not [`crate::DbError::NotFound`].
@@ -335,23 +323,8 @@ pub async fn me_stats<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResu
            (SELECT completed FROM watched) AS \"completed!\", \
            (SELECT COALESCE(sum(floor(last_read_whole_number)),0)::int8 FROM read_progress \
               WHERE user_id = $1) AS \"chapters_read!\", \
-           (SELECT COALESCE(sum(agg.unread),0)::int8 \
-              FROM watchlist_entries w \
-              LEFT JOIN read_progress rp ON rp.user_id = w.user_id AND rp.series_id = w.series_id \
-              CROSS JOIN LATERAL ( \
-                SELECT count(DISTINCT c.number_milli / 10000) AS unread \
-                FROM series_sources ss JOIN chapters c ON c.series_source_id = ss.id \
-                WHERE ss.series_id = w.series_id \
-                  AND c.number_milli >= (floor(COALESCE(rp.last_read_whole_number, 0))::bigint + 1) * 10000 \
-                  AND NOT (c.number_milli % 10000 <> 0 \
-                           AND rp.last_read_part_number IS NOT NULL \
-                           AND c.number_milli <= (rp.last_read_part_number * 10000)::bigint) \
-                  AND (c.access = 'free' OR c.unlocks_at <= now() \
-                       OR ss.provider_id = ANY(ARRAY( \
-                            SELECT e.provider_id FROM user_provider_early_access e \
-                            WHERE e.user_id = $1))) \
-              ) agg \
-              WHERE w.user_id = $1) AS \"unread!\"",
+           (SELECT COALESCE(sum(u.unread_count), 0)::int8 FROM watchlist_unread u \
+              WHERE u.user_id = $1) AS \"unread!\"",
         user_id.as_uuid(),
     )
     .fetch_one(exec)

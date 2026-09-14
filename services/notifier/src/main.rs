@@ -68,10 +68,10 @@ async fn serve_once(
     metrics: MetricsRegistry,
     shutdown: CancellationToken,
 ) -> anyhow::Result<()> {
+    let db = &cfg.database;
     let pool = tankovault_db::connect(
-        &cfg.database.url,
-        cfg.database.max_connections,
-        cfg.database.acquire_timeout_secs,
+        &db.url,
+        tankovault_db::PoolSettings::new(db.max_connections, db.acquire_timeout_secs),
     )
     .await?;
     tankovault_service::metrics::spawn_pool_sampler(pool.clone(), shutdown.clone());

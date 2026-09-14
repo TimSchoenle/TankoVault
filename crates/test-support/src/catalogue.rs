@@ -43,6 +43,13 @@ const USERS: i64 = 200;
 const WATCHED_PER_USER: i64 = 50;
 const NOTIFICATIONS_PER_USER: i64 = 100;
 const AUDIT_ROWS: i64 = 5_000;
+/// Scan runs, spread over [`SCAN_HISTORY_DAYS`]. Every triage query aggregates this history, so
+/// an empty table would plan every one of them as free.
+const SCAN_RUNS: i64 = 6_000;
+/// Tasks per run: 300 000 in all, a fifth of them failed.
+const SCAN_TASKS_PER_RUN: i64 = 50;
+/// How far back the scan history reaches — the default retention.
+const SCAN_HISTORY_DAYS: i64 = 30;
 
 /// Fixed seed for [`Lcg`]. Any value works; it is pinned so every machine and every run builds a
 /// byte-identical fixture.
@@ -118,6 +125,7 @@ pub(crate) async fn seed(pool: &PgPool) {
     seed_sources_and_chapters(pool).await;
     seed_tags_and_authors(pool, &mut rng).await;
     seed_readers(pool).await;
+    seed_scan_history(pool).await;
     analyse(pool).await;
 }
 
@@ -308,6 +316,47 @@ async fn seed_readers(pool: &PgPool) {
     .execute(pool)
     .await
     .expect("seed audit log");
+}
+
+/// Scan runs and their tasks: the history the console's triage queries aggregate.
+///
+/// A fifth of the tasks failed and a tenth of those were cleared, so the failure feed's partial
+/// indexes have the selectivity they have in a deployment that scans continuously.
+async fn seed_scan_history(pool: &PgPool) {
+    sqlx::query(
+        "INSERT INTO scan_runs (provider_id, mode, state, total_tasks, done_tasks, failed_tasks, \
+                                started_at, finished_at, created_at) \
+         SELECT p.id, CASE WHEN g % 10 = 0 THEN 'full' ELSE 'fast' END::scan_mode, \
+                CASE WHEN g % 50 = 0 THEN 'failed' ELSE 'completed' END::run_state, \
+                $2, $2 * 4 / 5, $2 / 5, \
+                now() - make_interval(secs => g * $3), \
+                now() - make_interval(secs => g * $3) + interval '5 minutes', \
+                now() - make_interval(secs => g * $3) \
+         FROM generate_series(1, $1) g \
+         JOIN (SELECT id, row_number() OVER (ORDER BY slug) - 1 AS rn FROM providers) p \
+           ON p.rn = g % (SELECT count(*) FROM providers)",
+    )
+    .bind(SCAN_RUNS)
+    .bind(i32::try_from(SCAN_TASKS_PER_RUN).unwrap_or(i32::MAX))
+    .bind(SCAN_HISTORY_DAYS * 86_400 / SCAN_RUNS)
+    .execute(pool)
+    .await
+    .expect("seed scan runs");
+
+    sqlx::query(
+        "INSERT INTO scan_tasks (run_id, kind, target, state, attempts, error, claimed_at, \
+                                 finished_at, acknowledged_at) \
+         SELECT r.id, 'series', jsonb_build_object('path', 'series/' || g), \
+                CASE WHEN g % 5 = 0 THEN 'failed' ELSE 'done' END::task_state, 1, \
+                CASE WHEN g % 5 = 0 THEN 'http ' || (500 + g % 4) END, \
+                r.started_at, r.finished_at, \
+                CASE WHEN g % 50 = 0 THEN r.finished_at END \
+         FROM scan_runs r CROSS JOIN generate_series(1, $1) g",
+    )
+    .bind(SCAN_TASKS_PER_RUN)
+    .execute(pool)
+    .await
+    .expect("seed scan tasks");
 }
 
 /// `VACUUM` then `ANALYZE` the whole database, so no table is left planning from defaults.

@@ -1967,6 +1967,20 @@ const SERIES_REFERENCES: &[(&str, &str, Handling)] = &[
         Handling::Cascades("the other half of the same pair; see series_cooccurrence.series_id"),
     ),
     ("rec_repair_queue", "series_id", Handling::Folded),
+    (
+        "series_browse",
+        "series_id",
+        Handling::Cascades(
+            "a projection of the series row itself; the merge's source and tag moves fire the triggers that recompute the survivor's row, and the absorbed series' row goes with it",
+        ),
+    ),
+    (
+        "watchlist_unread",
+        "series_id",
+        Handling::Cascades(
+            "derived per watchlist entry and cascades with it; the merge's own watchlist, progress and source moves fire the triggers that recompute the survivor's rows",
+        ),
+    ),
     // The reader model. Affinity is derived from the watchlist and read progress, both of which
     // this transaction folds correctly a few statements earlier — so re-pointing it by hand is
     // how the derived rows and their source diverge. `merge_series` marks the affected profiles

@@ -71,10 +71,20 @@ pub struct ListParams {
     pub cursor: Option<i64>,
     #[serde(default = "default_limit")]
     pub limit: i64,
+    /// `false` skips counting the matching rows, and `X-Total-Count` is then omitted. For a client
+    /// that already holds the total for this filter, or never shows one. Defaults to `true`.
+    #[serde(default = "default_with_total")]
+    pub with_total: bool,
 }
 
 fn default_limit() -> i64 {
     40
+}
+
+// Counting stays the default: installed desktop builds read the header on every page and would
+// show the page length as the total without it.
+const fn default_with_total() -> bool {
+    true
 }
 
 /// The `tracking` parameter: which side of the caller's own watchlist the list is narrowed to.
@@ -243,8 +253,8 @@ impl SeriesSummary {
 ///
 /// Filter/sort/paginate the public series list (frontend §9.1). The body remains a plain
 /// `SeriesSummary[]`; pagination metadata rides on the `X-Total-Count` (rows matching the
-/// filter) and `X-Next-Cursor` (next page index, absent on the last page) headers so existing
-/// array-decoding clients keep working.
+/// filter, omitted when `with_total=false`) and `X-Next-Cursor` (next page index, absent on the
+/// last page) headers so existing array-decoding clients keep working.
 #[utoipa::path(
     get,
     path = "/v1/series",
@@ -255,7 +265,7 @@ impl SeriesSummary {
             status = 200, description = "Matching series, newest-updated first by default",
             body = Vec<SeriesSummary>,
             headers(
-                ("X-Total-Count" = i64, description = "Total rows matching the filter"),
+                ("X-Total-Count" = i64, description = "Total rows matching the filter; omitted when `with_total=false`"),
                 ("X-Next-Cursor" = i64, description = "Next page index; absent on the last page"),
             ),
         ),
@@ -344,14 +354,21 @@ pub async fn list(
         limit,
         offset: page.saturating_mul(limit),
     };
-    let out = tankovault_db::repo::catalog::list_series_filtered(&state.pool, &filter).await?;
+    let total = if params.with_total {
+        tankovault_db::repo::catalog::Total::Count
+    } else {
+        tankovault_db::repo::catalog::Total::Skip
+    };
+    let out =
+        tankovault_db::repo::catalog::list_series_filtered(&state.pool, &filter, total).await?;
 
     let mut headers = HeaderMap::new();
-    if let Ok(v) = HeaderValue::from_str(&out.total.to_string()) {
+    if let Some(total) = out.total
+        && let Ok(v) = HeaderValue::from_str(&total.to_string())
+    {
         headers.insert("X-Total-Count", v);
     }
-    let returned = i64::try_from(out.items.len()).unwrap_or(0);
-    if filter.offset + returned < out.total
+    if out.has_more
         && let Ok(v) = HeaderValue::from_str(&(page + 1).to_string())
     {
         headers.insert("X-Next-Cursor", v);

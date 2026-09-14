@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE watchlist_unread u SET verified_at = now() FROM UNNEST($1::uuid[], $2::uuid[]) AS k(user_id, series_id) WHERE u.user_id = k.user_id AND u.series_id = k.series_id",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "72460fc060eeb80f926cf3b18cc5b9e0b60fdc7ab7da6862dc0ea4bf46d33bdc"
+}

@@ -105,6 +105,11 @@ const NOT_EXPORTED: &[(&str, &str)] = &[
          decision, and each of those is a privileged action that already writes the subject's \
          own `audit_log` row, which is exported",
     ),
+    (
+        "watchlist_unread",
+        "derived figures, recomputed from `watchlist_entries`, `read_progress` and the catalogue, \
+         all of which the export already carries; it holds nothing the subject gave or did",
+    ),
 ];
 
 /// Every `(table, column)` in the live schema that names a user: `user_id` or `actor_id`.

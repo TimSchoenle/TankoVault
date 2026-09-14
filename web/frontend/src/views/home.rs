@@ -34,8 +34,9 @@ pub(crate) fn Home() -> Element {
     let caps = use_capabilities();
     let reload = use_reload();
 
-    // Each resource builds its client from the live session token, so the boot-time silent
-    // refresh (landing just after first paint) refetches everything automatically.
+    // Each resource subscribes to the signed-in account through `api.client()`, so the boot-time
+    // silent refresh (landing just after first paint) refetches everything, and a later renewal
+    // of the same account refetches nothing.
     let feed = use_resource(move || {
         reload.track();
         let client = api.client();

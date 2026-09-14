@@ -257,6 +257,8 @@ fn use_capability_sync() {
     let wall = use_account_wall();
 
     use_resource(move || {
+        // Tracked on purpose: renewal is the cadence a changed grant reaches the UI at.
+        let _renewal = session.token.read();
         let client = api.client();
         let signed_in = session.is_authenticated();
         let settled = session.is_settled();
@@ -287,8 +289,8 @@ fn use_capability_sync() {
 
 /// Keep the cached global source order in step with the session.
 ///
-/// Keyed on the token for the same reason capabilities are: the order is per reader, so a
-/// sign-out must not leave the previous reader's preference shaping this one's links.
+/// Keyed on the signed-in account: the order is per reader, so a sign-out must not leave the
+/// previous reader's preference shaping this one's links. A renewal changes nothing it reads.
 fn use_source_order_sync() {
     let session = use_session();
     let api = api::use_api();
@@ -320,11 +322,11 @@ fn use_source_order_sync() {
 /// Subscribe to the per-user SSE stream while signed in, keeping the rail's unread badge
 /// current (design §14, §17.4).
 ///
-/// `use_resource` restarts when the token changes — dropping the previous `EventSource` and
-/// closing its connection — so a sign-out or a silent refresh transparently tears the stream
-/// down or re-establishes it. The token is read only to decide *whether* to run and to key the
-/// resource; the stream authenticates with a single-use ticket [`crate::live::run`] mints for
-/// itself, so it is never in the URL (SEC-8).
+/// `use_resource` restarts when the signed-in account changes — dropping the previous
+/// `EventSource` and closing its connection — so a sign-out tears the stream down and a sign-in
+/// establishes it. A renewal does not restart it: the stream authenticates with a single-use
+/// ticket [`crate::live::run`] mints for itself (SEC-8), so a fresh token changes nothing it
+/// holds, and restarting it on every refresh was a reconnect burst per reader per ~14 minutes.
 fn use_live_notifications() {
     let session = use_session();
     let api = api::use_api();
@@ -347,7 +349,7 @@ fn use_live_notifications() {
     });
 }
 
-/// Seed the unread badge from the server, and re-seed it on every token change.
+/// Seed the unread badge from the server, and re-seed it on every token renewal.
 ///
 /// The stream alone was not enough, and this is the defect that made the count "not always
 /// load": the SSE stream only ever *pushes a change*. A reader who opens the app with unread
@@ -369,6 +371,8 @@ fn use_unread_count() {
     let badge = use_context::<UnreadBadge>();
 
     use_resource(move || {
+        // Tracked on purpose: renewal is what repairs a badge the stream drifted from.
+        let _renewal = session.token.read();
         let client = api.client();
         let signed_in = session.is_authenticated();
         let mut count = badge.0;

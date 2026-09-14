@@ -8,7 +8,7 @@
 #![cfg(feature = "integration")]
 
 use tankovault_db::repo::catalog::{
-    SeriesFilter, SeriesSort, list_series, list_series_authors, list_series_filtered,
+    SeriesFilter, SeriesSort, Total, list_series, list_series_authors, list_series_filtered,
     list_series_tags, list_series_titles, list_tags,
 };
 use tankovault_domain::{ContentType, ProviderId, SeriesId, SeriesStatus};
@@ -305,6 +305,7 @@ async fn every_page_and_count_statement_selects_the_same_rows() {
                 sort: SeriesSort::Updated,
                 ..filter.clone()
             }),
+            Total::Count,
         )
         .await
         .unwrap_or_else(|e| panic!("{name}: recency page: {e}"));
@@ -315,6 +316,7 @@ async fn every_page_and_count_statement_selects_the_same_rows() {
                 sort: SeriesSort::Title,
                 ..filter.clone()
             }),
+            Total::Count,
         )
         .await
         .unwrap_or_else(|e| panic!("{name}: sort-token page: {e}"));
@@ -329,6 +331,7 @@ async fn every_page_and_count_statement_selects_the_same_rows() {
                 sort: SeriesSort::Relevance,
                 ..filter.clone()
             }),
+            Total::Count,
         )
         .await
         .unwrap_or_else(|e| panic!("{name}: relevance page: {e}"));
@@ -348,7 +351,7 @@ async fn every_page_and_count_statement_selects_the_same_rows() {
             "{name}: the count disagrees with the relevance page it is paging"
         );
         assert_eq!(
-            i64::try_from(recency.items.len()).unwrap(),
+            Some(i64::try_from(recency.items.len()).unwrap()),
             recency.total,
             "{name}: the count disagrees with the page it is paging"
         );
@@ -406,7 +409,7 @@ async fn each_filter_narrows_to_exactly_its_rows() {
             .iter()
             .find(|(n, _)| n == name)
             .map_or_else(|| panic!("no filter named {name}"), |(_, f)| f.clone());
-        let page = list_series_filtered(&db.pool, &all_of(filter))
+        let page = list_series_filtered(&db.pool, &all_of(filter), Total::Count)
             .await
             .unwrap_or_else(|e| panic!("{name}: {e}"));
         assert_eq!(sorted_titles(&page), *want, "{name}");
@@ -432,6 +435,7 @@ async fn a_series_on_two_sources_is_not_as_long_as_its_carriers_added_up() {
             min_chapters: Some(200),
             ..SeriesFilter::default()
         }),
+        Total::Count,
     )
     .await
     .expect("browse at 200");
@@ -447,6 +451,7 @@ async fn a_series_on_two_sources_is_not_as_long_as_its_carriers_added_up() {
             min_chapters: Some(201),
             ..SeriesFilter::default()
         }),
+        Total::Count,
     )
     .await
     .expect("browse past 200");
@@ -475,14 +480,14 @@ async fn a_series_without_a_year_is_outside_every_year_bound() {
             ..SeriesFilter::default()
         },
     ] {
-        let page = list_series_filtered(&db.pool, &all_of(filter))
+        let page = list_series_filtered(&db.pool, &all_of(filter), Total::Count)
             .await
             .expect("year bound");
         assert!(
             !titles(&page).contains(&"Oyasumi Punpun"),
             "a NULL release_year must not satisfy a year bound"
         );
-        assert_eq!(page.total, 4);
+        assert_eq!(page.total, Some(4));
     }
 }
 
@@ -500,11 +505,12 @@ async fn tags_require_all_and_exclude_tags_remove_any() {
             tags: vec!["action".to_owned(), "isekai".to_owned()],
             ..SeriesFilter::default()
         }),
+        Total::Count,
     )
     .await
     .expect("tags all");
     assert!(
-        none.items.is_empty() && none.total == 0,
+        none.items.is_empty() && none.total == Some(0),
         "requiring an absent tag must match nothing, got {:?}",
         titles(&none)
     );
@@ -516,6 +522,7 @@ async fn tags_require_all_and_exclude_tags_remove_any() {
             exclude_tags: vec!["historical".to_owned(), "dark-fantasy".to_owned()],
             ..SeriesFilter::default()
         }),
+        Total::Count,
     )
     .await
     .expect("exclude tags");
@@ -605,6 +612,7 @@ async fn every_sort_order_orders_by_its_own_key() {
                 sort: *sort,
                 ..SeriesFilter::default()
             }),
+            Total::Count,
         )
         .await
         .expect("sorted page");
@@ -632,10 +640,15 @@ async fn paging_a_tied_sort_key_neither_repeats_nor_skips() {
                     offset,
                     ..SeriesFilter::default()
                 },
+                Total::Count,
             )
             .await
             .expect("page");
-            assert_eq!(page.total, 5, "the total must not depend on the offset");
+            assert_eq!(
+                page.total,
+                Some(5),
+                "the total must not depend on the offset"
+            );
             seen.extend(titles(&page).into_iter().map(str::to_owned));
         }
         seen.sort();
@@ -669,6 +682,7 @@ async fn search_finds_a_series_by_its_alternative_title() {
             query: Some("na honjaman level up".to_owned()),
             ..SeriesFilter::default()
         }),
+        Total::Count,
     )
     .await
     .expect("alt-title search");
@@ -724,6 +738,7 @@ async fn an_exact_title_match_leads_the_relevance_order() {
             sort: SeriesSort::Relevance,
             ..SeriesFilter::default()
         }),
+        Total::Count,
     )
     .await
     .expect("relevance page");
@@ -743,6 +758,7 @@ async fn an_exact_title_match_leads_the_relevance_order() {
             sort: SeriesSort::Updated,
             ..SeriesFilter::default()
         }),
+        Total::Count,
     )
     .await
     .expect("recency page");
@@ -772,6 +788,7 @@ async fn an_exact_alternative_title_leads_as_well() {
             sort: SeriesSort::Relevance,
             ..SeriesFilter::default()
         }),
+        Total::Count,
     )
     .await
     .expect("relevance page");
@@ -797,10 +814,11 @@ async fn a_blank_query_is_not_a_filter() {
                 query: Some(query.to_owned()),
                 ..SeriesFilter::default()
             }),
+            Total::Count,
         )
         .await
         .expect("blank query");
-        assert_eq!(page.total, 5, "query={query:?}");
+        assert_eq!(page.total, Some(5), "query={query:?}");
     }
 }
 
@@ -813,7 +831,7 @@ async fn the_per_series_reads_are_alphabetical_and_empty_when_unset() {
     let db = TestDb::spawn().await;
     seed_corpus(&db).await;
 
-    let page = list_series_filtered(&db.pool, &all_of(SeriesFilter::default()))
+    let page = list_series_filtered(&db.pool, &all_of(SeriesFilter::default()), Total::Count)
         .await
         .expect("page");
     let id_of = |title: &str| {
@@ -915,5 +933,133 @@ async fn source_count_counts_distinct_providers() {
             "{}: source_count",
             item.series.canonical_title
         );
+    }
+}
+
+// The projection's edges
+
+/// **An unknown tag slug beside a known one matches nothing, and a repeated slug is one slug.**
+///
+/// The include-tags filter maps slugs to ids before comparing id sets. `ARRAY(SELECT id FROM tags
+/// WHERE slug = ANY(...))` drops a slug no tag has, which would turn `tag=action&tag=typo` into
+/// `tag=action` and return every action series instead of none.
+#[tokio::test]
+async fn an_unknown_tag_beside_a_known_one_matches_nothing() {
+    let db = TestDb::spawn().await;
+    seed_corpus(&db).await;
+
+    let browse = |tags: &[&str]| {
+        all_of(SeriesFilter {
+            tags: tags.iter().map(|t| (*t).to_owned()).collect(),
+            ..SeriesFilter::default()
+        })
+    };
+    for sort in [SeriesSort::Updated, SeriesSort::Title] {
+        let widened = list_series_filtered(
+            &db.pool,
+            &SeriesFilter {
+                sort,
+                ..browse(&["action", "no-such-tag"])
+            },
+            Total::Count,
+        )
+        .await
+        .expect("known plus unknown slug");
+        assert!(
+            widened.items.is_empty() && widened.total == Some(0),
+            "{sort:?}: an unknown slug must match nothing, got {:?}",
+            titles(&widened)
+        );
+    }
+
+    let once = list_series_filtered(&db.pool, &browse(&["action"]), Total::Count)
+        .await
+        .expect("one slug");
+    let twice = list_series_filtered(&db.pool, &browse(&["action", "action"]), Total::Count)
+        .await
+        .expect("a repeated slug");
+    assert_eq!(sorted_titles(&once), sorted_titles(&twice));
+    assert_eq!(once.total, twice.total);
+}
+
+/// **A chapter floor at or below zero keeps a series with no sources.**
+///
+/// The predicate compared `COALESCE(max(chapter_count), 0)` with the floor, so a series nobody
+/// carries passes a floor of 0. The projection stores that `COALESCE` as `max_chapters`'s default;
+/// storing `NULL` instead would silently drop sourceless series from every floored browse.
+#[tokio::test]
+async fn a_chapter_floor_at_or_below_zero_keeps_a_series_with_no_sources() {
+    let db = TestDb::spawn().await;
+    seed_corpus(&db).await;
+    db.execute(
+        "INSERT INTO series (canonical_title, normalized_title) VALUES ('Orphan', 'orphan')",
+    )
+    .await;
+
+    for (floor, kept) in [(Some(-5), true), (Some(0), true), (Some(1), false)] {
+        let page = list_series_filtered(
+            &db.pool,
+            &all_of(SeriesFilter {
+                min_chapters: floor,
+                ..SeriesFilter::default()
+            }),
+            Total::Count,
+        )
+        .await
+        .expect("floored browse");
+        assert_eq!(
+            titles(&page).contains(&"Orphan"),
+            kept,
+            "min_chapters {floor:?}"
+        );
+    }
+}
+
+/// **Whether another page follows is known without counting, at every page boundary.**
+///
+/// `X-Next-Cursor` used to be `offset + returned < total`, so skipping the count would have ended
+/// the list one page early, or offered an empty page when the matches were an exact multiple of the
+/// page size. A page now reads one row more than it returns.
+#[tokio::test]
+async fn whether_another_page_follows_is_known_without_counting() {
+    let db = TestDb::spawn().await;
+    seed_corpus(&db).await;
+
+    for (query, matches) in [(None, 5), (Some("berserk"), 1)] {
+        let everything = list_series_filtered(
+            &db.pool,
+            &all_of(SeriesFilter {
+                query: query.map(str::to_owned),
+                ..SeriesFilter::default()
+            }),
+            Total::Count,
+        )
+        .await
+        .expect("the whole match set");
+        let total = everything.total.expect("counted");
+        assert_eq!(total, matches, "premise: query {query:?} matches {matches}");
+        for limit in 1..=total + 1 {
+            for offset in 0..=total {
+                let filter = SeriesFilter {
+                    query: query.map(str::to_owned),
+                    limit,
+                    offset,
+                    ..SeriesFilter::default()
+                };
+                let counted = list_series_filtered(&db.pool, &filter, Total::Count)
+                    .await
+                    .expect("counted page");
+                let skipped = list_series_filtered(&db.pool, &filter, Total::Skip)
+                    .await
+                    .expect("uncounted page");
+                let context = format!("query {query:?}, limit {limit}, offset {offset}");
+                assert_eq!(counted.has_more, offset + limit < total, "{context}");
+                assert_eq!(skipped.has_more, counted.has_more, "{context}");
+                assert_eq!(titles(&skipped), titles(&counted), "{context}");
+                assert_eq!(skipped.total, None, "{context}");
+                // A search page past the end has no row to carry the window count.
+                assert_eq!(counted.total, Some(total), "{context}");
+            }
+        }
     }
 }

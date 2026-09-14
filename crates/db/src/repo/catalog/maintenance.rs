@@ -256,7 +256,7 @@ pub async fn totals<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<CatalogueTotals>
          SELECT \
            (SELECT count(*) FROM health) AS \"series_total!\", \
            (SELECT count(*) FROM series_sources) AS \"sources_total!\", \
-           (SELECT count(*) FROM chapters) AS \"chapters_total!\", \
+           (SELECT COALESCE(sum(chapters), 0)::int8 FROM chapter_rollup) AS \"chapters_total!\", \
            (SELECT count(*) FROM health WHERE orphaned) AS \"orphaned_series!\", \
            (SELECT count(*) FROM health WHERE empty) AS \"empty_series!\", \
            (SELECT count(*) FROM watchlist_entries) AS \"watchlist_entries!\", \
@@ -339,9 +339,11 @@ pub async fn purge_chapters_batch(
     .await?
     .rows_affected();
 
-    let remaining = sqlx::query_scalar!("SELECT count(*) AS \"count!\" FROM chapters")
-        .fetch_one(&mut *conn)
-        .await?;
+    let remaining = sqlx::query_scalar!(
+        "SELECT COALESCE(sum(chapters), 0)::int8 AS \"count!\" FROM chapter_rollup"
+    )
+    .fetch_one(&mut *conn)
+    .await?;
     Ok((
         DeletionReport {
             chapters: i64::try_from(deleted).unwrap_or(i64::MAX),

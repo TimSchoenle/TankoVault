@@ -67,7 +67,8 @@ pub(crate) fn Search(query: SearchQuery) -> Element {
             let mut builder = client
                 .list()
                 .query(search.q.trim().to_owned())
-                .limit(i64::try_from(limit).unwrap_or(60));
+                .limit(i64::try_from(limit).unwrap_or(60))
+                .with_total(false);
             if let Some(content_type) = search.content_type {
                 builder = builder.content_type(content_type.token());
             }

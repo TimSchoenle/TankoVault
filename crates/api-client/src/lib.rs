@@ -35465,7 +35465,7 @@ impl Client {
     pub fn providers(&self) -> builder::Providers<'_> {
         builder::Providers::new(self)
     }
-    #[doc = "Browse the catalogue\n\nFilter/sort/paginate the public series list (frontend §9.1). The body remains a plain\n`SeriesSummary[]`; pagination metadata rides on the `X-Total-Count` (rows matching the\nfilter) and `X-Next-Cursor` (next page index, absent on the last page) headers so existing\narray-decoding clients keep working.\n\nSends a `GET` request to `/v1/series`\n\nArguments:\n- `content_type`\n- `cursor`\n- `exclude_tag`: Tag slugs the series must not carry.\n- `limit`\n- `min_chapters`\n- `page`: Zero-based page index (alias: `cursor`).\n- `provider`: Provider slug the series must have a source on.\n- `query`\n- `sort`: `relevance | updated | title | chapters | sources | year | rating`. Defaults to\n`relevance` when `query` is supplied and `updated` when it is not; `relevance` without a\n`query` has nothing to rank and falls back to `updated`.\n- `status`\n- `tag`: Tag slugs the series must all carry.\n- `tracking`: `tracked` narrows the list to series the caller already has on their watchlist,\n`untracked` to the rest. Requires an authenticated caller — whose watchlist it is comes\nfrom the token, never from a parameter.\n- `year_max`\n- `year_min`\n```ignore\nlet response = client.list()\n    .content_type(content_type)\n    .cursor(cursor)\n    .exclude_tag(exclude_tag)\n    .limit(limit)\n    .min_chapters(min_chapters)\n    .page(page)\n    .provider(provider)\n    .query(query)\n    .sort(sort)\n    .status(status)\n    .tag(tag)\n    .tracking(tracking)\n    .year_max(year_max)\n    .year_min(year_min)\n    .send()\n    .await;\n```"]
+    #[doc = "Browse the catalogue\n\nFilter/sort/paginate the public series list (frontend §9.1). The body remains a plain\n`SeriesSummary[]`; pagination metadata rides on the `X-Total-Count` (rows matching the\nfilter, omitted when `with_total=false`) and `X-Next-Cursor` (next page index, absent on the\nlast page) headers so existing array-decoding clients keep working.\n\nSends a `GET` request to `/v1/series`\n\nArguments:\n- `content_type`\n- `cursor`\n- `exclude_tag`: Tag slugs the series must not carry.\n- `limit`\n- `min_chapters`\n- `page`: Zero-based page index (alias: `cursor`).\n- `provider`: Provider slug the series must have a source on.\n- `query`\n- `sort`: `relevance | updated | title | chapters | sources | year | rating`. Defaults to\n`relevance` when `query` is supplied and `updated` when it is not; `relevance` without a\n`query` has nothing to rank and falls back to `updated`.\n- `status`\n- `tag`: Tag slugs the series must all carry.\n- `tracking`: `tracked` narrows the list to series the caller already has on their watchlist,\n`untracked` to the rest. Requires an authenticated caller — whose watchlist it is comes\nfrom the token, never from a parameter.\n- `with_total`: `false` skips counting the matching rows, and `X-Total-Count` is then omitted. For a client\nthat already holds the total for this filter, or never shows one. Defaults to `true`.\n- `year_max`\n- `year_min`\n```ignore\nlet response = client.list()\n    .content_type(content_type)\n    .cursor(cursor)\n    .exclude_tag(exclude_tag)\n    .limit(limit)\n    .min_chapters(min_chapters)\n    .page(page)\n    .provider(provider)\n    .query(query)\n    .sort(sort)\n    .status(status)\n    .tag(tag)\n    .tracking(tracking)\n    .with_total(with_total)\n    .year_max(year_max)\n    .year_min(year_min)\n    .send()\n    .await;\n```"]
     pub fn list(&self) -> builder::List<'_> {
         builder::List::new(self)
     }
@@ -48409,6 +48409,7 @@ pub mod builder {
         status: Result<Option<::std::string::String>, String>,
         tag: Result<Option<::std::vec::Vec<::std::string::String>>, String>,
         tracking: Result<Option<::std::string::String>, String>,
+        with_total: Result<Option<bool>, String>,
         year_max: Result<Option<i32>, String>,
         year_min: Result<Option<i32>, String>,
     }
@@ -48428,6 +48429,7 @@ pub mod builder {
                 status: Ok(None),
                 tag: Ok(None),
                 tracking: Ok(None),
+                with_total: Ok(None),
                 year_max: Ok(None),
                 year_min: Ok(None),
             }
@@ -48540,6 +48542,16 @@ pub mod builder {
             });
             self
         }
+        pub fn with_total<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<bool>,
+        {
+            self.with_total = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `bool` for with_total failed".to_string());
+            self
+        }
         pub fn year_max<V>(mut self, value: V) -> Self
         where
             V: std::convert::TryInto<i32>,
@@ -48581,6 +48593,7 @@ pub mod builder {
                 status,
                 tag,
                 tracking,
+                with_total,
                 year_max,
                 year_min,
             } = self;
@@ -48596,6 +48609,7 @@ pub mod builder {
             let status = status.map_err(Error::InvalidRequest)?;
             let tag = tag.map_err(Error::InvalidRequest)?;
             let tracking = tracking.map_err(Error::InvalidRequest)?;
+            let with_total = with_total.map_err(Error::InvalidRequest)?;
             let year_max = year_max.map_err(Error::InvalidRequest)?;
             let year_min = year_min.map_err(Error::InvalidRequest)?;
             let url = format!("{}/v1/series", client.baseurl,);
@@ -48633,6 +48647,10 @@ pub mod builder {
                 .query(&progenitor_client::QueryParam::new("status", &status))
                 .query(&progenitor_client::QueryParam::new("tag", &tag))
                 .query(&progenitor_client::QueryParam::new("tracking", &tracking))
+                .query(&progenitor_client::QueryParam::new(
+                    "with_total",
+                    &with_total,
+                ))
                 .query(&progenitor_client::QueryParam::new("year_max", &year_max))
                 .query(&progenitor_client::QueryParam::new("year_min", &year_min))
                 .headers(header_map)

@@ -120,6 +120,28 @@ pub async fn connect_with(options: PgConnectOptions, settings: PoolSettings) -> 
     Ok(pool)
 }
 
+/// Begin a transaction whose statements run under `ceiling` rather than the pool's own.
+///
+/// For work that is off the request path by design and slower than the route class it is
+/// reached through — a snapshot refresh that aggregates a whole table. The setting is
+/// transaction-local, so the connection returns to the pool with its own ceiling intact.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only.
+pub async fn begin_with_statement_timeout(
+    pool: &PgPool,
+    ceiling: Duration,
+) -> DbResult<sqlx::Transaction<'static, sqlx::Postgres>> {
+    let mut tx = pool.begin().await?;
+    sqlx::query_scalar!(
+        "SELECT set_config('statement_timeout', $1, true)",
+        format!("{}ms", ceiling.as_millis()),
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+    Ok(tx)
+}
+
 /// Run all pending migrations. Safe to call on every service boot; the `render`
 /// tier or a dedicated migration Job typically gates this before app rollout.
 ///

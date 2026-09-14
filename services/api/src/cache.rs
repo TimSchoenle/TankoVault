@@ -25,6 +25,36 @@ use tokio::sync::{Mutex, RwLock};
 /// How long a console rollup is served before a refresh is started behind the response.
 pub const ADMIN_STATS_TTL: Duration = Duration::from_secs(30);
 
+/// Statement ceiling for a rollup refresh, in place of the admin pool's.
+///
+/// The refresh runs behind a response that has already been served, so the route's ceiling —
+/// sized for a request someone is waiting on — would only cancel it, and a rollup whose every
+/// refresh is cancelled is a console that never shows a figure. This still bounds it: a refresh
+/// that cannot finish in two minutes is load, not a slow answer.
+const ROLLUP_STATEMENT_CEILING: Duration = Duration::from_secs(120);
+
+/// Load the console header rollup under [`ROLLUP_STATEMENT_CEILING`].
+pub(crate) async fn load_system_overview(
+    pool: tankovault_db::PgPool,
+) -> tankovault_db::DbResult<tankovault_db::repo::stats::SystemStats> {
+    let mut tx =
+        tankovault_db::begin_with_statement_timeout(&pool, ROLLUP_STATEMENT_CEILING).await?;
+    let overview = tankovault_db::repo::stats::system_overview(&mut *tx).await?;
+    tx.commit().await?;
+    Ok(overview)
+}
+
+/// Load the per-provider table under [`ROLLUP_STATEMENT_CEILING`].
+pub(crate) async fn load_provider_stats(
+    pool: tankovault_db::PgPool,
+) -> tankovault_db::DbResult<Vec<tankovault_db::repo::stats::ProviderStat>> {
+    let mut tx =
+        tankovault_db::begin_with_statement_timeout(&pool, ROLLUP_STATEMENT_CEILING).await?;
+    let rows = tankovault_db::repo::stats::provider_stats(&mut *tx).await?;
+    tx.commit().await?;
+    Ok(rows)
+}
+
 /// A value and when it was computed.
 struct Snapshot<T> {
     value: T,

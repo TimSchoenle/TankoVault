@@ -39,7 +39,7 @@ pub async fn system_stats(
         .system_stats
         .get(move || {
             let pool = pool.clone();
-            async move { tankovault_db::repo::stats::system_overview(&pool).await }
+            crate::cache::load_system_overview(pool)
         })
         .await?;
     Ok(Json(overview.into_view()))

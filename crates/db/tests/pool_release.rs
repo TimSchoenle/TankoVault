@@ -98,3 +98,34 @@ async fn a_statement_past_its_ceiling_is_cancelled() {
         .await
         .expect("the connection survives its own cancellation");
 }
+
+/// A transaction-local ceiling outlasts the pool's, and does not outlive its transaction.
+///
+/// The admin console's rollups refresh behind a response under this override. Were the setting
+/// session-wide instead, the connection would go back to the pool with a two-minute ceiling and
+/// the next reader's statement on it would run uncapped.
+#[tokio::test]
+async fn a_raised_ceiling_applies_to_its_transaction_only() {
+    let db = TestDb::spawn().await;
+    let pool = tankovault_db::connect_with(
+        (*db.pool.connect_options()).clone(),
+        PoolSettings::new(1, 30).with_statement_timeout_secs(1),
+    )
+    .await
+    .expect("connect");
+
+    let mut tx = tankovault_db::begin_with_statement_timeout(&pool, Duration::from_secs(10))
+        .await
+        .expect("begin");
+    sqlx::query("SELECT pg_sleep(1.5)")
+        .execute(&mut *tx)
+        .await
+        .expect("the raised ceiling admits the sleep");
+    tx.commit().await.expect("commit");
+
+    let error = sqlx::query("SELECT pg_sleep(1.5)")
+        .execute(&pool)
+        .await
+        .expect_err("the pool's own ceiling is back once the transaction ends");
+    assert!(DbError::from(error).is_statement_cancelled());
+}

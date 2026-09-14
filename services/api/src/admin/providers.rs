@@ -505,7 +505,7 @@ pub async fn provider_stats(
         .provider_stats
         .get(move || {
             let pool = pool.clone();
-            async move { tankovault_db::repo::stats::provider_stats(&pool).await }
+            crate::cache::load_provider_stats(pool)
         })
         .await?;
     Ok(Json(rows.into_view()))

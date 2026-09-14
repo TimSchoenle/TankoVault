@@ -841,10 +841,16 @@ mod tests {
         let readers = reader_routes().split_for_parts().1;
         assert!(!admin.paths.paths.is_empty());
         for path in admin.paths.paths.keys() {
-            assert!(path.starts_with("/v1/admin/"), "{path} is served by the admin pool");
+            assert!(
+                path.starts_with("/v1/admin/"),
+                "{path} is served by the admin pool"
+            );
         }
         for path in readers.paths.paths.keys() {
-            assert!(!path.starts_with("/v1/admin"), "{path} is served by the reader pool");
+            assert!(
+                !path.starts_with("/v1/admin"),
+                "{path} is served by the reader pool"
+            );
         }
     }
 }

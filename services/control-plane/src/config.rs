@@ -159,6 +159,18 @@ pub struct SchedulerConfig {
     /// Seconds between scan-history pruning passes. 0 disables.
     #[serde(default = "default_scan_history_prune_interval")]
     pub scan_history_prune_interval_secs: u64,
+    /// Seconds between passes that recompute stored unread figures whose early-access unlock time
+    /// has passed. 0 disables.
+    ///
+    /// Nothing is written when a paywall timer expires, so no trigger recomputes the reader's
+    /// counts; this pass is what makes the chapter count. The interval is the longest a reader
+    /// waits to see it.
+    #[serde(default = "default_unread_unlock_interval")]
+    pub unread_unlock_interval_secs: u64,
+    /// Seconds between passes that re-verify stored unread figures against the live computation
+    /// and repair any that drifted. 0 disables.
+    #[serde(default = "default_unread_reconcile_interval")]
+    pub unread_reconcile_interval_secs: u64,
 }
 
 fn default_fast_interval() -> u64 {
@@ -220,6 +232,16 @@ const fn default_scan_history_prune_interval() -> u64 {
     3600
 }
 
+/// A minute: early-access windows are measured in days, so a minute's lag does not show.
+const fn default_unread_unlock_interval() -> u64 {
+    60
+}
+
+/// Fifteen minutes, 500 rows a pass: a repair, not the mechanism, so it can be slow.
+const fn default_unread_reconcile_interval() -> u64 {
+    900
+}
+
 const fn default_recsys_incremental_interval() -> u64 {
     900
 }
@@ -252,6 +274,8 @@ impl Default for SchedulerConfig {
             reconcile_interval_secs: default_reconcile_interval(),
             scan_history_retention_days: default_scan_history_retention_days(),
             scan_history_prune_interval_secs: default_scan_history_prune_interval(),
+            unread_unlock_interval_secs: default_unread_unlock_interval(),
+            unread_reconcile_interval_secs: default_unread_reconcile_interval(),
             recsys_incremental_interval_secs: default_recsys_incremental_interval(),
             recsys_full_interval_secs: default_recsys_full_interval(),
             recsys_batch: default_recsys_batch(),

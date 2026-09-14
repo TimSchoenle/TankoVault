@@ -106,6 +106,10 @@ pub mod names {
     pub const SCAN_RECONCILE_DURATION: &str = "scan_reconcile_duration_seconds";
     /// Settled scan history deleted by retention, by kind.
     pub const SCAN_HISTORY_PRUNED: &str = "scan_history_pruned_total";
+    /// Stored unread rows recomputed because an early-access unlock time passed.
+    pub const UNREAD_UNLOCKS_SWEPT: &str = "watchlist_unread_unlocks_total";
+    /// Stored unread rows the reconciler found disagreeing with the live computation, by field.
+    pub const UNREAD_DRIFT: &str = "watchlist_unread_drift_total";
     /// How long one scheduler sweep took, by tier.
     pub const SCHEDULER_SWEEP_DURATION: &str = "scheduler_sweep_duration_seconds";
     /// `1` on the replica currently holding scheduler leadership.
@@ -399,6 +403,20 @@ pub const CATALOGUE: &[Metric] = &[
         unit: Unit::Count,
         emitted_by: "control-plane",
         help: "Scan task and run rows deleted by history retention, labelled kind=tasks|runs. Flat at zero past the first weeks means retention is off or the leader is not running it.",
+    },
+    Metric {
+        name: names::UNREAD_UNLOCKS_SWEPT,
+        kind: Kind::Counter,
+        unit: Unit::Count,
+        emitted_by: "control-plane",
+        help: "Stored watchlist unread rows recomputed because a chapter's early-access unlock time passed. Rises with paywalled releases; flat at zero with early-access chapters in the catalogue means the sweeper is not running.",
+    },
+    Metric {
+        name: names::UNREAD_DRIFT,
+        kind: Kind::Counter,
+        unit: Unit::Count,
+        emitted_by: "control-plane",
+        help: "Stored watchlist unread rows the reconciler found disagreeing with the live computation, labelled by field (missing, unread_count, next_unread, totals, latest, next_unlock). A healthy deployment never increments it: any rise is a writer the database triggers do not cover, repaired in the same pass.",
     },
     Metric {
         name: names::SCHEDULER_SWEEP_DURATION,

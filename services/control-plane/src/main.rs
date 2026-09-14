@@ -763,6 +763,8 @@ async fn run_scheduler(
         && cfg.recsys_full_interval_secs == 0
         && cfg.reconcile_interval_secs == 0
         && (cfg.scan_history_prune_interval_secs == 0 || cfg.scan_history_retention_days == 0)
+        && cfg.unread_unlock_interval_secs == 0
+        && cfg.unread_reconcile_interval_secs == 0
     {
         tracing::info!("scheduler disabled");
         return;
@@ -777,6 +779,8 @@ async fn run_scheduler(
     } else {
         cfg.scan_history_prune_interval_secs
     });
+    let mut unlocks = interval_or_never(cfg.unread_unlock_interval_secs);
+    let mut unread_repair = interval_or_never(cfg.unread_reconcile_interval_secs);
     let mut recsys_incremental = interval_or_never(cfg.recsys_incremental_interval_secs);
     let mut recsys_full = interval_or_never(cfg.recsys_full_interval_secs);
 
@@ -799,6 +803,8 @@ async fn run_scheduler(
                 maybe_merge_sweep(&state, &leadership, dedupe::SweepScope::Rotation).await;
             }
             () = tick(&mut repair) => maybe_reconcile(&state, &leadership).await,
+            () = tick(&mut unlocks) => maybe_sweep_unlocks(&state, &leadership).await,
+            () = tick(&mut unread_repair) => maybe_reconcile_unread(&state, &leadership).await,
             () = tick(&mut prune) => {
                 maybe_prune_scan_history(&state, &leadership, cfg.scan_history_retention_days).await;
             }
@@ -909,6 +915,86 @@ async fn maybe_reconcile(state: &AppState, leadership: &leader::Leadership) {
         tracing::warn!(error = %e, "scan dispatch reconciliation failed");
     }
     metrics::histogram!("scan_reconcile_duration_seconds").record(started.elapsed().as_secs_f64());
+}
+
+/// Stored unread rows recomputed per unlock pass; the rest wait for the next tick.
+const UNLOCK_SWEEP_BATCH: i64 = 1_000;
+
+/// Stored unread rows re-verified per reconciliation pass.
+const UNREAD_RECONCILE_BATCH: i64 = 500;
+
+/// Recomputes stored unread figures whose early-access unlock time has passed, on the leader only.
+///
+/// Not behind [`Feature::ScanningScheduler`]: it plans no scan, and a reader's counts must stay
+/// right while scanning is switched off.
+async fn maybe_sweep_unlocks(state: &AppState, leadership: &leader::Leadership) {
+    if !leadership.is_leader() {
+        return;
+    }
+    match tankovault_db::repo::tracking::unread::sweep_unlocks(&state.pool, UNLOCK_SWEEP_BATCH)
+        .instrument(tracing::info_span!(
+            "unread_unlock_sweep",
+            "sentry.op" = "cron"
+        ))
+        .await
+    {
+        Ok(0) => {}
+        Ok(due) => {
+            metrics::counter!(tankovault_service::metrics::names::UNREAD_UNLOCKS_SWEPT)
+                .increment(due);
+            tracing::debug!(due, "recomputed unread figures past their unlock time");
+        }
+        Err(e) => tracing::warn!(error = %e, "unread unlock sweep failed"),
+    }
+}
+
+/// Re-verifies a batch of stored unread figures against the live computation, on the leader only.
+///
+/// Any drift it finds is a writer the database triggers do not cover; it is logged at `WARN` with
+/// the per-column counts and repaired in the same pass.
+async fn maybe_reconcile_unread(state: &AppState, leadership: &leader::Leadership) {
+    if !leadership.is_leader() {
+        return;
+    }
+    let drift = match tankovault_db::repo::tracking::unread::reconcile_batch(
+        &state.pool,
+        UNREAD_RECONCILE_BATCH,
+    )
+    .instrument(tracing::info_span!(
+        "unread_reconcile",
+        "sentry.op" = "cron"
+    ))
+    .await
+    {
+        Ok(drift) => drift,
+        Err(e) => {
+            tracing::warn!(error = %e, "unread reconciliation failed");
+            return;
+        }
+    };
+    for (field, count) in [
+        ("missing", drift.missing),
+        ("unread_count", drift.unread_count),
+        ("next_unread", drift.next_unread),
+        ("totals", drift.totals),
+        ("latest", drift.latest),
+        ("next_unlock", drift.next_unlock),
+    ] {
+        metrics::counter!(tankovault_service::metrics::names::UNREAD_DRIFT, "field" => field)
+            .increment(count);
+    }
+    if drift.drifted() > 0 {
+        tracing::warn!(
+            checked = drift.checked,
+            missing = drift.missing,
+            unread_count = drift.unread_count,
+            next_unread = drift.next_unread,
+            totals = drift.totals,
+            latest = drift.latest,
+            next_unlock = drift.next_unlock,
+            "stored unread figures had drifted from the live computation; repaired"
+        );
+    }
 }
 
 /// Scan runs selected per pruning pass.

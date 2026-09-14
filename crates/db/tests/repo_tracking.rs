@@ -2194,3 +2194,73 @@ async fn the_staged_feed_matches_the_statement_it_replaced() {
         assert_eq!(staged, oracle, "progress {progress:?}, limit {limit}");
     }
 }
+
+/// **Two chapter batches for one watched series, committing close together, both count.**
+///
+/// `refresh_watchlist_unread` used to compute and write in one statement, whose snapshot predates
+/// its wait for the row lock. The first batch adds chapter 10 on one source and holds its
+/// transaction; the second adds chapter 11 on the other source, computes an unread count without
+/// chapter 10, waits for the row, and overwrites the first batch's count with its own. The stored
+/// count then stays one short until the reconciler repairs it (migration 0061).
+#[tokio::test]
+async fn concurrent_chapter_batches_for_one_watched_series_both_count() {
+    use tankovault_db::repo::catalog::{ChapterUpsert, upsert_chapters};
+
+    let db = TestDb::spawn().await;
+    let user = seed::user(&db, "reader").create().await;
+    let alpha = seed::provider(&db, "alpha").create().await;
+    let beta = seed::provider(&db, "beta").create().await;
+    let series = a_series(&db, alpha, "Vinland Saga", &[1.0, 2.0]).await;
+    let (first_source, first_path) = first_source(&db, series).await;
+    let second_source: uuid::Uuid = sqlx::query_scalar(
+        "INSERT INTO series_sources (series_id, provider_id, source_path) \
+         VALUES ($1, $2, '/beta') RETURNING id",
+    )
+    .bind(series.as_uuid())
+    .bind(beta.as_uuid())
+    .fetch_one(&db.pool)
+    .await
+    .expect("second source");
+    watchlist_upsert(&db.pool, user, series, WatchStatus::Reading, true)
+        .await
+        .expect("track");
+
+    let chapter = |number: f64| ChapterUpsert {
+        number,
+        title: None,
+        path: format!("/c/{number}"),
+        published_at: None,
+        access: tankovault_domain::ChapterAccess::Free,
+        unlocks_at: None,
+    };
+    let mut first = db.pool.begin().await.expect("first batch");
+    upsert_chapters(&mut *first, first_source, &first_path, &[chapter(10.0)])
+        .await
+        .expect("first batch adds chapter 10");
+    let pool = db.pool.clone();
+    let second = tokio::spawn(async move {
+        upsert_chapters(
+            &pool,
+            SeriesSourceId::from_uuid(second_source),
+            "/beta",
+            &[chapter(11.0)],
+        )
+        .await
+        .expect("second batch adds chapter 11");
+    });
+    // Long enough for the second batch to reach the row lock the first one holds.
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    first.commit().await.expect("first batch commits");
+    second.await.expect("second batch task");
+
+    let stored: i32 = sqlx::query_scalar(
+        "SELECT unread_count FROM watchlist_unread WHERE user_id = $1 AND series_id = $2",
+    )
+    .bind(user.as_uuid())
+    .bind(series.as_uuid())
+    .fetch_one(&db.pool)
+    .await
+    .expect("stored unread count");
+    assert_eq!(stored, 4, "chapters 1, 2, 10 and 11 are all unread");
+    assert_stored_matches_live(&db, "concurrent chapter batches").await;
+}

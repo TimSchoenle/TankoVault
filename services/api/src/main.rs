@@ -374,7 +374,9 @@ async fn connect_pools(
             cfg.statement_timeouts.admin_max_connections.max(1),
             cfg.database.acquire_timeout_secs,
         )
-        .with_statement_timeout_secs(cfg.statement_timeouts.admin_secs),
+        .with_statement_timeout_secs(cfg.statement_timeouts.admin_secs)
+        // Console statements filter on optional parameters; see `PoolSettings::with_custom_plans`.
+        .with_custom_plans(),
     )
     .await?;
     Ok((interactive, admin))

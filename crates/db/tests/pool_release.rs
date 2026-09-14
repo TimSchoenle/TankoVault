@@ -129,3 +129,33 @@ async fn a_raised_ceiling_applies_to_its_transaction_only() {
         .expect_err("the pool's own ceiling is back once the transaction ends");
     assert!(DbError::from(error).is_statement_cancelled());
 }
+
+/// A pool asked for custom plans keeps them past the fifth execution of a prepared statement.
+///
+/// The console's merge-decision journal, filtered to flagged decisions, returned nothing in
+/// 1–30 s in production: after five executions the connection's prepared statement switched to a
+/// generic plan, which cannot use the partial index its `NOT $6 OR flagged_at IS NOT NULL` arm
+/// needs and walked the whole journal instead.
+#[tokio::test]
+async fn a_custom_plan_pool_never_switches_to_the_generic_plan() {
+    let db = TestDb::spawn().await;
+    let pool = tankovault_db::connect_with(
+        (*db.pool.connect_options()).clone(),
+        PoolSettings::new(1, 30).with_custom_plans(),
+    )
+    .await
+    .expect("connect");
+
+    for _ in 0..8 {
+        sqlx::query("SELECT 1 WHERE $1::boolean IS NULL OR $1")
+            .bind(true)
+            .execute(&pool)
+            .await
+            .expect("prepared statement");
+    }
+    let mode: String = sqlx::query_scalar("SELECT current_setting('plan_cache_mode')")
+        .fetch_one(&pool)
+        .await
+        .expect("read setting");
+    assert_eq!(mode, "force_custom_plan");
+}

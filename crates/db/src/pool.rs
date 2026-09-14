@@ -39,6 +39,8 @@ pub struct PoolSettings {
     pub acquire_timeout: Duration,
     /// Server-side ceiling on a single statement; `None` leaves Postgres's default (none).
     pub statement_timeout: Option<Duration>,
+    /// Plan every execution of a prepared statement with its actual parameters.
+    pub custom_plans: bool,
 }
 
 impl PoolSettings {
@@ -49,6 +51,7 @@ impl PoolSettings {
             max_connections,
             acquire_timeout: Duration::from_secs(acquire_timeout_secs),
             statement_timeout: None,
+            custom_plans: false,
         }
     }
 
@@ -60,6 +63,21 @@ impl PoolSettings {
         } else {
             Some(Duration::from_secs(secs))
         };
+        self
+    }
+
+    /// The same pool, planning every statement for the parameters it was given.
+    ///
+    /// sqlx prepares each statement once per connection, and after five executions Postgres may
+    /// switch it to a generic plan costed without parameter values. For a statement built from
+    /// `$n IS NULL OR column = $n` arms that plan can use no partial or column index, so a filter
+    /// that matches nothing walks the whole table: the console's flagged-decisions view measured
+    /// 0.08 ms with a custom plan and 506 ms cold with the generic one, on a 100 000-row journal.
+    /// The price is planning on every call, which is right for low-volume, filter-heavy traffic
+    /// and wrong for a hot path.
+    #[must_use]
+    pub const fn with_custom_plans(mut self) -> Self {
+        self.custom_plans = true;
         self
     }
 }
@@ -100,6 +118,9 @@ pub async fn connect_with(options: PgConnectOptions, settings: PoolSettings) -> 
         options.options([("client_connection_check_interval", CLIENT_CONNECTION_CHECK)]);
     if let Some(timeout) = settings.statement_timeout {
         options = options.options([("statement_timeout", format!("{}ms", timeout.as_millis()))]);
+    }
+    if settings.custom_plans {
+        options = options.options([("plan_cache_mode", "force_custom_plan")]);
     }
     let pool = PgPoolOptions::new()
         .max_connections(settings.max_connections)

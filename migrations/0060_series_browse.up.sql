@@ -43,12 +43,20 @@
 -- with `deadlock detected` on every retry. Only the `series` lock waits, holding nothing; the other
 -- two are `NOWAIT`, and a refusal rolls the attempt back — releasing `series` so that worker can
 -- finish — and tries again.
+--
+-- `series` is EXCLUSIVE, not SHARE ROW EXCLUSIVE, because the backfill's foreign-key check takes
+-- `FOR KEY SHARE` on every series row. SHARE ROW EXCLUSIVE admits `SELECT … FOR UPDATE`
+-- (`merge_metadata` runs one before its `UPDATE series`): that worker then held a row lock the
+-- backfill waited on while itself waiting on this migration for the `UPDATE`, and Postgres aborted
+-- the migration with `deadlock detected`. EXCLUSIVE waits out every row lock on `series` first.
+-- Plain reads still pass; `FOR UPDATE`/`FOR KEY SHARE` on `series` (including foreign-key checks
+-- of rows inserted into its child tables) waits for the backfill.
 
 DO $$
 BEGIN
   FOR attempt IN 1..600 LOOP
     BEGIN
-      LOCK TABLE series IN SHARE ROW EXCLUSIVE MODE;
+      LOCK TABLE series IN EXCLUSIVE MODE;
       LOCK TABLE series_sources, series_tags IN SHARE ROW EXCLUSIVE MODE NOWAIT;
       RETURN;
     EXCEPTION WHEN lock_not_available THEN

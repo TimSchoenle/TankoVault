@@ -277,7 +277,7 @@ winsafe = { version = "0.0.29", features = ["user"], optional = true }
 # because the monitor is all that is wanted here, and it is the same crate at the same version
 # `tao` already compiles — a name for something in the graph, not an addition to it.
 [target.'cfg(all(unix, not(target_vendor = "apple")))'.dependencies]
-gdk = { version = "0.18", optional = true }
+gdk = { version = "0.19", optional = true }
 
 # One of `web` and `desktop` must be on and both may not be; `src/platform/mod.rs` says so to the
 # compiler, because a violation otherwise surfaces as a wall of unrelated resolution errors.

@@ -6736,7 +6736,7 @@ by the block naming that crate.
   - itertools 0.14.0
   - itoa 1.0.18
   - jobserver 0.1.35
-  - js-sys 0.3.104
+  - js-sys 0.3.105
   - kbkdf 0.1.0-rc.1
   - keyboard-types 0.7.0
   - lazy-js-bundle 0.7.10
@@ -6894,14 +6894,14 @@ by the block naming that crate.
   - version_check 0.9.5
   - warnings 0.2.1
   - warnings-macro 0.2.0
-  - wasm-bindgen 0.2.127
-  - wasm-bindgen-futures 0.4.77
-  - wasm-bindgen-macro 0.2.127
-  - wasm-bindgen-macro-support 0.2.127
-  - wasm-bindgen-shared 0.2.127
+  - wasm-bindgen 0.2.128
+  - wasm-bindgen-futures 0.4.78
+  - wasm-bindgen-macro 0.2.128
+  - wasm-bindgen-macro-support 0.2.128
+  - wasm-bindgen-shared 0.2.128
   - wasm-streams 0.4.2
   - wasm-streams 0.5.0
-  - web-sys 0.3.104
+  - web-sys 0.3.105
   - weezl 0.1.12
   - windows_x86_64_msvc 0.41.0
   - wry 0.53.5
@@ -9524,7 +9524,7 @@ THE SOFTWARE.
 
 Applies to:
 
-  - i18nrs 0.1.9
+  - i18nrs 0.1.10
 
 MIT License
 

@@ -12,6 +12,13 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [10.0.1](https://github.com/TimSchoenle/TankoVault/compare/v10.0.0...v10.0.1) (2026-09-15)
+
+
+### Bug Fixes
+
+* **db:** lock series exclusively so migration 0060's backfill cannot deadlock ([#398](https://github.com/TimSchoenle/TankoVault/issues/398)) ([635560d](https://github.com/TimSchoenle/TankoVault/commit/635560da9b27c06c4f628ab6b659f0a4369faf02))
+
 ## [10.0.0](https://github.com/TimSchoenle/TankoVault/compare/v9.0.0...v10.0.0) (2026-09-15)
 
 

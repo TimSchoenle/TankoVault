@@ -194,6 +194,28 @@ async fn concurrent_scans_of_one_series_do_not_store_a_stale_chapter_count() {
 /// and the worker then writes the series; both must commit.
 #[tokio::test]
 async fn migration_0060_does_not_deadlock_with_a_running_worker() {
+    let stored = migration_0060_races_a_worker_holding(
+        "UPDATE series_sources SET chapter_count = 7 WHERE series_id = $1",
+    )
+    .await;
+    assert_eq!(stored, 7, "the backfill saw the worker's committed write");
+}
+
+/// **Migration 0060 applies while `merge_metadata` holds a series row lock.**
+///
+/// `SELECT … FOR UPDATE` takes ROW SHARE, which the migration's SHARE ROW EXCLUSIVE on `series`
+/// admitted. The backfill's foreign-key check then waited on that row lock while the worker's
+/// `UPDATE series` waited on the migration, and every deploy with the worker up failed `migrate`
+/// with `deadlock detected` even after the table-lock fix above.
+#[tokio::test]
+async fn migration_0060_does_not_deadlock_with_a_series_row_lock() {
+    migration_0060_races_a_worker_holding("SELECT id FROM series WHERE id = $1 FOR UPDATE").await;
+}
+
+/// Reverts to 0059, runs `hold` (bound to the series id) in an open worker transaction, starts
+/// migration 0060, then has the worker write `series`; both must commit. Returns the backfilled
+/// `max_chapters`.
+async fn migration_0060_races_a_worker_holding(hold: &'static str) -> i32 {
     let db = TestDb::spawn().await;
     let alpha = seed::provider(&db, "alpha").create().await;
     let series = a_series(&db, alpha, "Berserk", &["action"]).await;
@@ -203,11 +225,11 @@ async fn migration_0060_does_not_deadlock_with_a_running_worker() {
         .expect("revert to before series_browse");
 
     let mut worker = db.pool.begin().await.expect("worker transaction");
-    sqlx::query("UPDATE series_sources SET chapter_count = 7 WHERE series_id = $1")
+    sqlx::query(hold)
         .bind(series.as_uuid())
         .execute(&mut *worker)
         .await
-        .expect("worker writes a source");
+        .expect("worker takes its lock");
 
     let pool = db.pool.clone();
     let migration = tokio::spawn(async move { tankovault_db::MIGRATOR.run_to(60, &pool).await });
@@ -241,14 +263,12 @@ async fn migration_0060_does_not_deadlock_with_a_running_worker() {
         .expect("migration task")
         .expect("migration 0060 must not be the deadlock victim");
 
-    let stored: i32 =
-        sqlx::query_scalar("SELECT max_chapters FROM series_browse WHERE series_id = $1")
-            .bind(series.as_uuid())
-            .fetch_one(&db.pool)
-            .await
-            .expect("backfilled row");
-    assert_eq!(stored, 7, "the backfill saw the worker's committed write");
     assert_projection_is_current(&db, "a migration racing a worker").await;
+    sqlx::query_scalar("SELECT max_chapters FROM series_browse WHERE series_id = $1")
+        .bind(series.as_uuid())
+        .fetch_one(&db.pool)
+        .await
+        .expect("backfilled row")
 }
 
 /// **The verifier restores a projection row a writer bypassed.**

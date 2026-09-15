@@ -36,6 +36,28 @@
 -- `CREATE TRIGGER` takes SHARE ROW EXCLUSIVE on `series`, `series_sources` and `series_tags`
 -- until this migration commits. Reads continue; ingest, enrichment and merges wait for the
 -- backfill (about 1.5 s on a 54 000-series catalogue).
+--
+-- All three locks are taken up front, and never while waiting holding another. Taking them one
+-- `CREATE` at a time held `series` while waiting for `series_sources`; a running worker holding
+-- `series_sources` and then writing `series` closed the cycle, and Postgres aborted the migration
+-- with `deadlock detected` on every retry. Only the `series` lock waits, holding nothing; the other
+-- two are `NOWAIT`, and a refusal rolls the attempt back — releasing `series` so that worker can
+-- finish — and tries again.
+
+DO $$
+BEGIN
+  FOR attempt IN 1..600 LOOP
+    BEGIN
+      LOCK TABLE series IN SHARE ROW EXCLUSIVE MODE;
+      LOCK TABLE series_sources, series_tags IN SHARE ROW EXCLUSIVE MODE NOWAIT;
+      RETURN;
+    EXCEPTION WHEN lock_not_available THEN
+      PERFORM pg_sleep(0.1);
+    END;
+  END LOOP;
+  RAISE EXCEPTION 'series_browse: series_sources/series_tags stayed locked for 600 attempts';
+END
+$$;
 
 CREATE TABLE series_browse (
   series_id       uuid          PRIMARY KEY REFERENCES series (id) ON DELETE CASCADE,

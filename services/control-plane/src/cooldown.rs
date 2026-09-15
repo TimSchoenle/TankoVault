@@ -118,9 +118,9 @@ mod tests {
     #[test]
     fn the_cooldown_doubles_per_failure_and_then_stops() {
         assert_eq!(POLICY.cooldown(FAILURES_BEFORE_BACKOFF), POLICY.interval);
-        assert_eq!(POLICY.cooldown(3), Duration::from_secs(600));
-        assert_eq!(POLICY.cooldown(4), Duration::from_secs(1_200));
-        assert_eq!(POLICY.cooldown(8), Duration::from_secs(19_200));
+        assert_eq!(POLICY.cooldown(3), Duration::from_mins(10));
+        assert_eq!(POLICY.cooldown(4), Duration::from_mins(20));
+        assert_eq!(POLICY.cooldown(8), Duration::from_mins(320));
         assert_eq!(POLICY.cooldown(9), POLICY.max, "the ceiling holds");
         assert_eq!(POLICY.cooldown(i64::MAX), POLICY.max, "and cannot overflow");
     }
@@ -136,7 +136,7 @@ mod tests {
                 .is_some()
         );
         assert_eq!(
-            POLICY.remaining(streak(4, Duration::from_secs(1_500)), now),
+            POLICY.remaining(streak(4, Duration::from_mins(25)), now),
             None
         );
     }

@@ -108,7 +108,7 @@ Options, best first:
    docker run --rm -v "$PWD:/src:ro" -v tv-target:/target -v tv-cargo:/cargo \
      -e CARGO_TARGET_DIR=/target -e CARGO_HOME=/cargo -e LIBCLANG_PATH=/usr/lib \
      -e SQLX_OFFLINE=true -e RUSTFLAGS="-C target-feature=-crt-static" -w /src \
-     lukemathwalker/cargo-chef:latest-rust-1.94.0-alpine \
+     lukemathwalker/cargo-chef:latest-rust-1.98.1-alpine \
      sh -c "apk add --no-cache musl-dev g++ cmake make nasm perl git clang-dev && \
             cargo test -p tankovault-fetch -p tankovault-solver --locked"
    ```

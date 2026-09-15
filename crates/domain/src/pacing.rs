@@ -231,7 +231,7 @@ mod tests {
     fn an_absurd_retry_after_is_clamped() {
         let pacer = Pacer::new(Duration::ZERO, policy());
         let now = Instant::now();
-        pacer.penalise(now, Some(Duration::from_secs(86_400)));
+        pacer.penalise(now, Some(Duration::from_hours(24)));
         assert_eq!(pacer.penalty(now), Duration::from_secs(8));
     }
 

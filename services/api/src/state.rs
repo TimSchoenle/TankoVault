@@ -129,8 +129,11 @@ pub struct ClientContext {
 impl<S: Send + Sync> FromRequestParts<S> for ClientContext {
     type Rejection = std::convert::Infallible;
 
-    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        Ok(Self::from_parts(parts))
+    fn from_request_parts(
+        parts: &mut Parts,
+        _state: &S,
+    ) -> impl Future<Output = Result<Self, Self::Rejection>> + Send {
+        std::future::ready(Ok(Self::from_parts(parts)))
     }
 }
 

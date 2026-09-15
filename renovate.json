@@ -6,15 +6,21 @@
   ],
   "packageRules": [
     {
-      "description": "The Rust toolchain is a reviewed decision, not a dependency — `rust-toolchain.toml`, ci.yml and the Dockerfiles' RUST_VERSION must move together, not one at a time.",
+      "description": "Only the installer: the toolchain version comes from `rust-toolchain.toml` (see the `rust toolchain` group), and this action is pinned to a reviewed `master` commit.",
       "matchPackageNames": ["dtolnay/rust-toolchain"],
       "enabled": false
     },
     {
-      "description": "Same lockstep from the image side: these base tags embed the Rust minor and must not move ahead of rust-toolchain.toml. Digest updates (same toolchain, rebuilt) are still wanted.",
-      "matchPackageNames": ["lukemathwalker/cargo-chef", "rust"],
+      "description": "The Rust toolchain moves in one pull request: `rust-toolchain.toml` and the two `FROM` tags in deploy/docker/Dockerfile carry the same version and must not drift apart. Never automerged — a new toolchain brings new clippy lints and new dependency `rust-version` floors, and the only build of the `cfg(windows)` desktop graph runs at release time, not on the pull request. Digest updates (same toolchain, rebuilt) stay ungrouped.",
+      "matchDepNames": ["rust", "lukemathwalker/cargo-chef"],
       "matchUpdateTypes": ["major", "minor", "patch"],
-      "enabled": false
+      "groupName": "rust toolchain",
+      "automerge": false
+    },
+    {
+      "description": "cargo-chef tags are `latest-rust-<rust version>-alpine`, which docker versioning cannot parse; this exposes the Rust version inside the tag so the `rust toolchain` group can move it.",
+      "matchDepNames": ["lukemathwalker/cargo-chef"],
+      "versioning": "regex:^latest-rust-(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)-(?<compatibility>alpine)$"
     },
     {
       "description": "`testcontainers` and `testcontainers-modules` must move together: modules 0.15.0 requires testcontainers `^0.27.0`, and the two cannot even co-resolve — 0.27 pins bollard `^0.20` and 0.28 pins `^0.21`, whose exact `bollard-stubs` 1.x requirements collide. Grouped so the pair lands in one pull request once the ceiling below is lifted.",

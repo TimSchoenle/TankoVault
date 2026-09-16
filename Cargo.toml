@@ -295,7 +295,7 @@ terrace-config = { git = "https://github.com/TimSchoenle/terrace-config", tag = 
 # here implements. A secret that must go on the wire (`LoginResponse::access_token`) opts in
 # at that one field with `serialize_with`, which is the audit trail this trade wants.
 secrecy = { version = "0.10", features = ["serde"] }
-argon2 = "0.5"          # 0.6 is only a pre-release (rc); 0.5 is the current stable.
+argon2 = "0.6"          # 0.6 is only a pre-release (rc); 0.5 is the current stable.
 jsonwebtoken = { version = "11", default-features = false, features = ["rust_crypto"] }
 aes-gcm = "0.11"
 rand = "0.10"

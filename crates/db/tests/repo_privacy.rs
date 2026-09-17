@@ -26,6 +26,8 @@ const EXPORTED: &[(&str, &str)] = &[
     ("user_recovery_codes", "recovery_codes"),
     ("watchlist_entries", "watchlist"),
     ("read_progress", "read_progress"),
+    // Imported watchlist entries whose series is not crawled yet: watchlist rows in waiting.
+    ("watchlist_import_pending", "watchlist_import_pending"),
     ("notifications", "notifications"),
     ("external_accounts", "linked_accounts"),
     ("sync_remote_entries", "sync_remote_entries"),

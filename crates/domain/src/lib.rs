@@ -22,6 +22,7 @@ pub mod scan_stage;
 pub mod ssrf;
 pub mod term_filter;
 pub mod tunables;
+pub mod watchlist_transfer;
 
 pub use adult::{AdultTagSet, DEFAULT_ADULT_TAGS};
 pub use chapter_number::{

@@ -1,0 +1,124 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.canonical_title AS \"title!\",\n                  ARRAY(SELECT t.title FROM series_titles t\n                         WHERE t.series_id = w.series_id\n                         ORDER BY t.title LIMIT 64) AS \"alternative_titles!\",\n                  w.status AS \"status!: WatchStatus\",\n                  w.notify AS \"notify!\",\n                  w.sync_excluded AS \"sync_excluded!\",\n                  w.added_at AS \"added_at!\",\n                  p.last_read_whole_number::float8 AS \"whole?\",\n                  p.last_read_part_number::float8 AS \"part?\",\n                  (SELECT coalesce(jsonb_agg(jsonb_build_object(\n                             'provider', src.slug, 'base_url', src.base_url,\n                             'path', src.source_path, 'pinned', src.pinned)\n                           ORDER BY src.pinned DESC, src.slug, src.source_path), '[]'::jsonb)\n                     FROM (SELECT pr.slug, pr.base_url, ss.source_path,\n                                  ss.id IS NOT DISTINCT FROM w.pinned_source_id AS pinned\n                             FROM series_sources ss\n                             JOIN providers pr ON pr.id = ss.provider_id\n                            WHERE ss.series_id = w.series_id\n                            ORDER BY pinned DESC, pr.slug, ss.source_path\n                            LIMIT 64) src) AS \"sources!: Json<Vec<SourceRow>>\",\n                  (SELECT coalesce(jsonb_agg(jsonb_build_object('tracker', m.provider, 'id', m.external_id)\n                           ORDER BY m.provider, m.external_id), '[]'::jsonb)\n                     FROM sync_mappings m\n                    WHERE m.series_id = w.series_id) AS \"external_ids!: Json<Vec<ExternalRow>>\"\n             FROM watchlist_entries w\n             JOIN series s ON s.id = w.series_id\n             LEFT JOIN read_progress p ON p.user_id = w.user_id AND p.series_id = w.series_id\n            WHERE w.user_id = $1\n            ORDER BY w.added_at, w.series_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "title!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "canonical_title"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "alternative_titles!",
+        "type_info": "TextArray",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "status!: WatchStatus",
+        "type_info": {
+          "Custom": {
+            "name": "watch_status",
+            "kind": {
+              "Enum": [
+                "reading",
+                "planned",
+                "completed",
+                "dropped",
+                "paused"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "watchlist_entries",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "notify!",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "watchlist_entries",
+            "name": "notify"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "sync_excluded!",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "watchlist_entries",
+            "name": "sync_excluded"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "added_at!",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "watchlist_entries",
+            "name": "added_at"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "whole?",
+        "type_info": "Float8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "part?",
+        "type_info": "Float8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 8,
+        "name": "sources!: Json<Vec<SourceRow>>",
+        "type_info": "Jsonb",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 9,
+        "name": "external_ids!: Json<Vec<ExternalRow>>",
+        "type_info": "Jsonb",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      false,
+      false,
+      false,
+      false,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "958d7f5dc059ce75a5c5f2b3af5ec7bf5b038ceb2aaa1087d7a929bad860cc12"
+}

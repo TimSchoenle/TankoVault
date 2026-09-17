@@ -5,6 +5,7 @@
 //! reload, the back button and a footer link all land where they say they do.
 
 mod appearance;
+mod backup;
 mod callback;
 mod content;
 mod desktop;
@@ -46,6 +47,7 @@ pub(crate) enum AccountPanel {
     Security,
     Sync,
     Notifications,
+    Backup,
     DesktopApp,
     Privacy,
 }
@@ -61,6 +63,7 @@ impl TabKind for AccountPanel {
             Self::Security,
             Self::Sync,
             Self::Notifications,
+            Self::Backup,
             Self::DesktopApp,
             Self::Privacy,
         ]
@@ -77,6 +80,7 @@ impl TabKind for AccountPanel {
             Self::Security => "account.tab.security",
             Self::Sync => "account.tab.sync",
             Self::Notifications => "account.tab.notifications",
+            Self::Backup => "account.tab.backup",
             Self::DesktopApp => "account.tab.desktop",
             Self::Privacy => "account.tab.privacy",
         }
@@ -95,6 +99,7 @@ impl AccountPanel {
             Self::Security => "security",
             Self::Sync => "sync",
             Self::Notifications => "notifications",
+            Self::Backup => "backup",
             Self::DesktopApp => "desktop-app",
             Self::Privacy => "privacy",
         }
@@ -123,6 +128,7 @@ impl AccountPanel {
             }
             Self::Sync => caps.has_feature(Feature::SyncExternal),
             Self::Notifications => caps.has_feature(Feature::NotificationsPreferences),
+            Self::Backup => caps.has_feature(Feature::TrackingWatchlist),
             Self::Privacy => {
                 caps.has_feature(Feature::PrivacySelfExport)
                     || caps.has_feature(Feature::PrivacySelfErasure)
@@ -295,6 +301,7 @@ pub(crate) fn AccountSection(panel: AccountPanel) -> Element {
             AccountPanel::Security => rsx! { security::SecurityPanel {} },
             AccountPanel::Sync => rsx! { sync::SyncPanel {} },
             AccountPanel::Notifications => rsx! { notifications::NotificationsPanel {} },
+            AccountPanel::Backup => rsx! { backup::BackupPanel {} },
             AccountPanel::DesktopApp => rsx! { desktop::DesktopAppPanel {} },
             AccountPanel::Privacy => rsx! { privacy::PrivacyPanel {} },
         }

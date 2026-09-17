@@ -14,6 +14,7 @@ pub mod me;
 pub mod messages;
 pub mod subjects;
 pub mod sync;
+pub mod watchlist_transfer;
 
 /// Re-exported: a task's subject and worker consumer are both named after the scan mode.
 pub use tankovault_domain::ScanMode;

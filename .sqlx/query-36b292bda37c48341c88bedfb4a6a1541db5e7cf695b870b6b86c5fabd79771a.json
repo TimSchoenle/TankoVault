@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO read_progress\n                  (user_id, series_id, last_read_whole_number, last_read_part_number)\n           SELECT $1, r.series_id, r.whole::numeric(10,4), r.part::numeric(10,4)\n             FROM unnest($2::uuid[], $3::float8[], $4::float8[]) AS r(series_id, whole, part)\n           ON CONFLICT (user_id, series_id) DO UPDATE\n              SET last_read_whole_number = EXCLUDED.last_read_whole_number,\n                  last_read_part_number = EXCLUDED.last_read_part_number,\n                  updated_at = now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray",
+        "Float8Array",
+        "Float8Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "36b292bda37c48341c88bedfb4a6a1541db5e7cf695b870b6b86c5fabd79771a"
+}

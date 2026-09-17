@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM watchlist_import_pending WHERE user_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2bf69a6b803ee1c6d2a6dfb6a24af0e31dae1cc77899a3a5cb3b99b1f9deb6fd"
+}

@@ -1215,6 +1215,34 @@
         "reserved": false
       },
       {
+        "path": "scheduler.watchlist_import_resolve_interval_secs",
+        "env": "TANKOVAULT_SCHEDULER__WATCHLIST_IMPORT_RESOLVE_INTERVAL_SECS",
+        "env_file": "TANKOVAULT_SCHEDULER__WATCHLIST_IMPORT_RESOLVE_INTERVAL_SECS_FILE",
+        "secrets_file": "scheduler__watchlist_import_resolve_interval_secs",
+        "docs": "Seconds between passes that retry imported watchlist entries still waiting for their\nseries, attaching each one a scan has since brought into the catalogue. 0 disables.",
+        "ty": "u64",
+        "values": [],
+        "constraint": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "text_constraint": {
+          "pattern": "^\\s*\\+?[0-9]+\\s*$",
+          "type": "string"
+        },
+        "text_form": "integer",
+        "aliases": [],
+        "env_aliases": [],
+        "env_file_aliases": [],
+        "secrets_file_aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
         "path": "scheduler.chapter_rollup_verify_interval_secs",
         "env": "TANKOVAULT_SCHEDULER__CHAPTER_ROLLUP_VERIFY_INTERVAL_SECS",
         "env_file": "TANKOVAULT_SCHEDULER__CHAPTER_ROLLUP_VERIFY_INTERVAL_SECS_FILE",
@@ -2780,6 +2808,11 @@
           },
           "unread_unlock_interval_secs": {
             "description": "Seconds between passes that recompute stored unread figures whose early-access unlock time\nhas passed. 0 disables.\n\nNothing is written when a paywall timer expires, so no trigger recomputes the reader's\ncounts; this pass is what makes the chapter count. The interval is the longest a reader\nwaits to see it.",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "watchlist_import_resolve_interval_secs": {
+            "description": "Seconds between passes that retry imported watchlist entries still waiting for their\nseries, attaching each one a scan has since brought into the catalogue. 0 disables.",
             "minimum": 0,
             "type": "integer"
           }

@@ -35,6 +35,7 @@ mod upstream;
 mod views;
 
 use axum::Router;
+use axum::extract::DefaultBodyLimit;
 pub use branding::Branding;
 pub use cache::{ADMIN_STATS_TTL, Cached};
 pub use client::ClientChannel;
@@ -90,6 +91,10 @@ pub fn route_classifier() -> RouteClassifier {
         .auth("/v1/me/mfa")
         // Cheap to ask for, expensive to serve — genuinely heavy however they are called.
         .expensive("/v1/me/export")
+        // A backup is the whole watchlist in one response, and an import resolves and rewrites
+        // up to ten thousand entries in one transaction.
+        .expensive("/v1/me/watchlist/export")
+        .expensive("/v1/me/watchlist/import")
         .expensive("/v1/me/sync/{provider}/push")
         .expensive("/v1/me/sync/{provider}/pull")
         .expensive("/v1/admin/providers/{id}/test")
@@ -394,6 +399,37 @@ pub async fn ensure_deployment_owner(pool: &tankovault_db::PgPool) {
     }
 }
 
+/// `/v1/me/watchlist`: the list, its entries, bulk edits, and backup and restore.
+fn watchlist_routes() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(me::watchlist))
+        .routes(routes!(me::watchlist_summary))
+        // Bulk before the `{series_id}` sibling for readability only — `matchit` prefers the
+        // static segment regardless, and a `series_id` is a uuid, so `bulk` can never be one.
+        .routes(routes!(
+            me::bulk_update_watchlist,
+            me::bulk_remove_watchlist
+        ))
+        .routes(routes!(
+            me::get_watchlist_entry,
+            me::put_watchlist,
+            me::delete_watchlist
+        ))
+        .routes(routes!(me::export_watchlist))
+        .routes(routes!(
+            me::watchlist_import_pending,
+            me::clear_watchlist_import_pending
+        ))
+        // A router of their own so the raised body limit reaches these two routes and no other;
+        // see `me::IMPORT_BODY_LIMIT`.
+        .merge(
+            OpenApiRouter::new()
+                .routes(routes!(me::preview_watchlist_import))
+                .routes(routes!(me::import_watchlist))
+                .layer(DefaultBodyLimit::max(me::IMPORT_BODY_LIMIT)),
+        )
+}
+
 /// Every route a reader, a signed-out visitor or the native client reaches, served from the
 /// interactive pool. With [`admin_routes`], shared by [`full_openapi`] and [`build_router`] so
 /// the specification and the served routes cannot drift apart.
@@ -433,19 +469,7 @@ fn reader_routes() -> OpenApiRouter<AppState> {
         // updater runs from the moment the app starts, session or not.
         .routes(routes!(client::client_channel))
         // me
-        .routes(routes!(me::watchlist))
-        .routes(routes!(me::watchlist_summary))
-        // Bulk before the `{series_id}` sibling for readability only — `matchit` prefers the
-        // static segment regardless, and a `series_id` is a uuid, so `bulk` can never be one.
-        .routes(routes!(
-            me::bulk_update_watchlist,
-            me::bulk_remove_watchlist
-        ))
-        .routes(routes!(
-            me::get_watchlist_entry,
-            me::put_watchlist,
-            me::delete_watchlist
-        ))
+        .merge(watchlist_routes())
         // The per-series half of the source preference; the global half is under
         // `/v1/me/source-preferences` with the other account settings.
         .routes(routes!(me::put_source_pin, me::delete_source_pin))

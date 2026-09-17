@@ -19,6 +19,7 @@ mod recommendations;
 mod source_prefs;
 mod sync;
 mod watchlist;
+mod watchlist_transfer;
 
 pub use account::*;
 pub use capabilities::*;
@@ -33,3 +34,4 @@ pub use recommendations::*;
 pub use source_prefs::*;
 pub use sync::*;
 pub use watchlist::*;
+pub use watchlist_transfer::*;

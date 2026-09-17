@@ -765,6 +765,7 @@ async fn run_scheduler(
         && (cfg.scan_history_prune_interval_secs == 0 || cfg.scan_history_retention_days == 0)
         && cfg.unread_unlock_interval_secs == 0
         && cfg.unread_reconcile_interval_secs == 0
+        && cfg.watchlist_import_resolve_interval_secs == 0
         && cfg.chapter_rollup_verify_interval_secs == 0
         && cfg.series_browse_verify_interval_secs == 0
     {
@@ -783,6 +784,7 @@ async fn run_scheduler(
     });
     let mut unlocks = interval_or_never(cfg.unread_unlock_interval_secs);
     let mut unread_repair = interval_or_never(cfg.unread_reconcile_interval_secs);
+    let mut import_resolve = interval_or_never(cfg.watchlist_import_resolve_interval_secs);
     let mut rollup_verify = interval_or_never(cfg.chapter_rollup_verify_interval_secs);
     let mut rollup_cursor = None;
     let mut browse_verify = interval_or_never(cfg.series_browse_verify_interval_secs);
@@ -811,6 +813,9 @@ async fn run_scheduler(
             () = tick(&mut repair) => maybe_reconcile(&state, &leadership).await,
             () = tick(&mut unlocks) => maybe_sweep_unlocks(&state, &leadership).await,
             () = tick(&mut unread_repair) => maybe_reconcile_unread(&state, &leadership).await,
+            () = tick(&mut import_resolve) => {
+                maybe_resolve_watchlist_imports(&state, &leadership).await;
+            }
             () = tick(&mut rollup_verify) => {
                 maybe_verify_chapter_rollup(&state, &leadership, &mut rollup_cursor).await;
             }
@@ -1024,6 +1029,41 @@ async fn maybe_verify_series_browse(
             stale = check.stale,
             "stored browse keys had drifted from the catalogue; repaired"
         );
+    }
+}
+
+/// Pending watchlist-import entries retried per pass; the rest wait for the next tick.
+const WATCHLIST_IMPORT_RESOLVE_BATCH: i64 = 500;
+
+/// Attaches imported watchlist entries whose series a scan has since brought in, on the leader
+/// only.
+///
+/// Skipped while [`Feature::TrackingWatchlist`] is off, so switching the watchlist off does not
+/// leave it being written to behind the reader's back. Not behind the scanning scheduler: it plans
+/// no scan, and entries should still attach from scans an operator triggers by hand.
+async fn maybe_resolve_watchlist_imports(state: &AppState, leadership: &leader::Leadership) {
+    if !leadership.is_leader() || !state.features.is_enabled(Feature::TrackingWatchlist) {
+        return;
+    }
+    let adult_feature_on = state.features.is_enabled(Feature::CatalogueAdultContent);
+    match tankovault_db::repo::tracking::watchlist_pending_sweep(
+        &state.pool,
+        WATCHLIST_IMPORT_RESOLVE_BATCH,
+        adult_feature_on,
+    )
+    .instrument(tracing::info_span!(
+        "watchlist_import_resolve",
+        "sentry.op" = "cron"
+    ))
+    .await
+    {
+        Ok(outcome) if outcome.attached > 0 => tracing::info!(
+            examined = outcome.examined,
+            attached = outcome.attached,
+            "attached imported watchlist entries whose series are now in the catalogue"
+        ),
+        Ok(_) => {}
+        Err(e) => tracing::warn!(error = %e, "watchlist import resolution pass failed"),
     }
 }
 

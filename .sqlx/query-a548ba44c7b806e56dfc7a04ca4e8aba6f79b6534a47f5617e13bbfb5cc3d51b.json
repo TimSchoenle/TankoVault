@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE watchlist_import_pending SET attempts = attempts + 1, last_attempt_at = now() WHERE id = ANY($1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a548ba44c7b806e56dfc7a04ca4e8aba6f79b6534a47f5617e13bbfb5cc3d51b"
+}

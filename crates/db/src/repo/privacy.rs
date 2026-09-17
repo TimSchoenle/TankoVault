@@ -50,6 +50,11 @@ pub async fn export_user_data<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -
                            FROM watchlist_entries w WHERE w.user_id = $1), \
            'read_progress', (SELECT coalesce(json_agg(to_jsonb(p) ORDER BY p.updated_at), '[]'::json) \
                                FROM read_progress p WHERE p.user_id = $1), \
+           /* Backup entries still waiting for their series to be crawled: watchlist rows in \
+              every sense but the foreign key. */ \
+           'watchlist_import_pending', (SELECT coalesce(json_agg(to_jsonb(ip) - 'user_id' \
+                                                                ORDER BY ip.queued_at), '[]'::json) \
+                                          FROM watchlist_import_pending ip WHERE ip.user_id = $1), \
            /* The reader's global source order. Carries the provider slug rather than only the \
               id, so the export says which sites the subject preferred without a second lookup \
               they have no access to. The per-series half of the same preference rides the \

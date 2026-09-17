@@ -54,6 +54,16 @@ fn empty() -> Option<Value> {
     None
 }
 
+/// A valid, empty watchlist backup — the smallest body the import routes accept.
+fn empty_watchlist_backup() -> Value {
+    json!({
+        "format": "tankovault.watchlist",
+        "version": 1,
+        "exported_at": "2026-01-01T00:00:00Z",
+        "entries": [],
+    })
+}
+
 /// A `Gate` with the common shape: header credential, no body, admitted leg asserted.
 const fn get(template: &'static str, path: &'static str) -> Gate {
     Gate {
@@ -437,6 +447,31 @@ fn me_gates() -> Vec<Gate> {
             "DELETE",
             "/v1/me/watchlist/{series_id}/source-pin",
             "/v1/me/watchlist/00000000-0000-7000-8000-00000000000a/source-pin",
+        ),
+        // --- watchlist backup and restore ---
+        get("/v1/me/watchlist/export", "/v1/me/watchlist/export"),
+        Gate {
+            // An empty backup: the admitted leg parses it and plans nothing, so it neither fails
+            // on the document nor changes the shared caller's watchlist.
+            body: || Some(empty_watchlist_backup()),
+            ..gate(
+                "POST",
+                "/v1/me/watchlist/import/preview",
+                "/v1/me/watchlist/import/preview",
+            )
+        },
+        Gate {
+            body: || Some(empty_watchlist_backup()),
+            ..elevated("POST", "/v1/me/watchlist/import", "/v1/me/watchlist/import")
+        },
+        get(
+            "/v1/me/watchlist/import/pending",
+            "/v1/me/watchlist/import/pending",
+        ),
+        gate(
+            "DELETE",
+            "/v1/me/watchlist/import/pending",
+            "/v1/me/watchlist/import/pending",
         ),
         // --- external sync (proxied to `services/sync`, which is not running here; an
         //     admitted call lands on a gateway error, which is still an admission) ---

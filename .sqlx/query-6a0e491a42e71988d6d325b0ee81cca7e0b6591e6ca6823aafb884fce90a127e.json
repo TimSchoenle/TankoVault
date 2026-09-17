@@ -1,0 +1,247 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT p.id, p.user_id, p.title, p.alternative_titles, p.source_providers,\n                  p.source_urls, p.source_paths, p.pinned_source, p.external_trackers,\n                  p.external_ids, p.status AS \"status: WatchStatus\", p.notify, p.sync_excluded,\n                  p.added_at, p.last_read_whole_number::float8 AS whole,\n                  p.last_read_part_number::float8 AS part, p.prefer_imported, p.match_titles,\n                  u.adult_opt_in\n             FROM watchlist_import_pending p\n             JOIN users u ON u.id = p.user_id\n            ORDER BY p.last_attempt_at, p.id\n            LIMIT $1\n              FOR UPDATE OF p SKIP LOCKED",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "watchlist_import_pending",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "watchlist_import_pending",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "watchlist_import_pending",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "alternative_titles",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "watchlist_import_pending",
+            "name": "alternative_titles"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "source_providers",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "watchlist_import_pending",
+            "name": "source_providers"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "source_urls",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "watchlist_import_pending",
+            "name": "source_urls"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "source_paths",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "watchlist_import_pending",
+            "name": "source_paths"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "pinned_source",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "watchlist_import_pending",
+            "name": "pinned_source"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "external_trackers",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "watchlist_import_pending",
+            "name": "external_trackers"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "external_ids",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "watchlist_import_pending",
+            "name": "external_ids"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "status: WatchStatus",
+        "type_info": {
+          "Custom": {
+            "name": "watch_status",
+            "kind": {
+              "Enum": [
+                "reading",
+                "planned",
+                "completed",
+                "dropped",
+                "paused"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "watchlist_import_pending",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "notify",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "watchlist_import_pending",
+            "name": "notify"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "sync_excluded",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "watchlist_import_pending",
+            "name": "sync_excluded"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "added_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "watchlist_import_pending",
+            "name": "added_at"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "whole",
+        "type_info": "Float8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 15,
+        "name": "part",
+        "type_info": "Float8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 16,
+        "name": "prefer_imported",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "watchlist_import_pending",
+            "name": "prefer_imported"
+          }
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "match_titles",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "watchlist_import_pending",
+            "name": "match_titles"
+          }
+        }
+      },
+      {
+        "ordinal": 18,
+        "name": "adult_opt_in",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "adult_opt_in"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      null,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "6a0e491a42e71988d6d325b0ee81cca7e0b6591e6ca6823aafb884fce90a127e"
+}

@@ -15212,6 +15212,293 @@ pub mod types {
             Default::default()
         }
     }
+    #[doc = "A watchlist backup, version 1.\n\nUnknown fields are refused at every level: within one version the shape is closed, so an\nunrecognised key is a hand-edit gone wrong or a newer document mislabelled, and neither\nshould be imported as though the key were not there."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"A watchlist backup, version 1.\\n\\nUnknown fields are refused at every level: within one version the shape is closed, so an\\nunrecognised key is a hand-edit gone wrong or a newer document mislabelled, and neither\\nshould be imported as though the key were not there.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"entries\","]
+    #[doc = "    \"exported_at\","]
+    #[doc = "    \"format\","]
+    #[doc = "    \"version\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"entries\": {"]
+    #[doc = "      \"description\": \"Every tracked series.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/WatchlistExportEntry\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"exported_at\": {"]
+    #[doc = "      \"description\": \"When the backup was taken.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"format\": {"]
+    #[doc = "      \"description\": \"Always `tankovault.watchlist`.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"version\": {"]
+    #[doc = "      \"description\": \"Always `1` for this shape.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int32\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    }"]
+    #[doc = "  },"]
+    #[doc = "  \"additionalProperties\": false"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    #[serde(deny_unknown_fields)]
+    pub struct WatchlistExport {
+        #[doc = "Every tracked series."]
+        pub entries: ::std::vec::Vec<WatchlistExportEntry>,
+        #[doc = "When the backup was taken."]
+        pub exported_at: ::std::string::String,
+        #[doc = "Always `tankovault.watchlist`."]
+        pub format: ::std::string::String,
+        #[doc = "Always `1` for this shape."]
+        pub version: i32,
+    }
+    impl WatchlistExport {
+        pub fn builder() -> builder::WatchlistExport {
+            Default::default()
+        }
+    }
+    #[doc = "One tracked series, identified without any database id."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One tracked series, identified without any database id.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"added_at\","]
+    #[doc = "    \"notify\","]
+    #[doc = "    \"status\","]
+    #[doc = "    \"title\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"added_at\": {"]
+    #[doc = "      \"description\": \"When the series was first tracked.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"alternative_titles\": {"]
+    #[doc = "      \"description\": \"Other titles the series is known by.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"type\": \"string\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"external_ids\": {"]
+    #[doc = "      \"description\": \"Ids on external trackers, where this deployment had mapped the series to one.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/WatchlistExportExternalId\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"notify\": {"]
+    #[doc = "      \"description\": \"Whether new chapters notify the reader.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"progress\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/WatchlistExportProgress\""]
+    #[doc = "    },"]
+    #[doc = "    \"sources\": {"]
+    #[doc = "      \"description\": \"Provider pages carrying the series; the primary way an import finds it again.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/WatchlistExportSource\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"status\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/WatchStatus\""]
+    #[doc = "    },"]
+    #[doc = "    \"sync_excluded\": {"]
+    #[doc = "      \"description\": \"Whether the series is kept out of external sync.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"title\": {"]
+    #[doc = "      \"description\": \"The series' canonical title.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  },"]
+    #[doc = "  \"additionalProperties\": false"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    #[serde(deny_unknown_fields)]
+    pub struct WatchlistExportEntry {
+        #[doc = "When the series was first tracked."]
+        pub added_at: ::std::string::String,
+        #[doc = "Other titles the series is known by."]
+        #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
+        pub alternative_titles: ::std::vec::Vec<::std::string::String>,
+        #[doc = "Ids on external trackers, where this deployment had mapped the series to one."]
+        #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
+        pub external_ids: ::std::vec::Vec<WatchlistExportExternalId>,
+        #[doc = "Whether new chapters notify the reader."]
+        pub notify: bool,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub progress: ::std::option::Option<WatchlistExportProgress>,
+        #[doc = "Provider pages carrying the series; the primary way an import finds it again."]
+        #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
+        pub sources: ::std::vec::Vec<WatchlistExportSource>,
+        pub status: WatchStatus,
+        #[doc = "Whether the series is kept out of external sync."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub sync_excluded: ::std::option::Option<bool>,
+        #[doc = "The series' canonical title."]
+        pub title: ::std::string::String,
+    }
+    impl WatchlistExportEntry {
+        pub fn builder() -> builder::WatchlistExportEntry {
+            Default::default()
+        }
+    }
+    #[doc = "An id on an external tracker."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"An id on an external tracker.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"id\","]
+    #[doc = "    \"tracker\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"id\": {"]
+    #[doc = "      \"description\": \"The tracker's id for the series.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"tracker\": {"]
+    #[doc = "      \"description\": \"The tracker, such as `anilist`.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  },"]
+    #[doc = "  \"additionalProperties\": false"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    #[serde(deny_unknown_fields)]
+    pub struct WatchlistExportExternalId {
+        #[doc = "The tracker's id for the series."]
+        pub id: ::std::string::String,
+        #[doc = "The tracker, such as `anilist`."]
+        pub tracker: ::std::string::String,
+    }
+    impl WatchlistExportExternalId {
+        pub fn builder() -> builder::WatchlistExportExternalId {
+            Default::default()
+        }
+    }
+    #[doc = "Read progress."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Read progress.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"chapter\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"chapter\": {"]
+    #[doc = "      \"description\": \"The highest whole chapter read.\","]
+    #[doc = "      \"type\": \"number\","]
+    #[doc = "      \"format\": \"double\""]
+    #[doc = "    },"]
+    #[doc = "    \"part\": {"]
+    #[doc = "      \"description\": \"The highest part release read beyond it, such as `12.5`.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"number\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"double\""]
+    #[doc = "    }"]
+    #[doc = "  },"]
+    #[doc = "  \"additionalProperties\": false"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    #[serde(deny_unknown_fields)]
+    pub struct WatchlistExportProgress {
+        #[doc = "The highest whole chapter read."]
+        pub chapter: f64,
+        #[doc = "The highest part release read beyond it, such as `12.5`."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub part: ::std::option::Option<f64>,
+    }
+    impl WatchlistExportProgress {
+        pub fn builder() -> builder::WatchlistExportProgress {
+            Default::default()
+        }
+    }
+    #[doc = "A provider page carrying the series."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"A provider page carrying the series.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"path\","]
+    #[doc = "    \"provider\","]
+    #[doc = "    \"url\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"path\": {"]
+    #[doc = "      \"description\": \"The page's path relative to the provider's base URL.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"pinned\": {"]
+    #[doc = "      \"description\": \"Whether the reader pinned this source.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"provider\": {"]
+    #[doc = "      \"description\": \"The provider's slug on the exporting deployment.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"url\": {"]
+    #[doc = "      \"description\": \"The page's absolute URL at export time.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  },"]
+    #[doc = "  \"additionalProperties\": false"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    #[serde(deny_unknown_fields)]
+    pub struct WatchlistExportSource {
+        #[doc = "The page's path relative to the provider's base URL."]
+        pub path: ::std::string::String,
+        #[doc = "Whether the reader pinned this source."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub pinned: ::std::option::Option<bool>,
+        #[doc = "The provider's slug on the exporting deployment."]
+        pub provider: ::std::string::String,
+        #[doc = "The page's absolute URL at export time."]
+        pub url: ::std::string::String,
+    }
+    impl WatchlistExportSource {
+        pub fn builder() -> builder::WatchlistExportSource {
+            Default::default()
+        }
+    }
     #[doc = "One release-recency band's aggregates, for a group header."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -15251,6 +15538,250 @@ pub mod types {
     }
     impl WatchlistGroup {
         pub fn builder() -> builder::WatchlistGroup {
+            Default::default()
+        }
+    }
+    #[doc = "One entry an import wants the reader to look at."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One entry an import wants the reader to look at.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"index\","]
+    #[doc = "    \"title\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"index\": {"]
+    #[doc = "      \"description\": \"The entry's zero-based position in the document.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"title\": {"]
+    #[doc = "      \"description\": \"The entry's title, as the document gave it.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct WatchlistImportIssue {
+        #[doc = "The entry's zero-based position in the document."]
+        pub index: i64,
+        #[doc = "The entry's title, as the document gave it."]
+        pub title: ::std::string::String,
+    }
+    impl WatchlistImportIssue {
+        pub fn builder() -> builder::WatchlistImportIssue {
+            Default::default()
+        }
+    }
+    #[doc = "How an import treats series already on the watchlist."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"How an import treats series already on the watchlist.\","]
+    #[doc = "  \"type\": \"string\","]
+    #[doc = "  \"enum\": ["]
+    #[doc = "    \"merge\","]
+    #[doc = "    \"overwrite\","]
+    #[doc = "    \"replace\""]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+    )]
+    pub enum WatchlistImportMode {
+        #[serde(rename = "merge")]
+        Merge,
+        #[serde(rename = "overwrite")]
+        Overwrite,
+        #[serde(rename = "replace")]
+        Replace,
+    }
+    impl ::std::fmt::Display for WatchlistImportMode {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Merge => f.write_str("merge"),
+                Self::Overwrite => f.write_str("overwrite"),
+                Self::Replace => f.write_str("replace"),
+            }
+        }
+    }
+    impl ::std::str::FromStr for WatchlistImportMode {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "merge" => Ok(Self::Merge),
+                "overwrite" => Ok(Self::Overwrite),
+                "replace" => Ok(Self::Replace),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+    impl ::std::convert::TryFrom<&str> for WatchlistImportMode {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    impl ::std::convert::TryFrom<&::std::string::String> for WatchlistImportMode {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    impl ::std::convert::TryFrom<::std::string::String> for WatchlistImportMode {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    #[doc = "What an import did, or with `dry_run`, would do."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"What an import did, or with `dry_run`, would do.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"added\","]
+    #[doc = "    \"dry_run\","]
+    #[doc = "    \"duplicates\","]
+    #[doc = "    \"entries\","]
+    #[doc = "    \"format_version\","]
+    #[doc = "    \"mode\","]
+    #[doc = "    \"pending\","]
+    #[doc = "    \"pending_entries\","]
+    #[doc = "    \"progress_written\","]
+    #[doc = "    \"removed\","]
+    #[doc = "    \"title_matches\","]
+    #[doc = "    \"unchanged\","]
+    #[doc = "    \"updated\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"added\": {"]
+    #[doc = "      \"description\": \"Entries added to the watchlist.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"dry_run\": {"]
+    #[doc = "      \"description\": \"Whether nothing was written.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"duplicates\": {"]
+    #[doc = "      \"description\": \"Entries matching a series an earlier entry already claimed; ignored.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"entries\": {"]
+    #[doc = "      \"description\": \"Entries in the document.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"format_version\": {"]
+    #[doc = "      \"description\": \"The document version that was read.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int32\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"mode\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/WatchlistImportMode\""]
+    #[doc = "    },"]
+    #[doc = "    \"pending\": {"]
+    #[doc = "      \"description\": \"Entries naming no series this catalogue has yet, queued to attach once it does.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"pending_entries\": {"]
+    #[doc = "      \"description\": \"The first 100 entries left pending.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/WatchlistImportIssue\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"progress_written\": {"]
+    #[doc = "      \"description\": \"Series whose read progress was written.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"removed\": {"]
+    #[doc = "      \"description\": \"Entries removed because the backup lacks them (`replace` only).\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"title_matches\": {"]
+    #[doc = "      \"description\": \"The first 100 entries matched by title alone, which are worth checking.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/WatchlistImportIssue\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"unchanged\": {"]
+    #[doc = "      \"description\": \"Existing entries left exactly as they were.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"updated\": {"]
+    #[doc = "      \"description\": \"Existing entries the import changed.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct WatchlistImportReport {
+        #[doc = "Entries added to the watchlist."]
+        pub added: i64,
+        #[doc = "Whether nothing was written."]
+        pub dry_run: bool,
+        #[doc = "Entries matching a series an earlier entry already claimed; ignored."]
+        pub duplicates: i64,
+        #[doc = "Entries in the document."]
+        pub entries: i64,
+        #[doc = "The document version that was read."]
+        pub format_version: i32,
+        pub mode: WatchlistImportMode,
+        #[doc = "Entries naming no series this catalogue has yet, queued to attach once it does."]
+        pub pending: i64,
+        #[doc = "The first 100 entries left pending."]
+        pub pending_entries: ::std::vec::Vec<WatchlistImportIssue>,
+        #[doc = "Series whose read progress was written."]
+        pub progress_written: i64,
+        #[doc = "Entries removed because the backup lacks them (`replace` only)."]
+        pub removed: i64,
+        #[doc = "The first 100 entries matched by title alone, which are worth checking."]
+        pub title_matches: ::std::vec::Vec<WatchlistImportIssue>,
+        #[doc = "Existing entries left exactly as they were."]
+        pub unchanged: i64,
+        #[doc = "Existing entries the import changed."]
+        pub updated: i64,
+    }
+    impl WatchlistImportReport {
+        pub fn builder() -> builder::WatchlistImportReport {
             Default::default()
         }
     }
@@ -15422,6 +15953,109 @@ pub mod types {
     }
     impl WatchlistItem {
         pub fn builder() -> builder::WatchlistItem {
+            Default::default()
+        }
+    }
+    #[doc = "The reader's pending backup entries."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"The reader's pending backup entries.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"items\","]
+    #[doc = "    \"total\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"items\": {"]
+    #[doc = "      \"description\": \"The oldest 200 of them.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/WatchlistPendingEntry\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"total\": {"]
+    #[doc = "      \"description\": \"Every pending entry the reader has.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct WatchlistPending {
+        #[doc = "The oldest 200 of them."]
+        pub items: ::std::vec::Vec<WatchlistPendingEntry>,
+        #[doc = "Every pending entry the reader has."]
+        pub total: i64,
+    }
+    impl WatchlistPending {
+        pub fn builder() -> builder::WatchlistPending {
+            Default::default()
+        }
+    }
+    #[doc = "A backup entry still waiting for its series to appear in this catalogue."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"A backup entry still waiting for its series to appear in this catalogue.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"attempts\","]
+    #[doc = "    \"last_attempt_at\","]
+    #[doc = "    \"queued_at\","]
+    #[doc = "    \"source_urls\","]
+    #[doc = "    \"title\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"attempts\": {"]
+    #[doc = "      \"description\": \"How many times a match has been attempted.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int32\""]
+    #[doc = "    },"]
+    #[doc = "    \"last_attempt_at\": {"]
+    #[doc = "      \"description\": \"When a match was last attempted.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"queued_at\": {"]
+    #[doc = "      \"description\": \"When the entry was first queued.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"source_urls\": {"]
+    #[doc = "      \"description\": \"The entry's source page URLs, so the reader can see what it is waiting for.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"type\": \"string\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"title\": {"]
+    #[doc = "      \"description\": \"The entry's title.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct WatchlistPendingEntry {
+        #[doc = "How many times a match has been attempted."]
+        pub attempts: i32,
+        #[doc = "When a match was last attempted."]
+        pub last_attempt_at: ::std::string::String,
+        #[doc = "When the entry was first queued."]
+        pub queued_at: ::std::string::String,
+        #[doc = "The entry's source page URLs, so the reader can see what it is waiting for."]
+        pub source_urls: ::std::vec::Vec<::std::string::String>,
+        #[doc = "The entry's title."]
+        pub title: ::std::string::String,
+    }
+    impl WatchlistPendingEntry {
+        pub fn builder() -> builder::WatchlistPendingEntry {
             Default::default()
         }
     }
@@ -33955,6 +34589,446 @@ pub mod types {
             }
         }
         #[derive(Clone, Debug)]
+        pub struct WatchlistExport {
+            entries: ::std::result::Result<
+                ::std::vec::Vec<super::WatchlistExportEntry>,
+                ::std::string::String,
+            >,
+            exported_at: ::std::result::Result<::std::string::String, ::std::string::String>,
+            format: ::std::result::Result<::std::string::String, ::std::string::String>,
+            version: ::std::result::Result<i32, ::std::string::String>,
+        }
+        impl ::std::default::Default for WatchlistExport {
+            fn default() -> Self {
+                Self {
+                    entries: Err("no value supplied for entries".to_string()),
+                    exported_at: Err("no value supplied for exported_at".to_string()),
+                    format: Err("no value supplied for format".to_string()),
+                    version: Err("no value supplied for version".to_string()),
+                }
+            }
+        }
+        impl WatchlistExport {
+            pub fn entries<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::WatchlistExportEntry>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.entries = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for entries: {e}"));
+                self
+            }
+            pub fn exported_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.exported_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for exported_at: {e}"));
+                self
+            }
+            pub fn format<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.format = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for format: {e}"));
+                self
+            }
+            pub fn version<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.version = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for version: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<WatchlistExport> for super::WatchlistExport {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: WatchlistExport,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    entries: value.entries?,
+                    exported_at: value.exported_at?,
+                    format: value.format?,
+                    version: value.version?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::WatchlistExport> for WatchlistExport {
+            fn from(value: super::WatchlistExport) -> Self {
+                Self {
+                    entries: Ok(value.entries),
+                    exported_at: Ok(value.exported_at),
+                    format: Ok(value.format),
+                    version: Ok(value.version),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct WatchlistExportEntry {
+            added_at: ::std::result::Result<::std::string::String, ::std::string::String>,
+            alternative_titles: ::std::result::Result<
+                ::std::vec::Vec<::std::string::String>,
+                ::std::string::String,
+            >,
+            external_ids: ::std::result::Result<
+                ::std::vec::Vec<super::WatchlistExportExternalId>,
+                ::std::string::String,
+            >,
+            notify: ::std::result::Result<bool, ::std::string::String>,
+            progress: ::std::result::Result<
+                ::std::option::Option<super::WatchlistExportProgress>,
+                ::std::string::String,
+            >,
+            sources: ::std::result::Result<
+                ::std::vec::Vec<super::WatchlistExportSource>,
+                ::std::string::String,
+            >,
+            status: ::std::result::Result<super::WatchStatus, ::std::string::String>,
+            sync_excluded:
+                ::std::result::Result<::std::option::Option<bool>, ::std::string::String>,
+            title: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+        impl ::std::default::Default for WatchlistExportEntry {
+            fn default() -> Self {
+                Self {
+                    added_at: Err("no value supplied for added_at".to_string()),
+                    alternative_titles: Ok(Default::default()),
+                    external_ids: Ok(Default::default()),
+                    notify: Err("no value supplied for notify".to_string()),
+                    progress: Ok(Default::default()),
+                    sources: Ok(Default::default()),
+                    status: Err("no value supplied for status".to_string()),
+                    sync_excluded: Ok(Default::default()),
+                    title: Err("no value supplied for title".to_string()),
+                }
+            }
+        }
+        impl WatchlistExportEntry {
+            pub fn added_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.added_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for added_at: {e}"));
+                self
+            }
+            pub fn alternative_titles<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.alternative_titles = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for alternative_titles: {e}")
+                });
+                self
+            }
+            pub fn external_ids<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::WatchlistExportExternalId>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.external_ids = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for external_ids: {e}"));
+                self
+            }
+            pub fn notify<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.notify = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for notify: {e}"));
+                self
+            }
+            pub fn progress<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<super::WatchlistExportProgress>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.progress = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for progress: {e}"));
+                self
+            }
+            pub fn sources<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::WatchlistExportSource>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.sources = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for sources: {e}"));
+                self
+            }
+            pub fn status<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::WatchStatus>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.status = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for status: {e}"));
+                self
+            }
+            pub fn sync_excluded<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<bool>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.sync_excluded = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for sync_excluded: {e}"));
+                self
+            }
+            pub fn title<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.title = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for title: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<WatchlistExportEntry> for super::WatchlistExportEntry {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: WatchlistExportEntry,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    added_at: value.added_at?,
+                    alternative_titles: value.alternative_titles?,
+                    external_ids: value.external_ids?,
+                    notify: value.notify?,
+                    progress: value.progress?,
+                    sources: value.sources?,
+                    status: value.status?,
+                    sync_excluded: value.sync_excluded?,
+                    title: value.title?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::WatchlistExportEntry> for WatchlistExportEntry {
+            fn from(value: super::WatchlistExportEntry) -> Self {
+                Self {
+                    added_at: Ok(value.added_at),
+                    alternative_titles: Ok(value.alternative_titles),
+                    external_ids: Ok(value.external_ids),
+                    notify: Ok(value.notify),
+                    progress: Ok(value.progress),
+                    sources: Ok(value.sources),
+                    status: Ok(value.status),
+                    sync_excluded: Ok(value.sync_excluded),
+                    title: Ok(value.title),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct WatchlistExportExternalId {
+            id: ::std::result::Result<::std::string::String, ::std::string::String>,
+            tracker: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+        impl ::std::default::Default for WatchlistExportExternalId {
+            fn default() -> Self {
+                Self {
+                    id: Err("no value supplied for id".to_string()),
+                    tracker: Err("no value supplied for tracker".to_string()),
+                }
+            }
+        }
+        impl WatchlistExportExternalId {
+            pub fn id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for id: {e}"));
+                self
+            }
+            pub fn tracker<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.tracker = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for tracker: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<WatchlistExportExternalId> for super::WatchlistExportExternalId {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: WatchlistExportExternalId,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    id: value.id?,
+                    tracker: value.tracker?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::WatchlistExportExternalId> for WatchlistExportExternalId {
+            fn from(value: super::WatchlistExportExternalId) -> Self {
+                Self {
+                    id: Ok(value.id),
+                    tracker: Ok(value.tracker),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct WatchlistExportProgress {
+            chapter: ::std::result::Result<f64, ::std::string::String>,
+            part: ::std::result::Result<::std::option::Option<f64>, ::std::string::String>,
+        }
+        impl ::std::default::Default for WatchlistExportProgress {
+            fn default() -> Self {
+                Self {
+                    chapter: Err("no value supplied for chapter".to_string()),
+                    part: Ok(Default::default()),
+                }
+            }
+        }
+        impl WatchlistExportProgress {
+            pub fn chapter<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<f64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.chapter = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for chapter: {e}"));
+                self
+            }
+            pub fn part<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<f64>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.part = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for part: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<WatchlistExportProgress> for super::WatchlistExportProgress {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: WatchlistExportProgress,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    chapter: value.chapter?,
+                    part: value.part?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::WatchlistExportProgress> for WatchlistExportProgress {
+            fn from(value: super::WatchlistExportProgress) -> Self {
+                Self {
+                    chapter: Ok(value.chapter),
+                    part: Ok(value.part),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct WatchlistExportSource {
+            path: ::std::result::Result<::std::string::String, ::std::string::String>,
+            pinned: ::std::result::Result<::std::option::Option<bool>, ::std::string::String>,
+            provider: ::std::result::Result<::std::string::String, ::std::string::String>,
+            url: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+        impl ::std::default::Default for WatchlistExportSource {
+            fn default() -> Self {
+                Self {
+                    path: Err("no value supplied for path".to_string()),
+                    pinned: Ok(Default::default()),
+                    provider: Err("no value supplied for provider".to_string()),
+                    url: Err("no value supplied for url".to_string()),
+                }
+            }
+        }
+        impl WatchlistExportSource {
+            pub fn path<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.path = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for path: {e}"));
+                self
+            }
+            pub fn pinned<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<bool>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.pinned = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for pinned: {e}"));
+                self
+            }
+            pub fn provider<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.provider = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for provider: {e}"));
+                self
+            }
+            pub fn url<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.url = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for url: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<WatchlistExportSource> for super::WatchlistExportSource {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: WatchlistExportSource,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    path: value.path?,
+                    pinned: value.pinned?,
+                    provider: value.provider?,
+                    url: value.url?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::WatchlistExportSource> for WatchlistExportSource {
+            fn from(value: super::WatchlistExportSource) -> Self {
+                Self {
+                    path: Ok(value.path),
+                    pinned: Ok(value.pinned),
+                    provider: Ok(value.provider),
+                    url: Ok(value.url),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
         pub struct WatchlistGroup {
             chapter_count: ::std::result::Result<i64, ::std::string::String>,
             key: ::std::result::Result<::std::string::String, ::std::string::String>,
@@ -34019,6 +35093,274 @@ pub mod types {
                     chapter_count: Ok(value.chapter_count),
                     key: Ok(value.key),
                     title_count: Ok(value.title_count),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct WatchlistImportIssue {
+            index: ::std::result::Result<i64, ::std::string::String>,
+            title: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+        impl ::std::default::Default for WatchlistImportIssue {
+            fn default() -> Self {
+                Self {
+                    index: Err("no value supplied for index".to_string()),
+                    title: Err("no value supplied for title".to_string()),
+                }
+            }
+        }
+        impl WatchlistImportIssue {
+            pub fn index<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.index = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for index: {e}"));
+                self
+            }
+            pub fn title<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.title = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for title: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<WatchlistImportIssue> for super::WatchlistImportIssue {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: WatchlistImportIssue,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    index: value.index?,
+                    title: value.title?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::WatchlistImportIssue> for WatchlistImportIssue {
+            fn from(value: super::WatchlistImportIssue) -> Self {
+                Self {
+                    index: Ok(value.index),
+                    title: Ok(value.title),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct WatchlistImportReport {
+            added: ::std::result::Result<i64, ::std::string::String>,
+            dry_run: ::std::result::Result<bool, ::std::string::String>,
+            duplicates: ::std::result::Result<i64, ::std::string::String>,
+            entries: ::std::result::Result<i64, ::std::string::String>,
+            format_version: ::std::result::Result<i32, ::std::string::String>,
+            mode: ::std::result::Result<super::WatchlistImportMode, ::std::string::String>,
+            pending: ::std::result::Result<i64, ::std::string::String>,
+            pending_entries: ::std::result::Result<
+                ::std::vec::Vec<super::WatchlistImportIssue>,
+                ::std::string::String,
+            >,
+            progress_written: ::std::result::Result<i64, ::std::string::String>,
+            removed: ::std::result::Result<i64, ::std::string::String>,
+            title_matches: ::std::result::Result<
+                ::std::vec::Vec<super::WatchlistImportIssue>,
+                ::std::string::String,
+            >,
+            unchanged: ::std::result::Result<i64, ::std::string::String>,
+            updated: ::std::result::Result<i64, ::std::string::String>,
+        }
+        impl ::std::default::Default for WatchlistImportReport {
+            fn default() -> Self {
+                Self {
+                    added: Err("no value supplied for added".to_string()),
+                    dry_run: Err("no value supplied for dry_run".to_string()),
+                    duplicates: Err("no value supplied for duplicates".to_string()),
+                    entries: Err("no value supplied for entries".to_string()),
+                    format_version: Err("no value supplied for format_version".to_string()),
+                    mode: Err("no value supplied for mode".to_string()),
+                    pending: Err("no value supplied for pending".to_string()),
+                    pending_entries: Err("no value supplied for pending_entries".to_string()),
+                    progress_written: Err("no value supplied for progress_written".to_string()),
+                    removed: Err("no value supplied for removed".to_string()),
+                    title_matches: Err("no value supplied for title_matches".to_string()),
+                    unchanged: Err("no value supplied for unchanged".to_string()),
+                    updated: Err("no value supplied for updated".to_string()),
+                }
+            }
+        }
+        impl WatchlistImportReport {
+            pub fn added<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.added = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for added: {e}"));
+                self
+            }
+            pub fn dry_run<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.dry_run = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for dry_run: {e}"));
+                self
+            }
+            pub fn duplicates<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.duplicates = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for duplicates: {e}"));
+                self
+            }
+            pub fn entries<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.entries = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for entries: {e}"));
+                self
+            }
+            pub fn format_version<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.format_version = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for format_version: {e}")
+                });
+                self
+            }
+            pub fn mode<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::WatchlistImportMode>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.mode = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for mode: {e}"));
+                self
+            }
+            pub fn pending<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.pending = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for pending: {e}"));
+                self
+            }
+            pub fn pending_entries<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::WatchlistImportIssue>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.pending_entries = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for pending_entries: {e}")
+                });
+                self
+            }
+            pub fn progress_written<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.progress_written = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for progress_written: {e}")
+                });
+                self
+            }
+            pub fn removed<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.removed = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for removed: {e}"));
+                self
+            }
+            pub fn title_matches<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::WatchlistImportIssue>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.title_matches = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for title_matches: {e}"));
+                self
+            }
+            pub fn unchanged<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.unchanged = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for unchanged: {e}"));
+                self
+            }
+            pub fn updated<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.updated = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for updated: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<WatchlistImportReport> for super::WatchlistImportReport {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: WatchlistImportReport,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    added: value.added?,
+                    dry_run: value.dry_run?,
+                    duplicates: value.duplicates?,
+                    entries: value.entries?,
+                    format_version: value.format_version?,
+                    mode: value.mode?,
+                    pending: value.pending?,
+                    pending_entries: value.pending_entries?,
+                    progress_written: value.progress_written?,
+                    removed: value.removed?,
+                    title_matches: value.title_matches?,
+                    unchanged: value.unchanged?,
+                    updated: value.updated?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::WatchlistImportReport> for WatchlistImportReport {
+            fn from(value: super::WatchlistImportReport) -> Self {
+                Self {
+                    added: Ok(value.added),
+                    dry_run: Ok(value.dry_run),
+                    duplicates: Ok(value.duplicates),
+                    entries: Ok(value.entries),
+                    format_version: Ok(value.format_version),
+                    mode: Ok(value.mode),
+                    pending: Ok(value.pending),
+                    pending_entries: Ok(value.pending_entries),
+                    progress_written: Ok(value.progress_written),
+                    removed: Ok(value.removed),
+                    title_matches: Ok(value.title_matches),
+                    unchanged: Ok(value.unchanged),
+                    updated: Ok(value.updated),
                 }
             }
         }
@@ -34329,6 +35671,162 @@ pub mod types {
                     sync_excluded: Ok(value.sync_excluded),
                     total_chapters: Ok(value.total_chapters),
                     unread: Ok(value.unread),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct WatchlistPending {
+            items: ::std::result::Result<
+                ::std::vec::Vec<super::WatchlistPendingEntry>,
+                ::std::string::String,
+            >,
+            total: ::std::result::Result<i64, ::std::string::String>,
+        }
+        impl ::std::default::Default for WatchlistPending {
+            fn default() -> Self {
+                Self {
+                    items: Err("no value supplied for items".to_string()),
+                    total: Err("no value supplied for total".to_string()),
+                }
+            }
+        }
+        impl WatchlistPending {
+            pub fn items<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::WatchlistPendingEntry>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.items = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for items: {e}"));
+                self
+            }
+            pub fn total<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.total = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for total: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<WatchlistPending> for super::WatchlistPending {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: WatchlistPending,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    items: value.items?,
+                    total: value.total?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::WatchlistPending> for WatchlistPending {
+            fn from(value: super::WatchlistPending) -> Self {
+                Self {
+                    items: Ok(value.items),
+                    total: Ok(value.total),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct WatchlistPendingEntry {
+            attempts: ::std::result::Result<i32, ::std::string::String>,
+            last_attempt_at: ::std::result::Result<::std::string::String, ::std::string::String>,
+            queued_at: ::std::result::Result<::std::string::String, ::std::string::String>,
+            source_urls: ::std::result::Result<
+                ::std::vec::Vec<::std::string::String>,
+                ::std::string::String,
+            >,
+            title: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+        impl ::std::default::Default for WatchlistPendingEntry {
+            fn default() -> Self {
+                Self {
+                    attempts: Err("no value supplied for attempts".to_string()),
+                    last_attempt_at: Err("no value supplied for last_attempt_at".to_string()),
+                    queued_at: Err("no value supplied for queued_at".to_string()),
+                    source_urls: Err("no value supplied for source_urls".to_string()),
+                    title: Err("no value supplied for title".to_string()),
+                }
+            }
+        }
+        impl WatchlistPendingEntry {
+            pub fn attempts<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.attempts = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for attempts: {e}"));
+                self
+            }
+            pub fn last_attempt_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.last_attempt_at = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for last_attempt_at: {e}")
+                });
+                self
+            }
+            pub fn queued_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.queued_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for queued_at: {e}"));
+                self
+            }
+            pub fn source_urls<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.source_urls = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for source_urls: {e}"));
+                self
+            }
+            pub fn title<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.title = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for title: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<WatchlistPendingEntry> for super::WatchlistPendingEntry {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: WatchlistPendingEntry,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    attempts: value.attempts?,
+                    last_attempt_at: value.last_attempt_at?,
+                    queued_at: value.queued_at?,
+                    source_urls: value.source_urls?,
+                    title: value.title?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::WatchlistPendingEntry> for WatchlistPendingEntry {
+            fn from(value: super::WatchlistPendingEntry) -> Self {
+                Self {
+                    attempts: Ok(value.attempts),
+                    last_attempt_at: Ok(value.last_attempt_at),
+                    queued_at: Ok(value.queued_at),
+                    source_urls: Ok(value.source_urls),
+                    title: Ok(value.title),
                 }
             }
         }
@@ -35428,6 +36926,26 @@ impl Client {
     #[doc = "Remove many watchlist entries at once\n\nSends a `DELETE` request to `/v1/me/watchlist/bulk`\n\n```ignore\nlet response = client.bulk_remove_watchlist()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn bulk_remove_watchlist(&self) -> builder::BulkRemoveWatchlist<'_> {
         builder::BulkRemoveWatchlist::new(self)
+    }
+    #[doc = "Export the watchlist\n\nThe reader's whole watchlist — statuses, notification and sync choices, read progress, pinned\nsources — as a versioned JSON document that identifies each series without database ids, so\nit imports into a wiped database or another deployment.\n\nNot behind a step-up: every value in it is already readable page by page through\n`GET /v1/me/watchlist`, so elevation here would inconvenience the owner without denying a\nstolen session anything.\n\nSends a `GET` request to `/v1/me/watchlist/export`\n\n```ignore\nlet response = client.export_watchlist()\n    .send()\n    .await;\n```"]
+    pub fn export_watchlist(&self) -> builder::ExportWatchlist<'_> {
+        builder::ExportWatchlist::new(self)
+    }
+    #[doc = "Import a watchlist backup\n\nApplies a backup in one transaction. Entries whose series this deployment has not crawled yet\nare queued rather than dropped, and attach automatically once a scan brings the series in;\nsee `GET /v1/me/watchlist/import/pending`.\n\nBehind a step-up. `replace` removes every entry the backup lacks and `overwrite` rewrites\nevery one it names, so a single call can undo a reader's whole library.\n\nA body over 8 MiB is refused with `413` before it is read.\n\nSends a `POST` request to `/v1/me/watchlist/import`\n\nArguments:\n- `match_titles`: Also match an entry by a title naming exactly one series, when no provider page or\nexternal id matches. Off by default: two different works share titles often enough that\nthis is the reader's call.\n- `mode`: `merge` (default) | `overwrite` | `replace`.\n- `body`: A watchlist backup, any supported version\n```ignore\nlet response = client.import_watchlist()\n    .match_titles(match_titles)\n    .mode(mode)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn import_watchlist(&self) -> builder::ImportWatchlist<'_> {
+        builder::ImportWatchlist::new(self)
+    }
+    #[doc = "List pending import entries\n\nImported entries whose series this deployment has not crawled yet. Each attaches on its own\nonce a scan brings its series in; this is what is still waiting.\n\nSends a `GET` request to `/v1/me/watchlist/import/pending`\n\n```ignore\nlet response = client.watchlist_import_pending()\n    .send()\n    .await;\n```"]
+    pub fn watchlist_import_pending(&self) -> builder::WatchlistImportPending<'_> {
+        builder::WatchlistImportPending::new(self)
+    }
+    #[doc = "Discard pending import entries\n\nStops waiting for every pending entry. Idempotent; entries already attached are unaffected.\n\nSends a `DELETE` request to `/v1/me/watchlist/import/pending`\n\n```ignore\nlet response = client.clear_watchlist_import_pending()\n    .send()\n    .await;\n```"]
+    pub fn clear_watchlist_import_pending(&self) -> builder::ClearWatchlistImportPending<'_> {
+        builder::ClearWatchlistImportPending::new(self)
+    }
+    #[doc = "Preview a watchlist import\n\nEverything [`import_watchlist`] would do with this document — what it adds, changes, removes\nand queues — computed against the current watchlist and then rolled back. Nothing is written.\n\nA body over 8 MiB is refused with `413` before it is read.\n\nSends a `POST` request to `/v1/me/watchlist/import/preview`\n\nArguments:\n- `match_titles`: Also match an entry by a title naming exactly one series, when no provider page or\nexternal id matches. Off by default: two different works share titles often enough that\nthis is the reader's call.\n- `mode`: `merge` (default) | `overwrite` | `replace`.\n- `body`: A watchlist backup, any supported version\n```ignore\nlet response = client.preview_watchlist_import()\n    .match_titles(match_titles)\n    .mode(mode)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn preview_watchlist_import(&self) -> builder::PreviewWatchlistImport<'_> {
+        builder::PreviewWatchlistImport::new(self)
     }
     #[doc = "Get the watchlist summary\n\nPer-status counts and the unread total over the **whole** watchlist, under no filters.\n\nSeparate from the list's `counts`, which drop only the `status` arm and keep the search,\nrecency and source filters: those answer \"how many would this tab show given what I have\ntyped\", while this answers \"how big is my library\" for surfaces that carry no filter state\nof their own — a tab badge, the More sheet, a signed-in header.\n\nSends a `GET` request to `/v1/me/watchlist/summary`\n\n```ignore\nlet response = client.watchlist_summary()\n    .send()\n    .await;\n```"]
     pub fn watchlist_summary(&self) -> builder::WatchlistSummary<'_> {
@@ -47710,6 +49228,353 @@ pub mod builder {
                     ResponseValue::from_response(response).await?,
                 )),
                 401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::export_watchlist`]\n\n[`Client::export_watchlist`]: super::Client::export_watchlist"]
+    #[derive(Debug, Clone)]
+    pub struct ExportWatchlist<'a> {
+        client: &'a super::Client,
+    }
+    impl<'a> ExportWatchlist<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+        #[doc = "Sends a `GET` request to `/v1/me/watchlist/export`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::WatchlistExport>, Error<types::ProblemDetails>> {
+            let Self { client } = self;
+            let url = format!("{}/v1/me/watchlist/export", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "export_watchlist",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::import_watchlist`]\n\n[`Client::import_watchlist`]: super::Client::import_watchlist"]
+    #[derive(Debug, Clone)]
+    pub struct ImportWatchlist<'a> {
+        client: &'a super::Client,
+        match_titles: Result<Option<bool>, String>,
+        mode: Result<Option<types::WatchlistImportMode>, String>,
+        body: Result<::serde_json::Value, String>,
+    }
+    impl<'a> ImportWatchlist<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                match_titles: Ok(None),
+                mode: Ok(None),
+                body: Err("body was not initialized".to_string()),
+            }
+        }
+        pub fn match_titles<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<bool>,
+        {
+            self.match_titles = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `bool` for match_titles failed".to_string());
+            self
+        }
+        pub fn mode<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::WatchlistImportMode>,
+        {
+            self.mode = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `WatchlistImportMode` for mode failed".to_string());
+            self
+        }
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::serde_json::Value>,
+        {
+            self.body = value
+                .try_into()
+                .map_err(|_| "conversion to `:: serde_json :: Value` for body failed".to_string());
+            self
+        }
+        #[doc = "Sends a `POST` request to `/v1/me/watchlist/import`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::WatchlistImportReport>, Error<types::ProblemDetails>>
+        {
+            let Self {
+                client,
+                match_titles,
+                mode,
+                body,
+            } = self;
+            let match_titles = match_titles.map_err(Error::InvalidRequest)?;
+            let mode = mode.map_err(Error::InvalidRequest)?;
+            let body = body.map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v1/me/watchlist/import", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .query(&progenitor_client::QueryParam::new(
+                    "match_titles",
+                    &match_titles,
+                ))
+                .query(&progenitor_client::QueryParam::new("mode", &mode))
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "import_watchlist",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                409u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::watchlist_import_pending`]\n\n[`Client::watchlist_import_pending`]: super::Client::watchlist_import_pending"]
+    #[derive(Debug, Clone)]
+    pub struct WatchlistImportPending<'a> {
+        client: &'a super::Client,
+    }
+    impl<'a> WatchlistImportPending<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+        #[doc = "Sends a `GET` request to `/v1/me/watchlist/import/pending`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::WatchlistPending>, Error<types::ProblemDetails>> {
+            let Self { client } = self;
+            let url = format!("{}/v1/me/watchlist/import/pending", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "watchlist_import_pending",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::clear_watchlist_import_pending`]\n\n[`Client::clear_watchlist_import_pending`]: super::Client::clear_watchlist_import_pending"]
+    #[derive(Debug, Clone)]
+    pub struct ClearWatchlistImportPending<'a> {
+        client: &'a super::Client,
+    }
+    impl<'a> ClearWatchlistImportPending<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+        #[doc = "Sends a `DELETE` request to `/v1/me/watchlist/import/pending`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::ProblemDetails>> {
+            let Self { client } = self;
+            let url = format!("{}/v1/me/watchlist/import/pending", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .delete(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "clear_watchlist_import_pending",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                204u16 => Ok(ResponseValue::empty(response)),
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::preview_watchlist_import`]\n\n[`Client::preview_watchlist_import`]: super::Client::preview_watchlist_import"]
+    #[derive(Debug, Clone)]
+    pub struct PreviewWatchlistImport<'a> {
+        client: &'a super::Client,
+        match_titles: Result<Option<bool>, String>,
+        mode: Result<Option<types::WatchlistImportMode>, String>,
+        body: Result<::serde_json::Value, String>,
+    }
+    impl<'a> PreviewWatchlistImport<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                match_titles: Ok(None),
+                mode: Ok(None),
+                body: Err("body was not initialized".to_string()),
+            }
+        }
+        pub fn match_titles<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<bool>,
+        {
+            self.match_titles = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `bool` for match_titles failed".to_string());
+            self
+        }
+        pub fn mode<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::WatchlistImportMode>,
+        {
+            self.mode = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `WatchlistImportMode` for mode failed".to_string());
+            self
+        }
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::serde_json::Value>,
+        {
+            self.body = value
+                .try_into()
+                .map_err(|_| "conversion to `:: serde_json :: Value` for body failed".to_string());
+            self
+        }
+        #[doc = "Sends a `POST` request to `/v1/me/watchlist/import/preview`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::WatchlistImportReport>, Error<types::ProblemDetails>>
+        {
+            let Self {
+                client,
+                match_titles,
+                mode,
+                body,
+            } = self;
+            let match_titles = match_titles.map_err(Error::InvalidRequest)?;
+            let mode = mode.map_err(Error::InvalidRequest)?;
+            let body = body.map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v1/me/watchlist/import/preview", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .query(&progenitor_client::QueryParam::new(
+                    "match_titles",
+                    &match_titles,
+                ))
+                .query(&progenitor_client::QueryParam::new("mode", &mode))
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "preview_watchlist_import",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                409u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
                 _ => Err(Error::UnexpectedResponse(response)),

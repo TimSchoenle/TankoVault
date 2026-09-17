@@ -171,6 +171,10 @@ pub struct SchedulerConfig {
     /// and repair any that drifted. 0 disables.
     #[serde(default = "default_unread_reconcile_interval")]
     pub unread_reconcile_interval_secs: u64,
+    /// Seconds between passes that retry imported watchlist entries still waiting for their
+    /// series, attaching each one a scan has since brought into the catalogue. 0 disables.
+    #[serde(default = "default_watchlist_import_resolve_interval")]
+    pub watchlist_import_resolve_interval_secs: u64,
     /// Seconds between passes that re-count a batch of sources' chapters and rebuild any whose
     /// stored console totals disagree. 0 disables.
     #[serde(default = "default_chapter_rollup_verify_interval")]
@@ -250,6 +254,12 @@ const fn default_unread_reconcile_interval() -> u64 {
     900
 }
 
+/// Fifteen minutes, 500 entries a pass: a restored backup waits on crawls measured in hours, so
+/// finding its series a few minutes after they land costs nothing.
+const fn default_watchlist_import_resolve_interval() -> u64 {
+    900
+}
+
 /// Five minutes, 2 000 sources a pass: a full cycle over 80 000 sources takes a few hours.
 const fn default_chapter_rollup_verify_interval() -> u64 {
     300
@@ -294,6 +304,7 @@ impl Default for SchedulerConfig {
             scan_history_prune_interval_secs: default_scan_history_prune_interval(),
             unread_unlock_interval_secs: default_unread_unlock_interval(),
             unread_reconcile_interval_secs: default_unread_reconcile_interval(),
+            watchlist_import_resolve_interval_secs: default_watchlist_import_resolve_interval(),
             chapter_rollup_verify_interval_secs: default_chapter_rollup_verify_interval(),
             series_browse_verify_interval_secs: default_series_browse_verify_interval(),
             recsys_incremental_interval_secs: default_recsys_incremental_interval(),

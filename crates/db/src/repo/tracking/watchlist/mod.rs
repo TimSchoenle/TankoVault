@@ -2,12 +2,13 @@
 //! Watchlist board renders.
 //!
 //! `entries` owns membership, `query` the sort/filter vocabulary a board request speaks,
-//! `page` the assembly of a card page, and `summary` the counts beside it.
+//! `page` the assembly of a card page, `summary` the counts beside it, and `transfer` backups.
 
 mod entries;
 mod page;
 mod query;
 mod summary;
+mod transfer;
 
 pub use entries::{
     BULK_ID_LIMIT, PinOutcome, watchlist_bulk_remove, watchlist_bulk_update, watchlist_list,
@@ -21,3 +22,8 @@ pub use query::{
     WatchlistSort, WatchlistSource,
 };
 pub use summary::{WatchlistSummary, watchlist_summary};
+pub use transfer::{
+    Commit, ImportOptions, ImportOutcome, ImportRefusal, PendingEntry, SweepOutcome,
+    watchlist_export, watchlist_import, watchlist_pending, watchlist_pending_clear,
+    watchlist_pending_sweep,
+};

@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO watchlist_entries\n                  (user_id, series_id, status, notify, sync_excluded, added_at, pinned_source_id)\n           SELECT $1, r.series_id, r.status::watch_status, r.notify, r.sync_excluded,\n                  LEAST(r.added_at, now()),\n                  CASE WHEN EXISTS (SELECT 1 FROM series_sources ss\n                                     WHERE ss.id = r.pinned AND ss.series_id = r.series_id)\n                       THEN r.pinned END\n             FROM unnest($2::uuid[], $3::text[], $4::bool[], $5::bool[],\n                         $6::timestamptz[], $7::uuid[])\n                  AS r(series_id, status, notify, sync_excluded, added_at, pinned)\n           ON CONFLICT (user_id, series_id) DO UPDATE\n              SET status = EXCLUDED.status,\n                  notify = EXCLUDED.notify,\n                  sync_excluded = EXCLUDED.sync_excluded,\n                  pinned_source_id = EXCLUDED.pinned_source_id,\n                  updated_at = now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray",
+        "TextArray",
+        "BoolArray",
+        "BoolArray",
+        "TimestamptzArray",
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9861592981ac2119335cb0cc56c9612a31126ea9d9038439617dfaed27425295"
+}

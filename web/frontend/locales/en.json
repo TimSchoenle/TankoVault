@@ -207,7 +207,8 @@
       "security": "Security & sessions",
       "sources": "Sources",
       "sync": "Sync & integrations",
-      "taste": "Taste"
+      "taste": "Taste",
+      "backup": "Backup"
     },
     "taste": {
       "avoids": "You steer clear of",
@@ -220,6 +221,98 @@
         "other": "Built from {count} series"
       },
       "title": "Your taste profile"
+    },
+    "backup": {
+      "export": {
+        "title": "Back up your watchlist",
+        "intro": "Download every series you track, with its status, notification and sync settings, pinned source and reading progress. The file names each series by the pages it is read on rather than by this server's internal ids, so it can be restored here after a reset or on another {brand} server.",
+        "cta": "Download backup",
+        "preparing": "Preparing…",
+        "done": "Your watchlist backup has been downloaded.",
+        "failed": "The backup could not be prepared."
+      },
+      "import": {
+        "title": "Restore a backup",
+        "intro": "Choose a watchlist backup and preview what restoring it would change. Nothing is written until you apply the preview.",
+        "file": "Backup file",
+        "tooLarge": "That file is larger than a watchlist backup can be (8 MB).",
+        "notJson": "That file is not a watchlist backup.",
+        "mode": "When a series is already on your watchlist",
+        "modes": {
+          "merge": {
+            "label": "Keep mine",
+            "hint": "Adds what is missing. Series you already track keep their settings; reading progress only moves forward."
+          },
+          "overwrite": {
+            "label": "Use the backup",
+            "hint": "Adds what is missing, and series you already track take the backup's settings and progress."
+          },
+          "replace": {
+            "label": "Replace my watchlist",
+            "hint": "Makes your watchlist exactly the backup: anything not in the file is removed, and entries still waiting from an earlier restore are discarded."
+          }
+        },
+        "matchTitles": "Also match series by title",
+        "matchTitlesHint": "Only used when no source page or tracker id matches, and only when exactly one series has the title. Different works sometimes share a title, so check the matches the preview lists.",
+        "preview": "Preview",
+        "apply": "Apply",
+        "previewTitle": "Restoring this backup would:",
+        "resultTitle": "Restored:",
+        "done": "Backup restored."
+      },
+      "report": {
+        "added": {
+          "one": "add {count} series",
+          "other": "add {count} series"
+        },
+        "updated": {
+          "one": "update {count} series",
+          "other": "update {count} series"
+        },
+        "unchanged": {
+          "one": "leave {count} series unchanged",
+          "other": "leave {count} series unchanged"
+        },
+        "removed": {
+          "one": "remove {count} series",
+          "other": "remove {count} series"
+        },
+        "progress": {
+          "one": "set reading progress on {count} series",
+          "other": "set reading progress on {count} series"
+        },
+        "pending": {
+          "one": "keep {count} entry waiting until its series is crawled",
+          "other": "keep {count} entries waiting until their series are crawled"
+        },
+        "duplicates": {
+          "one": "skip {count} duplicate entry",
+          "other": "skip {count} duplicate entries"
+        },
+        "nothing": "Nothing would change.",
+        "removedWarning": {
+          "one": "{count} series on your watchlist is not in this backup and will be removed.",
+          "other": "{count} series on your watchlist are not in this backup and will be removed."
+        },
+        "titleMatches": "Matched by title only — worth checking:",
+        "pendingList": "Not on this server yet:"
+      },
+      "pending": {
+        "title": "Waiting to be restored",
+        "intro": "Restored series this server has not crawled yet. Each one is added to your watchlist automatically, with its settings and progress, once a scan finds it.",
+        "empty": "Nothing is waiting.",
+        "count": {
+          "one": "{count} entry waiting",
+          "other": "{count} entries waiting"
+        },
+        "more": {
+          "one": "and {count} more",
+          "other": "and {count} more"
+        },
+        "queuedOn": "Queued {date}",
+        "discard": "Stop waiting for all of these",
+        "discarded": "Pending entries discarded."
+      }
     }
   },
   "auth": {

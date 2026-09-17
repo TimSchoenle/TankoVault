@@ -1,0 +1,89 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT series_id, status AS \"status: WatchStatus\", notify, sync_excluded, pinned_source_id\n             FROM watchlist_entries WHERE user_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "series_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "watchlist_entries",
+            "name": "series_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "status: WatchStatus",
+        "type_info": {
+          "Custom": {
+            "name": "watch_status",
+            "kind": {
+              "Enum": [
+                "reading",
+                "planned",
+                "completed",
+                "dropped",
+                "paused"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "watchlist_entries",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "notify",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "watchlist_entries",
+            "name": "notify"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "sync_excluded",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "watchlist_entries",
+            "name": "sync_excluded"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "pinned_source_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "watchlist_entries",
+            "name": "pinned_source_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "2f84a2fa45b42d57686965fccc2c61fc04015b8630ad40f87d115ebb907f4c7b"
+}

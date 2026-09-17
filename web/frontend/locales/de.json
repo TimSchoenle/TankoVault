@@ -207,7 +207,8 @@
       "security": "Sicherheit & Sitzungen",
       "sources": "Quellen",
       "sync": "Sync & Integrationen",
-      "taste": "Geschmack"
+      "taste": "Geschmack",
+      "backup": "Sicherung"
     },
     "taste": {
       "avoids": "Du meidest",
@@ -220,6 +221,98 @@
         "other": "Aus {count} Serien gebildet"
       },
       "title": "Dein Geschmacksprofil"
+    },
+    "backup": {
+      "export": {
+        "title": "Merkliste sichern",
+        "intro": "Lade alle verfolgten Serien herunter, mit Status, Benachrichtigungs- und Sync-Einstellungen, angehefteter Quelle und Lesefortschritt. Die Datei benennt jede Serie über die Seiten, auf denen sie gelesen wird, statt über interne IDs dieses Servers – so lässt sie sich nach einem Zurücksetzen oder auf einem anderen {brand}-Server wiederherstellen.",
+        "cta": "Sicherung herunterladen",
+        "preparing": "Wird vorbereitet…",
+        "done": "Die Sicherung deiner Merkliste wurde heruntergeladen.",
+        "failed": "Die Sicherung konnte nicht erstellt werden."
+      },
+      "import": {
+        "title": "Sicherung wiederherstellen",
+        "intro": "Wähle eine Merklisten-Sicherung und sieh dir an, was die Wiederherstellung ändern würde. Geschrieben wird erst, wenn du die Vorschau anwendest.",
+        "file": "Sicherungsdatei",
+        "tooLarge": "Diese Datei ist größer, als eine Merklisten-Sicherung sein kann (8 MB).",
+        "notJson": "Diese Datei ist keine Merklisten-Sicherung.",
+        "mode": "Wenn eine Serie schon auf deiner Merkliste steht",
+        "modes": {
+          "merge": {
+            "label": "Meine behalten",
+            "hint": "Fügt Fehlendes hinzu. Bereits verfolgte Serien behalten ihre Einstellungen; der Lesefortschritt bewegt sich nur vorwärts."
+          },
+          "overwrite": {
+            "label": "Sicherung verwenden",
+            "hint": "Fügt Fehlendes hinzu, und bereits verfolgte Serien übernehmen Einstellungen und Fortschritt aus der Sicherung."
+          },
+          "replace": {
+            "label": "Merkliste ersetzen",
+            "hint": "Macht deine Merkliste genau zur Sicherung: Alles, was nicht in der Datei steht, wird entfernt, und noch wartende Einträge einer früheren Wiederherstellung werden verworfen."
+          }
+        },
+        "matchTitles": "Serien auch über den Titel zuordnen",
+        "matchTitlesHint": "Nur, wenn keine Quellseite und keine Tracker-ID passt, und nur, wenn genau eine Serie den Titel trägt. Verschiedene Werke teilen sich manchmal einen Titel – prüfe die Zuordnungen in der Vorschau.",
+        "preview": "Vorschau",
+        "apply": "Anwenden",
+        "previewTitle": "Die Wiederherstellung würde:",
+        "resultTitle": "Wiederhergestellt:",
+        "done": "Sicherung wiederhergestellt."
+      },
+      "report": {
+        "added": {
+          "one": "{count} Serie hinzufügen",
+          "other": "{count} Serien hinzufügen"
+        },
+        "updated": {
+          "one": "{count} Serie aktualisieren",
+          "other": "{count} Serien aktualisieren"
+        },
+        "unchanged": {
+          "one": "{count} Serie unverändert lassen",
+          "other": "{count} Serien unverändert lassen"
+        },
+        "removed": {
+          "one": "{count} Serie entfernen",
+          "other": "{count} Serien entfernen"
+        },
+        "progress": {
+          "one": "Lesefortschritt für {count} Serie setzen",
+          "other": "Lesefortschritt für {count} Serien setzen"
+        },
+        "pending": {
+          "one": "{count} Eintrag warten lassen, bis seine Serie erfasst ist",
+          "other": "{count} Einträge warten lassen, bis ihre Serien erfasst sind"
+        },
+        "duplicates": {
+          "one": "{count} doppelten Eintrag überspringen",
+          "other": "{count} doppelte Einträge überspringen"
+        },
+        "nothing": "Es würde sich nichts ändern.",
+        "removedWarning": {
+          "one": "{count} Serie auf deiner Merkliste fehlt in dieser Sicherung und wird entfernt.",
+          "other": "{count} Serien auf deiner Merkliste fehlen in dieser Sicherung und werden entfernt."
+        },
+        "titleMatches": "Nur über den Titel zugeordnet – bitte prüfen:",
+        "pendingList": "Noch nicht auf diesem Server:"
+      },
+      "pending": {
+        "title": "Warten auf Wiederherstellung",
+        "intro": "Wiederhergestellte Serien, die dieser Server noch nicht erfasst hat. Jede wird automatisch mit Einstellungen und Fortschritt zu deiner Merkliste hinzugefügt, sobald ein Scan sie findet.",
+        "empty": "Nichts wartet.",
+        "count": {
+          "one": "{count} Eintrag wartet",
+          "other": "{count} Einträge warten"
+        },
+        "more": {
+          "one": "und {count} weiterer",
+          "other": "und {count} weitere"
+        },
+        "queuedOn": "Eingereiht am {date}",
+        "discard": "Nicht mehr auf diese warten",
+        "discarded": "Wartende Einträge verworfen."
+      }
     }
   },
   "auth": {

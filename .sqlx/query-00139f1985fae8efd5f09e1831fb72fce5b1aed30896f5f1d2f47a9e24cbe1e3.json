@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT k.key AS \"key!\", s.id AS \"series_id!\"\n             FROM unnest($1::text[]) AS k(key)\n             JOIN series s ON replace(s.normalized_title, ' ', '') = k.key\n            WHERE NOT s.adult_gated OR $2\n           UNION\n           SELECT k.key, s.id\n             FROM unnest($1::text[]) AS k(key)\n             JOIN series_titles t ON replace(t.normalized, ' ', '') = k.key\n             JOIN series s ON s.id = t.series_id\n            WHERE NOT s.adult_gated OR $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "key!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "series_id!",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "TextArray",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "00139f1985fae8efd5f09e1831fb72fce5b1aed30896f5f1d2f47a9e24cbe1e3"
+}

@@ -7127,6 +7127,175 @@
         },
         "type": "object"
       },
+      "WatchlistExport": {
+        "additionalProperties": false,
+        "description": "A watchlist backup, version 1.\n\nUnknown fields are refused at every level: within one version the shape is closed, so an\nunrecognised key is a hand-edit gone wrong or a newer document mislabelled, and neither\nshould be imported as though the key were not there.",
+        "properties": {
+          "entries": {
+            "description": "Every tracked series.",
+            "items": {
+              "$ref": "#/components/schemas/WatchlistExportEntry"
+            },
+            "type": "array"
+          },
+          "exported_at": {
+            "description": "When the backup was taken.",
+            "type": "string"
+          },
+          "format": {
+            "description": "Always `tankovault.watchlist`.",
+            "type": "string"
+          },
+          "version": {
+            "description": "Always `1` for this shape.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "format",
+          "version",
+          "exported_at",
+          "entries"
+        ],
+        "type": "object"
+      },
+      "WatchlistExportEntry": {
+        "additionalProperties": false,
+        "description": "One tracked series, identified without any database id.",
+        "properties": {
+          "added_at": {
+            "description": "When the series was first tracked.",
+            "type": "string"
+          },
+          "alternative_titles": {
+            "description": "Other titles the series is known by.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "external_ids": {
+            "description": "Ids on external trackers, where this deployment had mapped the series to one.",
+            "items": {
+              "$ref": "#/components/schemas/WatchlistExportExternalId"
+            },
+            "type": "array"
+          },
+          "notify": {
+            "description": "Whether new chapters notify the reader.",
+            "type": "boolean"
+          },
+          "progress": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/WatchlistExportProgress",
+                "description": "`null` when nothing has been read."
+              }
+            ]
+          },
+          "sources": {
+            "description": "Provider pages carrying the series; the primary way an import finds it again.",
+            "items": {
+              "$ref": "#/components/schemas/WatchlistExportSource"
+            },
+            "type": "array"
+          },
+          "status": {
+            "$ref": "#/components/schemas/WatchStatus",
+            "description": "The tracking status."
+          },
+          "sync_excluded": {
+            "description": "Whether the series is kept out of external sync.",
+            "type": "boolean"
+          },
+          "title": {
+            "description": "The series' canonical title.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "status",
+          "notify",
+          "added_at"
+        ],
+        "type": "object"
+      },
+      "WatchlistExportExternalId": {
+        "additionalProperties": false,
+        "description": "An id on an external tracker.",
+        "properties": {
+          "id": {
+            "description": "The tracker's id for the series.",
+            "type": "string"
+          },
+          "tracker": {
+            "description": "The tracker, such as `anilist`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tracker",
+          "id"
+        ],
+        "type": "object"
+      },
+      "WatchlistExportProgress": {
+        "additionalProperties": false,
+        "description": "Read progress.",
+        "properties": {
+          "chapter": {
+            "description": "The highest whole chapter read.",
+            "format": "double",
+            "type": "number"
+          },
+          "part": {
+            "description": "The highest part release read beyond it, such as `12.5`.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "chapter"
+        ],
+        "type": "object"
+      },
+      "WatchlistExportSource": {
+        "additionalProperties": false,
+        "description": "A provider page carrying the series.",
+        "properties": {
+          "path": {
+            "description": "The page's path relative to the provider's base URL.",
+            "type": "string"
+          },
+          "pinned": {
+            "description": "Whether the reader pinned this source.",
+            "type": "boolean"
+          },
+          "provider": {
+            "description": "The provider's slug on the exporting deployment.",
+            "type": "string"
+          },
+          "url": {
+            "description": "The page's absolute URL at export time.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "url",
+          "path"
+        ],
+        "type": "object"
+      },
       "WatchlistGroup": {
         "description": "One release-recency band's aggregates, for a group header.",
         "properties": {
@@ -7147,6 +7316,123 @@
           "key",
           "title_count",
           "chapter_count"
+        ],
+        "type": "object"
+      },
+      "WatchlistImportIssue": {
+        "description": "One entry an import wants the reader to look at.",
+        "properties": {
+          "index": {
+            "description": "The entry's zero-based position in the document.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "title": {
+            "description": "The entry's title, as the document gave it.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "index",
+          "title"
+        ],
+        "type": "object"
+      },
+      "WatchlistImportMode": {
+        "description": "How an import treats series already on the watchlist.",
+        "enum": [
+          "merge",
+          "overwrite",
+          "replace"
+        ],
+        "type": "string"
+      },
+      "WatchlistImportReport": {
+        "description": "What an import did, or with `dry_run`, would do.",
+        "properties": {
+          "added": {
+            "description": "Entries added to the watchlist.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "dry_run": {
+            "description": "Whether nothing was written.",
+            "type": "boolean"
+          },
+          "duplicates": {
+            "description": "Entries matching a series an earlier entry already claimed; ignored.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "entries": {
+            "description": "Entries in the document.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "format_version": {
+            "description": "The document version that was read.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/WatchlistImportMode",
+            "description": "The mode the import ran in."
+          },
+          "pending": {
+            "description": "Entries naming no series this catalogue has yet, queued to attach once it does.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "pending_entries": {
+            "description": "The first 100 entries left pending.",
+            "items": {
+              "$ref": "#/components/schemas/WatchlistImportIssue"
+            },
+            "type": "array"
+          },
+          "progress_written": {
+            "description": "Series whose read progress was written.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "removed": {
+            "description": "Entries removed because the backup lacks them (`replace` only).",
+            "format": "int64",
+            "type": "integer"
+          },
+          "title_matches": {
+            "description": "The first 100 entries matched by title alone, which are worth checking.",
+            "items": {
+              "$ref": "#/components/schemas/WatchlistImportIssue"
+            },
+            "type": "array"
+          },
+          "unchanged": {
+            "description": "Existing entries left exactly as they were.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "updated": {
+            "description": "Existing entries the import changed.",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "dry_run",
+          "mode",
+          "format_version",
+          "entries",
+          "added",
+          "updated",
+          "unchanged",
+          "removed",
+          "progress_written",
+          "pending",
+          "duplicates",
+          "pending_entries",
+          "title_matches"
         ],
         "type": "object"
       },
@@ -7272,6 +7558,65 @@
           "source_count",
           "source_degraded",
           "sync_excluded"
+        ],
+        "type": "object"
+      },
+      "WatchlistPending": {
+        "description": "The reader's pending backup entries.",
+        "properties": {
+          "items": {
+            "description": "The oldest 200 of them.",
+            "items": {
+              "$ref": "#/components/schemas/WatchlistPendingEntry"
+            },
+            "type": "array"
+          },
+          "total": {
+            "description": "Every pending entry the reader has.",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "items"
+        ],
+        "type": "object"
+      },
+      "WatchlistPendingEntry": {
+        "description": "A backup entry still waiting for its series to appear in this catalogue.",
+        "properties": {
+          "attempts": {
+            "description": "How many times a match has been attempted.",
+            "format": "int32",
+            "type": "integer"
+          },
+          "last_attempt_at": {
+            "description": "When a match was last attempted.",
+            "type": "string"
+          },
+          "queued_at": {
+            "description": "When the entry was first queued.",
+            "type": "string"
+          },
+          "source_urls": {
+            "description": "The entry's source page URLs, so the reader can see what it is waiting for.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "title": {
+            "description": "The entry's title.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "source_urls",
+          "queued_at",
+          "last_attempt_at",
+          "attempts"
         ],
         "type": "object"
       },
@@ -17732,6 +18077,290 @@
           }
         ],
         "summary": "Change many watchlist entries at once",
+        "tags": [
+          "me-watchlist"
+        ]
+      }
+    },
+    "/v1/me/watchlist/export": {
+      "get": {
+        "description": "The reader's whole watchlist — statuses, notification and sync choices, read progress, pinned\nsources — as a versioned JSON document that identifies each series without database ids, so\nit imports into a wiped database or another deployment.\n\nNot behind a step-up: every value in it is already readable page by page through\n`GET /v1/me/watchlist`, so elevation here would inconvenience the owner without denying a\nstolen session anything.",
+        "operationId": "export_watchlist",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WatchlistExport"
+                }
+              }
+            },
+            "description": "The watchlist backup"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Export the watchlist",
+        "tags": [
+          "me-watchlist"
+        ]
+      }
+    },
+    "/v1/me/watchlist/import": {
+      "post": {
+        "description": "Applies a backup in one transaction. Entries whose series this deployment has not crawled yet\nare queued rather than dropped, and attach automatically once a scan brings the series in;\nsee `GET /v1/me/watchlist/import/pending`.\n\nBehind a step-up. `replace` removes every entry the backup lacks and `overwrite` rewrites\nevery one it names, so a single call can undo a reader's whole library.\n\nA body over 8 MiB is refused with `413` before it is read.",
+        "operationId": "import_watchlist",
+        "parameters": [
+          {
+            "description": "`merge` (default) | `overwrite` | `replace`.",
+            "in": "query",
+            "name": "mode",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/WatchlistImportMode"
+            }
+          },
+          {
+            "description": "Also match an entry by a title naming exactly one series, when no provider page or\nexternal id matches. Off by default: two different works share titles often enough that\nthis is the reader's call.",
+            "in": "query",
+            "name": "match_titles",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          },
+          "description": "A watchlist backup, any supported version",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WatchlistImportReport"
+                }
+              }
+            },
+            "description": "What the import did"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "not a valid watchlist backup, or an unsupported version"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "a step-up is required"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "the import would exceed the pending-entry limit"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Import a watchlist backup",
+        "tags": [
+          "me-watchlist"
+        ]
+      }
+    },
+    "/v1/me/watchlist/import/pending": {
+      "delete": {
+        "description": "Stops waiting for every pending entry. Idempotent; entries already attached are unaffected.",
+        "operationId": "clear_watchlist_import_pending",
+        "responses": {
+          "204": {
+            "description": "Discarded"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Discard pending import entries",
+        "tags": [
+          "me-watchlist"
+        ]
+      },
+      "get": {
+        "description": "Imported entries whose series this deployment has not crawled yet. Each attaches on its own\nonce a scan brings its series in; this is what is still waiting.",
+        "operationId": "watchlist_import_pending",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WatchlistPending"
+                }
+              }
+            },
+            "description": "The caller's pending entries, oldest first"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "List pending import entries",
+        "tags": [
+          "me-watchlist"
+        ]
+      }
+    },
+    "/v1/me/watchlist/import/preview": {
+      "post": {
+        "description": "Everything [`import_watchlist`] would do with this document — what it adds, changes, removes\nand queues — computed against the current watchlist and then rolled back. Nothing is written.\n\nA body over 8 MiB is refused with `413` before it is read.",
+        "operationId": "preview_watchlist_import",
+        "parameters": [
+          {
+            "description": "`merge` (default) | `overwrite` | `replace`.",
+            "in": "query",
+            "name": "mode",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/WatchlistImportMode"
+            }
+          },
+          {
+            "description": "Also match an entry by a title naming exactly one series, when no provider page or\nexternal id matches. Off by default: two different works share titles often enough that\nthis is the reader's call.",
+            "in": "query",
+            "name": "match_titles",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          },
+          "description": "A watchlist backup, any supported version",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WatchlistImportReport"
+                }
+              }
+            },
+            "description": "What the import would do"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "not a valid watchlist backup, or an unsupported version"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "the import would exceed the pending-entry limit"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Preview a watchlist import",
         "tags": [
           "me-watchlist"
         ]

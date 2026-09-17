@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO watchlist_import_pending\n                  (user_id, identity_key, title, alternative_titles, source_providers, source_urls,\n                   source_paths, pinned_source, external_trackers, external_ids, status, notify,\n                   sync_excluded, added_at, last_read_whole_number, last_read_part_number,\n                   prefer_imported, match_titles)\n           SELECT $1, e->>'identity_key', e->>'title',\n                  ARRAY(SELECT v FROM jsonb_array_elements_text(e->'alternative_titles')\n                        WITH ORDINALITY AS a(v, n) ORDER BY n),\n                  ARRAY(SELECT v FROM jsonb_array_elements_text(e->'source_providers')\n                        WITH ORDINALITY AS a(v, n) ORDER BY n),\n                  ARRAY(SELECT v FROM jsonb_array_elements_text(e->'source_urls')\n                        WITH ORDINALITY AS a(v, n) ORDER BY n),\n                  ARRAY(SELECT v FROM jsonb_array_elements_text(e->'source_paths')\n                        WITH ORDINALITY AS a(v, n) ORDER BY n),\n                  (e->>'pinned_source')::smallint,\n                  ARRAY(SELECT v FROM jsonb_array_elements_text(e->'external_trackers')\n                        WITH ORDINALITY AS a(v, n) ORDER BY n),\n                  ARRAY(SELECT v FROM jsonb_array_elements_text(e->'external_ids')\n                        WITH ORDINALITY AS a(v, n) ORDER BY n),\n                  (e->>'status')::watch_status, (e->>'notify')::boolean,\n                  (e->>'sync_excluded')::boolean, LEAST((e->>'added_at')::timestamptz, now()),\n                  (e->>'whole')::numeric(10,4), (e->>'part')::numeric(10,4),\n                  $3, $4\n             FROM jsonb_array_elements($2::jsonb) AS e\n           ON CONFLICT (user_id, identity_key) DO UPDATE\n              SET title = EXCLUDED.title,\n                  alternative_titles = EXCLUDED.alternative_titles,\n                  source_providers = EXCLUDED.source_providers,\n                  source_urls = EXCLUDED.source_urls,\n                  source_paths = EXCLUDED.source_paths,\n                  pinned_source = EXCLUDED.pinned_source,\n                  external_trackers = EXCLUDED.external_trackers,\n                  external_ids = EXCLUDED.external_ids,\n                  status = EXCLUDED.status,\n                  notify = EXCLUDED.notify,\n                  sync_excluded = EXCLUDED.sync_excluded,\n                  added_at = EXCLUDED.added_at,\n                  last_read_whole_number = EXCLUDED.last_read_whole_number,\n                  last_read_part_number = EXCLUDED.last_read_part_number,\n                  prefer_imported = EXCLUDED.prefer_imported,\n                  match_titles = EXCLUDED.match_titles,\n                  last_attempt_at = now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Jsonb",
+        "Bool",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6381352388d3ee961d18ae27d7ad37ff3c7e7d604dc49d9f36060932b3b7f9ca"
+}

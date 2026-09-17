@@ -7,7 +7,7 @@
   },
   "app": {
     "name": "tankovault-challenge-solver",
-    "version": "v10.0.1",
+    "version": "v10.1.0",
     "source": "https://github.com/TimSchoenle/TankoVault"
   },
   "schema": {

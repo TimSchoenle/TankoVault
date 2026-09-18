@@ -704,7 +704,7 @@ jobs:
       # Pinned by digest: an action on a mutable ref is an unreviewed code change on every run.
       # Renovate moves the pin, and `renovate.json` keeps oasdiff explicitly enabled because its
       # 0.x versioning would otherwise park every minor on the dashboard.
-      - uses: oasdiff/oasdiff-action/breaking@95200b7219229c6259caee5062c59e2f4506e5d9 # v0.1.16
+      - uses: oasdiff/oasdiff-action/breaking@5e81b5c380accc6b523f9d32a637ca630e33620b # v0.1.17
         with:
           base: base-openapi.json
           revision: openapi.json
@@ -942,7 +942,7 @@ jobs:
           shared-key: coverage
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-on-failure: true
-      - uses: taiki-e/install-action@3f74d7c16a4242f1c95561e98edc25d36adb4375 # v2.87.12
+      - uses: taiki-e/install-action@26e9283f268b880168bdbd2c545dfcd60ec2c6ab # v2.87.13
         with:
           tool: cargo-llvm-cov
 
@@ -1019,7 +1019,7 @@ jobs:
           shared-key: coverage-integration
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-on-failure: true
-      - uses: taiki-e/install-action@3f74d7c16a4242f1c95561e98edc25d36adb4375 # v2.87.12
+      - uses: taiki-e/install-action@26e9283f268b880168bdbd2c545dfcd60ec2c6ab # v2.87.13
         with:
           tool: cargo-llvm-cov
 
@@ -1091,7 +1091,7 @@ jobs:
         with:
           shared-key: test
           save-if: false
-      - uses: taiki-e/install-action@3f74d7c16a4242f1c95561e98edc25d36adb4375 # v2.87.12
+      - uses: taiki-e/install-action@26e9283f268b880168bdbd2c545dfcd60ec2c6ab # v2.87.13
         with:
           tool: cargo-mutants
 
@@ -1179,7 +1179,7 @@ jobs:
           shared-key: notices
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-on-failure: true
-      - uses: taiki-e/install-action@3f74d7c16a4242f1c95561e98edc25d36adb4375 # v2.87.12
+      - uses: taiki-e/install-action@26e9283f268b880168bdbd2c545dfcd60ec2c6ab # v2.87.13
         with:
           tool: cargo-about
 

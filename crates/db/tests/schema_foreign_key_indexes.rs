@@ -93,10 +93,10 @@ async fn every_foreign_key_has_a_usable_index() {
         .collect();
     assert!(
         missing.is_empty(),
-        "foreign keys with no index leading on their columns; every parent delete scans the          referencing table once per row. Index them, or exempt a table bounded independently of          users and the catalogue:
-  {}",
-        missing.join("
-  ")
+        "foreign keys with no index leading on their columns; every parent delete scans the \
+         referencing table once per row. Index them, or exempt a table bounded independently of \
+         users and the catalogue:\n  {}",
+        missing.join("\n  ")
     );
 
     let stale: Vec<&str> = EXEMPT
@@ -106,11 +106,7 @@ async fn every_foreign_key_has_a_usable_index() {
         .collect();
     assert!(
         stale.is_empty(),
-        "exempted foreign keys that are now indexed or gone; remove them from EXEMPT:
-  {}",
-        stale.join(
-            "
-  "
-        )
+        "exempted foreign keys that are now indexed or gone; remove them from EXEMPT:\n  {}",
+        stale.join("\n  ")
     );
 }

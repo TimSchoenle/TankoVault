@@ -32,6 +32,9 @@ const MAX_DECISIONS: i64 = 200;
 /// anything that would make the journal expensive to read.
 const MAX_REASON: usize = 1000;
 
+/// Longest search term the journal accepts; far above any title, and bounds the `ILIKE` pattern.
+const MAX_SEARCH: usize = 200;
+
 /// Reject an empty or oversized reason before it reaches the database.
 ///
 /// A revert and a flag are both durable judgements that suppress a pair forever, and an unlabelled
@@ -53,6 +56,10 @@ fn check_reason(reason: &str) -> ApiResult<()> {
 }
 
 #[derive(Debug, Default, Deserialize, IntoParams)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "independent query-string flags that combine freely"
+)]
 pub struct MergeDecisionFilter {
     /// Restrict to one outcome: `merged`, `queued`, `requeued`, `reopened`, `withdrawn`,
     /// `distinct`, `deferred`.
@@ -74,6 +81,16 @@ pub struct MergeDecisionFilter {
     /// Only decisions a guard held back: the near misses.
     #[serde(default)]
     pub blocked: bool,
+    /// Only merges that have since been undone.
+    #[serde(default)]
+    pub reverted: bool,
+    /// Restrict to one trigger: `operator`, `sweep_new`, `sweep_requeue`, `sweep_recheck`.
+    #[serde(default)]
+    pub trigger: Option<String>,
+    /// A series or decision id matches exactly on any of the three ids; any other text is a
+    /// case-insensitive substring of either title.
+    #[serde(default)]
+    pub search: Option<String>,
     #[serde(default)]
     pub limit: Option<i64>,
     #[serde(default)]
@@ -102,6 +119,15 @@ pub async fn list_merge_decisions(
     Query(filter): Query<MergeDecisionFilter>,
 ) -> ApiResult<Json<Vec<MergeDecisionView>>> {
     user.require(Permission::MergeAudit).await?;
+    if filter
+        .search
+        .as_deref()
+        .is_some_and(|q| q.trim().chars().count() > MAX_SEARCH)
+    {
+        return Err(ApiError::BadRequest(format!(
+            "search is longer than {MAX_SEARCH} characters"
+        )));
+    }
     let rows = tankovault_db::repo::matching::list_merge_decisions(
         &state.pool,
         &tankovault_db::repo::matching::MergeDecisionFilter {
@@ -110,12 +136,42 @@ pub async fn list_merge_decisions(
             revertible_only: filter.revertible,
             flagged_only: filter.flagged,
             blocked_only: filter.blocked,
+            reverted_only: filter.reverted,
+            trigger: filter.trigger,
+            search: filter.search,
         },
         filter.limit.unwrap_or(50).clamp(1, MAX_DECISIONS),
         filter.offset.unwrap_or(0).max(0),
     )
     .await?;
     Ok(Json(rows.into_view()))
+}
+
+/// Get a merge decision
+///
+/// One entry of the journal by id, in the same shape as the list. A link to a decision resolves
+/// here whatever page of the list it would fall on.
+#[utoipa::path(
+    get,
+    path = "/v1/admin/merge-decisions/{id}",
+    tag = ADMIN_MATCHING_TAG,
+    params(("id" = Uuid, Path, description = "The merge decision")),
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "The decision", body = MergeDecisionView),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 404, description = "no such decision", body = crate::error::ProblemDetails),
+    )
+)]
+pub async fn get_merge_decision(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<Uuid>,
+) -> ApiResult<Json<MergeDecisionView>> {
+    user.require(Permission::MergeAudit).await?;
+    let row = tankovault_db::repo::matching::get_merge_decision(&state.pool, id).await?;
+    Ok(Json(row.into_view()))
 }
 
 #[derive(Debug, Deserialize, ToSchema)]

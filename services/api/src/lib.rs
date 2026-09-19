@@ -638,6 +638,7 @@ fn admin_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(admin::get_merge_policy))
         .routes(routes!(admin::set_merge_policy, admin::reset_merge_policy))
         .routes(routes!(admin::list_merge_decisions))
+        .routes(routes!(admin::get_merge_decision))
         .routes(routes!(admin::revert_merge_decision))
         .routes(routes!(admin::flag_merge_decision))
         .routes(routes!(admin::list_sync_decisions))

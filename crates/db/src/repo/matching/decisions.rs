@@ -246,6 +246,10 @@ pub struct MergeDecisionRow {
 
 /// How the console narrows the journal.
 #[derive(Debug, Default, Clone)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "independent filters that combine freely; each is one `NOT $n OR ...` clause"
+)]
 pub struct MergeDecisionFilter {
     /// Restrict to one outcome (`merged`, `queued`, `deferred`, …).
     pub outcome: Option<String>,
@@ -258,6 +262,36 @@ pub struct MergeDecisionFilter {
     pub flagged_only: bool,
     /// Only decisions a guard held back — the near-misses.
     pub blocked_only: bool,
+    /// Only merges that have been undone.
+    pub reverted_only: bool,
+    /// Restrict to one trigger (`operator`, `sweep_new`, …).
+    pub trigger: Option<String>,
+    /// Free text: a series or decision id matches exactly on any of the three ids, anything else
+    /// is a case-insensitive substring of either title. Blank is no filter.
+    pub search: Option<String>,
+}
+
+/// The two shapes a search term takes in the statement: an exact id, or an escaped `ILIKE`
+/// pattern. At most one is set.
+fn search_terms(search: Option<&str>) -> (Option<Uuid>, Option<String>) {
+    let Some(term) = search.map(str::trim).filter(|t| !t.is_empty()) else {
+        return (None, None);
+    };
+    if let Ok(id) = Uuid::parse_str(term) {
+        return (Some(id), None);
+    }
+    // The operator's text is matched literally: `%` and `_` in a title are characters, not
+    // wildcards. Backslash is Postgres' default `LIKE` escape.
+    let mut pattern = String::with_capacity(term.len() + 2);
+    pattern.push('%');
+    for c in term.chars() {
+        if matches!(c, '\\' | '%' | '_') {
+            pattern.push('\\');
+        }
+        pattern.push(c);
+    }
+    pattern.push('%');
+    (None, Some(pattern))
 }
 
 /// One row of the projection above, before the domain newtypes are put back on.
@@ -347,6 +381,21 @@ pub async fn list_merge_decisions<'e, E: PgExecutor<'e>>(
     limit: i64,
     offset: i64,
 ) -> DbResult<Vec<MergeDecisionRow>> {
+    select_merge_decisions(exec, filter, None, limit, offset).await
+}
+
+/// The one statement behind both reads, so the list row and the single row cannot drift apart.
+///
+/// `d.id` breaks `decided_at` ties: a sweep stamps its whole batch with one timestamp, and offset
+/// paging over a tied order repeats some rows and skips others.
+async fn select_merge_decisions<'e, E: PgExecutor<'e>>(
+    exec: E,
+    filter: &MergeDecisionFilter,
+    only_id: Option<Uuid>,
+    limit: i64,
+    offset: i64,
+) -> DbResult<Vec<MergeDecisionRow>> {
+    let (search_id, search_like) = search_terms(filter.search.as_deref());
     // `undo_rows` is counted in the database rather than by deserialising the journal: the point
     // of leaving `undo` out of the projection is not to ship it to the caller at all.
     //
@@ -386,7 +435,12 @@ pub async fn list_merge_decisions<'e, E: PgExecutor<'e>>(
             AND (NOT $5::boolean OR (d.undo IS NOT NULL AND d.reverted_at IS NULL)) \
             AND (NOT $6::boolean OR d.flagged_at IS NOT NULL) \
             AND (NOT $7::boolean OR cardinality(d.blocked_by) > 0) \
-          ORDER BY d.decided_at DESC \
+            AND (NOT $8::boolean OR d.reverted_at IS NOT NULL) \
+            AND ($9::text IS NULL OR d.trigger = $9) \
+            AND ($10::uuid IS NULL OR d.id = $10 OR d.left_id = $10 OR d.right_id = $10) \
+            AND ($11::text IS NULL OR d.left_title ILIKE $11 OR d.right_title ILIKE $11) \
+            AND ($12::uuid IS NULL OR d.id = $12) \
+          ORDER BY d.decided_at DESC, d.id DESC \
           LIMIT $1 OFFSET $2",
         limit,
         offset,
@@ -395,11 +449,30 @@ pub async fn list_merge_decisions<'e, E: PgExecutor<'e>>(
         filter.revertible_only,
         filter.flagged_only,
         filter.blocked_only,
+        filter.reverted_only,
+        filter.trigger.as_deref(),
+        search_id,
+        search_like,
+        only_id,
     )
     .fetch_all(exec)
     .await?;
 
     Ok(rows.into_iter().map(MergeDecisionRow::from).collect())
+}
+
+/// One decision by id, in the same projection as [`list_merge_decisions`].
+///
+/// # Errors
+/// [`DbError::NotFound`] when no such decision exists; otherwise [`DbError::Sqlx`].
+pub async fn get_merge_decision<'e, E: PgExecutor<'e>>(
+    exec: E,
+    id: Uuid,
+) -> DbResult<MergeDecisionRow> {
+    select_merge_decisions(exec, &MergeDecisionFilter::default(), Some(id), 1, 0)
+        .await?
+        .pop()
+        .ok_or(DbError::NotFound)
 }
 
 /// Undo the merge a decision performed, suppress the pair, and take back what made the two look

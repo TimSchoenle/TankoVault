@@ -252,6 +252,13 @@ fn admin_gates() -> Vec<Gate> {
             body: empty,
         },
         Gate {
+            method: "GET",
+            template: "/v1/admin/merge-decisions/{id}",
+            path: "/v1/admin/merge-decisions/00000000-0000-0000-0000-0000000000aa",
+            required: &[Permission::MergeAudit],
+            body: empty,
+        },
+        Gate {
             method: "POST",
             template: "/v1/admin/merge-decisions/{id}/revert",
             path: "/v1/admin/merge-decisions/00000000-0000-0000-0000-0000000000aa/revert",

@@ -1556,7 +1556,12 @@
         "one": "{count} Treffer",
         "other": "{count} Treffer"
       },
-      "count": "{shown} angezeigt · {reversible} rücknehmbar",
+      "count": "{first}–{last} · {reversible} rücknehmbar",
+      "hitsMore": {
+        "one": "{count}+ Treffer",
+        "other": "{count}+ Treffer"
+      },
+      "offPage": "Die geöffnete Zusammenführung steht nicht auf dieser Seite.",
       "empty": "Keine Zusammenführung passt zu dieser Ansicht.",
       "pick": "Wähle eine Zusammenführung, um zu sehen, warum sie geschah und was ein Rückgängigmachen wiederherstellen würde.",
       "lens": {

@@ -9214,6 +9214,39 @@
             }
           },
           {
+            "description": "Only merges that have since been undone.",
+            "in": "query",
+            "name": "reverted",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Restrict to one trigger: `operator`, `sweep_new`, `sweep_requeue`, `sweep_recheck`.",
+            "in": "query",
+            "name": "trigger",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "A series or decision id matches exactly on any of the three ids; any other text is a\ncase-insensitive substring of either title.",
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
             "in": "query",
             "name": "limit",
             "required": false,
@@ -9279,6 +9312,75 @@
           }
         ],
         "summary": "List merge decisions",
+        "tags": [
+          "admin-matching"
+        ]
+      }
+    },
+    "/v1/admin/merge-decisions/{id}": {
+      "get": {
+        "description": "One entry of the journal by id, in the same shape as the list. A link to a decision resolves\nhere whatever page of the list it would fall on.",
+        "operationId": "get_merge_decision",
+        "parameters": [
+          {
+            "description": "The merge decision",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MergeDecision"
+                }
+              }
+            },
+            "description": "The decision"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "no second factor is enrolled, or the caller does not hold the required permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "no such decision"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Get a merge decision",
         "tags": [
           "admin-matching"
         ]

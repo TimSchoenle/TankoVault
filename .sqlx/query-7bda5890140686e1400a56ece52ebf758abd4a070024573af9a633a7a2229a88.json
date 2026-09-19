@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE catalogue_purge_state SET heartbeat_at      = now(), series_removed    = $2, sources_removed   = $3, chapters_removed  = $4, watchlist_removed = $5, progress_removed  = $6, remaining         = $7 WHERE id AND claim_id = $1 AND running RETURNING cancel_requested",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "cancel_requested",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "catalogue_purge_state",
+            "name": "cancel_requested"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "7bda5890140686e1400a56ece52ebf758abd4a070024573af9a633a7a2229a88"
+}

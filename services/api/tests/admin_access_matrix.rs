@@ -143,6 +143,21 @@ fn admin_gates() -> Vec<Gate> {
             // instead of this matrix emptying the fixture catalogue out from under the suite.
             body: || Some(json!({ "scope": "everything", "confirm": "no" })),
         },
+        Gate {
+            method: "GET",
+            template: "/v1/admin/catalogue/purge",
+            path: "/v1/admin/catalogue/purge",
+            required: &[Permission::CatalogueRead],
+            body: empty,
+        },
+        Gate {
+            method: "POST",
+            template: "/v1/admin/catalogue/purge/cancel",
+            path: "/v1/admin/catalogue/purge/cancel",
+            // With no run live this is a no-op `200`, so leg 3 cannot disturb the suite.
+            required: &[Permission::CatalogueDelete],
+            body: empty,
+        },
         // --- merge queue ---
         Gate {
             method: "GET",

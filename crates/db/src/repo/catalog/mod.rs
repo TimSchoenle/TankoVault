@@ -7,6 +7,7 @@ pub mod enrichment;
 pub mod ingest;
 pub mod maintenance;
 pub mod metadata;
+pub mod purge;
 pub mod rollup;
 pub mod series;
 pub mod sources;

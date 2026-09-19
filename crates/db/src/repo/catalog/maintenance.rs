@@ -128,6 +128,16 @@ pub struct DeletionReport {
     pub progress_rows: i64,
 }
 
+impl std::ops::AddAssign for DeletionReport {
+    fn add_assign(&mut self, other: Self) {
+        self.series += other.series;
+        self.sources += other.sources;
+        self.chapters += other.chapters;
+        self.watchlist_entries += other.watchlist_entries;
+        self.progress_rows += other.progress_rows;
+    }
+}
+
 /// List the catalogue for maintenance, newest first.
 ///
 /// Ordered by `created_at DESC` and deliberately not sortable: the panel narrows with the health
@@ -290,11 +300,10 @@ pub async fn delete_series(conn: &mut PgConnection, ids: &[Uuid]) -> DbResult<De
 
 /// Delete up to `batch` series, oldest first, and report how many are left.
 ///
-/// Batched rather than one `DELETE FROM series`, because a full catalogue cascades into a dozen
-/// tables and takes far longer than any HTTP request may: an unbatched purge would hit the
-/// request timeout and roll back every time, so the deployment could never actually be emptied.
-/// Each call is its own transaction and the operation is resumable — the caller repeats until
-/// `remaining` reaches zero.
+/// Batched rather than one `DELETE FROM series`: a full catalogue cascades into a dozen tables,
+/// and one transaction over all of it would hold row locks against every running scan for
+/// minutes. Each call is its own transaction, so the purge is resumable — the caller repeats
+/// until `remaining` reaches zero.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.

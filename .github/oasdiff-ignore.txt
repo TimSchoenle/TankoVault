@@ -62,3 +62,13 @@ in api post /v1/auth/login removed the required property `expires_in` from the r
 # document refused every provider list carrying such a provider. Pinned by
 # `tankovault_domain::enums`' `the_published_vocabulary_is_the_one_serde_writes`.
 in api post /v1/admin/providers removed the enum value `manga_themesia` of the request property `adapter`
+
+# The catalogue purge deleted inside the request and was called in a loop; one batch on a large
+# catalogue outlasted the 30 s request timeout, rolled back, and the purge could never finish. It
+# now runs detached, so the start response can only say whether a run started — the progress
+# these four properties carried is on `GET /v1/admin/catalogue/purge`. Consumed only by the
+# operator console, updated in the same commit.
+in api post /v1/admin/catalogue/purge removed the required property `done` from the response with the `200` status
+in api post /v1/admin/catalogue/purge removed the required property `remaining` from the response with the `200` status
+in api post /v1/admin/catalogue/purge removed the required property `removed` from the response with the `200` status
+in api post /v1/admin/catalogue/purge removed the required property `scope` from the response with the `200` status

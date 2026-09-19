@@ -12,6 +12,25 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [10.1.1](https://github.com/TimSchoenle/TankoVault/compare/v10.1.0...v10.1.1) (2026-09-19)
+
+
+### Bug Fixes
+
+* **db:** index every foreign key onto the catalogue ([#416](https://github.com/TimSchoenle/TankoVault/issues/416)) ([9402c0a](https://github.com/TimSchoenle/TankoVault/commit/9402c0a92d3c1454f32eae62c2ca4e0c77373c93))
+* **db:** index the foreign keys parent deletes cascade through ([#417](https://github.com/TimSchoenle/TankoVault/issues/417)) ([0133653](https://github.com/TimSchoenle/TankoVault/commit/0133653533070e7afecba84697fbeaf9bb374c22))
+
+
+### Miscellaneous
+
+* **deps:** update all non-major action updates ([c19a90c](https://github.com/TimSchoenle/TankoVault/commit/c19a90c981acd3f442bc526eb9d8a21b55ff4ee5))
+* **deps:** update all non-major action updates ([#414](https://github.com/TimSchoenle/TankoVault/issues/414)) ([c19a90c](https://github.com/TimSchoenle/TankoVault/commit/c19a90c981acd3f442bc526eb9d8a21b55ff4ee5))
+* **deps:** update all non-major action updates (minor) ([#415](https://github.com/TimSchoenle/TankoVault/issues/415)) ([b1766d9](https://github.com/TimSchoenle/TankoVault/commit/b1766d916185ed92ac183744fe961c7c4d807dfc))
+* **deps:** update timschoenle/actions/.github/workflows/maintenance-auto-approve-renovate.yaml to vworkflows-maintenance-auto-approve-renovate-v1.4.25 ([#409](https://github.com/TimSchoenle/TankoVault/issues/409)) ([18808f9](https://github.com/TimSchoenle/TankoVault/commit/18808f9ebb2cbb79ed7649e5913efc2018b0526d))
+* **deps:** update timschoenle/actions/.github/workflows/maintenance-timed-auto-pr-approve.yaml to vworkflows-maintenance-timed-auto-pr-approve-v1.2.37 ([#410](https://github.com/TimSchoenle/TankoVault/issues/410)) ([1c2f292](https://github.com/TimSchoenle/TankoVault/commit/1c2f29224eb221650e20369b739c3f39a0e8c324))
+* **deps:** update timschoenle/actions/actions/common/render-template-and-commit to vactions-common-render-template-and-commit-v1.1.10 ([#412](https://github.com/TimSchoenle/TankoVault/issues/412)) ([68c14a5](https://github.com/TimSchoenle/TankoVault/commit/68c14a591c68d95a8f4696206fd25a298d2be740))
+* **deps:** update timschoenle/actions/actions/helm/update-chart-version to vactions-helm-update-chart-version-v1.6.12 ([#413](https://github.com/TimSchoenle/TankoVault/issues/413)) ([86d117f](https://github.com/TimSchoenle/TankoVault/commit/86d117fac50d859355d6b742bad3195cb21db991))
+
 ## [10.1.0](https://github.com/TimSchoenle/TankoVault/compare/v10.0.1...v10.1.0) (2026-09-17)
 
 

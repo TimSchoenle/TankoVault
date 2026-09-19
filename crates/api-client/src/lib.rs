@@ -36231,7 +36231,7 @@ pub mod types {
     }
 }
 #[derive(Clone, Debug)]
-#[doc = "Client for tankovault-api\n\nAxum HTTP edge: public read/write + admin, auth, resolved links, SSE.\n\nVersion: 10.1.0"]
+#[doc = "Client for tankovault-api\n\nAxum HTTP edge: public read/write + admin, auth, resolved links, SSE.\n\nVersion: 10.1.1"]
 pub struct Client {
     pub(crate) baseurl: String,
     pub(crate) client: reqwest::Client,
@@ -36269,7 +36269,7 @@ impl Client {
 }
 impl ClientInfo<()> for Client {
     fn api_version() -> &'static str {
-        "10.1.0"
+        "10.1.1"
     }
     fn baseurl(&self) -> &str {
         self.baseurl.as_str()

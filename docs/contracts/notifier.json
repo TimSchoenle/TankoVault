@@ -7,7 +7,7 @@
   },
   "app": {
     "name": "tankovault-notifier",
-    "version": "v10.1.1",
+    "version": "v10.1.2",
     "source": "https://github.com/TimSchoenle/TankoVault"
   },
   "schema": {

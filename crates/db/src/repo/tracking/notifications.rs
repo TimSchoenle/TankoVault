@@ -349,7 +349,7 @@ pub async fn watchers_for_series<'e, E: PgExecutor<'e>>(
     }
     let rows = sqlx::query_as!(
         Row,
-        "SELECT w.user_id AS \"user_id!\", w.status AS \"status!: WatchStatus\", \
+        "SELECT w.user_id, w.status AS \"status: WatchStatus\", \
                 u.notification_prefs AS \"prefs: Json\", \
                 rp.last_read_whole_number::float8 AS whole, \
                 rp.last_read_part_number::float8 AS part \

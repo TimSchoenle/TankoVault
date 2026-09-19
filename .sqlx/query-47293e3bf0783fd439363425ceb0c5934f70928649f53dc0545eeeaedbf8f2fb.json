@@ -1,0 +1,79 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT w.user_id, w.status AS \"status: WatchStatus\", u.notification_prefs AS \"prefs: Json\", rp.last_read_whole_number::float8 AS whole, rp.last_read_part_number::float8 AS part FROM watchlist_entries w JOIN users u ON u.id = w.user_id LEFT JOIN read_progress rp ON rp.user_id = w.user_id AND rp.series_id = w.series_id WHERE w.series_id = $1 AND w.notify",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "watchlist_entries",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "status: WatchStatus",
+        "type_info": {
+          "Custom": {
+            "name": "watch_status",
+            "kind": {
+              "Enum": [
+                "reading",
+                "planned",
+                "completed",
+                "dropped",
+                "paused"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "watchlist_entries",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "prefs: Json",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "notification_prefs"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "whole",
+        "type_info": "Float8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "part",
+        "type_info": "Float8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "47293e3bf0783fd439363425ceb0c5934f70928649f53dc0545eeeaedbf8f2fb"
+}

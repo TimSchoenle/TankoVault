@@ -1,0 +1,12 @@
+DROP INDEX IF EXISTS recommendation_feedback_series_idx;
+DROP INDEX IF EXISTS user_series_affinity_series_idx;
+DROP INDEX IF EXISTS series_cooccurrence_other_idx;
+DROP INDEX IF EXISTS sync_history_series_idx;
+DROP INDEX IF EXISTS sync_conflicts_series_idx;
+DROP INDEX IF EXISTS series_sync_overrides_series_idx;
+DROP INDEX IF EXISTS sync_remote_entries_series_idx;
+DROP INDEX IF EXISTS merge_candidates_candidate_idx;
+DROP INDEX IF EXISTS notification_dedup_series_idx;
+DROP INDEX IF EXISTS read_progress_series_idx;
+DROP INDEX IF EXISTS watchlist_entries_pinned_source_idx;
+DROP INDEX IF EXISTS watchlist_entries_series_idx;

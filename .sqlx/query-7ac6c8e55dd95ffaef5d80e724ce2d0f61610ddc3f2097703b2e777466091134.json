@@ -1,0 +1,191 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT running AND heartbeat_at IS NOT NULL AND heartbeat_at >= now() - make_interval(secs => $1::double precision) AS \"live!\", running AS \"claimed!\", scope, started_by, started_at, finished_at, cancel_requested, series_removed, sources_removed, chapters_removed, watchlist_removed, progress_removed, remaining, stopped, error FROM catalogue_purge_state WHERE id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "live!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "claimed!",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "catalogue_purge_state",
+            "name": "running"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "scope",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "catalogue_purge_state",
+            "name": "scope"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "started_by",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "catalogue_purge_state",
+            "name": "started_by"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "started_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "catalogue_purge_state",
+            "name": "started_at"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "finished_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "catalogue_purge_state",
+            "name": "finished_at"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "cancel_requested",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "catalogue_purge_state",
+            "name": "cancel_requested"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "series_removed",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "catalogue_purge_state",
+            "name": "series_removed"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "sources_removed",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "catalogue_purge_state",
+            "name": "sources_removed"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "chapters_removed",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "catalogue_purge_state",
+            "name": "chapters_removed"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "watchlist_removed",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "catalogue_purge_state",
+            "name": "watchlist_removed"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "progress_removed",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "catalogue_purge_state",
+            "name": "progress_removed"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "remaining",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "catalogue_purge_state",
+            "name": "remaining"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "stopped",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "catalogue_purge_state",
+            "name": "stopped"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "error",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "catalogue_purge_state",
+            "name": "error"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Float8"
+      ]
+    },
+    "nullable": [
+      null,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "7ac6c8e55dd95ffaef5d80e724ce2d0f61610ddc3f2097703b2e777466091134"
+}

@@ -558,32 +558,105 @@
         ],
         "type": "object"
       },
-      "CataloguePurge": {
-        "description": "One purge call's progress.",
+      "CataloguePurgeStart": {
+        "description": "Whether a purge was started, and the state it is in.",
         "properties": {
-          "done": {
-            "description": "Whether this call finished the job.",
+          "started": {
+            "description": "`false` when a run was already live; `status` is then that run's.",
             "type": "boolean"
           },
-          "remaining": {
-            "description": "Rows of the purged kind still standing. The caller repeats until this is zero.",
-            "format": "int64",
-            "type": "integer"
-          },
-          "removed": {
-            "$ref": "#/components/schemas/CatalogueDeletion"
-          },
-          "scope": {
-            "$ref": "#/components/schemas/PurgeScope"
+          "status": {
+            "$ref": "#/components/schemas/CataloguePurgeStatus"
           }
         },
         "required": [
-          "scope",
-          "removed",
-          "remaining",
-          "done"
+          "started",
+          "status"
         ],
         "type": "object"
+      },
+      "CataloguePurgeStatus": {
+        "description": "The purge's current or most recent run.",
+        "properties": {
+          "cancel_requested": {
+            "description": "Whether a cancel has been asked of the running purge. It stops after its current batch.",
+            "type": "boolean"
+          },
+          "error": {
+            "description": "Why the last run failed.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "finished_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "remaining": {
+            "description": "Rows of the purged kind left after the last committed batch; absent until one commits.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "removed": {
+            "$ref": "#/components/schemas/CatalogueDeletion",
+            "description": "What the run has removed so far."
+          },
+          "running": {
+            "description": "Whether a run holds the claim and is still making progress.",
+            "type": "boolean"
+          },
+          "scope": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PurgeScope",
+                "description": "The scope of the current or last run; absent before the first."
+              }
+            ]
+          },
+          "started_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "stopped": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CataloguePurgeStop",
+                "description": "Why the last run stopped; absent while one is running and before the first."
+              }
+            ]
+          }
+        },
+        "required": [
+          "running",
+          "cancel_requested",
+          "removed"
+        ],
+        "type": "object"
+      },
+      "CataloguePurgeStop": {
+        "description": "Why a purge run stopped.",
+        "enum": [
+          "done",
+          "cancelled",
+          "stalled",
+          "failed",
+          "interrupted"
+        ],
+        "type": "string"
       },
       "CatalogueRow": {
         "description": "One row of the maintenance list.",
@@ -7970,8 +8043,53 @@
       }
     },
     "/v1/admin/catalogue/purge": {
+      "get": {
+        "description": "Progress of the run `POST` of this path starts, and the outcome of the last one. Read from\nthe database, so any replica answers for the run wherever it is executing.",
+        "operationId": "catalogue_purge_status",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CataloguePurgeStatus"
+                }
+              }
+            },
+            "description": "The purge's current state"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "no second factor is enrolled, or the caller does not hold the required permission"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Get the catalogue purge's state",
+        "tags": [
+          "admin-catalogue"
+        ]
+      },
       "post": {
-        "description": "Empties the catalogue for up to ten seconds per call. The response says how much this call\nremoved and how much is left, and the caller repeats until `done`.\n\n# Why this is not one request\n\nA full catalogue cascades into a dozen tables and takes minutes, far longer than the request\ntimeout allows. A single statement would therefore be killed and rolled back every time, and\nthe deployment could never actually be emptied. Batching makes the operation resumable\ninstead: each batch commits, and an interrupted purge leaves a smaller catalogue rather than\nno progress at all.\n\n# Why it is not one batch per request either\n\nSee [`PURGE_BUDGET`]: a call per batch spent the caller's rate-limit budget long before the\ncatalogue was empty.",
+        "description": "Starts a detached run that empties the catalogue in batches, and answers only whether it\nstarted. Progress is on `GET` of this path. A request arriving while a run is live answers\n`started: false` and changes nothing; one arriving after an interrupted run resumes it,\nbecause every committed batch stays committed.",
         "operationId": "purge_catalogue",
         "requestBody": {
           "content": {
@@ -7988,11 +8106,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CataloguePurge"
+                  "$ref": "#/components/schemas/CataloguePurgeStart"
                 }
               }
             },
-            "description": "What this batch removed and what is left"
+            "description": "Whether a run was started, and the purge's state"
           },
           "400": {
             "content": {
@@ -8030,7 +8148,54 @@
             "bearer_auth": []
           }
         ],
-        "summary": "Purge the catalogue",
+        "summary": "Start a catalogue purge",
+        "tags": [
+          "admin-catalogue"
+        ]
+      }
+    },
+    "/v1/admin/catalogue/purge/cancel": {
+      "post": {
+        "description": "Asks the live run to stop after the batch it is on. Everything already removed stays\nremoved. A no-op when no run is live.",
+        "operationId": "cancel_catalogue_purge",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CataloguePurgeStatus"
+                }
+              }
+            },
+            "description": "The purge's state after the request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Cancel the catalogue purge",
         "tags": [
           "admin-catalogue"
         ]

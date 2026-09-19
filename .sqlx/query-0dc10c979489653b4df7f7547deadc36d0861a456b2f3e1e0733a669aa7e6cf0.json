@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE catalogue_purge_state SET cancel_requested = true WHERE id AND running AND heartbeat_at >= now() - make_interval(secs => $1::double precision)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0dc10c979489653b4df7f7547deadc36d0861a456b2f3e1e0733a669aa7e6cf0"
+}

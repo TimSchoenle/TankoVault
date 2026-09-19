@@ -1324,52 +1324,216 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "One purge call's progress."]
+    #[doc = "Whether a purge was started, and the state it is in."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"One purge call's progress.\","]
+    #[doc = "  \"description\": \"Whether a purge was started, and the state it is in.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
-    #[doc = "    \"done\","]
-    #[doc = "    \"remaining\","]
-    #[doc = "    \"removed\","]
-    #[doc = "    \"scope\""]
+    #[doc = "    \"started\","]
+    #[doc = "    \"status\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
-    #[doc = "    \"done\": {"]
-    #[doc = "      \"description\": \"Whether this call finished the job.\","]
+    #[doc = "    \"started\": {"]
+    #[doc = "      \"description\": \"`false` when a run was already live; `status` is then that run's.\","]
     #[doc = "      \"type\": \"boolean\""]
     #[doc = "    },"]
-    #[doc = "    \"remaining\": {"]
-    #[doc = "      \"description\": \"Rows of the purged kind still standing. The caller repeats until this is zero.\","]
-    #[doc = "      \"type\": \"integer\","]
-    #[doc = "      \"format\": \"int64\""]
-    #[doc = "    },"]
-    #[doc = "    \"removed\": {"]
-    #[doc = "      \"$ref\": \"#/components/schemas/CatalogueDeletion\""]
-    #[doc = "    },"]
-    #[doc = "    \"scope\": {"]
-    #[doc = "      \"$ref\": \"#/components/schemas/PurgeScope\""]
+    #[doc = "    \"status\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/CataloguePurgeStatus\""]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
     #[doc = r" ```"]
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
-    pub struct CataloguePurge {
-        #[doc = "Whether this call finished the job."]
-        pub done: bool,
-        #[doc = "Rows of the purged kind still standing. The caller repeats until this is zero."]
-        pub remaining: i64,
-        pub removed: CatalogueDeletion,
-        pub scope: PurgeScope,
+    pub struct CataloguePurgeStart {
+        #[doc = "`false` when a run was already live; `status` is then that run's."]
+        pub started: bool,
+        pub status: CataloguePurgeStatus,
     }
-    impl CataloguePurge {
-        pub fn builder() -> builder::CataloguePurge {
+    impl CataloguePurgeStart {
+        pub fn builder() -> builder::CataloguePurgeStart {
             Default::default()
+        }
+    }
+    #[doc = "The purge's current or most recent run."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"The purge's current or most recent run.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"cancel_requested\","]
+    #[doc = "    \"removed\","]
+    #[doc = "    \"running\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"cancel_requested\": {"]
+    #[doc = "      \"description\": \"Whether a cancel has been asked of the running purge. It stops after its current batch.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"error\": {"]
+    #[doc = "      \"description\": \"Why the last run failed.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"finished_at\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"remaining\": {"]
+    #[doc = "      \"description\": \"Rows of the purged kind left after the last committed batch; absent until one commits.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"integer\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"removed\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/CatalogueDeletion\""]
+    #[doc = "    },"]
+    #[doc = "    \"running\": {"]
+    #[doc = "      \"description\": \"Whether a run holds the claim and is still making progress.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"scope\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/PurgeScope\""]
+    #[doc = "    },"]
+    #[doc = "    \"started_at\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"stopped\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/CataloguePurgeStop\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct CataloguePurgeStatus {
+        #[doc = "Whether a cancel has been asked of the running purge. It stops after its current batch."]
+        pub cancel_requested: bool,
+        #[doc = "Why the last run failed."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub error: ::std::option::Option<::std::string::String>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub finished_at: ::std::option::Option<::std::string::String>,
+        #[doc = "Rows of the purged kind left after the last committed batch; absent until one commits."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub remaining: ::std::option::Option<i64>,
+        pub removed: CatalogueDeletion,
+        #[doc = "Whether a run holds the claim and is still making progress."]
+        pub running: bool,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub scope: ::std::option::Option<PurgeScope>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub started_at: ::std::option::Option<::std::string::String>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub stopped: ::std::option::Option<CataloguePurgeStop>,
+    }
+    impl CataloguePurgeStatus {
+        pub fn builder() -> builder::CataloguePurgeStatus {
+            Default::default()
+        }
+    }
+    #[doc = "Why a purge run stopped."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Why a purge run stopped.\","]
+    #[doc = "  \"type\": \"string\","]
+    #[doc = "  \"enum\": ["]
+    #[doc = "    \"done\","]
+    #[doc = "    \"cancelled\","]
+    #[doc = "    \"stalled\","]
+    #[doc = "    \"failed\","]
+    #[doc = "    \"interrupted\""]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+    )]
+    pub enum CataloguePurgeStop {
+        #[serde(rename = "done")]
+        Done,
+        #[serde(rename = "cancelled")]
+        Cancelled,
+        #[serde(rename = "stalled")]
+        Stalled,
+        #[serde(rename = "failed")]
+        Failed,
+        #[serde(rename = "interrupted")]
+        Interrupted,
+    }
+    impl ::std::fmt::Display for CataloguePurgeStop {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Done => f.write_str("done"),
+                Self::Cancelled => f.write_str("cancelled"),
+                Self::Stalled => f.write_str("stalled"),
+                Self::Failed => f.write_str("failed"),
+                Self::Interrupted => f.write_str("interrupted"),
+            }
+        }
+    }
+    impl ::std::str::FromStr for CataloguePurgeStop {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "done" => Ok(Self::Done),
+                "cancelled" => Ok(Self::Cancelled),
+                "stalled" => Ok(Self::Stalled),
+                "failed" => Ok(Self::Failed),
+                "interrupted" => Ok(Self::Interrupted),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+    impl ::std::convert::TryFrom<&str> for CataloguePurgeStop {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    impl ::std::convert::TryFrom<&::std::string::String> for CataloguePurgeStop {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    impl ::std::convert::TryFrom<::std::string::String> for CataloguePurgeStop {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
         }
     }
     #[doc = "One row of the maintenance list."]
@@ -17697,36 +17861,135 @@ pub mod types {
             }
         }
         #[derive(Clone, Debug)]
-        pub struct CataloguePurge {
-            done: ::std::result::Result<bool, ::std::string::String>,
-            remaining: ::std::result::Result<i64, ::std::string::String>,
-            removed: ::std::result::Result<super::CatalogueDeletion, ::std::string::String>,
-            scope: ::std::result::Result<super::PurgeScope, ::std::string::String>,
+        pub struct CataloguePurgeStart {
+            started: ::std::result::Result<bool, ::std::string::String>,
+            status: ::std::result::Result<super::CataloguePurgeStatus, ::std::string::String>,
         }
-        impl ::std::default::Default for CataloguePurge {
+        impl ::std::default::Default for CataloguePurgeStart {
             fn default() -> Self {
                 Self {
-                    done: Err("no value supplied for done".to_string()),
-                    remaining: Err("no value supplied for remaining".to_string()),
-                    removed: Err("no value supplied for removed".to_string()),
-                    scope: Err("no value supplied for scope".to_string()),
+                    started: Err("no value supplied for started".to_string()),
+                    status: Err("no value supplied for status".to_string()),
                 }
             }
         }
-        impl CataloguePurge {
-            pub fn done<T>(mut self, value: T) -> Self
+        impl CataloguePurgeStart {
+            pub fn started<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<bool>,
                 T::Error: ::std::fmt::Display,
             {
-                self.done = value
+                self.started = value
                     .try_into()
-                    .map_err(|e| format!("error converting supplied value for done: {e}"));
+                    .map_err(|e| format!("error converting supplied value for started: {e}"));
+                self
+            }
+            pub fn status<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::CataloguePurgeStatus>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.status = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for status: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<CataloguePurgeStart> for super::CataloguePurgeStart {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: CataloguePurgeStart,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    started: value.started?,
+                    status: value.status?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::CataloguePurgeStart> for CataloguePurgeStart {
+            fn from(value: super::CataloguePurgeStart) -> Self {
+                Self {
+                    started: Ok(value.started),
+                    status: Ok(value.status),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct CataloguePurgeStatus {
+            cancel_requested: ::std::result::Result<bool, ::std::string::String>,
+            error: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            finished_at: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            remaining: ::std::result::Result<::std::option::Option<i64>, ::std::string::String>,
+            removed: ::std::result::Result<super::CatalogueDeletion, ::std::string::String>,
+            running: ::std::result::Result<bool, ::std::string::String>,
+            scope: ::std::result::Result<
+                ::std::option::Option<super::PurgeScope>,
+                ::std::string::String,
+            >,
+            started_at: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            stopped: ::std::result::Result<
+                ::std::option::Option<super::CataloguePurgeStop>,
+                ::std::string::String,
+            >,
+        }
+        impl ::std::default::Default for CataloguePurgeStatus {
+            fn default() -> Self {
+                Self {
+                    cancel_requested: Err("no value supplied for cancel_requested".to_string()),
+                    error: Ok(Default::default()),
+                    finished_at: Ok(Default::default()),
+                    remaining: Ok(Default::default()),
+                    removed: Err("no value supplied for removed".to_string()),
+                    running: Err("no value supplied for running".to_string()),
+                    scope: Ok(Default::default()),
+                    started_at: Ok(Default::default()),
+                    stopped: Ok(Default::default()),
+                }
+            }
+        }
+        impl CataloguePurgeStatus {
+            pub fn cancel_requested<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.cancel_requested = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for cancel_requested: {e}")
+                });
+                self
+            }
+            pub fn error<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.error = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for error: {e}"));
+                self
+            }
+            pub fn finished_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.finished_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for finished_at: {e}"));
                 self
             }
             pub fn remaining<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<i64>,
+                T: ::std::convert::TryInto<::std::option::Option<i64>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.remaining = value
@@ -17744,9 +18007,19 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for removed: {e}"));
                 self
             }
+            pub fn running<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.running = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for running: {e}"));
+                self
+            }
             pub fn scope<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<super::PurgeScope>,
+                T: ::std::convert::TryInto<::std::option::Option<super::PurgeScope>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.scope = value
@@ -17754,27 +18027,57 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for scope: {e}"));
                 self
             }
+            pub fn started_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.started_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for started_at: {e}"));
+                self
+            }
+            pub fn stopped<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<super::CataloguePurgeStop>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.stopped = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for stopped: {e}"));
+                self
+            }
         }
-        impl ::std::convert::TryFrom<CataloguePurge> for super::CataloguePurge {
+        impl ::std::convert::TryFrom<CataloguePurgeStatus> for super::CataloguePurgeStatus {
             type Error = super::error::ConversionError;
             fn try_from(
-                value: CataloguePurge,
+                value: CataloguePurgeStatus,
             ) -> ::std::result::Result<Self, super::error::ConversionError> {
                 Ok(Self {
-                    done: value.done?,
+                    cancel_requested: value.cancel_requested?,
+                    error: value.error?,
+                    finished_at: value.finished_at?,
                     remaining: value.remaining?,
                     removed: value.removed?,
+                    running: value.running?,
                     scope: value.scope?,
+                    started_at: value.started_at?,
+                    stopped: value.stopped?,
                 })
             }
         }
-        impl ::std::convert::From<super::CataloguePurge> for CataloguePurge {
-            fn from(value: super::CataloguePurge) -> Self {
+        impl ::std::convert::From<super::CataloguePurgeStatus> for CataloguePurgeStatus {
+            fn from(value: super::CataloguePurgeStatus) -> Self {
                 Self {
-                    done: Ok(value.done),
+                    cancel_requested: Ok(value.cancel_requested),
+                    error: Ok(value.error),
+                    finished_at: Ok(value.finished_at),
                     remaining: Ok(value.remaining),
                     removed: Ok(value.removed),
+                    running: Ok(value.running),
                     scope: Ok(value.scope),
+                    started_at: Ok(value.started_at),
+                    stopped: Ok(value.stopped),
                 }
             }
         }
@@ -36291,9 +36594,17 @@ impl Client {
     pub fn audit_actions(&self) -> builder::AuditActions<'_> {
         builder::AuditActions::new(self)
     }
-    #[doc = "Purge the catalogue\n\nEmpties the catalogue for up to ten seconds per call. The response says how much this call\nremoved and how much is left, and the caller repeats until `done`.\n\n# Why this is not one request\n\nA full catalogue cascades into a dozen tables and takes minutes, far longer than the request\ntimeout allows. A single statement would therefore be killed and rolled back every time, and\nthe deployment could never actually be emptied. Batching makes the operation resumable\ninstead: each batch commits, and an interrupted purge leaves a smaller catalogue rather than\nno progress at all.\n\n# Why it is not one batch per request either\n\nSee [`PURGE_BUDGET`]: a call per batch spent the caller's rate-limit budget long before the\ncatalogue was empty.\n\nSends a `POST` request to `/v1/admin/catalogue/purge`\n\n```ignore\nlet response = client.purge_catalogue()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Get the catalogue purge's state\n\nProgress of the run `POST` of this path starts, and the outcome of the last one. Read from\nthe database, so any replica answers for the run wherever it is executing.\n\nSends a `GET` request to `/v1/admin/catalogue/purge`\n\n```ignore\nlet response = client.catalogue_purge_status()\n    .send()\n    .await;\n```"]
+    pub fn catalogue_purge_status(&self) -> builder::CataloguePurgeStatus<'_> {
+        builder::CataloguePurgeStatus::new(self)
+    }
+    #[doc = "Start a catalogue purge\n\nStarts a detached run that empties the catalogue in batches, and answers only whether it\nstarted. Progress is on `GET` of this path. A request arriving while a run is live answers\n`started: false` and changes nothing; one arriving after an interrupted run resumes it,\nbecause every committed batch stays committed.\n\nSends a `POST` request to `/v1/admin/catalogue/purge`\n\n```ignore\nlet response = client.purge_catalogue()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn purge_catalogue(&self) -> builder::PurgeCatalogue<'_> {
         builder::PurgeCatalogue::new(self)
+    }
+    #[doc = "Cancel the catalogue purge\n\nAsks the live run to stop after the batch it is on. Everything already removed stays\nremoved. A no-op when no run is live.\n\nSends a `POST` request to `/v1/admin/catalogue/purge/cancel`\n\n```ignore\nlet response = client.cancel_catalogue_purge()\n    .send()\n    .await;\n```"]
+    pub fn cancel_catalogue_purge(&self) -> builder::CancelCataloguePurge<'_> {
+        builder::CancelCataloguePurge::new(self)
     }
     #[doc = "List the catalogue for maintenance\n\nThe operator's view of the catalogue: what is in it, how much of it each series is, and how\nmany readers would notice it going. Newest first, filterable by title, provider and health.\n\nSends a `GET` request to `/v1/admin/catalogue/series`\n\nArguments:\n- `health`\n- `limit`\n- `offset`\n- `provider`: Restrict to series carried by this provider slug.\n- `search`: Case-insensitive substring of the canonical title. Empty lists everything.\n```ignore\nlet response = client.list_catalogue()\n    .health(health)\n    .limit(limit)\n    .offset(offset)\n    .provider(provider)\n    .search(search)\n    .send()\n    .await;\n```"]
     pub fn list_catalogue(&self) -> builder::ListCatalogue<'_> {
@@ -37229,6 +37540,56 @@ pub mod builder {
             }
         }
     }
+    #[doc = "Builder for [`Client::catalogue_purge_status`]\n\n[`Client::catalogue_purge_status`]: super::Client::catalogue_purge_status"]
+    #[derive(Debug, Clone)]
+    pub struct CataloguePurgeStatus<'a> {
+        client: &'a super::Client,
+    }
+    impl<'a> CataloguePurgeStatus<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+        #[doc = "Sends a `GET` request to `/v1/admin/catalogue/purge`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::CataloguePurgeStatus>, Error<types::ProblemDetails>>
+        {
+            let Self { client } = self;
+            let url = format!("{}/v1/admin/catalogue/purge", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "catalogue_purge_status",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
     #[doc = "Builder for [`Client::purge_catalogue`]\n\n[`Client::purge_catalogue`]: super::Client::purge_catalogue"]
     #[derive(Debug, Clone)]
     pub struct PurgeCatalogue<'a> {
@@ -37263,7 +37624,8 @@ pub mod builder {
         #[doc = "Sends a `POST` request to `/v1/admin/catalogue/purge`"]
         pub async fn send(
             self,
-        ) -> Result<ResponseValue<types::CataloguePurge>, Error<types::ProblemDetails>> {
+        ) -> Result<ResponseValue<types::CataloguePurgeStart>, Error<types::ProblemDetails>>
+        {
             let Self { client, body } = self;
             let body = body
                 .and_then(|v| types::PurgeRequest::try_from(v).map_err(|e| e.to_string()))
@@ -37297,6 +37659,56 @@ pub mod builder {
                 400u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::cancel_catalogue_purge`]\n\n[`Client::cancel_catalogue_purge`]: super::Client::cancel_catalogue_purge"]
+    #[derive(Debug, Clone)]
+    pub struct CancelCataloguePurge<'a> {
+        client: &'a super::Client,
+    }
+    impl<'a> CancelCataloguePurge<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+        #[doc = "Sends a `POST` request to `/v1/admin/catalogue/purge/cancel`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::CataloguePurgeStatus>, Error<types::ProblemDetails>>
+        {
+            let Self { client } = self;
+            let url = format!("{}/v1/admin/catalogue/purge/cancel", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "cancel_catalogue_purge",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
                 401u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),

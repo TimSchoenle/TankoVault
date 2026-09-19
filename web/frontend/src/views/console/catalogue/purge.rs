@@ -1,60 +1,26 @@
 //! The catalogue danger zone: drop every chapter, or empty the catalogue outright.
 //!
-//! Both run as a **loop** of calls rather than one request. A full catalogue cascades into a
-//! dozen tables and would outlast any request timeout, so the endpoint deletes for as long as it
-//! safely can and reports what is left; this panel drives it until nothing is, showing the
-//! running total as it goes. An operator who closes the tab half way leaves a smaller catalogue,
-//! not a rolled-back no-op: the purge is resumable, and pressing it again continues.
-//!
-//! The loop is also the one console interaction that can rate-limit *itself*, so it waits out a
-//! `429` and carries on instead of reporting it. It used to make one call per 500 series against
-//! a budget of thirty a minute, which meant it could not finish on any catalogue big enough to
-//! need it; the endpoint's own deadline fixed the arithmetic, and this is the belt to that
-//! braces — a console busy elsewhere can still spend the budget out from under it.
+//! Both start a detached run on the server and then read its progress back. The panel neither
+//! drives the batches nor has to stay open: closing the tab leaves the purge running, and
+//! reopening it shows where it got to. Stopping one is the cancel button, not navigation.
 
 use crate::api;
 use crate::components::{use_step_up_gate, OutcomeLine, Section, StepUpGuard, TypeToConfirm};
-use crate::hooks::{use_busy, use_outcome, Reload};
-use crate::i18n::use_i18n;
+use crate::hooks::{use_busy, use_outcome, use_reload, Reload};
+use crate::i18n::{use_i18n, Translator};
 use crate::util::thousands;
-use crate::wire::types::{CatalogueSummary, PurgeRequest, PurgeScope};
+use crate::wire::types::{
+    CataloguePurgeStatus, CataloguePurgeStop, CatalogueSummary, PurgeRequest, PurgeScope,
+};
 use dioxus::prelude::*;
+use inkstone_ui::{Button, Tone};
 use progenitor_client::ResponseValue;
 
-/// Safety stop on the batch loop.
-///
-/// A server that kept answering `done: false` without shrinking `remaining` would otherwise spin
-/// this loop forever against a live deployment. At the server's batch size this covers a
-/// catalogue far larger than any this software is aimed at; hitting it means something is wrong,
-/// and stopping with the count on screen is the honest outcome.
-const MAX_BATCHES: u32 = 5_000;
+/// How often the panel re-reads a running purge.
+const POLL_MS: u32 = 2_000;
 
-/// How long to wait when the server refuses with `429` but names no interval.
-const WAIT_FALLBACK_MS: u32 = 5_000;
-
-/// How many rate-limit waits one purge may sit through before giving up.
-///
-/// A budget the purge cannot get back — because something else is spending it, or because the
-/// limiter is misconfigured — would otherwise keep this loop alive indefinitely behind a progress
-/// line that never moves. Twenty waits is minutes of patience, which is the right amount for an
-/// operation that legitimately takes minutes.
-const MAX_WAITS: u32 = 20;
-
-/// Progress through a running purge.
-#[derive(Clone, Copy, Default, PartialEq)]
-struct Progress {
-    removed: i64,
-    remaining: i64,
-    running: bool,
-    /// Whether the loop is currently sitting out a rate limit rather than deleting.
-    ///
-    /// On screen because the two look identical otherwise: a counter that stops moving for five
-    /// seconds reads as a wedged purge, and the operator's next move is to reload the page and
-    /// start it again.
-    waiting: bool,
-}
-
-/// The two purges, each stating its blast radius from the live totals.
+/// The two purges, each stating its blast radius from the live totals, and the state of the
+/// current or last run.
 #[component]
 pub(super) fn PurgePanel(totals: Option<CatalogueSummary>, reload: Reload) -> Element {
     let api = api::use_api();
@@ -62,7 +28,37 @@ pub(super) fn PurgePanel(totals: Option<CatalogueSummary>, reload: Reload) -> El
     let gate = use_step_up_gate();
     let busy = use_busy();
     let mut outcome = use_outcome();
-    let mut progress = use_signal(Progress::default);
+    let tick = use_reload();
+
+    let status = use_resource(move || {
+        tick.track();
+        let client = api.client();
+        async move {
+            client
+                .catalogue_purge_status()
+                .send()
+                .await
+                .map(ResponseValue::into_inner)
+                .map_err(|e| api::friendly_error(i18n, e))
+        }
+    });
+
+    // Polls only while a run is live. The flag is read inside the loop because this future runs
+    // once; a copy taken at mount would be `false` for a run started from this panel. The first
+    // idle read after a live one refreshes the totals above, which the run has just emptied.
+    use_future(move || async move {
+        let mut was_running = false;
+        loop {
+            crate::platform::sleep_ms(POLL_MS).await;
+            let running = matches!(&*status.read_unchecked(), Some(Ok(view)) if view.running);
+            if running {
+                tick.bump();
+            } else if was_running {
+                reload.bump();
+            }
+            was_running = running;
+        }
+    });
 
     // `—` rather than `0` while the summary is in flight: a purge panel that claims the
     // catalogue holds nothing is the one wrong thing it could say here.
@@ -72,94 +68,68 @@ pub(super) fn PurgePanel(totals: Option<CatalogueSummary>, reload: Reload) -> El
     let watchlist_total = count(totals.as_ref().map(|t| t.watchlist_entries));
     let progress_total = count(totals.as_ref().map(|t| t.progress_rows));
 
-    let run = use_callback(move |scope: PurgeScope| {
+    let start = use_callback(move |scope: PurgeScope| {
         if !busy.claim() {
             return;
         }
         outcome.set(None);
-        progress.set(Progress {
-            running: true,
-            ..Progress::default()
-        });
-        // Elevated, and built once for the whole loop: the grant outlives the batches, so a
-        // purge that took a hundred calls asks for the second factor once rather than per batch.
         let client = gate.client(api);
         spawn(async move {
             let confirm = match scope {
                 PurgeScope::Chapters => "chapters",
                 PurgeScope::Everything => "everything",
             };
-            let mut removed = 0_i64;
-            let mut batches = 0_u32;
-            let mut waits = 0_u32;
-            loop {
-                let call = client
-                    .purge_catalogue()
-                    .body(PurgeRequest {
-                        scope,
-                        confirm: confirm.to_owned(),
-                    })
-                    .send()
-                    .await
-                    .map(ResponseValue::into_inner);
-                let batch = match call {
-                    Ok(batch) => batch,
-                    // A rate limit is not a failure of the purge, it is the server asking for a
-                    // pause: the route draws on the tight write budget and a console doing
-                    // anything else at the same time can spend it. Waiting the stated interval
-                    // and carrying on is the only answer that finishes the job — reporting it
-                    // strands the operator mid-purge with no way to tell how far it got.
-                    Err(e) if api::retry_after_ms(&e).is_some() && waits < MAX_WAITS => {
-                        let wait = api::retry_after_ms(&e).unwrap_or(WAIT_FALLBACK_MS);
-                        waits += 1;
-                        progress.with_mut(|p| p.waiting = true);
-                        crate::platform::sleep_ms(wait).await;
-                        progress.with_mut(|p| p.waiting = false);
-                        continue;
-                    }
-                    Err(e) => {
-                        // Mid-loop as much as on the first call: a grant that lapses between
-                        // batches leaves a half-emptied catalogue, and the operator needs the
-                        // prompt to finish it rather than "you don't have permission".
-                        if !gate.refused(api::Refusal::of(&e)) {
-                            outcome.set(Some(Err(api::guarded_error(i18n, e))));
-                        }
-                        break;
-                    }
-                };
-                removed += match scope {
-                    PurgeScope::Chapters => batch.removed.chapters,
-                    PurgeScope::Everything => batch.removed.series,
-                };
-                progress.set(Progress {
-                    removed,
-                    remaining: batch.remaining,
-                    running: !batch.done,
-                    waiting: false,
-                });
-                batches += 1;
-                if batch.done {
-                    outcome.set(Some(Ok(i18n.args(
-                        "console.catalogue.purgeDone",
-                        &[("count", &thousands(removed))],
-                    ))));
-                    break;
+            let call = client
+                .purge_catalogue()
+                .body(PurgeRequest {
+                    scope,
+                    confirm: confirm.to_owned(),
+                })
+                .send()
+                .await
+                .map(ResponseValue::into_inner);
+            match call {
+                // A run already held the claim. Not an error: the line below is tracking it.
+                Ok(start) if !start.started => {
+                    outcome.set(Some(Ok(i18n.t("console.catalogue.purgeBusy"))));
                 }
-                if batches >= MAX_BATCHES {
-                    outcome.set(Some(Err(i18n.t("console.catalogue.purgeStalled"))));
-                    break;
+                Ok(_) => {}
+                Err(e) => {
+                    if !gate.refused(api::Refusal::of(&e)) {
+                        outcome.set(Some(Err(api::guarded_error(i18n, e))));
+                    }
                 }
             }
-            progress.with_mut(|p| {
-                p.running = false;
-                p.waiting = false;
-            });
             busy.release();
-            reload.bump();
+            tick.bump();
         });
     });
 
-    let live = *progress.read();
+    let cancel = use_callback(move |()| {
+        if !busy.claim() {
+            return;
+        }
+        let client = gate.client(api);
+        spawn(async move {
+            if let Err(e) = client.cancel_catalogue_purge().send().await {
+                if !gate.refused(api::Refusal::of(&e)) {
+                    outcome.set(Some(Err(api::guarded_error(i18n, e))));
+                }
+            }
+            busy.release();
+            tick.bump();
+        });
+    });
+
+    let view = match &*status.read() {
+        Some(Ok(view)) => Some(view.clone()),
+        _ => None,
+    };
+    let running = view.as_ref().is_some_and(|v| v.running);
+    let cancelling = view.as_ref().is_some_and(|v| v.cancel_requested);
+    let line = view.as_ref().and_then(|v| status_line(i18n, v));
+    let locked = busy.is_busy() || running;
+
     rsx! {
         Section { label: i18n.t("console.catalogue.danger"),
             div { class: "ik-danger",
@@ -171,8 +141,8 @@ pub(super) fn PurgePanel(totals: Option<CatalogueSummary>, reload: Reload) -> El
                     ),
                     expect: "chapters".to_owned(),
                     cta: i18n.t("console.catalogue.purgeChaptersCta"),
-                    busy: busy.is_busy(),
-                    on_confirm: move |()| gate.attempt(move || run.call(PurgeScope::Chapters)),
+                    busy: locked,
+                    on_confirm: move |()| gate.attempt(move || start.call(PurgeScope::Chapters)),
                 }
                 TypeToConfirm {
                     title: i18n.t("console.catalogue.purgeAll"),
@@ -187,24 +157,23 @@ pub(super) fn PurgePanel(totals: Option<CatalogueSummary>, reload: Reload) -> El
                     ),
                     expect: "everything".to_owned(),
                     cta: i18n.t("console.catalogue.purgeAllCta"),
-                    busy: busy.is_busy(),
-                    on_confirm: move |()| gate.attempt(move || run.call(PurgeScope::Everything)),
+                    busy: locked,
+                    on_confirm: move |()| gate.attempt(move || start.call(PurgeScope::Everything)),
                 }
             }
-            if live.running || live.removed > 0 {
-                p { class: "ik-mono", style: "font-size:12px;margin:10px 0 0;color:var(--muted);",
-                    {
-                        i18n.args(
-                            "console.catalogue.purgeProgress",
-                            &[
-                                ("done", &thousands(live.removed)),
-                                ("left", &thousands(live.remaining)),
-                            ],
-                        )
+            if let Some(line) = line {
+                div {
+                    class: "ik-flex",
+                    style: "gap:10px;align-items:center;flex-wrap:wrap;margin:10px 0 0;",
+                    p { class: "ik-mono", style: "font-size:12px;margin:0;color:var(--muted);",
+                        "{line}"
                     }
-                    if live.waiting {
-                        span { style: "margin-left:8px;color:var(--star-ink);",
-                            {i18n.t("console.catalogue.purgeWaiting")}
+                    if running && !cancelling {
+                        Button {
+                            tone: Tone::Danger,
+                            busy: busy.is_busy(),
+                            on_click: move |_| gate.attempt(move || cancel.call(())),
+                            {i18n.t("console.catalogue.purgeCancel")}
                         }
                     }
                 }
@@ -213,4 +182,34 @@ pub(super) fn PurgePanel(totals: Option<CatalogueSummary>, reload: Reload) -> El
             OutcomeLine { outcome: outcome.read().clone() }
         }
     }
+}
+
+/// One line saying what the purge is doing, or how the last run ended. `None` before any run.
+fn status_line(i18n: Translator, view: &CataloguePurgeStatus) -> Option<String> {
+    let scope = view.scope?;
+    let removed = thousands(match scope {
+        PurgeScope::Chapters => view.removed.chapters,
+        PurgeScope::Everything => view.removed.series,
+    });
+    let left = view.remaining.map_or_else(|| "—".to_owned(), thousands);
+    let counts = [("done", removed.as_str()), ("left", left.as_str())];
+
+    if view.running {
+        let key = if view.cancel_requested {
+            "console.catalogue.purgeCancelling"
+        } else {
+            "console.catalogue.purgeProgress"
+        };
+        return Some(i18n.args(key, &counts));
+    }
+    Some(match view.stopped? {
+        CataloguePurgeStop::Done => i18n.args("console.catalogue.purgeDone", &counts),
+        CataloguePurgeStop::Cancelled => i18n.args("console.catalogue.purgeCancelled", &counts),
+        CataloguePurgeStop::Interrupted => i18n.args("console.catalogue.purgeInterrupted", &counts),
+        CataloguePurgeStop::Stalled => i18n.args("console.catalogue.purgeStalled", &counts),
+        CataloguePurgeStop::Failed => i18n.args(
+            "console.catalogue.purgeFailed",
+            &[("message", view.error.as_deref().unwrap_or("-"))],
+        ),
+    })
 }

@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE catalogue_purge_state SET running           = true, claim_id          = $1, heartbeat_at      = now(), started_at        = now(), finished_at       = NULL, scope             = $2, started_by        = $3, cancel_requested  = false, series_removed    = 0, sources_removed   = 0, chapters_removed  = 0, watchlist_removed = 0, progress_removed  = 0, remaining         = NULL, stopped           = NULL, error             = NULL WHERE id AND (NOT running OR heartbeat_at IS NULL OR heartbeat_at < now() - make_interval(secs => $4::double precision)) RETURNING claim_id AS \"claim_id!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "claim_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "catalogue_purge_state",
+            "name": "claim_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Uuid",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "780e21a13010f58093b1d3e945fe6a1ace1d376eaa6d2697ec49e62e8b4eb5e6"
+}

@@ -5,6 +5,7 @@
 //! then fail at the route table.
 
 mod catalogue;
+mod catalogue_purge;
 mod decisions;
 mod flags;
 mod merge;
@@ -18,6 +19,7 @@ mod system;
 mod users;
 
 pub use catalogue::*;
+pub use catalogue_purge::*;
 pub use decisions::*;
 pub use flags::*;
 pub use merge::*;

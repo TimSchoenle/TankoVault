@@ -107,9 +107,9 @@ pub fn route_classifier() -> RouteClassifier {
         // lasts, and the whole point of the poll is that it stays cheap.
         .expensive_write("/v1/admin/merge-candidates/sweep-all")
         .expensive("/v1/admin/matching/rebuild-keys")
-        // Each call cascades a batch of series into a dozen tables, and a purge is a *loop* of
-        // them — the one console action that deliberately calls the same endpoint hundreds of
-        // times. Reads of the same family stay on the global budget.
+        // A bulk delete cascades up to 500 series into a dozen tables in one request, and a
+        // purge start or cancel is a destructive act. Reads of the same family, including the
+        // purge status the console polls, stay on the global budget.
         .expensive_write("/v1/admin/catalogue")
         // A model rebuild walks the whole catalogue: the same class as a merge sweep, and for
         // the same reason.
@@ -621,7 +621,11 @@ fn admin_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(admin::list_catalogue))
         .routes(routes!(admin::catalogue_summary))
         .routes(routes!(admin::bulk_delete_series))
-        .routes(routes!(admin::purge_catalogue))
+        .routes(routes!(
+            admin::purge_catalogue,
+            admin::catalogue_purge_status
+        ))
+        .routes(routes!(admin::cancel_catalogue_purge))
         .routes(routes!(admin::list_merge_candidates))
         .routes(routes!(admin::dismiss_merge_candidate))
         .routes(routes!(admin::merge_series))

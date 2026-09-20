@@ -36666,9 +36666,13 @@ impl Client {
     pub fn sweep_all_merge_candidates(&self) -> builder::SweepAllMergeCandidates<'_> {
         builder::SweepAllMergeCandidates::new(self)
     }
-    #[doc = "List merge decisions\n\nThe automatic-merge journal, newest first: the itemised score behind each decision, the rule\nthat produced the verdict, the guards that overrode it, and whether it can still be undone.\n\nSends a `GET` request to `/v1/admin/merge-decisions`\n\nArguments:\n- `blocked`: Only decisions a guard held back: the near misses.\n- `flagged`: Only decisions an operator has flagged wrong.\n- `limit`\n- `offset`\n- `outcome`: Restrict to one outcome: `merged`, `queued`, `requeued`, `reopened`, `withdrawn`,\n`distinct`, `deferred`.\n- `revertible`: Only merges that can still be undone.\n- `series_id`: Only decisions naming this series on either side. Survives the merge — an absorbed id is\nstill on the row that absorbed it, which is the one you go looking for.\n\nA bare `Uuid`, not `SeriesId`: an optional newtype in a query parameter generates a\none-variant `oneOf` that the client generator cannot render.\n```ignore\nlet response = client.list_merge_decisions()\n    .blocked(blocked)\n    .flagged(flagged)\n    .limit(limit)\n    .offset(offset)\n    .outcome(outcome)\n    .revertible(revertible)\n    .series_id(series_id)\n    .send()\n    .await;\n```"]
+    #[doc = "List merge decisions\n\nThe automatic-merge journal, newest first: the itemised score behind each decision, the rule\nthat produced the verdict, the guards that overrode it, and whether it can still be undone.\n\nSends a `GET` request to `/v1/admin/merge-decisions`\n\nArguments:\n- `blocked`: Only decisions a guard held back: the near misses.\n- `flagged`: Only decisions an operator has flagged wrong.\n- `limit`\n- `offset`\n- `outcome`: Restrict to one outcome: `merged`, `queued`, `requeued`, `reopened`, `withdrawn`,\n`distinct`, `deferred`.\n- `reverted`: Only merges that have since been undone.\n- `revertible`: Only merges that can still be undone.\n- `search`: A series or decision id matches exactly on any of the three ids; any other text is a\ncase-insensitive substring of either title.\n- `series_id`: Only decisions naming this series on either side. Survives the merge — an absorbed id is\nstill on the row that absorbed it, which is the one you go looking for.\n\nA bare `Uuid`, not `SeriesId`: an optional newtype in a query parameter generates a\none-variant `oneOf` that the client generator cannot render.\n- `trigger`: Restrict to one trigger: `operator`, `sweep_new`, `sweep_requeue`, `sweep_recheck`.\n```ignore\nlet response = client.list_merge_decisions()\n    .blocked(blocked)\n    .flagged(flagged)\n    .limit(limit)\n    .offset(offset)\n    .outcome(outcome)\n    .reverted(reverted)\n    .revertible(revertible)\n    .search(search)\n    .series_id(series_id)\n    .trigger(trigger)\n    .send()\n    .await;\n```"]
     pub fn list_merge_decisions(&self) -> builder::ListMergeDecisions<'_> {
         builder::ListMergeDecisions::new(self)
+    }
+    #[doc = "Get a merge decision\n\nOne entry of the journal by id, in the same shape as the list. A link to a decision resolves\nhere whatever page of the list it would fall on.\n\nSends a `GET` request to `/v1/admin/merge-decisions/{id}`\n\nArguments:\n- `id`: The merge decision\n```ignore\nlet response = client.get_merge_decision()\n    .id(id)\n    .send()\n    .await;\n```"]
+    pub fn get_merge_decision(&self) -> builder::GetMergeDecision<'_> {
+        builder::GetMergeDecision::new(self)
     }
     #[doc = "Flag a merge as wrong\n\nRecord that an automatic merge was the wrong call, and suppress the pair permanently, without\nundoing it. Deliberately independent of the revert: a merge can be wrong and no longer worth\nthe disruption of unpicking, and a merge can be undone as a precaution while still having been\ncorrect. Either way the flag is what stops the sweep re-making the same decision.\n\nSends a `POST` request to `/v1/admin/merge-decisions/{id}/flag`\n\nArguments:\n- `id`: The merge decision to flag\n- `body`\n```ignore\nlet response = client.flag_merge_decision()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn flag_merge_decision(&self) -> builder::FlagMergeDecision<'_> {
@@ -38768,8 +38772,11 @@ pub mod builder {
         limit: Result<Option<i64>, String>,
         offset: Result<Option<i64>, String>,
         outcome: Result<Option<::std::string::String>, String>,
+        reverted: Result<Option<bool>, String>,
         revertible: Result<Option<bool>, String>,
+        search: Result<Option<::std::string::String>, String>,
         series_id: Result<Option<::uuid::Uuid>, String>,
+        trigger: Result<Option<::std::string::String>, String>,
     }
     impl<'a> ListMergeDecisions<'a> {
         pub fn new(client: &'a super::Client) -> Self {
@@ -38780,8 +38787,11 @@ pub mod builder {
                 limit: Ok(None),
                 offset: Ok(None),
                 outcome: Ok(None),
+                reverted: Ok(None),
                 revertible: Ok(None),
+                search: Ok(None),
                 series_id: Ok(None),
+                trigger: Ok(None),
             }
         }
         pub fn blocked<V>(mut self, value: V) -> Self
@@ -38833,6 +38843,16 @@ pub mod builder {
             });
             self
         }
+        pub fn reverted<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<bool>,
+        {
+            self.reverted = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `bool` for reverted failed".to_string());
+            self
+        }
         pub fn revertible<V>(mut self, value: V) -> Self
         where
             V: std::convert::TryInto<bool>,
@@ -38843,6 +38863,15 @@ pub mod builder {
                 .map_err(|_| "conversion to `bool` for revertible failed".to_string());
             self
         }
+        pub fn search<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.search = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for search failed".to_string()
+            });
+            self
+        }
         pub fn series_id<V>(mut self, value: V) -> Self
         where
             V: std::convert::TryInto<::uuid::Uuid>,
@@ -38851,6 +38880,15 @@ pub mod builder {
                 .try_into()
                 .map(Some)
                 .map_err(|_| "conversion to `:: uuid :: Uuid` for series_id failed".to_string());
+            self
+        }
+        pub fn trigger<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.trigger = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for trigger failed".to_string()
+            });
             self
         }
         #[doc = "Sends a `GET` request to `/v1/admin/merge-decisions`"]
@@ -38867,16 +38905,22 @@ pub mod builder {
                 limit,
                 offset,
                 outcome,
+                reverted,
                 revertible,
+                search,
                 series_id,
+                trigger,
             } = self;
             let blocked = blocked.map_err(Error::InvalidRequest)?;
             let flagged = flagged.map_err(Error::InvalidRequest)?;
             let limit = limit.map_err(Error::InvalidRequest)?;
             let offset = offset.map_err(Error::InvalidRequest)?;
             let outcome = outcome.map_err(Error::InvalidRequest)?;
+            let reverted = reverted.map_err(Error::InvalidRequest)?;
             let revertible = revertible.map_err(Error::InvalidRequest)?;
+            let search = search.map_err(Error::InvalidRequest)?;
             let series_id = series_id.map_err(Error::InvalidRequest)?;
+            let trigger = trigger.map_err(Error::InvalidRequest)?;
             let url = format!("{}/v1/admin/merge-decisions", client.baseurl,);
             let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
             header_map.append(
@@ -38896,11 +38940,14 @@ pub mod builder {
                 .query(&progenitor_client::QueryParam::new("limit", &limit))
                 .query(&progenitor_client::QueryParam::new("offset", &offset))
                 .query(&progenitor_client::QueryParam::new("outcome", &outcome))
+                .query(&progenitor_client::QueryParam::new("reverted", &reverted))
                 .query(&progenitor_client::QueryParam::new(
                     "revertible",
                     &revertible,
                 ))
+                .query(&progenitor_client::QueryParam::new("search", &search))
                 .query(&progenitor_client::QueryParam::new("series_id", &series_id))
+                .query(&progenitor_client::QueryParam::new("trigger", &trigger))
                 .headers(header_map)
                 .build()?;
             let info = OperationInfo {
@@ -38916,6 +38963,76 @@ pub mod builder {
                     ResponseValue::from_response(response).await?,
                 )),
                 403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::get_merge_decision`]\n\n[`Client::get_merge_decision`]: super::Client::get_merge_decision"]
+    #[derive(Debug, Clone)]
+    pub struct GetMergeDecision<'a> {
+        client: &'a super::Client,
+        id: Result<::uuid::Uuid, String>,
+    }
+    impl<'a> GetMergeDecision<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                id: Err("id was not initialized".to_string()),
+            }
+        }
+        pub fn id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for id failed".to_string());
+            self
+        }
+        #[doc = "Sends a `GET` request to `/v1/admin/merge-decisions/{id}`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::MergeDecision>, Error<types::ProblemDetails>> {
+            let Self { client, id } = self;
+            let id = id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/admin/merge-decisions/{}",
+                client.baseurl,
+                encode_path(&id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "get_merge_decision",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                404u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
                 _ => Err(Error::UnexpectedResponse(response)),

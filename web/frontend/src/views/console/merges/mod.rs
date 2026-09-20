@@ -17,7 +17,7 @@ mod unmerge;
 
 use crate::api;
 use crate::components::{
-    async_view, use_step_up_gate, ListFooter, ListSearch, NoSelection, SkeletonBlock, StepUpGuard,
+    async_view, use_step_up_gate, ListSearch, NoSelection, SeekPager, SkeletonBlock, StepUpGuard,
 };
 use crate::hooks::use_reload;
 use crate::i18n::use_i18n;
@@ -29,19 +29,11 @@ use inspect::MergeInspector;
 use progenitor_client::ResponseValue;
 use row::MergeListRow;
 
-/// How deep into the journal one page of this section reads.
-///
-/// Larger than the decision journal's page because two of the four filters and the search are
-/// applied here rather than by the endpoint — see [`Lens`] — so the loaded window *is* the
-/// searchable one.
-const PAGE_SIZE: u32 = 200;
+/// Rows per page. Every lens and the search run in the endpoint, so this sizes a page, not the
+/// reach of the section.
+const PAGE_SIZE: usize = 50;
 
-/// How the operator narrows the list.
-///
-/// `Flagged` is the endpoint's own predicate; `Reverted` and `ByOperator` are not — the journal
-/// indexes neither `reverted_at` nor `trigger` as a filter — so they run over the loaded window.
-/// That is stated in the footer rather than hidden, because "no reverted merges" and "none in the
-/// newest two hundred" are different answers.
+/// How the operator narrows the list. Each lens is one of the endpoint's own filters.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Lens {
     All,
@@ -79,16 +71,38 @@ impl Lens {
             .find(|lens| lens.token() == token)
             .unwrap_or(Self::All)
     }
+}
 
-    /// Whether this row belongs under this lens.
-    fn keeps(self, decision: &MergeDecision) -> bool {
-        match self {
-            Self::All => true,
-            Self::Reverted => decision.reverted_at.is_some(),
-            Self::Flagged => decision.flagged_at.is_some(),
-            Self::ByOperator => decision.trigger == "operator",
-        }
+/// What the inspector should open, before any fetch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Pick {
+    /// This row of the loaded page.
+    Row(usize),
+    /// A decision the URL names that is not on this page; it is fetched by id.
+    Fetch(uuid::Uuid),
+    /// Nothing to open.
+    Nothing,
+}
+
+/// Resolve `sel` against the loaded page.
+///
+/// A `sel` that is a decision id but not on this page is fetched rather than replaced by the
+/// first row: a link from a series page or the journal names one merge, and opening another in
+/// its place is the bug this section had while it only read the newest two hundred. A `sel`
+/// that is not an id at all falls back to the first row.
+fn pick(sel: Option<&str>, page: &[MergeDecision]) -> Pick {
+    let first = if page.is_empty() {
+        Pick::Nothing
+    } else {
+        Pick::Row(0)
+    };
+    let Some(sel) = sel else {
+        return first;
+    };
+    if let Some(at) = page.iter().position(|d| d.id.to_string() == sel) {
+        return Pick::Row(at);
     }
+    uuid::Uuid::parse_str(sel).map_or(first, Pick::Fetch)
 }
 
 /// The list pane and the inspector pane, as the console shell's two grid children.
@@ -103,21 +117,31 @@ pub(super) fn MergesEntity(tick: RefreshTick) -> Element {
     let gate = use_step_up_gate();
     let view = nav.query();
     let lens = Lens::parse(view.status_token());
-    let flagged_only = lens == Lens::Flagged;
+    let search = view.q.trim().to_owned();
+    let page = i64::from(view.page);
+    let page_size = i64::try_from(PAGE_SIZE).unwrap_or(i64::MAX);
 
-    let rows = use_resource(use_reactive!(|flagged_only| {
+    let rows = use_resource(use_reactive!(|(lens, search, page)| {
         tick.track();
         reload.track();
         let client = api.client();
         async move {
             // Only decisions that merged something: this section is about what can be taken
-            // back, and a queued or declined pair has nothing to put back.
+            // back, and a queued or declined pair has nothing to put back. One row past the page
+            // is the probe for Next, since the endpoint reports no total.
             let mut request = client
                 .list_merge_decisions()
                 .outcome("merged")
-                .limit(PAGE_SIZE);
-            if flagged_only {
-                request = request.flagged(true);
+                .limit(page_size + 1)
+                .offset(page.saturating_mul(page_size));
+            request = match lens {
+                Lens::All => request,
+                Lens::Reverted => request.reverted(true),
+                Lens::Flagged => request.flagged(true),
+                Lens::ByOperator => request.trigger("operator"),
+            };
+            if !search.is_empty() {
+                request = request.search(search);
             }
             request
                 .send()
@@ -127,27 +151,50 @@ pub(super) fn MergesEntity(tick: RefreshTick) -> Element {
         }
     }));
 
-    let needle = view.q.trim().to_lowercase();
-    let loaded: Vec<MergeDecision> = match &*rows.read_unchecked() {
+    let mut shown: Vec<MergeDecision> = match &*rows.read_unchecked() {
         Some(Ok(list)) => list.clone(),
         _ => Vec::new(),
     };
-    let shown: Vec<MergeDecision> = loaded
-        .iter()
-        .filter(|decision| lens.keeps(decision) && matches(&needle, decision))
-        .cloned()
-        .collect();
+    let has_next = shown.len() > PAGE_SIZE;
+    shown.truncate(PAGE_SIZE);
     let reversible = shown.iter().filter(|d| d.revertible).count();
 
-    // Falls back to the first row so the inspector is never empty, and a `sel` naming a row the
-    // filter dropped falls back too rather than lighting nothing in the list.
-    let chosen = view
-        .sel
-        .as_deref()
-        .and_then(|id| shown.iter().find(|d| d.id.to_string() == id))
-        .or_else(|| shown.first())
-        .cloned();
-    let selected = chosen.as_ref().map(|d| d.id);
+    let wanted = pick(view.sel.as_deref(), &shown);
+    let off_page = match wanted {
+        Pick::Fetch(id) => Some(id),
+        Pick::Row(_) | Pick::Nothing => None,
+    };
+    let pinned = use_resource(use_reactive!(|off_page| {
+        tick.track();
+        reload.track();
+        let client = api.client();
+        async move {
+            let id = off_page?;
+            Some(
+                client
+                    .get_merge_decision()
+                    .id(id)
+                    .send()
+                    .await
+                    .map(ResponseValue::into_inner),
+            )
+        }
+    }));
+
+    // The outer `None` is "still loading the decision the URL names", so the first row never
+    // flashes into the inspector in its place. A `sel` that resolves to nothing falls back to
+    // the first row.
+    let chosen: Option<Option<MergeDecision>> = match wanted {
+        Pick::Row(at) => Some(shown.get(at).cloned()),
+        Pick::Nothing => Some(None),
+        Pick::Fetch(_) => match &*pinned.read_unchecked() {
+            Some(Some(Ok(decision))) => Some(Some(decision.clone())),
+            Some(Some(Err(_))) => Some(shown.first().cloned()),
+            Some(None) | None => None,
+        },
+    };
+    let selected = chosen.as_ref().and_then(|c| c.as_ref().map(|d| d.id));
+    let outside_page = selected.is_some_and(|id| shown.iter().all(|d| d.id != id));
 
     // …and the fallback goes into the URL, so the address names the merge on screen rather than
     // whichever one is newest under the filter that happens to be applied. It replaces rather
@@ -162,6 +209,21 @@ pub(super) fn MergesEntity(tick: RefreshTick) -> Element {
         }
     }));
 
+    let hits = i64::try_from(shown.len()).unwrap_or(0);
+    let first = page.saturating_mul(page_size);
+    let summary = if shown.is_empty() {
+        String::new()
+    } else {
+        i18n.args(
+            "console.merges.count",
+            &[
+                ("first", &(first + 1).to_string()),
+                ("last", &(first + hits).to_string()),
+                ("reversible", &reversible.to_string()),
+            ],
+        )
+    };
+
     rsx! {
         div { class: "ik-cons-list",
             div { class: "ik-cons-listhead",
@@ -170,8 +232,8 @@ pub(super) fn MergesEntity(tick: RefreshTick) -> Element {
                     query: view.q.clone(),
                     on_input: move |text| nav.filter(nav.query().with_search(text)),
                     hits: i18n.plural(
-                        "console.merges.hits",
-                        i64::try_from(shown.len()).unwrap_or(0),
+                        if has_next { "console.merges.hitsMore" } else { "console.merges.hits" },
+                        hits,
                         &[],
                     ),
                 }
@@ -185,10 +247,16 @@ pub(super) fn MergesEntity(tick: RefreshTick) -> Element {
                                 let mut next = nav.query();
                                 next.status = (option != Lens::All).then(|| option.token().to_owned());
                                 next.sel = None;
+                                next.page = 0;
                                 nav.filter(next);
                             },
                             {i18n.t(option.label_key())}
                         }
+                    }
+                }
+                if outside_page {
+                    div { class: "ik-muted", style: "font-size:12px;",
+                        {i18n.t("console.merges.offPage")}
                     }
                 }
             }
@@ -224,49 +292,39 @@ pub(super) fn MergesEntity(tick: RefreshTick) -> Element {
                     },
                 )
             }
-            ListFooter {
-                count: i18n.args(
-                    "console.merges.count",
-                    &[
-                        ("shown", &shown.len().to_string()),
-                        ("reversible", &reversible.to_string()),
-                    ],
-                ),
+            SeekPager {
+                page,
+                has_next,
+                summary,
+                on_page: move |next: i64| {
+                    nav.select(nav.query().with_page(u32::try_from(next).unwrap_or(0)));
+                },
             }
         }
-        if let Some(decision) = chosen {
-            div { class: "ik-cons-insp",
-                StepUpGuard { gate, intro: Some(i18n.t("console.stepUp.intro")) }
-                MergeInspector { key: "{decision.id}", decision, gate, tick }
-            }
-        } else {
-            NoSelection { message: i18n.t("console.merges.pick") }
+        match chosen {
+            Some(Some(decision)) => rsx! {
+                div { class: "ik-cons-insp",
+                    StepUpGuard { gate, intro: Some(i18n.t("console.stepUp.intro")) }
+                    MergeInspector { key: "{decision.id}", decision, gate, tick }
+                }
+            },
+            Some(None) => rsx! {
+                NoSelection { message: i18n.t("console.merges.pick") }
+            },
+            None => rsx! {
+                div { class: "ik-cons-insp",
+                    div { style: "padding:22px;",
+                        SkeletonBlock { height: 280 }
+                    }
+                }
+            },
         }
     }
-}
-
-/// Whether a row answers the already-lowercased search text.
-///
-/// Both titles and both ids: an operator arriving from a reader's report has the id of the
-/// series that stopped existing, which is on the row that absorbed it and nowhere else.
-fn matches(needle: &str, decision: &MergeDecision) -> bool {
-    if needle.is_empty() {
-        return true;
-    }
-    [
-        decision.left_title.to_lowercase(),
-        decision.right_title.to_lowercase(),
-        decision.left_id.to_string(),
-        decision.right_id.to_string(),
-        decision.id.to_string(),
-    ]
-    .iter()
-    .any(|field| field.contains(needle))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::Lens;
+    use super::{pick, Lens, Pick};
 
     /// Every lens is worded, and every token round-trips through the URL parameter it rides in.
     ///
@@ -282,5 +340,19 @@ mod tests {
                 lens.token()
             );
         }
+    }
+
+    /// The bug this pins: a `sel` naming a merge that was not on the loaded page opened the
+    /// first row instead, so "why merged" on a series page showed some other merge.
+    #[test]
+    fn a_selection_off_the_page_is_fetched_not_replaced() {
+        let id = uuid::Uuid::from_u128(0xaa);
+        assert_eq!(pick(Some(&id.to_string()), &[]), Pick::Fetch(id));
+    }
+
+    #[test]
+    fn no_selection_or_a_garbled_one_lands_on_the_first_row() {
+        assert_eq!(pick(None, &[]), Pick::Nothing);
+        assert_eq!(pick(Some("not-an-id"), &[]), Pick::Nothing);
     }
 }

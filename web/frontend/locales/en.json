@@ -1556,7 +1556,12 @@
         "one": "{count} match",
         "other": "{count} matches"
       },
-      "count": "{shown} shown · {reversible} reversible",
+      "count": "{first}–{last} · {reversible} reversible",
+      "hitsMore": {
+        "one": "{count}+ match",
+        "other": "{count}+ matches"
+      },
+      "offPage": "The open merge is not on this page.",
       "empty": "No merges match this view.",
       "pick": "Pick a merge to see why it happened and what undoing it would put back.",
       "lens": {

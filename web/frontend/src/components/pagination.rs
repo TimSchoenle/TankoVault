@@ -202,6 +202,38 @@ pub(crate) fn CompactPager(
     }
 }
 
+/// [`CompactPager`] for an endpoint that reports no total: the caller's sentence plus prev/next,
+/// with `has_next` from whatever probe the caller made.
+#[component]
+pub(crate) fn SeekPager(
+    /// Controlled, as for [`CompactPager`].
+    page: i64,
+    has_next: bool,
+    summary: String,
+    on_page: EventHandler<i64>,
+) -> Element {
+    let i18n = use_i18n();
+    rsx! {
+        div { class: "ik-cons-foot",
+            span { "{summary}" }
+            span { class: "hint", style: "display:flex;gap:6px;",
+                Button {
+                    size: Size::Xs,
+                    disabled: page <= 0,
+                    on_click: move |_| on_page.call(page - 1),
+                    {i18n.t("common.previous")}
+                }
+                Button {
+                    size: Size::Xs,
+                    disabled: !has_next,
+                    on_click: move |_| on_page.call(page + 1),
+                    {i18n.t("common.next")}
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

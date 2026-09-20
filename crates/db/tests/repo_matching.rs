@@ -3349,3 +3349,144 @@ async fn an_unmerge_is_stamped_and_refuses_a_second() {
     assert!(row.reverted_at.is_some(), "the revert is stamped");
     assert!(!row.revertible, "and is no longer offered");
 }
+
+/// **Every merge must be reachable, not just the newest page of them.**
+///
+/// The console's Merges section used to read one page of 200 and apply its lenses and search to
+/// that window, so a merge older than the 200th was unreachable, and a "why merged" link naming
+/// one opened a different merge instead. The filters now run in the statement, a decision
+/// resolves by id, and paging is stable over a sweep batch that shares one `decided_at`.
+#[tokio::test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "every filter asserted against one seeded batch; the tied timestamp is the fixture"
+)]
+async fn the_merge_journal_filters_searches_pages_and_resolves_by_id_in_the_statement() {
+    use tankovault_db::repo::matching::{
+        MergeDecisionFilter, NewMergeDecision, get_merge_decision, list_merge_decisions,
+        record_merge_decisions,
+    };
+
+    let db = TestDb::spawn().await;
+    let pct = insert_series_directly(&db, "100% Club").await;
+    let pct_alias = insert_series_directly(&db, "100 Percent Club").await;
+    let blue = insert_series_directly(&db, "Blue Lock").await;
+    let blue_alias = insert_series_directly(&db, "Bluelock").await;
+    let thousand = insert_series_directly(&db, "1000 Club").await;
+    let thousand_alias = insert_series_directly(&db, "Thousand Club").await;
+
+    let empty = serde_json::json!({});
+    let merged = |trigger, pair, titles| NewMergeDecision {
+        sweep_id: None,
+        trigger,
+        actor: None,
+        pair,
+        titles,
+        verdict: "auto",
+        reason: "compact_identity",
+        blocked_by: &[],
+        outcome: "merged",
+        survivor_id: Some(pair.0),
+        absorbed_id: Some(pair.1),
+        score: 1.0,
+        base_score: 0.9,
+        signals: &[],
+        terms: &empty,
+        evidence: &empty,
+        policy: &empty,
+        undo: None,
+    };
+    // One batch, one transaction, so all three share a `decided_at`.
+    let ids = record_merge_decisions(
+        &db.pool,
+        &[
+            merged(
+                "sweep_new",
+                (pct, pct_alias),
+                ("100% Club", "100 Percent Club"),
+            ),
+            merged("operator", (blue, blue_alias), ("Blue Lock", "Bluelock")),
+            merged(
+                "sweep_recheck",
+                (thousand, thousand_alias),
+                ("1000 Club", "Thousand Club"),
+            ),
+        ],
+    )
+    .await
+    .expect("journal the merges");
+    sqlx::query("UPDATE merge_decisions SET reverted_at = now(), undo = '{}' WHERE id = $1")
+        .bind(ids[2])
+        .execute(&db.pool)
+        .await
+        .expect("mark one reverted");
+
+    let list = |filter: MergeDecisionFilter, limit, offset| {
+        let pool = db.pool.clone();
+        async move {
+            list_merge_decisions(&pool, &filter, limit, offset)
+                .await
+                .expect("read the journal")
+                .into_iter()
+                .map(|row| row.id)
+                .collect::<Vec<_>>()
+        }
+    };
+    let search = |text: &str| MergeDecisionFilter {
+        search: Some(text.to_owned()),
+        ..MergeDecisionFilter::default()
+    };
+
+    let mut paged = Vec::new();
+    for offset in 0..3 {
+        paged.extend(list(MergeDecisionFilter::default(), 1, offset).await);
+    }
+    paged.sort_unstable();
+    let mut all = ids.clone();
+    all.sort_unstable();
+    assert_eq!(
+        paged, all,
+        "one-row pages over a tied timestamp visit every row once"
+    );
+
+    assert_eq!(
+        list(search("100%"), 10, 0).await,
+        vec![ids[0]],
+        "`%` is literal"
+    );
+    assert!(
+        list(search("10_0"), 10, 0).await.is_empty(),
+        "`_` is literal, not a one-character wildcard",
+    );
+    assert_eq!(list(search("  bluelock "), 10, 0).await, vec![ids[1]]);
+    assert_eq!(
+        list(search(&thousand_alias.as_uuid().to_string()), 10, 0).await,
+        vec![ids[2]],
+        "an absorbed series id finds the merge that absorbed it",
+    );
+    assert_eq!(list(search(&ids[1].to_string()), 10, 0).await, vec![ids[1]]);
+    assert_eq!(
+        list(search("   "), 10, 0).await.len(),
+        3,
+        "blank is no filter"
+    );
+
+    let operator = MergeDecisionFilter {
+        trigger: Some("operator".to_owned()),
+        ..MergeDecisionFilter::default()
+    };
+    assert_eq!(list(operator, 10, 0).await, vec![ids[1]]);
+    let reverted = MergeDecisionFilter {
+        reverted_only: true,
+        ..MergeDecisionFilter::default()
+    };
+    assert_eq!(list(reverted, 10, 0).await, vec![ids[2]]);
+
+    let one = get_merge_decision(&db.pool, ids[0]).await.expect("by id");
+    assert_eq!(one.id, ids[0]);
+    assert!([one.left_title, one.right_title].contains(&"100% Club".to_owned()));
+    assert!(matches!(
+        get_merge_decision(&db.pool, uuid::Uuid::now_v7()).await,
+        Err(DbError::NotFound)
+    ));
+}

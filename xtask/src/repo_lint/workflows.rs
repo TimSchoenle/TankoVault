@@ -626,7 +626,7 @@ pub(super) fn registry_calls_in_publish_retry(root: &Path) -> anyhow::Result<Vec
     /// The helper each of them is invoked through, by the name it is written and called under.
     const HELPER: &str = "registry-retry";
     /// The composite action that installs it, by the path a job references it at.
-    const HELPER_ACTION: &str = "./.github/actions/registry-retry";
+    const HELPER_ACTION: &str = "$/.github/actions/registry-retry";
     /// Commands that reach a registry, in the spellings this workflow uses.
     const REGISTRY_COMMANDS: [&str; 7] = [
         "docker buildx build",
@@ -697,7 +697,7 @@ pub(super) fn registry_calls_in_publish_retry(root: &Path) -> anyhow::Result<Vec
     // leave every call above failing with "no such file" — a message about the helper's path, not
     // about the registry.
     let action = root
-        .join(HELPER_ACTION.trim_start_matches("./"))
+        .join(HELPER_ACTION.trim_start_matches("$/"))
         .join("action.yml");
     let installs = std::fs::read_to_string(&action)
         .is_ok_and(|action| action.contains(HELPER) && action.contains("chmod +x"));
@@ -1307,7 +1307,7 @@ steps:\n      \
 - run: docker buildx imagetools inspect \"$IMAGE:$TAG\"\n  \
 manifest:\n    \
 steps:\n      \
-- uses: ./.github/actions/registry-retry\n      \
+- uses: $/.github/actions/registry-retry\n      \
 # a comment naming docker pull is prose, not a call\n      \
 - run: \"${RUNNER_TEMP}/registry-retry\" docker buildx imagetools create --tag \"$TAG\"\n      \
 - run: docker pull \"$IMAGE:$TAG\"\n  \
@@ -1330,7 +1330,7 @@ steps:\n      \
         assert!(
             lines
                 .iter()
-                .any(|(_, line)| line.contains("./.github/actions/registry-retry"))
+                .any(|(_, line)| line.contains("$/.github/actions/registry-retry"))
         );
         assert!(!lines.iter().any(|(_, line)| line.contains("cosign sign")));
         assert!(!lines.iter().any(|(_, line)| line.contains("inspect")));

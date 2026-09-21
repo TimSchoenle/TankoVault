@@ -20,6 +20,10 @@ tankovault-config = { workspace = true }
 # this image publishes, so a local block that skipped the derive would be a key the
 # contract claims the binary does not read.
 terrace-config = { workspace = true, features = ["schema"] }
+# The legal documents: `LegalConfig` in this service's config root, the `Catalog` built from it
+# per configuration generation, and the conditional responders behind `/v1/legal`.
+terrace-legal = { workspace = true }
+terrace-legal-axum = { workspace = true }
 tankovault-service = { workspace = true, features = ["db", "redis"] }
 tankovault-db = { workspace = true }
 tankovault-recsys = { workspace = true }

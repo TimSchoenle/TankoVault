@@ -79,6 +79,13 @@ const DIRECT_ENV_ROOTS: &[&str] = &["crates", "services", "xtask/src"];
 /// The document this gate reads.
 const DOC: &str = "docs/CONFIGURATION.md";
 
+/// Dependencies outside this workspace that declare a config block a service nests: the package
+/// name `cargo metadata` knows it by, and the name a type path uses for it.
+///
+/// Their sources are read from wherever Cargo checked them out, so the surface follows the pinned
+/// tag. A crate missing here is not silent: its `#[config(nested)]` field fails the walk.
+const EXTERNAL: &[(&str, &str)] = &[("terrace-legal", "terrace_legal")];
+
 /// Derive the configuration surface and, with `check`, compare it against the document.
 ///
 /// Without `check` the derived keys are printed, which is what makes a failure fixable: the
@@ -152,12 +159,19 @@ fn derive(root: &Path) -> Result<BTreeSet<String>> {
     // composes it, so it is still part of the surface.
     shared.parse_file(&root.join("crates/domain/src/metadata_priority.rs"))?;
 
+    let mut external = surface::External::default();
+    for (package, ident) in EXTERNAL {
+        let mut table = surface::Table::default();
+        table.parse_dir(&package_src(root, package)?)?;
+        external.insert(ident, table);
+    }
+
     let mut keys = BTreeSet::new();
     for service in SERVICES {
         let mut local = surface::Table::default();
         local.parse_dir(&root.join(service.src))?;
         keys.extend(
-            surface::walk(&local, &shared, service.root)
+            surface::walk(&local, &shared, &external, service.root)
                 .with_context(|| format!("deriving the config surface of `{}`", service.name))?,
         );
     }
@@ -165,6 +179,50 @@ fn derive(root: &Path) -> Result<BTreeSet<String>> {
     let roots: Vec<_> = DIRECT_ENV_ROOTS.iter().map(|d| root.join(d)).collect();
     keys.extend(surface::direct_env_keys(&roots)?);
     Ok(keys)
+}
+
+/// The `src` directory of `package` as this workspace resolved it.
+///
+/// `--locked` so the sources read are the ones `Cargo.lock` pins, not whatever a fresh resolve
+/// would pick.
+fn package_src(root: &Path, package: &str) -> Result<std::path::PathBuf> {
+    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+    let output = std::process::Command::new(cargo)
+        .args([
+            "metadata",
+            "--format-version",
+            "1",
+            "--locked",
+            "--manifest-path",
+        ])
+        .arg(root.join("Cargo.toml"))
+        .output()
+        .context("running `cargo metadata`")?;
+    if !output.status.success() {
+        bail!(
+            "`cargo metadata` failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    let metadata: serde_json::Value =
+        serde_json::from_slice(&output.stdout).context("parsing `cargo metadata` output")?;
+    let manifests: Vec<&str> = metadata["packages"]
+        .as_array()
+        .context("`cargo metadata` lists no packages")?
+        .iter()
+        .filter(|p| p["name"] == package)
+        .filter_map(|p| p["manifest_path"].as_str())
+        .collect();
+    let [manifest] = manifests.as_slice() else {
+        bail!(
+            "`{package}` resolves to {} packages in this workspace; the walker reads exactly one",
+            manifests.len()
+        );
+    };
+    let dir = Path::new(manifest)
+        .parent()
+        .context("a manifest path has a parent")?;
+    Ok(dir.join("src"))
 }
 
 fn section(report: &mut String, keys: &[&String], headline: &str) {
@@ -233,6 +291,8 @@ mod tests {
             "TANKOVAULT_DATABASE__URL",
             "TANKOVAULT_RATE_LIMIT__GLOBAL__BURST",
             "TANKOVAULT_PROFILE",
+            // A block declared outside this workspace.
+            "TANKOVAULT_LEGAL__DOCUMENTS",
         ] {
             assert!(
                 keys.contains(expected),

@@ -2486,12 +2486,12 @@
         "reserved": false
       },
       {
-        "path": "legal.dir",
-        "env": "TANKOVAULT_LEGAL__DIR",
-        "env_file": "TANKOVAULT_LEGAL__DIR_FILE",
-        "secrets_file": "legal__dir",
-        "docs": "Root that relative [`LegalDocument::sources`] paths resolve against.\n\nAbsent means paths are taken as given, which is what makes a single absolute path in an\nenvironment variable work without also setting a root.",
-        "ty": "PathBuf",
+        "path": "legal.default_locale",
+        "env": "TANKOVAULT_LEGAL__DEFAULT_LOCALE",
+        "env_file": "TANKOVAULT_LEGAL__DEFAULT_LOCALE_FILE",
+        "secrets_file": "legal__default_locale",
+        "docs": "Locale served when neither the request nor its `Accept-Language` header matches a\npublished one, for example `en`. Without it, the first published locale in alphabetical\norder is served.",
+        "ty": "String",
         "values": [],
         "constraint": {
           "type": "string"
@@ -2513,33 +2513,39 @@
         "env": "TANKOVAULT_LEGAL__DOCUMENTS",
         "env_file": "TANKOVAULT_LEGAL__DOCUMENTS_FILE",
         "secrets_file": "legal__documents",
-        "docs": "The published documents, keyed by the slug their URL uses (`terms`, `privacy`,\n`imprint`, …).\n\nA map rather than a struct of known documents on purpose — see the module docs.",
+        "docs": "The published documents, keyed by the slug their URL uses. A slug is lowercase letters,\ndigits, `_` and `-`, at most 64 characters, and starts with a letter or a digit.",
         "ty": "BTreeMap<String, LegalDocument>",
         "values": [],
         "constraint": {
           "additionalProperties": {
             "additionalProperties": false,
             "properties": {
-              "sources": {
+              "body": {
                 "additionalProperties": {
                   "type": "string"
                 },
-                "description": "Markdown file per locale, keyed by the language code the frontend uses (`en`, `de`).\n\nA plain `String` key rather than a shipped-locale enum: an operator publishing French\nterms should not need this build to know about French.",
+                "description": "Markdown text per locale, keyed by locale (`en`, `de-AT`). Usually supplied through a\n`…__BODY__<LOCALE>_FILE` variable naming a mounted file. Each text is at most 1 MiB.\nExclusive with `url`.",
                 "type": "object"
+              },
+              "order": {
+                "description": "Position in the index, lowest first. Documents with the same value are ordered by slug.",
+                "maximum": 2147483647,
+                "minimum": -2147483648,
+                "type": "integer"
               },
               "title": {
                 "additionalProperties": {
                   "type": "string"
                 },
-                "description": "Per-locale display title. A locale with no entry falls back to the frontend's own\ncatalogue for the slugs it knows, and to the slug itself for the ones it does not.",
+                "description": "Display title per locale, keyed like `body`.",
                 "type": "object"
               },
               "updated": {
-                "description": "The \"last updated\" line, as the operator wants it shown (`2026-08-04`).\n\nFree text rather than a date, because it is displayed verbatim and a file mtime is the\nwrong answer — touching a file is not amending a policy.",
+                "description": "The \"last updated\" line, displayed verbatim.",
                 "type": "string"
               },
               "url": {
-                "description": "Somewhere else entirely — a corporate imprint already hosted by the operator.\n\nMutually exclusive with [`Self::sources`]; see [`LegalConfig::validate`].",
+                "description": "Absolute `http` or `https` URL of a document hosted elsewhere, without credentials.\nExclusive with `body`.",
                 "type": "string"
               }
             },
@@ -3300,40 +3306,46 @@
       "legal": {
         "additionalProperties": false,
         "properties": {
-          "dir": {
-            "description": "Root that relative [`LegalDocument::sources`] paths resolve against.\n\nAbsent means paths are taken as given, which is what makes a single absolute path in an\nenvironment variable work without also setting a root.",
+          "default_locale": {
+            "description": "Locale served when neither the request nor its `Accept-Language` header matches a\npublished one, for example `en`. Without it, the first published locale in alphabetical\norder is served.",
             "type": "string"
           },
           "documents": {
             "additionalProperties": {
               "additionalProperties": false,
               "properties": {
-                "sources": {
+                "body": {
                   "additionalProperties": {
                     "type": "string"
                   },
-                  "description": "Markdown file per locale, keyed by the language code the frontend uses (`en`, `de`).\n\nA plain `String` key rather than a shipped-locale enum: an operator publishing French\nterms should not need this build to know about French.",
+                  "description": "Markdown text per locale, keyed by locale (`en`, `de-AT`). Usually supplied through a\n`…__BODY__<LOCALE>_FILE` variable naming a mounted file. Each text is at most 1 MiB.\nExclusive with `url`.",
                   "type": "object"
+                },
+                "order": {
+                  "description": "Position in the index, lowest first. Documents with the same value are ordered by slug.",
+                  "maximum": 2147483647,
+                  "minimum": -2147483648,
+                  "type": "integer"
                 },
                 "title": {
                   "additionalProperties": {
                     "type": "string"
                   },
-                  "description": "Per-locale display title. A locale with no entry falls back to the frontend's own\ncatalogue for the slugs it knows, and to the slug itself for the ones it does not.",
+                  "description": "Display title per locale, keyed like `body`.",
                   "type": "object"
                 },
                 "updated": {
-                  "description": "The \"last updated\" line, as the operator wants it shown (`2026-08-04`).\n\nFree text rather than a date, because it is displayed verbatim and a file mtime is the\nwrong answer — touching a file is not amending a policy.",
+                  "description": "The \"last updated\" line, displayed verbatim.",
                   "type": "string"
                 },
                 "url": {
-                  "description": "Somewhere else entirely — a corporate imprint already hosted by the operator.\n\nMutually exclusive with [`Self::sources`]; see [`LegalConfig::validate`].",
+                  "description": "Absolute `http` or `https` URL of a document hosted elsewhere, without credentials.\nExclusive with `body`.",
                   "type": "string"
                 }
               },
               "type": "object"
             },
-            "description": "The published documents, keyed by the slug their URL uses (`terms`, `privacy`,\n`imprint`, …).\n\nA map rather than a struct of known documents on purpose — see the module docs.",
+            "description": "The published documents, keyed by the slug their URL uses. A slug is lowercase letters,\ndigits, `_` and `-`, at most 64 characters, and starts with a letter or a digit.",
             "type": "object"
           }
         },

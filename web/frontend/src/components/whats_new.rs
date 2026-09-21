@@ -5,7 +5,7 @@
 //! and the only trace is an OS toast that may well have gone to a notification centre nobody
 //! opens. A dot on the title bar says *something* happened; this says **what**.
 //!
-//! The notes are the release body as its author wrote it, rendered through [`crate::markdown`] —
+//! The notes are the release body as its author wrote it, rendered through [`terrace_legal_markdown::markdown`] —
 //! `rsx!` nodes, never an HTML string. They are text from github.com, which makes them exactly
 //! the kind of input the `dangerous_inner_html` ban is about.
 //!
@@ -14,10 +14,10 @@
 //! image — what *would* I get.
 
 use crate::i18n::use_i18n;
-use crate::markdown::markdown;
 use crate::update::{self, Notes, ReleaseNotes, Status, UpdateState};
 use dioxus::prelude::*;
 use inkstone_ui::{Button, Modal, ModalSize, Tone};
+use terrace_legal_markdown::markdown;
 
 /// What the panel is about: a version this installation has taken, or one it has only found.
 ///

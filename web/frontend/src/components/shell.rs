@@ -31,7 +31,6 @@ pub(crate) fn Shell() -> Element {
     use_source_order_sync();
     use_unread_count();
     use_live_notifications();
-    crate::state::legal::use_legal_sync();
     crate::state::branding::use_branding_sync();
     // Here rather than in each screen: the layout is the one component every route renders
     // through, so no route can be added without a title.
@@ -41,6 +40,9 @@ pub(crate) fn Shell() -> Element {
     let route: Route = use_route();
     let walled_out = use_account_wall_redirect(&route);
     rsx! {
+        // Above everything that links a legal document: the footer, the sheet, the register
+        // form and `/legal/:slug` share its one index fetch.
+        crate::state::legal::LegalRoot {
         div { class: "ik-app",
             // Skip link: without it, a keyboard reader re-tabs the ~10-stop rail on every route.
             a { class: "ik-skip", href: "#ik-content", {i18n.t("nav.skipToContent")} }
@@ -62,6 +64,7 @@ pub(crate) fn Shell() -> Element {
             // After `.ik-main`, not inside it: the bar is `position: fixed` at the viewport's
             // bottom edge below 820px and renders to nothing above it.
             BottomTabs {}
+        }
         }
     }
 }

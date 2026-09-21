@@ -818,25 +818,32 @@ it — there is no second place to edit.
 
 ### Where the files live
 
-Wherever `TANKOVAULT_LEGAL__DIR` points, mounted read-only. The reference stack mounts
-`deploy/legal/` at `/etc/tankovault/legal`. Those checked-in files are **samples that say so in
-their first line** — they are not legal advice and not fit for a deployment. Replace them before
-anyone else uses the instance.
+Anywhere the API can read them, mounted read-only and named one per locale with a `_FILE`
+variable (`TANKOVAULT_LEGAL__DOCUMENTS__TERMS__BODY__EN_FILE=/etc/tankovault/legal/terms.en.md`).
+The reference stack mounts `deploy/legal/` at `/etc/tankovault/legal`. Those checked-in files are
+**samples that say so in their first line** — they are not legal advice and not fit for a
+deployment. Replace them before anyone else uses the instance.
+
+A deployment still on the earlier shape (`TANKOVAULT_LEGAL__DIR` and `…__SOURCES__<LOCALE>`) is
+refused at boot, naming the key: replace each `SOURCES__<LOCALE>=<path>` with
+`BODY__<LOCALE>_FILE=<absolute path>` and delete `DIR`.
 
 ### Editing does not need a restart
 
-Each file is read on demand and cached against its mtime, so an edit is visible to the next
-request that misses the five-minute `Cache-Control` window. Restarting only matters when the
-`[legal]` *section* changes — which documents exist, their slugs, locales or `updated` line —
-because that is configuration, not content.
+A document's text is configuration, so the API watches its file like any other configuration
+file. An edit re-reads the configuration and rebuilds the API's runtime (docs/CONFIGURATION.md
+§7.3); in-flight requests drain first. Readers see the new text once their five-minute
+`Cache-Control` window passes, and a client that revalidates with its `ETag` gets a `304` until
+then. Changing the `[legal]` section itself — which documents exist, their slugs, locales or
+`updated` line — reloads the same way.
 
 ### Failure modes
 
 | What happened | What readers see |
 |---|---|
-| A document has neither `sources` nor `url`, or both | The API **refuses to boot**, naming the slug. Better than a footer link that permanently 404s. |
-| A configured file is missing or unreadable at request time | `404` for that document, one warning line naming the path. The rest of the index is unaffected. |
-| A file exceeds 1 MiB | `404` and an error line. The cap exists so a `source` pointed at a log file cannot become a response body. |
+| A document has neither `body` nor `url`, or both | The API **refuses the configuration**, naming every bad key at once. At boot it does not start; on a reload the previous runtime keeps serving. Better than a footer link that permanently 404s. |
+| A named file is missing, unreadable, blank or over 1 MiB | The same refusal, naming the variable. The cap exists so a `_FILE` pointed at a log file cannot become a response body. |
+| An external `url` uses plain `http` | Served, with one warning line at every (re)load. |
 | No `[legal]` section at all | An empty index; the footer publishes no Legal column, and the register form omits its "you accept …" line rather than linking nowhere. |
 
 ---

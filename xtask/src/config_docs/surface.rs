@@ -26,8 +26,11 @@ struct Field {
     /// name a struct at all (a tuple, a reference), which is always a leaf.
     ty: Option<TypeRef>,
     /// `#[serde(flatten)]`: the field contributes its own block's keys at *this* level, so
-    /// [`descend`] does not push [`Self::key`] onto the path.
+    /// [`Scope::descend`] does not push [`Self::key`] onto the path.
     flatten: bool,
+    /// `#[config(nested)]`: the `Describe` derive treats the field as a block, so the walker must
+    /// find one.
+    nested: bool,
 }
 
 /// A field's type path, reduced to the qualifier and the name.
@@ -81,115 +84,169 @@ impl Table {
     }
 }
 
+/// Config blocks declared by crates outside this workspace, keyed by the name a type path uses
+/// for the crate (`terrace_legal` in `terrace_legal::LegalConfig`).
+#[derive(Default)]
+pub(super) struct External {
+    crates: BTreeMap<String, Table>,
+}
+
+impl External {
+    /// Register `table` as the blocks of the crate a type path names as `ident`.
+    pub(super) fn insert(&mut self, ident: &str, table: Table) {
+        self.crates.insert(ident.to_owned(), table);
+    }
+
+    fn get(&self, ident: &str) -> Option<(&str, &Table)> {
+        self.crates
+            .get_key_value(ident)
+            .map(|(name, table)| (name.as_str(), table))
+    }
+}
+
+/// The tables one walk resolves against.
+struct Scope<'a> {
+    local: &'a Table,
+    shared: &'a Table,
+    external: &'a External,
+}
+
+/// A block found by [`Scope::resolve`], with the external crate it was declared in, if any.
+struct Found<'a> {
+    block: &'a Block,
+    /// A bare type name inside an external block names that crate's type, not a workspace one.
+    within: Option<&'a str>,
+}
+
 /// Every environment key a service reads through `tankovault_config::load`, derived by
 /// descending from its root config struct.
 ///
 /// `local` is that service's own source; `shared` is `crates/config` plus the one domain type a
 /// config struct names. A bare type name resolves against `local` first and `shared` second,
 /// which is how `DatabaseConfig` (imported) and `AuthConfig` (declared next to `Config`) can sit
-/// in the same struct — but a name present in *both* is an error rather than a coin toss.
+/// in the same struct — but a name present in *both* is an error rather than a coin toss. A type
+/// qualified by a crate in `external` resolves there, and so does every bare name beneath it.
 ///
 /// # Errors
-/// An unresolvable ambiguity, a `serde` attribute the walker cannot model, or a cycle.
-pub(super) fn walk(local: &Table, shared: &Table, root: &str) -> Result<BTreeSet<String>> {
+/// An unresolvable ambiguity, a `serde` attribute the walker cannot model, a cycle, or a
+/// `#[config(nested)]` field whose block cannot be found.
+pub(super) fn walk(
+    local: &Table,
+    shared: &Table,
+    external: &External,
+    root: &str,
+) -> Result<BTreeSet<String>> {
+    let scope = Scope {
+        local,
+        shared,
+        external,
+    };
+    let found = scope
+        .resolve(root, None, None)?
+        .ok_or_else(|| anyhow::anyhow!("no `#[derive(Deserialize)]` struct named `{root}`"))?;
     let mut keys = BTreeSet::new();
     let mut path = Vec::new();
     let mut stack = Vec::new();
-    descend(local, shared, root, None, &mut path, &mut stack, &mut keys)?;
+    scope.descend(root, &found, &mut path, &mut stack, &mut keys)?;
     Ok(keys)
 }
 
-fn descend(
-    local: &Table,
-    shared: &Table,
-    name: &str,
-    qualifier: Option<&str>,
-    path: &mut Vec<String>,
-    stack: &mut Vec<String>,
-    keys: &mut BTreeSet<String>,
-) -> Result<()> {
-    if stack.iter().any(|s| s == name) {
-        bail!(
-            "config struct `{name}` contains itself: {} -> {name}",
-            stack.join(" -> ")
-        );
-    }
-    let block = resolve(local, shared, name, qualifier)?
-        .ok_or_else(|| anyhow::anyhow!("no `#[derive(Deserialize)]` struct named `{name}`"))?;
+impl<'a> Scope<'a> {
+    fn descend(
+        &self,
+        name: &str,
+        found: &Found<'a>,
+        path: &mut Vec<String>,
+        stack: &mut Vec<String>,
+        keys: &mut BTreeSet<String>,
+    ) -> Result<()> {
+        if stack.iter().any(|s| s == name) {
+            bail!(
+                "config struct `{name}` contains itself: {} -> {name}",
+                stack.join(" -> ")
+            );
+        }
 
-    stack.push(name.to_owned());
-    for field in &block.fields {
-        // A field whose type names a struct in either table is a nested block; anything else
-        // — a scalar, a `Vec`, an enum — is a value figment parses directly.
-        let nested = match field.ty.as_ref() {
-            Some(ty) => resolve(local, shared, &ty.name, ty.qualifier.as_deref())?.and(Some(ty)),
-            None => None,
-        };
-        // A flattened field owns no segment of its own: serde merges its block into this one, so
-        // its keys are derived at this level. That only holds for a block — `#[serde(flatten)]`
-        // over a map collects whatever keys the input happens to carry, which no walk can
-        // enumerate, so it is refused rather than derived as empty.
-        if field.flatten {
-            let Some(ty) = nested else {
+        stack.push(name.to_owned());
+        for field in &found.block.fields {
+            // A field whose type names a struct in a table is a nested block; anything else — a
+            // scalar, a `Vec`, an enum — is a value figment parses directly.
+            let nested = match field.ty.as_ref() {
+                Some(ty) => self
+                    .resolve(&ty.name, ty.qualifier.as_deref(), found.within)?
+                    .map(|inner| (ty, inner)),
+                None => None,
+            };
+            // The derive's own claim that this is a block. Without this a block the walker cannot
+            // see — one declared in a crate it was not told about — is a leaf, and the document
+            // is checked against one key where the code reads many.
+            if field.nested && nested.is_none() {
                 bail!(
-                    "`{name}`'s field `{}` is `#[serde(flatten)]` over something that is \
-                     not a config block, so the keys it answers to cannot be derived",
+                    "`{name}`'s field `{}` is `#[config(nested)]`, but its type names no \
+                     `#[derive(Deserialize)]` struct the walker can read; if it lives in \
+                     another crate, add that crate to `config_docs::EXTERNAL`",
                     field.key
                 );
-            };
-            descend(
-                local,
-                shared,
-                &ty.name,
-                ty.qualifier.as_deref(),
-                path,
-                stack,
-                keys,
-            )?;
-            continue;
+            }
+            // A flattened field owns no segment of its own: serde merges its block into this
+            // one, so its keys are derived at this level. That only holds for a block —
+            // `#[serde(flatten)]` over a map collects whatever keys the input happens to carry,
+            // which no walk can enumerate, so it is refused rather than derived as empty.
+            if field.flatten {
+                let Some((ty, inner)) = nested else {
+                    bail!(
+                        "`{name}`'s field `{}` is `#[serde(flatten)]` over something that is \
+                         not a config block, so the keys it answers to cannot be derived",
+                        field.key
+                    );
+                };
+                self.descend(&ty.name, &inner, path, stack, keys)?;
+                continue;
+            }
+            path.push(field.key.clone());
+            if let Some((ty, inner)) = nested {
+                self.descend(&ty.name, &inner, path, stack, keys)?;
+            } else {
+                keys.insert(format!("TANKOVAULT_{}", path.join("__").to_uppercase()));
+            }
+            path.pop();
         }
-        path.push(field.key.clone());
-        if let Some(ty) = nested {
-            descend(
-                local,
-                shared,
-                &ty.name,
-                ty.qualifier.as_deref(),
-                path,
-                stack,
-                keys,
-            )?;
-        } else {
-            keys.insert(format!("TANKOVAULT_{}", path.join("__").to_uppercase()));
-        }
-        path.pop();
+        stack.pop();
+        Ok(())
     }
-    stack.pop();
-    Ok(())
-}
 
-/// Look a type name up in the two tables.
-///
-/// `Ok(None)` means "not a config block" — a `String`, a `Vec`, an enum — which is the common
-/// case and is what makes a field a leaf.
-fn resolve<'a>(
-    local: &'a Table,
-    shared: &'a Table,
-    name: &str,
-    qualifier: Option<&str>,
-) -> Result<Option<&'a Block>> {
-    // A type written `tankovault_config::X` names the shared crate and nothing else, so a
-    // service-local struct of the same name cannot shadow it.
-    if qualifier.is_some_and(|q| q.starts_with("tankovault_")) {
-        return one(shared.get(name), name);
-    }
-    match (local.get(name), shared.get(name)) {
-        (Some(_), Some(_)) => bail!(
-            "`{name}` is declared both in this service and in the shared config crate; \
-             write the field's type as a qualified path so which one is meant is not a guess"
-        ),
-        (Some(blocks), None) | (None, Some(blocks)) => one(Some(blocks), name),
-        (None, None) => Ok(None),
+    /// Look a type name up.
+    ///
+    /// `Ok(None)` means "not a config block" — a `String`, a `Vec`, an enum — which is the common
+    /// case and is what makes a field a leaf.
+    fn resolve(
+        &self,
+        name: &str,
+        qualifier: Option<&str>,
+        within: Option<&'a str>,
+    ) -> Result<Option<Found<'a>>> {
+        let found = |block: Option<&'a Block>, within: Option<&'a str>| {
+            block.map(|block| Found { block, within })
+        };
+        // A type written `tankovault_config::X` names the shared crate and nothing else, so a
+        // service-local struct of the same name cannot shadow it.
+        if qualifier.is_some_and(|q| q.starts_with("tankovault_")) {
+            return Ok(found(one(self.shared.get(name), name)?, None));
+        }
+        // An external crate's type, named by its crate or reached from inside one of its blocks.
+        if let Some((ident, table)) = qualifier.or(within).and_then(|q| self.external.get(q)) {
+            return Ok(found(one(table.get(name), name)?, Some(ident)));
+        }
+        match (self.local.get(name), self.shared.get(name)) {
+            (Some(_), Some(_)) => bail!(
+                "`{name}` is declared both in this service and in the shared config crate; \
+                 write the field's type as a qualified path so which one is meant is not a guess"
+            ),
+            (Some(blocks), None) | (None, Some(blocks)) => {
+                Ok(found(one(Some(blocks), name)?, None))
+            }
+            (None, None) => Ok(None),
+        }
     }
 }
 
@@ -264,6 +321,7 @@ fn block_from(item: &syn::ItemStruct, origin: &str) -> Result<Option<Block>> {
             key: meta.rename.unwrap_or_else(|| ident.to_string()),
             ty: type_ref(&field.ty),
             flatten: meta.flatten,
+            nested: meta.nested,
         });
     }
     Ok(Some(Block {
@@ -321,12 +379,22 @@ struct FieldMeta {
     rename: Option<String>,
     skip: bool,
     flatten: bool,
+    nested: bool,
 }
 
 fn field_serde(attrs: &[syn::Attribute]) -> Result<FieldMeta> {
     let mut out = FieldMeta::default();
     let mut unsupported = None;
     for attr in attrs {
+        if attr.path().is_ident("config") {
+            attr.parse_nested_meta(|meta| {
+                if meta.path.is_ident("nested") {
+                    out.nested = true;
+                }
+                skip_any_value(&meta)
+            })?;
+            continue;
+        }
         if !attr.path().is_ident("serde") {
             continue;
         }
@@ -364,6 +432,25 @@ fn skip_value(meta: &syn::meta::ParseNestedMeta<'_>) -> syn::Result<()> {
         meta.value()?.parse::<syn::Expr>()?;
     } else if meta.input.peek(syn::token::Paren) {
         meta.parse_nested_meta(|nested| skip_value(&nested))?;
+    }
+    Ok(())
+}
+
+/// As [`skip_value`], for an attribute whose lists hold literals as well as idents
+/// (`#[config(values("none", "accept"))]`).
+fn skip_any_value(meta: &syn::meta::ParseNestedMeta<'_>) -> syn::Result<()> {
+    if meta.input.peek(syn::Token![=]) {
+        meta.value()?.parse::<syn::Expr>()?;
+    } else if meta.input.peek(syn::token::Paren) {
+        let content;
+        syn::parenthesized!(content in meta.input);
+        content.step(|cursor| {
+            let mut rest = *cursor;
+            while let Some((_, next)) = rest.token_tree() {
+                rest = next;
+            }
+            Ok(((), rest))
+        })?;
     }
     Ok(())
 }
@@ -478,7 +565,7 @@ fn rust_sources(dir: &Path) -> Result<Vec<std::path::PathBuf>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Table, walk};
+    use super::{External, Table, walk};
 
     fn table(source: &str) -> Table {
         let mut table = Table::default();
@@ -488,10 +575,15 @@ mod tests {
     }
 
     fn keys(source: &str) -> Vec<String> {
-        walk(&table(source), &Table::default(), "Config")
-            .expect("walk succeeds")
-            .into_iter()
-            .collect()
+        walk(
+            &table(source),
+            &Table::default(),
+            &External::default(),
+            "Config",
+        )
+        .expect("walk succeeds")
+        .into_iter()
+        .collect()
     }
 
     /// The shape every service's root config has: scalars beside nested blocks.
@@ -606,6 +698,7 @@ mod tests {
             ",
             ),
             &Table::default(),
+            &External::default(),
             "Config",
         )
         .expect_err("a flattened map is not modelled");
@@ -648,7 +741,8 @@ mod tests {
             struct SecurityConfig { hsts: bool }
         ",
         );
-        let err = walk(&local, &shared, "Config").expect_err("the collision is reported");
+        let err = walk(&local, &shared, &External::default(), "Config")
+            .expect_err("the collision is reported");
         assert!(format!("{err:#}").contains("qualified path"), "{err:#}");
     }
 
@@ -671,7 +765,7 @@ mod tests {
         ",
         );
         assert_eq!(
-            walk(&local, &shared, "Config")
+            walk(&local, &shared, &External::default(), "Config")
                 .expect("resolves")
                 .into_iter()
                 .collect::<Vec<_>>(),
@@ -692,9 +786,68 @@ mod tests {
             ",
             ),
             &Table::default(),
+            &External::default(),
             "Config",
         )
         .expect_err("the cycle is reported");
         assert!(format!("{err:#}").contains("contains itself"), "{err:#}");
+    }
+
+    /// A block declared in another crate is descended into, and a bare name inside it resolves
+    /// in that crate rather than in this workspace.
+    #[test]
+    fn a_block_from_an_external_crate_is_walked_in_its_own_crate() {
+        let local = table(
+            r"
+            #[derive(Deserialize)]
+            struct Config { #[config(nested)] legal: terrace_legal::LegalConfig }
+            #[derive(Deserialize)]
+            struct Inner { shadow: String }
+        ",
+        );
+        let mut external = External::default();
+        external.insert(
+            "terrace_legal",
+            table(
+                r"
+                #[derive(Deserialize)]
+                struct LegalConfig { default_locale: Option<String>, nested: Inner }
+                #[derive(Deserialize)]
+                struct Inner { limit: u32 }
+            ",
+            ),
+        );
+        assert_eq!(
+            walk(&local, &Table::default(), &external, "Config")
+                .expect("resolves")
+                .into_iter()
+                .collect::<Vec<_>>(),
+            [
+                "TANKOVAULT_LEGAL__DEFAULT_LOCALE",
+                "TANKOVAULT_LEGAL__NESTED__LIMIT"
+            ]
+        );
+    }
+
+    /// A `#[config(nested)]` field whose block the walker cannot read is refused.
+    ///
+    /// The bug it pins: a block moved into a dependency became a leaf, so the gate derived one
+    /// key, `TANKOVAULT_LEGAL`, in place of the section's real ones, and passed against a
+    /// document that described neither.
+    #[test]
+    fn a_nested_block_the_walker_cannot_read_is_refused() {
+        let err = walk(
+            &table(
+                r"
+                #[derive(Deserialize)]
+                struct Config { #[config(nested)] legal: terrace_legal::LegalConfig }
+            ",
+            ),
+            &Table::default(),
+            &External::default(),
+            "Config",
+        )
+        .expect_err("an unreadable block is not a leaf");
+        assert!(format!("{err:#}").contains("EXTERNAL"), "{err:#}");
     }
 }

@@ -122,13 +122,18 @@ uuid = { version = "1", features = ["serde"] }
 # `dio-ssr`/`server` features are fullstack-only and would drag `http` and server functions into
 # a bundle that is a pure client-side SPA.
 i18nrs = { version = "0.1.9", default-features = false, features = ["dio"] }
-# Renders the operator's legal Markdown. `default-features = false` drops the `html` feature
-# deliberately: this crate is used as a *pull parser*, and its events are mapped straight onto
-# `rsx!` nodes. Nothing ever produces an HTML string, so there is no HTML for an operator's file
-# to inject and nothing to sanitise — `Event::Html` is rendered as literal text. A
+# The legal documents: the provider, hooks and page the footer, sheet, register form and
+# `/legal/:slug` render through, and the wire types they share with the API. Renderer-agnostic,
+# so both builds use them. Pinned by the same tag as the host workspace's `terrace-legal`, which
+# serves what these read. `consent` stays off, as it does on the server.
+#
+# `-markdown` renders the operator's text, and the release notes, as elements: no HTML string is
+# ever produced, so there is nothing for a document to inject into and nothing to sanitise. A
 # markdown-to-HTML pipeline would need `dangerous_inner_html`, which is the one door this app
 # keeps shut (see `src/platform/mod.rs` and the served CSP).
-pulldown-cmark = { version = "0.13.4", default-features = false }
+terrace-legal-dioxus = { git = "https://github.com/TimSchoenle/terrace-legal", tag = "v0.2.0" }
+terrace-legal-markdown = { git = "https://github.com/TimSchoenle/terrace-legal", tag = "v0.2.0" }
+terrace-legal-model = { git = "https://github.com/TimSchoenle/terrace-legal", tag = "v0.2.0" }
 # The logging facade, on both builds. Already in this graph — `dioxus` logs through it — so this
 # names a crate that is compiled either way rather than adding one. `clippy.toml` bans `dbg!` in
 # favour of it. The *subscriber* that gives the calls somewhere to go is desktop-only, below; on

@@ -11,64 +11,48 @@
 #![cfg(feature = "integration")]
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
 
-use axum::http::StatusCode;
+use axum::body::Body;
+use axum::http::header::{ACCEPT_LANGUAGE, ETAG, IF_NONE_MATCH, VARY};
+use axum::http::{Request, StatusCode};
 use tankovault_api_test_support::{TestApp, TestConfig};
-use tankovault_config::{LegalConfig, LegalDocument};
+use terrace_legal::{LegalConfig, LegalDocument};
 
-/// A scratch directory holding two locales of one document, removed on drop.
-struct Fixture {
-    dir: PathBuf,
-}
-
-impl Fixture {
-    fn new(name: &str) -> Self {
-        let dir = std::env::temp_dir().join(format!("tv-legal-{name}-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).expect("scratch dir");
-        std::fs::write(dir.join("terms.en.md"), "# Terms\n\nEnglish body.\n").expect("en");
-        std::fs::write(
-            dir.join("terms.de.md"),
-            "# Bedingungen\n\nDeutscher Text.\n",
-        )
-        .expect("de");
-        Self { dir }
-    }
-
-    fn config(&self) -> LegalConfig {
-        let terms = LegalDocument {
-            sources: BTreeMap::from([
-                ("de".to_owned(), PathBuf::from("terms.de.md")),
-                ("en".to_owned(), PathBuf::from("terms.en.md")),
-            ]),
-            updated: Some("2026-08-04".to_owned()),
-            title: BTreeMap::from([("en".to_owned(), "Terms of Service".to_owned())]),
-            ..LegalDocument::default()
-        };
-        let imprint = LegalDocument {
-            url: Some("https://example.org/impressum".to_owned()),
-            ..LegalDocument::default()
-        };
-        LegalConfig {
-            dir: Some(self.dir.clone()),
-            documents: BTreeMap::from([
-                ("terms".to_owned(), terms),
-                ("imprint".to_owned(), imprint),
-            ]),
-        }
+/// Two locales of the Terms, served here, and an Imprint hosted elsewhere.
+fn config() -> LegalConfig {
+    let terms = LegalDocument {
+        body: BTreeMap::from([
+            (
+                "de".to_owned(),
+                "# Bedingungen\n\nDeutscher Text.\n".to_owned(),
+            ),
+            ("en".to_owned(), "# Terms\n\nEnglish body.\n".to_owned()),
+        ]),
+        updated: Some("2026-08-04".to_owned()),
+        title: BTreeMap::from([("en".to_owned(), "Terms of Service".to_owned())]),
+        ..LegalDocument::default()
+    };
+    let imprint = LegalDocument {
+        url: Some("https://example.org/impressum".to_owned()),
+        ..LegalDocument::default()
+    };
+    LegalConfig {
+        documents: BTreeMap::from([("terms".to_owned(), terms), ("imprint".to_owned(), imprint)]),
+        ..LegalConfig::default()
     }
 }
 
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        std::fs::remove_dir_all(&self.dir).ok();
-    }
+async fn app() -> TestApp {
+    TestApp::spawn_with(TestConfig::new().with_legal(config())).await
+}
+
+fn get(uri: &str) -> axum::http::request::Builder {
+    Request::builder().method("GET").uri(uri)
 }
 
 #[tokio::test]
 async fn the_documents_are_readable_without_an_account() {
-    let fixture = Fixture::new("public");
-    let app = TestApp::spawn_with(TestConfig::new().with_legal(fixture.config())).await;
+    let app = app().await;
 
     let (status, body) = app.call("GET", "/v1/legal", None, None).await;
     assert_eq!(status, StatusCode::OK, "the index must not require a token");
@@ -109,8 +93,7 @@ async fn the_documents_are_readable_without_an_account() {
 /// their language like that.
 #[tokio::test]
 async fn an_unpublished_locale_falls_back_and_the_response_names_what_it_served() {
-    let fixture = Fixture::new("locale");
-    let app = TestApp::spawn_with(TestConfig::new().with_legal(fixture.config())).await;
+    let app = app().await;
 
     let (status, body) = app.call("GET", "/v1/legal/terms?lang=fr", None, None).await;
     assert_eq!(status, StatusCode::OK);
@@ -120,15 +103,75 @@ async fn an_unpublished_locale_falls_back_and_the_response_names_what_it_served(
     );
 }
 
-/// An unconfigured slug is a 404 — the footer only ever links what the index returned, so this
-/// is a hand-typed URL or a stale bookmark, not a broken link the app published.
+/// The title follows the body's locale.
+///
+/// The bug: the title had its own fallback chain, so a German reader of the only-English-titled
+/// Terms got the German body under the English title "Terms of Service". Now a body served in
+/// `de` carries the `de` title or none, and the client names it from its own catalogue.
 #[tokio::test]
-async fn an_unconfigured_slug_is_not_found() {
-    let fixture = Fixture::new("missing");
-    let app = TestApp::spawn_with(TestConfig::new().with_legal(fixture.config())).await;
+async fn the_title_is_never_in_another_language_than_the_body() {
+    let app = app().await;
 
-    let (status, _) = app.call("GET", "/v1/legal/dmca", None, None).await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, body) = app.call("GET", "/v1/legal/terms?lang=de", None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["locale"], "de");
+    assert_eq!(body["title"], serde_json::Value::Null);
+}
+
+/// A repeat request with the tag it was given is a `304`, and both answers say they vary by
+/// `Accept-Language`.
+///
+/// The bug: the old handler sent an `ETag` it never compared, so every footer render re-fetched
+/// the whole document, and it sent no `Vary`, so a shared cache could hand a German reader the
+/// copy it negotiated for an English one.
+#[tokio::test]
+async fn a_matching_if_none_match_is_not_modified_and_every_answer_varies_by_language() {
+    let app = app().await;
+
+    let first = app
+        .request(
+            get("/v1/legal/terms")
+                .header(ACCEPT_LANGUAGE, "de-AT, en;q=0.5")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await;
+    assert_eq!(first.status(), StatusCode::OK);
+    assert_eq!(first.headers()[VARY], "Accept-Language");
+    let etag = first.headers()[ETAG].clone();
+
+    let second = app
+        .request(
+            get("/v1/legal/terms")
+                .header(ACCEPT_LANGUAGE, "de-AT, en;q=0.5")
+                .header(IF_NONE_MATCH, etag.clone())
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await;
+    assert_eq!(second.status(), StatusCode::NOT_MODIFIED);
+    assert_eq!(second.headers()[ETAG], etag);
+    assert_eq!(second.headers()[VARY], "Accept-Language");
+
+    let index = app
+        .request(get("/v1/legal").body(Body::empty()).expect("request"))
+        .await;
+    assert_eq!(index.status(), StatusCode::OK);
+    assert_eq!(index.headers()[VARY], "Accept-Language");
+    assert!(index.headers().contains_key(ETAG));
+}
+
+/// An unconfigured slug is a 404 — the footer only ever links what the index returned, so this
+/// is a hand-typed URL or a stale bookmark, not a broken link the app published. An external
+/// document has no body here, so it is one too, in the same problem shape.
+#[tokio::test]
+async fn an_unconfigured_slug_or_an_external_document_is_not_found() {
+    let app = app().await;
+
+    for uri in ["/v1/legal/dmca", "/v1/legal/imprint", "/v1/legal/..%2Fetc"] {
+        let (status, _) = app.call("GET", uri, None, None).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{uri}");
+    }
 }
 
 /// The common deployment: no `[legal]` section at all. An empty index, not an error — the

@@ -1839,17 +1839,19 @@
         "type": "object"
       },
       "LegalDocumentView": {
-        "description": "One document, in the locale that was actually served.",
+        "description": "One document, in the locale that was actually served.\n\nEvery member is always present; an absent value is `null`. The type is `#[non_exhaustive]`, so\nbuild one with [`Self::new`] and the setters.",
         "properties": {
           "body": {
             "type": "string"
           },
           "format": {
             "description": "Always `markdown`. Present so a future format is a value rather than a new endpoint.",
+            "example": "markdown",
             "type": "string"
           },
           "locale": {
             "description": "The locale served, which is **not** necessarily the one requested — a reader asking for\nGerman and receiving the only available English text has to be told, or they conclude\nthe operator writes German like that.",
+            "example": "de-AT",
             "type": "string"
           },
           "slug": {
@@ -1877,7 +1879,7 @@
         "type": "object"
       },
       "LegalIndexEntry": {
-        "description": "One entry in the index the footer renders.",
+        "description": "One entry in the index the footer renders.\n\nEvery member is always present; an absent value is `null`. The type is `#[non_exhaustive]`, so\nbuild one with [`Self::new`] and the setters.",
         "properties": {
           "kind": {
             "$ref": "#/components/schemas/LegalKind",
@@ -14687,7 +14689,7 @@
                 }
               }
             },
-            "description": "no such document, or its file is unreadable"
+            "description": "no such document, or one hosted elsewhere"
           }
         },
         "summary": "Get one legal document",

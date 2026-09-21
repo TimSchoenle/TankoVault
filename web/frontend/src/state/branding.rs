@@ -160,8 +160,8 @@ pub(crate) fn use_branding_sync() {
     let api = api::use_api();
     let mut branding = use_context::<BrandingState>();
 
-    // Bound and unread, for the same reason `use_legal_sync`'s is: it writes into context
-    // rather than being read back, and `let _ =` would drop the future.
+    // Bound and unread: it writes into context rather than being read back, and `let _ =`
+    // would drop the future.
     let _fetch = use_resource(move || {
         let client = api.client();
         async move {

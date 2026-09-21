@@ -5613,6 +5613,8 @@ dependencies = [
  "tankovault-service",
  "tankovault-test-support",
  "terrace-config",
+ "terrace-legal",
+ "terrace-legal-axum",
  "thiserror 2.0.20",
  "time",
  "tokio",
@@ -5655,6 +5657,7 @@ dependencies = [
  "tankovault-email",
  "tankovault-service",
  "tankovault-test-support",
+ "terrace-legal",
  "time",
  "tower",
 ]
@@ -6149,6 +6152,43 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.6",
+]
+
+[[package]]
+name = "terrace-legal"
+version = "0.2.0"
+source = "git+https://github.com/TimSchoenle/terrace-legal?tag=v0.2.0#622e98585ef290fa1ab7d8be303a8be8c24832d8"
+dependencies = [
+ "base64 0.23.1",
+ "serde",
+ "sha2 0.11.0",
+ "terrace-config",
+ "terrace-legal-model",
+ "thiserror 2.0.20",
+ "url",
+]
+
+[[package]]
+name = "terrace-legal-axum"
+version = "0.2.0"
+source = "git+https://github.com/TimSchoenle/terrace-legal?tag=v0.2.0#622e98585ef290fa1ab7d8be303a8be8c24832d8"
+dependencies = [
+ "axum",
+ "http",
+ "serde",
+ "serde_json",
+ "terrace-legal",
+ "terrace-legal-model",
+]
+
+[[package]]
+name = "terrace-legal-model"
+version = "0.2.0"
+source = "git+https://github.com/TimSchoenle/terrace-legal?tag=v0.2.0#622e98585ef290fa1ab7d8be303a8be8c24832d8"
+dependencies = [
+ "serde",
+ "thiserror 2.0.20",
+ "utoipa",
 ]
 
 [[package]]

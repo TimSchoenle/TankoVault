@@ -4079,13 +4079,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "One document, in the locale that was actually served."]
+    #[doc = "One document, in the locale that was actually served.\n\nEvery member is always present; an absent value is `null`. The type is `#[non_exhaustive]`, so\nbuild one with [`Self::new`] and the setters."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"One document, in the locale that was actually served.\","]
+    #[doc = "  \"description\": \"One document, in the locale that was actually served.\\n\\nEvery member is always present; an absent value is `null`. The type is `#[non_exhaustive]`, so\\nbuild one with [`Self::new`] and the setters.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"body\","]
@@ -4099,10 +4099,16 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"format\": {"]
     #[doc = "      \"description\": \"Always `markdown`. Present so a future format is a value rather than a new endpoint.\","]
+    #[doc = "      \"examples\": ["]
+    #[doc = "        \"markdown\""]
+    #[doc = "      ],"]
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
     #[doc = "    \"locale\": {"]
     #[doc = "      \"description\": \"The locale served, which is **not** necessarily the one requested — a reader asking for\\nGerman and receiving the only available English text has to be told, or they conclude\\nthe operator writes German like that.\","]
+    #[doc = "      \"examples\": ["]
+    #[doc = "        \"de-AT\""]
+    #[doc = "      ],"]
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
     #[doc = "    \"slug\": {"]
@@ -4142,13 +4148,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "One entry in the index the footer renders."]
+    #[doc = "One entry in the index the footer renders.\n\nEvery member is always present; an absent value is `null`. The type is `#[non_exhaustive]`, so\nbuild one with [`Self::new`] and the setters."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"One entry in the index the footer renders.\","]
+    #[doc = "  \"description\": \"One entry in the index the footer renders.\\n\\nEvery member is always present; an absent value is `null`. The type is `#[non_exhaustive]`, so\\nbuild one with [`Self::new`] and the setters.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"kind\","]

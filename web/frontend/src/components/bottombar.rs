@@ -11,9 +11,8 @@ use crate::components::nav::{reader_destinations_visible, tab_destinations, Dest
 use crate::components::UnreadBadge;
 use crate::i18n::{use_i18n, Translator, LOCALES};
 use crate::icons::{Ic, Icon};
-use crate::models::LegalKind;
 use crate::state::capabilities::use_capabilities;
-use crate::state::legal::{legal_title, use_legal_index};
+use crate::state::legal;
 use crate::state::use_session;
 use crate::views::AccountPanel;
 use crate::wire::types::Feature;
@@ -199,39 +198,32 @@ fn MoreSheet(on_close: EventHandler<()>) -> Element {
 /// like, and is the correct degradation either way: a heading over an empty list is worse than
 /// no heading.
 fn legal_block(i18n: Translator) -> Element {
-    let entries = use_legal_index();
-    let entries = entries.read().clone();
+    let entries = legal::documents();
     if entries.is_empty() {
         return rsx! {};
     }
     rsx! {
         div { class: "ik-sheet-head", {i18n.t("footer.legal")} }
         for entry in entries {
-            match entry.kind {
-                LegalKind::External => {
-                    let href = entry.url.clone().unwrap_or_default();
-                    rsx! {
-                        a {
-                            key: "{entry.slug}",
-                            class: "ik-sheet-row",
-                            href: "{href}",
-                            target: "_blank",
-                            rel: "noopener noreferrer",
-                            Ic { icon: Icon::Gavel, size: 19 }
-                            {legal_title(i18n, &entry.slug, entry.title.as_deref())}
-                            span { class: "val", Ic { icon: Icon::OpenInNew, size: 14 } }
-                        }
-                    }
+            if let Some(href) = legal::external_url(&entry) {
+                a {
+                    key: "{entry.slug}",
+                    class: "ik-sheet-row",
+                    href: "{href}",
+                    target: "_blank",
+                    rel: "noopener noreferrer",
+                    Ic { icon: Icon::Gavel, size: 19 }
+                    {legal::title(i18n, &entry)}
+                    span { class: "val", Ic { icon: Icon::OpenInNew, size: 14 } }
                 }
-                LegalKind::Inline => rsx! {
-                    Link {
-                        key: "{entry.slug}",
-                        to: Route::Legal { slug: entry.slug.clone() },
-                        class: "ik-sheet-row",
-                        Ic { icon: Icon::Gavel, size: 19 }
-                        {legal_title(i18n, &entry.slug, entry.title.as_deref())}
-                    }
-                },
+            } else {
+                Link {
+                    key: "{entry.slug}",
+                    to: Route::Legal { slug: entry.slug.clone() },
+                    class: "ik-sheet-row",
+                    Ic { icon: Icon::Gavel, size: 19 }
+                    {legal::title(i18n, &entry)}
+                }
             }
         }
     }

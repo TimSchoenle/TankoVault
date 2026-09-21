@@ -20,7 +20,6 @@ mod hooks;
 mod i18n;
 mod icons;
 mod live;
-mod markdown;
 mod models;
 mod platform;
 mod state;

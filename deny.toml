@@ -183,13 +183,15 @@ skip = [
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-# The two git dependencies, both extracted out of this workspace and both pinned by tag in the
-# root manifest: `terrace-config` (the layered config loader and reload supervisor) and
-# `csp-shell` (the frontend tier's Content-Security-Policy). Listed here because
-# `unknown-git = "deny"` above is what stops a *third* one arriving unnoticed — a git source is
+# The three git dependencies, all extracted out of this workspace and all pinned by tag in the
+# root manifest: `terrace-config` (the layered config loader and reload supervisor), `csp-shell`
+# (the frontend tier's Content-Security-Policy) and `terrace-legal` (the legal documents, whose
+# Dioxus crates `web/frontend` also uses). Listed here because `unknown-git = "deny"` above is
+# what stops a *fourth* one arriving unnoticed — a git source is
 # a dependency with no registry, no version resolution and no yank mechanism, so each one is a
 # deliberate decision rather than something a transitive bump can introduce.
 allow-git = [
     "https://github.com/TimSchoenle/terrace-config",
     "https://github.com/TimSchoenle/csp-shell",
+    "https://github.com/TimSchoenle/terrace-legal",
 ]

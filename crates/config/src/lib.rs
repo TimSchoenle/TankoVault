@@ -21,7 +21,6 @@ mod database;
 mod email;
 mod features;
 mod internal_auth;
-mod legal;
 mod loader;
 mod matching;
 mod messaging;
@@ -44,7 +43,6 @@ pub use internal_auth::{
     CallerConfig, IdentityMode, InternalAuthConfig, InternalTlsConfig, MIN_INTERNAL_TOKEN_LEN,
     PeerConfig, ResolvedCaller, ResolvedInternalAuth, ResolvedPeer, ResolvedTls,
 };
-pub use legal::{LegalConfig, LegalDocument};
 pub use loader::{
     ConfigError, Explanation, Layer, Loaded, Sources, default_true, explain, is_production, load,
     load_watched, terrace,

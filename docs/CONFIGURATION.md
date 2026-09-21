@@ -58,13 +58,15 @@ TANKOVAULT_CHANNELS__EMAIL_TO='["ops@example.com"]'
 An **unknown** `TANKOVAULT_*` key is ignored, not rejected. A typo therefore fails silently —
 so does a key that has been removed (see [§8](#8-removed-keys)).
 
-**Two objects are exceptions and refuse an undeclared key at boot**: one entry of
-`internal.peers`, and one entry of `legal.documents`. Both are values inside an operator-keyed
-map, so the *names* stay open — a caller, or a document slug this build has never heard of, is
-still the operator's to choose — while the fixed keys inside one entry are this build's, and
-each of them decides whether a credential is verified or a published link resolves. The
-generated contracts say so too (`additionalProperties: false` on those two objects and nowhere
-else), so a validator reading the contract and the loader agree about which keys exist.
+**Three objects are exceptions and refuse an undeclared key at boot**: one entry of
+`internal.peers`, the `legal` section, and one entry of `legal.documents`. The two entries are
+values inside an operator-keyed map, so the *names* stay open — a caller, or a document slug this
+build has never heard of, is still the operator's to choose — while the fixed keys inside one
+entry are this build's, and each of them decides whether a credential is verified or a published
+link resolves. The `legal` section is closed so that a key from its earlier shape
+(`legal.dir`, `…sources…`) fails the boot instead of publishing nothing. The generated contracts
+say so too (`additionalProperties: false` on those objects), so a validator reading the contract
+and the loader agree about which keys exist.
 
 **Every service reports its layers at boot.** The log line lists each layer in precedence order
 and, for every key that was supplied, which layer it came from — and it *warns* for a key more
@@ -277,13 +279,18 @@ and an Imprint is a statutory requirement in some jurisdictions and meaningless 
 none of it is in the bundle. The whole block is optional: with no `[legal]` section the API
 returns an empty index and the footer publishes **no Legal column**, rather than links that 404.
 
-Files are read on demand behind an mtime check, so correcting a policy is an edit, not a restart.
-A file that disappears degrades to `404` and a warning, never a panic.
+Each document's text is a configuration value, validated once per configuration generation by
+[`terrace-legal`](https://github.com/TimSchoenle/terrace-legal). Mount the files and name each one
+with a `_FILE` variable ([§7.2](#72-from-files-kubernetes-and-anything-else-that-mounts-secrets)):
+the API watches them like any other configuration file, so correcting a policy is an edit and a
+runtime rebuild ([§7.3](#73-rotation-without-a-restart)), not a restart. A missing file, a blank
+one or one over 1 MiB refuses the configuration, naming the key; on a reload the previous runtime
+keeps serving.
 
 | Key | Default | Notes |
 |---|---|---|
-| `TANKOVAULT_LEGAL__DIR` | *(unset)* | Root that relative `sources` paths resolve against. An absolute `source` wins over it, so a single absolute path in one variable works without also setting a root. |
-| `TANKOVAULT_LEGAL__DOCUMENTS` | `{}` | The published documents, **keyed by URL slug** — so an operator can publish a document this build has never heard of (`dmca`, `acceptable_use`) with no code change. Each value is `{ sources: { <locale>: <path> }, url, updated, title: { <locale>: <text> } }`, and a key inside one document that is **not** one of those four is refused at boot rather than ignored, so a misspelt `updated` or `title` fails the deploy instead of vanishing. The slugs themselves stay open. `sources` and `url` are mutually exclusive and one is required: a document with neither, or with both, is **refused at boot** naming the slug, because the alternative is a permanent 404 on a link the footer publishes from the same config. As a map it is one figment value, so it takes either a whole JSON object or the usual `__` nesting per leaf: `TANKOVAULT_LEGAL__DOCUMENTS__TERMS__SOURCES__EN=/etc/tankovault/legal/terms.en.md`. `updated` is free text shown verbatim — a file mtime is the wrong answer, since touching a file is not amending a policy. |
+| `TANKOVAULT_LEGAL__DEFAULT_LOCALE` | *(unset)* | Locale served when neither `?lang=` nor `Accept-Language` matches a published one, e.g. `en`. Unset, the first published locale in alphabetical order is served. |
+| `TANKOVAULT_LEGAL__DOCUMENTS` | `{}` | The published documents, **keyed by URL slug** — so an operator can publish a document this build has never heard of (`dmca`, `acceptable_use`) with no code change. A slug is lowercase letters, digits, `_` and `-`, at most 64 characters. Each value is `{ body: { <locale>: <markdown> }, url, updated, title: { <locale>: <text> }, order }`; a key inside one document that is **not** one of those five is refused at boot rather than ignored, so a misspelt `updated` or `title` fails the deploy instead of vanishing. `body` and `url` are mutually exclusive and one is required; a `url` is absolute `http(s)` with no credentials in it. Every problem is reported at once, keyed as written (`legal.documents.terms.body.en`). Address one leaf at a time: `TANKOVAULT_LEGAL__DOCUMENTS__TERMS__BODY__EN_FILE=/etc/tankovault/legal/terms.en.md`. A locale key normalises, so `DE_AT` in a variable name is `de-AT`. `updated` is free text shown verbatim — a file mtime is the wrong answer, since touching a file is not amending a policy. `order` sorts the index, lowest first, then by slug. A title is shown only over a body in the same locale. |
 
 `deploy/legal/` holds working samples that say so in their first line, mounted read-only by the
 reference compose file. They are not legal advice and not fit for a deployment; replace them.
@@ -958,6 +965,7 @@ they were removed for.
 
 | Key | Removed because |
 |---|---|
+| `TANKOVAULT_LEGAL__DIR` | Document text became configuration: each `body.<locale>` is a value, usually a `_FILE` naming the mounted file, so there is no directory to root paths in. **Refused at boot** rather than ignored, as is a document's former `sources` map, because a section that silently published nothing would take the Terms offline. Replace `…__SOURCES__<LOCALE>=terms.en.md` with `…__BODY__<LOCALE>_FILE=/etc/tankovault/legal/terms.en.md`. |
 | `TANKOVAULT_TELEMETRY__OTLP_ENDPOINT` | It never exported anything. Four OpenTelemetry crates were declared in `[workspace.dependencies]`, used by zero members, while this knob logged `"collector export is pending"` and installed no layer. An operator who set it believed traces were being exported and would have found out during an incident. Re-add it only together with a real `OpenTelemetryLayer` in `crates/service/src/telemetry.rs`. |
 
 `TANKOVAULT_TASKS` and `TANKOVAULT_EVENTS` are **not** environment variables — they are the

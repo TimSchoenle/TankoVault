@@ -39,7 +39,7 @@ pub struct TestConfig {
     features: FeatureGate,
     tunables: tankovault_service::TunableSet,
     webauthn: Option<tankovault_api::SharedRelyingParty>,
-    legal: tankovault_config::LegalConfig,
+    legal: terrace_legal::LegalConfig,
     branding: tankovault_config::BrandingConfig,
     client: tankovault_config::ClientConfig,
     step_up_max_ttl: Duration,
@@ -65,7 +65,7 @@ impl Default for TestConfig {
             )),
             // Empty by default, which is what most deployments run: `/v1/legal` answers with an
             // empty index rather than 404ing, and the footer publishes no Legal column.
-            legal: tankovault_config::LegalConfig::default(),
+            legal: terrace_legal::LegalConfig::default(),
             // The shipped identity, so `/v1/branding` assertions read as what a stock
             // deployment publishes.
             branding: tankovault_config::BrandingConfig::default(),
@@ -93,7 +93,7 @@ impl TestConfig {
 
     /// Publish a set of legal documents, as an operator's `[legal]` section would.
     #[must_use]
-    pub fn with_legal(mut self, legal: tankovault_config::LegalConfig) -> Self {
+    pub fn with_legal(mut self, legal: terrace_legal::LegalConfig) -> Self {
         self.legal = legal;
         self
     }
@@ -261,7 +261,8 @@ impl TestApp {
             mfa_challenge_ttl: Duration::minutes(5),
             mailer: cfg.mailer,
             email_base_url: "http://localhost".to_owned(),
-            legal: tankovault_api::LegalDocs::new(cfg.legal.clone()),
+            legal: tankovault_api::legal_documents(&cfg.legal)
+                .expect("the harness legal section validates"),
             branding: tankovault_api::Branding::new(cfg.branding.clone()),
             client_channel: tankovault_api::ClientChannel::new(&cfg.client, "0.0.0")
                 .expect("the harness client channel resolves"),

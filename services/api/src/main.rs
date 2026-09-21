@@ -219,9 +219,9 @@ async fn serve_once(
     // Refuse to boot with a broken trust root: a production deployment must not serve a single
     // request against a missing or brute-forceable JWT secret.
     validate_auth_secrets(&cfg.auth, is_production())?;
-    // A legal document with no file and no URL would 404 on a link the footer publishes from
-    // the same config that omitted it. Refusing to boot names the slug, which is the fix.
-    cfg.legal.validate()?;
+    // A legal document that cannot be served would 404 on a link the footer publishes from the
+    // same config. Refusing here names every bad key, and on a reload keeps the previous runtime.
+    let legal = tankovault_api::legal_documents(&cfg.legal)?;
 
     let (pool, admin_pool) = connect_pools(&cfg).await?;
     tankovault_service::metrics::spawn_pool_sampler(pool.clone(), shutdown.clone());
@@ -329,7 +329,7 @@ async fn serve_once(
         mfa_sealer,
         mailer,
         email_base_url: cfg.email.base_url.clone(),
-        legal: tankovault_api::LegalDocs::new(cfg.legal.clone()),
+        legal,
         branding: tankovault_api::Branding::new(cfg.branding.clone()),
         client_channel,
         system_stats: tankovault_api::Cached::new(tankovault_api::ADMIN_STATS_TTL),

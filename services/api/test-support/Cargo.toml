@@ -22,6 +22,8 @@ tankovault-api = { path = ".." }
 secrecy = { workspace = true }
 tankovault-test-support = { path = "../../../crates/test-support" }
 tankovault-config = { workspace = true }
+# `TestConfig::with_legal` takes the operator's `[legal]` section as the API reads it.
+terrace-legal = { workspace = true }
 tankovault-service = { workspace = true }
 tankovault-domain = { workspace = true }
 # The `Sealer` the harness hands `AppState`, so TOTP enrolment is exercised for real rather

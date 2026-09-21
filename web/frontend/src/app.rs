@@ -8,7 +8,6 @@ use crate::i18n::I18nRoot;
 use crate::state::account_wall::AccountWall;
 use crate::state::branding::BrandingState;
 use crate::state::capabilities::CapabilitySet;
-use crate::state::legal::LegalIndex;
 use crate::state::source_order::SourceOrder;
 use crate::state::Session;
 use crate::title::PageTitle;
@@ -116,8 +115,6 @@ pub(crate) fn App() -> Element {
     // The reader's global source order; filled by `Shell` and re-set by the Account panel that
     // edits it, so a save lands on the Series screen without a reload.
     use_context_provider(SourceOrder::new);
-    // Filled once by `Shell`; three surfaces read the same list.
-    use_context_provider(LegalIndex::new);
     // The shipped identity until `Shell` fetches this deployment's. Provided here, above
     // `I18nRoot`, because the translator substitutes the product name into every message that
     // names it — so it has to be in scope wherever a message is rendered.

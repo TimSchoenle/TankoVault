@@ -79,7 +79,7 @@ pub struct Config {
     /// section publishes nothing, which is a valid deployment.
     #[serde(default)]
     #[config(nested)]
-    pub legal: tankovault_config::LegalConfig,
+    pub legal: terrace_legal::LegalConfig,
     /// What this deployment calls itself: name, wordmark, copyright, links. Served to the
     /// client at `/v1/branding` and stamped into email and the authenticator prompts.
     #[serde(default)]

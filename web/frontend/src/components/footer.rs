@@ -14,9 +14,8 @@
 use crate::components::Wordmark;
 use crate::i18n::{use_i18n, Translator};
 use crate::icons::{Ic, Icon};
-use crate::models::LegalKind;
 use crate::state::branding::use_branding;
-use crate::state::legal::{legal_title, use_legal_index};
+use crate::state::legal;
 use crate::state::use_session;
 use crate::views::AccountPanel;
 use crate::{build_info, Route};
@@ -69,8 +68,7 @@ pub(crate) fn Footer(#[props(default = false)] compact: bool) -> Element {
 #[component]
 fn LegalColumn() -> Element {
     let i18n = use_i18n();
-    let entries = use_legal_index();
-    if entries.read().is_empty() {
+    if legal::documents().is_empty() {
         return rsx! {};
     }
     rsx! {
@@ -116,33 +114,25 @@ fn tagline(i18n: Translator, branding: &crate::state::branding::Branding) -> Str
 /// Shared with the compact footer and the register form's acceptance line, so an externally
 /// hosted document is a plain `<a>` in all three rather than a route that would 404.
 pub(crate) fn legal_links(i18n: Translator) -> Element {
-    let entries = use_legal_index();
-    let entries = entries.read().clone();
     rsx! {
-        for entry in entries {
-            match entry.kind {
-                LegalKind::External => {
-                    let href = entry.url.clone().unwrap_or_default();
-                    rsx! {
-                        a {
-                            key: "{entry.slug}",
-                            class: "ik-footer-link",
-                            href: "{href}",
-                            target: "_blank",
-                            rel: "noopener noreferrer",
-                            {legal_title(i18n, &entry.slug, entry.title.as_deref())}
-                            Ic { icon: Icon::OpenInNew, size: 12 }
-                        }
-                    }
+        for entry in legal::documents() {
+            if let Some(href) = legal::external_url(&entry) {
+                a {
+                    key: "{entry.slug}",
+                    class: "ik-footer-link",
+                    href: "{href}",
+                    target: "_blank",
+                    rel: "noopener noreferrer",
+                    {legal::title(i18n, &entry)}
+                    Ic { icon: Icon::OpenInNew, size: 12 }
                 }
-                LegalKind::Inline => rsx! {
-                    Link {
-                        key: "{entry.slug}",
-                        to: Route::Legal { slug: entry.slug.clone() },
-                        class: "ik-footer-link",
-                        {legal_title(i18n, &entry.slug, entry.title.as_deref())}
-                    }
-                },
+            } else {
+                Link {
+                    key: "{entry.slug}",
+                    to: Route::Legal { slug: entry.slug.clone() },
+                    class: "ik-footer-link",
+                    {legal::title(i18n, &entry)}
+                }
             }
         }
     }

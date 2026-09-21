@@ -1846,10 +1846,12 @@
           },
           "format": {
             "description": "Always `markdown`. Present so a future format is a value rather than a new endpoint.",
+            "example": "markdown",
             "type": "string"
           },
           "locale": {
             "description": "The locale served, which is **not** necessarily the one requested — a reader asking for\nGerman and receiving the only available English text has to be told, or they conclude\nthe operator writes German like that.",
+            "example": "de-AT",
             "type": "string"
           },
           "slug": {
@@ -14687,7 +14689,7 @@
                 }
               }
             },
-            "description": "no such document, or its file is unreadable"
+            "description": "no such document, or one hosted elsewhere"
           }
         },
         "summary": "Get one legal document",

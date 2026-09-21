@@ -39,7 +39,7 @@ use axum::extract::DefaultBodyLimit;
 pub use branding::Branding;
 pub use cache::{ADMIN_STATS_TTL, Cached};
 pub use client::ClientChannel;
-pub use legal::LegalDocs;
+pub use legal::legal_documents;
 pub use passkey::{RelyingParty, SharedRelyingParty};
 pub use state::AppState;
 // The header a step-up grant is presented in. Public so the test harness can set it without

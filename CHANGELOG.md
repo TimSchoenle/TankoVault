@@ -12,6 +12,30 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [11.0.0](https://github.com/TimSchoenle/TankoVault/compare/v10.1.3...v11.0.0) (2026-09-21)
+
+
+### ⚠ BREAKING CHANGES
+
+* **legal:** serve legal documents through terrace-legal ([#430](https://github.com/TimSchoenle/TankoVault/issues/430))
+
+### Features
+
+* **legal:** serve legal documents through terrace-legal ([#430](https://github.com/TimSchoenle/TankoVault/issues/430)) ([eb4338d](https://github.com/TimSchoenle/TankoVault/commit/eb4338d428c06a80f08bdc22e78e11628be0daf1))
+
+
+### CI
+
+* **workflows:** reference in-repo actions with self-repository syntax ([#425](https://github.com/TimSchoenle/TankoVault/issues/425)) ([fa303f3](https://github.com/TimSchoenle/TankoVault/commit/fa303f36f07871c40196710b97ae2e9c1271384b))
+
+
+### Miscellaneous
+
+* **deps:** update nats:2-alpine docker digest to ac8f88a ([#428](https://github.com/TimSchoenle/TankoVault/issues/428)) ([ff34870](https://github.com/TimSchoenle/TankoVault/commit/ff34870740a2bc7c1ae022b6177c4e0c21977c03))
+* **deps:** update redis:8-alpine docker digest to bd999b5 ([#429](https://github.com/TimSchoenle/TankoVault/issues/429)) ([cecf723](https://github.com/TimSchoenle/TankoVault/commit/cecf723f9f87fcbe77d6460de36b03a71e3a4e58))
+* **deps:** update rust crate syn to v3.0.6 ([#424](https://github.com/TimSchoenle/TankoVault/issues/424)) ([630522a](https://github.com/TimSchoenle/TankoVault/commit/630522ac15712a284c6c759e6c9f5f0fc1bbbc00))
+* **deps:** update taiki-e/install-action action to v2.87.14 ([#426](https://github.com/TimSchoenle/TankoVault/issues/426)) ([ec9de5c](https://github.com/TimSchoenle/TankoVault/commit/ec9de5c89f472ff4b145f29fa4d3e0965f9268eb))
+
 ## [10.1.3](https://github.com/TimSchoenle/TankoVault/compare/v10.1.2...v10.1.3) (2026-09-20)
 
 

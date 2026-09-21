@@ -182,7 +182,7 @@ services:
       retries: 12
 
   nats:
-    image: nats:2-alpine@sha256:ad7a43eb7e3337c3c38ce5d784d1461791f95f730f252d2b25eee699752a0ca3
+    image: nats:2-alpine@sha256:ac8f88a6494bffc2c2a5289a0ca61cb28a9145c11ba5677cf24265d07f46d8d4
     deploy: { resources: { limits: { memory: 512m } } }
     command: ["-js", "-m", "8222"] # JetStream + HTTP monitoring (for the healthcheck)
     healthcheck:

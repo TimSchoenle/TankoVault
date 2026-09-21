@@ -131,9 +131,9 @@ i18nrs = { version = "0.1.9", default-features = false, features = ["dio"] }
 # ever produced, so there is nothing for a document to inject into and nothing to sanitise. A
 # markdown-to-HTML pipeline would need `dangerous_inner_html`, which is the one door this app
 # keeps shut (see `src/platform/mod.rs` and the served CSP).
-terrace-legal-dioxus = { git = "https://github.com/TimSchoenle/terrace-legal", tag = "v0.2.0" }
-terrace-legal-markdown = { git = "https://github.com/TimSchoenle/terrace-legal", tag = "v0.2.0" }
-terrace-legal-model = { git = "https://github.com/TimSchoenle/terrace-legal", tag = "v0.2.0" }
+terrace-legal-dioxus = { git = "https://github.com/TimSchoenle/terrace-legal", tag = "v0.2.1" }
+terrace-legal-markdown = { git = "https://github.com/TimSchoenle/terrace-legal", tag = "v0.2.1" }
+terrace-legal-model = { git = "https://github.com/TimSchoenle/terrace-legal", tag = "v0.2.1" }
 # The logging facade, on both builds. Already in this graph — `dioxus` logs through it — so this
 # names a crate that is compiled either way rather than adding one. `clippy.toml` bans `dbg!` in
 # favour of it. The *subscriber* that gives the calls somewhere to go is desktop-only, below; on

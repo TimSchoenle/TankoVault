@@ -278,8 +278,8 @@ terrace-config = { git = "https://github.com/TimSchoenle/terrace-config", tag = 
 #
 # `utoipa` puts `ToSchema`/`IntoParams` on the wire types. `consent` stays off: it adds fields to
 # both published schemas.
-terrace-legal = { git = "https://github.com/TimSchoenle/terrace-legal", tag = "v0.2.0" }
-terrace-legal-axum = { git = "https://github.com/TimSchoenle/terrace-legal", tag = "v0.2.0", features = ["utoipa"] }
+terrace-legal = { git = "https://github.com/TimSchoenle/terrace-legal", tag = "v0.2.1" }
+terrace-legal-axum = { git = "https://github.com/TimSchoenle/terrace-legal", tag = "v0.2.1", features = ["utoipa"] }
 
 # --- auth / security ---
 # Every secret value in this workspace is a `secrecy` type — `SecretString` for text,

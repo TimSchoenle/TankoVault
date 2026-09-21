@@ -1717,7 +1717,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2572,7 +2572,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.6.5",
+ "socket2 0.5.10",
  "tokio",
  "tower-service",
  "tracing",
@@ -4072,7 +4072,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash",
  "rustls",
- "socket2 0.6.5",
+ "socket2 0.5.10",
  "thiserror 2.0.20",
  "tokio",
  "tracing",
@@ -4111,9 +4111,9 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.6.5",
+ "socket2 0.5.10",
  "tracing",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -4475,7 +4475,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -4534,7 +4534,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -6112,10 +6112,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -6156,8 +6156,8 @@ dependencies = [
 
 [[package]]
 name = "terrace-legal"
-version = "0.2.0"
-source = "git+https://github.com/TimSchoenle/terrace-legal?tag=v0.2.0#622e98585ef290fa1ab7d8be303a8be8c24832d8"
+version = "0.2.1"
+source = "git+https://github.com/TimSchoenle/terrace-legal?tag=v0.2.1#4c407a0698427532b735426351c1f729ddc7f132"
 dependencies = [
  "base64 0.23.1",
  "serde",
@@ -6170,8 +6170,8 @@ dependencies = [
 
 [[package]]
 name = "terrace-legal-axum"
-version = "0.2.0"
-source = "git+https://github.com/TimSchoenle/terrace-legal?tag=v0.2.0#622e98585ef290fa1ab7d8be303a8be8c24832d8"
+version = "0.2.1"
+source = "git+https://github.com/TimSchoenle/terrace-legal?tag=v0.2.1#4c407a0698427532b735426351c1f729ddc7f132"
 dependencies = [
  "axum",
  "http",
@@ -6183,8 +6183,8 @@ dependencies = [
 
 [[package]]
 name = "terrace-legal-model"
-version = "0.2.0"
-source = "git+https://github.com/TimSchoenle/terrace-legal?tag=v0.2.0#622e98585ef290fa1ab7d8be303a8be8c24832d8"
+version = "0.2.1"
+source = "git+https://github.com/TimSchoenle/terrace-legal?tag=v0.2.1#4c407a0698427532b735426351c1f729ddc7f132"
 dependencies = [
  "serde",
  "thiserror 2.0.20",
@@ -7283,7 +7283,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]

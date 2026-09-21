@@ -1839,7 +1839,7 @@
         "type": "object"
       },
       "LegalDocumentView": {
-        "description": "One document, in the locale that was actually served.\n\nEvery member is always present; an absent value is `null`. The type is `#[non_exhaustive]`, so\nbuild one with [`Self::new`] and the setters.",
+        "description": "One document, in the locale that was actually served.",
         "properties": {
           "body": {
             "type": "string"
@@ -1879,7 +1879,7 @@
         "type": "object"
       },
       "LegalIndexEntry": {
-        "description": "One entry in the index the footer renders.\n\nEvery member is always present; an absent value is `null`. The type is `#[non_exhaustive]`, so\nbuild one with [`Self::new`] and the setters.",
+        "description": "One entry in the index the footer renders.",
         "properties": {
           "kind": {
             "$ref": "#/components/schemas/LegalKind",

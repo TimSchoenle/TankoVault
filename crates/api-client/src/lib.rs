@@ -4079,13 +4079,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "One document, in the locale that was actually served.\n\nEvery member is always present; an absent value is `null`. The type is `#[non_exhaustive]`, so\nbuild one with [`Self::new`] and the setters."]
+    #[doc = "One document, in the locale that was actually served."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"One document, in the locale that was actually served.\\n\\nEvery member is always present; an absent value is `null`. The type is `#[non_exhaustive]`, so\\nbuild one with [`Self::new`] and the setters.\","]
+    #[doc = "  \"description\": \"One document, in the locale that was actually served.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"body\","]
@@ -4148,13 +4148,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "One entry in the index the footer renders.\n\nEvery member is always present; an absent value is `null`. The type is `#[non_exhaustive]`, so\nbuild one with [`Self::new`] and the setters."]
+    #[doc = "One entry in the index the footer renders."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"One entry in the index the footer renders.\\n\\nEvery member is always present; an absent value is `null`. The type is `#[non_exhaustive]`, so\\nbuild one with [`Self::new`] and the setters.\","]
+    #[doc = "  \"description\": \"One entry in the index the footer renders.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"kind\","]

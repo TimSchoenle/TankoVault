@@ -5,7 +5,30 @@
 //! type the binary deserialises, or it is a claim about something else.
 
 use secrecy::SecretString;
-use terrace_config::schema::Describe;
+use terrace_config::schema::{Describe, Schema};
+use terrace_legal::CatalogBuilder;
+
+use crate::legal::{LEGAL_SECTION, legal_rules};
+
+/// The schema this image publishes: what [`Config`]'s types state, tightened by the runtime
+/// checks they cannot state, wherever a check can be stated exactly.
+///
+/// # Errors
+/// A refinement terrace-config refuses: an unknown path, a key that is not a map, or an entry
+/// name some layer cannot spell.
+pub fn published_schema() -> Result<Schema, terrace_config::Error> {
+    published_schema_with(&legal_rules())
+}
+
+/// [`published_schema`] with the `[legal]` section refined by `legal` instead of the shipped
+/// rules.
+pub(crate) fn published_schema_with(
+    legal: &CatalogBuilder,
+) -> Result<Schema, terrace_config::Error> {
+    tankovault_config::terrace()
+        .schema::<Config>()
+        .refine_with(LEGAL_SECTION, legal)
+}
 
 /// Top-level API config.
 #[derive(Debug, serde::Deserialize, Describe)]

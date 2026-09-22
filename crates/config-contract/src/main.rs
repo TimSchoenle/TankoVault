@@ -63,29 +63,35 @@ use std::process::ExitCode;
 use terrace_config::schema::cli::{Cli, Request};
 use terrace_config::schema::{App, External, ExternalVar, Schema, Unknown};
 
-/// Every service that publishes an image, and the config root its binary deserialises.
+/// Every service that publishes an image, and how its binary's schema is built.
 ///
 /// Hand-written because which binaries become images is a deployment decision — the same one
 /// `SERVICE_BINS` and `[workspace.metadata.deploy.exclude]` encode. A missing entry cannot hide:
 /// the image build asks this tool for the service named by its `BIN` argument and fails on a
 /// name it does not know.
+///
+/// An entry names the config root the binary deserialises, described as its types state it, then
+/// optionally `=>` the service's own schema builder, for a binary whose runtime checks more than
+/// those types say and refines the schema to match.
 macro_rules! services {
-    ($($name:literal => $root:path),* $(,)?) => {
+    ($($name:literal => $root:path $(=> $build:path)?),* $(,)?) => {
         /// The names `--service` accepts, in the order `--services` lists them.
         const SERVICES: &[&str] = &[$($name),*];
 
         /// The schema of one service's root, or `None` for a name that is not a service.
-        fn schema_for(service: &str) -> Option<Schema> {
+        fn schema_for(service: &str) -> Option<Result<Schema, terrace_config::Error>> {
             match service {
-                $($name => Some(tankovault_config::terrace().schema::<$root>()),)*
+                $($name => Some(services!(@schema $root $(=> $build)?)),)*
                 _ => None,
             }
         }
     };
+    (@schema $root:path => $build:path) => { $build() };
+    (@schema $root:path) => { Ok(tankovault_config::terrace().schema::<$root>()) };
 }
 
 services! {
-    "api" => tankovault_api::config::Config,
+    "api" => tankovault_api::config::Config => tankovault_api::config::published_schema,
     "bootstrap" => tankovault_bootstrap::config::Config,
     "challenge-solver" => tankovault_challenge_solver::config::Config,
     "control-plane" => tankovault_control_plane::config::Config,
@@ -139,6 +145,8 @@ fn run() -> Result<String, String> {
             ))
         ));
     };
+
+    let schema = schema.map_err(|error| format!("error: {error}"))?;
 
     Cli::new(app(&service))
         .contract_with(&|builder| builder.external(external()))
@@ -232,7 +240,9 @@ mod tests {
 
     /// One rendering of one service, through the same `Cli` the binary uses.
     fn render(service: &str, format: Format) -> String {
-        let schema = schema_for(service).unwrap_or_else(|| panic!("{service} has no schema"));
+        let schema = schema_for(service)
+            .unwrap_or_else(|| panic!("{service} has no schema"))
+            .unwrap_or_else(|error| panic!("{service}'s schema does not build: {error}"));
         Cli::new(app(service))
             .contract_with(&|builder| builder.external(external()))
             .render(&Request::new(format), schema)

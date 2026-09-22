@@ -12,6 +12,21 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [11.0.1](https://github.com/TimSchoenle/TankoVault/compare/v11.0.0...v11.0.1) (2026-09-22)
+
+
+### Build System
+
+* **deps:** update terrace-config to v0.13.0 and terrace-legal to v0.3.0 ([#435](https://github.com/TimSchoenle/TankoVault/issues/435)) ([f374d84](https://github.com/TimSchoenle/TankoVault/commit/f374d84dc8504d850c802e1f9164fd5b9de369e5))
+
+
+### Miscellaneous
+
+* **deps:** update debian:13-slim docker digest to a99cfc5 ([#434](https://github.com/TimSchoenle/TankoVault/issues/434)) ([8ae26b5](https://github.com/TimSchoenle/TankoVault/commit/8ae26b5fa14fcb4652989f7d954f6a4c0d9e3f43))
+* **deps:** update lukemathwalker/cargo-chef:latest-rust-1.98.1-alpine docker digest to 32e64f0 ([#436](https://github.com/TimSchoenle/TankoVault/issues/436)) ([0781a05](https://github.com/TimSchoenle/TankoVault/commit/0781a0515809a60db15d26229cf74b56dece3864))
+* **deps:** update taiki-e/install-action action to v2.87.15 ([#431](https://github.com/TimSchoenle/TankoVault/issues/431)) ([8ed2eda](https://github.com/TimSchoenle/TankoVault/commit/8ed2eda42db626a2223745aa52077b4aa3ce4afc))
+* **deps:** update taiki-e/install-action action to v2.87.16 ([#433](https://github.com/TimSchoenle/TankoVault/issues/433)) ([f1eca6b](https://github.com/TimSchoenle/TankoVault/commit/f1eca6b9c0832fde6940eaab46dcc1fcca39018d))
+
 ## [11.0.0](https://github.com/TimSchoenle/TankoVault/compare/v10.1.3...v11.0.0) (2026-09-21)
 
 

@@ -14,12 +14,26 @@ use axum::extract::{Path, Query, State};
 use axum::http::HeaderMap;
 use axum::response::Response;
 use terrace_legal::model::{LegalDocumentView, LegalIndexEntry, LegalParams};
-use terrace_legal::{Catalog, ConfigIssues, Legal, LegalConfig};
+use terrace_legal::{Catalog, CatalogBuilder, ConfigIssues, Legal, LegalConfig};
 use terrace_legal_axum::{respond_document, respond_index};
 
 use crate::error::{ApiError, ApiResult};
 use crate::openapi::LEGAL_TAG;
 use crate::state::AppState;
+
+/// Where [`crate::config::Config`] mounts the section, and so the prefix of every key in it.
+pub const LEGAL_SECTION: &str = "legal";
+
+/// The rules the `[legal]` section is held to beyond the library's built-in checks.
+///
+/// The one source for both halves: the runtime validates with it and `config-contract` refines
+/// the published `legal` keys with it, so a rule added here is enforced and published from the
+/// same value and the two cannot drift. No document is required: an absent section is a valid
+/// deployment that publishes no Legal column.
+#[must_use]
+pub fn legal_rules() -> CatalogBuilder {
+    Catalog::builder()
+}
 
 /// Validate the operator's `[legal]` section into the documents this runtime serves.
 ///
@@ -28,11 +42,14 @@ use crate::state::AppState;
 /// # Errors
 /// Every problem in the section at once, keyed as the operator wrote it (`legal.documents.…`).
 pub fn legal_documents(config: &LegalConfig) -> Result<Legal, ConfigIssues> {
-    let catalog = Catalog::build(config).map_err(|issues| issues.with_prefix("legal"))?;
+    let rules = legal_rules();
+    let catalog = rules
+        .build(config)
+        .map_err(|issues| issues.with_prefix(LEGAL_SECTION))?;
     for warning in catalog.warnings() {
-        tracing::warn!(key = %format!("legal.{}", warning.key()), "{}", warning.message());
+        tracing::warn!(key = %format!("{LEGAL_SECTION}.{}", warning.key()), "{}", warning.message());
     }
-    Ok(Legal::new(catalog))
+    Ok(Legal::with_builder(catalog, rules))
 }
 
 /// List the legal documents
@@ -98,6 +115,23 @@ mod tests {
         let issues = legal_documents(&config).expect_err("a document with no body and no url");
         let keys: Vec<String> = issues.iter().map(terrace_legal::ConfigIssue::key).collect();
         assert_eq!(keys, ["legal.documents.terms"]);
+    }
+
+    /// A rule's refinement must land on the key this binary actually reads. Refining under a
+    /// mount that no longer matches the `legal` field is refused by terrace-config, so a renamed
+    /// section would fail the contract build instead of publishing an unrefined `documents`.
+    #[test]
+    fn a_rule_is_published_under_the_section_the_config_reads() {
+        let rules = legal_rules().rule(terrace_legal::RequiredDocuments::new(["terms"]));
+        let schema = crate::config::published_schema_with(&rules).expect("the mount resolves");
+        let key = schema
+            .keys
+            .iter()
+            .find(|key| key.path == "legal.documents")
+            .expect("legal.documents is published");
+        let constraint = key.constraint.as_ref().expect("a map constraint");
+
+        assert_eq!(constraint["required"], serde_json::json!(["terms"]));
     }
 
     #[test]

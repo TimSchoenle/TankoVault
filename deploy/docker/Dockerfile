@@ -18,7 +18,7 @@
 # musl-tools lacks, so the build is native rather than cross. Pinned by digest.
 # The Rust version is written into both `FROM` tags rather than an `ARG`: Renovate cannot rewrite
 # a tag through `${…}`, and its `rust toolchain` group moves both tags with `rust-toolchain.toml`.
-FROM lukemathwalker/cargo-chef:latest-rust-1.98.1-alpine@sha256:db36171219e2620c93de86e074f1364f61ac8e6e7a0d91e2a3a13232343cf0c9 AS chef
+FROM lukemathwalker/cargo-chef:latest-rust-1.98.1-alpine@sha256:32e64f01aca2b49480967e7a774c8330d3468258c23135e2ad0f2dec2d7cb11e AS chef
 WORKDIR /app
 # Copied alone, first, exactly as `wasm-chef` does below and for a sharper version of the same
 # reason: nothing guarantees the base image's toolchain is the exact patch this file pins.

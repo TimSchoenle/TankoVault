@@ -296,7 +296,7 @@ FROM scratch AS debug-symbols
 COPY --from=debug-bundler /debug/ /
 
 # `dx` needs glibc (wasm-bindgen/wasm-opt), so this half stays on Debian rather than Alpine.
-FROM rust:1.98.1-bookworm@sha256:9a73a5088750b4c95158ab26629c854c3d6fc4b173cb7bc8079ad252d8ed7bfa AS wasm-chef
+FROM rust:1.98.1-bookworm@sha256:93ce27a88655056a51dbdd8f5f2d7ddc071c7b0070fb288a37b5a285fc83971e AS wasm-chef
 WORKDIR /app
 # Copied alone, before `rustup target add`: nothing guarantees the base image's toolchain is the
 # exact patch this file pins, so without this order wasm32-unknown-unknown can end up missing.

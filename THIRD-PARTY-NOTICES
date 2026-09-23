@@ -451,7 +451,7 @@ by the block naming that crate.
   - psl-types 2.0.11
   - publicsuffix 2.3.0
   - quote 1.0.47
-  - rand 0.10.2
+  - rand 0.10.3
   - rand 0.8.7
   - rand 0.9.5
   - rand_chacha 0.9.0

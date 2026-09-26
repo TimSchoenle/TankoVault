@@ -1717,7 +1717,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3360,7 +3360,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4113,7 +4113,7 @@ dependencies = [
  "once_cell",
  "socket2 0.6.5",
  "tracing",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4475,7 +4475,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4534,7 +4534,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5223,7 +5223,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4"
 dependencies = [
  "libc",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5621,7 +5621,7 @@ dependencies = [
  "tokio-stream",
  "tokio-util",
  "tracing",
- "utoipa",
+ "utoipa 6.0.0",
  "utoipa-axum",
  "utoipa-scalar",
  "uuid",
@@ -5777,7 +5777,7 @@ dependencies = [
  "serde_json",
  "tankovault-domain",
  "time",
- "utoipa",
+ "utoipa 6.0.0",
  "uuid",
 ]
 
@@ -5841,7 +5841,7 @@ dependencies = [
  "time",
  "tokio",
  "url",
- "utoipa",
+ "utoipa 6.0.0",
  "uuid",
 ]
 
@@ -6115,7 +6115,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6188,7 +6188,7 @@ source = "git+https://github.com/TimSchoenle/terrace-legal?tag=v0.3.0#12493403b0
 dependencies = [
  "serde",
  "thiserror 2.0.20",
- "utoipa",
+ "utoipa 5.5.0",
 ]
 
 [[package]]
@@ -6949,7 +6949,19 @@ dependencies = [
  "indexmap 2.14.0",
  "serde",
  "serde_json",
- "utoipa-gen",
+ "utoipa-gen 5.5.0",
+]
+
+[[package]]
+name = "utoipa"
+version = "6.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8765fe27aeff71012a3f90fa474cf1df863a7d0dd81ed25de4e63fff2544994f"
+dependencies = [
+ "indexmap 2.14.0",
+ "serde",
+ "serde_json",
+ "utoipa-gen 6.0.1",
 ]
 
 [[package]]
@@ -6962,7 +6974,7 @@ dependencies = [
  "paste",
  "tower-layer",
  "tower-service",
- "utoipa",
+ "utoipa 5.5.0",
 ]
 
 [[package]]
@@ -6973,8 +6985,19 @@ checksum = "6ba0b99ee52df3028635d93840c797102da61f8a7bb3cf751032455895b52ef8"
 dependencies = [
  "proc-macro2",
  "quote",
- "regex",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "utoipa-gen"
+version = "6.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d935f1c83fdf8b88f09bbe050d0cea78ea4afee6d7b0317403228c1200b2c8ab"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "regex",
+ "syn 3.0.6",
  "uuid",
 ]
 
@@ -6987,7 +7010,7 @@ dependencies = [
  "axum",
  "serde",
  "serde_json",
- "utoipa",
+ "utoipa 5.5.0",
 ]
 
 [[package]]
@@ -7283,7 +7306,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

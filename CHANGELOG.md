@@ -12,6 +12,23 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [11.0.2](https://github.com/TimSchoenle/TankoVault/compare/v11.0.1...v11.0.2) (2026-09-26)
+
+
+### Documentation
+
+* resync AGENTS.md, repair source links and tag code fences ([#446](https://github.com/TimSchoenle/TankoVault/issues/446)) ([3d5f624](https://github.com/TimSchoenle/TankoVault/commit/3d5f6246ffefa0889b8b4a9ac82feaeb0facddcf))
+
+
+### Miscellaneous
+
+* **deps:** update rust crate rand to v0.10.3 ([#439](https://github.com/TimSchoenle/TankoVault/issues/439)) ([b8284db](https://github.com/TimSchoenle/TankoVault/commit/b8284dbf265560e4affaa1007d1fd7298825a329))
+* **deps:** update rust crate sentry to v0.49.3 ([#441](https://github.com/TimSchoenle/TankoVault/issues/441)) ([ccb1810](https://github.com/TimSchoenle/TankoVault/commit/ccb1810914c88aa3adbfdc5c20ccd99501a68ed7))
+* **deps:** update rust:1.98.1-bookworm docker digest to 93ce27a ([#437](https://github.com/TimSchoenle/TankoVault/issues/437)) ([6daea06](https://github.com/TimSchoenle/TankoVault/commit/6daea06b46a0e29aed8db5a471684aa811aa3318))
+* **deps:** update taiki-e/install-action action to v2.87.17 ([#440](https://github.com/TimSchoenle/TankoVault/issues/440)) ([8530438](https://github.com/TimSchoenle/TankoVault/commit/8530438090ea22e50f58a9e67a038a7cbf84619a))
+* **deps:** update taiki-e/install-action action to v2.87.18 ([#442](https://github.com/TimSchoenle/TankoVault/issues/442)) ([3f7754b](https://github.com/TimSchoenle/TankoVault/commit/3f7754b5e1d714a3a4663463f3ff4897ab30ab4c))
+* **deps:** update taiki-e/install-action action to v2.87.19 ([#445](https://github.com/TimSchoenle/TankoVault/issues/445)) ([834d456](https://github.com/TimSchoenle/TankoVault/commit/834d4568e5d98ad25613cabd0dffd575e6e05466))
+
 ## [11.0.1](https://github.com/TimSchoenle/TankoVault/compare/v11.0.0...v11.0.1) (2026-09-22)
 
 

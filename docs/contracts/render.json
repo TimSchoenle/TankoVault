@@ -7,7 +7,7 @@
   },
   "app": {
     "name": "tankovault-render",
-    "version": "v11.0.1",
+    "version": "v11.0.2",
     "source": "https://github.com/TimSchoenle/TankoVault"
   },
   "schema": {

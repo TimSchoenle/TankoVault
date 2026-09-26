@@ -182,6 +182,13 @@ Summarised with their enforcement in
   it can actually produce and what it returns *instead of* an error — several of those
   `Ok(None)`/`Ok(false)`/`Ok(0)` choices are security-relevant. See §3.2.
 
+## Writing
+
+Prose in the README, `docs/`, doc comments, commit bodies and pull request descriptions is
+reviewed against the [prose contract](https://github.com/TimSchoenle/actions/blob/main/docs/readme/PROSE.md).
+`README.md` is rendered from `.github/templates/README.md.hbs` and also follows the
+[README contract](https://github.com/TimSchoenle/actions/blob/main/docs/readme/GUIDE.md).
+
 ## Commit messages
 
 Conventional-commit prefixes (`feat`, `fix`, `refactor`, `docs`, `test`, `ci`, `chore`) and a body

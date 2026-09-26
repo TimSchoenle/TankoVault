@@ -14,7 +14,7 @@ spending it after every edit buys nothing CI will not report anyway.
 
 Default while working — the whole obligation:
 
-```
+```bash
 cargo check -p <the crate you touched>
 ```
 
@@ -52,7 +52,7 @@ enough — the route also needs a row in `me_gates()`, `public_gates()` or `cove
 (that last one carries the reason and where it is covered instead). Both suites need Docker, so
 no offline gate mentions it:
 
-```
+```bash
 cargo test -p tankovault-api --features integration --test me_access_matrix
 ```
 
@@ -61,7 +61,7 @@ wrote. A new `query!` is `repo_query_plans` (an `EXPLAIN` sweep with a cost ceil
 `.gate(…)` is `feature_gating`; a fifth copy of the unread predicate is `repo_tracking`'s
 differential. CI's own command is the full set:
 
-```
+```bash
 cargo test -p tankovault-db -p tankovault-api -p tankovault-sync --features integration
 ```
 

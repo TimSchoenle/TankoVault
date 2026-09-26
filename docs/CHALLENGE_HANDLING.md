@@ -44,9 +44,9 @@ feature enabled. A fully rendered `200` therefore classified as `ChallengeKind::
 
 The classifier is consulted twice per fetch, and the false positive is fatal at both:
 
-1. [`solving.rs:136`](../crates/fetch/src/solving.rs:136) — the direct `200` is read as an
+1. [`detect_challenge`](../crates/fetch/src/solving.rs) — the direct `200` is read as an
    interstitial, so a 30–60 s solve is spent on a page already in hand.
-2. [`solving.rs:168`](../crates/fetch/src/solving.rs:168) — the solver returns that same real page,
+2. [`detect_challenge_body`](../crates/fetch/src/solving.rs) — the solver returns that same real page,
    the "did the solver hand back the interstitial?" guard fires, and the fetch fails as
    `unsolved challenge: CloudflareJs`. No solver back-end could ever have won.
 
@@ -133,11 +133,11 @@ Whatever you use, report verification as scoped: name the command you ran and st
 
 ### W2 — A session is cached before anything has validated it
 
-**Problem.** [`solving.rs:155`](../crates/fetch/src/solving.rs:155) writes the solved session to the
+**Problem.** [`solve_if_challenged`](../crates/fetch/src/solving.rs) writes the solved session to the
 store, and only then checks whether the returned HTML is still an interstitial. A solve that failed
 therefore leaves its cookies and user-agent cached for the full TTL, and every later request to that
 provider replays them. Symmetrically, nothing evicts a session that keeps coming back challenged:
-the replay path at [`solving.rs:196`](../crates/fetch/src/solving.rs:196) errors and leaves the
+the replay path in [`SolvingFetcher::get`](../crates/fetch/src/solving.rs) errors and leaves the
 proven-stale session in place.
 
 **Rule to implement.** A session is stored only once something has succeeded with it — the solver's
@@ -178,7 +178,7 @@ reports `ok` for a solve that returned the interstitial, because from the servic
 succeed. WeebCentral sat at 100 % unsolved from the first scan and no panel could show it.
 
 **Changes** — all in `crates/fetch/src/solving.rs`, following the `metrics::counter!` style already
-used in [`base.rs:137`](../crates/fetch/src/base.rs:137):
+used in [`base.rs`](../crates/fetch/src/base.rs):
 
 | Metric | Labels | Incremented |
 |---|---|---|
@@ -194,7 +194,7 @@ Cardinality is bounded: `provider` already labels `provider_fetch_total`, `kind`
 `emitted_by`, `help`. `xtask repo-lint`'s `metrics-catalogue` rule fails both ways: a counter with
 no row, and a row nobody emits. `crates/fetch` sits below `tankovault-service` in the graph and so
 spells its names as **literals** rather than importing the constants, exactly as
-[`base.rs:137`](../crates/fetch/src/base.rs:137) does; the lint is what keeps the two spellings
+[`base.rs`](../crates/fetch/src/base.rs) does; the lint is what keeps the two spellings
 equal, and it also rejects a name that is neither a literal nor a `names::*` constant.
 
 **Docs.** Add the three rows to the **Fetch tier** table in
@@ -212,9 +212,9 @@ a separate PR against that repo; note it in the PR description rather than leavi
 ### W4 — A clearance cookie is replayed to hosts it was never issued for
 
 **Problem.** `ScrapeResult`'s cookie type
-([`trawl.rs:79`](../crates/solver/src/trawl.rs:79)) decodes only `name` and `value`, discarding
+([`TrawlCookie`](../crates/solver/src/trawl.rs)) decodes only `name` and `value`, discarding
 TRAWL's `domain`. Sessions are then keyed by **provider slug alone**
-([`solving.rs:131`](../crates/fetch/src/solving.rs:131)) and `apply_session` attaches the whole jar
+([`SolvingFetcher::get`](../crates/fetch/src/solving.rs)) and `apply_session` attaches the whole jar
 to every request that provider makes. A `cf_clearance` issued for `weebcentral.com` is therefore
 sent to whatever other host that provider's pages point at — image CDNs on unrelated domains
 included. That is a session credential leaving its origin, so it is a security fix, not a tidy-up,
@@ -254,8 +254,8 @@ fingerprint of the connection that earned it. We reproduce exactly one third of 
 
 | Component | Solver side | Scanner side | Shared? |
 |---|---|---|---|
-| User-agent | the browser's own, returned as `SolveOutcome.user_agent` | replayed verbatim ([`base.rs:167`](../crates/fetch/src/base.rs:167)) | yes |
-| TLS ClientHello + HTTP/2 settings | whatever Chromium `ghcr.io/germondai/trawl` bundles | `Profile::Chrome149`, fixed at build time ([`base.rs:48`](../crates/fetch/src/base.rs:48)) | **no — by luck only** |
+| User-agent | the browser's own, returned as `SolveOutcome.user_agent` | replayed verbatim ([`base.rs`](../crates/fetch/src/base.rs)) | yes |
+| TLS ClientHello + HTTP/2 settings | whatever Chromium `ghcr.io/germondai/trawl` bundles | `Profile::Chrome149`, fixed at build time ([`profile_for`](../crates/fetch/src/base.rs)) | **no — by luck only** |
 | Egress IP | the container's, unless a proxy tier won | the worker container's | usually, see below |
 
 Nothing in the repository relates the TRAWL image digest in
@@ -272,7 +272,7 @@ browser's is a stronger bot signal than an honest one, as `base.rs`'s own module
 The IP third has one case that no fingerprint work can fix: TRAWL's tier ladder ends in a
 **residential proxy**, and a session won there is bound to the proxy's address. Caching it
 guarantees a replay failure. `ScrapeResult` currently discards the `tier` field that would say so
-([`trawl.rs:60`](../crates/solver/src/trawl.rs:60)).
+([`ScrapeResult`](../crates/solver/src/trawl.rs)).
 
 #### What a profile covers, and what it cannot
 
@@ -323,7 +323,7 @@ pay for it, which is what `SolveOutcome.html` already allows.
 Camoufox is a hardened **Firefox**. Its TLS stack is NSS and its HTTP/2 settings are Firefox's, no
 matter what user-agent it is configured to present. Meanwhile every provider defaults to
 `BrowserEmulation::Chrome` — an absent `emulation` key reads as Chrome
-([`politeness.rs:111`](../crates/domain/src/politeness.rs:111)), and that is the stored default for
+([`default_emulation`](../crates/domain/src/politeness.rs)), and that is the stored default for
 the whole catalogue.
 
 So a replayed session sends a **Firefox user-agent over a Chrome ClientHello, with `sec-ch-ua`
@@ -468,10 +468,10 @@ to `None` (the value is advisory; `TrawlSolver` deliberately does not forward it
 
 ### W7 — Every worker replica solves independently
 
-[`services/worker/src/main.rs:247`](../services/worker/src/main.rs:247) wires
+[`services/worker/src/main.rs`](../services/worker/src/main.rs) wires
 `InMemorySessionStore`, so N replicas mean N solves per provider per TTL, and a rolling restart
 discards every session. The trait exists precisely so this can be swapped
-([`solving.rs:44`](../crates/fetch/src/solving.rs:44)).
+([`SessionStore`](../crates/fetch/src/solving.rs)).
 
 Implement `RedisSessionStore` in `crates/fetch` behind a feature, modelled on
 [`crates/service/src/ratelimit/redis.rs`](../crates/service/src/ratelimit/redis.rs) (`fred`, already

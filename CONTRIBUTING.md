@@ -27,7 +27,7 @@ worth as much here and costs you nothing.
 Every commit also needs a [Developer Certificate of Origin](https://developercertificate.org/)
 sign-off, which is your assertion that you had the right to submit the code in the first place:
 
-```
+```bash
 git commit -s -m "fix: ..."
 ```
 
@@ -37,7 +37,7 @@ is not yours to grant for them.
 
 ## Before you push
 
-```
+```bash
 cargo run -p xtask -- ci
 ```
 
@@ -52,7 +52,7 @@ builds, the Tailwind rebuild (Node), the Prometheus rule tests, and secret scann
 
 Install the pre-commit hook once — it regenerates the OpenAPI artifacts when the schema changes:
 
-```
+```bash
 cargo run -p xtask -- install-hooks
 ```
 
@@ -73,7 +73,7 @@ Force the whole suite from a branch with the `full` input (**Actions → CI → 
 
 ## Local setup
 
-```
+```bash
 docker compose -f deploy/docker-compose.yml up --build      # the whole stack, app on :3000
 ```
 
@@ -83,7 +83,7 @@ deliberately — a working default would only move the failure later.
 
 For a database without the stack:
 
-```
+```bash
 export DATABASE_URL=postgres://tankovault:tankovault@localhost:5432/tankovault
 cargo run -p xtask -- migrate
 cargo run -p xtask -- seed
@@ -95,7 +95,7 @@ indistinguishable from an intentional wipe.
 
 Integration suites need Docker:
 
-```
+```bash
 cargo test -p tankovault-db -p tankovault-api -p tankovault-sync --features integration
 ```
 
@@ -124,7 +124,7 @@ a second representation of half a megabyte, out of the same merge, that the plai
 already covers. A checkout has none, so the screen renders its unavailable state until you write
 one where the service can find it:
 
-```
+```bash
 cargo run -p xtask -- notices --json target/THIRD-PARTY-NOTICES.json
 TANKOVAULT_FRONTEND__NOTICES_JSON_PATH=target/THIRD-PARTY-NOTICES.json
 ```

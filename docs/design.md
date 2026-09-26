@@ -87,7 +87,7 @@ The **challenge-solver** service is the new bot-management bypass tier: workers 
 the fetch stack detects a challenge, and it fronts a pluggable solver back-end (TRAWL by
 default) plus an optional headless-render fallback.
 
-```
+```text
                          ┌──────────────────────────┐
                          │        Web Frontend        │  Dioxus (WASM SPA) + Tailwind
                          │      (webfront service)    │  static assets served by API/CDN
@@ -144,7 +144,7 @@ task row is the truth for *progress and audit*; the stream is the truth for *dis
 
 Single Cargo workspace. Binaries are thin; logic lives in libraries so it is testable and reusable.
 
-```
+```text
 tankovault/
 ├── Cargo.toml                      # [workspace] members, shared deps, lints
 ├── crates/
@@ -736,7 +736,7 @@ Axum. REST + JSON. SSE for live scan progress. Tower middleware: tracing, CORS, 
 timeout, rate limit, auth.
 
 **Public / user:**
-```
+```text
 POST   /v1/auth/register
 POST   /v1/auth/login                  -> access (JWT, ~15m) + refresh (httpOnly cookie)
 POST   /v1/auth/refresh
@@ -762,7 +762,7 @@ POST   /v1/me/sync/anilist/pull
 ```
 
 **Operator / admin (RBAC-gated):**
-```
+```text
 GET    /v1/admin/providers
 POST   /v1/admin/providers               { slug,name,base_url,adapter,config,politeness }
 PATCH  /v1/admin/providers/:id            (incl. base_url change = domain migration)
@@ -964,7 +964,7 @@ indicator are a single expressive brush stroke, and cover cards use a subtle pap
 one memorable device, everything else quiet.
 
 **Color tokens** (Tailwind theme extension; dark-first):
-```
+```text
 --ink-900  #0E1116   app background (near-black, faintly blue, not pure #000)
 --ink-800  #161B22   raised surfaces / cards
 --ink-700  #232A33   borders / hairlines

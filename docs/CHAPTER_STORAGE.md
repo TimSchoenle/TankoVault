@@ -197,7 +197,7 @@ A unique index may carry `INCLUDE` columns (PG 11+), so this one enforces unique
 `ON CONFLICT` arbiter, serves `ORDER BY number DESC` by scanning backwards, **and** answers the
 unread predicate index-only. Verified on the fixture:
 
-```
+```text
 Index Only Scan using v_f_source_number_key on v_f
   Index Cond: ((series_source_id = '…'::uuid) AND (number_milli >= 2510000))
   Filter: ((access = 'free') OR (unlocks_at <= now()))

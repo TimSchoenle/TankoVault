@@ -10,7 +10,7 @@ decisions a human still has to make.
 
 ## The flow
 
-```
+```text
 commit to main (conventional commits)
   └─ release-please.yaml
         release-pr        → opens/updates the release PR
@@ -54,7 +54,7 @@ It does not fail when it cannot find one. It falls back to the version in
 `.release-please-manifest.json` — so the version stays right — and takes the commit range from
 the beginning of history. Release v3.1.0 logged
 
-```
+```text
 ❯ looking for tagName: v3.1.0
 ✔ No latest release found for path: ., component: , but a previous version (3.1.0) was specified in the manifest.
 ✔ Considering: 259 commits
@@ -184,7 +184,7 @@ with the same tooling the images are.
 The public half is compiled into the client — `TRUSTED_KEYS` in
 `web/frontend/src/update/discover.rs`, generated 2026-08-07:
 
-```
+```text
 RWRJbPWpabBZ+C+5MBbE04xjL6HFoNsBZLbqqWogP7sD5BedsiJDJ4Ve
 ```
 
@@ -198,7 +198,7 @@ RWRJbPWpabBZ+C+5MBbE04xjL6HFoNsBZLbqqWogP7sD5BedsiJDJ4Ve
 is its passphrase. Both are **`release` environment** secrets; a repository secret is not
 equivalent, because a job that omits `environment: release` reads it as an empty string.
 
-```
+```bash
 gh secret set MINISIGN_SECRET_KEY --env release < tankovault-release.key
 gh secret set MINISIGN_PASSWORD --env release
 ```
@@ -208,7 +208,7 @@ the only way back — and that needs a release to carry the new public key *firs
 
 Generating a fresh pair, if one is ever needed:
 
-```
+```bash
 minisign -G -s tankovault-release.key -p tankovault-release.pub
 ```
 
@@ -234,14 +234,14 @@ has.
 
 ### Verifying a desktop release by hand
 
-```
+```bash
 gh release download vX.Y.Z -p 'desktop-manifest.json*' -p 'sha256sums.txt'
 minisign -Vm desktop-manifest.json -P '<the RWQ… public key>'
 ```
 
 or, without the key, against the workflow identity that produced it:
 
-```
+```bash
 cosign verify-blob desktop-manifest.json \
   --bundle desktop-manifest.json.cosign.bundle \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \

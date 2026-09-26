@@ -109,7 +109,7 @@ Read state stays a **monotonic frontier** — the same shape as the as-built `re
 table — but is split into **two independent scalars** so whole chapters and sub-chapter parts
 can no longer corrupt each other:
 
-```
+```text
 last_read_whole_number  -- highest WHOLE chapter number read (integer-valued)
 last_read_part_number   -- highest PART release number read, if any, ahead of the whole
                            frontier (nullable; always fractional, i.e. fract() != 0)
@@ -155,7 +155,7 @@ to either scalar.
 ### A.3 Read/write semantics
 
 **Is chapter `number` read?**
-```
+```text
 is_whole(number) := number == floor(number)
 
 read(number) when is_whole(number):      number <= last_read_whole_number
@@ -172,7 +172,7 @@ implementation, `ReadProgress::covers`, owns this rule; SQL read models mirror b
 inline.
 
 **Mark chapter `number` read** ("mark read to here" is exactly this rule applied to `N`):
-```
+```text
 if is_whole(number):
     last_read_whole_number = max(last_read_whole_number, number)
     if last_read_part_number is not null
@@ -209,7 +209,7 @@ series opened from Discover or Search was recorded against a title the reader co
 anywhere in Library.
 
 **Mark chapter `number` unread** (only sensible at or behind the current frontier):
-```
+```text
 if is_whole(number):
     last_read_whole_number = the previous whole chapter number that exists for this series
                               strictly below `number`
@@ -291,7 +291,7 @@ mental model for "does this title touch AniList" per series.
 
 ### A.6 API surface (new / changed)
 
-```
+```text
 PUT    /v1/me/progress/:series_id/chapters/:number   { read: bool }
        -- applies the §A.3 mark-read/mark-unread rule for that one chapter number. Unmarking
        -- a non-frontier (older) chapter retreats progress past it too (§A.1/A.3) -- the API
@@ -408,14 +408,14 @@ days per user.
 
 ### B.3 Conflict policy — four modes, three-way detection
 
-```
+```text
 ConflictPolicy = LocalWins | RemoteWins | NewestWins | AskMe
 ```
 
 `AskMe` is new. Detection algorithm per mapped series, per field (`progress`, `status`),
 replacing today's `reconcile_progress`:
 
-```
+```text
 local_changed  = current_local  != last_synced_local
 remote_changed = current_remote != last_synced_remote
 
@@ -474,7 +474,7 @@ and the same `is_sync_excluded` check (§A.5):
    double-run with the same Redis leader-election / lock pattern already built for
    `control-plane`'s singleton scheduler (`design.md` §12) — reuse, don't reinvent.
 
-```
+```text
                         auto_sync_enabled?  ──false──▶  no automatic sync at all
                               │ true                     (manual pull/push still works)
                               ▼
@@ -550,7 +550,7 @@ local-driven pass, the second clobbering the first.
 
 ### B.6 API surface (new / changed)
 
-```
+```text
 GET    /v1/me/sync/:provider/settings
 PATCH  /v1/me/sync/:provider/settings     { auto_sync_enabled?, conflict_policy? }
 

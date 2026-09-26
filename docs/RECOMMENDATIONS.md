@@ -172,7 +172,7 @@ one explicit signal available and is folded in at §4.3.
 
 ## 3. Architecture
 
-```
+```text
                      ┌───────────────────────────────────────────┐
                      │  control-plane (leader-elected scheduler)  │
                      │  publishes  recsys.build.{stage}          │
@@ -254,7 +254,7 @@ the move stays mechanical.
 
 One number per `(user, series)` in `[-1, 1]`, materialised into `user_series_affinity`.
 
-```
+```text
 affinity = base(status) · engagement_scale · recency_decay  +  external_score_offset
 ```
 
@@ -272,7 +272,7 @@ affinity = base(status) · engagement_scale · recency_decay  +  external_score_
 means "I liked this for a long time and then it declined" — a *positive* taste signal about
 everything except the ending. So:
 
-```
+```text
 dropped_base = -0.60 + 0.50 · engagement          # → -0.60 early, -0.10 deep
 ```
 
@@ -281,7 +281,7 @@ anyone who reads long series.
 
 **`engagement`** — absolute depth, log-scaled, not a fraction of total:
 
-```
+```text
 engagement = min(1, ln(1 + chapters_read) / ln(1 + 60))
 ```
 
@@ -291,7 +291,7 @@ committed, and more chapters add nothing to the *classification*.
 
 **`recency_decay`** — exponential with a floor:
 
-```
+```text
 recency_decay = max(0.30, 0.5 ^ (age_days / 180))
 ```
 
@@ -301,7 +301,7 @@ profile collapse to noise.
 
 **`external_score_offset`** — where an AniList account is linked and a score exists:
 
-```
+```text
 offset = 0.25 · clamp((score - user_mean_score) / 25, -1, 1)
 ```
 
@@ -660,7 +660,7 @@ whether `ef_search` is set correctly, and there is no way to guess it.
 
 Item-item over `user_series_affinity`, restricted to positive affinity:
 
-```
+```text
 score(i, j) = Σ_u  a(u,i)·a(u,j) / (log(1 + |list(u)|) · sqrt(pop(i)·pop(j)))
 ```
 
@@ -692,7 +692,7 @@ on a small deployment rather than being load-bearing.
 
 ### 6.6 Stage E — priors
 
-```
+```text
 prior = w_watchers·c·norm(watchers)
       + (w_score·norm(external_score) + w_sources·norm(source_count) + w_velocity·norm(velocity))
         · (1 + w_watchers·(1 − c))
@@ -759,7 +759,7 @@ Nothing here touches a row count that grows linearly with the catalogue.
 **The latency budget, spelled out**, because R1/R2 are the one place this design does real work
 per request rather than reading precomputed rows:
 
-```
+```text
 1 profile search + 8 seed searches ≈ 9 × ~1.5 ms  ≈  13 ms
 + candidate fetch (one = ANY) + scoring + MMR      ≈   5 ms
 ```
@@ -780,7 +780,7 @@ Each path's contribution is **rank-normalised within its own path before blendin
 scales are not comparable (a cosine, a co-occurrence score, a prior), and blending raw values
 means whichever has the largest natural range silently wins.
 
-```
+```text
 score(c) =  w_knn  · Σ_seeds a(u,s) · sim(s,c) · decay(s)
           + w_prof · cos(p(u), f(c))
           + w_cf   · cf(u,c) · confidence(support)
@@ -799,7 +799,7 @@ supervisor, so tuning does not need a redeploy.
 
 Greedy MMR over the candidate set:
 
-```
+```text
 pick = argmax [ λ·score(c) − (1−λ)·max_{s ∈ picked} cos(f(c), f(s)) ]     λ = 0.7
 ```
 

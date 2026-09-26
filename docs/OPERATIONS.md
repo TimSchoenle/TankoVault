@@ -332,7 +332,7 @@ Always-on response headers when `security_headers = true`: `X-Content-Type-Optio
 
 Fixed in `HttpStack` so no service can get it subtly wrong. Outermost first:
 
-```
+```text
 request-id → tracing → metrics → security headers → CORS → rate limit
            → timeout → body cap → compression → handler
 ```

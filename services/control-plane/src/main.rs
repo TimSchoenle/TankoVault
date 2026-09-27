@@ -186,8 +186,9 @@ async fn serve_once(
     .await?;
     tankovault_service::metrics::spawn_pool_sampler(pool.clone(), shutdown.clone());
 
+    cfg.nats.validate()?;
     let bus = Bus::connect(&cfg.nats.url, internal_auth.tls.as_ref()).await?;
-    bus.ensure_streams().await?;
+    bus.ensure_streams(cfg.nats.events_max_age()).await?;
 
     // Loaded before the scheduler starts so the first post-restart sweep respects stored
     // flags rather than briefly running against defaults.

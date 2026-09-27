@@ -37,6 +37,36 @@ pub use async_nats::jetstream::consumer::PullConsumer as BrokerConsumer;
 /// rather than after an hour of dead air.
 pub const TASK_ACK_WAIT: Duration = Duration::from_secs(300);
 
+/// The tasks stream: a work queue, so a task is removed when a worker acks it.
+///
+/// Deliberately no age or size limit. The reconciler compares a lane's open `scan_tasks` rows
+/// against what the broker holds, and a limit that silently dropped queued tasks would turn a
+/// long backlog into a republish storm.
+fn tasks_stream_config() -> stream::Config {
+    stream::Config {
+        name: subjects::TASKS_STREAM.to_owned(),
+        subjects: vec![subjects::TASKS_SUBJECT_WILDCARD.to_owned()],
+        retention: stream::RetentionPolicy::WorkQueue,
+        ..Default::default()
+    }
+}
+
+/// The events stream: kept only until every consumer bound to an event's subject has acked it,
+/// and never longer than `max_age`.
+///
+/// `max_age` is the backstop, not the cleanup. It bounds what `Interest` retention leaves
+/// behind — events for a consumer that is down, or retired but never deleted — and a notifier
+/// down for longer than it loses those chapter notifications.
+fn events_stream_config(max_age: Duration) -> stream::Config {
+    stream::Config {
+        name: subjects::EVENTS_STREAM.to_owned(),
+        subjects: vec![subjects::EVENTS_SUBJECT_WILDCARD.to_owned()],
+        retention: stream::RetentionPolicy::Interest,
+        max_age,
+        ..Default::default()
+    }
+}
+
 /// How often an in-flight task reports progress, as a fraction of [`TASK_ACK_WAIT`]; derived
 /// so tightening one without the other can't silently reintroduce mid-task redelivery.
 pub const TASK_ACK_HEARTBEAT: Duration = Duration::from_secs(TASK_ACK_WAIT.as_secs() / 5);
@@ -256,24 +286,25 @@ impl Bus {
     /// already has the stream, and every tiered task would be published to a subject no
     /// stream captures.
     ///
+    /// It is also what migrates an existing events stream from `Limits` to `Interest`
+    /// retention; the server accepts that change in place (2.10+). Every service that calls
+    /// this rewrites `events_max_age`, so they must all be given the same value.
+    ///
     /// # Errors
-    /// [`BusError::Jetstream`] on a provisioning failure.
-    pub async fn ensure_streams(&self) -> Result<(), BusError> {
+    /// [`BusError::Jetstream`] on a provisioning failure, including a zero `events_max_age`.
+    pub async fn ensure_streams(&self, events_max_age: Duration) -> Result<(), BusError> {
+        // Zero is JetStream's "unlimited": refused rather than silently unbounding the stream.
+        if events_max_age.is_zero() {
+            return Err(BusError::Jetstream(
+                "events stream max age must be greater than zero".to_owned(),
+            ));
+        }
         self.js
-            .create_or_update_stream(stream::Config {
-                name: subjects::TASKS_STREAM.to_owned(),
-                subjects: vec![subjects::TASKS_SUBJECT_WILDCARD.to_owned()],
-                retention: stream::RetentionPolicy::WorkQueue,
-                ..Default::default()
-            })
+            .create_or_update_stream(tasks_stream_config())
             .await
             .map_err(|e| BusError::Jetstream(e.to_string()))?;
         self.js
-            .create_or_update_stream(stream::Config {
-                name: subjects::EVENTS_STREAM.to_owned(),
-                subjects: vec![subjects::EVENTS_SUBJECT_WILDCARD.to_owned()],
-                ..Default::default()
-            })
+            .create_or_update_stream(events_stream_config(events_max_age))
             .await
             .map_err(|e| BusError::Jetstream(e.to_string()))?;
         Ok(())
@@ -815,6 +846,26 @@ mod tests {
             trace_in(Some(&carried)),
             Some("d49d9bf66f13450b81f65bc51cf49c03-a1b2c3d4e5f60718-1")
         );
+    }
+
+    /// The events stream was provisioned with default `Limits` retention and no bound, so every
+    /// event ever published stayed on disk: a production broker restored 33.7M messages on
+    /// start. Consumed events must be dropped, and nothing may be kept forever.
+    #[test]
+    fn the_events_stream_drops_consumed_events_and_is_age_bounded() {
+        let max_age = Duration::from_secs(3600);
+        let events = events_stream_config(max_age);
+        assert_eq!(events.retention, stream::RetentionPolicy::Interest);
+        assert_eq!(events.max_age, max_age);
+    }
+
+    /// The tasks stream must stay a work queue with no age limit; the reconciler reads its
+    /// per-lane backlog as the truth for what is still queued.
+    #[test]
+    fn the_tasks_stream_is_an_unbounded_work_queue() {
+        let tasks = tasks_stream_config();
+        assert_eq!(tasks.retention, stream::RetentionPolicy::WorkQueue);
+        assert_eq!(tasks.max_age, Duration::ZERO);
     }
 
     #[test]

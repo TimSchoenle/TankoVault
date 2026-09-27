@@ -96,6 +96,7 @@ async fn build(cfg: &Config) -> anyhow::Result<Built> {
     // Before anything connects: a threshold that cannot be compared against disables the guard
     // silently, and the symptom is junk chapter numbers in the catalogue weeks later.
     cfg.chapter_outliers.validate()?;
+    cfg.nats.validate()?;
     let internal_auth = tankovault_service::internal_auth::resolve(&cfg.internal)?;
     tankovault_service::internal_auth::check_upstream_scheme(
         internal_auth.mode,
@@ -113,7 +114,7 @@ async fn build(cfg: &Config) -> anyhow::Result<Built> {
     // The broker is required for the consumer path but optional for a one-shot scan.
     let bus = match Bus::connect(&cfg.nats.url, internal_auth.tls.as_ref()).await {
         Ok(bus) => {
-            bus.ensure_streams().await?;
+            bus.ensure_streams(cfg.nats.events_max_age()).await?;
             Some(bus)
         }
         Err(e) => {

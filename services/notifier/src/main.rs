@@ -76,8 +76,9 @@ async fn serve_once(
     .await?;
     tankovault_service::metrics::spawn_pool_sampler(pool.clone(), shutdown.clone());
     let internal_auth = tankovault_service::internal_auth::resolve(&cfg.internal)?;
+    cfg.nats.validate()?;
     let bus = Bus::connect(&cfg.nats.url, internal_auth.tls.as_ref()).await?;
-    bus.ensure_streams().await?;
+    bus.ensure_streams(cfg.nats.events_max_age()).await?;
 
     // Readiness names both dependencies: a notifier that can't reach Postgres or NATS
     // can't deliver anything.

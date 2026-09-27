@@ -152,6 +152,7 @@ a service only if that service names it — the *Services* column is the authori
 | Key | Default | Services | Notes |
 |---|---|---|---|
 | `TANKOVAULT_NATS__URL` | *(required, except on `api`)* | api (optional), control-plane, worker, notifier | The stream names (`TANKOVAULT_TASKS`, `TANKOVAULT_EVENTS`) are compiled-in constants, **not** environment variables. |
+| `TANKOVAULT_NATS__EVENTS_MAX_AGE_SECS` | `604800` (7 days) | control-plane, worker, notifier | Longest `TANKOVAULT_EVENTS` keeps an event no consumer has acked. The stream uses `Interest` retention, so an event is normally dropped as soon as every consumer bound to its subject acks it; this bounds the rest — events for a consumer that is down, or retired but never deleted. A notifier down for longer than this loses those chapter notifications. `0` is refused at boot, because JetStream reads it as unlimited. Each of the three services rewrites the stream config on start, so give them all the same value or the last to start wins. `TANKOVAULT_TASKS` has no age limit on purpose: the reconciler reads its backlog as the truth for what is queued. |
 
 ### `telemetry` — logging
 

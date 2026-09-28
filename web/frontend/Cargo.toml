@@ -208,7 +208,7 @@ cookie = { version = "0.18", optional = true }
 # goes stale. This crate is ed25519 verification and nothing else: **zero dependencies**, MIT, and
 # small enough to read. The release also carries a keyless `cosign sign-blob` bundle over the same
 # manifest for anyone auditing it with the tooling the images use — see `docs/RELEASING.md`.
-minisign-verify = { version = "0.2", optional = true }
+minisign-verify = { version = "0.3", optional = true }
 # Which release is newer, and whether this build is one. A hand-rolled tuple compare gets
 # pre-release ordering wrong, and this is the comparison that decides whether to replace the
 # reader's installed app. Already resolved in this lockfile.

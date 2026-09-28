@@ -8634,7 +8634,7 @@ Applies to:
   - dlopen2_derive 0.4.3
   - dpi 0.1.2
   - libm 0.2.16
-  - minisign-verify 0.2.5
+  - minisign-verify 0.3.0
   - pulp-wasm-simd-flag 0.1.1
   - simd_helpers 0.1.0
   - sledgehammer_bindgen 0.6.0

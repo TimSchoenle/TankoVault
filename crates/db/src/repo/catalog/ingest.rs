@@ -7,8 +7,8 @@ use super::enrichment::{
 };
 use super::metadata::merge_metadata;
 use super::series::{SeriesUpsert, resolve_canonical_series};
-use super::sources::{update_source_scan, upsert_source};
-use crate::error::DbResult;
+use super::sources::{attached_series, update_source_scan, upsert_source};
+use crate::error::{DbError, DbResult};
 use tankovault_domain::matching::Canonicaliser;
 use tankovault_domain::{
     AdultTagSet, MetadataPriority, MetadataSource, ProviderId, SeriesId, SeriesSourceId,
@@ -56,11 +56,18 @@ pub struct IngestOutcome {
 /// which scraped terms are neither tags nor credits; `adult` decides which of them classify the
 /// series as adult. This function only writes.
 ///
+/// Only a new source is canonicalised; a registered one is ingested into the series it is filed
+/// under. Canonicalising a known source again, on a title that no longer matches (the norm once
+/// `AniList` has renamed the series), creates a series the source never moves to — an empty
+/// duplicate per scan, and a `chapter.discovered` naming a series nobody watches.
+///
+/// A crash after commit but before the caller publishes `chapter.discovered` can still lose
+/// events — a replay must not report false-new chapters.
+///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; any failure rolls back the whole transaction, so a series
-/// never exists with only some of its chapters. A crash after commit but before the caller
-/// publishes `chapter.discovered` can still lose events — a replay must not report false-new
-/// chapters.
+/// [`crate::DbError::Sqlx`] for any database failure, rolling back the whole transaction so a
+/// series never exists with only some of its chapters; [`crate::DbError::Conflict`] if the source
+/// was re-filed under another series during both attempts.
 pub async fn ingest_series(
     pool: &sqlx::PgPool,
     scanned: &ScannedSeries,
@@ -69,9 +76,38 @@ pub async fn ingest_series(
     blocked: &TermBlocklist,
     adult: &AdultTagSet,
 ) -> DbResult<IngestOutcome> {
+    // A lost registration race is retried once: the winner's source row is committed by then, so
+    // the second attempt takes the attached path.
+    for _ in 0..2 {
+        if let Some(outcome) =
+            try_ingest(pool, scanned, canonicaliser, priority, blocked, adult).await?
+        {
+            return Ok(outcome);
+        }
+    }
+    Err(DbError::Conflict(format!(
+        "source {} on provider {} was re-filed under another series on every attempt",
+        scanned.source_path, scanned.provider_id,
+    )))
+}
+
+/// One ingest attempt; `None` when the source was filed under another series in the meantime
+/// and everything this attempt wrote has been rolled back.
+async fn try_ingest(
+    pool: &sqlx::PgPool,
+    scanned: &ScannedSeries,
+    canonicaliser: &dyn Canonicaliser,
+    priority: &MetadataPriority,
+    blocked: &TermBlocklist,
+    adult: &AdultTagSet,
+) -> DbResult<Option<IngestOutcome>> {
     let mut tx = pool.begin().await?;
 
-    let series_id = resolve_canonical_series(&mut tx, &scanned.meta, canonicaliser).await?;
+    let series_id =
+        match attached_series(&mut *tx, scanned.provider_id, &scanned.source_path).await? {
+            Some(id) => id,
+            None => resolve_canonical_series(&mut tx, &scanned.meta, canonicaliser).await?,
+        };
     merge_metadata(
         &mut tx,
         series_id,
@@ -98,7 +134,7 @@ pub async fn ingest_series(
         add_series_authors(&mut tx, series_id, &scanned.authors, blocked).await?;
     }
 
-    let source_id = upsert_source(
+    let (source_id, filed_under) = upsert_source(
         &mut *tx,
         series_id,
         scanned.provider_id,
@@ -106,6 +142,11 @@ pub async fn ingest_series(
         scanned.provider_title.as_deref(),
     )
     .await?;
+    if filed_under != series_id {
+        // A concurrent registration or a merge moved the source; dropping `tx` rolls back every
+        // write above, including a series this attempt created.
+        return Ok(None);
+    }
 
     // One statement, not a per-chapter loop: this transaction holds row locks on shared
     // `tags`/`authors` rows, so per-chapter round trips would stall other providers' ingests.
@@ -121,9 +162,9 @@ pub async fn ingest_series(
     update_source_scan(&mut *tx, source_id, &scanned.content_hash, count).await?;
 
     tx.commit().await?;
-    Ok(IngestOutcome {
+    Ok(Some(IngestOutcome {
         series_id,
         source_id,
         new_chapters,
-    })
+    }))
 }

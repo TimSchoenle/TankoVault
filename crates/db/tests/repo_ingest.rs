@@ -6,7 +6,8 @@
 
 use tankovault_config::MatchingConfig;
 use tankovault_db::repo::catalog::{
-    ChapterUpsert, ScannedSeries, SeriesUpsert, ingest_series, upsert_chapters,
+    ChapterUpsert, ScannedSeries, SeriesUpsert, ingest_series, register_source_stub,
+    upsert_chapters,
 };
 use tankovault_domain::{ContentType, MetadataPriority, SeriesStatus, normalize_title};
 use tankovault_test_support::{TestDb, seed};
@@ -414,4 +415,104 @@ async fn the_chapter_list_hides_paid_chapters_from_readers_who_have_not_bought_t
     .await
     .expect("expire the timer");
     assert_eq!(numbers(None).await, vec![3.0, 2.0, 1.0]);
+}
+
+async fn series_count(db: &TestDb) -> i64 {
+    sqlx::query_scalar("SELECT count(*) FROM series")
+        .fetch_one(&db.pool)
+        .await
+        .expect("count series")
+}
+
+/// Rescanning a source whose series has since been renamed must land in that series.
+///
+/// Ingest used to re-canonicalise every scan on the page title. Once `AniList` had renamed the
+/// series, that title matched nothing, so each scan created a fresh series, wrote the page's
+/// metadata onto it, and left it with no source because the existing source is never
+/// re-pointed: dozens of identical "0 chapters" cards per work, and `chapter.discovered` naming a
+/// series nobody watches.
+#[tokio::test]
+async fn a_rescan_after_a_rename_does_not_create_an_empty_duplicate() {
+    let db = TestDb::spawn().await;
+    let provider = seed::provider(&db, "ingest-renamed").create().await;
+
+    let first = ingest_series(
+        &db.pool,
+        &scanned(provider, vec![chapter(1.0, None, "/c/1")]),
+        &MatchingConfig::default(),
+        &MetadataPriority::default(),
+        &tankovault_domain::TermBlocklist::default(),
+        &tankovault_domain::AdultTagSet::defaults(),
+    )
+    .await
+    .expect("first ingest");
+
+    // What an `AniList` title win leaves behind: a canonical title the page no longer matches.
+    sqlx::query("UPDATE series SET canonical_title = $2, normalized_title = $3 WHERE id = $1")
+        .bind(first.series_id.as_uuid())
+        .bind("Na Honjaman Level Up")
+        .bind(normalize_title("Na Honjaman Level Up"))
+        .execute(&db.pool)
+        .await
+        .expect("rename");
+
+    let rescan = ingest_series(
+        &db.pool,
+        &scanned(
+            provider,
+            vec![chapter(1.0, None, "/c/1"), chapter(2.0, None, "/c/2")],
+        ),
+        &MatchingConfig::default(),
+        &MetadataPriority::default(),
+        &tankovault_domain::TermBlocklist::default(),
+        &tankovault_domain::AdultTagSet::defaults(),
+    )
+    .await
+    .expect("rescan");
+
+    assert_eq!(
+        rescan.series_id, first.series_id,
+        "the scan belongs to the series its source is filed under"
+    );
+    assert_eq!(rescan.source_id, first.source_id);
+    assert_eq!(rescan.new_chapters, vec![2.0]);
+    assert_eq!(series_count(&db).await, 1, "no empty duplicate was created");
+}
+
+/// The first full scan of a catalogue stub files into the stub's series, whatever it is titled.
+///
+/// A listing and its series page often spell the work differently ("Return of the Mount Hua
+/// Sect" against "Hwasangwihwan"). Canonicalising the page title created a second series on the
+/// very first scan, while the stub's source — and every chapter — stayed on the first.
+#[tokio::test]
+async fn a_stub_scanned_under_another_title_keeps_its_series() {
+    let db = TestDb::spawn().await;
+    let provider = seed::provider(&db, "ingest-stub").create().await;
+    register_source_stub(
+        &db.pool,
+        provider,
+        "/manga/solo-leveling",
+        "I Level Up Alone",
+        &MatchingConfig::default(),
+    )
+    .await
+    .expect("register stub");
+    let stub: uuid::Uuid = sqlx::query_scalar("SELECT id FROM series")
+        .fetch_one(&db.pool)
+        .await
+        .expect("stub series");
+
+    let outcome = ingest_series(
+        &db.pool,
+        &scanned(provider, vec![chapter(1.0, None, "/c/1")]),
+        &MatchingConfig::default(),
+        &MetadataPriority::default(),
+        &tankovault_domain::TermBlocklist::default(),
+        &tankovault_domain::AdultTagSet::defaults(),
+    )
+    .await
+    .expect("first scan");
+
+    assert_eq!(outcome.series_id.as_uuid(), stub);
+    assert_eq!(series_count(&db).await, 1, "no empty duplicate was created");
 }

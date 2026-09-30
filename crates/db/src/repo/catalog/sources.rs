@@ -42,10 +42,31 @@ impl TryFrom<SourceRow> for SeriesSource {
     }
 }
 
+/// The series the `(provider, path)` source is filed under, `None` when it is not registered.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only.
+pub async fn attached_series<'e, E: PgExecutor<'e>>(
+    exec: E,
+    provider_id: ProviderId,
+    source_path: &str,
+) -> DbResult<Option<SeriesId>> {
+    let id = sqlx::query_scalar!(
+        "SELECT series_id FROM series_sources WHERE provider_id = $1 AND source_path = $2",
+        provider_id.as_uuid(),
+        source_path,
+    )
+    .fetch_optional(exec)
+    .await?;
+    Ok(id.map(SeriesId::from_uuid))
+}
+
 /// Upsert the (provider, path) source for a series. Idempotent on `(provider_id, source_path)`.
 ///
 /// On conflict, the existing row's id comes back (a source keeps its identity across re-scans)
-/// and `series_id` is not updated — an already-attached source is never re-pointed.
+/// and `series_id` is not updated — an already-attached source is never re-pointed. The second
+/// element is the series the row is actually filed under; a caller that just created
+/// `series_id` must compare the two, because on a mismatch its new series holds no source.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only; unknown `series_id`/`provider_id` is a foreign-key violation.
@@ -55,13 +76,13 @@ pub async fn upsert_source<'e, E: PgExecutor<'e>>(
     provider_id: ProviderId,
     source_path: &str,
     provider_title: Option<&str>,
-) -> DbResult<SeriesSourceId> {
-    let id = sqlx::query_scalar!(
+) -> DbResult<(SeriesSourceId, SeriesId)> {
+    let row = sqlx::query!(
         "INSERT INTO series_sources (id, series_id, provider_id, source_path, provider_title) \
          VALUES ($1,$2,$3,$4,$5) \
          ON CONFLICT (provider_id, source_path) DO UPDATE \
             SET provider_title = EXCLUDED.provider_title \
-         RETURNING id",
+         RETURNING id, series_id",
         SeriesSourceId::new().as_uuid(),
         series_id.as_uuid(),
         provider_id.as_uuid(),
@@ -70,7 +91,10 @@ pub async fn upsert_source<'e, E: PgExecutor<'e>>(
     )
     .fetch_one(exec)
     .await?;
-    Ok(SeriesSourceId::from_uuid(id))
+    Ok((
+        SeriesSourceId::from_uuid(row.id),
+        SeriesId::from_uuid(row.series_id),
+    ))
 }
 
 /// Ensure a series **source** row exists for a catalogue entry.
@@ -93,19 +117,20 @@ pub async fn register_source_stub(
     let mut tx = pool.begin().await?;
 
     // Already registered (this or an earlier scan) — leave the enriched row untouched.
-    let existing = sqlx::query_scalar!(
-        "SELECT id FROM series_sources WHERE provider_id = $1 AND source_path = $2",
-        provider_id.as_uuid(),
-        source_path,
-    )
-    .fetch_optional(&mut *tx)
-    .await?;
-    if existing.is_some() {
+    if attached_series(&mut *tx, provider_id, source_path)
+        .await?
+        .is_some()
+    {
         return Ok(());
     }
 
     let series_id = resolve_stub_series(&mut tx, title, canonicaliser).await?;
-    upsert_source(&mut *tx, series_id, provider_id, source_path, Some(title)).await?;
+    let (_, filed_under) =
+        upsert_source(&mut *tx, series_id, provider_id, source_path, Some(title)).await?;
+    if filed_under != series_id {
+        // A concurrent registration won; dropping `tx` discards the series this one created.
+        return Ok(());
+    }
 
     tx.commit().await?;
     Ok(())

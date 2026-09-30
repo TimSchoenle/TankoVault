@@ -12,6 +12,21 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [11.0.3](https://github.com/TimSchoenle/TankoVault/compare/v11.0.2...v11.0.3) (2026-09-30)
+
+
+### Bug Fixes
+
+* **db:** ingest a registered source into the series it is filed under ([#455](https://github.com/TimSchoenle/TankoVault/issues/455)) ([f686b3b](https://github.com/TimSchoenle/TankoVault/commit/f686b3b2be74b8ada30548f6944728cea0030b3c))
+* **deps:** update rust crate minisign-verify to 0.3 ([#453](https://github.com/TimSchoenle/TankoVault/issues/453)) ([458ba86](https://github.com/TimSchoenle/TankoVault/commit/458ba864d2bc5e5309607efff5f0ffd2acd4756b))
+
+
+### Miscellaneous
+
+* **deps:** update redis:8-alpine docker digest to 3811787 ([#452](https://github.com/TimSchoenle/TankoVault/issues/452)) ([1660590](https://github.com/TimSchoenle/TankoVault/commit/1660590ed1cf0c6a52e33e73eb3688a99f5d2ac0))
+* **deps:** update taiki-e/install-action action to v2.87.20 ([#450](https://github.com/TimSchoenle/TankoVault/issues/450)) ([57b501f](https://github.com/TimSchoenle/TankoVault/commit/57b501f1e9d22418dc5c1d4c9fd9c436bae51cfb))
+* **deps:** update taiki-e/install-action action to v2.87.21 ([#454](https://github.com/TimSchoenle/TankoVault/issues/454)) ([02da1a0](https://github.com/TimSchoenle/TankoVault/commit/02da1a071c63ddfd4078458b0b62b58e30b54070))
+
 ## [11.0.2](https://github.com/TimSchoenle/TankoVault/compare/v11.0.1...v11.0.2) (2026-09-27)
 
 

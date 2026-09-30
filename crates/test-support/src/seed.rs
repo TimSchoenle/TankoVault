@@ -166,7 +166,7 @@ impl<'a> UserBuilder<'a> {
         let email = self
             .email
             .map_or_else(|| format!("{username}@example.test"), ToOwned::to_owned);
-        users::create(&self.db.pool, &email, username, "$argon2id$seed")
+        users::create(&self.db.pool, &email, username, crate::SEED_PASSWORD_HASH)
             .await
             .expect("seed user")
             .id

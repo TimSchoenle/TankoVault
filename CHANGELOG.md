@@ -12,6 +12,19 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [11.0.4](https://github.com/TimSchoenle/TankoVault/compare/v11.0.3...v11.0.4) (2026-10-03)
+
+
+### Miscellaneous
+
+* **deps:** update docker/dockerfile:1 docker digest to 4edf897 ([#463](https://github.com/TimSchoenle/TankoVault/issues/463)) ([b6635da](https://github.com/TimSchoenle/TankoVault/commit/b6635da29a47b6bddd4275f2cb21967f66d5fb4d))
+* **deps:** update rust crate notify-rust to v4.18.1 ([#456](https://github.com/TimSchoenle/TankoVault/issues/456)) ([995b161](https://github.com/TimSchoenle/TankoVault/commit/995b161044d1271327baa07c835ee4d9bf3cd57e))
+* **deps:** update rust crate tokio-rustls to v0.26.6 ([#458](https://github.com/TimSchoenle/TankoVault/issues/458)) ([98adbc0](https://github.com/TimSchoenle/TankoVault/commit/98adbc0c0cd0c94f83bbff25d753f00509536eb7))
+* **deps:** update taiki-e/install-action action to v2.87.22 ([#459](https://github.com/TimSchoenle/TankoVault/issues/459)) ([8f35d1b](https://github.com/TimSchoenle/TankoVault/commit/8f35d1b2886111ac49ece4623f51e468a73a9207))
+* **deps:** update timschoenle/actions/actions/common/commit-changes to vactions-common-commit-changes-v1.5.3 ([#460](https://github.com/TimSchoenle/TankoVault/issues/460)) ([b483ba8](https://github.com/TimSchoenle/TankoVault/commit/b483ba8b535f21983ee38d5bb3a0aec1e6f5e2de))
+* **deps:** update timschoenle/actions/actions/common/render-template to vactions-common-render-template-v1.2.3 ([#461](https://github.com/TimSchoenle/TankoVault/issues/461)) ([ee71296](https://github.com/TimSchoenle/TankoVault/commit/ee71296a084b50a26d5185b76aa4bab6eca75a49))
+* **deps:** update timschoenle/actions/actions/helm/update-chart-version to vactions-helm-update-chart-version-v1.6.13 ([#462](https://github.com/TimSchoenle/TankoVault/issues/462)) ([c2624b5](https://github.com/TimSchoenle/TankoVault/commit/c2624b5397a20bbf59f5f50804101eb0a07d83d5))
+
 ## [11.0.3](https://github.com/TimSchoenle/TankoVault/compare/v11.0.2...v11.0.3) (2026-09-30)
 
 

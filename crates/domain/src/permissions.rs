@@ -853,7 +853,10 @@ mod tests {
 
     #[test]
     fn reader_preset_is_empty() {
-        assert!(PermissionPreset::Reader.permissions().is_empty());
+        assert_eq!(
+            PermissionPreset::Reader.permissions(),
+            Vec::<Permission>::new()
+        );
     }
 
     #[test]

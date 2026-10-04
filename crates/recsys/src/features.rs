@@ -341,7 +341,7 @@ mod tests {
             country: None,
             source: None,
         };
-        assert!(extract(&bare).is_empty());
+        assert_eq!(extract(&bare), Vec::<(FeatureKey, f32)>::new());
         assert_eq!(decade_of(None), None);
         // Out of range is as unknown as absent: a year of 0 is a parse artefact, not a decade.
         assert_eq!(decade_of(Some(0)), None);

@@ -581,7 +581,7 @@ mod tests {
             )
         };
 
-        assert!(check(&["api", "render"]).is_empty());
+        assert_eq!(check(&["api", "render"]), Vec::<String>::new());
 
         let blacklisted = check(&["api", "render", "xtask"]);
         assert_eq!(blacklisted.len(), 1);

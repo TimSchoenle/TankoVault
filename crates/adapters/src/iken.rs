@@ -484,7 +484,7 @@ Why I Quit Being the Demon King
             split_alt_titles(Some("First Title\nSecond Title\n")),
             vec!["First Title".to_owned(), "Second Title".to_owned()]
         );
-        assert!(split_alt_titles(None).is_empty());
+        assert_eq!(split_alt_titles(None), Vec::<String>::new());
     }
 
     #[test]

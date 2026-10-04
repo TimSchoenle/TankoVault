@@ -258,7 +258,7 @@ mod tests {
         let regions =
             label_regions("FROM scratch\nUSER 1001:1001\n", BEGIN, END).expect("no regions");
 
-        assert!(regions.is_empty());
+        assert_eq!(regions, Vec::<String>::new());
     }
 
     /// An edit across a marker leaves a region that cannot be compared. Skipping it silently is

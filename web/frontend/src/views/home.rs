@@ -548,11 +548,6 @@ fn group_by_day(items: &[FeedEntry]) -> Vec<(String, Vec<FeedEntry>)> {
 }
 
 #[cfg(test)]
-#[expect(
-    clippy::float_cmp,
-    reason = "these compare against the exact chapter numbers the fixtures were built from, \
-              not against a computed value"
-)]
 mod tests {
     use super::{feed_row_key, group_by_series, home_shape, FeedEntry, HomeShape, MeStats};
 

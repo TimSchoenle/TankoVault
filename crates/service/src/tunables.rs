@@ -327,10 +327,6 @@ impl TunableSet {
 }
 
 #[cfg(test)]
-#[expect(
-    clippy::float_cmp,
-    reason = "these compare against exact registry bounds and clamp results, not \n              computed values: a clamp returns its bound bit-for-bit, and a default \n              is the literal in the registry"
-)]
 mod tests {
     use super::*;
 

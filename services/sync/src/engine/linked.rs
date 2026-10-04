@@ -224,12 +224,6 @@ impl LinkedSeries {
 
 #[cfg(test)]
 mod tests {
-    // Progress values under test are small, exactly-representable integers.
-    #![expect(
-        clippy::float_cmp,
-        reason = "the group folds by exact equality of whole-chapter frontiers"
-    )]
-
     use super::{LinkedMember, MirrorWrite, plan_group, plan_mirror};
     use tankovault_domain::{SeriesId, WatchStatus};
     use time::OffsetDateTime;

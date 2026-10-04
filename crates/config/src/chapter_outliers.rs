@@ -196,7 +196,7 @@ mod tests {
         };
         assert_eq!(
             implausible_indices(&listing_with_stray(), &off.policy()),
-            [] as [usize; 0]
+            Vec::<usize>::new()
         );
     }
 
@@ -246,7 +246,7 @@ mod tests {
         );
         assert_eq!(
             implausible_indices(&listing_with_stray(), &lenient.policy()),
-            [] as [usize; 0]
+            Vec::<usize>::new()
         );
     }
 }

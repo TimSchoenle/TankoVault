@@ -130,6 +130,9 @@ mod tests {
 
     #[test]
     fn nothing_shared_explains_nothing() {
-        assert!(shared_features(&[(1, 1.0)], &[(9, 1.0)], 3).is_empty());
+        assert_eq!(
+            shared_features(&[(1, 1.0)], &[(9, 1.0)], 3),
+            Vec::<i32>::new()
+        );
     }
 }

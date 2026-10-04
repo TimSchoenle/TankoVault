@@ -1270,18 +1270,18 @@ mod tests {
         // Reads are not writes: no `>`, so neither line is judged at all.
         let read = "          token=\"${RUNNER_TEMP}/cosign-oidc-token\"\n          \
                     cosign sign --yes --identity-token \"$token\" \"$IMAGE@$DIGEST\"";
-        assert_eq!(oidc_token_writes(read), [] as [(usize, bool); 0]);
+        assert_eq!(oidc_token_writes(read), Vec::<(usize, bool)>::new());
 
         // A comment may describe the broken form — including this rule's own rationale in the
         // workflow — without tripping the rule.
         let documented = "          # never `jq -er '.value' > \"$RUNNER_TEMP/cosign-oidc-token\"`";
-        assert_eq!(oidc_token_writes(documented), [] as [(usize, bool); 0]);
+        assert_eq!(oidc_token_writes(documented), Vec::<(usize, bool)>::new());
 
         // The no-op guard: a renamed file leaves nothing to check, which the rule reports rather
         // than passing silently.
         assert_eq!(
             oidc_token_writes("          printf '%s' \"$token\" > \"$other\""),
-            [] as [(usize, bool); 0]
+            Vec::<(usize, bool)>::new()
         );
     }
 

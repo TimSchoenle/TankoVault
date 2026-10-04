@@ -147,7 +147,7 @@ mod tests {
         // Local development: un-peppered is the shape the api itself allows outside production.
         assert_eq!(
             resolve_pepper(None, false).expect("unset outside production"),
-            [] as [u8; 0]
+            Vec::<u8>::new()
         );
 
         assert!(

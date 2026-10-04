@@ -634,7 +634,7 @@ mod tests {
         );
         assert_eq!(
             step_up_operations(&serde_json::json!({})),
-            [] as [std::string::String; 0]
+            Vec::<String>::new()
         );
     }
 

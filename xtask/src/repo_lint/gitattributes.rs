@@ -88,7 +88,7 @@ mod tests {
     fn declaring_eol_lf_satisfies_the_rule() {
         assert_eq!(
             offenders("openapi.json linguist-generated=true -diff eol=lf\n"),
-            [] as [(usize, std::string::String); 0]
+            Vec::<(usize, String)>::new()
         );
     }
 
@@ -98,7 +98,7 @@ mod tests {
     fn only_generated_paths_are_held_to_it() {
         assert_eq!(
             offenders("* text=auto\nfuzz/seeds/** -text\nsome/path -diff\n"),
-            [] as [(usize, std::string::String); 0]
+            Vec::<(usize, String)>::new()
         );
     }
 
@@ -109,7 +109,7 @@ mod tests {
     fn prose_naming_the_attribute_does_not_fire() {
         assert_eq!(
             offenders("# openapi.json linguist-generated=true and no eol\n"),
-            [] as [(usize, std::string::String); 0]
+            Vec::<(usize, String)>::new()
         );
     }
 }

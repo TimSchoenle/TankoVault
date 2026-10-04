@@ -346,15 +346,6 @@ fn strip_html(input: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    // Tests assert exact equality of small, exactly-representable progress/id/weight values.
-    // A tag weight is `rank / 100.0`, and IEEE division is correctly rounded, so it is bit-equal
-    // to the decimal literal the assertion spells.
-    #![expect(
-        clippy::float_cmp,
-        reason = "parsed progress and tag-weight values are compared against the exact numbers \
-                  the fixture documents encode"
-    )]
-
     use super::{
         AniListStatus, ContentType, MIN_TAG_WEIGHT, SeriesStatus, has_next_chunk, parse_media_list,
         parse_media_metadata, strip_html,
@@ -427,8 +418,8 @@ mod tests {
         // not a parse failure.
         assert_eq!(berserk.media.titles, vec!["Berserk", "ベルセルク"]);
         // No genres/staff in the fixture: both default to empty, not a parse failure.
-        assert_eq!(berserk.media.tags, [] as [std::string::String; 0]);
-        assert_eq!(berserk.media.authors, [] as [std::string::String; 0]);
+        assert_eq!(berserk.media.tags, Vec::<String>::new());
+        assert_eq!(berserk.media.authors, Vec::<String>::new());
         // A missing publication status must stay `Unknown`, not default to a real state.
         assert_eq!(berserk.media.series_status, SeriesStatus::Unknown);
         assert_eq!(berserk.media.description, None);

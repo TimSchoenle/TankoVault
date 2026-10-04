@@ -573,11 +573,11 @@ mod tests {
     fn an_empty_or_unparsable_certificate_yields_no_names_rather_than_panicking() {
         assert_eq!(
             dns_sans(&CertificateDer::from(vec![])),
-            [] as [std::string::String; 0]
+            Vec::<String>::new()
         );
         assert_eq!(
             dns_sans(&CertificateDer::from(vec![0x30, 0x00])),
-            [] as [std::string::String; 0]
+            Vec::<String>::new()
         );
     }
 

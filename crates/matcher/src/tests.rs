@@ -1,13 +1,6 @@
 //! Scoring and adjudication tests. The suite shares its `cand`/`query` fixtures across
 //! modules, so it stays one file rather than being split alongside the code it covers.
 
-// Tests assert exact equality of small, exactly-representable score values.
-#![expect(
-    clippy::float_cmp,
-    reason = "scores are compared against the exact constants the scorer is defined to \
-                  produce; a tolerance here would stop the test detecting a changed weight"
-)]
-
 use super::*;
 use crate::similarity::{
     edit_distance, edit_ratio, is_token_subset, name_set_overlap, numeric_signature,
@@ -533,7 +526,7 @@ fn signal_labels_are_stable_and_ordered() {
         signals.labels(),
         vec!["compact_identity", "year_conflict", "shared_author"]
     );
-    assert_eq!(MatchSignals::default().labels(), [] as [&str; 0]);
+    assert_eq!(MatchSignals::default().labels(), Vec::<&str>::new());
     assert!(signals.is_structural());
     assert!(
         !MatchSignals {

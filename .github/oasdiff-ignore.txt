@@ -72,3 +72,18 @@ in api post /v1/admin/catalogue/purge removed the required property `done` from 
 in api post /v1/admin/catalogue/purge removed the required property `remaining` from the response with the `200` status
 in api post /v1/admin/catalogue/purge removed the required property `removed` from the response with the `200` status
 in api post /v1/admin/catalogue/purge removed the required property `scope` from the response with the `200` status
+
+# Not a change of shape: utoipa 6 publishes a defaulted field of a schema type as a `$ref` with
+# its `default` beside it (valid in OpenAPI 3.1), where utoipa 5 wrapped the same `$ref` in a
+# one-member `oneOf`. Both accept exactly the instances of the referenced schema, and the request
+# body still defaults every field, but oasdiff compares the two forms structurally and reports
+# the arm as removed and the type as narrowed from `any`. The generated client is unchanged:
+# `xtask openapi` rewraps such a reference for the 3.0 document progenitor reads.
+in api put /v1/me/notification-prefs removed `#/components/schemas/channelprefs` from the `channels` request property `oneof` list
+in api put /v1/me/notification-prefs removed `#/components/schemas/kindprefs` from the `kinds` request property `oneof` list
+in api put /v1/me/notification-prefs removed `#/components/schemas/quiethours` from the `quiet_hours` request property `oneof` list
+in api put /v1/me/notification-prefs removed `#/components/schemas/statusprefs` from the `watch_status` request property `oneof` list
+in api put /v1/me/notification-prefs the `channels` request property `type` changed from `any` to `object`
+in api put /v1/me/notification-prefs the `kinds` request property `type` changed from `any` to `object`
+in api put /v1/me/notification-prefs the `quiet_hours` request property `type` changed from `any` to `object`
+in api put /v1/me/notification-prefs the `watch_status` request property `type` changed from `any` to `object`

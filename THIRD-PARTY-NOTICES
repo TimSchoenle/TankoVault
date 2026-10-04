@@ -425,7 +425,7 @@ by the block naming that crate.
   - parse-display 0.9.1
   - parse-display-derive 0.9.1
   - password-hash 0.5.0
-  - paste 1.0.15
+  - pastey 0.2.3
   - pbkdf2 0.12.2
   - pear 0.2.9
   - pear_codegen 0.2.9
@@ -554,10 +554,10 @@ by the block naming that crate.
   - utf-8 0.7.6
   - utf8-zero 0.8.1
   - utf8_iter 1.0.4
-  - utoipa 5.5.0
-  - utoipa-axum 0.2.0
-  - utoipa-gen 5.5.0
-  - utoipa-scalar 0.3.0
+  - utoipa 6.0.0
+  - utoipa-axum 0.3.0
+  - utoipa-gen 6.0.1
+  - utoipa-scalar 0.4.0
   - uuid 1.26.1
   - version_check 0.9.5
   - web_atoms 0.2.6
@@ -6977,8 +6977,8 @@ by the block naming that crate.
   - url 2.5.8
   - utf-8 0.7.6
   - utf8_iter 1.0.4
-  - utoipa 5.5.0
-  - utoipa-gen 5.5.0
+  - utoipa 6.0.0
+  - utoipa-gen 6.0.1
   - uuid 1.26.1
   - vcpkg 0.2.15
   - version_check 0.9.5

@@ -261,7 +261,7 @@ mod tests {
             split_list("Shibuya Noir, 시부야 느와르; Shibuya Nowaru"),
             vec!["Shibuya Noir", "시부야 느와르", "Shibuya Nowaru"]
         );
-        assert!(split_list("   ").is_empty());
-        assert!(split_list("").is_empty());
+        assert_eq!(split_list("   "), [] as [std::string::String; 0]);
+        assert_eq!(split_list(""), [] as [std::string::String; 0]);
     }
 }

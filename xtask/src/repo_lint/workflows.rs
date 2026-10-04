@@ -1270,16 +1270,19 @@ mod tests {
         // Reads are not writes: no `>`, so neither line is judged at all.
         let read = "          token=\"${RUNNER_TEMP}/cosign-oidc-token\"\n          \
                     cosign sign --yes --identity-token \"$token\" \"$IMAGE@$DIGEST\"";
-        assert!(oidc_token_writes(read).is_empty());
+        assert_eq!(oidc_token_writes(read), [] as [(usize, bool); 0]);
 
         // A comment may describe the broken form — including this rule's own rationale in the
         // workflow — without tripping the rule.
         let documented = "          # never `jq -er '.value' > \"$RUNNER_TEMP/cosign-oidc-token\"`";
-        assert!(oidc_token_writes(documented).is_empty());
+        assert_eq!(oidc_token_writes(documented), [] as [(usize, bool); 0]);
 
         // The no-op guard: a renamed file leaves nothing to check, which the rule reports rather
         // than passing silently.
-        assert!(oidc_token_writes("          printf '%s' \"$token\" > \"$other\"").is_empty());
+        assert_eq!(
+            oidc_token_writes("          printf '%s' \"$token\" > \"$other\""),
+            [] as [(usize, bool); 0]
+        );
     }
 
     /// The bug this pins: release 2.0.0 published seven of nine images. GHCR reports a throttled

@@ -427,8 +427,8 @@ mod tests {
         // not a parse failure.
         assert_eq!(berserk.media.titles, vec!["Berserk", "ベルセルク"]);
         // No genres/staff in the fixture: both default to empty, not a parse failure.
-        assert!(berserk.media.tags.is_empty());
-        assert!(berserk.media.authors.is_empty());
+        assert_eq!(berserk.media.tags, [] as [std::string::String; 0]);
+        assert_eq!(berserk.media.authors, [] as [std::string::String; 0]);
         // A missing publication status must stay `Unknown`, not default to a real state.
         assert_eq!(berserk.media.series_status, SeriesStatus::Unknown);
         assert_eq!(berserk.media.description, None);

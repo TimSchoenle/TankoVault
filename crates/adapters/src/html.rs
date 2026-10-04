@@ -561,8 +561,8 @@ mod tests {
             split_titles("Berserk | ベルセルク"),
             vec!["Berserk", "ベルセルク"]
         );
-        assert!(split_titles("   ").is_empty());
-        assert!(split_titles("").is_empty());
+        assert_eq!(split_titles("   "), [] as [std::string::String; 0]);
+        assert_eq!(split_titles(""), [] as [std::string::String; 0]);
     }
 
     /// Regression: a byte offset found in the lowercased copy must never index the original —

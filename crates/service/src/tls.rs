@@ -571,8 +571,14 @@ mod tests {
     /// to emit, which is not something an operator can see from the manifest they wrote.
     #[test]
     fn an_empty_or_unparsable_certificate_yields_no_names_rather_than_panicking() {
-        assert!(dns_sans(&CertificateDer::from(vec![])).is_empty());
-        assert!(dns_sans(&CertificateDer::from(vec![0x30, 0x00])).is_empty());
+        assert_eq!(
+            dns_sans(&CertificateDer::from(vec![])),
+            [] as [std::string::String; 0]
+        );
+        assert_eq!(
+            dns_sans(&CertificateDer::from(vec![0x30, 0x00])),
+            [] as [std::string::String; 0]
+        );
     }
 
     /// Missing files must surface as a named error rather than a panic: this runs at boot, and

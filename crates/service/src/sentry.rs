@@ -331,7 +331,7 @@ mod tests {
     /// which downstream would parse as a malformed trace and log about on every request.
     #[test]
     fn trace_headers_are_empty_without_a_client() {
-        assert!(trace_headers().is_empty());
+        assert_eq!(trace_headers(), [] as [(&str, std::string::String); 0]);
     }
 
     #[test]

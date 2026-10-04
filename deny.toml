@@ -117,9 +117,17 @@ skip = [
     { crate = "webpki-roots" },
     # `tower-http` 0.6 arrives transitively; ours is pinned at 0.7.
     { crate = "tower-http" },
-    # `miniz_oxide` 0.9 via `flate2` 1.1.10; 0.8 via `backtrace` 0.3.76 under `sentry`, which is
-    # its latest release. Collapses when `backtrace` takes 0.9.
+    # Compression backends split by the 2026-09 lock refresh; both newer copies arrive through
+    # `async-compression`/`flate2`, and each older one is held by a dependent already at its
+    # latest release. `miniz_oxide` 0.8 is `backtrace` 0.3.76's (under `sentry`), beside
+    # `flate2` 1.1.10's 0.9; `zstd` 0.13/`zstd-safe` 7 are `wreq-util` 3.0.0-rc.14's, beside
+    # `compression-codecs` 0.4.44's 0.14/8. Collapses when `backtrace` and `wreq-util` release.
     { crate = "miniz_oxide" },
+    { crate = "zstd" },
+    { crate = "zstd-safe" },
+    # `synstructure` 0.14 via the ICU stack's `zerofrom-derive` 0.1.8; 0.13 via `asn1-rs-derive`
+    # under both X.509 cohorts below, whose newest release (0.7) still requires 0.13.
+    { crate = "synstructure" },
     # The passkey stack (added 2026-08-01 with `webauthn-rs` 0.6): every entry below is a
     # second, older copy arriving only through `webauthn-rs-core`.
     # AEAD cluster: `crypto-glue` pins `aes-gcm 0.10`; `crates/auth` uses 0.11. Collapses when

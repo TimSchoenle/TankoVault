@@ -266,7 +266,7 @@ mod tests {
 
     #[test]
     fn no_pages_renders_nothing() {
-        assert!(page_window(0, 0).is_empty());
+        assert_eq!(page_window(0, 0), Vec::<Option<usize>>::new());
     }
 
     /// The bug this arithmetic used to have: the console directory passed the *filtered* row

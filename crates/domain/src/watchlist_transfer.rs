@@ -795,10 +795,9 @@ mod tests {
     #[test]
     fn a_host_match_does_not_cross_a_base_path_boundary() {
         let index = ProviderIndex::new([provider(3, "p", "https://h.example/read")]);
-        assert!(
-            index
-                .candidates(&source("q", "https://h.example/reader/x", "/x"))
-                .is_empty()
+        assert_eq!(
+            index.candidates(&source("q", "https://h.example/reader/x", "/x")),
+            Vec::<(ProviderId, String)>::new()
         );
     }
 
@@ -842,7 +841,7 @@ mod tests {
         assert_eq!(clean.progress, Some(progress(10.0, None)));
         assert_eq!(clean.sources.len(), 1);
         assert!(!clean.sources[0].pinned);
-        assert!(clean.external_ids.is_empty());
+        assert_eq!(clean.external_ids, Vec::<ExternalRef>::new());
     }
 
     #[test]
@@ -993,7 +992,7 @@ mod tests {
             &no_progress,
             ConflictPolicy::KeepLocal,
         );
-        assert!(keep.writes.is_empty());
+        assert_eq!(keep.writes, Vec::<EntryWrite>::new());
         assert_eq!(keep.unchanged, 1);
         let prefer = plan(
             &entries,

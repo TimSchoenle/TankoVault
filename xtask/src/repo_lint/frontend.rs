@@ -632,7 +632,10 @@ mod tests {
             step_up_operations(&spec),
             ["delete_user", "sync_authorize_url"]
         );
-        assert!(step_up_operations(&serde_json::json!({})).is_empty());
+        assert_eq!(
+            step_up_operations(&serde_json::json!({})),
+            Vec::<String>::new()
+        );
     }
 
     /// The binding has to be the nearest one above the call — a closure two actions up binds its

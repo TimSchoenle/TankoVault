@@ -210,7 +210,7 @@ mod tests {
 
     #[test]
     fn a_clean_listing_is_left_alone() {
-        assert!(rejected(&run(1, 200)).is_empty());
+        assert_eq!(rejected(&run(1, 200)), Vec::<f64>::new());
     }
 
     /// Ordinary numbering holes — a pulled chapter, a double release — must survive. The whole
@@ -218,7 +218,7 @@ mod tests {
     #[test]
     fn small_holes_are_not_jumps() {
         let listing = [1.0, 2.0, 3.0, 7.0, 8.0, 9.0, 15.0, 16.0, 17.0, 18.0];
-        assert!(rejected(&listing).is_empty());
+        assert_eq!(rejected(&listing), Vec::<f64>::new());
     }
 
     /// A site that renumbers an arc leaves a dense run above a large jump. It is a real
@@ -227,7 +227,7 @@ mod tests {
     fn a_dense_run_above_a_jump_is_a_renumbering_not_noise() {
         let mut listing = run(1, 359);
         listing.extend(run(505, 519));
-        assert!(rejected(&listing).is_empty());
+        assert_eq!(rejected(&listing), Vec::<f64>::new());
     }
 
     /// Pins the bug that top-down peeling exists to prevent. `Martial Peak` lists 3,862
@@ -275,14 +275,14 @@ mod tests {
     fn a_fractionally_numbered_body_does_not_condemn_whole_chapters() {
         let mut listing: Vec<f64> = (0..80).map(|i| f64::from(i) * 0.01).collect();
         listing.extend(run(53, 77));
-        assert!(rejected(&listing).is_empty());
+        assert_eq!(rejected(&listing), Vec::<f64>::new());
     }
 
     /// Too small to judge: with a handful of entries there is no rhythm to compare against, and
     /// guessing costs a real chapter. They are trusted until the next scan grows the listing.
     #[test]
     fn short_listings_are_trusted() {
-        assert!(rejected(&[1.0, 2.0, 900.0]).is_empty());
+        assert_eq!(rejected(&[1.0, 2.0, 900.0]), Vec::<f64>::new());
     }
 
     /// The budget is a backstop against a wholesale misreading of a source's numbering: however
@@ -325,7 +325,7 @@ mod tests {
 
     #[test]
     fn an_empty_listing_is_plausible() {
-        assert!(rejected(&[]).is_empty());
+        assert_eq!(rejected(&[]), Vec::<f64>::new());
     }
 
     /// Duplicated numbers give zero gaps; they must not be counted as the typical spacing and

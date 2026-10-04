@@ -297,13 +297,6 @@ pub(crate) fn run_cli(workspace_root: &Path, args: &[String]) -> anyhow::Result<
 
 #[cfg(test)]
 mod tests {
-    #![expect(
-        clippy::float_cmp,
-        reason = "the floor is a decimal literal parsed back out of its own text, so exact \
-                  equality is the property under test — a tolerance here would let the parser \
-                  round and still pass"
-    )]
-
     use super::{
         Floor, Suite, Verdict, judge, line_coverage, parse_args, parse_floor, parse_optional_floor,
     };

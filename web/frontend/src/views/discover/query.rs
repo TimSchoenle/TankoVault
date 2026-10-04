@@ -457,7 +457,7 @@ mod tests {
     fn unknown_tokens_are_dropped_not_defaulted() {
         let parsed = DiscoverQuery::from("type=manga,nonsense&status=nonsense");
         assert_eq!(parsed.filters.types, vec![ContentType::Manga]);
-        assert!(parsed.filters.statuses.is_empty());
+        assert_eq!(parsed.filters.statuses, Vec::<SeriesStatus>::new());
     }
 
     /// A hand-edited URL must not be able to state a window that matches nothing, or an
@@ -500,7 +500,7 @@ mod tests {
         filters.cycle_tag("action");
         assert_eq!(filters.inc, vec!["action".to_owned()]);
         filters.cycle_tag("action");
-        assert!(filters.inc.is_empty());
+        assert_eq!(filters.inc, Vec::<String>::new());
         assert_eq!(filters.exc, vec!["action".to_owned()]);
         filters.cycle_tag("action");
         assert!(filters.inc.is_empty() && filters.exc.is_empty());

@@ -194,7 +194,10 @@ mod tests {
             enabled: false,
             ..ChapterOutlierConfig::default()
         };
-        assert!(implausible_indices(&listing_with_stray(), &off.policy()).is_empty());
+        assert_eq!(
+            implausible_indices(&listing_with_stray(), &off.policy()),
+            Vec::<usize>::new()
+        );
     }
 
     /// The bug: TOML accepts `nan` as a float literal, and every comparison against `NaN` is
@@ -241,6 +244,9 @@ mod tests {
             [40],
             "sanity: the defaults reject it"
         );
-        assert!(implausible_indices(&listing_with_stray(), &lenient.policy()).is_empty());
+        assert_eq!(
+            implausible_indices(&listing_with_stray(), &lenient.policy()),
+            Vec::<usize>::new()
+        );
     }
 }

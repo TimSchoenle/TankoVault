@@ -267,7 +267,7 @@ mod tests {
             .iter()
             .map(|v| v.as_str().expect("problem tokens are strings").to_owned())
             .collect();
-        assert!(!published.is_empty());
+        assert_ne!(published, Vec::<String>::new());
 
         for token in &published {
             let kind: ProblemKind = token.parse().unwrap_or_else(|_| {

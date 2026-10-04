@@ -581,7 +581,7 @@ mod tests {
             )
         };
 
-        assert!(check(&["api", "render"]).is_empty());
+        assert_eq!(check(&["api", "render"]), [] as [std::string::String; 0]);
 
         let blacklisted = check(&["api", "render", "xtask"]);
         assert_eq!(blacklisted.len(), 1);

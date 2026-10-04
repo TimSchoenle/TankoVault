@@ -533,7 +533,7 @@ fn signal_labels_are_stable_and_ordered() {
         signals.labels(),
         vec!["compact_identity", "year_conflict", "shared_author"]
     );
-    assert!(MatchSignals::default().labels().is_empty());
+    assert_eq!(MatchSignals::default().labels(), [] as [&str; 0]);
     assert!(signals.is_structural());
     assert!(
         !MatchSignals {

@@ -86,14 +86,20 @@ mod tests {
 
     #[test]
     fn declaring_eol_lf_satisfies_the_rule() {
-        assert!(offenders("openapi.json linguist-generated=true -diff eol=lf\n").is_empty());
+        assert_eq!(
+            offenders("openapi.json linguist-generated=true -diff eol=lf\n"),
+            [] as [(usize, std::string::String); 0]
+        );
     }
 
     /// The rule fires on the marker, not on every line: a path that is merely `-diff`, or the
     /// `* text=auto` catch-all, is not a generated artefact and must not be dragged in.
     #[test]
     fn only_generated_paths_are_held_to_it() {
-        assert!(offenders("* text=auto\nfuzz/seeds/** -text\nsome/path -diff\n").is_empty());
+        assert_eq!(
+            offenders("* text=auto\nfuzz/seeds/** -text\nsome/path -diff\n"),
+            [] as [(usize, std::string::String); 0]
+        );
     }
 
     /// Prose describing the rule contains the very attribute it looks for, so a comment that is
@@ -101,6 +107,9 @@ mod tests {
     /// `is_comment` at all.
     #[test]
     fn prose_naming_the_attribute_does_not_fire() {
-        assert!(offenders("# openapi.json linguist-generated=true and no eol\n").is_empty());
+        assert_eq!(
+            offenders("# openapi.json linguist-generated=true and no eol\n"),
+            [] as [(usize, std::string::String); 0]
+        );
     }
 }

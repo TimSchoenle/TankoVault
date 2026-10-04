@@ -310,7 +310,10 @@ mod tests {
             .await
             .expect("a response without headers still solves");
         assert_eq!(outcome.status, Some(200));
-        assert!(outcome.headers.is_empty());
+        assert_eq!(
+            outcome.headers,
+            [] as [(std::string::String, std::string::String); 0]
+        );
     }
 
     /// An empty `html` becomes `None` rather than `Some("")`. The two mean different things

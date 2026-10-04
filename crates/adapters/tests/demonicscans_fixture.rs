@@ -109,7 +109,7 @@ async fn parses_series_metadata() {
         Some("https://readermc.org/images/thumbnails/Shibuya%20Noir.webp")
     );
     // This series lists no alternatives (the cell is &nbsp;).
-    assert!(meta.alt_titles.is_empty());
+    assert_eq!(meta.alt_titles, [] as [std::string::String; 0]);
 }
 
 #[tokio::test]

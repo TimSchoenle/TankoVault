@@ -15,7 +15,7 @@
 # `msrv` CI job checks; this is the version everything is actually built with. The two are
 # separate claims with separate jobs behind them and move independently.
 [toolchain]
-channel = "1.98.1"
+channel = "1.99.0"
 components = ["rustfmt", "clippy"]
 # `wasm32-unknown-unknown` for `web/frontend`, which is excluded from the host workspace but
 # built by this same toolchain.

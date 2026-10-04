@@ -117,6 +117,9 @@ skip = [
     { crate = "webpki-roots" },
     # `tower-http` 0.6 arrives transitively; ours is pinned at 0.7.
     { crate = "tower-http" },
+    # `miniz_oxide` 0.9 via `flate2` 1.1.10; 0.8 via `backtrace` 0.3.76 under `sentry`, which is
+    # its latest release. Collapses when `backtrace` takes 0.9.
+    { crate = "miniz_oxide" },
     # The passkey stack (added 2026-08-01 with `webauthn-rs` 0.6): every entry below is a
     # second, older copy arriving only through `webauthn-rs-core`.
     # AEAD cluster: `crypto-glue` pins `aes-gcm 0.10`; `crates/auth` uses 0.11. Collapses when

@@ -6957,7 +6957,7 @@ dependencies = [
  "sys-locale",
  "tankovault-api-client",
  "terrace-legal-dioxus",
- "terrace-legal-markdown",
+ "terrace-legal-markdown 0.3.1",
  "terrace-legal-model",
  "tokio",
  "tracing",
@@ -7069,7 +7069,7 @@ version = "0.3.0"
 source = "git+https://github.com/TimSchoenle/terrace-legal?tag=v0.3.0#12493403b03855d1e97f1a7acd149b887651085f"
 dependencies = [
  "dioxus",
- "terrace-legal-markdown",
+ "terrace-legal-markdown 0.3.0",
  "terrace-legal-model",
 ]
 
@@ -7077,6 +7077,15 @@ dependencies = [
 name = "terrace-legal-markdown"
 version = "0.3.0"
 source = "git+https://github.com/TimSchoenle/terrace-legal?tag=v0.3.0#12493403b03855d1e97f1a7acd149b887651085f"
+dependencies = [
+ "dioxus",
+ "pulldown-cmark",
+]
+
+[[package]]
+name = "terrace-legal-markdown"
+version = "0.3.1"
+source = "git+https://github.com/TimSchoenle/terrace-legal?tag=v0.3.1#cfe3362e23b69eaad9d35635bb4992a6454e156b"
 dependencies = [
  "dioxus",
  "pulldown-cmark",

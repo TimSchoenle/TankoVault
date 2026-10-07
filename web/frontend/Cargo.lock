@@ -6900,7 +6900,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-api-client"
-version = "11.0.3"
+version = "11.0.4"
 dependencies = [
  "progenitor-client",
  "reqwest 0.13.5",
@@ -6913,7 +6913,7 @@ dependencies = [
 
 [[package]]
 name = "tankovault-domain"
-version = "11.0.3"
+version = "11.0.4"
 dependencies = [
  "serde",
  "serde_json",

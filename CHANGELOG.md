@@ -12,6 +12,50 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [11.0.4](https://github.com/TimSchoenle/TankoVault/compare/v11.0.3...v11.0.4) (2026-10-07)
+
+
+### Bug Fixes
+
+* **deps:** update rust crate terrace-legal-markdown to v0.3.1 ([#475](https://github.com/TimSchoenle/TankoVault/issues/475)) ([2ef4542](https://github.com/TimSchoenle/TankoVault/commit/2ef4542d810f6ef1fda3dfe0220d419fe02056c2))
+
+
+### Miscellaneous
+
+* **deps:** update anchore/sbom-action action to v0.24.3 ([#473](https://github.com/TimSchoenle/TankoVault/issues/473)) ([b7b51f2](https://github.com/TimSchoenle/TankoVault/commit/b7b51f2737c3a70c2772630829643d125ab64fe7))
+* **deps:** update docker/dockerfile:1 docker digest to 4edf897 ([#463](https://github.com/TimSchoenle/TankoVault/issues/463)) ([b6635da](https://github.com/TimSchoenle/TankoVault/commit/b6635da29a47b6bddd4275f2cb21967f66d5fb4d))
+* **deps:** update oasdiff/oasdiff-action action to v0.1.18 ([#471](https://github.com/TimSchoenle/TankoVault/issues/471)) ([909dab0](https://github.com/TimSchoenle/TankoVault/commit/909dab02166f1bbe50bb54095da0812901d8a365))
+* **deps:** update rust crate flate2 to v1.1.10 ([#322](https://github.com/TimSchoenle/TankoVault/issues/322)) ([076e069](https://github.com/TimSchoenle/TankoVault/commit/076e06996f6e465122cc577f62d9b11e6a5bdeba))
+* **deps:** update rust crate notify-rust to v4.18.1 ([#456](https://github.com/TimSchoenle/TankoVault/issues/456)) ([995b161](https://github.com/TimSchoenle/TankoVault/commit/995b161044d1271327baa07c835ee4d9bf3cd57e))
+* **deps:** update rust crate tokio to v1.53.2 ([#478](https://github.com/TimSchoenle/TankoVault/issues/478)) ([e604565](https://github.com/TimSchoenle/TankoVault/commit/e60456568b222dff9577362d4f67c4e0507f5123))
+* **deps:** update rust crate tokio-rustls to v0.26.6 ([#458](https://github.com/TimSchoenle/TankoVault/issues/458)) ([98adbc0](https://github.com/TimSchoenle/TankoVault/commit/98adbc0c0cd0c94f83bbff25d753f00509536eb7))
+* **deps:** update rust crate utoipa to v6 ([#444](https://github.com/TimSchoenle/TankoVault/issues/444)) ([310786a](https://github.com/TimSchoenle/TankoVault/commit/310786a192982dba1d76870eb0314e0d7ad092c3))
+* **deps:** update rust crate uuid to v1.27.0 ([#477](https://github.com/TimSchoenle/TankoVault/issues/477)) ([fd832e4](https://github.com/TimSchoenle/TankoVault/commit/fd832e4fb0175d2a9a175886219e60cc3c806124))
+* **deps:** update rust to v1.99.0 ([#464](https://github.com/TimSchoenle/TankoVault/issues/464)) ([7721ab7](https://github.com/TimSchoenle/TankoVault/commit/7721ab7cc519283e2f472e17456d3da1a3dbbbd3))
+* **deps:** update taiki-e/install-action action to v2.87.22 ([#459](https://github.com/TimSchoenle/TankoVault/issues/459)) ([8f35d1b](https://github.com/TimSchoenle/TankoVault/commit/8f35d1b2886111ac49ece4623f51e468a73a9207))
+* **deps:** update taiki-e/install-action action to v2.87.23 ([#479](https://github.com/TimSchoenle/TankoVault/issues/479)) ([8993c59](https://github.com/TimSchoenle/TankoVault/commit/8993c59f1974b3383d1ede1298582f968d9775a0))
+* **deps:** update taiki-e/install-action action to v2.87.24 ([#486](https://github.com/TimSchoenle/TankoVault/issues/486)) ([ce9de7b](https://github.com/TimSchoenle/TankoVault/commit/ce9de7b7aa364af3476a97ec8bd0ceb6fc19034e))
+* **deps:** update timschoenle/actions/.github/workflows/maintenance-auto-approve-renovate.yaml to vworkflows-maintenance-auto-approve-renovate-v1.4.26 ([#465](https://github.com/TimSchoenle/TankoVault/issues/465)) ([a4870a1](https://github.com/TimSchoenle/TankoVault/commit/a4870a1af75e29bb1be317efaf9d81fb9af4fa27))
+* **deps:** update timschoenle/actions/.github/workflows/maintenance-auto-approve-renovate.yaml to vworkflows-maintenance-auto-approve-renovate-v1.4.27 ([#480](https://github.com/TimSchoenle/TankoVault/issues/480)) ([afa89ae](https://github.com/TimSchoenle/TankoVault/commit/afa89ae9647b519c8c2fc6a629a54432aaab668a))
+* **deps:** update timschoenle/actions/.github/workflows/maintenance-timed-auto-pr-approve.yaml to vworkflows-maintenance-timed-auto-pr-approve-v1.2.38 ([#466](https://github.com/TimSchoenle/TankoVault/issues/466)) ([cfd9429](https://github.com/TimSchoenle/TankoVault/commit/cfd9429c2d29f6ec6c86797ad255e9eecbabf4c7))
+* **deps:** update timschoenle/actions/.github/workflows/maintenance-timed-auto-pr-approve.yaml to vworkflows-maintenance-timed-auto-pr-approve-v1.2.39 ([#481](https://github.com/TimSchoenle/TankoVault/issues/481)) ([8e485ef](https://github.com/TimSchoenle/TankoVault/commit/8e485ef160032747e5b1f80755710bddc2dfc700))
+* **deps:** update timschoenle/actions/actions/common/commit-changes to vactions-common-commit-changes-v1.5.3 ([#460](https://github.com/TimSchoenle/TankoVault/issues/460)) ([b483ba8](https://github.com/TimSchoenle/TankoVault/commit/b483ba8b535f21983ee38d5bb3a0aec1e6f5e2de))
+* **deps:** update timschoenle/actions/actions/common/commit-changes to vactions-common-commit-changes-v1.5.4 ([#467](https://github.com/TimSchoenle/TankoVault/issues/467)) ([0dcc81d](https://github.com/TimSchoenle/TankoVault/commit/0dcc81d10d78559d563e20f6f078cfa2b0aced3d))
+* **deps:** update timschoenle/actions/actions/common/commit-changes to vactions-common-commit-changes-v1.5.5 ([#482](https://github.com/TimSchoenle/TankoVault/issues/482)) ([aefde5a](https://github.com/TimSchoenle/TankoVault/commit/aefde5ad289fa5bae70f9aec6f7124093679eafc))
+* **deps:** update timschoenle/actions/actions/common/render-template to vactions-common-render-template-v1.2.3 ([#461](https://github.com/TimSchoenle/TankoVault/issues/461)) ([ee71296](https://github.com/TimSchoenle/TankoVault/commit/ee71296a084b50a26d5185b76aa4bab6eca75a49))
+* **deps:** update timschoenle/actions/actions/common/render-template to vactions-common-render-template-v1.2.4 ([#468](https://github.com/TimSchoenle/TankoVault/issues/468)) ([065b52c](https://github.com/TimSchoenle/TankoVault/commit/065b52ce4a19b5604e937723785fd4c9f35dc9b9))
+* **deps:** update timschoenle/actions/actions/common/render-template to vactions-common-render-template-v1.2.5 ([#483](https://github.com/TimSchoenle/TankoVault/issues/483)) ([b48dbed](https://github.com/TimSchoenle/TankoVault/commit/b48dbed1dfb34f6e2abe35b4ff2006afe4290291))
+* **deps:** update timschoenle/actions/actions/common/render-template-and-commit to vactions-common-render-template-and-commit-v1.1.11 ([#469](https://github.com/TimSchoenle/TankoVault/issues/469)) ([b409cee](https://github.com/TimSchoenle/TankoVault/commit/b409cee94d4f239d82c5831e3441b8a5c4761497))
+* **deps:** update timschoenle/actions/actions/common/render-template-and-commit to vactions-common-render-template-and-commit-v1.1.12 ([#484](https://github.com/TimSchoenle/TankoVault/issues/484)) ([89c86fd](https://github.com/TimSchoenle/TankoVault/commit/89c86fd19795cc1c078d42b6d254b78b2144e84d))
+* **deps:** update timschoenle/actions/actions/helm/update-chart-version to vactions-helm-update-chart-version-v1.6.13 ([#462](https://github.com/TimSchoenle/TankoVault/issues/462)) ([c2624b5](https://github.com/TimSchoenle/TankoVault/commit/c2624b5397a20bbf59f5f50804101eb0a07d83d5))
+* **deps:** update timschoenle/actions/actions/helm/update-chart-version to vactions-helm-update-chart-version-v1.6.14 ([#470](https://github.com/TimSchoenle/TankoVault/issues/470)) ([6cff328](https://github.com/TimSchoenle/TankoVault/commit/6cff3289ed42866809a36e2a0ac6f7bb61204830))
+* **deps:** update timschoenle/actions/actions/helm/update-chart-version to vactions-helm-update-chart-version-v1.6.15 ([#485](https://github.com/TimSchoenle/TankoVault/issues/485)) ([3c66ef5](https://github.com/TimSchoenle/TankoVault/commit/3c66ef552f81072aa2695c1d983415e5d207641d))
+
+
+### Dependencies
+
+* **deps:** lock file maintenance ([#321](https://github.com/TimSchoenle/TankoVault/issues/321)) ([52a4a51](https://github.com/TimSchoenle/TankoVault/commit/52a4a51dad36a03fa49e47cc3025366f1aa63c5f))
+
 ## [11.0.3](https://github.com/TimSchoenle/TankoVault/compare/v11.0.2...v11.0.3) (2026-09-30)
 
 

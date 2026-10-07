@@ -6958,7 +6958,7 @@ dependencies = [
  "tankovault-api-client",
  "terrace-legal-dioxus",
  "terrace-legal-markdown 0.3.1",
- "terrace-legal-model",
+ "terrace-legal-model 0.3.1",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -7070,7 +7070,7 @@ source = "git+https://github.com/TimSchoenle/terrace-legal?tag=v0.3.0#12493403b0
 dependencies = [
  "dioxus",
  "terrace-legal-markdown 0.3.0",
- "terrace-legal-model",
+ "terrace-legal-model 0.3.0",
 ]
 
 [[package]]
@@ -7095,6 +7095,15 @@ dependencies = [
 name = "terrace-legal-model"
 version = "0.3.0"
 source = "git+https://github.com/TimSchoenle/terrace-legal?tag=v0.3.0#12493403b03855d1e97f1a7acd149b887651085f"
+dependencies = [
+ "serde",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "terrace-legal-model"
+version = "0.3.1"
+source = "git+https://github.com/TimSchoenle/terrace-legal?tag=v0.3.1#cfe3362e23b69eaad9d35635bb4992a6454e156b"
 dependencies = [
  "serde",
  "thiserror 2.0.21",

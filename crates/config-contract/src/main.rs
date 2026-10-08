@@ -414,6 +414,6 @@ mod tests {
         let (service, rest) = super::split_service(args.into_iter()).expect("a usable split");
 
         assert_eq!(service, None);
-        assert!(rest.is_empty());
+        assert_eq!(rest, Vec::<String>::new());
     }
 }

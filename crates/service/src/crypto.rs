@@ -62,6 +62,6 @@ mod tests {
         let verifier = rustls::server::WebPkiClientVerifier::builder(std::sync::Arc::new(roots))
             .build()
             .expect_err("an empty root store is refused, but only after the provider is read");
-        assert!(!verifier.to_string().is_empty());
+        assert_ne!(verifier.to_string(), "");
     }
 }

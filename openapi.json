@@ -463,11 +463,11 @@
           "mode": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/ScanMode",
                 "description": "Narrows the cancellation to one cadence, so a fast sweep can be stopped without\ntouching an archive rebuild that has been running for an hour."
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -614,11 +614,11 @@
           "scope": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/PurgeScope",
                 "description": "The scope of the current or last run; absent before the first."
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -631,11 +631,11 @@
           "stopped": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/CataloguePurgeStop",
                 "description": "Why the last run stopped; absent while one is running and before the first."
+              },
+              {
+                "type": "null"
               }
             ]
           }
@@ -855,11 +855,11 @@
           "run_id": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/ScanRunId",
                 "description": "One run's failures."
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -1102,10 +1102,10 @@
           "politeness": {
             "oneOf": [
               {
-                "type": "null"
+                "$ref": "#/components/schemas/PolitenessInput"
               },
               {
-                "$ref": "#/components/schemas/PolitenessInput"
+                "type": "null"
               }
             ]
           },
@@ -2163,11 +2163,11 @@
           "absorbed_id": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/SeriesId",
                 "description": "The series that stopped existing, `null` for anything but a merge."
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -2295,11 +2295,11 @@
           "survivor_id": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/SeriesId",
                 "description": "The series that survived, `null` for anything but a merge."
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -2796,11 +2796,11 @@
           "security_key": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/SecurityKeyAssertion",
                 "description": "A completed security-key assertion, from [`mfa_security_key_start`]."
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -3063,16 +3063,12 @@
         "description": "A reader's notification preferences, stored as `users.notification_prefs`.\n\nEvery field defaults, so an absent, partial or legacy document decodes to the product\ndefaults rather than an error: a preference read must never fail the request it decorates.\nThe pre-v1 document (`{\"new_chapters\": …, \"email\": …, \"digest\": …}`) therefore decodes to\nfull defaults — those keys were never read by anything, so nothing observable is lost.",
         "properties": {
           "channels": {
+            "$ref": "#/components/schemas/ChannelPrefs",
             "default": {
               "in_app": true,
               "live": true
             },
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/ChannelPrefs",
-                "description": "Where the notification goes once it has passed the two filters above."
-              }
-            ]
+            "description": "Where the notification goes once it has passed the two filters above."
           },
           "group_unread": {
             "default": true,
@@ -3080,6 +3076,7 @@
             "type": "boolean"
           },
           "kinds": {
+            "$ref": "#/components/schemas/KindPrefs",
             "default": {
               "announcement": true,
               "new_chapter": true,
@@ -3087,26 +3084,17 @@
               "source_added": true,
               "sync_conflict": true
             },
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/KindPrefs",
-                "description": "Which kinds of event are worth telling this reader about."
-              }
-            ]
+            "description": "Which kinds of event are worth telling this reader about."
           },
           "quiet_hours": {
+            "$ref": "#/components/schemas/QuietHours",
             "default": {
               "enabled": false,
               "end_minute": 420,
               "start_minute": 1380,
               "utc_offset_minutes": 0
             },
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/QuietHours",
-                "description": "A nightly window in which the live push stays silent."
-              }
-            ]
+            "description": "A nightly window in which the live push stays silent."
           },
           "version": {
             "default": 1,
@@ -3116,6 +3104,7 @@
             "type": "integer"
           },
           "watch_status": {
+            "$ref": "#/components/schemas/StatusPrefs",
             "default": {
               "completed": false,
               "dropped": false,
@@ -3123,12 +3112,7 @@
               "planned": true,
               "reading": true
             },
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/StatusPrefs",
-                "description": "Which watchlist statuses are worth telling this reader about."
-              }
-            ]
+            "description": "Which watchlist statuses are worth telling this reader about."
           }
         },
         "type": "object"
@@ -3420,11 +3404,11 @@
           "emulation": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/BrowserEmulation",
                 "description": "Browser to impersonate, or `None` to crawl as an identifiable bot using `user_agent`."
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -3458,11 +3442,11 @@
           "emulation": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/BrowserEmulation",
                 "description": "Browser to impersonate. Absent (or null) crawls as an identifiable bot using `user_agent`."
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -3754,11 +3738,11 @@
           "preset": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/PresetLink",
                 "description": "How this row relates to the built-in preset catalogue; `None` for a provider an\noperator registered by hand."
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -4101,11 +4085,11 @@
           "because_series_id": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/SeriesId",
                 "description": "The series that produced this one, when a seed did."
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -4732,11 +4716,11 @@
           "provider_id": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/ProviderId",
                 "description": "`null` for a run covering every enabled provider, and once the named provider is\ndeleted."
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -5028,11 +5012,11 @@
           "telemetry": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/Value",
                 "description": "The task's own [`tankovault_domain::StageTimings`], as recorded."
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -6075,11 +6059,11 @@
           "series_id": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/SeriesId",
                 "description": "The local series, `null` for an entry that matched none."
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -6178,11 +6162,11 @@
           "policy": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/ConflictPolicy",
                 "description": "Overrides the account's own conflict policy for this run; omitted uses it.\n\nTyped rather than a bare string since FRONTEND F10: the sync service's request body\nhas always been a `ConflictPolicy`, so a token this proxy accepted and that one did not\nused to fail one hop downstream, as a `502` with no useful detail. Now the two name the\nsame type and the rejection happens here, as a `422` that says which values are legal."
+              },
+              {
+                "type": "null"
               }
             ]
           }
@@ -6315,11 +6299,11 @@
           "conflict_policy": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/ConflictPolicy",
                 "description": "The account's new conflict policy; omitted leaves it unchanged.\n\nSee [`SyncOpts::policy`] for why this is typed rather than a bare string."
+              },
+              {
+                "type": "null"
               }
             ]
           }
@@ -6692,10 +6676,10 @@
           "provider_id": {
             "oneOf": [
               {
-                "type": "null"
+                "$ref": "#/components/schemas/ProviderId"
               },
               {
-                "$ref": "#/components/schemas/ProviderId"
+                "type": "null"
               }
             ]
           }
@@ -6929,10 +6913,10 @@
           "politeness": {
             "oneOf": [
               {
-                "type": "null"
+                "$ref": "#/components/schemas/PolitenessInput"
               },
               {
-                "$ref": "#/components/schemas/PolitenessInput"
+                "type": "null"
               }
             ]
           }
@@ -7128,11 +7112,11 @@
           "status": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/WatchStatus",
                 "description": "Leave absent to keep each entry's current status."
+              },
+              {
+                "type": "null"
               }
             ]
           }
@@ -7192,10 +7176,10 @@
           "entry": {
             "oneOf": [
               {
-                "type": "null"
+                "$ref": "#/components/schemas/WatchlistItem"
               },
               {
-                "$ref": "#/components/schemas/WatchlistItem"
+                "type": "null"
               }
             ]
           }
@@ -7265,11 +7249,11 @@
           "progress": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/WatchlistExportProgress",
                 "description": "`null` when nothing has been read."
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -7548,11 +7532,11 @@
           "next_unread": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/NextUnread",
                 "description": "The lowest unread chapter, or `null` when the reader is caught up."
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -7834,7 +7818,7 @@
       "name": ""
     },
     "title": "tankovault-api",
-    "version": "11.0.3"
+    "version": "11.0.4"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -8239,10 +8223,10 @@
             "schema": {
               "oneOf": [
                 {
-                  "type": "null"
+                  "$ref": "#/components/schemas/HealthFilter"
                 },
                 {
-                  "$ref": "#/components/schemas/HealthFilter"
+                  "type": "null"
                 }
               ]
             }
@@ -10750,10 +10734,10 @@
               "schema": {
                 "oneOf": [
                   {
-                    "type": "null"
+                    "$ref": "#/components/schemas/TestAdapterRequest"
                   },
                   {
-                    "$ref": "#/components/schemas/TestAdapterRequest"
+                    "type": "null"
                   }
                 ]
               }
@@ -11430,10 +11414,10 @@
             "schema": {
               "oneOf": [
                 {
-                  "type": "null"
+                  "$ref": "#/components/schemas/ScanMode"
                 },
                 {
-                  "$ref": "#/components/schemas/ScanMode"
+                  "type": "null"
                 }
               ]
             }
@@ -11445,10 +11429,10 @@
             "schema": {
               "oneOf": [
                 {
-                  "type": "null"
+                  "$ref": "#/components/schemas/RunState"
                 },
                 {
-                  "$ref": "#/components/schemas/RunState"
+                  "type": "null"
                 }
               ]
             }
@@ -17774,10 +17758,10 @@
               "schema": {
                 "oneOf": [
                   {
-                    "type": "null"
+                    "$ref": "#/components/schemas/SyncOpts"
                   },
                   {
-                    "$ref": "#/components/schemas/SyncOpts"
+                    "type": "null"
                   }
                 ]
               }
@@ -17849,10 +17833,10 @@
               "schema": {
                 "oneOf": [
                   {
-                    "type": "null"
+                    "$ref": "#/components/schemas/SyncOpts"
                   },
                   {
-                    "$ref": "#/components/schemas/SyncOpts"
+                    "type": "null"
                   }
                 ]
               }

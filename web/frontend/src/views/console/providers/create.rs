@@ -313,7 +313,7 @@ mod tests {
         else {
             panic!("a malformed config must be refused as a config error");
         };
-        assert!(!detail.is_empty());
+        assert_ne!(detail, "");
     }
 
     /// Politeness is never guessed here: the server's own defaults are the polite ones, and

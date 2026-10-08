@@ -409,7 +409,7 @@ jobs:
       - name: BoringSSL build dependencies
         uses: $/.github/actions/boringssl-deps
 
-      - uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
+      - uses: taiki-e/install-action@e407f7bafb71fd004bc5c2da3032e5470cbb6ef0 # v2.87.24
         with:
           tool: cargo-about
 
@@ -490,7 +490,7 @@ jobs:
 
       # The same recipe a developer runs, rather than a second spelling of it in YAML.
       - name: Install just
-        uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
+        uses: taiki-e/install-action@e407f7bafb71fd004bc5c2da3032e5470cbb6ef0 # v2.87.24
         with:
           tool: just
 
@@ -535,7 +535,7 @@ jobs:
       #
       # No `if:` guard: the action detects an unchanged tree itself and commits nothing.
       - name: Commit the fixes
-        uses: TimSchoenle/actions/actions/common/commit-changes@7e8fd61045447d321c5139eea8f2e2b766333f8b # tag=actions-common-commit-changes-v1.5.3
+        uses: TimSchoenle/actions/actions/common/commit-changes@c4068f4412c52bcf92d15f9bb255d37b2eafd0b7 # tag=actions-common-commit-changes-v1.5.5
         with:
           commit_message: "style: apply the mechanical fixes (lockfiles, clippy --fix, fmt, regenerated artefacts)"
           token: ${{ steps.generate_token.outputs.token }}
@@ -604,7 +604,7 @@ jobs:
       # that merely touched `Cargo.toml` makes no commit and no API call.
       - name: render README.md and commit it
         id: render
-        uses: TimSchoenle/actions/actions/common/render-template-and-commit@f4fea19c7d53dee672f082bd62406b3e1e29ee3a # tag=actions-common-render-template-and-commit-v1.1.10
+        uses: TimSchoenle/actions/actions/common/render-template-and-commit@c4068f4412c52bcf92d15f9bb255d37b2eafd0b7 # tag=actions-common-render-template-and-commit-v1.1.12
         with:
           template: .github/templates/README.md.hbs
           output: README.md

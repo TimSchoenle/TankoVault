@@ -1,10 +1,5 @@
 //! Registry tests: bounds, clamping and defaults.
 
-#![expect(
-    clippy::float_cmp,
-    reason = "these compare against exact registry bounds and clamp results, not \n              computed values: a clamp returns its bound bit-for-bit, and a default \n              is the literal in the registry"
-)]
-
 use super::*;
 use std::collections::BTreeSet;
 

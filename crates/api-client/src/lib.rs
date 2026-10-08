@@ -6321,11 +6321,12 @@ pub mod types {
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"channels\": {"]
+    #[doc = "      \"description\": \"Where the notification goes once it has passed the two filters above.\","]
     #[doc = "      \"default\": {"]
     #[doc = "        \"in_app\": true,"]
     #[doc = "        \"live\": true"]
     #[doc = "      },"]
-    #[doc = "      \"oneOf\": ["]
+    #[doc = "      \"allOf\": ["]
     #[doc = "        {"]
     #[doc = "          \"$ref\": \"#/components/schemas/ChannelPrefs\""]
     #[doc = "        }"]
@@ -6337,6 +6338,7 @@ pub mod types {
     #[doc = "      \"type\": \"boolean\""]
     #[doc = "    },"]
     #[doc = "    \"kinds\": {"]
+    #[doc = "      \"description\": \"Which kinds of event are worth telling this reader about.\","]
     #[doc = "      \"default\": {"]
     #[doc = "        \"announcement\": true,"]
     #[doc = "        \"new_chapter\": true,"]
@@ -6344,20 +6346,21 @@ pub mod types {
     #[doc = "        \"source_added\": true,"]
     #[doc = "        \"sync_conflict\": true"]
     #[doc = "      },"]
-    #[doc = "      \"oneOf\": ["]
+    #[doc = "      \"allOf\": ["]
     #[doc = "        {"]
     #[doc = "          \"$ref\": \"#/components/schemas/KindPrefs\""]
     #[doc = "        }"]
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"quiet_hours\": {"]
+    #[doc = "      \"description\": \"A nightly window in which the live push stays silent.\","]
     #[doc = "      \"default\": {"]
     #[doc = "        \"enabled\": false,"]
     #[doc = "        \"end_minute\": 420,"]
     #[doc = "        \"start_minute\": 1380,"]
     #[doc = "        \"utc_offset_minutes\": 0"]
     #[doc = "      },"]
-    #[doc = "      \"oneOf\": ["]
+    #[doc = "      \"allOf\": ["]
     #[doc = "        {"]
     #[doc = "          \"$ref\": \"#/components/schemas/QuietHours\""]
     #[doc = "        }"]
@@ -6371,6 +6374,7 @@ pub mod types {
     #[doc = "      \"minimum\": 0.0"]
     #[doc = "    },"]
     #[doc = "    \"watch_status\": {"]
+    #[doc = "      \"description\": \"Which watchlist statuses are worth telling this reader about.\","]
     #[doc = "      \"default\": {"]
     #[doc = "        \"completed\": false,"]
     #[doc = "        \"dropped\": false,"]
@@ -6378,7 +6382,7 @@ pub mod types {
     #[doc = "        \"planned\": true,"]
     #[doc = "        \"reading\": true"]
     #[doc = "      },"]
-    #[doc = "      \"oneOf\": ["]
+    #[doc = "      \"allOf\": ["]
     #[doc = "        {"]
     #[doc = "          \"$ref\": \"#/components/schemas/StatusPrefs\""]
     #[doc = "        }"]
@@ -6390,18 +6394,22 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct NotificationPrefs {
+        #[doc = "Where the notification goes once it has passed the two filters above."]
         #[serde(default = "defaults::notification_prefs_channels")]
         pub channels: ChannelPrefs,
         #[doc = "Collapse a series' chapters into one row while it stays unread, instead of one row each."]
         #[serde(default = "defaults::default_bool::<true>")]
         pub group_unread: bool,
+        #[doc = "Which kinds of event are worth telling this reader about."]
         #[serde(default = "defaults::notification_prefs_kinds")]
         pub kinds: KindPrefs,
+        #[doc = "A nightly window in which the live push stays silent."]
         #[serde(default = "defaults::notification_prefs_quiet_hours")]
         pub quiet_hours: QuietHours,
         #[doc = "Schema version of this document; see [`PREFS_VERSION`]."]
         #[serde(default = "defaults::default_u64::<i32, 1>")]
         pub version: i32,
+        #[doc = "Which watchlist statuses are worth telling this reader about."]
         #[serde(default = "defaults::notification_prefs_watch_status")]
         pub watch_status: StatusPrefs,
     }
@@ -36540,7 +36548,7 @@ pub mod types {
     }
 }
 #[derive(Clone, Debug)]
-#[doc = "Client for tankovault-api\n\nAxum HTTP edge: public read/write + admin, auth, resolved links, SSE.\n\nVersion: 11.0.3"]
+#[doc = "Client for tankovault-api\n\nAxum HTTP edge: public read/write + admin, auth, resolved links, SSE.\n\nVersion: 11.0.4"]
 pub struct Client {
     pub(crate) baseurl: String,
     pub(crate) client: reqwest::Client,
@@ -36578,7 +36586,7 @@ impl Client {
 }
 impl ClientInfo<()> for Client {
     fn api_version() -> &'static str {
-        "11.0.3"
+        "11.0.4"
     }
     fn baseurl(&self) -> &str {
         self.baseurl.as_str()

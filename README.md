@@ -99,8 +99,8 @@ when it publishes a port, so exposing one of those would put it on every interfa
 Nine images per release, each a `linux/amd64` + `linux/arm64` manifest list, on two registries:
 
 ```bash
-docker pull ghcr.io/timschoenle/tankovault/api:v11.0.3
-docker pull docker.io/timschoenle/tankovault-api:v11.0.3
+docker pull ghcr.io/timschoenle/tankovault/api:v11.0.4
+docker pull docker.io/timschoenle/tankovault-api:v11.0.4
 ```
 
 Substitute `api` for `bootstrap`, `challenge-solver`, `control-plane`, `frontend`, `notifier`,
@@ -256,7 +256,7 @@ confirmation variable, so nothing published carries a destructive command.
 
 | | Supported |
 | --- | --- |
-| Rust | 1.94 minimum, edition 2024; built with 1.98.1 |
+| Rust | 1.94 minimum, edition 2024; built with 1.99.0 |
 | PostgreSQL | 18, with `pgvector` |
 | Redis | 8 |
 | NATS | JetStream |

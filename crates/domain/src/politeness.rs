@@ -206,13 +206,6 @@ impl From<PolitenessInput> for Politeness {
 
 #[cfg(test)]
 mod tests {
-    // Clamping returns exactly the ceiling constants, so exact float comparison is correct.
-    #![expect(
-        clippy::float_cmp,
-        reason = "these assertions compare clamped values against the exact bounds they were \
-                  clamped to, so equality is the property under test"
-    )]
-
     use super::*;
 
     #[test]

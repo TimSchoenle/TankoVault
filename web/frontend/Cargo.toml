@@ -132,7 +132,7 @@ i18nrs = { version = "0.1.9", default-features = false, features = ["dio"] }
 # markdown-to-HTML pipeline would need `dangerous_inner_html`, which is the one door this app
 # keeps shut (see `src/platform/mod.rs` and the served CSP).
 terrace-legal-dioxus = { git = "https://github.com/TimSchoenle/terrace-legal", tag = "v0.3.0" }
-terrace-legal-markdown = { git = "https://github.com/TimSchoenle/terrace-legal", tag = "v0.3.0" }
+terrace-legal-markdown = { git = "https://github.com/TimSchoenle/terrace-legal", tag = "v0.3.1" }
 terrace-legal-model = { git = "https://github.com/TimSchoenle/terrace-legal", tag = "v0.3.0" }
 # The logging facade, on both builds. Already in this graph — `dioxus` logs through it — so this
 # names a crate that is compiled either way rather than adding one. `clippy.toml` bans `dbg!` in
@@ -383,7 +383,14 @@ codegen-units = 1
 # too: a panicked UI thread has no recovery path there either, and the settings document is
 # written through a rename, so an abort mid-write leaves the previous one intact.
 panic = "abort"
-strip = "symbols"
+# `debuginfo`, not `symbols`. `dx` reads this key itself and runs `rust-objcopy` over the linked
+# module *before* `wasm-bindgen` (dioxus-cli 0.7.10, `post_process_executable`). From LLVM 23
+# (Rust 1.99) `--strip-all` removes every custom section, including `__wasm_bindgen_unstable`,
+# and `wasm-bindgen` then refuses the module. `--strip-debug` keeps that section, and the web
+# bundle loses nothing: `wasm-opt --strip-debug` drops debug info and the name section anyway.
+# `false` is not an alternative: `wasm-opt` aborts on LLVM 23's DWARF. The cost lands on the
+# Linux desktop binary, which keeps its symbol table (MSVC symbols live in the PDB regardless).
+strip = "debuginfo"
 
 # `dx serve` rebuilds constantly, so keep the debug profile fast to compile but still cheap
 # enough to ship over the dev server.

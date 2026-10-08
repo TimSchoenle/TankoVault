@@ -533,7 +533,42 @@ fn collapse_nullable_union(map: &mut serde_json::Map<String, serde_json::Value>)
     }
 }
 
-/// Downgrade `OpenAPI` 3.1.0 (utoipa 5 default) to 3.0.3 (openapiv3 crate requirement).
+/// Keywords a 3.0 consumer may read beside a `$ref`. Both are annotations only: a generator that
+/// ignores them loses documentation, never a type.
+#[cfg(feature = "full")]
+const REFERENCE_ANNOTATIONS: [&str; 3] = ["$ref", "description", "summary"];
+
+/// Move a `$ref` that carries schema keywords beside it into a single-member `allOf`, so those
+/// keywords survive the downgrade.
+///
+/// `OpenAPI` 3.1 lets a `$ref` have siblings, and utoipa 6 publishes a defaulted field of a
+/// schema type that way: `{"$ref": "…/ChannelPrefs", "default": {…}}`. In 3.0 every sibling of
+/// a `$ref` is ignored, and `typify` follows that rule — so the `default` vanished, the field fell
+/// out of `required` with nothing to fill it, and the generated client turned
+/// `NotificationPrefs::channels` (and three more) into `Option<_>`. Wrapping the reference keeps
+/// the keywords on a schema that 3.0 does read, which is the shape utoipa 5 emitted itself.
+///
+/// A reference with only annotation siblings ([`REFERENCE_ANNOTATIONS`]) is left alone: that is
+/// what [`collapse_nullable_union`] produces for every nullable reference, and wrapping it would
+/// change nothing but the document's shape.
+#[cfg(feature = "full")]
+fn wrap_annotated_reference(map: &mut serde_json::Map<String, serde_json::Value>) {
+    if !map.contains_key("$ref")
+        || map
+            .keys()
+            .all(|key| REFERENCE_ANNOTATIONS.contains(&key.as_str()))
+    {
+        return;
+    }
+    if let Some(reference) = map.remove("$ref") {
+        map.insert(
+            "allOf".to_owned(),
+            serde_json::json!([{ "$ref": reference }]),
+        );
+    }
+}
+
+/// Downgrade `OpenAPI` 3.1.0 (what utoipa publishes) to 3.0.3 (openapiv3 crate requirement).
 /// This handles the `type: [string, null]` -> `type: string, nullable: true` conversion
 /// and changes the version string.
 #[cfg(feature = "full")]
@@ -547,6 +582,7 @@ fn downgrade_to_3_0(value: &mut serde_json::Value) {
             }
 
             collapse_nullable_union(map);
+            wrap_annotated_reference(map);
 
             // Handle 'type' which can be a string or an array in 3.1
             if let Some(type_val) = map.remove("type") {
@@ -791,6 +827,38 @@ mod tests {
 
         let no_null = json!({ "oneOf": [{ "type": "string" }, { "type": "integer" }] });
         assert_eq!(downgraded(no_null.clone())["oneOf"], no_null["oneOf"]);
+    }
+
+    /// A defaulted reference must keep its `default` where a 3.0 reader looks for it.
+    ///
+    /// utoipa 6 publishes it as a `$ref` with siblings; carried over verbatim, `typify` ignored
+    /// the `default` and four `NotificationPrefs` fields became `Option<_>` in the client.
+    #[test]
+    fn a_reference_with_a_default_is_wrapped_so_the_default_survives() {
+        let out = downgraded(json!({
+            "$ref": "#/components/schemas/ChannelPrefs",
+            "default": { "in_app": true },
+            "description": "where it goes",
+        }));
+        assert_eq!(
+            out,
+            json!({
+                "allOf": [{ "$ref": "#/components/schemas/ChannelPrefs" }],
+                "default": { "in_app": true },
+                "description": "where it goes",
+            })
+        );
+    }
+
+    /// Annotation-only siblings are what every collapsed nullable reference carries; wrapping
+    /// those would reshape the document for no change in meaning.
+    #[test]
+    fn a_reference_with_only_annotations_is_left_alone() {
+        let annotated = json!({
+            "$ref": "#/components/schemas/PresetLink",
+            "description": "how it relates",
+        });
+        assert_eq!(downgraded(annotated.clone()), annotated);
     }
 
     /// The collapsed member is itself downgraded, not spliced in raw: it arrives in the same

@@ -45,7 +45,7 @@ xtask = "the repository's task runner, not a service: its commands (migrate, see
 config-contract = "a build-time generator, not a service: it prints the configuration contract each image publishes and is run inside the build to produce that file"
 
 [workspace.package]
-version = "11.0.3"
+version = "11.0.4"
 edition = "2024"
 authors = ["TankoVault contributors"]
 # No member inherits this — each crate describes itself, and this describes the repository.
@@ -154,9 +154,9 @@ progenitor-impl = "0.14.0"
 # `full` is what `syn::parse_file` needs (the config surface walker in `xtask`); pinned to the
 # major already in the tree, so it adds no `deny.toml` duplicate-version entry.
 syn = { version = "3", features = ["full"] }
-utoipa = { version = "5", features = ["uuid", "axum_extras"] }
-utoipa-axum = "0.2"
-utoipa-scalar = { version = "0.3", features = ["axum"] }
+utoipa = { version = "6", features = ["uuid", "axum_extras"] }
+utoipa-axum = "0.3"
+utoipa-scalar = { version = "0.4", features = ["axum"] }
 
 # --- async runtime & web ---
 tokio = { version = "1.43", features = ["full"] }
@@ -278,8 +278,8 @@ terrace-config = { git = "https://github.com/TimSchoenle/terrace-config", tag = 
 #
 # `utoipa` puts `ToSchema`/`IntoParams` on the wire types. `consent` stays off: it adds fields to
 # both published schemas.
-terrace-legal = { git = "https://github.com/TimSchoenle/terrace-legal", tag = "v0.3.0" }
-terrace-legal-axum = { git = "https://github.com/TimSchoenle/terrace-legal", tag = "v0.3.0", features = ["utoipa"] }
+terrace-legal = { git = "https://github.com/TimSchoenle/terrace-legal", tag = "v0.3.1" }
+terrace-legal-axum = { git = "https://github.com/TimSchoenle/terrace-legal", tag = "v0.3.1", features = ["utoipa"] }
 
 # --- auth / security ---
 # Every secret value in this workspace is a `secrecy` type — `SecretString` for text,

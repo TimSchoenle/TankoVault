@@ -20,8 +20,6 @@ ignore = [
     # so no RSA path is ever entered. Reviewed 2026-07-29; re-review 2026-10-29 or if HS256 stops
     # being the only accepted algorithm.
     "RUSTSEC-2023-0071",
-
-    # RUSTSEC-2024-0436 — `paste` unmaintained; compile-time-only proc macro, no runtime
-    # surface, no fix available. Reviewed 2026-07-29; re-review 2026-10-29.
-    "RUSTSEC-2024-0436",
+    # RUSTSEC-2024-0436 (`paste` unmaintained) left both lists on 2026-10-08: the graph now carries
+    # the `pastey` fork instead, and cargo-deny reported the entry as not detected.
 ]

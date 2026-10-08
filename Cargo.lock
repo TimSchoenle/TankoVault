@@ -1262,7 +1262,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d045de693cb712d0b22c6a64be5b953f67b3ce00ab5ad3dd5d8b441886ab8e1a"
 dependencies = [
  "quote",
- "syn 2.0.119",
+ "syn 3.0.6",
 ]
 
 [[package]]
@@ -1717,7 +1717,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3370,7 +3370,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4123,7 +4123,7 @@ dependencies = [
  "once_cell",
  "socket2 0.5.10",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4485,7 +4485,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4544,7 +4544,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5233,7 +5233,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4"
 dependencies = [
  "libc",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5633,7 +5633,7 @@ dependencies = [
  "tankovault-recsys",
  "tankovault-service",
  "tankovault-test-support",
- "terrace-config 0.15.0",
+ "terrace-config",
  "terrace-legal",
  "terrace-legal-axum",
  "thiserror 2.0.21",
@@ -5721,7 +5721,7 @@ dependencies = [
  "tankovault-db",
  "tankovault-domain",
  "tankovault-service",
- "terrace-config 0.15.0",
+ "terrace-config",
  "tokio",
 ]
 
@@ -5755,7 +5755,7 @@ dependencies = [
  "tankovault-config",
  "tankovault-service",
  "tankovault-solver",
- "terrace-config 0.15.0",
+ "terrace-config",
  "tokio",
  "tracing",
 ]
@@ -5768,7 +5768,7 @@ dependencies = [
  "serde",
  "tankovault-domain",
  "tankovault-matcher",
- "terrace-config 0.15.0",
+ "terrace-config",
 ]
 
 [[package]]
@@ -5786,7 +5786,7 @@ dependencies = [
  "tankovault-render",
  "tankovault-sync",
  "tankovault-worker",
- "terrace-config 0.15.0",
+ "terrace-config",
 ]
 
 [[package]]
@@ -5822,7 +5822,7 @@ dependencies = [
  "tankovault-recsys",
  "tankovault-service",
  "tankovault-test-support",
- "terrace-config 0.15.0",
+ "terrace-config",
  "time",
  "tokio",
  "tokio-util",
@@ -5857,7 +5857,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlx",
- "terrace-config 0.15.0",
+ "terrace-config",
  "thiserror 2.0.21",
  "time",
  "tokio",
@@ -5915,7 +5915,7 @@ dependencies = [
  "serde",
  "tankovault-config",
  "tankovault-service",
- "terrace-config 0.15.0",
+ "terrace-config",
  "tokio",
  "tower",
  "tower-http 0.7.1",
@@ -5949,7 +5949,7 @@ dependencies = [
  "tankovault-domain",
  "tankovault-email",
  "tankovault-service",
- "terrace-config 0.15.0",
+ "terrace-config",
  "time",
  "tokio",
  "tokio-util",
@@ -5982,7 +5982,7 @@ dependencies = [
  "tankovault-domain",
  "tankovault-service",
  "tankovault-solver",
- "terrace-config 0.15.0",
+ "terrace-config",
  "tokio",
  "tracing",
 ]
@@ -6013,7 +6013,7 @@ dependencies = [
  "tankovault-config",
  "tankovault-db",
  "tankovault-domain",
- "terrace-config 0.15.0",
+ "terrace-config",
  "thiserror 2.0.21",
  "tokio",
  "tokio-rustls",
@@ -6065,7 +6065,7 @@ dependencies = [
  "tankovault-matcher",
  "tankovault-service",
  "tankovault-test-support",
- "terrace-config 0.15.0",
+ "terrace-config",
  "thiserror 2.0.21",
  "time",
  "tokio",
@@ -6117,7 +6117,7 @@ dependencies = [
  "tankovault-fetch",
  "tankovault-service",
  "tankovault-solver",
- "terrace-config 0.15.0",
+ "terrace-config",
  "thiserror 2.0.21",
  "time",
  "tokio",
@@ -6133,10 +6133,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6150,18 +6150,6 @@ dependencies = [
 
 [[package]]
 name = "terrace-config"
-version = "0.13.0"
-source = "git+https://github.com/TimSchoenle/terrace-config?tag=v0.13.0#e527e54e0136806cf0d0052da8bee1f3e5302dfb"
-dependencies = [
- "figment",
- "serde",
- "serde_json",
- "terrace-config-macros 0.13.0",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "terrace-config"
 version = "0.15.0"
 source = "git+https://github.com/TimSchoenle/terrace-config?tag=v0.15.0#2f2c6064623d79a893acb76342a34a18946ae052"
 dependencies = [
@@ -6171,21 +6159,11 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
- "terrace-config-macros 0.15.0",
+ "terrace-config-macros",
  "thiserror 2.0.21",
  "tokio",
  "tokio-util",
  "tracing",
-]
-
-[[package]]
-name = "terrace-config-macros"
-version = "0.13.0"
-source = "git+https://github.com/TimSchoenle/terrace-config?tag=v0.13.0#e527e54e0136806cf0d0052da8bee1f3e5302dfb"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 3.0.6",
 ]
 
 [[package]]
@@ -6200,13 +6178,13 @@ dependencies = [
 
 [[package]]
 name = "terrace-legal"
-version = "0.3.1"
-source = "git+https://github.com/TimSchoenle/terrace-legal?tag=v0.3.1#cfe3362e23b69eaad9d35635bb4992a6454e156b"
+version = "0.3.2"
+source = "git+https://github.com/TimSchoenle/terrace-legal?tag=v0.3.2#b73dbc184ee5967b9fa446f34137f0037f5b70f0"
 dependencies = [
  "base64 0.23.1",
  "serde",
  "sha2 0.11.0",
- "terrace-config 0.13.0",
+ "terrace-config",
  "terrace-legal-model",
  "thiserror 2.0.21",
  "url",
@@ -6214,8 +6192,8 @@ dependencies = [
 
 [[package]]
 name = "terrace-legal-axum"
-version = "0.3.1"
-source = "git+https://github.com/TimSchoenle/terrace-legal?tag=v0.3.1#cfe3362e23b69eaad9d35635bb4992a6454e156b"
+version = "0.3.2"
+source = "git+https://github.com/TimSchoenle/terrace-legal?tag=v0.3.2#b73dbc184ee5967b9fa446f34137f0037f5b70f0"
 dependencies = [
  "axum",
  "http",
@@ -6227,8 +6205,8 @@ dependencies = [
 
 [[package]]
 name = "terrace-legal-model"
-version = "0.3.1"
-source = "git+https://github.com/TimSchoenle/terrace-legal?tag=v0.3.1#cfe3362e23b69eaad9d35635bb4992a6454e156b"
+version = "0.3.2"
+source = "git+https://github.com/TimSchoenle/terrace-legal?tag=v0.3.2#b73dbc184ee5967b9fa446f34137f0037f5b70f0"
 dependencies = [
  "serde",
  "thiserror 2.0.21",
@@ -7319,7 +7297,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

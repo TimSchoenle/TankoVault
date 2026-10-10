@@ -81,6 +81,11 @@ pub fn bearer(user: UserId) -> String {
     format!("Bearer {}", token.expose_secret())
 }
 
+/// The password hash every seeded user stores: a well-formed argon2id PHC string whose
+/// password was discarded, so it parses and verifies against nothing.
+pub const SEED_PASSWORD_HASH: &str = "$argon2id$v=19$m=19456,t=2,p=1$XhkraVB9klqBtBanzjjPEA$\
+                                  M6vcqzZncJ6r8ule0WPKKnXmskoaS5aHeX+xueVhGsE";
+
 /// The process-wide Postgres container, started once on first use and kept alive for the
 /// lifetime of the test binary.
 static PG: OnceCell<PgContainer> = OnceCell::const_new();
@@ -495,8 +500,8 @@ impl TestDb {
     /// Seed a user with the given username, capabilities and account status.
     ///
     /// The email is derived from the username so callers need only supply a name unique within
-    /// the test. The stored password hash is a placeholder: the harness authenticates by
-    /// minting access tokens directly (see [`bearer`]), never by logging in.
+    /// the test. The harness authenticates by minting access tokens directly (see [`bearer`]);
+    /// the stored hash is [`SEED_PASSWORD_HASH`], so a password login answers a plain refusal.
     pub async fn seed_user(
         &self,
         username: &str,
@@ -505,7 +510,7 @@ impl TestDb {
     ) -> UserId {
         let email = format!("{username}@example.test");
         let user =
-            tankovault_db::repo::users::create(&self.pool, &email, username, "$argon2id$seed")
+            tankovault_db::repo::users::create(&self.pool, &email, username, SEED_PASSWORD_HASH)
                 .await
                 .expect("seed user");
         let user_id = user.id;

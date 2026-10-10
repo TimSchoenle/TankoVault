@@ -1,8 +1,8 @@
 //! Argon2id password hashing.
 
 use crate::error::AuthError;
-use argon2::password_hash::rand_core::OsRng;
-use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
+use argon2::password_hash::phc::PasswordHash;
+use argon2::password_hash::{PasswordHasher as _, PasswordVerifier as _};
 use argon2::{Algorithm, Argon2, Params, Version};
 use secrecy::{ExposeSecret as _, SecretSlice, SecretString};
 
@@ -35,9 +35,8 @@ pub fn hash_password(
     password: &SecretString,
     pepper: &SecretSlice<u8>,
 ) -> Result<String, AuthError> {
-    let salt = SaltString::generate(&mut OsRng);
     hasher(pepper)?
-        .hash_password(password.expose_secret().as_bytes(), &salt)
+        .hash_password(password.expose_secret().as_bytes())
         .map(|h| h.to_string())
         .map_err(|_| AuthError::Hashing)
 }
@@ -112,6 +111,16 @@ mod tests {
         let password = SecretString::from("s3cret");
         let hash = hash_password(&password, &default_pepper()).unwrap();
         assert!(!verify_password(&password, &hash, &pepper(b"different-pepper")).unwrap());
+    }
+
+    #[test]
+    fn stored_hash_from_argon2_0_5_still_verifies() {
+        // Written by `argon2` 0.5.3 with the default pepper; every stored hash predates 0.6.
+        const STORED: &str = "$argon2id$v=19$m=19456,t=2,p=1$dGFua292YXVsdC1hcmdvbjI$\
+                              uY7LSPondWiKAJLZqFN2idQ3i9cru3g3FAtV9VSf/u4";
+        let password = SecretString::from("correct horse battery staple");
+        assert!(verify_password(&password, STORED, &default_pepper()).unwrap());
+        assert!(!verify_password(&password, STORED, &pepper(b"")).unwrap());
     }
 
     #[test]

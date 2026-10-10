@@ -141,6 +141,11 @@ skip = [
     { crate = "inout" },
     { crate = "polyval" },
     { crate = "universal-hash" },
+    # Password-hashing cluster: `crypto-glue` pins `argon2 0.5`; `crates/auth` uses 0.6. Same
+    # `crypto-glue` bump collapses it.
+    { crate = "argon2" },
+    { crate = "blake2" },
+    { crate = "password-hash" },
     # `thiserror` 1.x via `webauthn-rs-core`/`x509-parser`/`asn1-rs`/`der-parser`; we're on 2.
     { crate = "thiserror" },
     { crate = "thiserror-impl" },

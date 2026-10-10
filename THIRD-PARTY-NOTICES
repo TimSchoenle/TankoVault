@@ -36,7 +36,7 @@ Ships as: the eight service binaries (api, bootstrap, worker, control-plane, not
 
 Licences in this section, by number of crates:
 
-  Apache License 2.0 (Apache-2.0) — 388 crates, 38 distinct notices
+  Apache License 2.0 (Apache-2.0) — 392 crates, 38 distinct notices
   MIT License (MIT) — 118 crates, 73 distinct notices
   Unicode License v3 (Unicode-3.0) — 19 crates, 2 distinct notices
   BSD 3-Clause "New" or "Revised" License (BSD-3-Clause) — 13 crates, 9 distinct notices
@@ -259,6 +259,7 @@ by the block naming that crate.
   - anyhow 1.0.104
   - arc-swap 1.9.2
   - argon2 0.5.3
+  - argon2 0.6.0
   - asn1-rs 0.6.2
   - asn1-rs 0.7.2
   - asn1-rs-derive 0.5.1
@@ -279,6 +280,7 @@ by the block naming that crate.
   - base64ct 1.8.3
   - bitflags 2.13.2
   - blake2 0.10.6
+  - blake2 0.11.0
   - block-buffer 0.10.4
   - block-buffer 0.12.1
   - block-padding 0.3.3
@@ -425,6 +427,7 @@ by the block naming that crate.
   - parse-display 0.9.1
   - parse-display-derive 0.9.1
   - password-hash 0.5.0
+  - password-hash 0.6.1
   - pastey 0.2.3
   - pbkdf2 0.12.2
   - pear 0.2.9
@@ -432,6 +435,7 @@ by the block naming that crate.
   - pem-rfc7468 0.7.0
   - pem-rfc7468 1.0.0
   - percent-encoding 2.3.2
+  - phc 0.6.1
   - pin-project 1.1.13
   - pin-project-internal 1.1.13
   - pin-project-lite 0.2.17

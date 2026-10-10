@@ -1,8 +1,9 @@
 <!--
-Generated from .github/templates/README.md.hbs — edit that file, not this one. `auto-fix.yaml`
-renders it on every pull request and commits the result back to the branch; a push to `main`,
-and a pull request from a fork, are covered by `ci.yml`'s `readme` job, which renders with
-`check: true` and fails on a stale file rather than writing one.
+Generated from .github/templates/README.md.hbs — edit that file, not this one. The `readme` job
+in .github/workflows/auto-fix.yaml renders it on every pull request and commits the result back to
+the branch; a push to `main`, and a pull request from a fork, are covered by the `readme` job in
+.github/workflows/ci.yml, which renders with `check: true` and fails on a stale file rather than
+writing one.
 
 Variables come from .github/scripts/readme-variables.sh, which reads them out of the files that
 own them:
@@ -31,8 +32,8 @@ Multi-service Rust aggregator and tracker for manga, manhwa and manhua. Stores l
 
 ## What this is
 
-A hobby project, built for my own use. There is no publicly hosted instance, and no support
-promise attaches to any of the images below.
+A hobby project, built for its author's own use. There is no publicly hosted instance, and no
+support promise attaches to any of the images below.
 
 TankoVault indexes series metadata across independent provider sites and reconciles it into one
 **canonical series** with many **provider sources**. Watchlists, read progress, per-title
@@ -309,8 +310,8 @@ however they are funded.
 Where the line falls, in plain terms. Running your own instance for yourself, your household or
 your friends is fine, including when donations cover the hosting bill, and so is modifying it and
 publishing your fork under the same terms. Charging for access, running ads against it, or
-offering it to customers as a hosted service needs a licence from me. Open an issue and ask if
-you are unsure.
+offering it to customers as a hosted service needs a licence from the copyright holder. Open an
+issue and ask if you are unsure.
 
 The published images carry the same terms and ship them at `/LICENSE`. A registry page does not
 say so, but pulling one to run a paid service is unlicensed.

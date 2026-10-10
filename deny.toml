@@ -14,14 +14,12 @@ ignore = [
     # so no RSA path is ever entered. Reviewed 2026-07-29; re-review 2026-10-29 or if HS256 stops
     # being the only accepted algorithm.
     "RUSTSEC-2023-0071",
-
-    # RUSTSEC-2024-0436 — `paste` unmaintained; compile-time-only proc macro, no runtime
-    # surface, no fix available. Reviewed 2026-07-29; re-review 2026-10-29.
-    "RUSTSEC-2024-0436",
     # RUSTSEC-2025-0111 (`rustls-pemfile`) and RUSTSEC-2025-0134 ("Tarmageddon", `tokio-tar`)
     # were here until 2026-08-03. Both arrived only through `testcontainers`/`bollard`, which
     # has since dropped them; cargo-deny reported the entries as `advisory-not-detected`, so
     # they went per this file's own rule rather than being re-dated.
+    # RUSTSEC-2024-0436 (`paste` unmaintained) followed on 2026-10-08 for the same reason: the
+    # graph now carries the `pastey` fork instead, and the entry was reported as not detected.
 ]
 
 [licenses]
@@ -122,9 +120,16 @@ skip = [
     # latest release. `miniz_oxide` 0.8 is `backtrace` 0.3.76's (under `sentry`), beside
     # `flate2` 1.1.10's 0.9; `zstd` 0.13/`zstd-safe` 7 are `wreq-util` 3.0.0-rc.14's, beside
     # `compression-codecs` 0.4.44's 0.14/8. Collapses when `backtrace` and `wreq-util` release.
+    # The 2026-10 refresh added the `brotli` family on the same seam: `compression-codecs` 0.4.45
+    # takes `brotli` 9 (`brotli-decompressor` 6, `alloc-stdlib` 0.3, `alloc-no-stdlib` 3), while
+    # `wreq-util` 3.0.0-rc.14, still its latest release, requires `brotli` 8.
     { crate = "miniz_oxide" },
     { crate = "zstd" },
     { crate = "zstd-safe" },
+    { crate = "brotli" },
+    { crate = "brotli-decompressor" },
+    { crate = "alloc-stdlib" },
+    { crate = "alloc-no-stdlib" },
     # `synstructure` 0.14 via the ICU stack's `zerofrom-derive` 0.1.8; 0.13 via `asn1-rs-derive`
     # under both X.509 cohorts below, whose newest release (0.7) still requires 0.13.
     { crate = "synstructure" },

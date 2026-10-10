@@ -37,9 +37,9 @@ Ships as: the eight service binaries (api, bootstrap, worker, control-plane, not
 Licences in this section, by number of crates:
 
   Apache License 2.0 (Apache-2.0) — 388 crates, 38 distinct notices
-  MIT License (MIT) — 118 crates, 73 distinct notices
+  MIT License (MIT) — 120 crates, 73 distinct notices
   Unicode License v3 (Unicode-3.0) — 19 crates, 2 distinct notices
-  BSD 3-Clause "New" or "Revised" License (BSD-3-Clause) — 13 crates, 9 distinct notices
+  BSD 3-Clause "New" or "Revised" License (BSD-3-Clause) — 16 crates, 9 distinct notices
   Mozilla Public License 2.0 (MPL-2.0) — 11 crates, 2 distinct notices
   ISC License (ISC) — 10 crates, 23 distinct notices
   Community Data License Agreement Permissive 2.0 (CDLA-Permissive-2.0) — 3 crates
@@ -265,7 +265,7 @@ by the block naming that crate.
   - asn1-rs-derive 0.6.0
   - asn1-rs-impl 0.2.0
   - astral-tokio-tar 0.6.4
-  - async-compression 0.4.49
+  - async-compression 0.4.50
   - async-nats 0.50.0
   - async-trait 0.1.92
   - atomic-waker 1.1.2
@@ -287,7 +287,7 @@ by the block naming that crate.
   - btls 0.5.6
   - bytes-utils 0.1.4
   - cbc 0.1.2
-  - cc 1.5.1
+  - cc 1.6.0
   - cexpr 0.6.0
   - cfg-if 1.0.5
   - chacha20 0.10.2
@@ -301,7 +301,7 @@ by the block naming that crate.
   - clang-sys 1.9.1
   - cmake 0.1.58
   - cmov 0.5.4
-  - compression-codecs 0.4.44
+  - compression-codecs 0.4.45
   - compression-core 0.4.33
   - const-oid 0.10.2
   - const-oid 0.9.6
@@ -316,7 +316,7 @@ by the block naming that crate.
   - crypto-common 0.2.2
   - ctr 0.10.1
   - ctr 0.9.2
-  - ctutils 0.4.2
+  - ctutils 0.4.3
   - curve25519-dalek-derive 0.1.1
   - debugid 0.8.0
   - der 0.7.10
@@ -332,7 +332,7 @@ by the block naming that crate.
   - dtoa 1.0.11
   - dunce 1.0.5
   - dyn-clone 1.0.20
-  - either 1.18.0
+  - either 1.19.0
   - elliptic-curve 0.13.8
   - email-encoding 0.4.2
   - equivalent 1.0.2
@@ -385,9 +385,9 @@ by the block naming that crate.
   - itoa 1.0.18
   - jobserver 0.1.35
   - kbkdf 0.1.0-rc.1
-  - lazy_static 1.5.0
+  - lazy_static 1.5.1
   - left-right 0.11.8
-  - libc 0.2.189
+  - libc 0.2.190
   - linux-raw-sys 0.12.1
   - litrs 1.0.0
   - lock_api 0.4.14
@@ -508,7 +508,7 @@ by the block naming that crate.
   - socket2 0.6.5
   - spinning_top 0.3.0
   - spki 0.7.3
-  - spki 0.8.0
+  - spki 0.8.1
   - sqlx-core 0.9.0
   - sqlx-macros 0.9.0
   - sqlx-macros-core 0.9.0
@@ -540,7 +540,7 @@ by the block naming that crate.
   - typify-impl 0.6.2
   - typify-macro 0.6.2
   - uncased 0.9.10
-  - unicase 2.9.0
+  - unicase 2.10.0
   - unicode-bidi 0.3.18
   - unicode-ident 1.0.26
   - unicode-normalization 0.1.25
@@ -566,7 +566,7 @@ by the block naming that crate.
   - x509-parser 0.16.0
   - x509-parser 0.18.1
   - xattr 1.6.1
-  - zeroize 1.9.0
+  - zeroize 1.9.1
   - zeroize_derive 1.5.0
 
    Copyright [yyyy] [name of copyright owner]
@@ -657,7 +657,7 @@ Software.
 
 … continued, for:
 
-  - powerfmt 0.2.0
+  - powerfmt 0.2.1
 
    Copyright 2023 Jacob Pratt et al.
 
@@ -1491,8 +1491,8 @@ by the block naming that crate.
 
 … continued, for:
 
-  - zerocopy 0.8.59
-  - zerocopy-derive 0.8.59
+  - zerocopy 0.8.61
+  - zerocopy-derive 0.8.61
 
       boilerplate notice, with the fields enclosed by brackets "[]"
       replaced with your own identifying information. (Don't include
@@ -2589,6 +2589,7 @@ Applies to:
   - async-stream 0.3.6
   - async-stream-impl 0.3.6
   - brotli-decompressor 5.0.3
+  - brotli-decompressor 6.0.1
   - csp-policy 0.2.0
   - csp-shell 0.2.0
   - governor 0.10.4
@@ -2913,6 +2914,31 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 Applies to:
 
+  - brotli 8.0.4
+  - brotli 9.0.0
+
+Copyright (c) 2009, 2010, 2013-2016 by the Brotli Authors.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+Applies to:
+
   - derive_more 2.1.1
   - derive_more-impl 2.1.1
 
@@ -2940,7 +2966,7 @@ SOFTWARE.
 
 Applies to:
 
-  - h2 0.4.19
+  - h2 0.4.20
   - http2 0.5.20
 
 Copyright (c) 2017 h2 authors
@@ -3289,30 +3315,6 @@ CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
 IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
-
-Applies to:
-
-  - brotli 8.0.4
-
-Copyright (c) 2009, 2010, 2013-2016 by the Brotli Authors.
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
 
 Applies to:
 
@@ -3786,7 +3788,7 @@ SOFTWARE.
 
 Applies to:
 
-  - hyper 1.11.1
+  - hyper 1.12.0
 
 Copyright (c) 2014-2026 Sean McArthur
 
@@ -3995,7 +3997,7 @@ SOFTWARE.
 
 Applies to:
 
-  - mio 1.2.3
+  - mio 1.2.4
 
 Copyright (c) 2014 Carl Lerche and other MIO contributors
 
@@ -4471,7 +4473,7 @@ THE SOFTWARE.
 
 Applies to:
 
-  - want 0.3.1
+  - want 0.3.2
 
 Copyright (c) 2018-2019 Sean McArthur
 
@@ -4548,7 +4550,7 @@ Applies to:
   - tinystr 0.8.4
   - writeable 0.6.4
   - yoke 0.8.3
-  - yoke-derive 0.8.3
+  - yoke-derive 0.8.4
   - zerofrom 0.1.8
   - zerofrom-derive 0.1.8
   - zerotrie 0.2.5
@@ -4652,6 +4654,45 @@ BSD 3-Clause "New" or "Revised" License (BSD-3-Clause)
 
 Applies to:
 
+  - alloc-no-stdlib 2.0.4
+  - alloc-no-stdlib 3.0.0
+  - brotli 8.0.4
+  - brotli 9.0.0
+
+Copyright (c) 2016 Dropbox, Inc.
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+
+3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+Applies to:
+
+  - alloc-stdlib 0.2.4
+  - alloc-stdlib 0.3.0
+  - aws-lc-sys 0.45.0
+  - curve25519-dalek 4.1.3
+
+Copyright (c) <year> <owner>. 
+
+Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+
+3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+Applies to:
+
   - zstd 0.14.0
   - zstd-safe 7.3.0
   - zstd-safe 8.0.0
@@ -4685,42 +4726,6 @@ SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
 CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-Applies to:
-
-  - alloc-stdlib 0.2.4
-  - aws-lc-sys 0.45.0
-  - curve25519-dalek 4.1.3
-
-Copyright (c) <year> <owner>. 
-
-Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
-
-1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
-
-2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
-
-3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-Applies to:
-
-  - alloc-no-stdlib 2.0.4
-  - brotli 8.0.4
-
-Copyright (c) 2016 Dropbox, Inc.
-All rights reserved.
-
-Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
-
-1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
-
-2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
-
-3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 Applies to:
 
@@ -6677,12 +6682,12 @@ by the block naming that crate.
   - asn1-rs-derive 0.5.1
   - asn1-rs-impl 0.2.0
   - async-channel 2.5.0
-  - async-compression 0.4.49
+  - async-compression 0.4.50
   - async-executor 1.14.0
   - async-io 2.6.0
   - async-lock 3.4.2
   - async-process 2.5.0
-  - async-recursion 1.1.1
+  - async-recursion 1.2.0
   - async-signal 0.2.14
   - async-task 4.7.1
   - async-trait 0.1.92
@@ -6707,7 +6712,7 @@ by the block naming that crate.
   - bytemuck 1.25.2
   - cbc 0.1.2
   - cbc 0.2.1
-  - cc 1.5.1
+  - cc 1.6.0
   - cfg-expr 0.15.8
   - cfg-if 1.0.5
   - chrono 0.4.45
@@ -6715,7 +6720,7 @@ by the block naming that crate.
   - cipher 0.5.2
   - cmake 0.1.58
   - cmov 0.5.4
-  - compression-codecs 0.4.44
+  - compression-codecs 0.4.45
   - compression-core 0.4.33
   - concurrent-queue 2.5.0
   - const-oid 0.10.2
@@ -6735,7 +6740,7 @@ by the block naming that crate.
   - crypto-common 0.1.7
   - crypto-common 0.2.2
   - ctr 0.9.2
-  - ctutils 0.4.2
+  - ctutils 0.4.3
   - der 0.7.10
   - der-parser 9.0.0
   - der_derive 0.7.3
@@ -6772,7 +6777,7 @@ by the block naming that crate.
   - document-features 0.2.12
   - downcast-rs 1.2.1
   - dunce 1.0.5
-  - either 1.18.0
+  - either 1.19.0
   - elliptic-curve 0.13.8
   - enumset 1.1.14
   - enumset_derive 0.15.0
@@ -6829,10 +6834,10 @@ by the block naming that crate.
   - kbkdf 0.1.0-rc.1
   - keyboard-types 0.7.0
   - lazy-js-bundle 0.7.10
-  - lazy_static 1.5.0
+  - lazy_static 1.5.1
   - libappindicator 0.9.0
   - libappindicator-sys 0.9.0
-  - libc 0.2.189
+  - libc 0.2.190
   - linux-raw-sys 0.12.1
   - litrs 1.0.0
   - lock_api 0.4.14
@@ -6968,7 +6973,7 @@ by the block naming that crate.
   - tracing-wasm 0.2.1
   - tray-icon 0.21.3
   - tungstenite 0.28.0
-  - unicase 2.9.0
+  - unicase 2.10.0
   - unicode-ident 1.0.26
   - unicode-normalization 0.1.25
   - unicode-segmentation 1.13.3
@@ -6999,7 +7004,7 @@ by the block naming that crate.
   - x11rb-protocol 0.13.2
   - x509-cert 0.2.5
   - x509-parser 0.16.0
-  - zeroize 1.9.0
+  - zeroize 1.9.1
   - zune-core 0.5.3
   - zune-inflate 0.2.54
   - zune-jpeg 0.5.15
@@ -7075,7 +7080,7 @@ Software.
 
 … continued, for:
 
-  - powerfmt 0.2.0
+  - powerfmt 0.2.1
 
    Copyright 2023 Jacob Pratt et al.
 
@@ -7365,7 +7370,7 @@ by the block naming that crate.
   - hex 0.4.3
   - native-tls 0.2.18
   - no_std_io2 0.9.4
-  - notify-rust 4.18.1
+  - notify-rust 4.18.2
   - openssl 0.10.81
   - openssl-macros 0.1.1
   - quick-error 2.0.1
@@ -7436,8 +7441,8 @@ by the block naming that crate.
 
 … continued, for:
 
-  - zerocopy 0.8.59
-  - zerocopy-derive 0.8.59
+  - zerocopy 0.8.61
+  - zerocopy-derive 0.8.61
 
    APPENDIX: How to apply the Apache License to your work.
 
@@ -8694,7 +8699,7 @@ Applies to:
 
   - async-stream 0.3.6
   - async-stream-impl 0.3.6
-  - brotli-decompressor 5.0.3
+  - brotli-decompressor 6.0.1
   - dioxus-logger 0.7.10
   - dlopen2 0.8.2
   - dlopen2_derive 0.4.3
@@ -9282,7 +9287,7 @@ SOFTWARE.
 
 Applies to:
 
-  - brotli 8.0.4
+  - brotli 9.0.0
 
 Copyright (c) 2009, 2010, 2013-2016 by the Brotli Authors.
 
@@ -9555,7 +9560,7 @@ SOFTWARE.
 
 Applies to:
 
-  - hyper 1.11.1
+  - hyper 1.12.0
 
 Copyright (c) 2014-2026 Sean McArthur
 
@@ -9744,7 +9749,7 @@ SOFTWARE.
 
 Applies to:
 
-  - mio 1.2.3
+  - mio 1.2.4
 
 Copyright (c) 2014 Carl Lerche and other MIO contributors
 
@@ -10348,7 +10353,7 @@ SOFTWARE.
 
 Applies to:
 
-  - want 0.3.1
+  - want 0.3.2
 
 Copyright (c) 2018-2019 Sean McArthur
 
@@ -10555,7 +10560,7 @@ Applies to:
   - tinystr 0.8.4
   - writeable 0.6.4
   - yoke 0.8.3
-  - yoke-derive 0.8.3
+  - yoke-derive 0.8.4
   - zerofrom 0.1.8
   - zerofrom-derive 0.1.8
   - zerotrie 0.2.5
@@ -10659,7 +10664,7 @@ BSD 3-Clause "New" or "Revised" License (BSD-3-Clause)
 
 Applies to:
 
-  - alloc-stdlib 0.2.4
+  - alloc-stdlib 0.3.0
   - aws-lc-sys 0.45.0
   - exr 1.74.2
 
@@ -10677,8 +10682,8 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 
 Applies to:
 
-  - alloc-no-stdlib 2.0.4
-  - brotli 8.0.4
+  - alloc-no-stdlib 3.0.0
+  - brotli 9.0.0
 
 Copyright (c) 2016 Dropbox, Inc.
 All rights reserved.

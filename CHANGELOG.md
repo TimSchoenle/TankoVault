@@ -12,6 +12,43 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [11.0.5](https://github.com/TimSchoenle/TankoVault/compare/v11.0.4...v11.0.5) (2026-10-10)
+
+
+### Bug Fixes
+
+* **auth:** draw the AES-GCM nonce whole from the CSPRNG ([#500](https://github.com/TimSchoenle/TankoVault/issues/500)) ([17f7f19](https://github.com/TimSchoenle/TankoVault/commit/17f7f19320bc3b88b98cd6834cc07b26c4b964ce))
+* **deps:** update terrace-config and terrace-legal ([#487](https://github.com/TimSchoenle/TankoVault/issues/487)) ([2ccb989](https://github.com/TimSchoenle/TankoVault/commit/2ccb98905db2e3e2ceb391985c080396403519ff))
+
+
+### Documentation
+
+* **readme:** add a Helm chart badge ([#498](https://github.com/TimSchoenle/TankoVault/issues/498)) ([a13bf57](https://github.com/TimSchoenle/TankoVault/commit/a13bf57cebd9b36cda3d7b4001e25ae24ac99eb3))
+* **readme:** align the template with the README standard ([#502](https://github.com/TimSchoenle/TankoVault/issues/502)) ([bf33b2e](https://github.com/TimSchoenle/TankoVault/commit/bf33b2e89da341489d57d4ddb5ac627998b67a15))
+
+
+### CI
+
+* **codeql:** move to the shared CodeQL action ([#501](https://github.com/TimSchoenle/TankoVault/issues/501)) ([4700596](https://github.com/TimSchoenle/TankoVault/commit/47005965a11fdf1010b636f564c000fa03dc360a))
+
+
+### Miscellaneous
+
+* **deps:** update all non-major action updates ([2122bd3](https://github.com/TimSchoenle/TankoVault/commit/2122bd3c8e4591ad8d9a41283152ae2bf84040de))
+* **deps:** update all non-major action updates ([#499](https://github.com/TimSchoenle/TankoVault/issues/499)) ([2122bd3](https://github.com/TimSchoenle/TankoVault/commit/2122bd3c8e4591ad8d9a41283152ae2bf84040de))
+* **deps:** update debian:13-slim docker digest to a29215f ([#490](https://github.com/TimSchoenle/TankoVault/issues/490)) ([8166e09](https://github.com/TimSchoenle/TankoVault/commit/8166e095287ec2bdf63771f68cbc3a58e36a14d5))
+* **deps:** update rust:1.99.0-bookworm docker digest to 114c7a4 ([#497](https://github.com/TimSchoenle/TankoVault/issues/497)) ([80aadb4](https://github.com/TimSchoenle/TankoVault/commit/80aadb4dab7e2142393cb2f27a4c56458971f167))
+* **deps:** update step-security/harden-runner action to v2.22.0 ([#491](https://github.com/TimSchoenle/TankoVault/issues/491)) ([5181175](https://github.com/TimSchoenle/TankoVault/commit/518117544edcce694cc097130c1ca15eea08c325))
+* **deps:** update taiki-e/install-action action to v2.87.25 ([#488](https://github.com/TimSchoenle/TankoVault/issues/488)) ([0b11f6f](https://github.com/TimSchoenle/TankoVault/commit/0b11f6f7376f077b2d6943a4a32bc58cce9c1fd6))
+* **deps:** update taiki-e/install-action action to v2.87.26 ([#492](https://github.com/TimSchoenle/TankoVault/issues/492)) ([45cad57](https://github.com/TimSchoenle/TankoVault/commit/45cad576705ad68a02a09ead25973515f00dce6a))
+* **deps:** update timschoenle/actions/.github/workflows/maintenance-auto-approve-renovate.yaml to vworkflows-maintenance-auto-approve-renovate-v1.4.28 ([#503](https://github.com/TimSchoenle/TankoVault/issues/503)) ([478e3fb](https://github.com/TimSchoenle/TankoVault/commit/478e3fb6d992a8aa636093f4c099ddd3d84a86c5))
+* **deps:** update timschoenle/actions/.github/workflows/maintenance-timed-auto-pr-approve.yaml to vworkflows-maintenance-timed-auto-pr-approve-v1.2.40 ([#504](https://github.com/TimSchoenle/TankoVault/issues/504)) ([683f59e](https://github.com/TimSchoenle/TankoVault/commit/683f59e1ff9af4de2261263f057097f2521e91b9))
+* **deps:** update timschoenle/actions/actions/common/commit-changes to vactions-common-commit-changes-v1.5.6 ([#493](https://github.com/TimSchoenle/TankoVault/issues/493)) ([3a539bc](https://github.com/TimSchoenle/TankoVault/commit/3a539bc26bc0bc87792c3bdfa15fd4a0f8d35a33))
+* **deps:** update timschoenle/actions/actions/common/render-template to vactions-common-render-template-v1.2.6 ([#495](https://github.com/TimSchoenle/TankoVault/issues/495)) ([681bc21](https://github.com/TimSchoenle/TankoVault/commit/681bc21d5ee2b3f2ab5069a8c70257c2127d7057))
+* **deps:** update timschoenle/actions/actions/common/render-template-and-commit to vactions-common-render-template-and-commit-v1.1.13 ([#496](https://github.com/TimSchoenle/TankoVault/issues/496)) ([eeb208f](https://github.com/TimSchoenle/TankoVault/commit/eeb208fd05f83c052be2ce4924a6c5e879ed93f5))
+* **deps:** update timschoenle/actions/actions/common/render-template-and-commit to vactions-common-render-template-and-commit-v1.1.14 ([#505](https://github.com/TimSchoenle/TankoVault/issues/505)) ([c8f5ce0](https://github.com/TimSchoenle/TankoVault/commit/c8f5ce0186637550327e483daa54194584aa107b))
+* **deps:** update timschoenle/actions/actions/helm/update-chart-version to vactions-helm-update-chart-version-v1.6.16 ([#506](https://github.com/TimSchoenle/TankoVault/issues/506)) ([be0ce61](https://github.com/TimSchoenle/TankoVault/commit/be0ce61d19017f38ec3fa20a0811e412fb508b7a))
+
 ## [11.0.4](https://github.com/TimSchoenle/TankoVault/compare/v11.0.3...v11.0.4) (2026-10-07)
 
 

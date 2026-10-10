@@ -24,6 +24,7 @@ this file: a number with a home elsewhere is injected, a sentence is written.
 Multi-service Rust aggregator and tracker for manga, manhwa and manhua. Stores links and metadata, not chapter images.
 
 [![Release](https://img.shields.io/github/v/release/TimSchoenle/TankoVault?sort=semver)](https://github.com/TimSchoenle/TankoVault/releases)
+[![Chart](https://img.shields.io/badge/dynamic/yaml?url=https%3A%2F%2Ftimschoenle.github.io%2Fhelm-charts%2Findex.yaml&query=%24.entries.tankovault%5B0%5D.version&label=chart)](https://github.com/TimSchoenle/helm-charts/tree/main/charts/tankovault)
 [![CI](https://img.shields.io/github/actions/workflow/status/TimSchoenle/TankoVault/ci.yml?branch=main)](https://github.com/TimSchoenle/TankoVault/actions/workflows/ci.yml)
 [![License](https://img.shields.io/static/v1?label=license&message=PolyForm-Noncommercial-1.0.0&color=blue)](LICENSE)
 [![Rust](https://img.shields.io/static/v1?label=rust&message=1.94%2B&color=orange)](https://www.rust-lang.org)

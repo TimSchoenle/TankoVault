@@ -4978,7 +4978,7 @@ Mozilla Public License Version 2.0
 … continued, for:
 
   - crypto-glue 0.1.15
-  - progenitor-client 0.15.0
+  - progenitor-client 0.15.1
   - progenitor-impl 0.14.0
   - selectors 0.38.0
   - webauthn-attestation-ca 0.6.1-dev
@@ -6452,7 +6452,7 @@ Ships as: the WebAssembly bundle the frontend image serves, which executes in th
 
 Licences in this section, by number of crates:
 
-  Apache License 2.0 (Apache-2.0) — 448 crates, 30 distinct notices
+  Apache License 2.0 (Apache-2.0) — 447 crates, 30 distinct notices
   MIT License (MIT) — 145 crates, 71 distinct notices
   Unicode License v3 (Unicode-3.0) — 19 crates, 2 distinct notices
   BSD 3-Clause "New" or "Revised" License (BSD-3-Clause) — 9 crates, 6 distinct notices
@@ -7316,7 +7316,6 @@ by the block naming that crate.
   - windows-strings 0.100.0
   - windows-strings 0.4.2
   - windows-strings 0.5.1
-  - windows-sys 0.52.0
   - windows-sys 0.59.0
   - windows-sys 0.60.2
   - windows-sys 0.61.2
@@ -10835,7 +10834,7 @@ Applies to:
 
   - crypto-glue 0.1.15
   - option-ext 0.2.0
-  - progenitor-client 0.15.0
+  - progenitor-client 0.15.1
   - webauthn-attestation-ca 0.6.1-dev
   - webauthn-authenticator-rs 0.6.1-dev
   - webauthn-rs-core 0.6.1-dev

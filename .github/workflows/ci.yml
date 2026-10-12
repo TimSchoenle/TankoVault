@@ -978,11 +978,13 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           exit "$status"
 
-      # Informational only: the floor above is the gate, and Codecov's statuses never are. Last, so
-      # the ratchet's verdict is already its own step when an outage fails this one, and gated on
-      # the measurement alone, so a regressed ratchet still uploads the run that regressed.
+      # Informational only: the floor above is the gate, and Codecov's statuses never are. Gated on
+      # the measurement alone, so a regressed ratchet still uploads the run that regressed. This
+      # job feeds the required `CI` verdict, so a failed upload must not fail it:
+      # `continue-on-error` turns a Codecov outage into a warning on this step.
       - name: upload to Codecov
         if: ${{ !cancelled() && steps.measure.outcome == 'success' }}
+        continue-on-error: true
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           files: target/llvm-cov/codecov.json
@@ -1080,6 +1082,7 @@ jobs:
       # full runs.
       - name: upload to Codecov
         if: ${{ !cancelled() && steps.measure.outcome == 'success' }}
+        continue-on-error: true
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           files: target/llvm-cov/codecov-integration.json

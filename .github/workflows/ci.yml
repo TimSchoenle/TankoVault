@@ -919,6 +919,7 @@ jobs:
     if: needs.changes.outputs.rust == 'true'
     permissions:
       contents: read # to check out the code
+      id-token: write # to authenticate the Codecov upload with OIDC
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
@@ -949,11 +950,15 @@ jobs:
       - name: BoringSSL build dependencies
         uses: $/.github/actions/boringssl-deps
 
+      # The second `report` reads the profiles the first command collected, so the Codecov file
+      # costs no rebuild and describes the same run the ratchet judges.
       - name: cargo llvm-cov
+        id: measure
         run: |
           mkdir -p target/llvm-cov
           cargo llvm-cov --workspace --all-targets --summary-only
           cargo llvm-cov report --json --summary-only --output-path target/llvm-cov/coverage.json
+          cargo llvm-cov report --codecov --output-path target/llvm-cov/codecov.json
 
       # Tee'd into the run summary so the "consider raising it" suggestion lands on the run page
       # rather than only in a log nobody opens when the job is green — the floor file's own
@@ -972,6 +977,20 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           exit "$status"
+
+      # Informational only: the floor above is the gate, and Codecov's statuses never are. Last, so
+      # the ratchet's verdict is already its own step when an outage fails this one, and gated on
+      # the measurement alone, so a regressed ratchet still uploads the run that regressed.
+      - name: upload to Codecov
+        if: ${{ !cancelled() && steps.measure.outcome == 'success' }}
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          files: target/llvm-cov/codecov.json
+          disable_search: true
+          disable_telem: true
+          flags: offline
+          use_oidc: true
+          fail_ci_if_error: true
 
   # The other half of the ratchet. `coverage` above builds without `--features integration`, so
   # the 118 `crates/db`, 86 `services/api` and 55 `services/sync` tests never run there and code
@@ -995,6 +1014,7 @@ jobs:
     if: needs.changes.outputs.full == 'true'
     permissions:
       contents: read # to check out the code
+      id-token: write # to authenticate the Codecov upload with OIDC
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
@@ -1030,11 +1050,13 @@ jobs:
       # stand their own Postgres up via testcontainers against the runner's Docker, exactly as the
       # `integration` job does; inherited `SQLX_OFFLINE` still resolves the macros at compile time.
       - name: cargo llvm-cov (integration)
+        id: measure
         run: |
           mkdir -p target/llvm-cov
           cargo llvm-cov --workspace --all-targets --features integration --summary-only
           cargo llvm-cov report --json --summary-only \
             --output-path target/llvm-cov/coverage-integration.json
+          cargo llvm-cov report --codecov --output-path target/llvm-cov/codecov-integration.json
 
       # Reports on the summary either way — while the floor is `unset` that report *is* the
       # deliverable, since it carries the number to commit. See the `coverage` job for why
@@ -1052,6 +1074,20 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           exit "$status"
+
+      # Same placement and condition as the `coverage` job's upload, and for its reasons. This is
+      # the only producer of the `integration` flag, so Codecov carries it forward between the
+      # full runs.
+      - name: upload to Codecov
+        if: ${{ !cancelled() && steps.measure.outcome == 'success' }}
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          files: target/llvm-cov/codecov-integration.json
+          disable_search: true
+          disable_telem: true
+          flags: integration
+          use_oidc: true
+          fail_ci_if_error: true
 
   # What coverage cannot answer: a line executing is not a line anything asserted on. `cargo
   # mutants` rewrites one function body at a time and re-runs the tests; a surviving mutant is a

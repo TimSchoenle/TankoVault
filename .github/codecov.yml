@@ -1,0 +1,149 @@
+# Codecov configuration. Codecov reads this file from the commit it is processing, so a change
+# here takes effect on the pull request that makes it.
+#
+# Everything above `component_management` is the baseline every repository in the estate carries,
+# except `after_n_builds` and the reason statuses stay informational, both explained where they
+# are set. The components below are this workspace's own.
+#
+# Codecov reports here and gates nothing. The gate is the coverage ratchet in `ci.yml`, against
+# `.github/coverage-floor.txt` and `.github/coverage-floor-integration.txt`.
+
+codecov:
+  require_ci_to_pass: true
+  notify:
+    wait_for_ci: true
+    # Two flags exist, one per job in ci.yml: `offline` from `coverage` and `integration` from
+    # `coverage-integration`. Only the weekly `schedule` run and a `workflow_dispatch` with `full`
+    # run the second; a pull request or a push to `main` uploads `offline` alone, and only when the
+    # `rust` path filter matched. At 2 Codecov would wait on every pull request for an upload that
+    # never comes. At 1 a full run notifies on its first upload and updates when the second lands,
+    # and carryforward below fills the missing flag on every other commit.
+    after_n_builds: 1
+
+coverage:
+  precision: 2
+  round: down
+  range: '60...90'
+  # Informational permanently, not for the rollout only. CI is path-filtered, so a commit that
+  # touches no Rust uploads nothing and gets no Codecov status at all; a required status would
+  # block it forever. The ratchet floors are the gate.
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 1%
+        if_ci_failed: error
+        informational: true
+    patch:
+      default:
+        target: 80%
+        # A pull request that changes no measured line, such as a lockfile update, passes rather
+        # than reporting 0% of nothing.
+        if_not_found: success
+        informational: true
+
+comment:
+  layout: 'condensed_header, diff, flags, components, condensed_files, condensed_footer'
+  behavior: default
+  require_changes: 'coverage_drop OR uncovered_patch'
+
+github_checks:
+  annotations: false
+
+# Load-bearing here: `integration` is uploaded once a week, and every commit in between inherits it
+# from its parent. Without carryforward the project figure would drop to the offline suite's on
+# every pull request.
+flag_management:
+  default_rules:
+    carryforward: true
+
+ignore:
+  - '**/fuzz/**'
+  - 'xtask/**'
+  - '**/benches/**'
+  - '**/examples/**'
+  - '**/generated/**'
+
+# One component per workspace member, so a pull request's comment shows which crate its coverage
+# moved in. `xtask` is ignored above and has none. `services/api/test-support` sits inside
+# `services/api`, so the `api` component excludes it.
+component_management:
+  individual_components:
+    - component_id: domain
+      name: tankovault-domain
+      paths: ['crates/domain/**']
+    - component_id: config
+      name: tankovault-config
+      paths: ['crates/config/**']
+    - component_id: config_contract
+      name: tankovault-config-contract
+      paths: ['crates/config-contract/**']
+    - component_id: contracts
+      name: tankovault-contracts
+      paths: ['crates/contracts/**']
+    - component_id: service
+      name: tankovault-service
+      paths: ['crates/service/**']
+    - component_id: db
+      name: tankovault-db
+      paths: ['crates/db/**']
+    - component_id: fetch
+      name: tankovault-fetch
+      paths: ['crates/fetch/**']
+    - component_id: solver
+      name: tankovault-solver
+      paths: ['crates/solver/**']
+    - component_id: adapters
+      name: tankovault-adapters
+      paths: ['crates/adapters/**']
+    - component_id: auth
+      name: tankovault-auth
+      paths: ['crates/auth/**']
+    - component_id: email
+      name: tankovault-email
+      paths: ['crates/email/**']
+    - component_id: matcher
+      name: tankovault-matcher
+      paths: ['crates/matcher/**']
+    - component_id: recsys
+      name: tankovault-recsys
+      paths: ['crates/recsys/**']
+    - component_id: bus
+      name: tankovault-bus
+      paths: ['crates/bus/**']
+    - component_id: api_client
+      name: tankovault-api-client
+      paths: ['crates/api-client/**']
+    - component_id: test_support
+      name: tankovault-test-support
+      paths: ['crates/test-support/**']
+    - component_id: api
+      name: tankovault-api
+      paths: ['services/api/**', '!services/api/test-support/**']
+    - component_id: api_test_support
+      name: tankovault-api-test-support
+      paths: ['services/api/test-support/**']
+    - component_id: control_plane
+      name: tankovault-control-plane
+      paths: ['services/control-plane/**']
+    - component_id: worker
+      name: tankovault-worker
+      paths: ['services/worker/**']
+    - component_id: notifier
+      name: tankovault-notifier
+      paths: ['services/notifier/**']
+    - component_id: sync
+      name: tankovault-sync
+      paths: ['services/sync/**']
+    - component_id: challenge_solver
+      name: tankovault-challenge-solver
+      paths: ['services/challenge-solver/**']
+    - component_id: render
+      name: tankovault-render
+      paths: ['services/render/**']
+    - component_id: frontend
+      name: tankovault-frontend
+      paths: ['services/frontend/**']
+    - component_id: bootstrap
+      name: tankovault-bootstrap
+      paths: ['services/bootstrap/**']

@@ -2842,7 +2842,7 @@ Applies to:
 
   - tokio 1.53.2
   - tokio-stream 0.1.19
-  - tokio-util 0.7.19
+  - tokio-util 0.7.20
 
 MIT License
 

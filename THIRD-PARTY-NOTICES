@@ -484,7 +484,7 @@ by the block naming that crate.
   - serde_core 1.0.229
   - serde_derive 1.0.229
   - serde_derive_internals 0.29.1
-  - serde_json 1.0.151
+  - serde_json 1.0.152
   - serde_nanos 0.1.4
   - serde_path_to_error 0.1.20
   - serde_repr 0.1.21
@@ -6929,7 +6929,7 @@ by the block naming that crate.
   - serde_cbor_2 0.13.0
   - serde_core 1.0.229
   - serde_derive 1.0.229
-  - serde_json 1.0.151
+  - serde_json 1.0.152
   - serde_repr 0.1.21
   - serde_urlencoded 0.7.1
   - serde_with 3.24.0

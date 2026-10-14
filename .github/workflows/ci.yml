@@ -97,7 +97,7 @@ jobs:
       readme: ${{ steps.decide.outputs.full == 'true' || steps.filter.outputs.readme == 'true' }}
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
@@ -349,7 +349,7 @@ jobs:
       contents: read # to check out the code
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
@@ -423,7 +423,7 @@ jobs:
       contents: read # to check out the code
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
@@ -503,7 +503,7 @@ jobs:
       contents: read # to check out the code
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
@@ -586,7 +586,7 @@ jobs:
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/tankovault
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
@@ -635,7 +635,7 @@ jobs:
       contents: read # to check out the code
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
@@ -674,7 +674,7 @@ jobs:
       contents: read # to check out both revisions of the spec
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
@@ -733,7 +733,7 @@ jobs:
       contents: read # to check out the code
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
@@ -807,7 +807,7 @@ jobs:
       contents: read # to check out the code
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
@@ -816,7 +816,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
 
@@ -845,7 +845,7 @@ jobs:
       contents: read # to check out the full history
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
@@ -872,7 +872,7 @@ jobs:
       contents: read # to check out the code
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
@@ -919,9 +919,10 @@ jobs:
     if: needs.changes.outputs.rust == 'true'
     permissions:
       contents: read # to check out the code
+      id-token: write # to authenticate the Codecov upload with OIDC
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
@@ -942,18 +943,22 @@ jobs:
           shared-key: coverage
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-on-failure: true
-      - uses: taiki-e/install-action@e407f7bafb71fd004bc5c2da3032e5470cbb6ef0 # v2.87.24
+      - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
         with:
           tool: cargo-llvm-cov
 
       - name: BoringSSL build dependencies
         uses: $/.github/actions/boringssl-deps
 
+      # The second `report` reads the profiles the first command collected, so the Codecov file
+      # costs no rebuild and describes the same run the ratchet judges.
       - name: cargo llvm-cov
+        id: measure
         run: |
           mkdir -p target/llvm-cov
           cargo llvm-cov --workspace --all-targets --summary-only
           cargo llvm-cov report --json --summary-only --output-path target/llvm-cov/coverage.json
+          cargo llvm-cov report --codecov --output-path target/llvm-cov/codecov.json
 
       # Tee'd into the run summary so the "consider raising it" suggestion lands on the run page
       # rather than only in a log nobody opens when the job is green — the floor file's own
@@ -972,6 +977,22 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           exit "$status"
+
+      # Informational only: the floor above is the gate, and Codecov's statuses never are. Gated on
+      # the measurement alone, so a regressed ratchet still uploads the run that regressed. This
+      # job feeds the required `CI` verdict, so a failed upload must not fail it:
+      # `continue-on-error` turns a Codecov outage into a warning on this step.
+      - name: upload to Codecov
+        if: ${{ !cancelled() && steps.measure.outcome == 'success' }}
+        continue-on-error: true
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          files: target/llvm-cov/codecov.json
+          disable_search: true
+          disable_telem: true
+          flags: offline
+          use_oidc: true
+          fail_ci_if_error: true
 
   # The other half of the ratchet. `coverage` above builds without `--features integration`, so
   # the 118 `crates/db`, 86 `services/api` and 55 `services/sync` tests never run there and code
@@ -995,9 +1016,10 @@ jobs:
     if: needs.changes.outputs.full == 'true'
     permissions:
       contents: read # to check out the code
+      id-token: write # to authenticate the Codecov upload with OIDC
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
@@ -1019,7 +1041,7 @@ jobs:
           shared-key: coverage-integration
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-on-failure: true
-      - uses: taiki-e/install-action@e407f7bafb71fd004bc5c2da3032e5470cbb6ef0 # v2.87.24
+      - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
         with:
           tool: cargo-llvm-cov
 
@@ -1030,11 +1052,13 @@ jobs:
       # stand their own Postgres up via testcontainers against the runner's Docker, exactly as the
       # `integration` job does; inherited `SQLX_OFFLINE` still resolves the macros at compile time.
       - name: cargo llvm-cov (integration)
+        id: measure
         run: |
           mkdir -p target/llvm-cov
           cargo llvm-cov --workspace --all-targets --features integration --summary-only
           cargo llvm-cov report --json --summary-only \
             --output-path target/llvm-cov/coverage-integration.json
+          cargo llvm-cov report --codecov --output-path target/llvm-cov/codecov-integration.json
 
       # Reports on the summary either way — while the floor is `unset` that report *is* the
       # deliverable, since it carries the number to commit. See the `coverage` job for why
@@ -1052,6 +1076,21 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           exit "$status"
+
+      # Same placement and condition as the `coverage` job's upload, and for its reasons. This is
+      # the only producer of the `integration` flag, so Codecov carries it forward between the
+      # full runs.
+      - name: upload to Codecov
+        if: ${{ !cancelled() && steps.measure.outcome == 'success' }}
+        continue-on-error: true
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          files: target/llvm-cov/codecov-integration.json
+          disable_search: true
+          disable_telem: true
+          flags: integration
+          use_oidc: true
+          fail_ci_if_error: true
 
   # What coverage cannot answer: a line executing is not a line anything asserted on. `cargo
   # mutants` rewrites one function body at a time and re-runs the tests; a surviving mutant is a
@@ -1072,7 +1111,7 @@ jobs:
       contents: read # to check out the code
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
@@ -1091,7 +1130,7 @@ jobs:
         with:
           shared-key: test
           save-if: false
-      - uses: taiki-e/install-action@e407f7bafb71fd004bc5c2da3032e5470cbb6ef0 # v2.87.24
+      - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
         with:
           tool: cargo-mutants
 
@@ -1104,7 +1143,7 @@ jobs:
       # Uploaded either way: `outcomes.json` feeds the next triage, `missed.txt` is what to read.
       - name: mutants report
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: mutants-report
           path: mutants.out/
@@ -1122,7 +1161,7 @@ jobs:
       contents: read # to check out the code
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
@@ -1159,7 +1198,7 @@ jobs:
       contents: read # to check out the code
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
@@ -1179,7 +1218,7 @@ jobs:
           shared-key: notices
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-on-failure: true
-      - uses: taiki-e/install-action@e407f7bafb71fd004bc5c2da3032e5470cbb6ef0 # v2.87.24
+      - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
         with:
           tool: cargo-about
 
@@ -1216,7 +1255,7 @@ jobs:
       issues: write # and opens an issue instead, on the scheduled run
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
@@ -1252,7 +1291,7 @@ jobs:
       contents: read # to check out the code
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
@@ -1295,7 +1334,7 @@ jobs:
       contents: read # to check out the config
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
@@ -1341,7 +1380,7 @@ jobs:
       contents: read # to check out the template and the document it renders to
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
@@ -1357,7 +1396,7 @@ jobs:
         run: echo "json=$(bash .github/scripts/readme-variables.sh)" >> "$GITHUB_OUTPUT"
 
       - name: README.md matches its template
-        uses: TimSchoenle/actions/actions/common/render-template@c4068f4412c52bcf92d15f9bb255d37b2eafd0b7 # tag=actions-common-render-template-v1.2.5
+        uses: TimSchoenle/actions/actions/common/render-template@1e89d598e447ab05d36edc9e9d18e8771adf6426 # tag=actions-common-render-template-v1.2.6
         with:
           template: .github/templates/README.md.hbs
           output: README.md
@@ -1424,7 +1463,7 @@ jobs:
         include: ${{ fromJSON(needs.changes.outputs.arches) }}
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
@@ -1493,7 +1532,7 @@ jobs:
         bin: ${{ fromJSON(needs.changes.outputs.images) }}
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
@@ -1641,7 +1680,7 @@ jobs:
         bin: [api, render]
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
@@ -1746,7 +1785,7 @@ jobs:
       packages: read # to import the layer cache from ghcr.io
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 

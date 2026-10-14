@@ -170,7 +170,7 @@ jobs:
       readme: ${{ steps.filter.outputs.readme }}
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
@@ -245,7 +245,7 @@ jobs:
     permissions: {}
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
@@ -409,7 +409,7 @@ jobs:
       - name: BoringSSL build dependencies
         uses: $/.github/actions/boringssl-deps
 
-      - uses: taiki-e/install-action@e407f7bafb71fd004bc5c2da3032e5470cbb6ef0 # v2.87.24
+      - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
         with:
           tool: cargo-about
 
@@ -490,7 +490,7 @@ jobs:
 
       # The same recipe a developer runs, rather than a second spelling of it in YAML.
       - name: Install just
-        uses: taiki-e/install-action@e407f7bafb71fd004bc5c2da3032e5470cbb6ef0 # v2.87.24
+        uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
         with:
           tool: just
 
@@ -503,7 +503,7 @@ jobs:
         run: just contract-json
 
       # Same Node major as `ci.yml`'s `css` job, which is what judges the result.
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
 
@@ -535,7 +535,7 @@ jobs:
       #
       # No `if:` guard: the action detects an unchanged tree itself and commits nothing.
       - name: Commit the fixes
-        uses: TimSchoenle/actions/actions/common/commit-changes@c4068f4412c52bcf92d15f9bb255d37b2eafd0b7 # tag=actions-common-commit-changes-v1.5.5
+        uses: TimSchoenle/actions/actions/common/commit-changes@1e89d598e447ab05d36edc9e9d18e8771adf6426 # tag=actions-common-commit-changes-v1.5.6
         with:
           commit_message: "style: apply the mechanical fixes (lockfiles, clippy --fix, fmt, regenerated artefacts)"
           token: ${{ steps.generate_token.outputs.token }}
@@ -569,7 +569,7 @@ jobs:
       contents: read # the write happens with the App token below, not with GITHUB_TOKEN
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
@@ -604,7 +604,7 @@ jobs:
       # that merely touched `Cargo.toml` makes no commit and no API call.
       - name: render README.md and commit it
         id: render
-        uses: TimSchoenle/actions/actions/common/render-template-and-commit@c4068f4412c52bcf92d15f9bb255d37b2eafd0b7 # tag=actions-common-render-template-and-commit-v1.1.12
+        uses: TimSchoenle/actions/actions/common/render-template-and-commit@5f23e7ecae779a09b699ce2983ec5e49e5f2b0a5 # tag=actions-common-render-template-and-commit-v1.1.14
         with:
           template: .github/templates/README.md.hbs
           output: README.md

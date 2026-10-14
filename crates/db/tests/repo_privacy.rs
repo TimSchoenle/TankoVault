@@ -9,7 +9,7 @@ use std::collections::BTreeSet;
 
 use tankovault_db::repo::{privacy, users};
 use tankovault_domain::{AccountStatus, Permission, UserId};
-use tankovault_test_support::TestDb;
+use tankovault_test_support::{SEED_PASSWORD_HASH, TestDb};
 
 /// Tables whose rows are about the subject, keyed by their export-document key.
 /// [`the_export_has_a_key_for_every_declared_table`] checks the SQL agrees.
@@ -296,7 +296,7 @@ async fn the_export_carries_no_credential_material() {
         "a-recognisable-session-token-hash",
         "access_token",
         "refresh_token",
-        "$argon2id$seed",
+        SEED_PASSWORD_HASH,
         "secret",
         "code_hash",
         "a-recognisable-recovery-code-hash",

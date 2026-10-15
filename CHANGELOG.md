@@ -12,6 +12,26 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [11.0.5](https://github.com/TimSchoenle/TankoVault/compare/v11.0.4...v11.0.5) (2026-10-15)
+
+
+### Bug Fixes
+
+* **auth:** draw the AES-GCM nonce whole from the CSPRNG ([#500](https://github.com/TimSchoenle/TankoVault/issues/500)) ([17f7f19](https://github.com/TimSchoenle/TankoVault/commit/17f7f19320bc3b88b98cd6834cc07b26c4b964ce))
+* **deps:** update terrace-config and terrace-legal ([#487](https://github.com/TimSchoenle/TankoVault/issues/487)) ([2ccb989](https://github.com/TimSchoenle/TankoVault/commit/2ccb98905db2e3e2ceb391985c080396403519ff))
+
+
+### Dependencies
+
+* **deps:** update rust crate proptest to v1.12.0 ([#521](https://github.com/TimSchoenle/TankoVault/issues/521)) ([3371b3d](https://github.com/TimSchoenle/TankoVault/commit/3371b3d8d3fd852fed06ea1ef3cec86616abb4c5))
+* **deps:** update rust crate rustls to v0.23.46 [security] ([#522](https://github.com/TimSchoenle/TankoVault/issues/522)) ([058ce1f](https://github.com/TimSchoenle/TankoVault/commit/058ce1f67e80a8cabee5e8fea975fea208b97b99))
+* **deps:** update rust crate serde_json to v1.0.152 ([#520](https://github.com/TimSchoenle/TankoVault/issues/520)) ([1346556](https://github.com/TimSchoenle/TankoVault/commit/13465561a378914ca2ab5994b73994604a7e2505))
+* **deps:** update rust crate serde_json to v1.0.154 ([#523](https://github.com/TimSchoenle/TankoVault/issues/523)) ([bb97e1e](https://github.com/TimSchoenle/TankoVault/commit/bb97e1ec062d8f08dec05328d12b5566be37fb89))
+* **deps:** update rust crate syn to v3.0.7 ([#519](https://github.com/TimSchoenle/TankoVault/issues/519)) ([7d5d9aa](https://github.com/TimSchoenle/TankoVault/commit/7d5d9aa0f61407a2e3e7f9db0121a5000b3e4c39))
+* **deps:** update rust crate syn to v3.0.8 ([#524](https://github.com/TimSchoenle/TankoVault/issues/524)) ([d346b5f](https://github.com/TimSchoenle/TankoVault/commit/d346b5f678973a1946e4ea6c151e01def5f02fa9))
+* **deps:** update rust crate tokio-util to v0.7.20 ([#513](https://github.com/TimSchoenle/TankoVault/issues/513)) ([d08d2d8](https://github.com/TimSchoenle/TankoVault/commit/d08d2d83ccb508f9ded830a900d093d6ceeba175))
+* **deps:** update rust crate uuid to v1.28.0 ([#518](https://github.com/TimSchoenle/TankoVault/issues/518)) ([7a8ea5b](https://github.com/TimSchoenle/TankoVault/commit/7a8ea5b5d74997c94bbf4867472cc357a008d70a))
+
 ## [11.0.4](https://github.com/TimSchoenle/TankoVault/compare/v11.0.3...v11.0.4) (2026-10-07)
 
 

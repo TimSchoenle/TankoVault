@@ -409,7 +409,7 @@ jobs:
       - name: BoringSSL build dependencies
         uses: $/.github/actions/boringssl-deps
 
-      - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
         with:
           tool: cargo-about
 
@@ -490,7 +490,7 @@ jobs:
 
       # The same recipe a developer runs, rather than a second spelling of it in YAML.
       - name: Install just
-        uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+        uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
         with:
           tool: just
 
@@ -535,7 +535,7 @@ jobs:
       #
       # No `if:` guard: the action detects an unchanged tree itself and commits nothing.
       - name: Commit the fixes
-        uses: TimSchoenle/actions/actions/common/commit-changes@1e89d598e447ab05d36edc9e9d18e8771adf6426 # tag=actions-common-commit-changes-v1.5.6
+        uses: TimSchoenle/actions/actions/common/commit-changes@f33849da61e2397d3a9277762d09a1bf0d2b9d7c # tag=actions-common-commit-changes-v1.5.7
         with:
           commit_message: "style: apply the mechanical fixes (lockfiles, clippy --fix, fmt, regenerated artefacts)"
           token: ${{ steps.generate_token.outputs.token }}

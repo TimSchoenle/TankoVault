@@ -943,7 +943,7 @@ jobs:
           shared-key: coverage
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-on-failure: true
-      - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
         with:
           tool: cargo-llvm-cov
 
@@ -1041,7 +1041,7 @@ jobs:
           shared-key: coverage-integration
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-on-failure: true
-      - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
         with:
           tool: cargo-llvm-cov
 
@@ -1130,7 +1130,7 @@ jobs:
         with:
           shared-key: test
           save-if: false
-      - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
         with:
           tool: cargo-mutants
 
@@ -1218,7 +1218,7 @@ jobs:
           shared-key: notices
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-on-failure: true
-      - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
         with:
           tool: cargo-about
 
@@ -1396,7 +1396,7 @@ jobs:
         run: echo "json=$(bash .github/scripts/readme-variables.sh)" >> "$GITHUB_OUTPUT"
 
       - name: README.md matches its template
-        uses: TimSchoenle/actions/actions/common/render-template@1e89d598e447ab05d36edc9e9d18e8771adf6426 # tag=actions-common-render-template-v1.2.6
+        uses: TimSchoenle/actions/actions/common/render-template@f33849da61e2397d3a9277762d09a1bf0d2b9d7c # tag=actions-common-render-template-v1.2.7
         with:
           template: .github/templates/README.md.hbs
           output: README.md

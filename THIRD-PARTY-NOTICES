@@ -37,9 +37,9 @@ Ships as: the eight service binaries (api, bootstrap, worker, control-plane, not
 Licences in this section, by number of crates:
 
   Apache License 2.0 (Apache-2.0) — 392 crates, 38 distinct notices
-  MIT License (MIT) — 118 crates, 73 distinct notices
-  Unicode License v3 (Unicode-3.0) — 19 crates, 2 distinct notices
-  BSD 3-Clause "New" or "Revised" License (BSD-3-Clause) — 13 crates, 9 distinct notices
+  MIT License (MIT) — 120 crates, 73 distinct notices
+  Unicode License v3 (Unicode-3.0) — 20 crates, 2 distinct notices
+  BSD 3-Clause "New" or "Revised" License (BSD-3-Clause) — 16 crates, 9 distinct notices
   Mozilla Public License 2.0 (MPL-2.0) — 11 crates, 2 distinct notices
   ISC License (ISC) — 10 crates, 23 distinct notices
   Community Data License Agreement Permissive 2.0 (CDLA-Permissive-2.0) — 3 crates
@@ -266,12 +266,12 @@ by the block naming that crate.
   - asn1-rs-derive 0.6.0
   - asn1-rs-impl 0.2.0
   - astral-tokio-tar 0.6.4
-  - async-compression 0.4.49
+  - async-compression 0.4.50
   - async-nats 0.50.0
   - async-trait 0.1.92
   - atomic-waker 1.1.2
   - autocfg 1.5.1
-  - aws-lc-sys 0.45.0
+  - aws-lc-sys 0.46.0
   - backtrace 0.3.76
   - base16ct 0.2.0
   - base64 0.21.7
@@ -289,7 +289,7 @@ by the block naming that crate.
   - btls 0.5.6
   - bytes-utils 0.1.4
   - cbc 0.1.2
-  - cc 1.5.1
+  - cc 1.8.0
   - cexpr 0.6.0
   - cfg-if 1.0.5
   - chacha20 0.10.2
@@ -303,7 +303,7 @@ by the block naming that crate.
   - clang-sys 1.9.1
   - cmake 0.1.58
   - cmov 0.5.4
-  - compression-codecs 0.4.44
+  - compression-codecs 0.4.45
   - compression-core 0.4.33
   - const-oid 0.10.2
   - const-oid 0.9.6
@@ -318,7 +318,7 @@ by the block naming that crate.
   - crypto-common 0.2.2
   - ctr 0.10.1
   - ctr 0.9.2
-  - ctutils 0.4.2
+  - ctutils 0.4.3
   - curve25519-dalek-derive 0.1.1
   - debugid 0.8.0
   - der 0.7.10
@@ -334,10 +334,10 @@ by the block naming that crate.
   - dtoa 1.0.11
   - dunce 1.0.5
   - dyn-clone 1.0.20
-  - either 1.18.0
+  - either 1.19.0
   - elliptic-curve 0.13.8
   - email-encoding 0.4.2
-  - equivalent 1.0.2
+  - equivalent 1.0.3
   - errno 0.3.14
   - etcetera 0.11.0
   - event-listener 5.4.2
@@ -381,17 +381,17 @@ by the block naming that crate.
   - indexmap 2.14.2
   - inlinable_string 0.1.15
   - inout 0.1.4
-  - inout 0.2.2
+  - inout 0.2.4
   - itertools 0.13.0
   - itertools 0.14.0
   - itoa 1.0.18
   - jobserver 0.1.35
   - kbkdf 0.1.0-rc.1
-  - lazy_static 1.5.0
+  - lazy_static 1.5.1
   - left-right 0.11.8
-  - libc 0.2.189
+  - libc 0.2.191
   - linux-raw-sys 0.12.1
-  - litrs 1.0.0
+  - litrs 1.0.1
   - lock_api 0.4.14
   - log 0.4.34
   - markup5ever 0.39.0
@@ -472,7 +472,7 @@ by the block naming that crate.
   - rusticata-macros 4.1.0
   - rustix 1.1.5
   - rustls 0.23.46
-  - rustls-native-certs 0.8.4
+  - rustls-native-certs 0.8.5
   - rustls-platform-verifier 0.7.1
   - rustversion 1.0.23
   - ryu 1.0.23
@@ -507,12 +507,12 @@ by the block naming that crate.
   - signatory 0.27.1
   - signature 2.2.0
   - siphasher 1.0.4
-  - smallvec 1.16.2
+  - smallvec 1.16.3
   - socket2 0.5.10
   - socket2 0.6.5
   - spinning_top 0.3.0
   - spki 0.7.3
-  - spki 0.8.0
+  - spki 0.8.1
   - sqlx-core 0.9.0
   - sqlx-macros 0.9.0
   - sqlx-macros-core 0.9.0
@@ -544,10 +544,10 @@ by the block naming that crate.
   - typify-impl 0.6.2
   - typify-macro 0.6.2
   - uncased 0.9.10
-  - unicase 2.9.0
+  - unicase 2.10.0
   - unicode-bidi 0.3.18
-  - unicode-ident 1.0.26
-  - unicode-normalization 0.1.25
+  - unicode-ident 1.0.27
+  - unicode-normalization 0.1.26
   - unicode-properties 0.1.4
   - unicode-width 0.2.2
   - universal-hash 0.5.1
@@ -570,7 +570,7 @@ by the block naming that crate.
   - x509-parser 0.16.0
   - x509-parser 0.18.1
   - xattr 1.6.1
-  - zeroize 1.9.0
+  - zeroize 1.9.1
   - zeroize_derive 1.5.0
 
    Copyright [yyyy] [name of copyright owner]
@@ -625,7 +625,7 @@ Software.
 
 … continued, for:
 
-  - deranged 0.5.8
+  - deranged 0.5.9
 
    Copyright 2024 Jacob Pratt et al.
 
@@ -661,7 +661,7 @@ Software.
 
 … continued, for:
 
-  - powerfmt 0.2.0
+  - powerfmt 0.2.1
 
    Copyright 2023 Jacob Pratt et al.
 
@@ -1495,8 +1495,8 @@ by the block naming that crate.
 
 … continued, for:
 
-  - zerocopy 0.8.59
-  - zerocopy-derive 0.8.59
+  - zerocopy 0.8.63
+  - zerocopy-derive 0.8.63
 
       boilerplate notice, with the fields enclosed by brackets "[]"
       replaced with your own identifying information. (Don't include
@@ -2593,6 +2593,7 @@ Applies to:
   - async-stream 0.3.6
   - async-stream-impl 0.3.6
   - brotli-decompressor 5.0.3
+  - brotli-decompressor 6.0.1
   - csp-policy 0.2.0
   - csp-shell 0.2.0
   - governor 0.10.4
@@ -2917,6 +2918,31 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 Applies to:
 
+  - brotli 8.0.4
+  - brotli 9.0.0
+
+Copyright (c) 2009, 2010, 2013-2016 by the Brotli Authors.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+Applies to:
+
   - derive_more 2.1.1
   - derive_more-impl 2.1.1
 
@@ -2944,7 +2970,7 @@ SOFTWARE.
 
 Applies to:
 
-  - h2 0.4.19
+  - h2 0.4.20
   - http2 0.5.20
 
 Copyright (c) 2017 h2 authors
@@ -3207,7 +3233,7 @@ SOFTWARE.
 
 Applies to:
 
-  - aws-lc-sys 0.45.0
+  - aws-lc-sys 0.46.0
 
 The MIT License (MIT)
 
@@ -3293,30 +3319,6 @@ CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
 IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
-
-Applies to:
-
-  - brotli 8.0.4
-
-Copyright (c) 2009, 2010, 2013-2016 by the Brotli Authors.
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
 
 Applies to:
 
@@ -3790,7 +3792,7 @@ SOFTWARE.
 
 Applies to:
 
-  - hyper 1.11.1
+  - hyper 1.12.0
 
 Copyright (c) 2014-2026 Sean McArthur
 
@@ -3999,7 +4001,7 @@ SOFTWARE.
 
 Applies to:
 
-  - mio 1.2.3
+  - mio 1.2.4
 
 Copyright (c) 2014 Carl Lerche and other MIO contributors
 
@@ -4475,7 +4477,7 @@ THE SOFTWARE.
 
 Applies to:
 
-  - want 0.3.1
+  - want 0.3.2
 
 Copyright (c) 2018-2019 Sean McArthur
 
@@ -4552,7 +4554,7 @@ Applies to:
   - tinystr 0.8.4
   - writeable 0.6.4
   - yoke 0.8.3
-  - yoke-derive 0.8.3
+  - yoke-derive 0.8.4
   - zerofrom 0.1.8
   - zerofrom-derive 0.1.8
   - zerotrie 0.2.5
@@ -4608,7 +4610,8 @@ ICU 1.8.1 to ICU 57.1 © 1995-2016 International Business Machines Corporation a
 
 Applies to:
 
-  - unicode-ident 1.0.26
+  - unicode-ident 1.0.27
+  - unicode-normalization 0.1.26
 
 UNICODE LICENSE V3
 
@@ -4656,10 +4659,49 @@ BSD 3-Clause "New" or "Revised" License (BSD-3-Clause)
 
 Applies to:
 
-  - zstd 0.14.0
+  - alloc-no-stdlib 2.0.4
+  - alloc-no-stdlib 3.0.0
+  - brotli 8.0.4
+  - brotli 9.0.0
+
+Copyright (c) 2016 Dropbox, Inc.
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+
+3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+Applies to:
+
+  - alloc-stdlib 0.2.4
+  - alloc-stdlib 0.3.0
+  - aws-lc-sys 0.46.0
+  - curve25519-dalek 4.1.3
+
+Copyright (c) <year> <owner>. 
+
+Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+
+3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+Applies to:
+
+  - zstd 0.14.3
   - zstd-safe 7.3.0
-  - zstd-safe 8.0.0
-  - zstd-sys 2.1.0+zstd.1.5.7
+  - zstd-safe 8.2.0
+  - zstd-sys 2.1.2+zstd.1.5.7
 
 BSD 3-Clause License
 
@@ -4689,42 +4731,6 @@ SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
 CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-Applies to:
-
-  - alloc-stdlib 0.2.4
-  - aws-lc-sys 0.45.0
-  - curve25519-dalek 4.1.3
-
-Copyright (c) <year> <owner>. 
-
-Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
-
-1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
-
-2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
-
-3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-Applies to:
-
-  - alloc-no-stdlib 2.0.4
-  - brotli 8.0.4
-
-Copyright (c) 2016 Dropbox, Inc.
-All rights reserved.
-
-Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
-
-1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
-
-2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
-
-3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 Applies to:
 
@@ -4863,7 +4869,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 Applies to:
 
-  - zstd-sys 2.1.0+zstd.1.5.7
+  - zstd-sys 2.1.2+zstd.1.5.7
 
 BSD License
 
@@ -4898,7 +4904,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 Applies to:
 
-  - zstd-sys 2.1.0+zstd.1.5.7
+  - zstd-sys 2.1.2+zstd.1.5.7
 
 The auto-generated bindings are under the 3-clause BSD license:
 
@@ -5676,8 +5682,8 @@ ISC License (ISC)
 
 Applies to:
 
-  - aws-lc-rs 1.18.1
-  - aws-lc-sys 0.45.0
+  - aws-lc-rs 1.18.2
+  - aws-lc-sys 0.46.0
 
 ISC License:
 
@@ -6456,9 +6462,9 @@ Ships as: the WebAssembly bundle the frontend image serves, which executes in th
 
 Licences in this section, by number of crates:
 
-  Apache License 2.0 (Apache-2.0) — 448 crates, 30 distinct notices
+  Apache License 2.0 (Apache-2.0) — 447 crates, 31 distinct notices
   MIT License (MIT) — 145 crates, 71 distinct notices
-  Unicode License v3 (Unicode-3.0) — 19 crates, 2 distinct notices
+  Unicode License v3 (Unicode-3.0) — 20 crates, 2 distinct notices
   BSD 3-Clause "New" or "Revised" License (BSD-3-Clause) — 9 crates, 6 distinct notices
   Mozilla Public License 2.0 (MPL-2.0) — 7 crates
   ISC License (ISC) — 6 crates, 4 distinct notices
@@ -6681,18 +6687,18 @@ by the block naming that crate.
   - asn1-rs-derive 0.5.1
   - asn1-rs-impl 0.2.0
   - async-channel 2.5.0
-  - async-compression 0.4.49
+  - async-compression 0.4.50
   - async-executor 1.14.0
   - async-io 2.6.0
   - async-lock 3.4.2
   - async-process 2.5.0
-  - async-recursion 1.1.1
+  - async-recursion 1.2.0
   - async-signal 0.2.14
   - async-task 4.7.1
   - async-trait 0.1.92
   - atomic-waker 1.1.2
   - autocfg 1.5.1
-  - aws-lc-sys 0.45.0
+  - aws-lc-sys 0.46.0
   - base16ct 0.2.0
   - base64 0.21.7
   - base64 0.22.1
@@ -6711,7 +6717,7 @@ by the block naming that crate.
   - bytemuck 1.25.2
   - cbc 0.1.2
   - cbc 0.2.1
-  - cc 1.5.1
+  - cc 1.8.0
   - cfg-expr 0.15.8
   - cfg-if 1.0.5
   - chrono 0.4.45
@@ -6719,7 +6725,7 @@ by the block naming that crate.
   - cipher 0.5.2
   - cmake 0.1.58
   - cmov 0.5.4
-  - compression-codecs 0.4.44
+  - compression-codecs 0.4.45
   - compression-core 0.4.33
   - concurrent-queue 2.5.0
   - const-oid 0.10.2
@@ -6727,7 +6733,7 @@ by the block naming that crate.
   - const-serialize 0.7.2
   - const-serialize 0.8.0-alpha.0
   - const-serialize-macro 0.7.2
-  - const-serialize-macro 0.8.0-alpha.1
+  - const-serialize-macro 0.8.0-alpha.3
   - cpubits 0.1.1
   - cpufeatures 0.2.17
   - cpufeatures 0.3.1
@@ -6739,7 +6745,7 @@ by the block naming that crate.
   - crypto-common 0.1.7
   - crypto-common 0.2.2
   - ctr 0.9.2
-  - ctutils 0.4.2
+  - ctutils 0.4.3
   - der 0.7.10
   - der-parser 9.0.0
   - der_derive 0.7.3
@@ -6776,11 +6782,11 @@ by the block naming that crate.
   - document-features 0.2.12
   - downcast-rs 1.2.1
   - dunce 1.0.5
-  - either 1.18.0
+  - either 1.19.0
   - elliptic-curve 0.13.8
   - enumset 1.1.14
   - enumset_derive 0.15.0
-  - equivalent 1.0.2
+  - equivalent 1.0.3
   - errno 0.3.14
   - euclid 0.22.14
   - event-listener 5.4.2
@@ -6825,7 +6831,7 @@ by the block naming that crate.
   - imgref 1.12.3
   - indexmap 2.14.2
   - inout 0.1.4
-  - inout 0.2.2
+  - inout 0.2.4
   - itertools 0.14.0
   - itoa 1.0.18
   - jobserver 0.1.35
@@ -6833,12 +6839,12 @@ by the block naming that crate.
   - kbkdf 0.1.0-rc.1
   - keyboard-types 0.7.0
   - lazy-js-bundle 0.7.10
-  - lazy_static 1.5.0
+  - lazy_static 1.5.1
   - libappindicator 0.9.0
   - libappindicator-sys 0.9.0
-  - libc 0.2.189
+  - libc 0.2.191
   - linux-raw-sys 0.12.1
-  - litrs 1.0.0
+  - litrs 1.0.1
   - lock_api 0.4.14
   - log 0.4.34
   - longest-increasing-subsequence 0.1.0
@@ -6916,8 +6922,8 @@ by the block naming that crate.
   - rustc_version 0.4.1
   - rusticata-macros 4.1.0
   - rustix 1.1.5
-  - rustls 0.23.45
-  - rustls-native-certs 0.8.4
+  - rustls 0.23.46
+  - rustls-native-certs 0.8.5
   - rustls-platform-verifier 0.7.1
   - rustversion 1.0.23
   - ryu 1.0.23
@@ -6945,7 +6951,7 @@ by the block naming that crate.
   - signal-hook 0.3.18
   - signal-hook-registry 1.4.8
   - signature 2.2.0
-  - smallvec 1.16.2
+  - smallvec 1.16.3
   - socket2 0.6.5
   - spki 0.7.3
   - stable_deref_trait 1.2.1
@@ -6953,7 +6959,7 @@ by the block naming that crate.
   - subsecond-types 0.7.10
   - syn 1.0.109
   - syn 2.0.119
-  - syn 3.0.6
+  - syn 3.0.9
   - sync_wrapper 1.0.2
   - sys-locale 0.3.2
   - system-deps 6.2.2
@@ -6972,9 +6978,9 @@ by the block naming that crate.
   - tracing-wasm 0.2.1
   - tray-icon 0.21.3
   - tungstenite 0.28.0
-  - unicase 2.9.0
-  - unicode-ident 1.0.26
-  - unicode-normalization 0.1.25
+  - unicase 2.10.0
+  - unicode-ident 1.0.27
+  - unicode-normalization 0.1.26
   - unicode-segmentation 1.13.3
   - unicode-xid 0.2.6
   - universal-hash 0.5.1
@@ -7003,7 +7009,7 @@ by the block naming that crate.
   - x11rb-protocol 0.13.2
   - x509-cert 0.2.5
   - x509-parser 0.16.0
-  - zeroize 1.9.0
+  - zeroize 1.9.1
   - zune-core 0.5.3
   - zune-inflate 0.2.54
   - zune-jpeg 0.5.15
@@ -7061,7 +7067,7 @@ Software.
 
 … continued, for:
 
-  - deranged 0.5.8
+  - deranged 0.5.9
 
    Copyright 2024 Jacob Pratt et al.
 
@@ -7079,7 +7085,7 @@ Software.
 
 … continued, for:
 
-  - powerfmt 0.2.0
+  - powerfmt 0.2.1
 
    Copyright 2023 Jacob Pratt et al.
 
@@ -7113,7 +7119,7 @@ Software.
    See the License for the specific language governing permissions and
    limitations under the License.
 
-The 6 notices below open with the same text, reproduced here once. Each block
+The 7 notices below open with the same text, reproduced here once. Each block
 that follows completes one of them: a crate's notice is this text followed
 by the block naming that crate.
 
@@ -7320,7 +7326,6 @@ by the block naming that crate.
   - windows-strings 0.100.0
   - windows-strings 0.4.2
   - windows-strings 0.5.1
-  - windows-sys 0.52.0
   - windows-sys 0.59.0
   - windows-sys 0.60.2
   - windows-sys 0.61.2
@@ -7377,11 +7382,8 @@ by the block naming that crate.
   - serde_spanned 0.6.9
   - tao 0.34.8
   - toml 0.8.2
-  - toml_datetime 1.1.1+spec-1.1.0
   - toml_edit 0.19.15
   - toml_edit 0.20.2
-  - toml_edit 0.25.15+spec-1.1.0
-  - toml_parser 1.1.3+spec-1.1.0
   - winapi 0.3.9
 
    APPENDIX: How to apply the Apache License to your work.
@@ -7396,6 +7398,37 @@ by the block naming that crate.
       identification within third-party archives.
 
    Copyright {yyyy} {name of copyright owner}
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+
+… continued, for:
+
+  - toml_datetime 1.1.2+spec-1.1.0
+  - toml_edit 0.25.17+spec-1.1.0
+  - toml_parser 1.1.5+spec-1.1.0
+
+   APPENDIX: How to apply the Apache License to your work.
+
+      To apply the Apache License to your work, attach the following
+      boilerplate notice, with the fields enclosed by brackets "{}"
+      replaced with your own identifying information. (Don't include
+      the brackets!)  The text should be enclosed in the appropriate
+      comment syntax for the file format. We also recommend that a
+      file or class name and description of purpose be included on the
+      same "printed page" as the copyright notice for easier
+      identification within third-party archives.
+
+   Copyright Individual contributors
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -7441,8 +7474,8 @@ by the block naming that crate.
 
 … continued, for:
 
-  - zerocopy 0.8.59
-  - zerocopy-derive 0.8.59
+  - zerocopy 0.8.63
+  - zerocopy-derive 0.8.63
 
    APPENDIX: How to apply the Apache License to your work.
 
@@ -7739,7 +7772,7 @@ limitations under the License.
 … continued, for:
 
   - keyring 4.2.0
-  - keyring-core 1.0.0
+  - keyring-core 1.0.1
   - windows-native-keyring-store 1.1.0
   - zbus-secret-service-keyring-store 1.0.1
 
@@ -8699,7 +8732,7 @@ Applies to:
 
   - async-stream 0.3.6
   - async-stream-impl 0.3.6
-  - brotli-decompressor 5.0.3
+  - brotli-decompressor 6.0.1
   - dioxus-logger 0.7.10
   - dlopen2 0.8.2
   - dlopen2_derive 0.4.3
@@ -8797,9 +8830,9 @@ Applies to:
 
   - zbus 5.19.0
   - zbus_macros 5.19.0
-  - zbus_names 4.3.4
-  - zvariant 5.15.0
-  - zvariant_derive 5.15.0
+  - zbus_names 4.3.5
+  - zvariant 5.15.1
+  - zvariant_derive 5.15.1
 
 Copyright (c) 2024 Zeeshan Ali Khan & zbus contributors
 
@@ -9182,7 +9215,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 Applies to:
 
   - tokio 1.53.3
-  - tokio-util 0.7.19
+  - tokio-util 0.7.20
 
 MIT License
 
@@ -9260,7 +9293,7 @@ SOFTWARE.
 
 Applies to:
 
-  - aws-lc-sys 0.45.0
+  - aws-lc-sys 0.46.0
 
 The MIT License (MIT)
 
@@ -9287,7 +9320,7 @@ SOFTWARE.
 
 Applies to:
 
-  - brotli 8.0.4
+  - brotli 9.0.0
 
 Copyright (c) 2009, 2010, 2013-2016 by the Brotli Authors.
 
@@ -9560,7 +9593,7 @@ SOFTWARE.
 
 Applies to:
 
-  - hyper 1.11.1
+  - hyper 1.12.0
 
 Copyright (c) 2014-2026 Sean McArthur
 
@@ -9749,7 +9782,7 @@ SOFTWARE.
 
 Applies to:
 
-  - mio 1.2.3
+  - mio 1.2.4
 
 Copyright (c) 2014 Carl Lerche and other MIO contributors
 
@@ -10073,7 +10106,7 @@ SOFTWARE.
 
 Applies to:
 
-  - schannel 0.1.29
+  - schannel 0.1.30
 
 Copyright (c) 2015 steffengy
 
@@ -10353,7 +10386,7 @@ SOFTWARE.
 
 Applies to:
 
-  - want 0.3.1
+  - want 0.3.2
 
 Copyright (c) 2018-2019 Sean McArthur
 
@@ -10560,7 +10593,7 @@ Applies to:
   - tinystr 0.8.4
   - writeable 0.6.4
   - yoke 0.8.3
-  - yoke-derive 0.8.3
+  - yoke-derive 0.8.4
   - zerofrom 0.1.8
   - zerofrom-derive 0.1.8
   - zerotrie 0.2.5
@@ -10616,7 +10649,8 @@ ICU 1.8.1 to ICU 57.1 © 1995-2016 International Business Machines Corporation a
 
 Applies to:
 
-  - unicode-ident 1.0.26
+  - unicode-ident 1.0.27
+  - unicode-normalization 0.1.26
 
 UNICODE LICENSE V3
 
@@ -10664,8 +10698,8 @@ BSD 3-Clause "New" or "Revised" License (BSD-3-Clause)
 
 Applies to:
 
-  - alloc-stdlib 0.2.4
-  - aws-lc-sys 0.45.0
+  - alloc-stdlib 0.3.0
+  - aws-lc-sys 0.46.0
   - exr 1.74.2
 
 Copyright (c) <year> <owner>. 
@@ -10682,8 +10716,8 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 
 Applies to:
 
-  - alloc-no-stdlib 2.0.4
-  - brotli 8.0.4
+  - alloc-no-stdlib 3.0.0
+  - brotli 9.0.0
 
 Copyright (c) 2016 Dropbox, Inc.
 All rights reserved.
@@ -11225,8 +11259,8 @@ ISC License (ISC)
 
 Applies to:
 
-  - aws-lc-rs 1.18.1
-  - aws-lc-sys 0.45.0
+  - aws-lc-rs 1.18.2
+  - aws-lc-sys 0.46.0
 
 ISC License:
 

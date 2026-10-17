@@ -535,7 +535,7 @@ jobs:
       #
       # No `if:` guard: the action detects an unchanged tree itself and commits nothing.
       - name: Commit the fixes
-        uses: TimSchoenle/actions/actions/common/commit-changes@f33849da61e2397d3a9277762d09a1bf0d2b9d7c # tag=actions-common-commit-changes-v1.5.7
+        uses: TimSchoenle/actions/actions/common/commit-changes@eaf935674fec7116856ca5e138e1a2dca3f8146d # tag=actions-common-commit-changes-v1.5.8
         with:
           commit_message: "style: apply the mechanical fixes (lockfiles, clippy --fix, fmt, regenerated artefacts)"
           token: ${{ steps.generate_token.outputs.token }}
@@ -604,7 +604,7 @@ jobs:
       # that merely touched `Cargo.toml` makes no commit and no API call.
       - name: render README.md and commit it
         id: render
-        uses: TimSchoenle/actions/actions/common/render-template-and-commit@5f23e7ecae779a09b699ce2983ec5e49e5f2b0a5 # tag=actions-common-render-template-and-commit-v1.1.14
+        uses: TimSchoenle/actions/actions/common/render-template-and-commit@eaf935674fec7116856ca5e138e1a2dca3f8146d # tag=actions-common-render-template-and-commit-v1.1.15
         with:
           template: .github/templates/README.md.hbs
           output: README.md

@@ -15,9 +15,11 @@ use axum::Json;
 use axum::extract::{Path, Query, State};
 use serde::Deserialize;
 use tankovault_contracts::admin::{
-    MergeDecisionView, MergeRevertedView, SyncDecisionView, SyncRevertedView,
+    MergeDecisionView, MergeRevertBatchItemView, MergeRevertBatchOutcomeView, MergeRevertBatchView,
+    MergeRevertedView, SyncDecisionView, SyncRevertedView,
 };
 use tankovault_contracts::sync::Flagged;
+use tankovault_db::repo::matching::RevertReadiness;
 use tankovault_domain::{Permission, SeriesId};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
@@ -220,11 +222,24 @@ pub async fn revert_merge_decision(
 ) -> ApiResult<Json<MergeRevertedView>> {
     user.require(Permission::MergeRevert).await?;
     check_reason(&req.reason)?;
+    Ok(Json(
+        revert_one(&state, &user, id, req.reason.trim(), false).await?,
+    ))
+}
+
+/// Revert one decision and audit it; shared by the single and the batch revert.
+async fn revert_one(
+    state: &AppState,
+    user: &AuthUser,
+    id: Uuid,
+    reason: &str,
+    batch: bool,
+) -> ApiResult<MergeRevertedView> {
     let (undo, cleaned) = tankovault_db::repo::matching::revert_merge_decision(
         &state.pool,
         id,
         Some(user.user_id),
-        req.reason.trim(),
+        reason,
     )
     .await?;
 
@@ -239,8 +254,8 @@ pub async fn revert_merge_decision(
         chapters_returned: cleaned.chapters_returned,
     };
     audit(
-        &state,
-        &user,
+        state,
+        user,
         "merge_decision.revert",
         &id.to_string(),
         &serde_json::json!({
@@ -253,11 +268,126 @@ pub async fn revert_merge_decision(
             "titles_removed": view.titles_removed,
             "sources_returned": view.sources_returned,
             "chapters_returned": view.chapters_returned,
-            "reason": req.reason.trim(),
+            "reason": reason,
+            "batch": batch,
         }),
     )
     .await;
-    Ok(Json(view))
+    Ok(view)
+}
+
+/// Most decisions one batch revert takes. Each is its own transaction and the whole batch has to
+/// finish inside one request.
+const MAX_REVERT_BATCH: usize = 50;
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct MergeRevertBatchRequest {
+    /// The decisions to revert, at most 50. Reverted newest first, whatever the order given.
+    pub decision_ids: Vec<Uuid>,
+    /// Why. Required, and stored on every decision the batch reverts.
+    pub reason: String,
+    /// Report what would be attempted without reverting anything.
+    #[serde(default)]
+    pub dry_run: bool,
+}
+
+/// Revert merges in a batch
+///
+/// Revert a reviewed list of automatic merges, each exactly as the single revert does it
+/// (restore, suppress, disentangle), newest first: a merge whose survivor a later merge absorbed
+/// can only be reverted after that later one, so newest first lets a chain inside one batch
+/// unwind. One decision's refusal does not stop the others; each item reports its own outcome.
+/// A dry run checks each decision as stored and changes nothing, so it cannot predict a refusal
+/// that depends on another decision in the batch.
+#[utoipa::path(
+    post,
+    path = "/v1/admin/merge-decisions/revert-batch",
+    tag = ADMIN_MATCHING_TAG,
+    request_body = MergeRevertBatchRequest,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "What happened to each decision", body = MergeRevertBatchView),
+        (status = 400, description = "no reason given, no decisions, or more than 50", body = crate::error::ProblemDetails),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
+    )
+)]
+pub async fn revert_merge_decisions(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Json(req): Json<MergeRevertBatchRequest>,
+) -> ApiResult<Json<MergeRevertBatchView>> {
+    user.require(Permission::MergeRevert).await?;
+    check_reason(&req.reason)?;
+    let mut ids = req.decision_ids;
+    ids.sort_unstable();
+    ids.dedup();
+    if ids.is_empty() || ids.len() > MAX_REVERT_BATCH {
+        return Err(ApiError::BadRequest(format!(
+            "between 1 and {MAX_REVERT_BATCH} distinct decision ids are required"
+        )));
+    }
+    let reason = req.reason.trim();
+
+    let ordered = tankovault_db::repo::matching::revert_order(&state.pool, &ids).await?;
+    let mut items = Vec::with_capacity(ids.len());
+    for (id, readiness) in &ordered {
+        let item = match readiness {
+            RevertReadiness::Reverted | RevertReadiness::NothingToUndo => batch_item(
+                *id,
+                MergeRevertBatchOutcomeView::NothingToRevert,
+                None,
+                None,
+            ),
+            RevertReadiness::Ready if req.dry_run => {
+                batch_item(*id, MergeRevertBatchOutcomeView::Reverted, None, None)
+            }
+            RevertReadiness::Ready => match revert_one(&state, &user, *id, reason, true).await {
+                Ok(view) => {
+                    batch_item(*id, MergeRevertBatchOutcomeView::Reverted, None, Some(view))
+                }
+                // A refusal is this decision's outcome; anything else is the batch's failure.
+                Err(ApiError::Conflict(why)) => {
+                    batch_item(*id, MergeRevertBatchOutcomeView::Refused, Some(why), None)
+                }
+                Err(ApiError::NotFound) => {
+                    batch_item(*id, MergeRevertBatchOutcomeView::NotFound, None, None)
+                }
+                Err(e) => return Err(e),
+            },
+        };
+        items.push(item);
+    }
+    items.extend(
+        ids.iter()
+            .filter(|id| !ordered.iter().any(|(found, _)| found == *id))
+            .map(|id| batch_item(*id, MergeRevertBatchOutcomeView::NotFound, None, None)),
+    );
+
+    let reverted = items
+        .iter()
+        .filter(|i| i.outcome == MergeRevertBatchOutcomeView::Reverted)
+        .count();
+    Ok(Json(MergeRevertBatchView {
+        dry_run: req.dry_run,
+        reverted: i64::try_from(reverted).unwrap_or(i64::MAX),
+        skipped: i64::try_from(items.len() - reverted).unwrap_or(i64::MAX),
+        items,
+    }))
+}
+
+const fn batch_item(
+    decision_id: Uuid,
+    outcome: MergeRevertBatchOutcomeView,
+    detail: Option<String>,
+    reverted: Option<MergeRevertedView>,
+) -> MergeRevertBatchItemView {
+    MergeRevertBatchItemView {
+        decision_id,
+        outcome,
+        detail,
+        reverted,
+    }
 }
 
 /// Flag a merge as wrong

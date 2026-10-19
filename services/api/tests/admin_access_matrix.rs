@@ -267,6 +267,19 @@ fn admin_gates() -> Vec<Gate> {
         },
         Gate {
             method: "POST",
+            template: "/v1/admin/merge-decisions/revert-batch",
+            path: "/v1/admin/merge-decisions/revert-batch",
+            required: &[Permission::MergeRevert],
+            body: || {
+                Some(json!({
+                    "decision_ids": ["00000000-0000-0000-0000-0000000000aa"],
+                    "reason": "not the same work",
+                    "dry_run": true,
+                }))
+            },
+        },
+        Gate {
+            method: "POST",
             template: "/v1/admin/merge-decisions/{id}/flag",
             path: "/v1/admin/merge-decisions/00000000-0000-0000-0000-0000000000aa/flag",
             required: &[Permission::MergeRevert],

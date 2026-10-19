@@ -2701,6 +2701,111 @@
         ],
         "type": "object"
       },
+      "MergeRevertBatch": {
+        "description": "The result of a batch revert.",
+        "properties": {
+          "dry_run": {
+            "description": "Whether this was a dry run, which changes nothing.",
+            "type": "boolean"
+          },
+          "items": {
+            "description": "Every requested decision, newest first; unknown ids last.",
+            "items": {
+              "$ref": "#/components/schemas/MergeRevertBatchItem"
+            },
+            "type": "array"
+          },
+          "reverted": {
+            "description": "Decisions reverted, or on a dry run the ones that would be attempted.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "skipped": {
+            "description": "Decisions not reverted, for any reason.",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "dry_run",
+          "reverted",
+          "skipped",
+          "items"
+        ],
+        "type": "object"
+      },
+      "MergeRevertBatchItem": {
+        "description": "One decision of a batch revert, in the order the batch handled it.",
+        "properties": {
+          "decision_id": {
+            "description": "The journal row.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "detail": {
+            "description": "Why it was refused, when it was.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/MergeRevertBatchOutcome",
+            "description": "What happened to it."
+          },
+          "reverted": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MergeReverted",
+                "description": "What was put back, for a decision a real run reverted."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "decision_id",
+          "outcome"
+        ],
+        "type": "object"
+      },
+      "MergeRevertBatchOutcome": {
+        "description": "What a batch revert did, or would do, with one decision.",
+        "enum": [
+          "reverted",
+          "not_found",
+          "nothing_to_revert",
+          "refused"
+        ],
+        "type": "string"
+      },
+      "MergeRevertBatchRequest": {
+        "properties": {
+          "decision_ids": {
+            "description": "The decisions to revert, at most 50. Reverted newest first, whatever the order given.",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "dry_run": {
+            "description": "Report what would be attempted without reverting anything.",
+            "type": "boolean"
+          },
+          "reason": {
+            "description": "Why. Required, and stored on every decision the batch reverts.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "decision_ids",
+          "reason"
+        ],
+        "type": "object"
+      },
       "MergeReverted": {
         "description": "What undoing an automatic merge put back, and what it took off the survivor.\n\nThe last three counts are not part of the merge's inverse. A revert is an operator saying the\ntwo rows are different works, and it acts on that: the names both rows answered to come off\nthe survivor, and the sources those names attracted go back with their chapters. Reported\nbecause it happens without review — the survivor loses rows nobody listed first.",
         "properties": {
@@ -9432,6 +9537,73 @@
           }
         ],
         "summary": "List merge decisions",
+        "tags": [
+          "admin-matching"
+        ]
+      }
+    },
+    "/v1/admin/merge-decisions/revert-batch": {
+      "post": {
+        "description": "Revert a reviewed list of automatic merges, each exactly as the single revert does it\n(restore, suppress, disentangle), newest first: a merge whose survivor a later merge absorbed\ncan only be reverted after that later one, so newest first lets a chain inside one batch\nunwind. One decision's refusal does not stop the others; each item reports its own outcome.\nA dry run checks each decision as stored and changes nothing, so it cannot predict a refusal\nthat depends on another decision in the batch.",
+        "operationId": "revert_merge_decisions",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MergeRevertBatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MergeRevertBatch"
+                }
+              }
+            },
+            "description": "What happened to each decision"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "no reason given, no decisions, or more than 50"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Revert merges in a batch",
         "tags": [
           "admin-matching"
         ]

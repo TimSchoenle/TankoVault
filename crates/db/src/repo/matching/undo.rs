@@ -34,6 +34,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use sqlx::{Postgres, Transaction};
+use tankovault_domain::SeriesId;
 use uuid::Uuid;
 
 use crate::error::DbResult;
@@ -282,9 +283,10 @@ pub(super) async fn capture(
 ///
 /// # Errors
 ///
-/// [`crate::DbError::Conflict`] when the journal was written by a different [`UNDO_VERSION`], or
+/// [`crate::DbError::Conflict`] when the journal was written by a different [`UNDO_VERSION`],
 /// when the absorbed id has been taken by a live series since the merge (which means something
-/// other than this revert has already put it back). Otherwise [`crate::DbError::Sqlx`] from any
+/// other than this revert has already put it back), or when the survivor has since been merged
+/// into another series, whose merge has to be reverted first. Otherwise [`crate::DbError::Sqlx`] from any
 /// statement, which rolls the whole revert back: a half-restored series is worse than a merged
 /// one, because nothing downstream is prepared for it.
 pub async fn revert_merge(pool: &sqlx::PgPool, undo: &MergeUndo) -> DbResult<()> {
@@ -338,6 +340,25 @@ pub(super) async fn revert_merge_in(
         return Err(crate::error::DbError::Conflict(
             "the absorbed series already exists; this merge has already been reverted".to_owned(),
         ));
+    }
+    // Every statement below that touches the survivor addresses it by this id. Once it has been
+    // merged away itself, the rows this merge added live on its own survivor, out of reach.
+    let survivor_live = sqlx::query_scalar!(
+        "SELECT count(*) AS \"count!\" FROM series WHERE id = $1",
+        keep,
+    )
+    .fetch_one(&mut **tx)
+    .await?;
+    if survivor_live == 0 {
+        let now = super::resolve_merged_series(&mut **tx, SeriesId::from_uuid(keep)).await?;
+        return Err(crate::error::DbError::Conflict(now.map_or_else(
+            || "the surviving series no longer exists".to_owned(),
+            |at| {
+                format!(
+                    "the surviving series has since been merged into {at}; revert that merge first"
+                )
+            },
+        )));
     }
 
     // The absorbed series itself. Named column by column because `search_vec` is generated and

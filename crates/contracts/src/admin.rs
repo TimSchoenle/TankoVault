@@ -1160,6 +1160,49 @@ pub struct MergeRevertedView {
     pub chapters_returned: i64,
 }
 
+/// What a batch revert did, or would do, with one decision.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[schema(as = MergeRevertBatchOutcome)]
+pub enum MergeRevertBatchOutcomeView {
+    /// Reverted. On a dry run: would be attempted.
+    Reverted,
+    /// No such decision.
+    NotFound,
+    /// Already reverted, or merged nothing.
+    NothingToRevert,
+    /// The revert was attempted and refused; `detail` says why.
+    Refused,
+}
+
+/// One decision of a batch revert, in the order the batch handled it.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[schema(as = MergeRevertBatchItem)]
+pub struct MergeRevertBatchItemView {
+    /// The journal row.
+    pub decision_id: Uuid,
+    /// What happened to it.
+    pub outcome: MergeRevertBatchOutcomeView,
+    /// Why it was refused, when it was.
+    pub detail: Option<String>,
+    /// What was put back, for a decision a real run reverted.
+    pub reverted: Option<MergeRevertedView>,
+}
+
+/// The result of a batch revert.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[schema(as = MergeRevertBatch)]
+pub struct MergeRevertBatchView {
+    /// Whether this was a dry run, which changes nothing.
+    pub dry_run: bool,
+    /// Decisions reverted, or on a dry run the ones that would be attempted.
+    pub reverted: i64,
+    /// Decisions not reverted, for any reason.
+    pub skipped: i64,
+    /// Every requested decision, newest first; unknown ids last.
+    pub items: Vec<MergeRevertBatchItemView>,
+}
+
 /// One row of the automatic-sync decision journal.
 ///
 /// Covers what `sync_history` never did: the entries that matched no local series, the series

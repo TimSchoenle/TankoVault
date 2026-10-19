@@ -5701,6 +5701,243 @@ pub mod types {
             Default::default()
         }
     }
+    #[doc = "The result of a batch revert."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"The result of a batch revert.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"dry_run\","]
+    #[doc = "    \"items\","]
+    #[doc = "    \"reverted\","]
+    #[doc = "    \"skipped\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"dry_run\": {"]
+    #[doc = "      \"description\": \"Whether this was a dry run, which changes nothing.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"items\": {"]
+    #[doc = "      \"description\": \"Every requested decision, newest first; unknown ids last.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/MergeRevertBatchItem\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"reverted\": {"]
+    #[doc = "      \"description\": \"Decisions reverted, or on a dry run the ones that would be attempted.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"skipped\": {"]
+    #[doc = "      \"description\": \"Decisions not reverted, for any reason.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct MergeRevertBatch {
+        #[doc = "Whether this was a dry run, which changes nothing."]
+        pub dry_run: bool,
+        #[doc = "Every requested decision, newest first; unknown ids last."]
+        pub items: ::std::vec::Vec<MergeRevertBatchItem>,
+        #[doc = "Decisions reverted, or on a dry run the ones that would be attempted."]
+        pub reverted: i64,
+        #[doc = "Decisions not reverted, for any reason."]
+        pub skipped: i64,
+    }
+    impl MergeRevertBatch {
+        pub fn builder() -> builder::MergeRevertBatch {
+            Default::default()
+        }
+    }
+    #[doc = "One decision of a batch revert, in the order the batch handled it."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One decision of a batch revert, in the order the batch handled it.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"decision_id\","]
+    #[doc = "    \"outcome\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"decision_id\": {"]
+    #[doc = "      \"description\": \"The journal row.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"detail\": {"]
+    #[doc = "      \"description\": \"Why it was refused, when it was.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"outcome\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/MergeRevertBatchOutcome\""]
+    #[doc = "    },"]
+    #[doc = "    \"reverted\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/MergeReverted\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct MergeRevertBatchItem {
+        #[doc = "The journal row."]
+        pub decision_id: ::uuid::Uuid,
+        #[doc = "Why it was refused, when it was."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub detail: ::std::option::Option<::std::string::String>,
+        pub outcome: MergeRevertBatchOutcome,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub reverted: ::std::option::Option<MergeReverted>,
+    }
+    impl MergeRevertBatchItem {
+        pub fn builder() -> builder::MergeRevertBatchItem {
+            Default::default()
+        }
+    }
+    #[doc = "What a batch revert did, or would do, with one decision."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"What a batch revert did, or would do, with one decision.\","]
+    #[doc = "  \"type\": \"string\","]
+    #[doc = "  \"enum\": ["]
+    #[doc = "    \"reverted\","]
+    #[doc = "    \"not_found\","]
+    #[doc = "    \"nothing_to_revert\","]
+    #[doc = "    \"refused\""]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+    )]
+    pub enum MergeRevertBatchOutcome {
+        #[serde(rename = "reverted")]
+        Reverted,
+        #[serde(rename = "not_found")]
+        NotFound,
+        #[serde(rename = "nothing_to_revert")]
+        NothingToRevert,
+        #[serde(rename = "refused")]
+        Refused,
+    }
+    impl ::std::fmt::Display for MergeRevertBatchOutcome {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Reverted => f.write_str("reverted"),
+                Self::NotFound => f.write_str("not_found"),
+                Self::NothingToRevert => f.write_str("nothing_to_revert"),
+                Self::Refused => f.write_str("refused"),
+            }
+        }
+    }
+    impl ::std::str::FromStr for MergeRevertBatchOutcome {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "reverted" => Ok(Self::Reverted),
+                "not_found" => Ok(Self::NotFound),
+                "nothing_to_revert" => Ok(Self::NothingToRevert),
+                "refused" => Ok(Self::Refused),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+    impl ::std::convert::TryFrom<&str> for MergeRevertBatchOutcome {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    impl ::std::convert::TryFrom<&::std::string::String> for MergeRevertBatchOutcome {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    impl ::std::convert::TryFrom<::std::string::String> for MergeRevertBatchOutcome {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    #[doc = "`MergeRevertBatchRequest`"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"decision_ids\","]
+    #[doc = "    \"reason\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"decision_ids\": {"]
+    #[doc = "      \"description\": \"The decisions to revert, at most 50. Reverted newest first, whatever the order given.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"type\": \"string\","]
+    #[doc = "        \"format\": \"uuid\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"dry_run\": {"]
+    #[doc = "      \"description\": \"Report what would be attempted without reverting anything.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"reason\": {"]
+    #[doc = "      \"description\": \"Why. Required, and stored on every decision the batch reverts.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct MergeRevertBatchRequest {
+        #[doc = "The decisions to revert, at most 50. Reverted newest first, whatever the order given."]
+        pub decision_ids: ::std::vec::Vec<::uuid::Uuid>,
+        #[doc = "Report what would be attempted without reverting anything."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub dry_run: ::std::option::Option<bool>,
+        #[doc = "Why. Required, and stored on every decision the batch reverts."]
+        pub reason: ::std::string::String,
+    }
+    impl MergeRevertBatchRequest {
+        pub fn builder() -> builder::MergeRevertBatchRequest {
+            Default::default()
+        }
+    }
     #[doc = "What undoing an automatic merge put back, and what it took off the survivor.\n\nThe last three counts are not part of the merge's inverse. A revert is an operator saying the\ntwo rows are different works, and it acts on that: the names both rows answered to come off\nthe survivor, and the sources those names attracted go back with their chapters. Reported\nbecause it happens without review — the survivor loses rows nobody listed first."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -23667,6 +23904,248 @@ pub mod types {
             }
         }
         #[derive(Clone, Debug)]
+        pub struct MergeRevertBatch {
+            dry_run: ::std::result::Result<bool, ::std::string::String>,
+            items: ::std::result::Result<
+                ::std::vec::Vec<super::MergeRevertBatchItem>,
+                ::std::string::String,
+            >,
+            reverted: ::std::result::Result<i64, ::std::string::String>,
+            skipped: ::std::result::Result<i64, ::std::string::String>,
+        }
+        impl ::std::default::Default for MergeRevertBatch {
+            fn default() -> Self {
+                Self {
+                    dry_run: Err("no value supplied for dry_run".to_string()),
+                    items: Err("no value supplied for items".to_string()),
+                    reverted: Err("no value supplied for reverted".to_string()),
+                    skipped: Err("no value supplied for skipped".to_string()),
+                }
+            }
+        }
+        impl MergeRevertBatch {
+            pub fn dry_run<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.dry_run = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for dry_run: {e}"));
+                self
+            }
+            pub fn items<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::MergeRevertBatchItem>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.items = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for items: {e}"));
+                self
+            }
+            pub fn reverted<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.reverted = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for reverted: {e}"));
+                self
+            }
+            pub fn skipped<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.skipped = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for skipped: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<MergeRevertBatch> for super::MergeRevertBatch {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: MergeRevertBatch,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    dry_run: value.dry_run?,
+                    items: value.items?,
+                    reverted: value.reverted?,
+                    skipped: value.skipped?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::MergeRevertBatch> for MergeRevertBatch {
+            fn from(value: super::MergeRevertBatch) -> Self {
+                Self {
+                    dry_run: Ok(value.dry_run),
+                    items: Ok(value.items),
+                    reverted: Ok(value.reverted),
+                    skipped: Ok(value.skipped),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct MergeRevertBatchItem {
+            decision_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            detail: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            outcome: ::std::result::Result<super::MergeRevertBatchOutcome, ::std::string::String>,
+            reverted: ::std::result::Result<
+                ::std::option::Option<super::MergeReverted>,
+                ::std::string::String,
+            >,
+        }
+        impl ::std::default::Default for MergeRevertBatchItem {
+            fn default() -> Self {
+                Self {
+                    decision_id: Err("no value supplied for decision_id".to_string()),
+                    detail: Ok(Default::default()),
+                    outcome: Err("no value supplied for outcome".to_string()),
+                    reverted: Ok(Default::default()),
+                }
+            }
+        }
+        impl MergeRevertBatchItem {
+            pub fn decision_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.decision_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for decision_id: {e}"));
+                self
+            }
+            pub fn detail<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.detail = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for detail: {e}"));
+                self
+            }
+            pub fn outcome<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::MergeRevertBatchOutcome>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.outcome = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for outcome: {e}"));
+                self
+            }
+            pub fn reverted<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<super::MergeReverted>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.reverted = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for reverted: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<MergeRevertBatchItem> for super::MergeRevertBatchItem {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: MergeRevertBatchItem,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    decision_id: value.decision_id?,
+                    detail: value.detail?,
+                    outcome: value.outcome?,
+                    reverted: value.reverted?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::MergeRevertBatchItem> for MergeRevertBatchItem {
+            fn from(value: super::MergeRevertBatchItem) -> Self {
+                Self {
+                    decision_id: Ok(value.decision_id),
+                    detail: Ok(value.detail),
+                    outcome: Ok(value.outcome),
+                    reverted: Ok(value.reverted),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct MergeRevertBatchRequest {
+            decision_ids:
+                ::std::result::Result<::std::vec::Vec<::uuid::Uuid>, ::std::string::String>,
+            dry_run: ::std::result::Result<::std::option::Option<bool>, ::std::string::String>,
+            reason: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+        impl ::std::default::Default for MergeRevertBatchRequest {
+            fn default() -> Self {
+                Self {
+                    decision_ids: Err("no value supplied for decision_ids".to_string()),
+                    dry_run: Ok(Default::default()),
+                    reason: Err("no value supplied for reason".to_string()),
+                }
+            }
+        }
+        impl MergeRevertBatchRequest {
+            pub fn decision_ids<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<::uuid::Uuid>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.decision_ids = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for decision_ids: {e}"));
+                self
+            }
+            pub fn dry_run<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<bool>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.dry_run = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for dry_run: {e}"));
+                self
+            }
+            pub fn reason<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.reason = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for reason: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<MergeRevertBatchRequest> for super::MergeRevertBatchRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: MergeRevertBatchRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    decision_ids: value.decision_ids?,
+                    dry_run: value.dry_run?,
+                    reason: value.reason?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::MergeRevertBatchRequest> for MergeRevertBatchRequest {
+            fn from(value: super::MergeRevertBatchRequest) -> Self {
+                Self {
+                    decision_ids: Ok(value.decision_ids),
+                    dry_run: Ok(value.dry_run),
+                    reason: Ok(value.reason),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
         pub struct MergeReverted {
             chapters_returned: ::std::result::Result<i64, ::std::string::String>,
             decision_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
@@ -37293,6 +37772,10 @@ impl Client {
     pub fn list_merge_decisions(&self) -> builder::ListMergeDecisions<'_> {
         builder::ListMergeDecisions::new(self)
     }
+    #[doc = "Revert merges in a batch\n\nRevert a reviewed list of automatic merges, each exactly as the single revert does it\n(restore, suppress, disentangle), newest first: a merge whose survivor a later merge absorbed\ncan only be reverted after that later one, so newest first lets a chain inside one batch\nunwind. One decision's refusal does not stop the others; each item reports its own outcome.\nA dry run checks each decision as stored and changes nothing, so it cannot predict a refusal\nthat depends on another decision in the batch.\n\nSends a `POST` request to `/v1/admin/merge-decisions/revert-batch`\n\n```ignore\nlet response = client.revert_merge_decisions()\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn revert_merge_decisions(&self) -> builder::RevertMergeDecisions<'_> {
+        builder::RevertMergeDecisions::new(self)
+    }
     #[doc = "Get a merge decision\n\nOne entry of the journal by id, in the same shape as the list. A link to a decision resolves\nhere whatever page of the list it would fall on.\n\nSends a `GET` request to `/v1/admin/merge-decisions/{id}`\n\nArguments:\n- `id`: The merge decision\n```ignore\nlet response = client.get_merge_decision()\n    .id(id)\n    .send()\n    .await;\n```"]
     pub fn get_merge_decision(&self) -> builder::GetMergeDecision<'_> {
         builder::GetMergeDecision::new(self)
@@ -39590,6 +40073,90 @@ pub mod builder {
             let response = result?;
             match response.status().as_u16() {
                 200u16 => ResponseValue::from_response(response).await,
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::revert_merge_decisions`]\n\n[`Client::revert_merge_decisions`]: super::Client::revert_merge_decisions"]
+    #[derive(Debug, Clone)]
+    pub struct RevertMergeDecisions<'a> {
+        client: &'a super::Client,
+        body: Result<types::builder::MergeRevertBatchRequest, String>,
+    }
+    impl<'a> RevertMergeDecisions<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::MergeRevertBatchRequest>,
+            <V as std::convert::TryInto<types::MergeRevertBatchRequest>>::Error: std::fmt::Display,
+        {
+            self.body = value.try_into().map(From::from).map_err(|s| {
+                format!(
+                    "conversion to `MergeRevertBatchRequest` for body failed: {}",
+                    s
+                )
+            });
+            self
+        }
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::MergeRevertBatchRequest,
+                ) -> types::builder::MergeRevertBatchRequest,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+        #[doc = "Sends a `POST` request to `/v1/admin/merge-decisions/revert-batch`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::MergeRevertBatch>, Error<types::ProblemDetails>> {
+            let Self { client, body } = self;
+            let body = body
+                .and_then(|v| {
+                    types::MergeRevertBatchRequest::try_from(v).map_err(|e| e.to_string())
+                })
+                .map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v1/admin/merge-decisions/revert-batch", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "revert_merge_decisions",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
                 401u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),

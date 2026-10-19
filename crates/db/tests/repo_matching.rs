@@ -3678,3 +3678,67 @@ async fn live_timing_agrees_conflicts_or_says_nothing() {
     let none = live_timing(&db.pool, work, bulk).await.expect("bulk");
     assert_eq!(none.median_gap_hours, None);
 }
+
+/// Reverting a merge whose survivor was itself merged away later is refused until the later
+/// merge is reverted, and then leaves nothing of the absorbed series behind.
+///
+/// The revert addresses the rows the merge added to the survivor by the survivor's id, which no
+/// longer exists once B is merged into C: reverting A→B first failed on a foreign key halfway
+/// through, a server error that named neither the cause nor the merge to revert first, and the
+/// names A brought were on C where no statement keyed on B could reach them.
+#[tokio::test]
+async fn a_merge_into_a_since_merged_survivor_reverts_only_after_the_later_merge() {
+    let db = TestDb::spawn().await;
+    let alpha = seed::provider(&db, "alpha").create().await;
+    let beta = seed::provider(&db, "beta").create().await;
+    let gamma = seed::provider(&db, "gamma").create().await;
+    let a = ingest(&db, alpha, &VINLAND, &[1.0]).await;
+    let b = ingest(&db, beta, &BERSERK, &[1.0]).await;
+    let c = ingest(&db, gamma, &MONSTER, &[1.0]).await;
+
+    let a_into_b = merge_series(&db.pool, b, a, None, "auto_merged")
+        .await
+        .expect("merge a into b");
+    let b_into_c = merge_series(&db.pool, c, b, None, "auto_merged")
+        .await
+        .expect("merge b into c");
+
+    let refused = revert_merge(&db.pool, &a_into_b).await;
+    assert!(
+        matches!(refused, Err(DbError::Conflict(_))),
+        "a revert into a merged-away survivor must be refused, got {refused:?}"
+    );
+
+    revert_merge(&db.pool, &b_into_c)
+        .await
+        .expect("revert b from c");
+    revert_merge(&db.pool, &a_into_b)
+        .await
+        .expect("revert a from b");
+
+    let source_owners: Vec<uuid::Uuid> =
+        sqlx::query_scalar("SELECT series_id FROM series_sources ORDER BY source_path")
+            .fetch_all(&db.pool)
+            .await
+            .expect("sources");
+    assert_eq!(source_owners.len(), 3);
+    for series in [a, b, c] {
+        assert!(
+            source_owners.contains(&series.as_uuid()),
+            "{series} must own its source again"
+        );
+    }
+    for survivor in [b, c] {
+        let titles = list_series_titles(&db.pool, survivor)
+            .await
+            .expect("titles");
+        assert!(
+            !titles.iter().any(|t| t == VINLAND.title),
+            "{survivor} still carries the absorbed title: {titles:?}"
+        );
+    }
+    assert_eq!(
+        resolve_merged_series(&db.pool, a).await.expect("resolve"),
+        None
+    );
+}

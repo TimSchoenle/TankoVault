@@ -1457,7 +1457,45 @@
       "searchFailed": "Search failed: {message}",
       "searchSeries": "Search a series by title to open its info…",
       "suggested": "Suggested matches",
-      "unlink": "Unlink"
+      "unlink": "Unlink",
+      "reverify": {
+        "title": "AniList mapping re-verification",
+        "intro": "Checks every stored AniList mapping against its record: a mapping is refused when the record is not a library format (a novel, say) or when none of its titles matches the series. A dry run only reports; a real run removes each refused mapping and blocks the pair from being matched again.",
+        "dryRunStarted": "Dry run started. The counters update as it goes.",
+        "runStarted": "Run started. Refused mappings are removed as it goes.",
+        "failed": "Could not start the run: {message}",
+        "startedAt": "started {when}",
+        "finishedAt": "last finished {when}",
+        "never": "never run",
+        "modeDry": "dry run",
+        "modeReal": "applied",
+        "running": "checking",
+        "idle": "idle",
+        "lastError": "Last run ended with: {message}",
+        "kpi": {
+          "checked": "Checked",
+          "checkedSub": "mappings looked up",
+          "failed": "Refused",
+          "failedSub": "would not survive the check",
+          "removed": "Removed",
+          "removedSub": "mappings deleted and blocked",
+          "unreachable": "Unreachable",
+          "unreachableSub": "lookups that failed, left as they are"
+        },
+        "dryRun": "Dry run",
+        "apply": "Apply · remove {count}",
+        "applyNote": "Apply is offered after a finished dry run. It runs the check again and removes what fails then, which can differ from the list below if AniList changed in between.",
+        "listed": "Showing {shown} of {total} refused mappings.",
+        "col": {
+          "series": "Series",
+          "external": "Mapping",
+          "reason": "Why"
+        },
+        "reason": {
+          "notALibraryRecord": "not a library format",
+          "titlesDiffer": "titles do not match"
+        }
+      }
     },
     "tab": {
       "adapterTest": "Adapter test",
@@ -1660,6 +1698,30 @@
         "inserted_dedup": "Dedup keys the merge added",
         "moved_sources": "Source links",
         "moved_history": "Sync history rows"
+      },
+      "batch": {
+        "toggle": "Revert a list",
+        "intro": "Reverts up to 50 merges at once, newest first, all with the same reason. Do a dry run first; the revert is offered for the exact list it checked.",
+        "idsLabel": "decision ids — any separator works",
+        "idsPlaceholder": "one decision id per line",
+        "parsed": "{count} decision ids found.",
+        "tooMany": "More than {max} ids. Split the list.",
+        "reasonRequired": "Give a reason: it is stored on every merge the batch reverts.",
+        "dryRun": "Dry run",
+        "apply": "Revert {count}",
+        "dryRunDone": "Dry run: {reverted} would be attempted, {skipped} skipped.",
+        "done": "{reverted} reverted, {skipped} skipped.",
+        "col": {
+          "decision": "Decision",
+          "outcome": "Outcome"
+        },
+        "outcome": {
+          "wouldRevert": "would be reverted",
+          "reverted": "reverted",
+          "notFound": "no such decision",
+          "nothingToRevert": "nothing to revert",
+          "refused": "refused"
+        }
       }
     }
   },

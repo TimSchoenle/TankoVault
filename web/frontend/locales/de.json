@@ -1457,7 +1457,45 @@
       "searchFailed": "Suche fehlgeschlagen: {message}",
       "searchSeries": "Serie nach Titel suchen, um ihre Daten zu öffnen…",
       "suggested": "Vorgeschlagene Treffer",
-      "unlink": "Trennen"
+      "unlink": "Trennen",
+      "reverify": {
+        "title": "AniList-Zuordnungen neu prüfen",
+        "intro": "Prüft jede gespeicherte AniList-Zuordnung gegen ihren Eintrag: Eine Zuordnung wird abgelehnt, wenn der Eintrag kein Bibliotheksformat ist (etwa ein Roman) oder keiner seiner Titel zur Serie passt. Ein Testlauf meldet nur; ein echter Lauf entfernt jede abgelehnte Zuordnung und sperrt das Paar gegen erneutes Zuordnen.",
+        "dryRunStarted": "Testlauf gestartet. Die Zähler aktualisieren sich laufend.",
+        "runStarted": "Lauf gestartet. Abgelehnte Zuordnungen werden laufend entfernt.",
+        "failed": "Lauf konnte nicht gestartet werden: {message}",
+        "startedAt": "gestartet {when}",
+        "finishedAt": "zuletzt beendet {when}",
+        "never": "noch nie gelaufen",
+        "modeDry": "Testlauf",
+        "modeReal": "angewendet",
+        "running": "prüft",
+        "idle": "inaktiv",
+        "lastError": "Letzter Lauf endete mit: {message}",
+        "kpi": {
+          "checked": "Geprüft",
+          "checkedSub": "nachgeschlagene Zuordnungen",
+          "failed": "Abgelehnt",
+          "failedSub": "bestehen die Prüfung nicht",
+          "removed": "Entfernt",
+          "removedSub": "gelöschte und gesperrte Zuordnungen",
+          "unreachable": "Nicht erreichbar",
+          "unreachableSub": "fehlgeschlagene Abfragen, unverändert gelassen"
+        },
+        "dryRun": "Testlauf",
+        "apply": "Anwenden · {count} entfernen",
+        "applyNote": "Anwenden steht nach einem beendeten Testlauf bereit. Es prüft erneut und entfernt, was dann durchfällt; das kann von der Liste unten abweichen, wenn sich AniList zwischendurch geändert hat.",
+        "listed": "{shown} von {total} abgelehnten Zuordnungen angezeigt.",
+        "col": {
+          "series": "Serie",
+          "external": "Zuordnung",
+          "reason": "Grund"
+        },
+        "reason": {
+          "notALibraryRecord": "kein Bibliotheksformat",
+          "titlesDiffer": "Titel passen nicht"
+        }
+      }
     },
     "tab": {
       "adapterTest": "Adapter-Test",
@@ -1660,6 +1698,30 @@
         "inserted_dedup": "Von der Zusammenführung ergänzte Dedup-Schlüssel",
         "moved_sources": "Quellverknüpfungen",
         "moved_history": "Sync-Verlaufszeilen"
+      },
+      "batch": {
+        "toggle": "Liste zurücknehmen",
+        "intro": "Nimmt bis zu 50 Zusammenführungen auf einmal zurück, die neueste zuerst, alle mit derselben Begründung. Mach zuerst einen Testlauf; zurückgenommen werden kann genau die Liste, die er geprüft hat.",
+        "idsLabel": "Entscheidungs-IDs — jedes Trennzeichen geht",
+        "idsPlaceholder": "eine Entscheidungs-ID pro Zeile",
+        "parsed": "{count} Entscheidungs-IDs gefunden.",
+        "tooMany": "Mehr als {max} IDs. Teile die Liste auf.",
+        "reasonRequired": "Bitte einen Grund angeben: Er wird bei jeder zurückgenommenen Zusammenführung gespeichert.",
+        "dryRun": "Testlauf",
+        "apply": "{count} zurücknehmen",
+        "dryRunDone": "Testlauf: {reverted} würden versucht, {skipped} übersprungen.",
+        "done": "{reverted} zurückgenommen, {skipped} übersprungen.",
+        "col": {
+          "decision": "Entscheidung",
+          "outcome": "Ergebnis"
+        },
+        "outcome": {
+          "wouldRevert": "würde zurückgenommen",
+          "reverted": "zurückgenommen",
+          "notFound": "keine solche Entscheidung",
+          "nothingToRevert": "nichts zurückzunehmen",
+          "refused": "abgelehnt"
+        }
       }
     }
   },

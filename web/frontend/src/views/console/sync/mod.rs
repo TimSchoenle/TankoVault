@@ -3,6 +3,7 @@
 mod enrichment;
 mod inspector;
 mod queues;
+mod reverify;
 
 use crate::api;
 use crate::components::{async_block_list, use_step_up_gate, StepUpGate, StepUpGuard};
@@ -17,6 +18,7 @@ use inspector::SeriesSyncInspector;
 use progenitor_client::ResponseValue;
 use queues::AssignQueue;
 use queues::UnmatchedRemoteQueue;
+use reverify::MappingReverifyPanel;
 /// The sync panel's step-up gate, for any component below it.
 ///
 /// Context rather than a prop, unlike the other console panels: the actions that need the
@@ -76,6 +78,13 @@ pub(super) fn SyncAdminPanel() -> Element {
                 {i18n.t("console.sync.enrich.intro")}
             }
             EnrichmentPanel {}
+        }
+        section { style: "margin-bottom:24px;",
+            h3 { {i18n.t("console.sync.reverify.title")} }
+            p { class: "ik-muted", style: "font-size:13px;margin-top:0;max-width:74ch;",
+                {i18n.t("console.sync.reverify.intro")}
+            }
+            MappingReverifyPanel {}
         }
         section { style: "margin-bottom:24px;",
             h3 { {i18n.t("console.sync.accounts")} }

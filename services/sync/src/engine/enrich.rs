@@ -163,7 +163,11 @@ impl Enricher {
                     .fetch_public_metadata_by_title(&row.canonical_title)
                     .await?
                 {
-                    Some(meta) if record_identifies(&self.pool, row.id, &meta).await? => Some(meta),
+                    Some(meta)
+                        if record_identifies(&self.pool, row.id, &meta).await? == Some(true) =>
+                    {
+                        Some(meta)
+                    }
                     _ => None,
                 },
             };

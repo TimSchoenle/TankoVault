@@ -12,16 +12,17 @@ use tankovault_matcher::titles_identify;
 use super::registry::ProviderRegistry;
 use crate::provider::RemoteMetadata;
 
-/// Mappings read per page; also how often progress is published and the claim renewed.
-const PAGE: i64 = 50;
+/// Mappings read per page; also how often progress is published and the claim renewed, so it
+/// stays small enough that a page of rate-limited lookups finishes well inside the claim's
+/// abandonment window.
+const PAGE: i64 = 20;
 
 /// Failures kept in the state row. The count is exact; the list is for review, and an operator
 /// reading thousands of rows would sample them anyway.
 const MAX_LISTED_FAILURES: usize = 1_000;
 
-/// Whether `meta` names `series_id` by its title or one of its sources' listing titles.
-///
-/// An erased series identifies nothing, so a record for it is refused.
+/// Whether `meta` names `series_id` by its title or one of its sources' listing titles. `None`
+/// when the series no longer exists.
 ///
 /// # Errors
 /// Database failures.
@@ -29,15 +30,16 @@ pub(super) async fn record_identifies(
     pool: &PgPool,
     series_id: SeriesId,
     meta: &RemoteMetadata,
-) -> anyhow::Result<bool> {
-    let Some(identity) = catalog::series_identity_titles(pool, series_id).await? else {
-        return Ok(false);
-    };
-    Ok(titles_identify(
-        &identity.normalized_title,
-        &identity.listing_titles,
-        &meta.titles,
-    ))
+) -> anyhow::Result<Option<bool>> {
+    Ok(catalog::series_identity_titles(pool, series_id)
+        .await?
+        .map(|identity| {
+            titles_identify(
+                &identity.normalized_title,
+                &identity.listing_titles,
+                &meta.titles,
+            )
+        }))
 }
 
 /// Re-fetches every stored mapping by id and refuses the ones that no longer verify.
@@ -112,10 +114,12 @@ impl MappingVerifier {
                         }
                         Ok(None) => MappingReverifyReason::NotALibraryRecord,
                         Ok(Some(meta)) => {
-                            if record_identifies(&self.pool, series_id, &meta).await? {
-                                continue;
+                            match record_identifies(&self.pool, series_id, &meta).await? {
+                                // Verified, or the series was deleted since the page was read
+                                // and its mapping with it.
+                                Some(true) | None => continue,
+                                Some(false) => MappingReverifyReason::TitlesDiffer,
                             }
-                            MappingReverifyReason::TitlesDiffer
                         }
                     };
                     counts.failed = counts.failed.saturating_add(1);

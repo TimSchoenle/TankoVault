@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT p.lo AS \"lo!\", p.hi AS \"hi!\" FROM UNNEST($1::uuid[], $2::uuid[]) AS p(lo, hi) WHERE (SELECT md.outcome FROM merge_decisions md WHERE md.left_id = p.lo AND md.right_id = p.hi ORDER BY md.decided_at DESC LIMIT 1) = 'deferred'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "lo!",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "hi!",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "e8c47501167b54e0748fdec7de35d7ed284096d1daba6eb1211d57dda90a2196"
+}

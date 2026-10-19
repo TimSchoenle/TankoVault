@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM series s WHERE s.id = ANY($1) AND NOT EXISTS (SELECT 1 FROM series_sources ss WHERE ss.series_id = s.id)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5b81c384dcbaf141a76e9e790207db1999f98083105a4fd2686c956aa1664e51"
+}

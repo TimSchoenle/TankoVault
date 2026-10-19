@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT DISTINCT ON (o.id) o.id AS \"orphan!\", t.id AS \"twin!\" FROM series o JOIN series t ON replace(t.normalized_title, ' ', '') = replace(o.normalized_title, ' ', '') AND t.normalized_title = o.normalized_title AND t.id <> o.id WHERE o.normalized_title <> '' AND NOT EXISTS (SELECT 1 FROM series_sources x WHERE x.series_id = o.id) AND EXISTS (SELECT 1 FROM series_sources x WHERE x.series_id = t.id) AND NOT EXISTS ( SELECT 1 FROM sync_mappings mo JOIN sync_mappings mt ON mt.provider = mo.provider AND mt.series_id = t.id WHERE mo.series_id = o.id AND mo.provider = 'anilist' AND mo.external_id <> mt.external_id) ORDER BY o.id, (SELECT count(*) FROM series_sources x WHERE x.series_id = t.id) DESC, t.id LIMIT $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "orphan!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "twin!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "3ff805e85549cf63f28a5a1cbae1794d24223cab21582c09e871321152b48aa1"
+}

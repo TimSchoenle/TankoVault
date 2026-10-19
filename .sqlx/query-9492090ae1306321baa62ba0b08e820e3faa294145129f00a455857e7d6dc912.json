@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.normalized_title,\n                  ARRAY(SELECT DISTINCT ss.provider_title_normalized\n                          FROM series_sources ss\n                         WHERE ss.series_id = s.id\n                           AND ss.provider_title_normalized IS NOT NULL\n                         ORDER BY 1) AS \"listing_titles!: Vec<String>\"\n             FROM series s\n            WHERE s.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "normalized_title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "normalized_title"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "listing_titles!: Vec<String>",
+        "type_info": "TextArray",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "9492090ae1306321baa62ba0b08e820e3faa294145129f00a455857e7d6dc912"
+}

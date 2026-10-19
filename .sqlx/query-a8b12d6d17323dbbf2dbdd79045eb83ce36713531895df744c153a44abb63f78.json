@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH src AS (\n               SELECT false AS is_right, id FROM series_sources WHERE series_id = $1\n               UNION ALL\n               SELECT true, id FROM series_sources WHERE series_id = $2\n           ), ch AS (\n               SELECT src.is_right, src.id AS source_id,\n                      c.number_milli / 10000 AS n, c.discovered_at,\n                      min(c.discovered_at) OVER (PARTITION BY src.id) AS first_seen\n                 FROM src JOIN chapters c ON c.series_source_id = src.id\n           ), pair AS (\n               SELECT count(*) AS live_n,\n                      percentile_cont(0.5) WITHIN GROUP (\n                          ORDER BY abs(extract(epoch FROM l.discovered_at - r.discovered_at))\n                                   / 3600) AS gap_h\n                 FROM ch l\n                 JOIN ch r ON r.is_right AND r.n = l.n\n                WHERE NOT l.is_right\n                  AND l.discovered_at > greatest(l.first_seen, r.first_seen) + interval '1 day'\n                  AND r.discovered_at > greatest(l.first_seen, r.first_seen) + interval '1 day'\n                GROUP BY l.source_id, r.source_id\n           )\n           SELECT live_n AS \"live_n!\", gap_h AS \"gap_h!\"\n             FROM pair\n            WHERE live_n >= $3\n            ORDER BY gap_h, live_n DESC\n            LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "live_n!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "gap_h!",
+        "type_info": "Float8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "a8b12d6d17323dbbf2dbdd79045eb83ce36713531895df744c153a44abb63f78"
+}

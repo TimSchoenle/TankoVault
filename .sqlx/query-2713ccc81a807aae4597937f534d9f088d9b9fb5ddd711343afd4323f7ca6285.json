@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO series_titles SELECT * FROM jsonb_populate_recordset( jsonb_populate_record(NULL::series_titles, '{\"origin\": \"adapter\"}'), $1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2713ccc81a807aae4597937f534d9f088d9b9fb5ddd711343afd4323f7ca6285"
+}

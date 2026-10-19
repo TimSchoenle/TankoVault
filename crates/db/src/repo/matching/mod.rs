@@ -75,8 +75,8 @@ pub use keys::{KeyRebuildReport, rebuild_normalized_keys};
 pub use merge::{merge_series, resolve_merged_series, resolve_merged_series_batch};
 pub use pairs::{
     DistinctVerdict, DuplicatePair, SeriesMatchFacts, distinct_merge_pairs, find_duplicate_pairs,
-    open_merge_pairs, pair_similarities, record_distinct_pair, record_distinct_pairs,
-    series_match_facts,
+    find_orphan_twins, open_merge_pairs, pair_similarities, record_distinct_pair,
+    record_distinct_pairs, series_match_facts,
 };
 pub use queue::{
     MergeCandidateView, NewMergeCandidate, QueueOutcome, dismiss_merge_candidate,

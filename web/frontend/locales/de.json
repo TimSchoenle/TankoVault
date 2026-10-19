@@ -826,6 +826,7 @@
         "numeric_conflict": "Titel tragen unterschiedliche Zahlen",
         "only_local_changed": "nur deine Seite hat sich geändert",
         "only_remote_changed": "nur der Tracker hat sich geändert",
+        "orphan_twin": "quellenlose Kopie einer gleichnamigen Serie mit Quellen",
         "series_already_reconciled_this_run": "der Tracker führte dieses Werk doppelt",
         "stale_past_refresh_interval": "Metadaten waren fällig",
         "structural_identity_above_threshold": "identische Titel über der automatischen Schwelle",

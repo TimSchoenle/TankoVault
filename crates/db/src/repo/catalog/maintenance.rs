@@ -382,3 +382,61 @@ async fn measure(conn: &mut PgConnection, ids: &[Uuid]) -> DbResult<DeletionRepo
     .await?;
     Ok(report)
 }
+
+/// Delete up to `batch` series that nothing refers to: no source, no reader's watchlist entry or
+/// progress, no tracker mapping, sync override, conflict, match block or sync history. Returns
+/// how many.
+///
+/// These are leftovers of the registration race fixed in `register_chunk` and of the copy bug
+/// fixed in `f686b3b`: nothing will ever scan them, and no reader can lose anything with them.
+/// A series with any of the references above is kept, because deleting it would cascade that
+/// reference away.
+///
+/// # Why lock, then re-check
+///
+/// An orphan is still a candidate for a scan to attach to. The candidates are locked first
+/// (`SKIP LOCKED`, so one a scan is attaching to right now is left alone), and the delete
+/// re-checks the predicate in a statement of its own: under read committed that statement sees
+/// any source committed in between, and from the lock onward a new source's foreign-key check
+/// waits for this transaction rather than racing it.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only.
+pub async fn delete_unreferenced_orphans(pool: &PgPool, batch: i64) -> DbResult<i64> {
+    let mut tx = pool.begin().await?;
+    let ids: Vec<Uuid> = sqlx::query_scalar!(
+        "SELECT s.id FROM series s \
+          WHERE NOT EXISTS (SELECT 1 FROM series_sources x WHERE x.series_id = s.id) \
+            AND NOT EXISTS (SELECT 1 FROM watchlist_entries x WHERE x.series_id = s.id) \
+            AND NOT EXISTS (SELECT 1 FROM read_progress x WHERE x.series_id = s.id) \
+            AND NOT EXISTS (SELECT 1 FROM sync_mappings x WHERE x.series_id = s.id) \
+            AND NOT EXISTS (SELECT 1 FROM series_sync_overrides x WHERE x.series_id = s.id) \
+            AND NOT EXISTS (SELECT 1 FROM sync_conflicts x WHERE x.series_id = s.id) \
+            AND NOT EXISTS (SELECT 1 FROM sync_match_blocks x WHERE x.series_id = s.id) \
+            AND NOT EXISTS (SELECT 1 FROM sync_history x WHERE x.series_id = s.id) \
+          LIMIT $1 FOR UPDATE OF s SKIP LOCKED",
+        batch.max(1),
+    )
+    .fetch_all(&mut *tx)
+    .await?;
+    if ids.is_empty() {
+        return Ok(0);
+    }
+    let deleted = sqlx::query!(
+        "DELETE FROM series s WHERE s.id = ANY($1) \
+            AND NOT EXISTS (SELECT 1 FROM series_sources x WHERE x.series_id = s.id) \
+            AND NOT EXISTS (SELECT 1 FROM watchlist_entries x WHERE x.series_id = s.id) \
+            AND NOT EXISTS (SELECT 1 FROM read_progress x WHERE x.series_id = s.id) \
+            AND NOT EXISTS (SELECT 1 FROM sync_mappings x WHERE x.series_id = s.id) \
+            AND NOT EXISTS (SELECT 1 FROM series_sync_overrides x WHERE x.series_id = s.id) \
+            AND NOT EXISTS (SELECT 1 FROM sync_conflicts x WHERE x.series_id = s.id) \
+            AND NOT EXISTS (SELECT 1 FROM sync_match_blocks x WHERE x.series_id = s.id) \
+            AND NOT EXISTS (SELECT 1 FROM sync_history x WHERE x.series_id = s.id)",
+        &ids,
+    )
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    tx.commit().await?;
+    Ok(i64::try_from(deleted).unwrap_or(i64::MAX))
+}

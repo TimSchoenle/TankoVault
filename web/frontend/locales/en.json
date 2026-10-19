@@ -826,6 +826,7 @@
         "numeric_conflict": "titles carry different numbers",
         "only_local_changed": "only your side changed",
         "only_remote_changed": "only the tracker changed",
+        "orphan_twin": "a sourceless copy of a sourced series with the same title",
         "series_already_reconciled_this_run": "the tracker listed this work twice",
         "stale_past_refresh_interval": "metadata was due a refresh",
         "structural_identity_above_threshold": "identical titles above the automatic threshold",

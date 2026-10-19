@@ -106,7 +106,11 @@ async fn try_ingest(
     let series_id =
         match attached_series(&mut *tx, scanned.provider_id, &scanned.source_path).await? {
             Some(id) => id,
-            None => resolve_canonical_series(&mut tx, &scanned.meta, canonicaliser).await?,
+            None => {
+                resolve_canonical_series(&mut tx, &scanned.meta, canonicaliser)
+                    .await?
+                    .series_id
+            }
         };
     merge_metadata(
         &mut tx,

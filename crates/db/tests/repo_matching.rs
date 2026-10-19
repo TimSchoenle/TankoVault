@@ -3490,3 +3490,100 @@ async fn the_merge_journal_filters_searches_pages_and_resolves_by_id_in_the_stat
         Err(DbError::NotFound)
     ));
 }
+
+/// Set an `AniList` mapping on a series directly.
+async fn map_anilist(db: &TestDb, series_id: SeriesId, external_id: &str) {
+    sqlx::query(
+        "INSERT INTO sync_mappings (series_id, provider, external_id) VALUES ($1, 'anilist', $2)",
+    )
+    .bind(series_id.as_uuid())
+    .bind(external_id)
+    .execute(&db.pool)
+    .await
+    .expect("map to anilist");
+}
+
+/// **A sourceless copy pairs with its sourced twin, however many copies the title has.**
+///
+/// Production held 23,500 series with no source, 22,696 of them with a sourced series of the same
+/// title, in `AniList` clusters of 17–256 copies (`docs/MATCHING_OVERHAUL.md` §2). Those clusters
+/// are above `MAX_KEY_FANOUT`, so the ordinary shortlist refused them and they never merged. The
+/// twin shortlist ignores the cap, takes one twin per orphan (the most-sourced), and still refuses
+/// a pair whose `AniList` ids disagree.
+#[tokio::test]
+async fn every_orphan_copy_pairs_with_its_sourced_twin() {
+    use tankovault_db::repo::matching::find_orphan_twins;
+
+    let db = TestDb::spawn().await;
+    let alpha = seed::provider(&db, "alpha").create().await;
+    let beta = seed::provider(&db, "beta").create().await;
+    let twin = ingest(&db, alpha, &plain("Skeleton Soldier"), &[1.0]).await;
+    seed::series(&db, beta, "Skeleton Soldier")
+        .source_path("/beta/skeleton-soldier")
+        .ingest()
+        .await;
+
+    let mut copies = Vec::new();
+    for _ in 0..20 {
+        copies.push(insert_series_directly(&db, "Skeleton Soldier").await);
+    }
+    let contradicted = insert_series_directly(&db, "Skeleton Soldier").await;
+    map_anilist(&db, twin, "100").await;
+    map_anilist(&db, contradicted, "200").await;
+    // A sourceless series with a different title has no twin.
+    insert_series_directly(&db, "Unrelated Work").await;
+
+    let pairs = find_orphan_twins(&db.pool, 100).await.expect("twins");
+    assert_eq!(pairs.len(), copies.len(), "{pairs:?}");
+    for (orphan, survivor) in &pairs {
+        assert!(copies.contains(orphan), "{orphan} is not one of the copies");
+        assert_eq!(*survivor, twin, "every copy lands on the one sourced twin");
+    }
+    assert!(
+        !pairs.iter().any(|(orphan, _)| *orphan == contradicted),
+        "a copy whose AniList id disagrees is not a twin"
+    );
+}
+
+/// Only a sourceless series nothing refers to is deleted.
+///
+/// The orphans left once their twins are merged are kept if a reader watches them or a tracker
+/// maps them, because deleting the series would cascade that away; the rest go.
+#[tokio::test]
+async fn only_an_unreferenced_orphan_is_deleted() {
+    use tankovault_db::repo::catalog::maintenance::delete_unreferenced_orphans;
+
+    let db = TestDb::spawn().await;
+    let alpha = seed::provider(&db, "alpha").create().await;
+    let sourced = ingest(&db, alpha, &plain("Vinland Saga"), &[1.0]).await;
+    let bare = insert_series_directly(&db, "Bare Orphan").await;
+    let mapped = insert_series_directly(&db, "Mapped Orphan").await;
+    map_anilist(&db, mapped, "300").await;
+    let watched = insert_series_directly(&db, "Watched Orphan").await;
+    let reader = seed::user(&db, "reader").create().await;
+    watchlist_upsert(&db.pool, reader, watched, WatchStatus::Reading, true)
+        .await
+        .expect("watch");
+
+    assert_eq!(
+        delete_unreferenced_orphans(&db.pool, 100)
+            .await
+            .expect("delete"),
+        1
+    );
+    assert_eq!(
+        delete_unreferenced_orphans(&db.pool, 100)
+            .await
+            .expect("again"),
+        0
+    );
+
+    let left: Vec<uuid::Uuid> = sqlx::query_scalar("SELECT id FROM series")
+        .fetch_all(&db.pool)
+        .await
+        .expect("list");
+    assert!(!left.contains(&bare.as_uuid()));
+    for kept in [sourced, mapped, watched] {
+        assert!(left.contains(&kept.as_uuid()), "{kept} must survive");
+    }
+}

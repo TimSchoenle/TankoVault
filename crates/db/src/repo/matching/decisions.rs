@@ -17,7 +17,7 @@ use tankovault_domain::{SeriesId, UserId};
 pub struct NewMergeDecision<'a> {
     /// Groups every decision of one sweep run; `None` for an operator's console merge.
     pub sweep_id: Option<Uuid>,
-    /// `sweep_new` | `sweep_requeue` | `sweep_recheck` | `operator`.
+    /// `sweep_new` | `sweep_requeue` | `sweep_recheck` | `sweep_twin` | `operator`.
     pub trigger: &'a str,
     /// The operator behind an `operator` trigger, `None` for a sweep.
     pub actor: Option<UserId>,

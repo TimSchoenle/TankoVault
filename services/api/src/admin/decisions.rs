@@ -84,7 +84,8 @@ pub struct MergeDecisionFilter {
     /// Only merges that have since been undone.
     #[serde(default)]
     pub reverted: bool,
-    /// Restrict to one trigger: `operator`, `sweep_new`, `sweep_requeue`, `sweep_recheck`.
+    /// Restrict to one trigger: `operator`, `sweep_new`, `sweep_requeue`, `sweep_recheck`,
+    /// `sweep_twin`.
     #[serde(default)]
     pub trigger: Option<String>,
     /// A series or decision id matches exactly on any of the three ids; any other text is a

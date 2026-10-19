@@ -516,3 +516,45 @@ async fn a_stub_scanned_under_another_title_keeps_its_series() {
     assert_eq!(outcome.series_id.as_uuid(), stub);
     assert_eq!(series_count(&db).await, 1, "no empty duplicate was created");
 }
+
+/// **Two scans registering the same new paths at once leave no empty series behind.**
+///
+/// `register_chunk` creates a series per fresh path and then upserts the sources, and the upsert
+/// keeps the series a concurrent scan already filed the path under. The series this scan created
+/// for that path was left with no source: an orphan nothing would ever scan again
+/// (`docs/MATCHING_OVERHAUL.md` WP6). Each path must end up with exactly one series.
+///
+/// The overlap is real concurrency, not staged: with no overlap this passes without the fix too,
+/// so it can only ever fail for the right reason.
+#[tokio::test]
+async fn concurrent_registrations_of_one_path_leave_no_empty_series() {
+    use tankovault_db::repo::catalog::register_source_stubs;
+
+    let db = TestDb::spawn().await;
+    let provider = seed::provider(&db, "ingest-race").create().await;
+    let entries: Vec<(String, String)> = (0..200)
+        .map(|i| (format!("/manga/race-{i}"), format!("Race Work {i}")))
+        .collect();
+    let borrowed: Vec<(&str, &str)> = entries
+        .iter()
+        .map(|(p, t)| (p.as_str(), t.as_str()))
+        .collect();
+    let policy = MatchingConfig::default();
+
+    let (a, b) = tokio::join!(
+        register_source_stubs(&db.pool, provider, &borrowed, &policy),
+        register_source_stubs(&db.pool, provider, &borrowed, &policy),
+    );
+    a.expect("first scan");
+    b.expect("second scan");
+
+    let empty: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM series s \
+          WHERE NOT EXISTS (SELECT 1 FROM series_sources ss WHERE ss.series_id = s.id)",
+    )
+    .fetch_one(&db.pool)
+    .await
+    .expect("count empty series");
+    assert_eq!(empty, 0, "a lost registration race left an empty series");
+    assert_eq!(series_count(&db).await, 200);
+}

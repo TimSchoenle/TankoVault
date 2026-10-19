@@ -41,6 +41,9 @@ pub(crate) struct MediaMetadata {
     /// always the first non-empty of romaji/english/native, so callers relying on "the primary
     /// title" (e.g. the remote-entry snapshot) see a stable value.
     pub(crate) titles: Vec<String>,
+    /// How many leading `titles` are the record's own romaji/english/native; the rest are
+    /// synonyms.
+    pub(crate) own_titles: usize,
     pub(crate) description: Option<String>,
     pub(crate) cover_url: Option<String>,
     pub(crate) start_year: Option<i32>,
@@ -68,6 +71,7 @@ impl From<MediaMetadata> for RemoteMetadata {
         Self {
             external_id: m.media_id.to_string(),
             titles: m.titles,
+            own_titles: m.own_titles,
             description: m.description,
             cover_url: m.cover_url,
             start_year: m.start_year,
@@ -163,7 +167,7 @@ pub(crate) fn parse_media_metadata(data: &serde_json::Value) -> Option<MediaMeta
 /// `None` for a node with no id or usable title: an entry we can't name, we can't match.
 fn parse_media(media: &serde_json::Value) -> Option<MediaMetadata> {
     let media_id = media.get("id").and_then(serde_json::Value::as_i64)?;
-    let titles = titles_from_media(media);
+    let (titles, own_titles) = titles_from_media(media);
     if titles.is_empty() {
         return None;
     }
@@ -186,6 +190,7 @@ fn parse_media(media: &serde_json::Value) -> Option<MediaMetadata> {
     Some(MediaMetadata {
         media_id,
         titles,
+        own_titles,
         description,
         cover_url,
         start_year: start_year_from_media(media),
@@ -220,8 +225,9 @@ fn parse_media(media: &serde_json::Value) -> Option<MediaMetadata> {
 }
 
 /// Candidate titles for a `media` object: the non-blank romaji/english/native trio first (so
-/// `titles[0]` is a stable "primary"), then every non-blank synonym `AniList` tracks.
-fn titles_from_media(media: &serde_json::Value) -> Vec<String> {
+/// `titles[0]` is a stable "primary"), then every non-blank synonym `AniList` tracks, with how
+/// many of them are the trio.
+fn titles_from_media(media: &serde_json::Value) -> (Vec<String>, usize) {
     let mut titles = Vec::new();
     if let Some(title) = media.get("title") {
         for key in ["romaji", "english", "native"] {
@@ -232,6 +238,7 @@ fn titles_from_media(media: &serde_json::Value) -> Vec<String> {
             }
         }
     }
+    let own = titles.len();
     if let Some(synonyms) = media.get("synonyms").and_then(serde_json::Value::as_array) {
         for s in synonyms {
             if let Some(t) = s.as_str()
@@ -241,7 +248,7 @@ fn titles_from_media(media: &serde_json::Value) -> Vec<String> {
             }
         }
     }
-    titles
+    (titles, own)
 }
 
 /// Publication start year, when `AniList` knows one.
@@ -412,6 +419,10 @@ mod tests {
                 "Only I Level Up",
                 "I Level Up Alone",
             ]
+        );
+        assert_eq!(
+            solo.media.own_titles, 2,
+            "romaji and english, then synonyms"
         );
         assert_eq!(solo.media.tags, vec!["Action", "Fantasy"]);
         assert_eq!(solo.media.authors, vec!["Chugong", "Redice Studio"]);

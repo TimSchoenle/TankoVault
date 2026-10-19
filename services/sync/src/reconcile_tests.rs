@@ -1036,6 +1036,7 @@ mod verification {
         RemoteMetadata {
             external_id: external_id.to_owned(),
             titles: titles.iter().map(|t| (*t).to_owned()).collect(),
+            own_titles: titles.len(),
             description: Some(format!("description of {external_id}")),
             ..RemoteMetadata::default()
         }
@@ -1094,6 +1095,23 @@ mod verification {
             f.description_of(f.series).await.as_deref(),
             Some("description of 105398")
         );
+    }
+
+    /// A synonym is not identity. `AniList` lists franchise-wide names (`SAO`, a short form shared
+    /// by every spin-off) as synonyms of each sibling, so a sibling's record whose synonym equals
+    /// the series' title passed the check and the series took that sibling's metadata.
+    #[tokio::test]
+    async fn a_title_hit_naming_the_series_only_by_synonym_writes_nothing() {
+        let f = Fixture::spawn().await;
+        f.offer_public_api();
+        let mut sibling = record("200000", &["Solo Leveling: Ragnarok", TITLE]);
+        sibling.own_titles = 1;
+        *f.remote.public_title_hit.lock().expect("title mutex") = Some(sibling);
+
+        let report = f.engine.enrich_all(10, 10).await.expect("enrich");
+
+        assert_eq!((report.enriched, report.unresolved), (0, 1));
+        assert_eq!(f.mapping_of(f.series).await, None);
     }
 
     /// Mappings written before enrichment verified its hits: a dry run reports the ones that do

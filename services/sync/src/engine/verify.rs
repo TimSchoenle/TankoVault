@@ -22,8 +22,8 @@ const PAGE: i64 = 20;
 /// reading thousands of rows would sample them anyway.
 const MAX_LISTED_FAILURES: usize = 1_000;
 
-/// Whether `meta` names `series_id` by its title or one of its sources' listing titles. `None`
-/// when the series no longer exists.
+/// Whether one of `meta`'s own titles (not a synonym) names `series_id` by its title or one of
+/// its sources' listing titles. `None` when the series no longer exists.
 ///
 /// # Errors
 /// Database failures.
@@ -38,7 +38,7 @@ pub(super) async fn record_identifies(
             titles_identify(
                 &identity.normalized_title,
                 &identity.listing_titles,
-                &meta.titles,
+                &meta.titles[..meta.own_titles.min(meta.titles.len())],
             )
         }))
 }

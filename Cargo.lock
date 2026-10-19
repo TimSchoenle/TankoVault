@@ -6013,7 +6013,10 @@ name = "tankovault-matcher"
 version = "11.0.5"
 dependencies = [
  "proptest",
+ "serde",
+ "serde_json",
  "tankovault-domain",
+ "tankovault-matcher",
 ]
 
 [[package]]

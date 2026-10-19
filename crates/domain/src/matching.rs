@@ -178,6 +178,18 @@ pub enum MergeVerdict {
     Distinct,
 }
 
+impl MergeVerdict {
+    /// The stable slug `merge_decisions.verdict` stores.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Review => "review",
+            Self::Distinct => "distinct",
+        }
+    }
+}
+
 /// The canonicalisation policy the ingest paths defer to.
 ///
 /// Both methods are **pure** — same query and candidates give the same answer, no I/O — so the

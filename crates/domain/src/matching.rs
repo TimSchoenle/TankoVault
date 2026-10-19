@@ -48,8 +48,12 @@ pub struct Query {
 /// Which scoring rules fired for one query/candidate pair.
 ///
 /// A bare score cannot tell the merge queue *why* two titles matched, and the destructive
-/// automatic merge must not fire on a high fuzzy score alone — only on [`Self::is_structural`],
-/// which means the titles are the same string under a conservative rule.
+/// automatic merge must not fire on a high fuzzy score alone — only on
+/// [`Self::is_primary_identity`] (the titles are the same string under a conservative rule) or
+/// [`Self::is_corroborated_alias`].
+///
+/// Author, year, medium and tags are recorded here and rendered, but they never move a score or
+/// a verdict: across providers they are wrong or inconsistent too often to decide anything.
 ///
 /// A flat struct of `bool`s rather than a bitflag set: it is `Copy` and each field is named
 /// where it is read.
@@ -67,7 +71,7 @@ pub struct MatchSignals {
     /// dropped a space between two HTML elements" class (`Spy X Family` / `Spyxfamily`).
     pub compact_identity: bool,
     /// The query matched one of the candidate's *alternative* titles exactly, or exactly
-    /// modulo whitespace.
+    /// modulo whitespace. Evidence, not identity: an alias alone never merges or attaches.
     pub alias_identity: bool,
     /// The titles are not identical but are within a couple of characters of each other, long
     /// enough for that to mean something.
@@ -97,24 +101,48 @@ pub struct MatchSignals {
     /// against volume 4. Nothing else in the scorer distinguishes a sequel from its predecessor,
     /// and the closer the rest of the title matches the more certain a merge would be wrong.
     pub numeric_conflict: bool,
+    /// The query matched another source's *listing* title exactly, or exactly modulo
+    /// whitespace. A listing title is what a provider calls the work, so this is identity.
+    pub source_title_identity: bool,
+    /// One title carries an edition or arc marker the other lacks (`gaiden`, `colored`, an
+    /// `-hen` arc, `Railgun S` against `Railgun T`). A veto.
+    pub edition_conflict: bool,
+    /// Both series are mapped to the same external tracker id.
+    pub external_id_agreement: bool,
+    /// Both series are mapped to an external tracker and the ids differ. A veto.
+    pub external_id_conflict: bool,
+    /// Chapters both series first saw after they were already being scanned arrived within
+    /// hours of each other.
+    pub live_timing_agreement: bool,
+    /// Those chapters arrived weeks apart. A veto.
+    pub live_timing_conflict: bool,
 }
 
 impl MatchSignals {
-    /// Whether the two titles are the *same string* under an identity rule, not merely a high
-    /// score — the precondition for an automatic, destructive merge.
+    /// Whether a *primary* title — the canonical one, or a provider's listing title — is the
+    /// same string on both sides, not merely a high score.
     ///
     /// A fuzzy score can reach 0.95 on two genuinely different works with similar names; an
     /// identity rule at the same score means the titles differ only in whitespace or punctuation.
+    /// An alternative title is deliberately not enough: aliases are scraped free text shared
+    /// across franchises and junk (`unknown`, `sao`), and alias-only merges pulled a dozen hub
+    /// series into absorbing 20–100 different works each.
     #[must_use]
-    pub const fn is_structural(self) -> bool {
-        self.exact_title || self.compact_identity || self.alias_identity
+    pub const fn is_primary_identity(self) -> bool {
+        self.exact_title || self.compact_identity || self.source_title_identity
+    }
+
+    /// Whether an alternative-title hit is corroborated by a trusted signal that is not a title.
+    #[must_use]
+    pub const fn is_corroborated_alias(self) -> bool {
+        self.alias_identity && (self.external_id_agreement || self.live_timing_agreement)
     }
 
     /// The stable slugs for the rules that fired, for the merge queue's `reason` column and the
     /// operator console's badges.
     ///
     /// Stable because they are persisted and rendered: a renamed slug silently blanks a badge
-    /// on every historical row.
+    /// on every historical row. New slugs are appended, never inserted.
     #[must_use]
     pub fn labels(self) -> Vec<&'static str> {
         let mut out = Vec::new();
@@ -132,6 +160,12 @@ impl MatchSignals {
             (self.author_conflict, "author_conflict"),
             (self.tag_overlap, "tag_overlap"),
             (self.numeric_conflict, "numeric_conflict"),
+            (self.source_title_identity, "source_title_identity"),
+            (self.edition_conflict, "edition_conflict"),
+            (self.external_id_agreement, "external_id_agreement"),
+            (self.external_id_conflict, "external_id_conflict"),
+            (self.live_timing_agreement, "live_timing_agreement"),
+            (self.live_timing_conflict, "live_timing_conflict"),
         ] {
             if fired {
                 out.push(label);
@@ -169,8 +203,8 @@ pub enum Decision {
 /// affirmative is destructive: the absorbed series' id stops existing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MergeVerdict {
-    /// Merge without asking. Requires both a structural identity signal and a score at or above
-    /// the configured automatic-merge threshold.
+    /// Merge without asking. Requires a primary identity at or above the configured
+    /// automatic-merge threshold, or a corroborated alias, and no veto.
     Auto,
     /// Put it in front of an operator.
     Review,

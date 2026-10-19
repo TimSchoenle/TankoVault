@@ -1,8 +1,5 @@
 //! Pure string and numeric similarity primitives. No domain knowledge lives here.
 
-use tankovault_domain::compact_key;
-use tankovault_domain::matching::Candidate;
-
 /// Shortest compact title for which the edit-distance comparison is consulted at all.
 ///
 /// Below this length a one-character difference is a large fraction of the title, and the ratio
@@ -72,37 +69,75 @@ pub(crate) fn edit_distance(a: &str, b: &str) -> usize {
     previous[b_chars.len()]
 }
 
-/// Whether the query and *any* of the candidate's titles carry the same numbers.
+/// Whether `query` carries different numbers from any of `titles`.
 ///
-/// The numbers are read off the **compact** key, so `10nen` and `10 nen` produce the same
-/// signature and only a genuine difference — `overlord` against `overlord 2`, volume 3 against
-/// volume 4 — registers as a conflict. Leading zeros are insignificant, so `001` and `1` agree.
-pub(crate) fn numeric_signatures_agree(query_compact: &str, candidate: &Candidate) -> bool {
-    let query_signature = numeric_signature(query_compact);
-    std::iter::once(&candidate.normalized_title)
-        .chain(candidate.alt_normalized_titles.iter())
-        .any(|t| numeric_signature(&compact_key(t)) == query_signature)
+/// The caller passes the titles the query must agree with — the one it was scored against and
+/// the candidate's canonical title — never "any title the candidate answers to": that let a
+/// sequel's alias on a series wave every further sequel through (Douluo Dalu 4 merged into 5
+/// through the alias `douluo dalu 4 zhongji douluo`).
+pub(crate) fn numbers_conflict(query: &str, titles: &[&str]) -> bool {
+    let signature = numeric_signature(query);
+    titles.iter().any(|t| numeric_signature(t) != signature)
 }
 
-/// The numbers a title carries, in order, as maximal runs of ASCII digits.
+/// Roman numerals read as numbers when they stand alone. `i`, `v` and `x` are left out: as
+/// tokens they are far more often a pronoun, `versus` and the `×` of `Spy × Family`.
+const ROMAN_NUMERALS: &[(&str, u64)] = &[
+    ("ii", 2),
+    ("iii", 3),
+    ("iv", 4),
+    ("vi", 6),
+    ("vii", 7),
+    ("viii", 8),
+    ("ix", 9),
+];
+
+/// Spelled ordinals read as numbers. `first` is left out: it names the original far less often
+/// than it is part of a title (`First Love`), and the original rarely carries a number at all.
+const ORDINALS: &[(&str, u64)] = &[
+    ("second", 2),
+    ("third", 3),
+    ("fourth", 4),
+    ("fifth", 5),
+    ("sixth", 6),
+    ("seventh", 7),
+    ("eighth", 8),
+    ("ninth", 9),
+    ("tenth", 10),
+];
+
+/// The numbers a normalized title carries, in order.
 ///
-/// Parsed rather than compared as text so `001` and `1` agree, and saturating rather than
-/// wrapping so a title carrying a 40-digit run cannot panic under the release profile's
-/// overflow checks (SEC-11).
-pub(crate) fn numeric_signature(compact: &str) -> Vec<u64> {
+/// Digit runs are read as if the title were compact — a run continues across a space — so
+/// `10nen` and `10 nen` produce the same signature and only a genuine difference registers:
+/// `overlord` against `overlord 2`, volume 3 against volume 4. Parsed rather than compared as
+/// text so `001` and `1` agree, and saturating so a 40-digit run cannot panic under the release
+/// profile's overflow checks (SEC-11). A standalone roman numeral or spelled ordinal is a number
+/// too, so `Overlord II` and `Overlord 2` agree with each other and conflict with `Overlord`.
+pub(crate) fn numeric_signature(normalized: &str) -> Vec<u64> {
     let mut out = Vec::new();
     let mut current: Option<u64> = None;
-    for c in compact.chars() {
-        if let Some(digit) = c.to_digit(10) {
-            let acc = current.unwrap_or(0);
-            current = Some(acc.saturating_mul(10).saturating_add(u64::from(digit)));
-        } else if let Some(value) = current.take() {
+    for token in normalized.split_whitespace() {
+        let word = ROMAN_NUMERALS
+            .iter()
+            .chain(ORDINALS)
+            .find(|(w, _)| *w == token)
+            .map(|(_, n)| *n);
+        if let Some(value) = word {
+            out.extend(current.take());
             out.push(value);
+            continue;
+        }
+        for c in token.chars() {
+            if let Some(digit) = c.to_digit(10) {
+                let acc = current.unwrap_or(0);
+                current = Some(acc.saturating_mul(10).saturating_add(u64::from(digit)));
+            } else if let Some(value) = current.take() {
+                out.push(value);
+            }
         }
     }
-    if let Some(value) = current {
-        out.push(value);
-    }
+    out.extend(current);
     out
 }
 
@@ -164,4 +199,11 @@ pub(crate) fn is_token_subset(needle: &str, haystack: &str) -> bool {
     }
     let sh: std::collections::BTreeSet<&str> = haystack.split_whitespace().collect();
     sn.is_subset(&sh)
+}
+
+/// Whether every word of `needle` appears in `haystack` and `haystack` has words `needle` lacks.
+pub(crate) fn is_strict_token_subset(needle: &str, haystack: &str) -> bool {
+    let sn: std::collections::BTreeSet<&str> = needle.split_whitespace().collect();
+    let sh: std::collections::BTreeSet<&str> = haystack.split_whitespace().collect();
+    !sn.is_empty() && sn.len() < sh.len() && sn.is_subset(&sh)
 }

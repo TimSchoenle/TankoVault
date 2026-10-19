@@ -851,6 +851,12 @@ fn review_reason(verdict: &Adjudication) -> String {
         "below_auto_merge_threshold" => {
             "duplicate sweep: identical titles, below the automatic-merge threshold".to_owned()
         }
+        "alias_uncorroborated" => {
+            "duplicate sweep: an alternative title matches, and nothing else confirms it".to_owned()
+        }
+        veto @ ("external_id_conflict" | "live_timing_conflict") => {
+            format!("duplicate sweep: titles match, but {veto} says these are different works")
+        }
         guard => format!("duplicate sweep: would have merged automatically, held back by {guard}"),
     }
 }
@@ -1190,7 +1196,7 @@ mod tests {
         assert_eq!(exhaustive.recheck, scheduled.recheck);
     }
 
-    /// A synonym identifies the pair from whichever side it sits on.
+    /// A synonym is found from whichever side it sits on.
     ///
     /// `Query` has no alternative titles, so a sweep that scored the query side's canonical
     /// title alone saw only the *right* side's synonyms. Here the synonym is on the left, and
@@ -1203,17 +1209,16 @@ mod tests {
 
         // Sanity: without the synonym the pair is not an identity match at all.
         let bare_left = facts("Solo Leveling", &[], 1, 10);
+        let bare = best_reading(&bare_left, &right, 0.0).assessment.signals;
         assert!(
-            !best_reading(&bare_left, &right, 0.0)
-                .assessment
-                .signals
-                .is_structural()
+            !bare.alias_identity && !bare.is_primary_identity(),
+            "{bare:?}"
         );
 
         for (a, b) in [(&left, &right), (&right, &left)] {
             let reading = best_reading(a, b, 0.0);
             assert!(
-                reading.assessment.signals.is_structural(),
+                reading.assessment.signals.alias_identity,
                 "{:?}",
                 reading.assessment
             );
@@ -1227,9 +1232,12 @@ mod tests {
     /// every reading. That lifted the canonical reading, which agrees on nothing, to the clamp
     /// ceiling, where it tied with the alias reading that carries the identity and beat it on
     /// iteration order. The row then read "100% match … titles are similar but not the same
-    /// string": no structural signal, so no sweep could ever merge it, and no badge to say which
-    /// title the number came from. The older test above pins the same pair at a trigram of zero,
-    /// which is the one value that hides this.
+    /// string", with no badge to say which title the number came from. The older test above pins
+    /// the same pair at a trigram of zero, which is the one value that hides this.
+    ///
+    /// An alias alone no longer merges (an uncorroborated alias is what built the hub series of
+    /// `docs/MATCHING_OVERHAUL.md` §2), so the pair is reviewed — and must be reviewed as the
+    /// alias hit it is, not as a fuzzy score.
     #[test]
     fn an_alias_identity_is_not_lost_to_the_trigram_it_produced() {
         let left = facts("Solo Leveling", &["Na Honjaman Level Up"], 1, 10);
@@ -1242,7 +1250,9 @@ mod tests {
                 "{:?}",
                 reading.assessment
             );
-            assert_eq!(verdict_for(a, b, 1.0), MergeVerdict::Auto);
+            let verdict = adjudicate(reading.assessment, MatchingConfig::default().thresholds());
+            assert_eq!(verdict.verdict, MergeVerdict::Review);
+            assert_eq!(verdict.reason, "alias_uncorroborated");
         }
     }
 
@@ -1273,7 +1283,7 @@ mod tests {
     ///
     /// `Sorry but I’m not Yuri` and `Sorry But Im Not Yuri` sat in the queue at 0.80 with no
     /// path to ever leaving it. With the corrected normalization their keys are identical, which
-    /// is a structural signal, which is what `adjudicate` requires before merging anything.
+    /// is a primary identity, which is what `adjudicate` requires before merging anything.
     #[test]
     fn the_reported_duplicate_is_merged_automatically() {
         let a = facts("Sorry but I\u{2019}m not Yuri", &[], 1, 12);
@@ -1290,12 +1300,15 @@ mod tests {
     /// The two `KunManga` listings the user reported, scored the way the sweep scores them.
     ///
     /// One series' canonical title is byte-identical to the other's alternative title, which is
-    /// `alias_identity` — structural, so the merge is permitted at all — and the year is within
-    /// a year, so the score reaches the ceiling. Nothing about the *scoring* was ever wrong here:
-    /// the pair sat split for a day because `find_duplicate_pairs` never reached it. This pins
-    /// the half that has to stay true for that fix to have any effect.
+    /// `alias_identity`. The pair sat split for a day because `find_duplicate_pairs` never
+    /// reached it; this pins that, once reached, the sweep reads it as the alias hit it is.
+    ///
+    /// It used to merge on the alias plus an agreeing year. Production showed that route
+    /// (alias, lifted by metadata) behind 12,356 suspicious merges and the contaminated hub
+    /// series in `docs/MATCHING_OVERHAUL.md` §2, so an alias alone is now held for review, and
+    /// merges once a trusted non-title signal agrees.
     #[test]
-    fn the_reported_pair_merges_once_the_sweep_can_reach_it() {
+    fn the_reported_pair_is_held_until_its_alias_is_corroborated() {
         let long = "The Capital\u{2019}s One-Man Army Golem Master\u{2014}Unexpectedly Banished!? \
                     ~Now That I\u{2019}m Free, I\u{2019}ll Create the Ultimate Golem Together \
                     With My Beautiful Hero Disciples. I Don\u{2019}t Care Even if They Beg Me to \
@@ -1314,7 +1327,17 @@ mod tests {
             "{:?}",
             reading.assessment
         );
-        assert_eq!(verdict_for(&subtitled, &bare, 0.4), MergeVerdict::Auto);
+        let thresholds = MatchingConfig::default().thresholds();
+        let held = adjudicate(reading.assessment, thresholds);
+        assert_eq!(held.verdict, MergeVerdict::Review);
+        assert_eq!(held.reason, "alias_uncorroborated");
+
+        let mut corroborated = reading.assessment;
+        corroborated.signals.live_timing_agreement = true;
+        assert_eq!(
+            adjudicate(corroborated, thresholds).verdict,
+            MergeVerdict::Auto
+        );
     }
 
     /// Two series that agree on nothing but a *shared synonym* are still a duplicate.
@@ -1335,11 +1358,12 @@ mod tests {
         // cannot be passing on the canonical titles.
         let bare_left = facts("The Beast Tamer Exiled From His Party", &[], 1, 30);
         let bare_right = facts("Banished Monster Tamer", &[], 1, 24);
+        let bare = best_reading(&bare_left, &bare_right, 0.0)
+            .assessment
+            .signals;
         assert!(
-            !best_reading(&bare_left, &bare_right, 0.0)
-                .assessment
-                .signals
-                .is_structural()
+            !bare.alias_identity && !bare.is_primary_identity(),
+            "{bare:?}"
         );
 
         let reading = best_reading(&left, &right, 0.0);
@@ -1386,7 +1410,7 @@ mod tests {
             reading.assessment
         );
         assert!(
-            reading.assessment.signals.is_structural(),
+            reading.assessment.signals.is_primary_identity(),
             "sanity: titles are identical"
         );
 

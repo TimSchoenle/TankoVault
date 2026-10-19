@@ -14,6 +14,7 @@ pub use tankovault_domain::matching::{
 
 mod assess;
 mod decide;
+mod edition;
 mod pair;
 mod similarity;
 mod title;

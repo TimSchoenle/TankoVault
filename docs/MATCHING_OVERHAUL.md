@@ -1,7 +1,8 @@
 # Matching overhaul — implementation plan
 
-**Audience:** the engineer or agent implementing this. **Status:** planned, nothing below is
-implemented yet. **Source:** an analysis of the production catalogue (2026-10-19) against the code
+**Audience:** the engineer or agent implementing this. **Status:** WP0, WP1 and WP2 are
+implemented (see [§9](#9-implementation-notes) for where the code departs from the letter of this
+plan); WP3–WP8 are planned. **Source:** an analysis of the production catalogue (2026-10-19) against the code
 at `5cad031`. Every production number below came from a query in [Appendix A](#appendix-a--production-evidence);
 re-run them before acting on any number that matters to a decision.
 
@@ -498,6 +499,58 @@ PRs 3, 4 and 8 are independent of the matcher work and can go in parallel.
 - **Chapter page image comparison.** 4–6 weeks for on-demand sampling of the ~10 adapter
   families, 80–240 GB for the current review set, webtoon slice alignment, copyright exposure from
   downloading page images, and ban risk on scraping sites. Rejected.
+
+---
+
+## 9. Implementation notes
+
+Decisions taken while implementing, where the plan left a choice open or its letter would have
+done harm. Each is in the code with its reason.
+
+**WP0.**
+- The pair reading lives in `crates/matcher/src/pair.rs` (`read_pair`, `adjudicate_pair`,
+  `PairSide`); the sweep calls it. The JSONL reader is `tankovault_matcher::replay`, behind the
+  matcher's `replay` feature so no service links it.
+- `tests/fixtures/*.jsonl` are hand-built stand-ins in the A10 shape; the real exports have not
+  been taken. `crates/matcher/tests/fixtures/README.md` says how to replace them. The ≥ 99 %
+  reproduction check against a production export is still to be run, on the WP0 commit.
+
+**WP1.**
+- `decide` still requires `score >= high` for an attach, so `high` keeps a meaning (above 1.0 it
+  switches automatic attach off). A primary identity scores 1.0, so this changes nothing at the
+  defaults.
+- `decide`: a numeric conflict is `Create`; any other veto is `Ambiguous` at or above `low` and
+  `Create` below it, so a veto never queues a pair the score would not.
+- `best_assessment` ranks a primary identity above a higher-scoring fuzzy candidate, because a
+  reordered title reaches the same clamped 1.0 as an identical one and only the identical one may
+  attach.
+- `adjudicate`: `below_review_floor` is checked before the two review vetoes. A corroborated alias
+  merges with no score bar (the alias discount caps it at 0.80 by design) under the new reason
+  slug `corroborated_alias`; enabled guards still hold it.
+- `read_pair` ranks primary identity, corroborated alias, **plain alias**, then score. The plain
+  alias tier keeps the bug pinned by `an_alias_identity_is_not_lost_to_the_trigram_it_produced`
+  fixed: without it a canonical reading lifted to 1.0 by the alias's own trigram outranks the
+  alias reading and the row loses its alias badge.
+- `services/sync/src/engine/resolve.rs` is unchanged: it still maps at `score >= high`. With
+  metadata out of the score, fewer tracker entries reach `high` on a fuzzy title.
+
+**WP2.**
+- Roman numerals are `ii`–`ix`; `i`, `v` and `x` are left out (pronoun, `versus`, the `×` of
+  `Spy × Family`). Spelled ordinals are `second`–`tenth`; `first` is left out.
+- Numbers and edition markers are compared against the matched title and the candidate's canonical
+  title, and — in the sweep — between the two canonical titles. A cross-language pair whose one
+  canonical title carries a number (`The Second Coming of Gluttony` against its romanised title)
+  therefore reads as distinct. Accepted as the conservative failure.
+- `alias_is_distinctive` lives in `tankovault_domain::normalize`, because `crates/db` applies it at
+  write time and cannot link the matcher. Its Latin length floors would refuse most native CJK
+  titles, so a key in a non-Latin script needs three characters instead.
+- The franchise rule applies to aliases of at most four words. A longer alias contained in a
+  longer title is the short form of one long light-novel title, which is the same work.
+- Write time applies a narrower predicate than match time. `add_series_titles` drops only
+  placeholder text (`alias_is_placeholder`: the deny-list, and empty keys); the length rules apply
+  only when matching (`alias_is_distinctive`). `series_titles` also feeds catalogue search, and
+  the length rules would have dropped real short titles from it — `Kureimoa` for *Claymore*, which
+  `repo_tracking::the_search_matches_canonical_titles_alt_titles_tags_and_authors` pins.
 
 ---
 

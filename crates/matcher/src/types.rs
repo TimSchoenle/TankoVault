@@ -6,15 +6,15 @@ use tankovault_domain::matching::{MatchSignals, MergeVerdict};
 /// Confidence thresholds for the decision bands, plus the guards an automatic merge must clear.
 #[derive(Debug, Clone, Copy)]
 pub struct Thresholds {
-    /// At or above this score [`decide`](crate::decide) attaches a scanned source to the
-    /// existing series with no review, unless the titles carry conflicting numbers.
+    /// At or above this score, and only with a primary identity and no veto,
+    /// [`decide`](crate::decide) attaches a scanned source to the existing series with no review.
     pub high: f32,
     /// The review floor. Below it a pair is not queued at all: `decide` creates a new series
     /// and [`adjudicate`](crate::adjudicate) reports [`MergeVerdict::Distinct`].
     pub low: f32,
-    /// At or above this score — **and** only with a structural identity signal, and only with
-    /// every enabled [`MergeGuards`] silent — two series that already exist separately are
-    /// merged without asking. See [`adjudicate`](crate::adjudicate).
+    /// At or above this score — **and** only with a primary identity, and only with every
+    /// enabled [`MergeGuards`] silent — two series that already exist separately are merged
+    /// without asking. See [`adjudicate`](crate::adjudicate).
     pub auto_merge: f32,
     /// Which vetoes are switched on for this deployment.
     pub guards: MergeGuards,
@@ -28,8 +28,10 @@ pub struct Thresholds {
 /// whose providers rarely publish credits gains nothing from [`Self::author_conflict`] and pays
 /// for it in review-queue length.
 ///
-/// Switching one **off** does not switch the signal off — it still fires, is still scored, is
-/// still recorded on the decision — it only stops that signal blocking the merge.
+/// Switching one **off** does not switch the signal off — it still fires and is still recorded
+/// on the decision — it only stops that signal blocking the merge. The author, year and medium
+/// signals no longer move a score, so those three guards are the only way they can affect a
+/// verdict at all.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[expect(
     clippy::struct_excessive_bools,
@@ -95,8 +97,8 @@ impl Default for Thresholds {
             high: 0.85,
             low: 0.6,
             // Deliberately close to the ceiling. The automatic merge deletes a series row, and
-            // the signals that can reach this number without a structural identity match are
-            // exactly the fuzzy ones an operator should be looking at.
+            // the signals that can reach this number without a primary identity are exactly the
+            // fuzzy ones an operator should be looking at.
             auto_merge: 0.97,
             guards: MergeGuards::default(),
         }
@@ -152,10 +154,10 @@ pub struct Explanation {
 
 /// A merge verdict with the rule that produced it.
 ///
-/// The slug matters as much as the verdict: "not merged" is the answer for four different
-/// reasons — below the review floor, below the automatic threshold, no structural identity, or a
-/// guard — and an operator triaging a queue of thousands needs to know which, without re-deriving
-/// it from a score and a bag of signal names.
+/// The slug matters as much as the verdict: "not merged" is the answer for many different
+/// reasons — below the review floor, below the automatic threshold, no identity, an alias alone,
+/// a veto, or a guard — and an operator triaging a queue of thousands needs to know which,
+/// without re-deriving it from a score and a bag of signal names.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Adjudication {
     /// What to do with the pair.

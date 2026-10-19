@@ -2,12 +2,14 @@
 //! and adjudicate it. One implementation for the duplicate sweep and the offline replay harness,
 //! so a replayed verdict is the verdict the sweep would reach.
 
-use tankovault_domain::matching::{Candidate, Query};
+use tankovault_domain::matching::{Candidate, MatchSignals, Query};
 use tankovault_domain::{ContentType, SeriesId};
 
-use crate::assess::{assess, explain};
+use crate::assess::{alias_counts_as_identity, assess, explain, is_franchise_name};
 use crate::decide::adjudicate;
-use crate::types::{Adjudication, Assessment, Explanation, ScoreTerm, Thresholds};
+use crate::edition::editions_conflict;
+use crate::similarity::numbers_conflict;
+use crate::types::{Adjudication, Assessment, ScoreTerm, Thresholds};
 
 /// One side of a pair, borrowed from whatever holds the series' facts.
 #[derive(Debug, Clone, Copy)]
@@ -87,7 +89,7 @@ pub fn adjudicate_pair(
 /// it. Explaining every reading would allocate a term list per alias per direction for a number
 /// the sweep discards.
 ///
-/// # Why a structural reading outranks a higher-scoring fuzzy one
+/// # Why an identity reading outranks a higher-scoring fuzzy one
 ///
 /// `trigram` is the *pair's* similarity, and `pair_similarities` takes it over each side's
 /// alternative titles as well as the two canonical ones — so a pair whose synonym identifies it
@@ -95,18 +97,27 @@ pub fn adjudicate_pair(
 /// `max(trigram, textual)`, which lifts the canonical reading to the clamp ceiling with no
 /// identity signal behind it, where it ties with the alias reading that *does* carry one. Ranked
 /// on score alone, the tie went to whichever came first — the canonical one — and the pair was
-/// filed as `no_structural_identity` at 100%, which `adjudicate` can never merge and no later
-/// sweep re-reads any differently. Structure first, then score: an identity rule is the
-/// stronger claim about a pair, and it is the only one an automatic merge may act on.
+/// filed as `no_structural_identity` at 100%, with no badge saying which title the number came
+/// from. So readings rank by the strength of their claim, then by score: a primary identity, a
+/// corroborated alias, an alias on its own, nothing. The class is read *after* the pair rules
+/// below, so a query-side synonym hit ranks as the alias hit it is.
+///
+/// # The rules only a pair can apply
+///
+/// `assess` sees one query title and the candidate's titles. Here both sides have a canonical
+/// title of their own, so a reading also has to agree with the *query side's* canonical title:
+/// its numbers and edition markers, and its franchise name. Douluo Dalu 4 merged into 5 because
+/// the reading compared the alias `douluo dalu 4 zhongji douluo` with itself and never looked at
+/// `Douluo Dalu 5`.
 ///
 /// # Panics
 ///
 /// Never: every pair has at least its two canonical readings.
 #[must_use]
 pub fn read_pair(left: PairSide<'_>, right: PairSide<'_>, trigram: f32) -> PairReading {
-    // whether an identity rule fired, the score, whether the query side was the left series,
-    // the winning title, whether it is an alias
-    let mut best: Option<(bool, f32, bool, &str, bool)> = None;
+    // the reading's class and score, whether the query side was the left series, the winning
+    // title, whether it is an alias
+    let mut best: Option<((u8, f32), bool, &str, bool)> = None;
 
     for query_is_left in [true, false] {
         let (query_side, candidate_side) = if query_is_left {
@@ -130,14 +141,21 @@ pub fn read_pair(left: PairSide<'_>, right: PairSide<'_>, trigram: f32) -> PairR
             query.normalized_title.clear();
             query.normalized_title.push_str(title);
             let assessment = assess(&query, &candidate);
-            let rank = (assessment.signals.is_structural(), assessment.score);
-            if best.is_none_or(|(structural, score, ..)| rank > (structural, score)) {
-                best = Some((rank.0, rank.1, query_is_left, title, from_alias));
+            let signals = pair_rules(
+                assessment.signals,
+                query_side,
+                candidate_side,
+                title,
+                from_alias,
+            );
+            let rank = (class(signals), assessment.score);
+            if best.is_none_or(|(best_rank, ..)| rank > best_rank) {
+                best = Some((rank, query_is_left, title, from_alias));
             }
         }
     }
 
-    let (_, _, query_is_left, title, from_alias) =
+    let (_, query_is_left, title, from_alias) =
         best.expect("a pair always has at least the two canonical readings");
     let (query_side, candidate_side) = if query_is_left {
         (left, right)
@@ -146,7 +164,32 @@ pub fn read_pair(left: PairSide<'_>, right: PairSide<'_>, trigram: f32) -> PairR
     };
     let query = query_of(query_side, title.to_owned());
     let candidate = candidate_of(candidate_side, trigram);
-    let explained = relabel_alias_query(explain(&query, &candidate), from_alias);
+    let mut explained = explain(&query, &candidate);
+    let scored = explained.assessment.signals;
+    let signals = pair_rules(scored, query_side, candidate_side, title, from_alias);
+    let canonicals = || {
+        format!(
+            "the canonical titles {:?} and {:?}",
+            query_side.normalized_title, candidate_side.normalized_title
+        )
+    };
+    // Zero-delta terms: the pair rules veto rather than score, and the terms must still sum to
+    // the score.
+    if signals.numeric_conflict && !scored.numeric_conflict {
+        explained.terms.push(ScoreTerm {
+            rule: "numeric_conflict",
+            delta: 0.0,
+            detail: format!("{} carry different numbers", canonicals()),
+        });
+    }
+    if signals.edition_conflict && !scored.edition_conflict {
+        explained.terms.push(ScoreTerm {
+            rule: "edition_conflict",
+            delta: 0.0,
+            detail: format!("{} name different editions or arcs", canonicals()),
+        });
+    }
+    explained.assessment.signals = signals;
 
     PairReading {
         assessment: explained.assessment,
@@ -182,19 +225,48 @@ fn candidate_of(side: PairSide<'_>, similarity: f32) -> Candidate {
     }
 }
 
-/// Re-label an identity hit that came from one of the *query* side's alternative titles.
+/// How strong a reading's claim is: a primary identity, a corroborated alias, an alias, nothing.
+const fn class(signals: MatchSignals) -> u8 {
+    if signals.is_primary_identity() {
+        3
+    } else if signals.is_corroborated_alias() {
+        2
+    } else if signals.alias_identity {
+        1
+    } else {
+        0
+    }
+}
+
+/// Apply the rules that need both sides' canonical titles to one reading's signals.
 ///
-/// `exact_title` and `compact_identity` assert that the two series' **canonical** titles are the
-/// same string. That claim is what the console renders as a badge and what the auto-merge journal
-/// records as its justification for deleting a row, and it is false when the title that matched
-/// was a synonym. `alias_identity` is the honest signal and is structural just the same, so the
-/// verdict does not move — only the reason given for it.
-fn relabel_alias_query(mut explanation: Explanation, query_from_alias: bool) -> Explanation {
-    let signals = &mut explanation.assessment.signals;
-    if query_from_alias && (signals.exact_title || signals.compact_identity) {
-        signals.alias_identity = true;
+/// An identity hit through one of the *query* side's alternative titles is relabelled:
+/// `exact_title` and `compact_identity` assert that the two **canonical** titles are the same
+/// string, which is what the console renders as a badge, what the auto-merge journal records as
+/// its justification for deleting a row, and what [`adjudicate`] merges on. Through a synonym it
+/// is an alias hit, held to the alias rules.
+fn pair_rules(
+    mut signals: MatchSignals,
+    query_side: PairSide<'_>,
+    candidate_side: PairSide<'_>,
+    query_title: &str,
+    query_from_alias: bool,
+) -> MatchSignals {
+    let canonicals = [query_side.normalized_title, candidate_side.normalized_title];
+    let alias_hit = if query_from_alias && (signals.exact_title || signals.compact_identity) {
         signals.exact_title = false;
         signals.compact_identity = false;
+        true
+    } else {
+        signals.alias_identity
+    };
+    if alias_hit {
+        // `assess` already held a candidate-side alias to the candidate's canonical title; this
+        // adds the query side's, and covers a query-side alias outright.
+        signals.alias_identity = alias_counts_as_identity(query_title, &canonicals);
+        signals.containment |= canonicals.iter().any(|c| is_franchise_name(query_title, c));
     }
-    explanation
+    signals.numeric_conflict |= numbers_conflict(canonicals[0], &canonicals[1..]);
+    signals.edition_conflict |= editions_conflict(canonicals[0], canonicals[1]);
+    signals
 }

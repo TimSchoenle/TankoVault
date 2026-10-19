@@ -7,8 +7,8 @@ use tankovault_domain::matching::{Candidate, Canonicaliser, Decision, Query};
 ///
 /// Ingest canonicalisation and external sync both decide through this one scorer via the
 /// [`Canonicaliser`] impl below, so `crates/db` names the port without depending on the scorer.
-/// Defaults are `tankovault_matcher::Thresholds::default()`: 0.85 to attach, 0.6 to flag as a
-/// merge candidate.
+/// Defaults are `tankovault_matcher::Thresholds::default()`: 0.85 to attach (an identical title
+/// only), 0.6 to flag as a merge candidate.
 ///
 /// ```
 /// use tankovault_config::MatchingConfig;
@@ -23,10 +23,10 @@ use tankovault_domain::matching::{Candidate, Canonicaliser, Decision, Query};
 ///     tags: Vec::new(),
 ///     authors: Vec::new(),
 /// };
-/// // No corroborating signal, so the score is just the trigram similarity — band edges exact.
-/// let scoring = |similarity| Candidate {
+/// // An unrelated title, so the score is just the trigram similarity — band edges exact.
+/// let titled = |title: &str, similarity| Candidate {
 ///     series_id: existing,
-///     normalized_title: "berserk".to_owned(),
+///     normalized_title: title.to_owned(),
 ///     similarity,
 ///     alt_normalized_titles: Vec::new(),
 ///     content_type: ContentType::Unknown,
@@ -34,27 +34,29 @@ use tankovault_domain::matching::{Candidate, Canonicaliser, Decision, Query};
 ///     tags: Vec::new(),
 ///     authors: Vec::new(),
 /// };
+/// let scoring = |similarity| titled("berserk", similarity);
 ///
 /// let policy = MatchingConfig::default();
-/// assert_eq!(policy.canonicalise(&query, &[scoring(0.9)]), Decision::Attach(existing));
+/// // Only an identical title attaches.
+/// assert_eq!(policy.canonicalise(&query, &[titled("solo leveling", 0.2)]), Decision::Attach(existing));
 /// assert_eq!(policy.canonicalise(&query, &[scoring(0.3)]), Decision::Create);
 ///
-/// // The middle band creates the series *and* queues the pair for operator review.
-/// assert!(matches!(
-///     policy.canonicalise(&query, &[scoring(0.7)]),
-///     Decision::Ambiguous { candidate, .. } if candidate == existing
-/// ));
+/// // Similarity alone, however high, creates the series *and* queues the pair for review.
+/// for similarity in [0.7, 0.9] {
+///     assert!(matches!(
+///         policy.canonicalise(&query, &[scoring(similarity)]),
+///         Decision::Ambiguous { candidate, .. } if candidate == existing
+///     ));
+/// }
 ///
-/// // Raising `high` moves the band: the same candidate now needs review instead of attaching.
-/// let cautious = MatchingConfig { high: 0.95, ..MatchingConfig::default() };
-/// assert!(matches!(
-///     cautious.canonicalise(&query, &[scoring(0.9)]),
-///     Decision::Ambiguous { .. }
-/// ));
+/// // Raising `low` moves the floor: the same candidate is now a new series, not a review row.
+/// let cautious = MatchingConfig { low: 0.95, ..MatchingConfig::default() };
+/// assert_eq!(cautious.canonicalise(&query, &[scoring(0.9)]), Decision::Create);
 ///
-/// // Boundaries are inclusive on the lower side of each band: `score == high` attaches.
-/// let exact = MatchingConfig { high: 0.9, low: 0.6, ..MatchingConfig::default() };
-/// assert_eq!(exact.canonicalise(&query, &[scoring(0.9)]), Decision::Attach(existing));
+/// // Boundaries are inclusive on the lower side of each band: an identity scoring exactly
+/// // `high` attaches.
+/// let exact = MatchingConfig { high: 1.0, ..MatchingConfig::default() };
+/// assert_eq!(exact.canonicalise(&query, &[titled("solo leveling", 0.2)]), Decision::Attach(existing));
 ///
 /// // No candidates is the same answer as no good candidate.
 /// assert_eq!(policy.canonicalise(&query, &[]), Decision::Create);
@@ -68,17 +70,18 @@ use tankovault_domain::matching::{Candidate, Canonicaliser, Decision, Query};
               turning one guard off without restating the other three."
 )]
 pub struct MatchingConfig {
-    /// At or above this score, attach to the existing series outright.
+    /// At or above this score, and only when the incoming title is the series' own title under
+    /// an identity rule, attach to the existing series outright.
     #[serde(default = "default_threshold_high")]
     pub high: f32,
-    /// At or above this score but below [`Self::high`], create the series but flag the pair for
+    /// At or above this score, and not attached, create the series but flag the pair for
     /// operator review.
     #[serde(default = "default_threshold_low")]
     pub low: f32,
-    /// At or above this score — **and** only when a structural identity rule fired — the
+    /// At or above this score — **and** only when a primary identity rule fired — the
     /// duplicate sweep merges two existing series without an operator. A separate knob from
     /// [`Self::high`]: that files an incoming source, this deletes one that already exists.
-    /// See `tankovault_matcher::adjudicate` for the structural half of the bar.
+    /// See `tankovault_matcher::adjudicate` for the identity half of the bar.
     #[serde(default = "default_threshold_auto_merge")]
     pub auto_merge: f32,
     /// How many trigram candidates to score per query title; more only costs a wider index scan.
@@ -97,8 +100,8 @@ pub struct MatchingConfig {
     #[serde(default = "enabled")]
     pub block_auto_merge_on_author_conflict: bool,
     /// Release years three or more years apart. Catches re-serialisations and remakes that share
-    /// an exact title; the scorer's own -0.05 penalty is smaller than the exact-title bonus and
-    /// so cannot hold such a pair back on its own.
+    /// an exact title. The year never moves a score, so this guard is the only way it can hold a
+    /// pair back.
     #[serde(default = "enabled")]
     pub block_auto_merge_on_year_conflict: bool,
     /// Both series declare a medium and they disagree (manga against manhwa). Worth switching
@@ -184,9 +187,14 @@ mod tests {
     /// A candidate whose score *is* `similarity`: no other signal is present, so every
     /// bonus/penalty in `score` is switched off and band boundaries are exact.
     fn scoring(similarity: f32) -> Candidate {
+        titled("berserk", similarity)
+    }
+
+    /// A candidate under `title`; with the query's own title it is an identity match.
+    fn titled(title: &str, similarity: f32) -> Candidate {
         Candidate {
             series_id: SeriesId::new(),
-            normalized_title: "berserk".to_owned(),
+            normalized_title: title.to_owned(),
             similarity,
             alt_normalized_titles: Vec::new(),
             content_type: ContentType::Unknown,
@@ -214,7 +222,7 @@ mod tests {
         let cfg = MatchingConfig::default();
         let q = query();
 
-        let attach = scoring(0.9);
+        let attach = titled("solo leveling", 0.2);
         let id = attach.series_id;
         assert_eq!(cfg.canonicalise(&q, &[attach]), Decision::Attach(id));
 
@@ -230,18 +238,23 @@ mod tests {
         assert_eq!(cfg.canonicalise(&q, &[]), Decision::Create);
     }
 
-    /// Both bands close at the bottom: `score == high` attaches, `score == low` is ambiguous.
-    /// An off-by-one here is invisible in integration tests and would silently move series
-    /// between auto-attach and operator review.
+    /// Both bands close at the bottom: an identity scoring exactly `high` attaches, `score ==
+    /// low` is ambiguous. An off-by-one here is invisible in integration tests and would
+    /// silently move series between auto-attach and operator review.
     #[test]
     fn the_bands_are_inclusive_at_their_lower_bound() {
         let cfg = MatchingConfig::default();
         let q = query();
 
-        let at_high = scoring(cfg.high);
+        // An identity scores 1.0, so `high = 1.0` puts it exactly on the boundary.
+        let at_high = titled("solo leveling", 0.2);
         let at_high_id = at_high.series_id;
         assert_eq!(
-            cfg.canonicalise(&q, &[at_high]),
+            MatchingConfig {
+                high: 1.0,
+                ..MatchingConfig::default()
+            }
+            .canonicalise(&q, &[at_high]),
             Decision::Attach(at_high_id),
             "score == high must attach"
         );
@@ -270,15 +283,28 @@ mod tests {
             low: 0.94,
             ..MatchingConfig::default()
         };
-        assert_eq!(
-            MatchingConfig::default().canonicalise(&q, std::slice::from_ref(&candidate)),
-            Decision::Attach(candidate.series_id),
-            "sanity: 0.9 attaches under the defaults"
+        assert!(
+            matches!(
+                MatchingConfig::default().canonicalise(&q, std::slice::from_ref(&candidate)),
+                Decision::Ambiguous { .. }
+            ),
+            "sanity: 0.9 is reviewed under the defaults"
         );
         assert_eq!(
             strict.canonicalise(&q, std::slice::from_ref(&candidate)),
             Decision::Create
         );
+
+        // `high` above every reachable score switches the automatic attach off.
+        let identical = titled("solo leveling", 0.2);
+        assert!(matches!(
+            MatchingConfig {
+                high: 1.01,
+                ..MatchingConfig::default()
+            }
+            .canonicalise(&q, &[identical]),
+            Decision::Ambiguous { .. }
+        ));
     }
 
     /// `candidate_limit` travels with the policy, not as a per-call-site argument.

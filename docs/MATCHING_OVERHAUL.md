@@ -315,8 +315,8 @@ that the sweep later merges drops by > 80% versus the week before.
 **Change.**
 1. `METADATA_QUERY`: add `format_in: [MANGA, ONE_SHOT]` to the `Media` selection used for title
    search. Keep `format` in the response and reject `NOVEL` defensively in `parse.rs` too.
-2. Verify the hit before `apply`: score the returned titles (romaji, english, native, synonyms)
-   against the series' canonical title and its sources' listing titles with the matcher; require
+2. Verify the hit before `apply`: score the returned titles (romaji, english, native; not
+   synonyms, which can name a different work in the same franchise) against the series' canonical title and its sources' listing titles with the matcher; require
    `exact_title`, `compact_identity` or `source_title_identity` on at least one pair. Otherwise
    stamp `mark_checked` and write nothing. Lookups by cached id (`fetch_public_metadata_by_id`)
    are unaffected.

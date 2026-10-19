@@ -126,8 +126,18 @@ pub async fn rebuild_normalized_keys(
         }
     }
 
-    // Listing keys. Also the backfill for sources registered before the column existed, which
-    // is why a missing key counts as a changed one.
+    rebuild_listing_keys(pool, normalizer, &mut report).await?;
+    Ok(report)
+}
+
+/// The listing-key pass of [`rebuild_normalized_keys`]. Also the backfill for sources registered
+/// before the column existed, which is why a missing key counts as a changed one.
+async fn rebuild_listing_keys(
+    pool: &sqlx::PgPool,
+    normalizer: fn(&str) -> String,
+    report: &mut KeyRebuildReport,
+) -> DbResult<()> {
+    const CHUNK: i64 = 500;
     let mut cursor = Uuid::nil();
     loop {
         let rows = sqlx::query!(
@@ -168,5 +178,5 @@ pub async fn rebuild_normalized_keys(
         }
     }
 
-    Ok(report)
+    Ok(())
 }

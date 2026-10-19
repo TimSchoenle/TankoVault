@@ -245,10 +245,11 @@ pub fn wants_live_timing(reading: &PairReading, verdict: &Adjudication) -> bool 
     reading.assessment.signals.alias_identity || verdict.verdict == MergeVerdict::Review
 }
 
-/// Fold the pair's live chapter timing into a reading: a gap of at most
-/// [`LIVE_AGREEMENT_HOURS`] is `live_timing_agreement`, over [`LIVE_CONFLICT_HOURS`]
-/// `live_timing_conflict`, anything between or no timing at all is neither. Absence says nothing:
-/// most works are finished, and back catalogues are bulk-imported.
+/// Fold the pair's live chapter timing into a reading.
+///
+/// A gap of at most [`LIVE_AGREEMENT_HOURS`] is `live_timing_agreement`, over
+/// [`LIVE_CONFLICT_HOURS`] `live_timing_conflict`, anything between or no timing at all is
+/// neither. Absence says nothing: most works are finished, and back catalogues are bulk-imported.
 pub fn apply_live_timing(reading: &mut PairReading, timing: LiveTiming) {
     let Some(gap) = timing.median_gap_hours else {
         return;

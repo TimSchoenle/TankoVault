@@ -1108,7 +1108,7 @@ fn a_long_alias_inside_a_subtitled_title_is_still_an_alias_hit() {
 
 /// **A listing title is identity.**
 ///
-/// A mirror listing could only reach a series AniList had renamed through an alias, which is
+/// A mirror listing could only reach a series `AniList` had renamed through an alias, which is
 /// discounted below the attach threshold, so registration created a new series that the sweep
 /// then merged: one key, `legend of star general`, drove 37 such merges in production
 /// (`docs/MATCHING_OVERHAUL.md` §2, WP3). Matching the sibling source's listing title attaches it.

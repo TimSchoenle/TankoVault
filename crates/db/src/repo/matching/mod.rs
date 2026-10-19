@@ -29,7 +29,8 @@
 //! One module per stage: `candidates` and `pairs` find them, `queue` holds the ambiguous
 //! ones for an operator, `merge` executes the decision, and `keys` maintains the normalized
 //! title keys the first two read. `full_sweep` holds the claim and the progress of the
-//! operator-triggered run that walks all three shortlists to the end. `undo` takes a merge back
+//! operator-triggered run that walks all three shortlists to the end. `timing` measures when two
+//! series' sources first saw the chapters they share. `undo` takes a merge back
 //! and `disentangle` takes back the shared names that caused it, which is the half a pure
 //! inverse cannot reach.
 
@@ -41,6 +42,7 @@ mod keys;
 mod merge;
 mod pairs;
 mod queue;
+mod timing;
 mod undo;
 
 /// How many distinct series may hold one title key before it stops identifying anything.
@@ -82,4 +84,5 @@ pub use queue::{
     MergeCandidateView, NewMergeCandidate, QueueOutcome, dismiss_merge_candidate,
     list_open_merge_candidates, record_merge_candidate, record_merge_candidates, suppress_pair,
 };
+pub use timing::live_timing;
 pub use undo::{MergeUndo, UNDO_VERSION, revert_merge};

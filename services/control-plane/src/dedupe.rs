@@ -15,9 +15,12 @@ use tankovault_db::repo::matching::{
     self, DistinctVerdict, DuplicatePair, MergeUndo, NewMergeCandidate, NewMergeDecision,
     QueueOutcome, SeriesMatchFacts,
 };
-use tankovault_domain::matching::MergeVerdict;
+use tankovault_domain::matching::{LiveTiming, MergeVerdict};
 use tankovault_domain::{SeriesId, UserId};
-use tankovault_matcher::{Adjudication, PairReading, PairSide, Thresholds, adjudicate, read_pair};
+use tankovault_matcher::{
+    Adjudication, PairReading, PairSide, Thresholds, adjudicate, apply_live_timing, read_pair,
+    wants_live_timing,
+};
 use tracing::Instrument as _;
 use uuid::Uuid;
 
@@ -96,6 +99,8 @@ struct Judged<'a> {
     right: &'a SeriesMatchFacts,
     trigram: f32,
     reading: PairReading,
+    /// The pair's live chapter timing, when the reading was worth measuring it for.
+    live_timing: Option<LiveTiming>,
     verdict: Adjudication,
     signals: Vec<&'static str>,
     /// The console sentence, for the pairs going to review.
@@ -160,7 +165,14 @@ impl Judged<'_> {
         JournalPayload {
             outcome,
             terms: terms_json(&self.reading),
-            evidence: evidence_json(self.left, self.right, self.trigram, &self.reading, merged),
+            evidence: evidence_json(
+                self.left,
+                self.right,
+                self.trigram,
+                &self.reading,
+                self.live_timing,
+                merged,
+            ),
         }
     }
 }
@@ -506,7 +518,7 @@ async fn merge_twin(
     let payload = JournalPayload {
         outcome: "merged",
         terms: terms_json(&reading),
-        evidence: evidence_json(keep, drop, 1.0, &reading, Some((keep, drop))),
+        evidence: evidence_json(keep, drop, 1.0, &reading, None, Some((keep, drop))),
     };
     tracing::info!(
         keep = %keep.series_id,
@@ -644,8 +656,17 @@ impl Pass<'_> {
             };
 
             let trigram = self.similarity.get(&pair).copied().unwrap_or_default();
-            let reading = best_reading(left, right, trigram);
-            let verdict = adjudicate(reading.assessment, self.thresholds);
+            let mut reading = best_reading(left, right, trigram);
+            let mut verdict = adjudicate(reading.assessment, self.thresholds);
+            let live_timing = if wants_live_timing(&reading, &verdict) {
+                let timing =
+                    matching::live_timing(self.pool, left.series_id, right.series_id).await?;
+                apply_live_timing(&mut reading, timing);
+                verdict = adjudicate(reading.assessment, self.thresholds);
+                Some(timing)
+            } else {
+                None
+            };
             let signals = reading.assessment.signals.labels();
             let merge = matches!(verdict.verdict, MergeVerdict::Auto)
                 && report.auto_merged < self.budget.max_auto_merges;
@@ -670,6 +691,7 @@ impl Pass<'_> {
                         right,
                         trigram,
                         reading,
+                        live_timing,
                         verdict,
                         signals,
                         None,
@@ -691,7 +713,16 @@ impl Pass<'_> {
             };
 
             judged.push(self.judgement(
-                pair, left, right, trigram, reading, verdict, signals, reason, action,
+                pair,
+                left,
+                right,
+                trigram,
+                reading,
+                live_timing,
+                verdict,
+                signals,
+                reason,
+                action,
             ));
         }
 
@@ -749,6 +780,7 @@ impl Pass<'_> {
         right: &'f SeriesMatchFacts,
         trigram: f32,
         reading: PairReading,
+        live_timing: Option<LiveTiming>,
         verdict: Adjudication,
         signals: Vec<&'static str>,
         reason: Option<String>,
@@ -761,6 +793,7 @@ impl Pass<'_> {
             right,
             trigram,
             reading,
+            live_timing,
             verdict,
             signals,
             reason,
@@ -1036,6 +1069,7 @@ fn evidence_json(
     right: &SeriesMatchFacts,
     trigram: f32,
     reading: &PairReading,
+    live_timing: Option<LiveTiming>,
     merged: Option<(&SeriesMatchFacts, &SeriesMatchFacts)>,
 ) -> serde_json::Value {
     let side = |f: &SeriesMatchFacts| {
@@ -1063,6 +1097,11 @@ fn evidence_json(
         "via_alias": reading.via_alias,
         "left": side(left),
         "right": side(right),
+        // Read back by the replay harness, which cannot re-measure it once chapters move.
+        "live_timing": live_timing.map(|t| json!({
+            "shared_live_chapters": t.shared_live_chapters,
+            "median_gap_hours": t.median_gap_hours,
+        })),
         // Why *this* id survived. The absorbed id stops existing, so the weights that chose it
         // are the part of the decision a reader with a broken bookmark will come looking for.
         "survivor_choice": merged.map(|(keep, drop)| json!({
@@ -1216,6 +1255,7 @@ mod tests {
             right,
             trigram: 0.0,
             reading,
+            live_timing: None,
             verdict,
             signals: Vec::new(),
             reason: None,

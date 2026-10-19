@@ -3626,3 +3626,55 @@ async fn the_sweep_blocks_on_listing_titles_and_loads_them() {
     );
     assert_eq!(facts[0].anilist_id.as_deref(), Some("4242"));
 }
+
+/// Re-stamp `series`' chapter discoveries: chapters 1–10 at the epoch as one bulk import,
+/// chapter `n` above that `n` days later plus `lag_hours`.
+async fn stamp_discoveries(db: &TestDb, series: SeriesId, lag_hours: i32) {
+    sqlx::query(
+        "UPDATE chapters c SET discovered_at = CASE \
+             WHEN c.number_milli / 10000 <= 10 THEN timestamptz '2026-01-01 00:00Z' \
+             ELSE timestamptz '2026-01-01 00:00Z' \
+                  + make_interval(days => c.number_milli / 10000, hours => $2) END \
+           FROM series_sources ss \
+          WHERE ss.id = c.series_source_id AND ss.series_id = $1",
+    )
+    .bind(series.as_uuid())
+    .bind(lag_hours)
+    .execute(&db.pool)
+    .await
+    .expect("stamp discoveries");
+}
+
+/// Two sources of one ongoing work see each new chapter within hours of each other, and two works
+/// sharing chapter numbers do not; a back catalogue imported in bulk says neither.
+///
+/// The sweep reads this to corroborate an alias hit or veto a merge (`docs/MATCHING_OVERHAUL.md`
+/// WP5), so a query that counted bulk-imported chapters would agree on every pair scanned the
+/// same day.
+#[tokio::test]
+async fn live_timing_agrees_conflicts_or_says_nothing() {
+    use tankovault_db::repo::matching::live_timing;
+
+    let db = TestDb::spawn().await;
+    let alpha = seed::provider(&db, "alpha").create().await;
+    let beta = seed::provider(&db, "beta").create().await;
+    let chapters: Vec<f64> = (1..=15).map(f64::from).collect();
+    let work = ingest(&db, alpha, &plain("Live Work"), &chapters).await;
+    let mirror = ingest(&db, beta, &plain("Live Work Mirror"), &chapters).await;
+    let other = ingest(&db, beta, &plain("Other Work"), &chapters).await;
+    let bulk = ingest(&db, beta, &plain("Bulk Work"), &[1.0, 2.0, 3.0, 4.0, 5.0]).await;
+    stamp_discoveries(&db, work, 0).await;
+    stamp_discoveries(&db, mirror, 3).await;
+    stamp_discoveries(&db, other, 24 * 30).await;
+    stamp_discoveries(&db, bulk, 0).await;
+
+    let agree = live_timing(&db.pool, work, mirror).await.expect("agree");
+    assert_eq!(agree.shared_live_chapters, 5);
+    assert_eq!(agree.median_gap_hours, Some(3.0));
+
+    let conflict = live_timing(&db.pool, work, other).await.expect("conflict");
+    assert_eq!(conflict.median_gap_hours, Some(f64::from(24 * 30)));
+
+    let none = live_timing(&db.pool, work, bulk).await.expect("bulk");
+    assert_eq!(none.median_gap_hours, None);
+}

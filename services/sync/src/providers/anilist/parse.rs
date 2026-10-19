@@ -162,6 +162,21 @@ pub(crate) fn parse_media_metadata(data: &serde_json::Value) -> Option<MediaMeta
     parse_media(media)
 }
 
+/// [`parse_media_metadata`] for a lookup by id, where a missing `Media` node means the record
+/// could not be read rather than that it is not a library record.
+///
+/// # Errors
+/// A `data` object with no `Media` node, or a null one.
+pub(crate) fn parse_media_metadata_by_id(
+    data: &serde_json::Value,
+) -> anyhow::Result<Option<MediaMetadata>> {
+    anyhow::ensure!(
+        data.get("Media").is_some_and(|media| !media.is_null()),
+        "AniList returned no Media record"
+    );
+    Ok(parse_media_metadata(data))
+}
+
 /// Read one `media` node — the single place a GraphQL media selection becomes local values,
 /// shared by the list and public-metadata parsers so neither can drift from the other. Returns
 /// `None` for a node with no id or usable title: an entry we can't name, we can't match.
@@ -364,7 +379,7 @@ fn strip_html(input: &str) -> String {
 mod tests {
     use super::{
         AniListStatus, ContentType, MIN_TAG_WEIGHT, SeriesStatus, has_next_chunk, parse_media_list,
-        parse_media_metadata, strip_html,
+        parse_media_metadata, parse_media_metadata_by_id, strip_html,
     };
 
     #[test]
@@ -547,6 +562,22 @@ mod tests {
         };
         assert!(parse_media_metadata(&media("NOVEL")).is_none());
         assert!(parse_media_metadata(&media("MANGA")).is_some());
+    }
+
+    /// Re-verification blocks a mapping on `Ok(None)`. A by-id response whose `Media` was null
+    /// once read as "not a library record", so a record `AniList` failed to return lost its mapping.
+    #[test]
+    fn a_by_id_lookup_with_no_record_is_an_error_not_a_verdict() {
+        assert!(parse_media_metadata_by_id(&serde_json::json!({ "Media": null })).is_err());
+        assert!(parse_media_metadata_by_id(&serde_json::json!({})).is_err());
+        let novel = serde_json::json!({ "Media": {
+            "id": 1, "format": "NOVEL", "title": { "romaji": "Shared Title" }
+        } });
+        assert!(
+            parse_media_metadata_by_id(&novel)
+                .expect("a present record")
+                .is_none()
+        );
     }
 
     #[test]

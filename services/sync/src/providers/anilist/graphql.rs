@@ -12,6 +12,7 @@ use crate::provider::Viewer;
 use super::client::AniListClient;
 use super::parse::{
     AniListEntry, MediaMetadata, has_next_chunk, parse_media_list, parse_media_metadata,
+    parse_media_metadata_by_id,
 };
 
 /// `AniList` returns a user's list in chunks and caps `perChunk` at 500.
@@ -189,7 +190,7 @@ impl AniListClient {
     /// `None` when the record is not one a library holds (see [`parse_media_metadata`]).
     ///
     /// # Errors
-    /// Transport and GraphQL failures, an id `AniList` no longer knows included. Unlike the title
+    /// Transport and GraphQL failures and a null `Media`, an id `AniList` no longer knows included. Unlike the title
     /// search these are not folded into `None`: re-verification removes a mapping on `None`, and
     /// an outage must not read as a verdict.
     pub(crate) async fn fetch_metadata_by_id(
@@ -203,7 +204,7 @@ impl AniListClient {
                 serde_json::json!({ "id": media_id }),
             )
             .await?;
-        Ok(parse_media_metadata(&data))
+        parse_media_metadata_by_id(&data)
     }
 
     /// Fetch public metadata for a work by title — **no user token**. Returns `None` when

@@ -111,6 +111,69 @@ pub async fn record_merge_decisions<'e, E: PgExecutor<'e>>(
     Ok(ids)
 }
 
+/// Of `pairs`, those whose most recent journal row is already a `deferred` one.
+///
+/// The sweep journals a deferral only for a pair outside this set. Without the check the merge
+/// ceiling journalled the same pair on every run until it let the pair through, which is how the
+/// table reached 1.8 million rows that each repeated the one before.
+///
+/// # Errors
+/// [`DbError::Sqlx`] only.
+pub async fn pairs_already_deferred<'e, E: PgExecutor<'e>>(
+    exec: E,
+    pairs: &[(SeriesId, SeriesId)],
+) -> DbResult<Vec<(SeriesId, SeriesId)>> {
+    if pairs.is_empty() {
+        return Ok(Vec::new());
+    }
+    let (los, his): (Vec<Uuid>, Vec<Uuid>) = pairs
+        .iter()
+        .map(|&(a, b)| (a.min(b).as_uuid(), a.max(b).as_uuid()))
+        .unzip();
+    let rows = sqlx::query!(
+        "SELECT p.lo AS \"lo!\", p.hi AS \"hi!\" \
+           FROM UNNEST($1::uuid[], $2::uuid[]) AS p(lo, hi) \
+          WHERE (SELECT md.outcome FROM merge_decisions md \
+                  WHERE md.left_id = p.lo AND md.right_id = p.hi \
+                  ORDER BY md.decided_at DESC LIMIT 1) = 'deferred'",
+        &los,
+        &his,
+    )
+    .fetch_all(exec)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| (SeriesId::from_uuid(r.lo), SeriesId::from_uuid(r.hi)))
+        .collect())
+}
+
+/// Delete up to `batch` `deferred` journal rows older than `retention_days`, returning how many.
+///
+/// Only `deferred`: a deferral records that the run's merge ceiling was spent, which is worth
+/// nothing once the pair has been decided or re-deferred. Every other outcome is an undo journal
+/// or part of the replay corpus and is never deleted here.
+///
+/// # Errors
+/// [`DbError::Sqlx`] only.
+pub async fn purge_deferred_decisions<'e, E: PgExecutor<'e>>(
+    exec: E,
+    retention_days: u32,
+    batch: i64,
+) -> DbResult<u64> {
+    let done = sqlx::query!(
+        "DELETE FROM merge_decisions WHERE id IN ( \
+           SELECT id FROM merge_decisions \
+            WHERE outcome = 'deferred' \
+              AND decided_at < now() - make_interval(days => $1) \
+            LIMIT $2)",
+        i32::try_from(retention_days).unwrap_or(i32::MAX),
+        batch,
+    )
+    .execute(exec)
+    .await?;
+    Ok(done.rows_affected())
+}
+
 /// One decision as the row the batch insert reads back out of its `jsonb` payload.
 fn decision_row(id: Uuid, decision: &NewMergeDecision<'_>) -> DbResult<Json> {
     let (a, b) = decision.pair;

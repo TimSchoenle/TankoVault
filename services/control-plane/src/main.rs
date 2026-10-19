@@ -1205,6 +1205,50 @@ async fn maybe_prune_scan_history(
             "pruned scan history"
         );
     }
+    prune_deferred_merge_decisions(state, &span, started).await;
+}
+
+/// How long a `deferred` merge-journal row is kept. A deferral only says a run's merge ceiling
+/// was spent; the pair is re-judged on the next run, so an old one records nothing still true.
+const DEFERRED_DECISION_RETENTION_DAYS: u32 = 14;
+
+/// `deferred` journal rows deleted per statement.
+const PRUNE_DECISION_BATCH: i64 = 5_000;
+
+/// Deletes `deferred` merge-journal rows past retention, inside what is left of the tick budget.
+///
+/// Runs on the scan-history pruning tick rather than its own: it is the same kind of
+/// housekeeping, on the leader, and a first pass over a backlog catches up over later ticks.
+async fn prune_deferred_merge_decisions(
+    state: &AppState,
+    span: &tracing::Span,
+    started: std::time::Instant,
+) {
+    let mut deleted = 0_u64;
+    while started.elapsed() < PRUNE_TICK_BUDGET {
+        match tankovault_db::repo::matching::purge_deferred_decisions(
+            &state.pool,
+            DEFERRED_DECISION_RETENTION_DAYS,
+            PRUNE_DECISION_BATCH,
+        )
+        .instrument(span.clone())
+        .await
+        {
+            Ok(0) => break,
+            Ok(n) => deleted += n,
+            Err(e) => {
+                tracing::warn!(error = %e, "merge-journal pruning failed");
+                break;
+            }
+        }
+    }
+    if deleted > 0 {
+        tracing::info!(
+            deleted,
+            retention_days = DEFERRED_DECISION_RETENTION_DAYS,
+            "pruned deferred merge decisions"
+        );
+    }
 }
 
 /// Runs a duplicate sweep only when this replica holds leadership *and* automatic

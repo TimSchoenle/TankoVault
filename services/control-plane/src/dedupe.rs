@@ -466,8 +466,9 @@ async fn sweep_once(
     let mut report = MergeSweepView::default();
     let judged = pass.judge(&pairs, &mut report).await?;
     let writes = flush_queue_writes(pool, &judged, &mut report).await?;
+    let repeat_deferrals = repeat_deferrals(pool, &judged).await;
 
-    let payloads = journal_payloads(&judged, &writes);
+    let payloads = journal_payloads(&judged, &writes, &repeat_deferrals);
     let decisions: Vec<NewMergeDecision<'_>> = payloads
         .iter()
         .map(|(judged, payload)| judged.journal(&pass.ctx, payload, None))
@@ -777,24 +778,53 @@ async fn flush_queue_writes(
     Ok(writes)
 }
 
+/// The deferred pairs of this pass whose latest journal row is already a deferral.
+///
+/// Best-effort like [`journal`]: a failed lookup journals every deferral, which is the old
+/// behaviour, rather than failing a pass whose merges are already committed.
+async fn repeat_deferrals(pool: &PgPool, judged: &[Judged<'_>]) -> HashSet<DuplicatePair> {
+    let deferred: Vec<DuplicatePair> = judged
+        .iter()
+        .filter(|j| matches!(j.action, Action::Deferred))
+        .map(|j| j.pair)
+        .collect();
+    match matching::pairs_already_deferred(pool, &deferred).await {
+        Ok(pairs) => pairs.into_iter().collect(),
+        Err(e) => {
+            tracing::warn!(error = %e, "could not read prior deferrals; journalling them all");
+            HashSet::new()
+        }
+    }
+}
+
 /// The journal payloads for everything the batched writes decided, each with the judgement it
 /// belongs to.
 ///
 /// Merges are absent: they were journalled as they happened. What is left out entirely is the
 /// noise — a row re-scored to the same place every hour is not a decision, and re-confirming that
 /// two unrelated series are unrelated on every run would bury the decisions that matter under
-/// hundreds of rows a day that say nothing changed.
+/// hundreds of rows a day that say nothing changed. A deferral is noise once the pair's latest
+/// row already says it was deferred (`repeat_deferrals`).
 ///
 /// The payloads are returned rather than turned into [`NewMergeDecision`]s here because those
 /// borrow their payload, so it has to outlive the batch that names it.
 fn journal_payloads<'a>(
     judged: &'a [Judged<'a>],
     writes: &HashMap<DuplicatePair, QueueWrite>,
+    repeat_deferrals: &HashSet<DuplicatePair>,
 ) -> Vec<(&'a Judged<'a>, JournalPayload)> {
     judged
         .iter()
+        .filter(|j| {
+            !(matches!(j.action, Action::Deferred) && repeat_deferrals.contains(&canonical(j.pair)))
+        })
         .filter_map(|j| journal_outcome(j, writes).map(|outcome| (j, j.payload(outcome))))
         .collect()
+}
+
+/// A pair in the id order the journal stores it in.
+fn canonical((a, b): DuplicatePair) -> DuplicatePair {
+    (a.min(b), a.max(b))
 }
 
 /// The outcome to journal for one judgement, or `None` when it is not worth a row.
@@ -1113,6 +1143,31 @@ mod tests {
             "a pass that merged nothing retracts nothing"
         );
         assert_eq!(untouched.len(), 1);
+    }
+
+    /// **A deferral is journalled once, not once per run.**
+    ///
+    /// The merge ceiling deferred the same pairs on every run until it let them through, and each
+    /// run wrote a fresh `deferred` row: 1,800,193 journal rows in production
+    /// (`docs/MATCHING_OVERHAUL.md` WP7). A pair whose latest row is already a deferral gets no
+    /// new one; a pair deferred for the first time still does.
+    #[test]
+    fn a_repeat_deferral_is_not_journalled_again() {
+        let a = facts("Survivor Work", &[], 3, 90);
+        let b = facts("Survivorwork", &[], 1, 12);
+        let c = facts("Other Work", &[], 1, 12);
+        let d = facts("Otherwork", &[], 1, 12);
+        let judged = vec![
+            judgement_of(&a, &b, Action::Deferred),
+            judgement_of(&c, &d, Action::Deferred),
+        ];
+        let repeat = HashSet::from([canonical((b.series_id, a.series_id))]);
+
+        let payloads = journal_payloads(&judged, &HashMap::new(), &repeat);
+
+        assert_eq!(payloads.len(), 1);
+        assert_eq!(payloads[0].0.pair, (c.series_id, d.series_id));
+        assert_eq!(payloads[0].1.outcome, "deferred");
     }
 
     fn round(shortlisted: &[DuplicatePair], auto_merged: i64) -> SweepRun {

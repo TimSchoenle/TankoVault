@@ -12,6 +12,23 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [11.1.0](https://github.com/TimSchoenle/TankoVault/compare/v11.0.5...v11.1.0) (2026-10-19)
+
+
+### Features
+
+* **matcher:** matching overhaul WP0–WP2 — replay harness, primary-title decisions, title rules ([#535](https://github.com/TimSchoenle/TankoVault/issues/535)) ([2ec30bf](https://github.com/TimSchoenle/TankoVault/commit/2ec30bf6ddf2fcdd16b0b073fe8e24897fda4cdb))
+* **matcher:** matching overhaul WP3–WP8 — listing titles, verified enrichment, live timing, orphan cleanup, safe reverts ([#536](https://github.com/TimSchoenle/TankoVault/issues/536)) ([55d0933](https://github.com/TimSchoenle/TankoVault/commit/55d093398f86d7dbb13b521350380c38f93d41a8))
+
+
+### Dependencies
+
+* **deps:** update nats:2-alpine docker digest to 2ae57df ([#528](https://github.com/TimSchoenle/TankoVault/issues/528)) ([2a4f96c](https://github.com/TimSchoenle/TankoVault/commit/2a4f96cd9d22b7adf6c5c7910c79ffdf3120a0a3))
+* **deps:** update rust crate sha2 to v0.11.1 ([#529](https://github.com/TimSchoenle/TankoVault/issues/529)) ([07dccf4](https://github.com/TimSchoenle/TankoVault/commit/07dccf4d8c8b9687c64f8a236eef1de685971bdb))
+* **deps:** update rust crate syn to v3.0.9 ([#526](https://github.com/TimSchoenle/TankoVault/issues/526)) ([fa1c9d1](https://github.com/TimSchoenle/TankoVault/commit/fa1c9d1d39f26a28044833a06c794aacef61f980))
+* **deps:** update rust crate tokio to v1.53.3 ([#531](https://github.com/TimSchoenle/TankoVault/issues/531)) ([a1896e5](https://github.com/TimSchoenle/TankoVault/commit/a1896e5b28ba87f9582c592414fafd13351bab3c))
+* **deps:** update rust to v1.99.1 ([#533](https://github.com/TimSchoenle/TankoVault/issues/533)) ([d79ef0e](https://github.com/TimSchoenle/TankoVault/commit/d79ef0efbf679ae96277d1a8aa0d7e72e25f6a5f))
+
 ## [11.0.5](https://github.com/TimSchoenle/TankoVault/compare/v11.0.4...v11.0.5) (2026-10-15)
 
 

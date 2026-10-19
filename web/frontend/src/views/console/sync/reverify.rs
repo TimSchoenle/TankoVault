@@ -6,7 +6,7 @@
 use super::use_sync_gate;
 use crate::api;
 use crate::components::{async_view, ErrorLine, Kpi, SkeletonBlock};
-use crate::hooks::use_reload;
+use crate::hooks::{use_reload, Reload};
 use crate::i18n::{use_i18n, Translator};
 use crate::state::capabilities::use_capabilities;
 use crate::util::{rel_time, thousands};
@@ -58,19 +58,18 @@ pub(super) fn MappingReverifyPanel() -> Element {
                 &state,
                 reload,
                 || rsx! { SkeletonBlock { height: 160 } },
-                |view| rsx! { ReverifyBody { view: view.clone() } },
+                |view| rsx! { ReverifyBody { view: view.clone(), reload } },
             )
         }
     }
 }
 
 #[component]
-fn ReverifyBody(view: MappingReverifyView) -> Element {
+fn ReverifyBody(view: MappingReverifyView, reload: Reload) -> Element {
     let api = api::use_api();
     let i18n = use_i18n();
     let caps = use_capabilities();
     let gate = use_sync_gate();
-    let reload = use_reload();
     let mut busy = use_signal(|| false);
     let mut notice = use_signal(String::new);
 

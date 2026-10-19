@@ -84,6 +84,13 @@ pub(super) fn BatchRevert(gate: StepUpGate, tick: RefreshTick) -> Element {
                     result.set(Some(batch));
                 }
                 Err(e) => {
+                    if !dry_run {
+                        // The batch is not one transaction: a real run that failed part way may
+                        // have reverted some decisions, so the dry run no longer describes it.
+                        checked.set(Vec::new());
+                        result.set(None);
+                        tick.bump();
+                    }
                     if !gate.refused(api::Refusal::of(&e)) {
                         notice.set(i18n.args(
                             "console.decisions.actionFailed",

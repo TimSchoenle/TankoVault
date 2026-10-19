@@ -3955,6 +3955,8 @@ pub mod types {
     #[doc = "  \"required\": ["]
     #[doc = "    \"series_scanned\","]
     #[doc = "    \"series_updated\","]
+    #[doc = "    \"sources_scanned\","]
+    #[doc = "    \"sources_updated\","]
     #[doc = "    \"titles_deduplicated\","]
     #[doc = "    \"titles_scanned\","]
     #[doc = "    \"titles_updated\""]
@@ -3967,6 +3969,16 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"series_updated\": {"]
     #[doc = "      \"description\": \"Of those, whose key the corrected rules changed.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"sources_scanned\": {"]
+    #[doc = "      \"description\": \"Source listing titles read.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"sources_updated\": {"]
+    #[doc = "      \"description\": \"Of those, whose listing key was missing or changed.\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
@@ -3995,6 +4007,10 @@ pub mod types {
         pub series_scanned: i64,
         #[doc = "Of those, whose key the corrected rules changed."]
         pub series_updated: i64,
+        #[doc = "Source listing titles read."]
+        pub sources_scanned: i64,
+        #[doc = "Of those, whose listing key was missing or changed."]
+        pub sources_updated: i64,
         #[doc = "Alternative titles dropped because the corrected rules collapsed them onto a key the\nsame series already held."]
         pub titles_deduplicated: i64,
         #[doc = "Alternative titles read."]
@@ -4562,6 +4578,271 @@ pub mod types {
             value.parse()
         }
     }
+    #[doc = "One mapping that failed re-verification."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One mapping that failed re-verification.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"external_id\","]
+    #[doc = "    \"provider\","]
+    #[doc = "    \"reason\","]
+    #[doc = "    \"series_id\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"external_id\": {"]
+    #[doc = "      \"description\": \"The provider's id for the record it was mapped to.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"provider\": {"]
+    #[doc = "      \"description\": \"The provider slug.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"reason\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/MappingReverifyReason\""]
+    #[doc = "    },"]
+    #[doc = "    \"series_id\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/SeriesId\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct MappingReverifyFailure {
+        #[doc = "The provider's id for the record it was mapped to."]
+        pub external_id: ::std::string::String,
+        #[doc = "The provider slug."]
+        pub provider: ::std::string::String,
+        pub reason: MappingReverifyReason,
+        pub series_id: SeriesId,
+    }
+    impl MappingReverifyFailure {
+        pub fn builder() -> builder::MappingReverifyFailure {
+            Default::default()
+        }
+    }
+    #[doc = "Why a stored mapping failed re-verification."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Why a stored mapping failed re-verification.\","]
+    #[doc = "  \"type\": \"string\","]
+    #[doc = "  \"enum\": ["]
+    #[doc = "    \"not_a_library_record\","]
+    #[doc = "    \"titles_differ\""]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+    )]
+    pub enum MappingReverifyReason {
+        #[serde(rename = "not_a_library_record")]
+        NotALibraryRecord,
+        #[serde(rename = "titles_differ")]
+        TitlesDiffer,
+    }
+    impl ::std::fmt::Display for MappingReverifyReason {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::NotALibraryRecord => f.write_str("not_a_library_record"),
+                Self::TitlesDiffer => f.write_str("titles_differ"),
+            }
+        }
+    }
+    impl ::std::str::FromStr for MappingReverifyReason {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "not_a_library_record" => Ok(Self::NotALibraryRecord),
+                "titles_differ" => Ok(Self::TitlesDiffer),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+    impl ::std::convert::TryFrom<&str> for MappingReverifyReason {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    impl ::std::convert::TryFrom<&::std::string::String> for MappingReverifyReason {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    impl ::std::convert::TryFrom<::std::string::String> for MappingReverifyReason {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    #[doc = "Start a mapping re-verification."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Start a mapping re-verification.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"dry_run\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"dry_run\": {"]
+    #[doc = "      \"description\": \"Report the failing mappings without removing them. Review a dry run before a real one.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct MappingReverifyStart {
+        #[doc = "Report the failing mappings without removing them. Review a dry run before a real one."]
+        pub dry_run: bool,
+    }
+    impl MappingReverifyStart {
+        pub fn builder() -> builder::MappingReverifyStart {
+            Default::default()
+        }
+    }
+    #[doc = "What the re-verification of stored `AniList` mappings is doing, or last did."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"What the re-verification of stored `AniList` mappings is doing, or last did.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"checked\","]
+    #[doc = "    \"dry_run\","]
+    #[doc = "    \"failed\","]
+    #[doc = "    \"failures\","]
+    #[doc = "    \"removed\","]
+    #[doc = "    \"running\","]
+    #[doc = "    \"unreachable\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"checked\": {"]
+    #[doc = "      \"description\": \"Mappings looked up so far.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int32\""]
+    #[doc = "    },"]
+    #[doc = "    \"dry_run\": {"]
+    #[doc = "      \"description\": \"Whether the current or last run only reported.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"error\": {"]
+    #[doc = "      \"description\": \"How the last run ended when it ended badly.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"failed\": {"]
+    #[doc = "      \"description\": \"Of those, the ones whose record does not identify their series.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int32\""]
+    #[doc = "    },"]
+    #[doc = "    \"failures\": {"]
+    #[doc = "      \"description\": \"The failing mappings of the last finished run, at most 1,000.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/MappingReverifyFailure\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"finished_at\": {"]
+    #[doc = "      \"description\": \"RFC 3339. When the last run ended; absent while one is running.\","]
+    #[doc = "      \"examples\": ["]
+    #[doc = "        \"2026-10-19T05:30:00Z\""]
+    #[doc = "      ],"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"removed\": {"]
+    #[doc = "      \"description\": \"Of the failed, the ones removed and blocked. Zero on a dry run.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int32\""]
+    #[doc = "    },"]
+    #[doc = "    \"running\": {"]
+    #[doc = "      \"description\": \"Whether a run holds the claim. Only one runs at a time.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"started_at\": {"]
+    #[doc = "      \"description\": \"RFC 3339. When the current or last run started.\","]
+    #[doc = "      \"examples\": ["]
+    #[doc = "        \"2026-10-19T02:00:00Z\""]
+    #[doc = "      ],"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"unreachable\": {"]
+    #[doc = "      \"description\": \"Lookups that errored. Those mappings were left as they were.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int32\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct MappingReverifyView {
+        #[doc = "Mappings looked up so far."]
+        pub checked: i32,
+        #[doc = "Whether the current or last run only reported."]
+        pub dry_run: bool,
+        #[doc = "How the last run ended when it ended badly."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub error: ::std::option::Option<::std::string::String>,
+        #[doc = "Of those, the ones whose record does not identify their series."]
+        pub failed: i32,
+        #[doc = "The failing mappings of the last finished run, at most 1,000."]
+        pub failures: ::std::vec::Vec<MappingReverifyFailure>,
+        #[doc = "RFC 3339. When the last run ended; absent while one is running."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub finished_at: ::std::option::Option<::std::string::String>,
+        #[doc = "Of the failed, the ones removed and blocked. Zero on a dry run."]
+        pub removed: i32,
+        #[doc = "Whether a run holds the claim. Only one runs at a time."]
+        pub running: bool,
+        #[doc = "RFC 3339. When the current or last run started."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub started_at: ::std::option::Option<::std::string::String>,
+        #[doc = "Lookups that errored. Those mappings were left as they were."]
+        pub unreachable: i32,
+    }
+    impl MappingReverifyView {
+        pub fn builder() -> builder::MappingReverifyView {
+            Default::default()
+        }
+    }
     #[doc = "`MarkRead`"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -4999,7 +5280,7 @@ pub mod types {
     #[doc = "      \"$ref\": \"#/components/schemas/Value\""]
     #[doc = "    },"]
     #[doc = "    \"trigger\": {"]
-    #[doc = "      \"description\": \"`sweep_new` | `sweep_requeue` | `sweep_recheck` | `operator`.\","]
+    #[doc = "      \"description\": \"`sweep_new` | `sweep_requeue` | `sweep_recheck` | `sweep_twin` | `operator`.\","]
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
     #[doc = "    \"undo_breakdown\": {"]
@@ -5079,7 +5360,7 @@ pub mod types {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub sweep_id: ::std::option::Option<::uuid::Uuid>,
         pub terms: Value,
-        #[doc = "`sweep_new` | `sweep_requeue` | `sweep_recheck` | `operator`."]
+        #[doc = "`sweep_new` | `sweep_requeue` | `sweep_recheck` | `sweep_twin` | `operator`."]
         pub trigger: ::std::string::String,
         #[doc = "Those rows itemised by journal key, largest segment first, empty segments dropped."]
         pub undo_breakdown: ::std::vec::Vec<UndoSegment>,
@@ -5417,6 +5698,243 @@ pub mod types {
     }
     impl MergeRequest {
         pub fn builder() -> builder::MergeRequest {
+            Default::default()
+        }
+    }
+    #[doc = "The result of a batch revert."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"The result of a batch revert.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"dry_run\","]
+    #[doc = "    \"items\","]
+    #[doc = "    \"reverted\","]
+    #[doc = "    \"skipped\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"dry_run\": {"]
+    #[doc = "      \"description\": \"Whether this was a dry run, which changes nothing.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"items\": {"]
+    #[doc = "      \"description\": \"Every requested decision, newest first; unknown ids last.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/MergeRevertBatchItem\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"reverted\": {"]
+    #[doc = "      \"description\": \"Decisions reverted, or on a dry run the ones that would be attempted.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"skipped\": {"]
+    #[doc = "      \"description\": \"Decisions not reverted, for any reason.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct MergeRevertBatch {
+        #[doc = "Whether this was a dry run, which changes nothing."]
+        pub dry_run: bool,
+        #[doc = "Every requested decision, newest first; unknown ids last."]
+        pub items: ::std::vec::Vec<MergeRevertBatchItem>,
+        #[doc = "Decisions reverted, or on a dry run the ones that would be attempted."]
+        pub reverted: i64,
+        #[doc = "Decisions not reverted, for any reason."]
+        pub skipped: i64,
+    }
+    impl MergeRevertBatch {
+        pub fn builder() -> builder::MergeRevertBatch {
+            Default::default()
+        }
+    }
+    #[doc = "One decision of a batch revert, in the order the batch handled it."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One decision of a batch revert, in the order the batch handled it.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"decision_id\","]
+    #[doc = "    \"outcome\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"decision_id\": {"]
+    #[doc = "      \"description\": \"The journal row.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"detail\": {"]
+    #[doc = "      \"description\": \"Why it was refused, when it was.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"outcome\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/MergeRevertBatchOutcome\""]
+    #[doc = "    },"]
+    #[doc = "    \"reverted\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/MergeReverted\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct MergeRevertBatchItem {
+        #[doc = "The journal row."]
+        pub decision_id: ::uuid::Uuid,
+        #[doc = "Why it was refused, when it was."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub detail: ::std::option::Option<::std::string::String>,
+        pub outcome: MergeRevertBatchOutcome,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub reverted: ::std::option::Option<MergeReverted>,
+    }
+    impl MergeRevertBatchItem {
+        pub fn builder() -> builder::MergeRevertBatchItem {
+            Default::default()
+        }
+    }
+    #[doc = "What a batch revert did, or would do, with one decision."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"What a batch revert did, or would do, with one decision.\","]
+    #[doc = "  \"type\": \"string\","]
+    #[doc = "  \"enum\": ["]
+    #[doc = "    \"reverted\","]
+    #[doc = "    \"not_found\","]
+    #[doc = "    \"nothing_to_revert\","]
+    #[doc = "    \"refused\""]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+    )]
+    pub enum MergeRevertBatchOutcome {
+        #[serde(rename = "reverted")]
+        Reverted,
+        #[serde(rename = "not_found")]
+        NotFound,
+        #[serde(rename = "nothing_to_revert")]
+        NothingToRevert,
+        #[serde(rename = "refused")]
+        Refused,
+    }
+    impl ::std::fmt::Display for MergeRevertBatchOutcome {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Reverted => f.write_str("reverted"),
+                Self::NotFound => f.write_str("not_found"),
+                Self::NothingToRevert => f.write_str("nothing_to_revert"),
+                Self::Refused => f.write_str("refused"),
+            }
+        }
+    }
+    impl ::std::str::FromStr for MergeRevertBatchOutcome {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "reverted" => Ok(Self::Reverted),
+                "not_found" => Ok(Self::NotFound),
+                "nothing_to_revert" => Ok(Self::NothingToRevert),
+                "refused" => Ok(Self::Refused),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+    impl ::std::convert::TryFrom<&str> for MergeRevertBatchOutcome {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    impl ::std::convert::TryFrom<&::std::string::String> for MergeRevertBatchOutcome {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    impl ::std::convert::TryFrom<::std::string::String> for MergeRevertBatchOutcome {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    #[doc = "`MergeRevertBatchRequest`"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"decision_ids\","]
+    #[doc = "    \"reason\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"decision_ids\": {"]
+    #[doc = "      \"description\": \"The decisions to revert, at most 50. Reverted newest first, whatever the order given.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"type\": \"string\","]
+    #[doc = "        \"format\": \"uuid\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"dry_run\": {"]
+    #[doc = "      \"description\": \"Report what would be attempted without reverting anything.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"reason\": {"]
+    #[doc = "      \"description\": \"Why. Required, and stored on every decision the batch reverts.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct MergeRevertBatchRequest {
+        #[doc = "The decisions to revert, at most 50. Reverted newest first, whatever the order given."]
+        pub decision_ids: ::std::vec::Vec<::uuid::Uuid>,
+        #[doc = "Report what would be attempted without reverting anything."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub dry_run: ::std::option::Option<bool>,
+        #[doc = "Why. Required, and stored on every decision the batch reverts."]
+        pub reason: ::std::string::String,
+    }
+    impl MergeRevertBatchRequest {
+        pub fn builder() -> builder::MergeRevertBatchRequest {
             Default::default()
         }
     }
@@ -20978,6 +21496,8 @@ pub mod types {
         pub struct KeyRebuildView {
             series_scanned: ::std::result::Result<i64, ::std::string::String>,
             series_updated: ::std::result::Result<i64, ::std::string::String>,
+            sources_scanned: ::std::result::Result<i64, ::std::string::String>,
+            sources_updated: ::std::result::Result<i64, ::std::string::String>,
             titles_deduplicated: ::std::result::Result<i64, ::std::string::String>,
             titles_scanned: ::std::result::Result<i64, ::std::string::String>,
             titles_updated: ::std::result::Result<i64, ::std::string::String>,
@@ -20987,6 +21507,8 @@ pub mod types {
                 Self {
                     series_scanned: Err("no value supplied for series_scanned".to_string()),
                     series_updated: Err("no value supplied for series_updated".to_string()),
+                    sources_scanned: Err("no value supplied for sources_scanned".to_string()),
+                    sources_updated: Err("no value supplied for sources_updated".to_string()),
                     titles_deduplicated: Err(
                         "no value supplied for titles_deduplicated".to_string()
                     ),
@@ -21013,6 +21535,26 @@ pub mod types {
             {
                 self.series_updated = value.try_into().map_err(|e| {
                     format!("error converting supplied value for series_updated: {e}")
+                });
+                self
+            }
+            pub fn sources_scanned<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.sources_scanned = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for sources_scanned: {e}")
+                });
+                self
+            }
+            pub fn sources_updated<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.sources_updated = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for sources_updated: {e}")
                 });
                 self
             }
@@ -21055,6 +21597,8 @@ pub mod types {
                 Ok(Self {
                     series_scanned: value.series_scanned?,
                     series_updated: value.series_updated?,
+                    sources_scanned: value.sources_scanned?,
+                    sources_updated: value.sources_updated?,
                     titles_deduplicated: value.titles_deduplicated?,
                     titles_scanned: value.titles_scanned?,
                     titles_updated: value.titles_updated?,
@@ -21066,6 +21610,8 @@ pub mod types {
                 Self {
                     series_scanned: Ok(value.series_scanned),
                     series_updated: Ok(value.series_updated),
+                    sources_scanned: Ok(value.sources_scanned),
+                    sources_updated: Ok(value.sources_updated),
                     titles_deduplicated: Ok(value.titles_deduplicated),
                     titles_scanned: Ok(value.titles_scanned),
                     titles_updated: Ok(value.titles_updated),
@@ -21588,6 +22134,306 @@ pub mod types {
                     mfa: Ok(value.mfa),
                     session: Ok(value.session),
                     status: Ok(value.status),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct MappingReverifyFailure {
+            external_id: ::std::result::Result<::std::string::String, ::std::string::String>,
+            provider: ::std::result::Result<::std::string::String, ::std::string::String>,
+            reason: ::std::result::Result<super::MappingReverifyReason, ::std::string::String>,
+            series_id: ::std::result::Result<super::SeriesId, ::std::string::String>,
+        }
+        impl ::std::default::Default for MappingReverifyFailure {
+            fn default() -> Self {
+                Self {
+                    external_id: Err("no value supplied for external_id".to_string()),
+                    provider: Err("no value supplied for provider".to_string()),
+                    reason: Err("no value supplied for reason".to_string()),
+                    series_id: Err("no value supplied for series_id".to_string()),
+                }
+            }
+        }
+        impl MappingReverifyFailure {
+            pub fn external_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.external_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for external_id: {e}"));
+                self
+            }
+            pub fn provider<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.provider = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for provider: {e}"));
+                self
+            }
+            pub fn reason<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::MappingReverifyReason>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.reason = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for reason: {e}"));
+                self
+            }
+            pub fn series_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::SeriesId>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.series_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for series_id: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<MappingReverifyFailure> for super::MappingReverifyFailure {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: MappingReverifyFailure,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    external_id: value.external_id?,
+                    provider: value.provider?,
+                    reason: value.reason?,
+                    series_id: value.series_id?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::MappingReverifyFailure> for MappingReverifyFailure {
+            fn from(value: super::MappingReverifyFailure) -> Self {
+                Self {
+                    external_id: Ok(value.external_id),
+                    provider: Ok(value.provider),
+                    reason: Ok(value.reason),
+                    series_id: Ok(value.series_id),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct MappingReverifyStart {
+            dry_run: ::std::result::Result<bool, ::std::string::String>,
+        }
+        impl ::std::default::Default for MappingReverifyStart {
+            fn default() -> Self {
+                Self {
+                    dry_run: Err("no value supplied for dry_run".to_string()),
+                }
+            }
+        }
+        impl MappingReverifyStart {
+            pub fn dry_run<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.dry_run = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for dry_run: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<MappingReverifyStart> for super::MappingReverifyStart {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: MappingReverifyStart,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    dry_run: value.dry_run?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::MappingReverifyStart> for MappingReverifyStart {
+            fn from(value: super::MappingReverifyStart) -> Self {
+                Self {
+                    dry_run: Ok(value.dry_run),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct MappingReverifyView {
+            checked: ::std::result::Result<i32, ::std::string::String>,
+            dry_run: ::std::result::Result<bool, ::std::string::String>,
+            error: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            failed: ::std::result::Result<i32, ::std::string::String>,
+            failures: ::std::result::Result<
+                ::std::vec::Vec<super::MappingReverifyFailure>,
+                ::std::string::String,
+            >,
+            finished_at: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            removed: ::std::result::Result<i32, ::std::string::String>,
+            running: ::std::result::Result<bool, ::std::string::String>,
+            started_at: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            unreachable: ::std::result::Result<i32, ::std::string::String>,
+        }
+        impl ::std::default::Default for MappingReverifyView {
+            fn default() -> Self {
+                Self {
+                    checked: Err("no value supplied for checked".to_string()),
+                    dry_run: Err("no value supplied for dry_run".to_string()),
+                    error: Ok(Default::default()),
+                    failed: Err("no value supplied for failed".to_string()),
+                    failures: Err("no value supplied for failures".to_string()),
+                    finished_at: Ok(Default::default()),
+                    removed: Err("no value supplied for removed".to_string()),
+                    running: Err("no value supplied for running".to_string()),
+                    started_at: Ok(Default::default()),
+                    unreachable: Err("no value supplied for unreachable".to_string()),
+                }
+            }
+        }
+        impl MappingReverifyView {
+            pub fn checked<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.checked = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for checked: {e}"));
+                self
+            }
+            pub fn dry_run<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.dry_run = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for dry_run: {e}"));
+                self
+            }
+            pub fn error<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.error = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for error: {e}"));
+                self
+            }
+            pub fn failed<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.failed = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for failed: {e}"));
+                self
+            }
+            pub fn failures<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::MappingReverifyFailure>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.failures = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for failures: {e}"));
+                self
+            }
+            pub fn finished_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.finished_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for finished_at: {e}"));
+                self
+            }
+            pub fn removed<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.removed = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for removed: {e}"));
+                self
+            }
+            pub fn running<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.running = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for running: {e}"));
+                self
+            }
+            pub fn started_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.started_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for started_at: {e}"));
+                self
+            }
+            pub fn unreachable<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.unreachable = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for unreachable: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<MappingReverifyView> for super::MappingReverifyView {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: MappingReverifyView,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    checked: value.checked?,
+                    dry_run: value.dry_run?,
+                    error: value.error?,
+                    failed: value.failed?,
+                    failures: value.failures?,
+                    finished_at: value.finished_at?,
+                    removed: value.removed?,
+                    running: value.running?,
+                    started_at: value.started_at?,
+                    unreachable: value.unreachable?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::MappingReverifyView> for MappingReverifyView {
+            fn from(value: super::MappingReverifyView) -> Self {
+                Self {
+                    checked: Ok(value.checked),
+                    dry_run: Ok(value.dry_run),
+                    error: Ok(value.error),
+                    failed: Ok(value.failed),
+                    failures: Ok(value.failures),
+                    finished_at: Ok(value.finished_at),
+                    removed: Ok(value.removed),
+                    running: Ok(value.running),
+                    started_at: Ok(value.started_at),
+                    unreachable: Ok(value.unreachable),
                 }
             }
         }
@@ -23054,6 +23900,248 @@ pub mod types {
                 Self {
                     keep: Ok(value.keep),
                     merge: Ok(value.merge),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct MergeRevertBatch {
+            dry_run: ::std::result::Result<bool, ::std::string::String>,
+            items: ::std::result::Result<
+                ::std::vec::Vec<super::MergeRevertBatchItem>,
+                ::std::string::String,
+            >,
+            reverted: ::std::result::Result<i64, ::std::string::String>,
+            skipped: ::std::result::Result<i64, ::std::string::String>,
+        }
+        impl ::std::default::Default for MergeRevertBatch {
+            fn default() -> Self {
+                Self {
+                    dry_run: Err("no value supplied for dry_run".to_string()),
+                    items: Err("no value supplied for items".to_string()),
+                    reverted: Err("no value supplied for reverted".to_string()),
+                    skipped: Err("no value supplied for skipped".to_string()),
+                }
+            }
+        }
+        impl MergeRevertBatch {
+            pub fn dry_run<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.dry_run = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for dry_run: {e}"));
+                self
+            }
+            pub fn items<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::MergeRevertBatchItem>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.items = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for items: {e}"));
+                self
+            }
+            pub fn reverted<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.reverted = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for reverted: {e}"));
+                self
+            }
+            pub fn skipped<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.skipped = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for skipped: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<MergeRevertBatch> for super::MergeRevertBatch {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: MergeRevertBatch,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    dry_run: value.dry_run?,
+                    items: value.items?,
+                    reverted: value.reverted?,
+                    skipped: value.skipped?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::MergeRevertBatch> for MergeRevertBatch {
+            fn from(value: super::MergeRevertBatch) -> Self {
+                Self {
+                    dry_run: Ok(value.dry_run),
+                    items: Ok(value.items),
+                    reverted: Ok(value.reverted),
+                    skipped: Ok(value.skipped),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct MergeRevertBatchItem {
+            decision_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            detail: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            outcome: ::std::result::Result<super::MergeRevertBatchOutcome, ::std::string::String>,
+            reverted: ::std::result::Result<
+                ::std::option::Option<super::MergeReverted>,
+                ::std::string::String,
+            >,
+        }
+        impl ::std::default::Default for MergeRevertBatchItem {
+            fn default() -> Self {
+                Self {
+                    decision_id: Err("no value supplied for decision_id".to_string()),
+                    detail: Ok(Default::default()),
+                    outcome: Err("no value supplied for outcome".to_string()),
+                    reverted: Ok(Default::default()),
+                }
+            }
+        }
+        impl MergeRevertBatchItem {
+            pub fn decision_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.decision_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for decision_id: {e}"));
+                self
+            }
+            pub fn detail<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.detail = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for detail: {e}"));
+                self
+            }
+            pub fn outcome<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::MergeRevertBatchOutcome>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.outcome = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for outcome: {e}"));
+                self
+            }
+            pub fn reverted<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<super::MergeReverted>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.reverted = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for reverted: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<MergeRevertBatchItem> for super::MergeRevertBatchItem {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: MergeRevertBatchItem,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    decision_id: value.decision_id?,
+                    detail: value.detail?,
+                    outcome: value.outcome?,
+                    reverted: value.reverted?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::MergeRevertBatchItem> for MergeRevertBatchItem {
+            fn from(value: super::MergeRevertBatchItem) -> Self {
+                Self {
+                    decision_id: Ok(value.decision_id),
+                    detail: Ok(value.detail),
+                    outcome: Ok(value.outcome),
+                    reverted: Ok(value.reverted),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct MergeRevertBatchRequest {
+            decision_ids:
+                ::std::result::Result<::std::vec::Vec<::uuid::Uuid>, ::std::string::String>,
+            dry_run: ::std::result::Result<::std::option::Option<bool>, ::std::string::String>,
+            reason: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+        impl ::std::default::Default for MergeRevertBatchRequest {
+            fn default() -> Self {
+                Self {
+                    decision_ids: Err("no value supplied for decision_ids".to_string()),
+                    dry_run: Ok(Default::default()),
+                    reason: Err("no value supplied for reason".to_string()),
+                }
+            }
+        }
+        impl MergeRevertBatchRequest {
+            pub fn decision_ids<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<::uuid::Uuid>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.decision_ids = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for decision_ids: {e}"));
+                self
+            }
+            pub fn dry_run<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<bool>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.dry_run = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for dry_run: {e}"));
+                self
+            }
+            pub fn reason<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.reason = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for reason: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<MergeRevertBatchRequest> for super::MergeRevertBatchRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: MergeRevertBatchRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    decision_ids: value.decision_ids?,
+                    dry_run: value.dry_run?,
+                    reason: value.reason?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::MergeRevertBatchRequest> for MergeRevertBatchRequest {
+            fn from(value: super::MergeRevertBatchRequest) -> Self {
+                Self {
+                    decision_ids: Ok(value.decision_ids),
+                    dry_run: Ok(value.dry_run),
+                    reason: Ok(value.reason),
                 }
             }
         }
@@ -36680,9 +37768,13 @@ impl Client {
     pub fn sweep_all_merge_candidates(&self) -> builder::SweepAllMergeCandidates<'_> {
         builder::SweepAllMergeCandidates::new(self)
     }
-    #[doc = "List merge decisions\n\nThe automatic-merge journal, newest first: the itemised score behind each decision, the rule\nthat produced the verdict, the guards that overrode it, and whether it can still be undone.\n\nSends a `GET` request to `/v1/admin/merge-decisions`\n\nArguments:\n- `blocked`: Only decisions a guard held back: the near misses.\n- `flagged`: Only decisions an operator has flagged wrong.\n- `limit`\n- `offset`\n- `outcome`: Restrict to one outcome: `merged`, `queued`, `requeued`, `reopened`, `withdrawn`,\n`distinct`, `deferred`.\n- `reverted`: Only merges that have since been undone.\n- `revertible`: Only merges that can still be undone.\n- `search`: A series or decision id matches exactly on any of the three ids; any other text is a\ncase-insensitive substring of either title.\n- `series_id`: Only decisions naming this series on either side. Survives the merge — an absorbed id is\nstill on the row that absorbed it, which is the one you go looking for.\n\nA bare `Uuid`, not `SeriesId`: an optional newtype in a query parameter generates a\none-variant `oneOf` that the client generator cannot render.\n- `trigger`: Restrict to one trigger: `operator`, `sweep_new`, `sweep_requeue`, `sweep_recheck`.\n```ignore\nlet response = client.list_merge_decisions()\n    .blocked(blocked)\n    .flagged(flagged)\n    .limit(limit)\n    .offset(offset)\n    .outcome(outcome)\n    .reverted(reverted)\n    .revertible(revertible)\n    .search(search)\n    .series_id(series_id)\n    .trigger(trigger)\n    .send()\n    .await;\n```"]
+    #[doc = "List merge decisions\n\nThe automatic-merge journal, newest first: the itemised score behind each decision, the rule\nthat produced the verdict, the guards that overrode it, and whether it can still be undone.\n\nSends a `GET` request to `/v1/admin/merge-decisions`\n\nArguments:\n- `blocked`: Only decisions a guard held back: the near misses.\n- `flagged`: Only decisions an operator has flagged wrong.\n- `limit`\n- `offset`\n- `outcome`: Restrict to one outcome: `merged`, `queued`, `requeued`, `reopened`, `withdrawn`,\n`distinct`, `deferred`.\n- `reverted`: Only merges that have since been undone.\n- `revertible`: Only merges that can still be undone.\n- `search`: A series or decision id matches exactly on any of the three ids; any other text is a\ncase-insensitive substring of either title.\n- `series_id`: Only decisions naming this series on either side. Survives the merge — an absorbed id is\nstill on the row that absorbed it, which is the one you go looking for.\n\nA bare `Uuid`, not `SeriesId`: an optional newtype in a query parameter generates a\none-variant `oneOf` that the client generator cannot render.\n- `trigger`: Restrict to one trigger: `operator`, `sweep_new`, `sweep_requeue`, `sweep_recheck`,\n`sweep_twin`.\n```ignore\nlet response = client.list_merge_decisions()\n    .blocked(blocked)\n    .flagged(flagged)\n    .limit(limit)\n    .offset(offset)\n    .outcome(outcome)\n    .reverted(reverted)\n    .revertible(revertible)\n    .search(search)\n    .series_id(series_id)\n    .trigger(trigger)\n    .send()\n    .await;\n```"]
     pub fn list_merge_decisions(&self) -> builder::ListMergeDecisions<'_> {
         builder::ListMergeDecisions::new(self)
+    }
+    #[doc = "Revert merges in a batch\n\nRevert a reviewed list of automatic merges, each exactly as the single revert does it\n(restore, suppress, disentangle), newest first: a merge whose survivor a later merge absorbed\ncan only be reverted after that later one, so newest first lets a chain inside one batch\nunwind. One decision's refusal does not stop the others; each item reports its own outcome.\nA dry run checks each decision as stored and changes nothing, so it cannot predict a refusal\nthat depends on another decision in the batch.\n\nSends a `POST` request to `/v1/admin/merge-decisions/revert-batch`\n\n```ignore\nlet response = client.revert_merge_decisions()\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn revert_merge_decisions(&self) -> builder::RevertMergeDecisions<'_> {
+        builder::RevertMergeDecisions::new(self)
     }
     #[doc = "Get a merge decision\n\nOne entry of the journal by id, in the same shape as the list. A link to a decision resolves\nhere whatever page of the list it would fall on.\n\nSends a `GET` request to `/v1/admin/merge-decisions/{id}`\n\nArguments:\n- `id`: The merge decision\n```ignore\nlet response = client.get_merge_decision()\n    .id(id)\n    .send()\n    .await;\n```"]
     pub fn get_merge_decision(&self) -> builder::GetMergeDecision<'_> {
@@ -36879,6 +37971,14 @@ impl Client {
     #[doc = "Clear a series↔external mapping\n\nRemove a bad series↔external mapping; the next pull/push (or targeted push) re-resolves it\nfrom scratch.\n\nSends a `POST` request to `/v1/admin/sync/mappings/clear`\n\n```ignore\nlet response = client.clear_sync_mapping()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn clear_sync_mapping(&self) -> builder::ClearSyncMapping<'_> {
         builder::ClearSyncMapping::new(self)
+    }
+    #[doc = "Get mapping re-verification status\n\nThe current or last re-verification of stored `AniList` mappings, with the mappings it\nrefused.\n\nSends a `GET` request to `/v1/admin/sync/mappings/reverify`\n\n```ignore\nlet response = client.mapping_reverify_status()\n    .send()\n    .await;\n```"]
+    pub fn mapping_reverify_status(&self) -> builder::MappingReverifyStatus<'_> {
+        builder::MappingReverifyStatus::new(self)
+    }
+    #[doc = "Re-verify stored mappings\n\nRe-fetch every stored `AniList` mapping by id and refuse the ones whose record is not a\nlibrary format (a light novel) or whose titles do not identify the series. A refused\nmapping is removed and blocked, so reconciliation does not write it back. Runs in the\nbackground at `AniList`'s rate limit; follow it with the status endpoint.\n\nSends a `POST` request to `/v1/admin/sync/mappings/reverify`\n\n```ignore\nlet response = client.start_mapping_reverify()\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn start_mapping_reverify(&self) -> builder::StartMappingReverify<'_> {
+        builder::StartMappingReverify::new(self)
     }
     #[doc = "Force-pull another user's linked account\n\nOperator-forced pull for another user's linked account.\n\nSends a `POST` request to `/v1/admin/sync/pull`\n\n```ignore\nlet response = client.admin_sync_pull()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn admin_sync_pull(&self) -> builder::AdminSyncPull<'_> {
@@ -38973,6 +40073,90 @@ pub mod builder {
             let response = result?;
             match response.status().as_u16() {
                 200u16 => ResponseValue::from_response(response).await,
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::revert_merge_decisions`]\n\n[`Client::revert_merge_decisions`]: super::Client::revert_merge_decisions"]
+    #[derive(Debug, Clone)]
+    pub struct RevertMergeDecisions<'a> {
+        client: &'a super::Client,
+        body: Result<types::builder::MergeRevertBatchRequest, String>,
+    }
+    impl<'a> RevertMergeDecisions<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::MergeRevertBatchRequest>,
+            <V as std::convert::TryInto<types::MergeRevertBatchRequest>>::Error: std::fmt::Display,
+        {
+            self.body = value.try_into().map(From::from).map_err(|s| {
+                format!(
+                    "conversion to `MergeRevertBatchRequest` for body failed: {}",
+                    s
+                )
+            });
+            self
+        }
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::MergeRevertBatchRequest,
+                ) -> types::builder::MergeRevertBatchRequest,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+        #[doc = "Sends a `POST` request to `/v1/admin/merge-decisions/revert-batch`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::MergeRevertBatch>, Error<types::ProblemDetails>> {
+            let Self { client, body } = self;
+            let body = body
+                .and_then(|v| {
+                    types::MergeRevertBatchRequest::try_from(v).map_err(|e| e.to_string())
+                })
+                .map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v1/admin/merge-decisions/revert-batch", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "revert_merge_decisions",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
                 401u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
@@ -42901,6 +44085,138 @@ pub mod builder {
                     ResponseValue::from_response(response).await?,
                 )),
                 403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::mapping_reverify_status`]\n\n[`Client::mapping_reverify_status`]: super::Client::mapping_reverify_status"]
+    #[derive(Debug, Clone)]
+    pub struct MappingReverifyStatus<'a> {
+        client: &'a super::Client,
+    }
+    impl<'a> MappingReverifyStatus<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+        #[doc = "Sends a `GET` request to `/v1/admin/sync/mappings/reverify`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::MappingReverifyView>, Error<types::ProblemDetails>>
+        {
+            let Self { client } = self;
+            let url = format!("{}/v1/admin/sync/mappings/reverify", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "mapping_reverify_status",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::start_mapping_reverify`]\n\n[`Client::start_mapping_reverify`]: super::Client::start_mapping_reverify"]
+    #[derive(Debug, Clone)]
+    pub struct StartMappingReverify<'a> {
+        client: &'a super::Client,
+        body: Result<types::builder::MappingReverifyStart, String>,
+    }
+    impl<'a> StartMappingReverify<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::MappingReverifyStart>,
+            <V as std::convert::TryInto<types::MappingReverifyStart>>::Error: std::fmt::Display,
+        {
+            self.body = value.try_into().map(From::from).map_err(|s| {
+                format!(
+                    "conversion to `MappingReverifyStart` for body failed: {}",
+                    s
+                )
+            });
+            self
+        }
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::MappingReverifyStart,
+                ) -> types::builder::MappingReverifyStart,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+        #[doc = "Sends a `POST` request to `/v1/admin/sync/mappings/reverify`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::SyncAck>, Error<types::ProblemDetails>> {
+            let Self { client, body } = self;
+            let body = body
+                .and_then(|v| types::MappingReverifyStart::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v1/admin/sync/mappings/reverify", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "start_mapping_reverify",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                202u16 => ResponseValue::from_response(response).await,
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                409u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
                 _ => Err(Error::UnexpectedResponse(response)),

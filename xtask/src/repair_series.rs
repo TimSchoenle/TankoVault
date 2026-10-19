@@ -119,13 +119,17 @@ pub(crate) async fn run(
     Ok(())
 }
 
-/// Pass 1: re-derive `series.normalized_title` and `series_titles.normalized`.
+/// Pass 1: re-derive `series.normalized_title`, `series_titles.normalized` and
+/// `series_sources.provider_title_normalized`.
 async fn rebuild_keys(pool: &tankovault_db::PgPool, apply: bool) -> anyhow::Result<()> {
     let stale: i64 = sqlx::query_scalar(
         "SELECT (SELECT count(*) FROM series WHERE normalized_title \
                    IS DISTINCT FROM tv_normalize_title(canonical_title)) \
               + (SELECT count(*) FROM series_titles WHERE normalized \
-                   IS DISTINCT FROM tv_normalize_title(title))",
+                   IS DISTINCT FROM tv_normalize_title(title)) \
+              + (SELECT count(*) FROM series_sources WHERE provider_title IS NOT NULL \
+                   AND provider_title_normalized \
+                   IS DISTINCT FROM tv_normalize_title(provider_title))",
     )
     .fetch_one(pool)
     .await?;
@@ -137,8 +141,12 @@ async fn rebuild_keys(pool: &tankovault_db::PgPool, apply: bool) -> anyhow::Resu
         .await
         .map_err(anyhow::Error::from)?;
     println!(
-        "keys: rewrote {} series and {} alternative titles, dropped {} that collided",
-        report.series_updated, report.titles_updated, report.titles_deduplicated
+        "keys: rewrote {} series, {} alternative titles and {} listing titles, dropped {} that \
+         collided",
+        report.series_updated,
+        report.titles_updated,
+        report.sources_updated,
+        report.titles_deduplicated
     );
     Ok(())
 }
@@ -329,6 +337,9 @@ async fn find_strays(
             normalized_title: normalize_title(&canonical_title),
             similarity: 0.0,
             alt_normalized_titles,
+            // Empty on purpose: every source under survey is scored *against* this series, and
+            // its own listing title would match itself.
+            source_titles: Vec::new(),
             content_type: ContentType::Unknown,
             release_year: None,
             tags: Vec::new(),

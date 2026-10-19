@@ -1863,6 +1863,41 @@ async fn rebuilding_the_keys_is_idempotent_and_repairs_a_stale_key() {
     assert_eq!(second.series_scanned, first.series_scanned);
 }
 
+/// A rewritten alternative title keeps its origin. The rewrite is an insert and a delete, and
+/// the insert once left `origin` to its `'adapter'` default, so every `AniList` or merge title
+/// whose key changed lost the provenance a cleanup targets it by.
+#[tokio::test]
+async fn rebuilding_the_keys_keeps_an_alternative_titles_origin() {
+    use tankovault_db::repo::matching::rebuild_normalized_keys;
+
+    let db = TestDb::spawn().await;
+    let alpha = seed::provider(&db, "alpha").create().await;
+    let series = ingest(&db, alpha, &plain("Berserk"), &[1.0]).await;
+    sqlx::query(
+        "INSERT INTO series_titles (series_id, title, normalized, origin) \
+         VALUES ($1, 'Kenpuu Denki', 'a key from older rules', 'anilist')",
+    )
+    .bind(series.as_uuid())
+    .execute(&db.pool)
+    .await
+    .expect("stale anilist title");
+
+    let report = rebuild_normalized_keys(&db.pool, normalize_title)
+        .await
+        .expect("rebuild");
+    assert_eq!(report.titles_updated, 1, "{report:?}");
+
+    let origin: String = sqlx::query_scalar(
+        "SELECT origin FROM series_titles WHERE series_id = $1 AND normalized = $2",
+    )
+    .bind(series.as_uuid())
+    .bind(normalize_title("Kenpuu Denki"))
+    .fetch_one(&db.pool)
+    .await
+    .expect("the rewritten title");
+    assert_eq!(origin, "anilist");
+}
+
 // ---------------------------------------------------------------------------
 // Merges: the alias map, and the guard on `merge_series` itself
 // ---------------------------------------------------------------------------
@@ -3489,4 +3524,265 @@ async fn the_merge_journal_filters_searches_pages_and_resolves_by_id_in_the_stat
         get_merge_decision(&db.pool, uuid::Uuid::now_v7()).await,
         Err(DbError::NotFound)
     ));
+}
+
+/// Set an `AniList` mapping on a series directly.
+async fn map_anilist(db: &TestDb, series_id: SeriesId, external_id: &str) {
+    sqlx::query(
+        "INSERT INTO sync_mappings (series_id, provider, external_id) VALUES ($1, 'anilist', $2)",
+    )
+    .bind(series_id.as_uuid())
+    .bind(external_id)
+    .execute(&db.pool)
+    .await
+    .expect("map to anilist");
+}
+
+/// **A sourceless copy pairs with its sourced twin, however many copies the title has.**
+///
+/// Production held 23,500 series with no source, 22,696 of them with a sourced series of the same
+/// title, in `AniList` clusters of 17–256 copies (`docs/MATCHING_OVERHAUL.md` §2). Those clusters
+/// are above `MAX_KEY_FANOUT`, so the ordinary shortlist refused them and they never merged. The
+/// twin shortlist ignores the cap, takes one twin per orphan (the most-sourced), and still refuses
+/// a pair whose `AniList` ids disagree.
+#[tokio::test]
+async fn every_orphan_copy_pairs_with_its_sourced_twin() {
+    use tankovault_db::repo::matching::find_orphan_twins;
+
+    let db = TestDb::spawn().await;
+    let alpha = seed::provider(&db, "alpha").create().await;
+    let beta = seed::provider(&db, "beta").create().await;
+    let twin = ingest(&db, alpha, &plain("Skeleton Soldier"), &[1.0]).await;
+    seed::series(&db, beta, "Skeleton Soldier")
+        .source_path("/beta/skeleton-soldier")
+        .ingest()
+        .await;
+
+    let mut copies = Vec::new();
+    for _ in 0..20 {
+        copies.push(insert_series_directly(&db, "Skeleton Soldier").await);
+    }
+    let contradicted = insert_series_directly(&db, "Skeleton Soldier").await;
+    map_anilist(&db, twin, "100").await;
+    map_anilist(&db, contradicted, "200").await;
+    // A sourceless series with a different title has no twin.
+    insert_series_directly(&db, "Unrelated Work").await;
+
+    let pairs = find_orphan_twins(&db.pool, 100).await.expect("twins");
+    assert_eq!(pairs.len(), copies.len(), "{pairs:?}");
+    for (orphan, survivor) in &pairs {
+        assert!(copies.contains(orphan), "{orphan} is not one of the copies");
+        assert_eq!(*survivor, twin, "every copy lands on the one sourced twin");
+    }
+    assert!(
+        !pairs.iter().any(|(orphan, _)| *orphan == contradicted),
+        "a copy whose AniList id disagrees is not a twin"
+    );
+}
+
+/// Only a sourceless series nothing refers to is deleted.
+///
+/// The orphans left once their twins are merged are kept if a reader watches them or a tracker
+/// maps them, because deleting the series would cascade that away; the rest go.
+#[tokio::test]
+async fn only_an_unreferenced_orphan_is_deleted() {
+    use tankovault_db::repo::catalog::maintenance::delete_unreferenced_orphans;
+
+    let db = TestDb::spawn().await;
+    let alpha = seed::provider(&db, "alpha").create().await;
+    let sourced = ingest(&db, alpha, &plain("Vinland Saga"), &[1.0]).await;
+    let bare = insert_series_directly(&db, "Bare Orphan").await;
+    let mapped = insert_series_directly(&db, "Mapped Orphan").await;
+    map_anilist(&db, mapped, "300").await;
+    let watched = insert_series_directly(&db, "Watched Orphan").await;
+    let reader = seed::user(&db, "reader").create().await;
+    watchlist_upsert(&db.pool, reader, watched, WatchStatus::Reading, true)
+        .await
+        .expect("watch");
+    // A sourceless merge survivor: deleting it would cascade away the row that forwards the
+    // merged id, so links to the absorbed series would stop resolving.
+    let survivor = insert_series_directly(&db, "Survivor Orphan").await;
+    sqlx::query("INSERT INTO series_merges (merged_id, survivor_id) VALUES ($1, $2)")
+        .bind(uuid::Uuid::now_v7())
+        .bind(survivor.as_uuid())
+        .execute(&db.pool)
+        .await
+        .expect("forwarding row");
+
+    assert_eq!(
+        delete_unreferenced_orphans(&db.pool, 100)
+            .await
+            .expect("delete"),
+        1
+    );
+    assert_eq!(
+        delete_unreferenced_orphans(&db.pool, 100)
+            .await
+            .expect("again"),
+        0
+    );
+
+    let left: Vec<uuid::Uuid> = sqlx::query_scalar("SELECT id FROM series")
+        .fetch_all(&db.pool)
+        .await
+        .expect("list");
+    assert!(!left.contains(&bare.as_uuid()));
+    for kept in [sourced, mapped, watched, survivor] {
+        assert!(left.contains(&kept.as_uuid()), "{kept} must survive");
+    }
+}
+
+/// The sweep shortlists a series whose canonical title is another series' *listing* title, and
+/// the pair facts carry the listing titles and `AniList` ids the matcher reads.
+///
+/// Without the listing branch a mirror-created duplicate of an `AniList`-renamed series only met
+/// it through an alias (`docs/MATCHING_OVERHAUL.md` WP3); without the facts the sweep could not
+/// read the listing title as the primary identity it is.
+#[tokio::test]
+async fn the_sweep_blocks_on_listing_titles_and_loads_them() {
+    use tankovault_db::repo::matching::{find_duplicate_pairs, series_match_facts};
+
+    let db = TestDb::spawn().await;
+    let alpha = seed::provider(&db, "alpha").create().await;
+    let renamed = ingest(&db, alpha, &plain("Legend of Star General"), &[1.0]).await;
+    sqlx::query("UPDATE series SET canonical_title = $2, normalized_title = $3 WHERE id = $1")
+        .bind(renamed.as_uuid())
+        .bind("Xing Jiang Chuanqi")
+        .bind(normalize_title("Xing Jiang Chuanqi"))
+        .execute(&db.pool)
+        .await
+        .expect("rename");
+    map_anilist(&db, renamed, "4242").await;
+    let mirror = insert_series_directly(&db, "Legend of Star General").await;
+
+    let pairs = find_duplicate_pairs(&db.pool, 50).await.expect("pairs");
+    assert!(
+        pairs.contains(&(renamed.min(mirror), renamed.max(mirror))),
+        "{pairs:?}"
+    );
+
+    let facts = series_match_facts(&db.pool, &[renamed])
+        .await
+        .expect("facts");
+    assert_eq!(
+        facts[0].source_titles,
+        vec!["legend of star general".to_owned()]
+    );
+    assert_eq!(facts[0].anilist_id.as_deref(), Some("4242"));
+}
+
+/// Re-stamp `series`' chapter discoveries: chapters 1–10 at the epoch as one bulk import,
+/// chapter `n` above that `n` days later plus `lag_hours`.
+async fn stamp_discoveries(db: &TestDb, series: SeriesId, lag_hours: i32) {
+    sqlx::query(
+        "UPDATE chapters c SET discovered_at = CASE \
+             WHEN c.number_milli / 10000 <= 10 THEN timestamptz '2026-01-01 00:00Z' \
+             ELSE timestamptz '2026-01-01 00:00Z' \
+                  + make_interval(days => c.number_milli / 10000, hours => $2) END \
+           FROM series_sources ss \
+          WHERE ss.id = c.series_source_id AND ss.series_id = $1",
+    )
+    .bind(series.as_uuid())
+    .bind(lag_hours)
+    .execute(&db.pool)
+    .await
+    .expect("stamp discoveries");
+}
+
+/// Two sources of one ongoing work see each new chapter within hours of each other, and two works
+/// sharing chapter numbers do not; a back catalogue imported in bulk says neither.
+///
+/// The sweep reads this to corroborate an alias hit or veto a merge (`docs/MATCHING_OVERHAUL.md`
+/// WP5), so a query that counted bulk-imported chapters would agree on every pair scanned the
+/// same day.
+#[tokio::test]
+async fn live_timing_agrees_conflicts_or_says_nothing() {
+    use tankovault_db::repo::matching::live_timing;
+
+    let db = TestDb::spawn().await;
+    let alpha = seed::provider(&db, "alpha").create().await;
+    let beta = seed::provider(&db, "beta").create().await;
+    let chapters: Vec<f64> = (1..=15).map(f64::from).collect();
+    let work = ingest(&db, alpha, &plain("Live Work"), &chapters).await;
+    let mirror = ingest(&db, beta, &plain("Live Work Mirror"), &chapters).await;
+    let other = ingest(&db, beta, &plain("Other Work"), &chapters).await;
+    let bulk = ingest(&db, beta, &plain("Bulk Work"), &[1.0, 2.0, 3.0, 4.0, 5.0]).await;
+    stamp_discoveries(&db, work, 0).await;
+    stamp_discoveries(&db, mirror, 3).await;
+    stamp_discoveries(&db, other, 24 * 30).await;
+    stamp_discoveries(&db, bulk, 0).await;
+
+    let agree = live_timing(&db.pool, work, mirror).await.expect("agree");
+    assert_eq!(agree.shared_live_chapters, 5);
+    assert_eq!(agree.median_gap_hours, Some(3.0));
+
+    let conflict = live_timing(&db.pool, work, other).await.expect("conflict");
+    assert_eq!(conflict.median_gap_hours, Some(f64::from(24 * 30)));
+
+    let none = live_timing(&db.pool, work, bulk).await.expect("bulk");
+    assert_eq!(none.median_gap_hours, None);
+}
+
+/// Reverting a merge whose survivor was itself merged away later is refused until the later
+/// merge is reverted, and then leaves nothing of the absorbed series behind.
+///
+/// The revert addresses the rows the merge added to the survivor by the survivor's id, which no
+/// longer exists once B is merged into C: reverting A→B first failed on a foreign key halfway
+/// through, a server error that named neither the cause nor the merge to revert first, and the
+/// names A brought were on C where no statement keyed on B could reach them.
+#[tokio::test]
+async fn a_merge_into_a_since_merged_survivor_reverts_only_after_the_later_merge() {
+    let db = TestDb::spawn().await;
+    let alpha = seed::provider(&db, "alpha").create().await;
+    let beta = seed::provider(&db, "beta").create().await;
+    let gamma = seed::provider(&db, "gamma").create().await;
+    let a = ingest(&db, alpha, &VINLAND, &[1.0]).await;
+    let b = ingest(&db, beta, &BERSERK, &[1.0]).await;
+    let c = ingest(&db, gamma, &MONSTER, &[1.0]).await;
+
+    let a_into_b = merge_series(&db.pool, b, a, None, "auto_merged")
+        .await
+        .expect("merge a into b");
+    let b_into_c = merge_series(&db.pool, c, b, None, "auto_merged")
+        .await
+        .expect("merge b into c");
+
+    let refused = revert_merge(&db.pool, &a_into_b).await;
+    assert!(
+        matches!(refused, Err(DbError::Conflict(_))),
+        "a revert into a merged-away survivor must be refused, got {refused:?}"
+    );
+
+    revert_merge(&db.pool, &b_into_c)
+        .await
+        .expect("revert b from c");
+    revert_merge(&db.pool, &a_into_b)
+        .await
+        .expect("revert a from b");
+
+    let source_owners: Vec<uuid::Uuid> =
+        sqlx::query_scalar("SELECT series_id FROM series_sources ORDER BY source_path")
+            .fetch_all(&db.pool)
+            .await
+            .expect("sources");
+    assert_eq!(source_owners.len(), 3);
+    for series in [a, b, c] {
+        assert!(
+            source_owners.contains(&series.as_uuid()),
+            "{series} must own its source again"
+        );
+    }
+    for survivor in [b, c] {
+        let titles = list_series_titles(&db.pool, survivor)
+            .await
+            .expect("titles");
+        assert!(
+            !titles.iter().any(|t| t == VINLAND.title),
+            "{survivor} still carries the absorbed title: {titles:?}"
+        );
+    }
+    assert_eq!(
+        resolve_merged_series(&db.pool, a).await.expect("resolve"),
+        None
+    );
 }

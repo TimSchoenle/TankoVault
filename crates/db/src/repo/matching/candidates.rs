@@ -29,6 +29,7 @@ pub async fn find_candidates<'e, E: PgExecutor<'e>>(
         id: Uuid,
         normalized_title: String,
         alt_titles: Vec<String>,
+        source_titles: Vec<String>,
         content_type: ContentType,
         release_year: Option<i32>,
         sim: f32,
@@ -63,6 +64,14 @@ pub async fn find_candidates<'e, E: PgExecutor<'e>>(
         // already returned, so it costs a partition of that set and no extra scan — and for the
         // case that matters, an exact hit on the junk key, every holder of the key is in it, so
         // the count is the true fan-out rather than a sample of it.
+        //
+        // The third branch is another source's listing title, by compact-key equality: what a
+        // mirror lists a work under is what its siblings list it under, whatever AniList has
+        // since renamed the series to. Capped like the alias branch, but on distinct *series*
+        // (several sources of one series share their listing title), hence the `GROUP BY`
+        // before the window. Its similarity is 1: the keys are equal, which the scorer reads as
+        // a full textual agreement anyway, and a lower trigram number could let the `LIMIT`
+        // drop the one candidate the title identifies.
         "WITH matched AS ( \
            SELECT s.id, similarity(s.normalized_title, $1) AS sim \
              FROM series s WHERE s.normalized_title % $1 \
@@ -72,6 +81,13 @@ pub async fn find_candidates<'e, E: PgExecutor<'e>>(
                     count(*) OVER (PARTITION BY st.normalized) AS fanout \
                FROM series_titles st WHERE st.normalized % $1 \
            ) a WHERE a.fanout <= $3 \
+           UNION ALL \
+           SELECT l.series_id, l.sim FROM ( \
+             SELECT ss.series_id, 1::real AS sim, count(*) OVER () AS fanout \
+               FROM series_sources ss \
+              WHERE replace(ss.provider_title_normalized, ' ', '') = replace($1, ' ', '') \
+              GROUP BY ss.series_id \
+           ) l WHERE l.fanout <= $3 \
          ), ranked AS ( \
            SELECT m.id, max(m.sim) AS sim \
            FROM matched m \
@@ -84,6 +100,9 @@ pub async fn find_candidates<'e, E: PgExecutor<'e>>(
                 r.sim AS \"sim!\", \
                 COALESCE((SELECT array_agg(st.normalized) FROM series_titles st \
                  WHERE st.series_id = r.id), '{}') AS \"alt_titles!\", \
+                COALESCE((SELECT array_agg(DISTINCT ss.provider_title_normalized) \
+                 FROM series_sources ss WHERE ss.series_id = r.id \
+                  AND ss.provider_title_normalized <> ''), '{}') AS \"source_titles!\", \
                 COALESCE((SELECT array_agg(t.name) FROM series_tags stg JOIN tags t ON t.id = stg.tag_id \
                  WHERE stg.series_id = r.id), '{}') AS \"tags!\", \
                 COALESCE((SELECT array_agg(a.name) FROM series_authors sa JOIN authors a ON a.id = sa.author_id \
@@ -104,6 +123,7 @@ pub async fn find_candidates<'e, E: PgExecutor<'e>>(
             normalized_title: r.normalized_title,
             similarity: r.sim,
             alt_normalized_titles: r.alt_titles,
+            source_titles: r.source_titles,
             content_type: r.content_type,
             release_year: r.release_year,
             tags: r.tags,
@@ -143,6 +163,7 @@ pub async fn find_candidates_multi<'e, E: PgExecutor<'e>>(
         id: Uuid,
         normalized_title: String,
         alt_titles: Vec<String>,
+        source_titles: Vec<String>,
         content_type: ContentType,
         release_year: Option<i32>,
         sim: f32,
@@ -161,12 +182,16 @@ pub async fn find_candidates_multi<'e, E: PgExecutor<'e>>(
         "SELECT q.norm AS \"query_title!\", c.id, c.normalized_title, \
                 c.content_type AS \"content_type: ContentType\", c.release_year, \
                 c.sim AS \"sim!\", c.alt_titles AS \"alt_titles!\", \
+                c.source_titles AS \"source_titles!\", \
                 c.tags AS \"tags!\", c.authors AS \"authors!\" \
          FROM UNNEST($1::text[]) AS q(norm) \
          CROSS JOIN LATERAL ( \
            SELECT r.id, r.normalized_title, r.content_type, r.release_year, r.sim, \
                   COALESCE((SELECT array_agg(st.normalized) FROM series_titles st \
                    WHERE st.series_id = r.id), '{}') AS alt_titles, \
+                  COALESCE((SELECT array_agg(DISTINCT ss.provider_title_normalized) \
+                   FROM series_sources ss WHERE ss.series_id = r.id \
+                    AND ss.provider_title_normalized <> ''), '{}') AS source_titles, \
                   COALESCE((SELECT array_agg(t.name) FROM series_tags stg JOIN tags t ON t.id = stg.tag_id \
                    WHERE stg.series_id = r.id), '{}') AS tags, \
                   COALESCE((SELECT array_agg(a.name) FROM series_authors sa JOIN authors a ON a.id = sa.author_id \
@@ -182,6 +207,14 @@ pub async fn find_candidates_multi<'e, E: PgExecutor<'e>>(
                                     count(*) OVER (PARTITION BY st2.normalized) AS fanout \
                                FROM series_titles st2 WHERE st2.normalized % q.norm \
                            ) a WHERE a.fanout <= $3 \
+                           UNION ALL \
+                           SELECT l.series_id, l.sim FROM ( \
+                             SELECT ss2.series_id, 1::real AS sim, count(*) OVER () AS fanout \
+                               FROM series_sources ss2 \
+                              WHERE replace(ss2.provider_title_normalized, ' ', '') \
+                                    = replace(q.norm, ' ', '') \
+                              GROUP BY ss2.series_id \
+                           ) l WHERE l.fanout <= $3 \
                          ) u \
                     GROUP BY u.id \
                     ORDER BY sim DESC \
@@ -208,6 +241,7 @@ pub async fn find_candidates_multi<'e, E: PgExecutor<'e>>(
                 normalized_title: row.normalized_title,
                 similarity: row.sim,
                 alt_normalized_titles: row.alt_titles,
+                source_titles: row.source_titles,
                 content_type: row.content_type,
                 release_year: row.release_year,
                 tags: row.tags,

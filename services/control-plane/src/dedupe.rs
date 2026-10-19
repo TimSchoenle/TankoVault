@@ -15,9 +15,12 @@ use tankovault_db::repo::matching::{
     self, DistinctVerdict, DuplicatePair, MergeUndo, NewMergeCandidate, NewMergeDecision,
     QueueOutcome, SeriesMatchFacts,
 };
-use tankovault_domain::matching::MergeVerdict;
+use tankovault_domain::matching::{LiveTiming, MergeVerdict};
 use tankovault_domain::{SeriesId, UserId};
-use tankovault_matcher::{Adjudication, PairReading, PairSide, Thresholds, adjudicate, read_pair};
+use tankovault_matcher::{
+    Adjudication, PairReading, PairSide, Thresholds, adjudicate, apply_live_timing, read_pair,
+    wants_live_timing,
+};
 use tracing::Instrument as _;
 use uuid::Uuid;
 
@@ -96,6 +99,8 @@ struct Judged<'a> {
     right: &'a SeriesMatchFacts,
     trigram: f32,
     reading: PairReading,
+    /// The pair's live chapter timing, when the reading was worth measuring it for.
+    live_timing: Option<LiveTiming>,
     verdict: Adjudication,
     signals: Vec<&'static str>,
     /// The console sentence, for the pairs going to review.
@@ -160,7 +165,14 @@ impl Judged<'_> {
         JournalPayload {
             outcome,
             terms: terms_json(&self.reading),
-            evidence: evidence_json(self.left, self.right, self.trigram, &self.reading, merged),
+            evidence: evidence_json(
+                self.left,
+                self.right,
+                self.trigram,
+                &self.reading,
+                self.live_timing,
+                merged,
+            ),
         }
     }
 }
@@ -400,6 +412,8 @@ async fn run_full_sweep(
 ) -> anyhow::Result<()> {
     let mut rounds = RoundLoop::new();
     let mut total = MergeSweepView::default();
+    total.auto_merged += clean_up_orphans(pool, policy, actor).await?;
+    matching::advance_full_sweep(pool, claim, rounds.rounds, counters(&total)).await?;
     loop {
         let run = sweep(pool, policy, budget, SweepScope::Full, actor).await?;
         accumulate(&mut total, &run.report);
@@ -412,6 +426,132 @@ async fn run_full_sweep(
             return Ok(());
         }
     }
+}
+
+/// Orphan/twin pairs merged per batch of [`clean_up_orphans`].
+const TWIN_BATCH: i64 = 500;
+
+/// Unreferenced orphans deleted per statement of [`clean_up_orphans`].
+const ORPHAN_DELETE_BATCH: i64 = 1_000;
+
+/// Merge every sourceless series into its sourced twin, then delete the sourceless series nothing
+/// refers to. Returns how many twins were merged.
+///
+/// Only the exhaustive run does this. The orphans are tens of thousands of copies left by a fixed
+/// registration bug, and the scheduled run's merge ceiling would take weeks over them; each merge
+/// here is still journalled with its undo, under the trigger `sweep_twin` and the reason
+/// `orphan_twin`. See [`matching::find_orphan_twins`] for why the twin rule may ignore
+/// `MAX_KEY_FANOUT`.
+///
+/// # Errors
+///
+/// Database failures. Merges and deletions already committed stay committed.
+async fn clean_up_orphans(
+    pool: &PgPool,
+    thresholds: Thresholds,
+    actor: Option<UserId>,
+) -> anyhow::Result<i64> {
+    let ctx = JournalContext {
+        sweep_id: Uuid::now_v7(),
+        actor,
+        // The thresholds in force, as every journal row carries them, so the replay harness can
+        // read this row like any other.
+        policy: policy_json(thresholds),
+    };
+    let mut merged = 0_i64;
+    loop {
+        let twins = matching::find_orphan_twins(pool, TWIN_BATCH).await?;
+        let facts = load_facts(pool, &twins).await?;
+        let mut progressed = false;
+        for (orphan, twin) in twins {
+            let (Some(drop), Some(keep)) = (facts.get(&orphan), facts.get(&twin)) else {
+                continue;
+            };
+            // Re-read since the shortlist: a scan may have attached a source to the orphan.
+            if drop.source_count != 0 || keep.source_count == 0 {
+                continue;
+            }
+            merge_twin(pool, &ctx, keep, drop).await?;
+            merged += 1;
+            progressed = true;
+        }
+        if !progressed {
+            break;
+        }
+    }
+
+    let mut deleted = 0_i64;
+    loop {
+        let n = tankovault_db::repo::catalog::maintenance::delete_unreferenced_orphans(
+            pool,
+            ORPHAN_DELETE_BATCH,
+        )
+        .await?;
+        deleted += n;
+        if n == 0 {
+            break;
+        }
+    }
+    if merged > 0 || deleted > 0 {
+        tracing::info!(merged, deleted, "cleaned up sourceless series");
+    }
+    Ok(merged)
+}
+
+/// Merge one sourceless series into its sourced twin and journal it with its undo.
+async fn merge_twin(
+    pool: &PgPool,
+    ctx: &JournalContext,
+    keep: &SeriesMatchFacts,
+    drop: &SeriesMatchFacts,
+) -> anyhow::Result<()> {
+    let undo = matching::merge_series(
+        pool,
+        keep.series_id,
+        drop.series_id,
+        ctx.actor,
+        "auto_merged",
+    )
+    .await?;
+    let reading = best_reading(keep, drop, 1.0);
+    let signals = reading.assessment.signals.labels();
+    let payload = JournalPayload {
+        outcome: "merged",
+        terms: terms_json(&reading),
+        evidence: evidence_json(keep, drop, 1.0, &reading, None, Some((keep, drop))),
+    };
+    tracing::info!(
+        keep = %keep.series_id,
+        dropped = %drop.series_id,
+        title = %keep.canonical_title,
+        undo_rows = undo.row_count(),
+        "merged a sourceless series into its twin"
+    );
+    journal(
+        pool,
+        &[NewMergeDecision {
+            sweep_id: Some(ctx.sweep_id),
+            trigger: "sweep_twin",
+            actor: ctx.actor,
+            pair: (keep.series_id, drop.series_id),
+            titles: (&keep.canonical_title, &drop.canonical_title),
+            verdict: MergeVerdict::Auto.as_str(),
+            reason: "orphan_twin",
+            blocked_by: &[],
+            outcome: payload.outcome,
+            survivor_id: Some(keep.series_id),
+            absorbed_id: Some(drop.series_id),
+            score: reading.assessment.score,
+            base_score: reading.base,
+            signals: &signals,
+            terms: &payload.terms,
+            evidence: &payload.evidence,
+            policy: &ctx.policy,
+            undo: Some(&undo),
+        }],
+    )
+    .await;
+    Ok(())
 }
 
 /// Run one pass of a sweep.
@@ -466,8 +606,9 @@ async fn sweep_once(
     let mut report = MergeSweepView::default();
     let judged = pass.judge(&pairs, &mut report).await?;
     let writes = flush_queue_writes(pool, &judged, &mut report).await?;
+    let repeat_deferrals = repeat_deferrals(pool, &judged).await;
 
-    let payloads = journal_payloads(&judged, &writes);
+    let payloads = journal_payloads(&judged, &writes, &repeat_deferrals);
     let decisions: Vec<NewMergeDecision<'_>> = payloads
         .iter()
         .map(|(judged, payload)| judged.journal(&pass.ctx, payload, None))
@@ -515,8 +656,17 @@ impl Pass<'_> {
             };
 
             let trigram = self.similarity.get(&pair).copied().unwrap_or_default();
-            let reading = best_reading(left, right, trigram);
-            let verdict = adjudicate(reading.assessment, self.thresholds);
+            let mut reading = best_reading(left, right, trigram);
+            let mut verdict = adjudicate(reading.assessment, self.thresholds);
+            let live_timing = if wants_live_timing(&reading, &verdict) {
+                let timing =
+                    matching::live_timing(self.pool, left.series_id, right.series_id).await?;
+                apply_live_timing(&mut reading, timing);
+                verdict = adjudicate(reading.assessment, self.thresholds);
+                Some(timing)
+            } else {
+                None
+            };
             let signals = reading.assessment.signals.labels();
             let merge = matches!(verdict.verdict, MergeVerdict::Auto)
                 && report.auto_merged < self.budget.max_auto_merges;
@@ -541,6 +691,7 @@ impl Pass<'_> {
                         right,
                         trigram,
                         reading,
+                        live_timing,
                         verdict,
                         signals,
                         None,
@@ -562,7 +713,16 @@ impl Pass<'_> {
             };
 
             judged.push(self.judgement(
-                pair, left, right, trigram, reading, verdict, signals, reason, action,
+                pair,
+                left,
+                right,
+                trigram,
+                reading,
+                live_timing,
+                verdict,
+                signals,
+                reason,
+                action,
             ));
         }
 
@@ -620,6 +780,7 @@ impl Pass<'_> {
         right: &'f SeriesMatchFacts,
         trigram: f32,
         reading: PairReading,
+        live_timing: Option<LiveTiming>,
         verdict: Adjudication,
         signals: Vec<&'static str>,
         reason: Option<String>,
@@ -632,6 +793,7 @@ impl Pass<'_> {
             right,
             trigram,
             reading,
+            live_timing,
             verdict,
             signals,
             reason,
@@ -777,24 +939,53 @@ async fn flush_queue_writes(
     Ok(writes)
 }
 
+/// The deferred pairs of this pass whose latest journal row is already a deferral.
+///
+/// Best-effort like [`journal`]: a failed lookup journals every deferral, which is the old
+/// behaviour, rather than failing a pass whose merges are already committed.
+async fn repeat_deferrals(pool: &PgPool, judged: &[Judged<'_>]) -> HashSet<DuplicatePair> {
+    let deferred: Vec<DuplicatePair> = judged
+        .iter()
+        .filter(|j| matches!(j.action, Action::Deferred))
+        .map(|j| j.pair)
+        .collect();
+    match matching::pairs_already_deferred(pool, &deferred).await {
+        Ok(pairs) => pairs.into_iter().collect(),
+        Err(e) => {
+            tracing::warn!(error = %e, "could not read prior deferrals; journalling them all");
+            HashSet::new()
+        }
+    }
+}
+
 /// The journal payloads for everything the batched writes decided, each with the judgement it
 /// belongs to.
 ///
 /// Merges are absent: they were journalled as they happened. What is left out entirely is the
 /// noise — a row re-scored to the same place every hour is not a decision, and re-confirming that
 /// two unrelated series are unrelated on every run would bury the decisions that matter under
-/// hundreds of rows a day that say nothing changed.
+/// hundreds of rows a day that say nothing changed. A deferral is noise once the pair's latest
+/// row already says it was deferred (`repeat_deferrals`).
 ///
 /// The payloads are returned rather than turned into [`NewMergeDecision`]s here because those
 /// borrow their payload, so it has to outlive the batch that names it.
 fn journal_payloads<'a>(
     judged: &'a [Judged<'a>],
     writes: &HashMap<DuplicatePair, QueueWrite>,
+    repeat_deferrals: &HashSet<DuplicatePair>,
 ) -> Vec<(&'a Judged<'a>, JournalPayload)> {
     judged
         .iter()
+        .filter(|j| {
+            !(matches!(j.action, Action::Deferred) && repeat_deferrals.contains(&canonical(j.pair)))
+        })
         .filter_map(|j| journal_outcome(j, writes).map(|outcome| (j, j.payload(outcome))))
         .collect()
+}
+
+/// A pair in the id order the journal stores it in.
+fn canonical((a, b): DuplicatePair) -> DuplicatePair {
+    (a.min(b), a.max(b))
 }
 
 /// The outcome to journal for one judgement, or `None` when it is not worth a row.
@@ -878,6 +1069,7 @@ fn evidence_json(
     right: &SeriesMatchFacts,
     trigram: f32,
     reading: &PairReading,
+    live_timing: Option<LiveTiming>,
     merged: Option<(&SeriesMatchFacts, &SeriesMatchFacts)>,
 ) -> serde_json::Value {
     let side = |f: &SeriesMatchFacts| {
@@ -886,6 +1078,8 @@ fn evidence_json(
             "title": f.canonical_title,
             "normalized_title": f.normalized_title,
             "alt_normalized_titles": f.alt_normalized_titles,
+            "source_titles": f.source_titles,
+            "anilist_id": f.anilist_id,
             "content_type": f.content_type.as_str(),
             "release_year": f.release_year,
             "tags": f.tags,
@@ -903,6 +1097,11 @@ fn evidence_json(
         "via_alias": reading.via_alias,
         "left": side(left),
         "right": side(right),
+        // Read back by the replay harness, which cannot re-measure it once chapters move.
+        "live_timing": live_timing.map(|t| json!({
+            "shared_live_chapters": t.shared_live_chapters,
+            "median_gap_hours": t.median_gap_hours,
+        })),
         // Why *this* id survived. The absorbed id stops existing, so the weights that chose it
         // are the part of the decision a reader with a broken bookmark will come looking for.
         "survivor_choice": merged.map(|(keep, drop)| json!({
@@ -956,6 +1155,8 @@ fn side(facts: &SeriesMatchFacts) -> PairSide<'_> {
         series_id: facts.series_id,
         normalized_title: &facts.normalized_title,
         alt_normalized_titles: &facts.alt_normalized_titles,
+        source_titles: &facts.source_titles,
+        anilist_id: facts.anilist_id.as_deref(),
         content_type: facts.content_type,
         release_year: facts.release_year,
         tags: &facts.tags,
@@ -983,6 +1184,8 @@ mod tests {
                 .iter()
                 .map(|t| tankovault_domain::normalize_title(t))
                 .collect(),
+            source_titles: Vec::new(),
+            anilist_id: None,
             content_type: ContentType::Unknown,
             release_year: None,
             tags: Vec::new(),
@@ -1052,6 +1255,7 @@ mod tests {
             right,
             trigram: 0.0,
             reading,
+            live_timing: None,
             verdict,
             signals: Vec::new(),
             reason: None,
@@ -1113,6 +1317,31 @@ mod tests {
             "a pass that merged nothing retracts nothing"
         );
         assert_eq!(untouched.len(), 1);
+    }
+
+    /// **A deferral is journalled once, not once per run.**
+    ///
+    /// The merge ceiling deferred the same pairs on every run until it let them through, and each
+    /// run wrote a fresh `deferred` row: 1,800,193 journal rows in production
+    /// (`docs/MATCHING_OVERHAUL.md` WP7). A pair whose latest row is already a deferral gets no
+    /// new one; a pair deferred for the first time still does.
+    #[test]
+    fn a_repeat_deferral_is_not_journalled_again() {
+        let a = facts("Survivor Work", &[], 3, 90);
+        let b = facts("Survivorwork", &[], 1, 12);
+        let c = facts("Other Work", &[], 1, 12);
+        let d = facts("Otherwork", &[], 1, 12);
+        let judged = vec![
+            judgement_of(&a, &b, Action::Deferred),
+            judgement_of(&c, &d, Action::Deferred),
+        ];
+        let repeat = HashSet::from([canonical((b.series_id, a.series_id))]);
+
+        let payloads = journal_payloads(&judged, &HashMap::new(), &repeat);
+
+        assert_eq!(payloads.len(), 1);
+        assert_eq!(payloads[0].0.pair, (c.series_id, d.series_id));
+        assert_eq!(payloads[0].1.outcome, "deferred");
     }
 
     fn round(shortlisted: &[DuplicatePair], auto_merged: i64) -> SweepRun {

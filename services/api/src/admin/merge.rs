@@ -530,6 +530,8 @@ pub async fn rebuild_matching_keys(
         titles_scanned: report.titles_scanned,
         titles_updated: report.titles_updated,
         titles_deduplicated: report.titles_deduplicated,
+        sources_scanned: report.sources_scanned,
+        sources_updated: report.sources_updated,
     };
     audit(
         &state,

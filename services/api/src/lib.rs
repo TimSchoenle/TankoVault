@@ -560,6 +560,10 @@ fn admin_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(admin::admin_sync_unlink))
         .routes(routes!(admin::clear_sync_mapping))
         .routes(routes!(admin::enrichment_status))
+        .routes(routes!(
+            admin::mapping_reverify_status,
+            admin::start_mapping_reverify
+        ))
         // admin
         .routes(routes!(admin::system_stats))
         .routes(routes!(admin::audit_log))
@@ -640,6 +644,7 @@ fn admin_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(admin::list_merge_decisions))
         .routes(routes!(admin::get_merge_decision))
         .routes(routes!(admin::revert_merge_decision))
+        .routes(routes!(admin::revert_merge_decisions))
         .routes(routes!(admin::flag_merge_decision))
         .routes(routes!(admin::list_sync_decisions))
         .routes(routes!(admin::revert_sync_decision))

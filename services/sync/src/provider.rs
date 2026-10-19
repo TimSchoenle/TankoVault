@@ -58,6 +58,9 @@ pub(crate) struct RemoteMetadata {
     pub(crate) external_id: String,
     /// Candidate titles (primary first, then every alternative/synonym), non-blank only.
     pub(crate) titles: Vec<String>,
+    /// How many leading `titles` are the record's own names rather than synonyms. Only these
+    /// can identify a series: a franchise-wide synonym is how a search lands on a sibling.
+    pub(crate) own_titles: usize,
     pub(crate) description: Option<String>,
     pub(crate) cover_url: Option<String>,
     pub(crate) start_year: Option<i32>,
@@ -140,6 +143,8 @@ pub(crate) trait ExternalProvider: Send + Sync {
     }
 
     /// Fetch public catalogue metadata for a known external id, **without** any user token.
+    /// Returns `Ok(None)` when the record is not one a library holds; a failed lookup is an
+    /// error, never `None`.
     async fn fetch_public_metadata_by_id(
         &self,
         _external_id: &str,

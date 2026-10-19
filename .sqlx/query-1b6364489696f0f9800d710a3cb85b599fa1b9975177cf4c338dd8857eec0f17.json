@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE mapping_reverify_state SET checked = $1, failed = $2, removed = $3, unreachable = $4, heartbeat_at = now() WHERE id AND running AND run_id = $5",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int4",
+        "Int4",
+        "Int4",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1b6364489696f0f9800d710a3cb85b599fa1b9975177cf4c338dd8857eec0f17"
+}

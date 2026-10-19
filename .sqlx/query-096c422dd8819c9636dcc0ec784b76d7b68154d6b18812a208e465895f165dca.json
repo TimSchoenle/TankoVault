@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO series_titles (series_id, title, normalized, origin) VALUES ($1,$2,$3,$4) ON CONFLICT (series_id, normalized) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "096c422dd8819c9636dcc0ec784b76d7b68154d6b18812a208e465895f165dca"
+}

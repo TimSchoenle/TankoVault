@@ -14,9 +14,12 @@ mod registry;
 mod resolve;
 mod revert;
 mod tokens;
+mod verify;
 
 use std::collections::HashMap;
 use std::sync::Arc;
+
+use tracing::Instrument as _;
 
 use tankovault_auth::Sealer;
 use tankovault_config::MatchingConfig;
@@ -46,6 +49,7 @@ use registry::ProviderRegistry;
 use resolve::SeriesResolver;
 use revert::RevertService;
 use tokens::TokenVault;
+use verify::MappingVerifier;
 
 /// The stateful sync engine, shared behind an `Arc` in service state. A façade over the
 /// collaborators listed in the module docs; it delegates and holds no logic itself.
@@ -56,6 +60,8 @@ pub(crate) struct SyncEngine {
     reconciler: Reconciler,
     targeted_push: TargetedPush,
     enricher: Enricher,
+    /// The operator's re-verification of stored mappings.
+    verifier: MappingVerifier,
     /// Undoing a journalled decision, and the durable refusal that stops it recurring.
     reverts: RevertService,
 }
@@ -118,6 +124,7 @@ impl SyncEngine {
                 resolver,
                 linked,
             ),
+            verifier: MappingVerifier::new(pool.clone(), Arc::clone(&registry)),
             enricher: Enricher::new(pool, Arc::clone(&registry), metadata),
             registry,
             accounts,
@@ -309,5 +316,41 @@ impl SyncEngine {
         max_series: usize,
     ) -> anyhow::Result<EnrichReport> {
         self.enricher.enrich_all(batch_size, max_series).await
+    }
+
+    /// Start re-verifying every stored mapping in the background. Returns `false`, starting
+    /// nothing, when a run is already in flight.
+    ///
+    /// # Errors
+    /// Database failures while claiming the run.
+    pub(crate) async fn start_reverify(
+        self: &Arc<Self>,
+        dry_run: bool,
+        actor: Option<UserId>,
+    ) -> anyhow::Result<bool> {
+        let Some(run) = self.verifier.claim(dry_run).await? else {
+            return Ok(false);
+        };
+        let engine = Arc::clone(self);
+        tokio::spawn(
+            async move { engine.verifier.run(run, dry_run, actor).await }.instrument(
+                tracing::info_span!("mapping_reverify", "sentry.op" = "task", dry_run),
+            ),
+        );
+        Ok(true)
+    }
+
+    /// The claimed re-verification, run to completion on the caller's task. For tests.
+    #[cfg(all(test, feature = "integration"))]
+    pub(crate) async fn reverify_now(
+        &self,
+        dry_run: bool,
+        actor: Option<UserId>,
+    ) -> anyhow::Result<bool> {
+        let Some(run) = self.verifier.claim(dry_run).await? else {
+            return Ok(false);
+        };
+        self.verifier.run(run, dry_run, actor).await;
+        Ok(true)
     }
 }

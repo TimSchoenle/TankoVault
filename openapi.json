@@ -1782,6 +1782,16 @@
             "format": "int64",
             "type": "integer"
           },
+          "sources_scanned": {
+            "description": "Source listing titles read.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "sources_updated": {
+            "description": "Of those, whose listing key was missing or changed.",
+            "format": "int64",
+            "type": "integer"
+          },
           "titles_deduplicated": {
             "description": "Alternative titles dropped because the corrected rules collapsed them onto a key the\nsame series already held.",
             "format": "int64",
@@ -1803,7 +1813,9 @@
           "series_updated",
           "titles_scanned",
           "titles_updated",
-          "titles_deduplicated"
+          "titles_deduplicated",
+          "sources_scanned",
+          "sources_updated"
         ],
         "type": "object"
       },
@@ -1995,6 +2007,128 @@
           "mfa_required"
         ],
         "type": "string"
+      },
+      "MappingReverifyFailure": {
+        "description": "One mapping that failed re-verification.",
+        "properties": {
+          "external_id": {
+            "description": "The provider's id for the record it was mapped to.",
+            "type": "string"
+          },
+          "provider": {
+            "description": "The provider slug.",
+            "type": "string"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/MappingReverifyReason",
+            "description": "Why it failed."
+          },
+          "series_id": {
+            "$ref": "#/components/schemas/SeriesId",
+            "description": "The local series."
+          }
+        },
+        "required": [
+          "series_id",
+          "provider",
+          "external_id",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "MappingReverifyReason": {
+        "description": "Why a stored mapping failed re-verification.",
+        "enum": [
+          "not_a_library_record",
+          "titles_differ"
+        ],
+        "type": "string"
+      },
+      "MappingReverifyStart": {
+        "description": "Start a mapping re-verification.",
+        "properties": {
+          "dry_run": {
+            "description": "Report the failing mappings without removing them. Review a dry run before a real one.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "dry_run"
+        ],
+        "type": "object"
+      },
+      "MappingReverifyView": {
+        "description": "What the re-verification of stored `AniList` mappings is doing, or last did.",
+        "properties": {
+          "checked": {
+            "description": "Mappings looked up so far.",
+            "format": "int32",
+            "type": "integer"
+          },
+          "dry_run": {
+            "description": "Whether the current or last run only reported.",
+            "type": "boolean"
+          },
+          "error": {
+            "description": "How the last run ended when it ended badly.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "failed": {
+            "description": "Of those, the ones whose record does not identify their series.",
+            "format": "int32",
+            "type": "integer"
+          },
+          "failures": {
+            "description": "The failing mappings of the last finished run, at most 1,000.",
+            "items": {
+              "$ref": "#/components/schemas/MappingReverifyFailure"
+            },
+            "type": "array"
+          },
+          "finished_at": {
+            "description": "RFC 3339. When the last run ended; absent while one is running.",
+            "example": "2026-10-19T05:30:00Z",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "removed": {
+            "description": "Of the failed, the ones removed and blocked. Zero on a dry run.",
+            "format": "int32",
+            "type": "integer"
+          },
+          "running": {
+            "description": "Whether a run holds the claim. Only one runs at a time.",
+            "type": "boolean"
+          },
+          "started_at": {
+            "description": "RFC 3339. When the current or last run started.",
+            "example": "2026-10-19T02:00:00Z",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "unreachable": {
+            "description": "Lookups that errored. Those mappings were left as they were.",
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "running",
+          "dry_run",
+          "checked",
+          "failed",
+          "removed",
+          "unreachable",
+          "failures"
+        ],
+        "type": "object"
       },
       "MarkRead": {
         "properties": {
@@ -2316,7 +2450,7 @@
             "description": "`[{rule, delta, detail}]` — every term the scorer applied, in order."
           },
           "trigger": {
-            "description": "`sweep_new` | `sweep_requeue` | `sweep_recheck` | `operator`.",
+            "description": "`sweep_new` | `sweep_requeue` | `sweep_recheck` | `sweep_twin` | `operator`.",
             "type": "string"
           },
           "undo_breakdown": {
@@ -2564,6 +2698,111 @@
         "required": [
           "keep",
           "merge"
+        ],
+        "type": "object"
+      },
+      "MergeRevertBatch": {
+        "description": "The result of a batch revert.",
+        "properties": {
+          "dry_run": {
+            "description": "Whether this was a dry run, which changes nothing.",
+            "type": "boolean"
+          },
+          "items": {
+            "description": "Every requested decision, newest first; unknown ids last.",
+            "items": {
+              "$ref": "#/components/schemas/MergeRevertBatchItem"
+            },
+            "type": "array"
+          },
+          "reverted": {
+            "description": "Decisions reverted, or on a dry run the ones that would be attempted.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "skipped": {
+            "description": "Decisions not reverted, for any reason.",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "dry_run",
+          "reverted",
+          "skipped",
+          "items"
+        ],
+        "type": "object"
+      },
+      "MergeRevertBatchItem": {
+        "description": "One decision of a batch revert, in the order the batch handled it.",
+        "properties": {
+          "decision_id": {
+            "description": "The journal row.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "detail": {
+            "description": "Why it was refused, when it was.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/MergeRevertBatchOutcome",
+            "description": "What happened to it."
+          },
+          "reverted": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MergeReverted",
+                "description": "What was put back, for a decision a real run reverted."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "decision_id",
+          "outcome"
+        ],
+        "type": "object"
+      },
+      "MergeRevertBatchOutcome": {
+        "description": "What a batch revert did, or would do, with one decision.",
+        "enum": [
+          "reverted",
+          "not_found",
+          "nothing_to_revert",
+          "refused"
+        ],
+        "type": "string"
+      },
+      "MergeRevertBatchRequest": {
+        "properties": {
+          "decision_ids": {
+            "description": "The decisions to revert, at most 50. Reverted newest first, whatever the order given.",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "dry_run": {
+            "description": "Report what would be attempted without reverting anything.",
+            "type": "boolean"
+          },
+          "reason": {
+            "description": "Why. Required, and stored on every decision the batch reverts.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "decision_ids",
+          "reason"
         ],
         "type": "object"
       },
@@ -9209,7 +9448,7 @@
             }
           },
           {
-            "description": "Restrict to one trigger: `operator`, `sweep_new`, `sweep_requeue`, `sweep_recheck`.",
+            "description": "Restrict to one trigger: `operator`, `sweep_new`, `sweep_requeue`, `sweep_recheck`,\n`sweep_twin`.",
             "in": "query",
             "name": "trigger",
             "required": false,
@@ -9298,6 +9537,73 @@
           }
         ],
         "summary": "List merge decisions",
+        "tags": [
+          "admin-matching"
+        ]
+      }
+    },
+    "/v1/admin/merge-decisions/revert-batch": {
+      "post": {
+        "description": "Revert a reviewed list of automatic merges, each exactly as the single revert does it\n(restore, suppress, disentangle), newest first: a merge whose survivor a later merge absorbed\ncan only be reverted after that later one, so newest first lets a chain inside one batch\nunwind. One decision's refusal does not stop the others; each item reports its own outcome.\nA dry run checks each decision as stored and changes nothing, so it cannot predict a refusal\nthat depends on another decision in the batch.",
+        "operationId": "revert_merge_decisions",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MergeRevertBatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MergeRevertBatch"
+                }
+              }
+            },
+            "description": "What happened to each decision"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "no reason given, no decisions, or more than 50"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Revert merges in a batch",
         "tags": [
           "admin-matching"
         ]
@@ -12889,6 +13195,118 @@
           }
         ],
         "summary": "Clear a series↔external mapping",
+        "tags": [
+          "admin-sync"
+        ]
+      }
+    },
+    "/v1/admin/sync/mappings/reverify": {
+      "get": {
+        "description": "The current or last re-verification of stored `AniList` mappings, with the mappings it\nrefused.",
+        "operationId": "mapping_reverify_status",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MappingReverifyView"
+                }
+              }
+            },
+            "description": "The run's current state"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "no second factor is enrolled, or the caller does not hold the required permission"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Get mapping re-verification status",
+        "tags": [
+          "admin-sync"
+        ]
+      },
+      "post": {
+        "description": "Re-fetch every stored `AniList` mapping by id and refuse the ones whose record is not a\nlibrary format (a light novel) or whose titles do not identify the series. A refused\nmapping is removed and blocked, so reconciliation does not write it back. Runs in the\nbackground at `AniList`'s rate limit; follow it with the status endpoint.",
+        "operationId": "start_mapping_reverify",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MappingReverifyStart"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncAck"
+                }
+              }
+            },
+            "description": "The run started"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "A run is already in flight"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "summary": "Re-verify stored mappings",
         "tags": [
           "admin-sync"
         ]

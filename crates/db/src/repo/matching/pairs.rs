@@ -9,9 +9,6 @@ use uuid::Uuid;
 /// A pair of series worth re-scoring, in canonical id order.
 pub type DuplicatePair = (SeriesId, SeriesId);
 
-/// How many distinct series may share one compact title key before [`find_duplicate_pairs`]
-/// stops blocking on it.
-///
 use super::MAX_KEY_FANOUT;
 
 /// Every pair of *existing* series whose titles collide on the whitespace-insensitive key and
@@ -26,10 +23,12 @@ use super::MAX_KEY_FANOUT;
 /// matcher is worst at, because a missing space between two HTML elements destroys both the
 /// trigram score and the token-set ratio at once.
 ///
-/// Three collisions count, and they are three different provider behaviours: two canonical
+/// Four collisions count, and they are four different provider behaviours: two canonical
 /// titles agreeing, one series' canonical title agreeing with another's *alternative* title
 /// (the same work listed under its romaji name on one site and its english name on another),
-/// and two series sharing an alternative title.
+/// two series sharing an alternative title, and a source's *listing* title agreeing with
+/// another series' canonical or listing title (a mirror that registered its own series because
+/// `AniList` had renamed the one its siblings sit under).
 ///
 /// The result is only a *shortlist*. Every pair is re-scored in full — with the tags, authors,
 /// release years and alternative titles that the create-time path never had — before anything
@@ -80,13 +79,18 @@ pub async fn find_duplicate_pairs<'e, E: PgExecutor<'e>>(
         Row,
         // `UNION` over (key, series_id) already deduplicates, so `count(*)` is the distinct
         // series count without a second pass.
-        "WITH over_shared AS ( \
+        "WITH listing AS ( \
+           SELECT DISTINCT series_id, replace(provider_title_normalized, ' ', '') AS key \
+             FROM series_sources WHERE provider_title_normalized <> '' \
+         ), over_shared AS ( \
            SELECT key FROM ( \
              SELECT replace(normalized_title, ' ', '') AS key, id AS series_id \
                FROM series WHERE normalized_title <> '' \
              UNION \
              SELECT replace(normalized, ' ', '') AS key, series_id \
                FROM series_titles WHERE normalized <> '' \
+             UNION \
+             SELECT key, series_id FROM listing \
            ) k \
            GROUP BY key HAVING count(*) > $2 \
          ), by_canonical AS ( \
@@ -112,10 +116,21 @@ pub async fn find_duplicate_pairs<'e, E: PgExecutor<'e>>(
            WHERE x.normalized <> '' \
              AND NOT EXISTS (SELECT 1 FROM over_shared o \
                               WHERE o.key = replace(x.normalized, ' ', '')) \
+         ), by_listing AS ( \
+           SELECT LEAST(l.series_id, o.series_id) AS lo, \
+                  GREATEST(l.series_id, o.series_id) AS hi \
+           FROM listing l JOIN ( \
+             SELECT id AS series_id, replace(normalized_title, ' ', '') AS key \
+               FROM series WHERE normalized_title <> '' \
+             UNION ALL \
+             SELECT series_id, key FROM listing \
+           ) o ON o.key = l.key AND o.series_id <> l.series_id \
+           WHERE NOT EXISTS (SELECT 1 FROM over_shared x WHERE x.key = l.key) \
          ), pairs AS ( \
            SELECT lo, hi FROM by_canonical \
            UNION SELECT lo, hi FROM by_alias \
            UNION SELECT lo, hi FROM by_shared_alias \
+           UNION SELECT lo, hi FROM by_listing \
          ) \
          SELECT p.lo AS \"lo!\", p.hi AS \"hi!\" FROM pairs p \
          WHERE NOT EXISTS ( \
@@ -131,6 +146,61 @@ pub async fn find_duplicate_pairs<'e, E: PgExecutor<'e>>(
     Ok(rows
         .into_iter()
         .map(|r| (SeriesId::from_uuid(r.lo), SeriesId::from_uuid(r.hi)))
+        .collect())
+}
+
+/// Series with no source paired with a sourced series of the same normalized title, as
+/// `(orphan, twin)`, at most `limit` of them and one twin per orphan.
+///
+/// The twin rule of the duplicate sweep: an orphan is the leftover copy of a fixed registration
+/// bug (22,696 of 23,500 production orphans had a sourced twin), so an exact title is enough —
+/// unless both carry an `AniList` id and the ids differ. Deliberately **not** capped by
+/// `MAX_KEY_FANOUT`: the copies sit in clusters of 17–256 per title, which is exactly what the cap
+/// exists to refuse, and lifting it globally would let junk keys collapse unrelated works. Being
+/// sourceless is what makes this safe to run uncapped; nothing here can join two sourced series.
+///
+/// Among several sourced twins the one with the most sources wins, so every orphan of one title
+/// lands on the same survivor.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only.
+pub async fn find_orphan_twins<'e, E: PgExecutor<'e>>(
+    exec: E,
+    limit: i64,
+) -> DbResult<Vec<(SeriesId, SeriesId)>> {
+    #[derive(FromRow)]
+    struct Row {
+        orphan: Uuid,
+        twin: Uuid,
+    }
+    let rows = sqlx::query_as!(
+        Row,
+        // The compact-key equality is redundant with the exact one and is there for the
+        // planner: `series_compact_title_idx` serves it, and nothing indexes the bare column.
+        "SELECT DISTINCT ON (o.id) o.id AS \"orphan!\", t.id AS \"twin!\" \
+           FROM series o \
+           JOIN series t \
+             ON replace(t.normalized_title, ' ', '') = replace(o.normalized_title, ' ', '') \
+            AND t.normalized_title = o.normalized_title \
+            AND t.id <> o.id \
+          WHERE o.normalized_title <> '' \
+            AND NOT EXISTS (SELECT 1 FROM series_sources x WHERE x.series_id = o.id) \
+            AND EXISTS (SELECT 1 FROM series_sources x WHERE x.series_id = t.id) \
+            AND NOT EXISTS ( \
+              SELECT 1 FROM sync_mappings mo \
+                JOIN sync_mappings mt ON mt.provider = mo.provider AND mt.series_id = t.id \
+               WHERE mo.series_id = o.id AND mo.provider = 'anilist' \
+                 AND mo.external_id <> mt.external_id) \
+          ORDER BY o.id, \
+                   (SELECT count(*) FROM series_sources x WHERE x.series_id = t.id) DESC, t.id \
+          LIMIT $1",
+        limit,
+    )
+    .fetch_all(exec)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| (SeriesId::from_uuid(r.orphan), SeriesId::from_uuid(r.twin)))
         .collect())
 }
 
@@ -150,6 +220,10 @@ pub struct SeriesMatchFacts {
     pub normalized_title: String,
     /// Its aliases, normalized, which an identity rule may match on alone.
     pub alt_normalized_titles: Vec<String>,
+    /// Its sources' listing titles, normalized: primary titles, like the canonical one.
+    pub source_titles: Vec<String>,
+    /// Its `AniList` id from `sync_mappings`, which agrees with or vetoes the other side's.
+    pub anilist_id: Option<String>,
     /// Its medium, which a guard can refuse a merge on.
     pub content_type: ContentType,
     /// Its year, `None` when the catalogue has none. A guard refuses on a mismatch,
@@ -196,6 +270,8 @@ pub async fn series_match_facts<'e, E: PgExecutor<'e>>(
         canonical_title: String,
         normalized_title: String,
         alt_titles: Vec<String>,
+        source_titles: Vec<String>,
+        anilist_id: Option<String>,
         content_type: ContentType,
         release_year: Option<i32>,
         tags: Vec<String>,
@@ -214,6 +290,11 @@ pub async fn series_match_facts<'e, E: PgExecutor<'e>>(
                 s.content_type AS \"content_type: ContentType\", s.release_year, \
                 COALESCE((SELECT array_agg(st.normalized) FROM series_titles st \
                  WHERE st.series_id = s.id), '{}') AS \"alt_titles!\", \
+                COALESCE((SELECT array_agg(DISTINCT ss.provider_title_normalized) \
+                 FROM series_sources ss WHERE ss.series_id = s.id \
+                  AND ss.provider_title_normalized <> ''), '{}') AS \"source_titles!\", \
+                (SELECT m.external_id FROM sync_mappings m \
+                  WHERE m.series_id = s.id AND m.provider = 'anilist') AS anilist_id, \
                 COALESCE((SELECT array_agg(t.name) FROM series_tags stg JOIN tags t ON t.id = stg.tag_id \
                  WHERE stg.series_id = s.id), '{}') AS \"tags!\", \
                 COALESCE((SELECT array_agg(a.name) FROM series_authors sa JOIN authors a ON a.id = sa.author_id \
@@ -235,6 +316,8 @@ pub async fn series_match_facts<'e, E: PgExecutor<'e>>(
             canonical_title: r.canonical_title,
             normalized_title: r.normalized_title,
             alt_normalized_titles: r.alt_titles,
+            source_titles: r.source_titles,
+            anilist_id: r.anilist_id,
             content_type: r.content_type,
             release_year: r.release_year,
             tags: r.tags,

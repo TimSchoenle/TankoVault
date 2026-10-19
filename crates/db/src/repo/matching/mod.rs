@@ -29,7 +29,8 @@
 //! One module per stage: `candidates` and `pairs` find them, `queue` holds the ambiguous
 //! ones for an operator, `merge` executes the decision, and `keys` maintains the normalized
 //! title keys the first two read. `full_sweep` holds the claim and the progress of the
-//! operator-triggered run that walks all three shortlists to the end. `undo` takes a merge back
+//! operator-triggered run that walks all three shortlists to the end. `timing` measures when two
+//! series' sources first saw the chapters they share. `undo` takes a merge back
 //! and `disentangle` takes back the shared names that caused it, which is the half a pure
 //! inverse cannot reach.
 
@@ -41,6 +42,7 @@ mod keys;
 mod merge;
 mod pairs;
 mod queue;
+mod timing;
 mod undo;
 
 /// How many distinct series may hold one title key before it stops identifying anything.
@@ -62,8 +64,9 @@ pub(super) const MAX_KEY_FANOUT: i64 = 16;
 
 pub use candidates::{find_candidates, find_candidates_multi};
 pub use decisions::{
-    MergeDecisionFilter, MergeDecisionRow, NewMergeDecision, UndoSegment, flag_merge_decision,
-    get_merge_decision, list_merge_decisions, record_merge_decisions, revert_merge_decision,
+    MergeDecisionFilter, MergeDecisionRow, NewMergeDecision, RevertReadiness, UndoSegment,
+    flag_merge_decision, get_merge_decision, list_merge_decisions, pairs_already_deferred,
+    purge_deferred_decisions, record_merge_decisions, revert_merge_decision, revert_order,
 };
 pub use disentangle::Disentangled;
 pub use full_sweep::{
@@ -74,11 +77,12 @@ pub use keys::{KeyRebuildReport, rebuild_normalized_keys};
 pub use merge::{merge_series, resolve_merged_series, resolve_merged_series_batch};
 pub use pairs::{
     DistinctVerdict, DuplicatePair, SeriesMatchFacts, distinct_merge_pairs, find_duplicate_pairs,
-    open_merge_pairs, pair_similarities, record_distinct_pair, record_distinct_pairs,
-    series_match_facts,
+    find_orphan_twins, open_merge_pairs, pair_similarities, record_distinct_pair,
+    record_distinct_pairs, series_match_facts,
 };
 pub use queue::{
     MergeCandidateView, NewMergeCandidate, QueueOutcome, dismiss_merge_candidate,
     list_open_merge_candidates, record_merge_candidate, record_merge_candidates, suppress_pair,
 };
+pub use timing::live_timing;
 pub use undo::{MergeUndo, UNDO_VERSION, revert_merge};

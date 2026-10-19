@@ -11,6 +11,7 @@
 //! were already live (`revert`, `flag`). [`super::decisions`] keeps the read side for every other
 //! outcome and for the sync journal; it no longer carries the actions.
 
+mod batch;
 mod inspect;
 mod row;
 mod unmerge;
@@ -23,6 +24,7 @@ use crate::hooks::use_reload;
 use crate::i18n::use_i18n;
 use crate::models::*;
 use crate::views::console::{landing_selection, use_console_nav, RefreshTick};
+use batch::BatchRevert;
 use dioxus::prelude::*;
 use inkstone_ui::{Size, ToggleButton};
 use inspect::MergeInspector;
@@ -305,6 +307,7 @@ pub(super) fn MergesEntity(tick: RefreshTick) -> Element {
             Some(Some(decision)) => rsx! {
                 div { class: "ik-cons-insp",
                     StepUpGuard { gate, intro: Some(i18n.t("console.stepUp.intro")) }
+                    BatchRevert { gate, tick }
                     MergeInspector { key: "{decision.id}", decision, gate, tick }
                 }
             },

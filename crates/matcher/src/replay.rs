@@ -9,9 +9,11 @@ use std::collections::BTreeMap;
 use std::str::FromStr as _;
 
 use serde::Deserialize;
+use tankovault_domain::matching::LiveTiming;
 use tankovault_domain::{ContentType, SeriesId};
 
-use crate::pair::{PairReading, PairSide, adjudicate_pair};
+use crate::decide::adjudicate;
+use crate::pair::{PairReading, PairSide, adjudicate_pair, apply_live_timing, wants_live_timing};
 use crate::types::{Adjudication, MergeGuards, Thresholds};
 
 /// One exported `merge_decisions` row, reduced to what a replay reads.
@@ -47,6 +49,18 @@ pub struct Evidence {
     pub left: SideFacts,
     /// The right series' facts.
     pub right: SideFacts,
+    /// The pair's live chapter timing, when the sweep measured it.
+    #[serde(default)]
+    pub live_timing: Option<StoredLiveTiming>,
+}
+
+/// `evidence.live_timing` as `evidence_json` records it.
+#[derive(Debug, Clone, Copy, Deserialize)]
+pub struct StoredLiveTiming {
+    /// Live chapters the best source pair shares.
+    pub shared_live_chapters: i64,
+    /// Their median discovery gap in hours.
+    pub median_gap_hours: Option<f64>,
 }
 
 /// One side's facts as `evidence_json` records them.
@@ -63,6 +77,12 @@ pub struct SideFacts {
     /// Alternative matching keys.
     #[serde(default)]
     pub alt_normalized_titles: Vec<String>,
+    /// Source listing keys; absent from decisions recorded before they were.
+    #[serde(default)]
+    pub source_titles: Vec<String>,
+    /// The `AniList` id; absent from decisions recorded before it was.
+    #[serde(default)]
+    pub anilist_id: Option<String>,
     /// The medium slug; anything unrecognised reads as `unknown`.
     #[serde(default)]
     pub content_type: String,
@@ -131,6 +151,8 @@ impl SideFacts {
             series_id: self.id.unwrap_or_default(),
             normalized_title: &self.normalized_title,
             alt_normalized_titles: &self.alt_normalized_titles,
+            source_titles: &self.source_titles,
+            anilist_id: self.anilist_id.as_deref(),
             content_type: ContentType::from_str(&self.content_type).unwrap_or(ContentType::Unknown),
             release_year: self.release_year,
             tags: &self.tags,
@@ -171,12 +193,24 @@ pub fn replay(row: &DecisionRow) -> Replayed {
     let thresholds = row
         .policy
         .map_or_else(Thresholds::default, Policy::thresholds);
-    let (reading, adjudication) = adjudicate_pair(
+    let (mut reading, mut adjudication) = adjudicate_pair(
         row.evidence.left.side(),
         row.evidence.right.side(),
         row.evidence.trigram_similarity,
         thresholds,
     );
+    if let Some(stored) = row.evidence.live_timing
+        && wants_live_timing(&reading, &adjudication)
+    {
+        apply_live_timing(
+            &mut reading,
+            LiveTiming {
+                shared_live_chapters: stored.shared_live_chapters,
+                median_gap_hours: stored.median_gap_hours,
+            },
+        );
+        adjudication = adjudicate(reading.assessment, thresholds);
+    }
     Replayed {
         reading,
         adjudication,

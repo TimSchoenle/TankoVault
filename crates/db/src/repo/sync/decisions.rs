@@ -499,6 +499,20 @@ pub async fn block_sync_match(
     reason: &str,
 ) -> DbResult<()> {
     let mut tx = pool.begin().await?;
+    block_sync_match_in(&mut tx, provider, external_id, series_id, actor, reason).await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+/// [`block_sync_match`] inside the caller's transaction, for a caller that must fence it.
+pub(crate) async fn block_sync_match_in(
+    tx: &mut sqlx::PgConnection,
+    provider: &str,
+    external_id: &str,
+    series_id: SeriesId,
+    actor: Option<UserId>,
+    reason: &str,
+) -> DbResult<()> {
     sqlx::query!(
         "INSERT INTO sync_match_blocks (provider, external_id, series_id, reason, created_by) \
          VALUES ($1, $2, $3, $4, $5) \
@@ -534,8 +548,6 @@ pub async fn block_sync_match(
     )
     .execute(&mut *tx)
     .await?;
-
-    tx.commit().await?;
     Ok(())
 }
 

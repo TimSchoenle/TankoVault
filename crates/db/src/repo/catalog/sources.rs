@@ -1,7 +1,7 @@
 //! Provider sources: the per-provider rows attached to a canonical series, their scan
 //! bookkeeping, and the stub registration a catalogue crawl performs before any deep scan.
 
-use super::series::{SeriesUpsert, resolve_canonical_series};
+use super::series::{Resolution, SeriesUpsert, resolve_canonical_series};
 use crate::error::{DbError, DbResult};
 use sqlx::{FromRow, PgExecutor};
 use tankovault_domain::matching::Canonicaliser;
@@ -78,16 +78,19 @@ pub async fn upsert_source<'e, E: PgExecutor<'e>>(
     provider_title: Option<&str>,
 ) -> DbResult<(SeriesSourceId, SeriesId)> {
     let row = sqlx::query!(
-        "INSERT INTO series_sources (id, series_id, provider_id, source_path, provider_title) \
-         VALUES ($1,$2,$3,$4,$5) \
+        "INSERT INTO series_sources \
+            (id, series_id, provider_id, source_path, provider_title, provider_title_normalized) \
+         VALUES ($1,$2,$3,$4,$5,$6) \
          ON CONFLICT (provider_id, source_path) DO UPDATE \
-            SET provider_title = EXCLUDED.provider_title \
+            SET provider_title = EXCLUDED.provider_title, \
+                provider_title_normalized = EXCLUDED.provider_title_normalized \
          RETURNING id, series_id",
         SeriesSourceId::new().as_uuid(),
         series_id.as_uuid(),
         provider_id.as_uuid(),
         source_path,
         provider_title,
+        provider_title.map(normalize_title),
     )
     .fetch_one(exec)
     .await?;
@@ -124,7 +127,9 @@ pub async fn register_source_stub(
         return Ok(());
     }
 
-    let series_id = resolve_stub_series(&mut tx, title, canonicaliser).await?;
+    let series_id = resolve_stub_series(&mut tx, title, canonicaliser)
+        .await?
+        .series_id;
     let (_, filed_under) =
         upsert_source(&mut *tx, series_id, provider_id, source_path, Some(title)).await?;
     if filed_under != series_id {
@@ -144,7 +149,7 @@ async fn resolve_stub_series(
     conn: &mut sqlx::PgConnection,
     title: &str,
     canonicaliser: &dyn Canonicaliser,
-) -> DbResult<SeriesId> {
+) -> DbResult<Resolution> {
     let meta = SeriesUpsert {
         canonical_title: title.to_owned(),
         normalized_title: normalize_title(title),
@@ -179,18 +184,23 @@ async fn upsert_sources(
     // only for this statement, so cloning each path and title is pure waste (PERF-19).
     let paths: Vec<&str> = rows.iter().map(|(_, p, _)| p.as_str()).collect();
     let titles: Vec<&str> = rows.iter().map(|(_, _, t)| t.as_str()).collect();
+    let normalized: Vec<String> = titles.iter().map(|t| normalize_title(t)).collect();
     sqlx::query!(
-        "INSERT INTO series_sources (id, series_id, provider_id, source_path, provider_title) \
-         SELECT DISTINCT ON (source_path) id, series_id, $2, source_path, provider_title \
-         FROM UNNEST($1::uuid[], $3::uuid[], $4::text[], $5::text[]) \
-              AS t(id, series_id, source_path, provider_title) \
+        "INSERT INTO series_sources \
+            (id, series_id, provider_id, source_path, provider_title, provider_title_normalized) \
+         SELECT DISTINCT ON (source_path) id, series_id, $2, source_path, provider_title, \
+                provider_title_normalized \
+         FROM UNNEST($1::uuid[], $3::uuid[], $4::text[], $5::text[], $6::text[]) \
+              AS t(id, series_id, source_path, provider_title, provider_title_normalized) \
          ON CONFLICT (provider_id, source_path) DO UPDATE \
-            SET provider_title = EXCLUDED.provider_title",
+            SET provider_title = EXCLUDED.provider_title, \
+                provider_title_normalized = EXCLUDED.provider_title_normalized",
         &ids,
         provider_id.as_uuid(),
         &series_ids,
         &paths as _,
         &titles as _,
+        &normalized,
     )
     .execute(conn)
     .await?;
@@ -215,16 +225,49 @@ async fn register_chunk(
 ) -> DbResult<usize> {
     let mut tx = pool.begin().await?;
     let mut sources = Vec::with_capacity(chunk.len());
+    let mut created = Vec::new();
     for (path, title) in chunk {
         // Per entry, inside the transaction, deliberately: the policy is a pure function over
         // values, so the only reason it cannot be lifted out of this loop is the one that
         // matters — entry N must be able to match the series entry N-1 just created (PERF-15).
-        let series_id = resolve_stub_series(&mut tx, title, canonicaliser).await?;
-        sources.push((series_id, (*path).to_owned(), (*title).to_owned()));
+        let resolved = resolve_stub_series(&mut tx, title, canonicaliser).await?;
+        if resolved.created {
+            created.push(resolved.series_id.as_uuid());
+        }
+        sources.push((resolved.series_id, (*path).to_owned(), (*title).to_owned()));
     }
     upsert_sources(&mut tx, provider_id, &sources).await?;
+    discard_unsourced(&mut tx, &created).await?;
     tx.commit().await?;
     Ok(chunk.len())
+}
+
+/// Delete each series in `created` that holds no source.
+///
+/// `upsert_sources` keeps a path's existing series on conflict, so a path a concurrent scan
+/// registered between the batch existence check and this chunk lands on that scan's series, and
+/// the series this chunk created for it is left with nothing, an orphan no scan will reach.
+/// Only series this chunk created are considered, and only empty ones, because a later entry of
+/// the same chunk may have attached to one.
+async fn discard_unsourced(conn: &mut sqlx::PgConnection, created: &[Uuid]) -> DbResult<()> {
+    if created.is_empty() {
+        return Ok(());
+    }
+    let discarded = sqlx::query!(
+        "DELETE FROM series s WHERE s.id = ANY($1) \
+            AND NOT EXISTS (SELECT 1 FROM series_sources ss WHERE ss.series_id = s.id)",
+        created,
+    )
+    .execute(conn)
+    .await?
+    .rows_affected();
+    if discarded > 0 {
+        tracing::debug!(
+            discarded,
+            "discarded series a concurrent registration made redundant"
+        );
+    }
+    Ok(())
 }
 
 /// Register a whole catalogue page's worth of entries, skipping those already known.
@@ -244,9 +287,9 @@ async fn register_chunk(
 ///
 /// The per-entry existence check inside the transaction is *not* repeated here: the caller-side
 /// batch check already filtered. A source registered by a concurrent scan in the window between
-/// the two is harmless — `upsert_sources` is `ON CONFLICT DO UPDATE` on `(provider_id,
-/// source_path)`, and canonicalisation re-attaches to the series that already matches the title
-/// rather than creating a second one.
+/// the two keeps the series that scan filed it under (`upsert_sources` is `ON CONFLICT DO UPDATE`
+/// on `(provider_id, source_path)` and never re-points), and the series this chunk created for
+/// it is deleted again before commit (`discard_unsourced`).
 ///
 /// Returns the number of sources newly registered. A chunk that fails is retried entry by entry
 /// so one bad entry costs only itself: losing one series must not lose the rest, and the

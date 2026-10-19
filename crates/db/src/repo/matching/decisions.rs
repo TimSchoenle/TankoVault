@@ -17,7 +17,7 @@ use tankovault_domain::{SeriesId, UserId};
 pub struct NewMergeDecision<'a> {
     /// Groups every decision of one sweep run; `None` for an operator's console merge.
     pub sweep_id: Option<Uuid>,
-    /// `sweep_new` | `sweep_requeue` | `sweep_recheck` | `operator`.
+    /// `sweep_new` | `sweep_requeue` | `sweep_recheck` | `sweep_twin` | `operator`.
     pub trigger: &'a str,
     /// The operator behind an `operator` trigger, `None` for a sweep.
     pub actor: Option<UserId>,
@@ -109,6 +109,69 @@ pub async fn record_merge_decisions<'e, E: PgExecutor<'e>>(
     .execute(exec)
     .await?;
     Ok(ids)
+}
+
+/// Of `pairs`, those whose most recent journal row is already a `deferred` one.
+///
+/// The sweep journals a deferral only for a pair outside this set. Without the check the merge
+/// ceiling journalled the same pair on every run until it let the pair through, which is how the
+/// table reached 1.8 million rows that each repeated the one before.
+///
+/// # Errors
+/// [`DbError::Sqlx`] only.
+pub async fn pairs_already_deferred<'e, E: PgExecutor<'e>>(
+    exec: E,
+    pairs: &[(SeriesId, SeriesId)],
+) -> DbResult<Vec<(SeriesId, SeriesId)>> {
+    if pairs.is_empty() {
+        return Ok(Vec::new());
+    }
+    let (los, his): (Vec<Uuid>, Vec<Uuid>) = pairs
+        .iter()
+        .map(|&(a, b)| (a.min(b).as_uuid(), a.max(b).as_uuid()))
+        .unzip();
+    let rows = sqlx::query!(
+        "SELECT p.lo AS \"lo!\", p.hi AS \"hi!\" \
+           FROM UNNEST($1::uuid[], $2::uuid[]) AS p(lo, hi) \
+          WHERE (SELECT md.outcome FROM merge_decisions md \
+                  WHERE md.left_id = p.lo AND md.right_id = p.hi \
+                  ORDER BY md.decided_at DESC LIMIT 1) = 'deferred'",
+        &los,
+        &his,
+    )
+    .fetch_all(exec)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| (SeriesId::from_uuid(r.lo), SeriesId::from_uuid(r.hi)))
+        .collect())
+}
+
+/// Delete up to `batch` `deferred` journal rows older than `retention_days`, returning how many.
+///
+/// Only `deferred`: a deferral records that the run's merge ceiling was spent, which is worth
+/// nothing once the pair has been decided or re-deferred. Every other outcome is an undo journal
+/// or part of the replay corpus and is never deleted here.
+///
+/// # Errors
+/// [`DbError::Sqlx`] only.
+pub async fn purge_deferred_decisions<'e, E: PgExecutor<'e>>(
+    exec: E,
+    retention_days: u32,
+    batch: i64,
+) -> DbResult<u64> {
+    let done = sqlx::query!(
+        "DELETE FROM merge_decisions WHERE id IN ( \
+           SELECT id FROM merge_decisions \
+            WHERE outcome = 'deferred' \
+              AND decided_at < now() - make_interval(days => $1) \
+            LIMIT $2)",
+        i32::try_from(retention_days).unwrap_or(i32::MAX),
+        batch,
+    )
+    .execute(exec)
+    .await?;
+    Ok(done.rows_affected())
 }
 
 /// One decision as the row the batch insert reads back out of its `jsonb` payload.
@@ -475,6 +538,52 @@ pub async fn get_merge_decision<'e, E: PgExecutor<'e>>(
         .ok_or(DbError::NotFound)
 }
 
+/// Whether one decision of a batch revert can be attempted, as stored.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RevertReadiness {
+    /// Merged, not yet reverted, and journalled with an undo.
+    Ready,
+    /// Already reverted.
+    Reverted,
+    /// Merged nothing, so there is nothing to undo.
+    NothingToUndo,
+}
+
+/// The decisions among `ids` that exist, newest first, with whether each can be reverted.
+///
+/// Newest first because a merge's survivor may have been absorbed by a later merge, and the
+/// later one has to be reverted before the earlier can be.
+///
+/// # Errors
+/// [`DbError::Sqlx`] only; unknown ids are absent from the result.
+pub async fn revert_order<'e, E: PgExecutor<'e>>(
+    exec: E,
+    ids: &[Uuid],
+) -> DbResult<Vec<(Uuid, RevertReadiness)>> {
+    let rows = sqlx::query!(
+        r#"SELECT id, reverted_at IS NOT NULL AS "reverted!", undo IS NOT NULL AS "has_undo!"
+             FROM merge_decisions
+            WHERE id = ANY($1)
+            ORDER BY decided_at DESC, id DESC"#,
+        ids,
+    )
+    .fetch_all(exec)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| {
+            let readiness = if r.reverted {
+                RevertReadiness::Reverted
+            } else if r.has_undo {
+                RevertReadiness::Ready
+            } else {
+                RevertReadiness::NothingToUndo
+            };
+            (r.id, readiness)
+        })
+        .collect())
+}
+
 /// Undo the merge a decision performed, suppress the pair, and take back what made the two look
 /// like one.
 ///
@@ -504,8 +613,9 @@ pub async fn get_merge_decision<'e, E: PgExecutor<'e>>(
 ///
 /// # Errors
 /// [`DbError::NotFound`] when no such decision exists. [`DbError::Conflict`] when it carries no
-/// undo journal (it merged nothing), when it has already been reverted, or when the absorbed id
-/// is live again — see [`revert_merge`](super::revert_merge). Otherwise [`DbError::Sqlx`].
+/// undo journal (it merged nothing), when it has already been reverted, when the absorbed id
+/// is live again, or when the survivor has since been merged away — see
+/// [`revert_merge`](super::revert_merge). Otherwise [`DbError::Sqlx`].
 pub async fn revert_merge_decision(
     pool: &sqlx::PgPool,
     id: Uuid,

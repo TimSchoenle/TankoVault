@@ -233,18 +233,18 @@ pub async fn merge_metadata(
     .execute(&mut *conn)
     .await?;
 
+    // Each losing title is filed under the provenance of whoever supplied it.
     let winning_title = title.as_ref().map(|(_, t)| *t);
-    let losing: Vec<(String, String)> = [
-        incoming.canonical_title,
-        Some(stored.canonical_title.as_str()),
-    ]
-    .into_iter()
-    .flatten()
-    .filter(|t| Some(*t) != winning_title)
-    .map(|t| (t.to_owned(), normalize_title(t)))
-    .collect();
-    if !losing.is_empty() {
-        add_series_titles(&mut *conn, series_id, &losing).await?;
+    let stored_origin = stored.title_source.unwrap_or(MetadataSource::Adapter);
+    for (losing, origin) in [
+        (incoming.canonical_title, source),
+        (Some(stored.canonical_title.as_str()), stored_origin),
+    ] {
+        let Some(losing) = losing.filter(|t| Some(*t) != winning_title) else {
+            continue;
+        };
+        let titles = [(losing.to_owned(), normalize_title(losing))];
+        add_series_titles(&mut *conn, series_id, &titles, origin.into()).await?;
     }
     Ok(())
 }

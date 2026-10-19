@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id FROM mapping_reverify_state WHERE id AND running AND run_id = $1 FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "mapping_reverify_state",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "a30cafdb9b78b23653cc6816853b96ee8f64c2836101c6dbf91724efabd77c7a"
+}

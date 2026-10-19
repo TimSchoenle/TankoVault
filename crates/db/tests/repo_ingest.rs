@@ -516,3 +516,161 @@ async fn a_stub_scanned_under_another_title_keeps_its_series() {
     assert_eq!(outcome.series_id.as_uuid(), stub);
     assert_eq!(series_count(&db).await, 1, "no empty duplicate was created");
 }
+
+/// **Two scans registering the same new paths at once leave no empty series behind.**
+///
+/// `register_chunk` creates a series per fresh path and then upserts the sources, and the upsert
+/// keeps the series a concurrent scan already filed the path under. The series this scan created
+/// for that path was left with no source: an orphan nothing would ever scan again
+/// (`docs/MATCHING_OVERHAUL.md` WP6). Each path must end up with exactly one series.
+///
+/// The overlap is real concurrency, not staged: with no overlap this passes without the fix too,
+/// so it can only ever fail for the right reason.
+#[tokio::test]
+async fn concurrent_registrations_of_one_path_leave_no_empty_series() {
+    use tankovault_db::repo::catalog::register_source_stubs;
+
+    let db = TestDb::spawn().await;
+    let provider = seed::provider(&db, "ingest-race").create().await;
+    let entries: Vec<(String, String)> = (0..200)
+        .map(|i| (format!("/manga/race-{i}"), format!("Race Work {i}")))
+        .collect();
+    let borrowed: Vec<(&str, &str)> = entries
+        .iter()
+        .map(|(p, t)| (p.as_str(), t.as_str()))
+        .collect();
+    let policy = MatchingConfig::default();
+
+    let (a, b) = tokio::join!(
+        register_source_stubs(&db.pool, provider, &borrowed, &policy),
+        register_source_stubs(&db.pool, provider, &borrowed, &policy),
+    );
+    a.expect("first scan");
+    b.expect("second scan");
+
+    let empty: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM series s \
+          WHERE NOT EXISTS (SELECT 1 FROM series_sources ss WHERE ss.series_id = s.id)",
+    )
+    .fetch_one(&db.pool)
+    .await
+    .expect("count empty series");
+    assert_eq!(empty, 0, "a lost registration race left an empty series");
+    assert_eq!(series_count(&db).await, 200);
+}
+
+/// **A mirror listing attaches through a sibling source's listing title.**
+///
+/// Once `AniList` has renamed a series, a mirror's stub (listing `Legend of Star General`) matched
+/// it only through an alias, which never attaches, so registration created a new series that the
+/// sweep later merged — 37 merges from that one key in production (`docs/MATCHING_OVERHAUL.md`
+/// WP3). The first source's listing title is a primary title, and the stub attaches to it.
+#[tokio::test]
+async fn a_mirror_stub_attaches_through_a_sibling_listing_title() {
+    let db = TestDb::spawn().await;
+    let first = seed::provider(&db, "mirror-a").create().await;
+    let second = seed::provider(&db, "mirror-b").create().await;
+    register_source_stub(
+        &db.pool,
+        first,
+        "/manga/legend-of-star-general",
+        "Legend of Star General",
+        &MatchingConfig::default(),
+    )
+    .await
+    .expect("first stub");
+    let series: uuid::Uuid = sqlx::query_scalar("SELECT id FROM series")
+        .fetch_one(&db.pool)
+        .await
+        .expect("series");
+    // What an `AniList` title win leaves behind.
+    sqlx::query("UPDATE series SET canonical_title = $2, normalized_title = $3 WHERE id = $1")
+        .bind(series)
+        .bind("Xing Jiang Chuanqi")
+        .bind(normalize_title("Xing Jiang Chuanqi"))
+        .execute(&db.pool)
+        .await
+        .expect("rename");
+
+    register_source_stub(
+        &db.pool,
+        second,
+        "/series/legend-of-star-general",
+        "Legend of Star General",
+        &MatchingConfig::default(),
+    )
+    .await
+    .expect("mirror stub");
+
+    assert_eq!(series_count(&db).await, 1, "the mirror created a series");
+    let filed: Vec<uuid::Uuid> = sqlx::query_scalar("SELECT series_id FROM series_sources")
+        .fetch_all(&db.pool)
+        .await
+        .expect("sources");
+    assert_eq!(filed, vec![series, series]);
+}
+
+/// **A source that only shares an alias with a series files its aliases on a series of its own.**
+///
+/// Every attach filed the incoming source's alternative titles under the series it attached to,
+/// so one weak attach pulled the next work in through those names: a dozen hub series absorbed
+/// 20–100 different works each (`docs/MATCHING_OVERHAUL.md` §2). An alias-only match no longer
+/// attaches at all, which is what keeps the incoming aliases off the matched series.
+#[tokio::test]
+async fn an_alias_only_match_does_not_file_its_aliases_on_the_matched_series() {
+    use tankovault_db::repo::catalog::list_series_titles;
+
+    let db = TestDb::spawn().await;
+    let provider = seed::provider(&db, "alias-filing").create().await;
+    let mut existing = scanned(provider, vec![chapter(1.0, None, "/c/1")]);
+    existing.source_path = "/manga/sword-art-online".to_owned();
+    existing.provider_title = Some("Sword Art Online".to_owned());
+    existing.meta.canonical_title = "Sword Art Online".to_owned();
+    existing.meta.normalized_title = normalize_title("Sword Art Online");
+    existing.alt_titles = vec![(
+        "Sword Art Online Progressive".to_owned(),
+        normalize_title("Sword Art Online Progressive"),
+    )];
+    let hub = ingest_series(
+        &db.pool,
+        &existing,
+        &MatchingConfig::default(),
+        &MetadataPriority::default(),
+        &tankovault_domain::TermBlocklist::default(),
+        &tankovault_domain::AdultTagSet::defaults(),
+    )
+    .await
+    .expect("existing series");
+
+    let mut incoming = scanned(provider, vec![chapter(1.0, None, "/c/1")]);
+    incoming.source_path = "/manga/sao-progressive".to_owned();
+    incoming.provider_title = Some("Sword Art Online Progressive".to_owned());
+    incoming.meta.canonical_title = "Sword Art Online Progressive".to_owned();
+    incoming.meta.normalized_title = normalize_title("Sword Art Online Progressive");
+    incoming.alt_titles = vec![(
+        "Kaiten Progressive".to_owned(),
+        normalize_title("Kaiten Progressive"),
+    )];
+    let outcome = ingest_series(
+        &db.pool,
+        &incoming,
+        &MatchingConfig::default(),
+        &MetadataPriority::default(),
+        &tankovault_domain::TermBlocklist::default(),
+        &tankovault_domain::AdultTagSet::defaults(),
+    )
+    .await
+    .expect("incoming series");
+
+    assert_ne!(
+        outcome.series_id, hub.series_id,
+        "an alias hit alone attached"
+    );
+    let hub_titles = list_series_titles(&db.pool, hub.series_id)
+        .await
+        .expect("titles");
+    assert!(
+        !hub_titles.iter().any(|t| t.contains("Kaiten")),
+        "the incoming source's alias reached the matched series: {hub_titles:?}"
+    );
+}

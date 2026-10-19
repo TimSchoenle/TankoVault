@@ -47,6 +47,12 @@ struct FakeState {
     search: Mutex<Option<String>>,
     /// Every `save_entry` call, in order.
     writes: Mutex<Vec<RemoteWrite>>,
+    /// Whether the fake offers public metadata; off so reconciliation tests see no enrichment.
+    public_api: std::sync::atomic::AtomicBool,
+    /// What a public title search returns.
+    public_title_hit: Mutex<Option<RemoteMetadata>>,
+    /// What a public by-id lookup returns per id; an absent id is a failed lookup.
+    public_by_id: Mutex<HashMap<String, Option<RemoteMetadata>>>,
 }
 
 impl FakeState {
@@ -95,11 +101,26 @@ impl ExternalProvider for FakeProvider {
     ) -> anyhow::Result<Option<String>> {
         Ok(self.0.search.lock().expect("search mutex").clone())
     }
+    fn supports_public_metadata(&self) -> bool {
+        self.0.public_api.load(std::sync::atomic::Ordering::Relaxed)
+    }
     async fn fetch_public_metadata_by_title(
         &self,
         _title: &str,
     ) -> anyhow::Result<Option<RemoteMetadata>> {
-        Ok(None)
+        Ok(self.0.public_title_hit.lock().expect("title mutex").clone())
+    }
+    async fn fetch_public_metadata_by_id(
+        &self,
+        external_id: &str,
+    ) -> anyhow::Result<Option<RemoteMetadata>> {
+        self.0
+            .public_by_id
+            .lock()
+            .expect("by-id mutex")
+            .get(external_id)
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("lookup of {external_id} failed"))
     }
     async fn save_entry(
         &self,
@@ -1003,5 +1024,163 @@ mod linked_entries {
             }]
         );
         assert_eq!(f.progress_of(dup).await, Some(100.0));
+    }
+}
+
+/// Enrichment's trust in a title search, and the operator's re-verification of stored mappings.
+mod verification {
+    use super::*;
+
+    /// A public record for `external_id` carrying `titles`.
+    fn record(external_id: &str, titles: &[&str]) -> RemoteMetadata {
+        RemoteMetadata {
+            external_id: external_id.to_owned(),
+            titles: titles.iter().map(|t| (*t).to_owned()).collect(),
+            own_titles: titles.len(),
+            description: Some(format!("description of {external_id}")),
+            ..RemoteMetadata::default()
+        }
+    }
+
+    impl Fixture {
+        fn offer_public_api(&self) {
+            self.remote
+                .public_api
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+
+        async fn description_of(&self, series_id: SeriesId) -> Option<String> {
+            tankovault_db::repo::catalog::get_series(&self.db.pool, series_id)
+                .await
+                .expect("read series")
+                .description
+        }
+
+        async fn mapping_of(&self, series_id: SeriesId) -> Option<String> {
+            sync::mapping_external_for_series(&self.db.pool, series_id, SLUG)
+                .await
+                .expect("read mapping")
+        }
+    }
+
+    /// A title search answers with its best-ranked record, and enrichment applied it unchecked:
+    /// `AniList` ranks a light novel (150193) and its manga (150194) under one title, and other
+    /// works sharing a word, so a series took another work's cover, description and mapping.
+    #[tokio::test]
+    async fn a_title_hit_naming_another_work_writes_nothing() {
+        let f = Fixture::spawn().await;
+        f.offer_public_api();
+        *f.remote.public_title_hit.lock().expect("title mutex") =
+            Some(record("150194", &["Solo Leveling: Ragnarok"]));
+
+        let report = f.engine.enrich_all(10, 10).await.expect("enrich");
+
+        assert_eq!((report.enriched, report.unresolved), (0, 1));
+        assert_eq!(f.mapping_of(f.series).await, None);
+        assert_eq!(f.description_of(f.series).await, None);
+    }
+
+    #[tokio::test]
+    async fn a_title_hit_naming_the_series_is_applied() {
+        let f = Fixture::spawn().await;
+        f.offer_public_api();
+        *f.remote.public_title_hit.lock().expect("title mutex") =
+            Some(record("105398", &["Na Honjaman Level Up", TITLE]));
+
+        let report = f.engine.enrich_all(10, 10).await.expect("enrich");
+
+        assert_eq!(report.enriched, 1);
+        assert_eq!(f.mapping_of(f.series).await.as_deref(), Some("105398"));
+        assert_eq!(
+            f.description_of(f.series).await.as_deref(),
+            Some("description of 105398")
+        );
+    }
+
+    /// A synonym is not identity. `AniList` lists franchise-wide names (`SAO`, a short form shared
+    /// by every spin-off) as synonyms of each sibling, so a sibling's record whose synonym equals
+    /// the series' title passed the check and the series took that sibling's metadata.
+    #[tokio::test]
+    async fn a_title_hit_naming_the_series_only_by_synonym_writes_nothing() {
+        let f = Fixture::spawn().await;
+        f.offer_public_api();
+        let mut sibling = record("200000", &["Solo Leveling: Ragnarok", TITLE]);
+        sibling.own_titles = 1;
+        *f.remote.public_title_hit.lock().expect("title mutex") = Some(sibling);
+
+        let report = f.engine.enrich_all(10, 10).await.expect("enrich");
+
+        assert_eq!((report.enriched, report.unresolved), (0, 1));
+        assert_eq!(f.mapping_of(f.series).await, None);
+    }
+
+    /// Mappings written before enrichment verified its hits: a dry run reports the ones that do
+    /// not identify their series and changes nothing; a real run removes and blocks them, and
+    /// leaves a mapping it could not look up alone.
+    #[tokio::test]
+    async fn reverification_refuses_novels_and_other_works_only() {
+        let f = Fixture::spawn().await;
+        f.offer_public_api();
+        let other = f.duplicate_series("Tower of God").await;
+        let novel = f.duplicate_series("The Beginning After the End").await;
+        let unreachable = f.duplicate_series("Omniscient Reader").await;
+        f.map_series(f.series, "1").await;
+        f.map_series(other, "2").await;
+        f.map_series(novel, "3").await;
+        f.map_series(unreachable, "4").await;
+        {
+            let mut by_id = f.remote.public_by_id.lock().expect("by-id mutex");
+            by_id.insert("1".to_owned(), Some(record("1", &[TITLE])));
+            by_id.insert(
+                "2".to_owned(),
+                Some(record("2", &["Kami no Tou: Side Story"])),
+            );
+            by_id.insert("3".to_owned(), None);
+        }
+
+        assert!(f.engine.reverify_now(true, None).await.expect("dry run"));
+        let dry = sync::reverify_state(&f.db.pool).await.expect("state");
+        assert!(!dry.running && dry.dry_run && dry.error.is_none());
+        assert_eq!(
+            dry.counts,
+            sync::ReverifyCounts {
+                checked: 4,
+                failed: 2,
+                removed: 0,
+                unreachable: 1,
+            }
+        );
+        assert_eq!(dry.failures.as_array().map(Vec::len), Some(2));
+        assert_eq!(f.mapping_of(other).await.as_deref(), Some("2"));
+
+        assert!(
+            f.engine
+                .reverify_now(false, Some(f.user))
+                .await
+                .expect("run")
+        );
+        let run = sync::reverify_state(&f.db.pool).await.expect("state");
+        assert_eq!((run.counts.failed, run.counts.removed), (2, 2));
+        assert_eq!(f.mapping_of(f.series).await.as_deref(), Some("1"));
+        assert_eq!(f.mapping_of(other).await, None);
+        assert_eq!(f.mapping_of(novel).await, None);
+        assert_eq!(f.mapping_of(unreachable).await.as_deref(), Some("4"));
+        let blocked = sync::blocked_sync_matches(&f.db.pool, SLUG)
+            .await
+            .expect("blocks");
+        assert_eq!(blocked.len(), 2);
+    }
+
+    /// One run at a time: two would spend the provider's rate budget on the same mappings.
+    #[tokio::test]
+    async fn a_second_run_is_refused_while_one_holds_the_claim() {
+        let f = Fixture::spawn().await;
+        assert!(
+            sync::begin_reverify(&f.db.pool, true)
+                .await
+                .expect("claim")
+                .is_some()
+        );
+        assert!(!f.engine.reverify_now(true, None).await.expect("refused"));
     }
 }

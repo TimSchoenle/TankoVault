@@ -1,8 +1,8 @@
 # Matching overhaul — implementation plan
 
-**Audience:** the engineer or agent implementing this. **Status:** WP0, WP1 and WP2 are
-implemented (see [§9](#9-implementation-notes) for where the code departs from the letter of this
-plan); WP3–WP8 are planned. **Source:** an analysis of the production catalogue (2026-10-19) against the code
+**Audience:** the engineer or agent implementing this. **Status:** WP0–WP8 are implemented
+except WP3c (mirror groups, conditional) and WP8c (an operator's selection, not code); see
+[§9](#9-implementation-notes) for where the code departs from the letter of this plan. **Source:** an analysis of the production catalogue (2026-10-19) against the code
 at `5cad031`. Every production number below came from a query in [Appendix A](#appendix-a--production-evidence);
 re-run them before acting on any number that matters to a decision.
 
@@ -315,8 +315,8 @@ that the sweep later merges drops by > 80% versus the week before.
 **Change.**
 1. `METADATA_QUERY`: add `format_in: [MANGA, ONE_SHOT]` to the `Media` selection used for title
    search. Keep `format` in the response and reject `NOVEL` defensively in `parse.rs` too.
-2. Verify the hit before `apply`: score the returned titles (romaji, english, native, synonyms)
-   against the series' canonical title and its sources' listing titles with the matcher; require
+2. Verify the hit before `apply`: score the returned titles (romaji, english, native; not
+   synonyms, which can name a different work in the same franchise) against the series' canonical title and its sources' listing titles with the matcher; require
    `exact_title`, `compact_identity` or `source_title_identity` on at least one pair. Otherwise
    stamp `mark_checked` and write nothing. Lookups by cached id (`fetch_public_metadata_by_id`)
    are unaffected.
@@ -551,6 +551,50 @@ done harm. Each is in the code with its reason.
   only when matching (`alias_is_distinctive`). `series_titles` also feeds catalogue search, and
   the length rules would have dropped real short titles from it — `Kureimoa` for *Claymore*, which
   `repo_tracking::the_search_matches_canonical_titles_alt_titles_tags_and_authors` pins.
+
+**WP3.**
+- Migrations: `0066` is WP7's retention index, `0067` the source listing key
+  (`series_sources.provider_title_normalized`) and `series_titles.origin`, `0068` WP4's
+  re-verification state.
+- After deploying, run the console's **Rebuild keys** once: existing sources have no listing key
+  until it does, and until then the listing branches of the candidate lookup and the sweep find
+  nothing for them.
+- `Decision::Attach` gained no signals. WP1 already requires a primary identity to attach, so an
+  attach never rests on an alias, and "do not file aliases on a weak attach" holds without it.
+- WP3c (mirror groups) is not implemented: the listing-title key covers the observed cases, and
+  the plan made it conditional.
+
+**WP4.**
+- The external-id comparison is pair-level (`read_pair`), not in `Candidate`/`Query`: an incoming
+  scan has no `AniList` id, so only the sweep has one on both sides.
+- `format_in` also filters the token-holding search (`SEARCH_QUERY`) the push path resolves
+  through, for the same reason. That path (`SeriesResolver::media_id_for_series`) still caches
+  the search's id as a mapping without checking titles, because the search returns only an id;
+  verifying it needs the search to return titles too, and is left as a follow-up. The parser's `NOVEL` refusal applies to the public lookups only;
+  list entries are the user's own choice.
+- A failed by-id lookup is now an error rather than `None`, so re-verification never removes a
+  mapping because `AniList` was unreachable.
+- Re-verification runs in the sync service, detached from the request, at the provider's rate
+  limit: `POST /v1/admin/sync/mappings/reverify` (`dry_run`) starts it and
+  `GET` on the same path reads `mapping_reverify_state`. A failing mapping is removed **and
+  blocked** (`sync_match_blocks`), because the cached remote entry would otherwise write it
+  back. Run a dry run and review its list first. There is no console control yet.
+
+**WP5.**
+- Timing is read in the sweep only, for pairs whose reading is an alias hit or a review; the
+  create-time path has no second series with history to compare against. The numbers are in each
+  decision's `evidence.live_timing`, which the replay harness reads back.
+
+**WP6.**
+- The twin rule and the orphan deletion run at the start of the console's whole-catalogue sweep,
+  not the scheduled one. Twins merge with trigger `sweep_twin`, reason `orphan_twin`.
+
+**WP8.**
+- 8a refuses rather than resolves: a revert whose survivor has since been merged away is a
+  `409` naming the newer survivor, and reverting the later merge first makes it applicable.
+- 8b: `POST /v1/admin/merge-decisions/revert-batch`, at most 50 decisions a request, reverted
+  newest first across the whole batch rather than per survivor, so a chain inside one batch
+  unwinds. There is no console control yet.
 
 ---
 

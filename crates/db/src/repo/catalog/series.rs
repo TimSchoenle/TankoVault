@@ -76,6 +76,16 @@ impl TryFrom<SeriesRow> for Series {
     }
 }
 
+/// Which series a scanned source resolved to, and whether resolving it created that series.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Resolution {
+    /// The series the source belongs to.
+    pub series_id: SeriesId,
+    /// `true` when this call inserted the series. A caller whose source then lands elsewhere
+    /// (a concurrent registration won) owns that series and must not leave it behind empty.
+    pub created: bool,
+}
+
 /// Resolves which canonical series a scanned source belongs to (design §10).
 ///
 /// A trigram candidate lookup, then whatever the caller's [`Canonicaliser`] decides: attach to
@@ -93,7 +103,7 @@ pub async fn resolve_canonical_series(
     conn: &mut sqlx::PgConnection,
     meta: &SeriesUpsert,
     canonicaliser: &dyn Canonicaliser,
-) -> DbResult<SeriesId> {
+) -> DbResult<Resolution> {
     let candidates = crate::repo::matching::find_candidates(
         &mut *conn,
         &meta.normalized_title,
@@ -111,8 +121,15 @@ pub async fn resolve_canonical_series(
         authors: Vec::new(),
     };
 
+    let created = |series_id| Resolution {
+        series_id,
+        created: true,
+    };
     match canonicaliser.canonicalise(&query, &candidates) {
-        Decision::Attach(id) => Ok(id),
+        Decision::Attach(series_id) => Ok(Resolution {
+            series_id,
+            created: false,
+        }),
         Decision::Ambiguous {
             candidate,
             score,
@@ -131,9 +148,9 @@ pub async fn resolve_canonical_series(
                 "ambiguous title match",
             )
             .await?;
-            Ok(id)
+            Ok(created(id))
         }
-        Decision::Create => create_series(conn, meta).await,
+        Decision::Create => create_series(conn, meta).await.map(created),
     }
 }
 

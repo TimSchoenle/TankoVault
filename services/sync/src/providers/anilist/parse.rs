@@ -41,6 +41,9 @@ pub(crate) struct MediaMetadata {
     /// always the first non-empty of romaji/english/native, so callers relying on "the primary
     /// title" (e.g. the remote-entry snapshot) see a stable value.
     pub(crate) titles: Vec<String>,
+    /// How many leading `titles` are the record's own romaji/english/native; the rest are
+    /// synonyms.
+    pub(crate) own_titles: usize,
     pub(crate) description: Option<String>,
     pub(crate) cover_url: Option<String>,
     pub(crate) start_year: Option<i32>,
@@ -68,6 +71,7 @@ impl From<MediaMetadata> for RemoteMetadata {
         Self {
             external_id: m.media_id.to_string(),
             titles: m.titles,
+            own_titles: m.own_titles,
             description: m.description,
             cover_url: m.cover_url,
             start_year: m.start_year,
@@ -143,10 +147,39 @@ fn parse_entry(entry: &serde_json::Value) -> Option<AniListEntry> {
 }
 
 /// Extract [`MediaMetadata`] from a public `Media(...)` GraphQL `data` object (no user token).
-/// Returns `None` when there is no `Media` node or it has no usable id/title.
+/// Returns `None` when there is no `Media` node, it has no usable id/title, or it is a light
+/// novel.
+///
+/// The novel check backs up the title query's `format_in` filter and also covers by-id lookups:
+/// a novel's metadata on a manga would replace its cover, description and status. List entries
+/// are not filtered here, because the user chose them.
 #[must_use]
 pub(crate) fn parse_media_metadata(data: &serde_json::Value) -> Option<MediaMetadata> {
-    parse_media(data.get("Media")?)
+    let media = data.get("Media")?;
+    if media.get("format").and_then(serde_json::Value::as_str) == Some("NOVEL") {
+        return None;
+    }
+    parse_media(media)
+}
+
+/// [`parse_media_metadata`] for a lookup by id. Re-verification removes a mapping on `Ok(None)`,
+/// so only a confirmed novel returns it; a record that could not be read is an error.
+///
+/// # Errors
+/// No `Media` node, a null one, or a non-novel with no usable id or title.
+pub(crate) fn parse_media_metadata_by_id(
+    data: &serde_json::Value,
+) -> anyhow::Result<Option<MediaMetadata>> {
+    let media = data
+        .get("Media")
+        .filter(|media| !media.is_null())
+        .ok_or_else(|| anyhow::anyhow!("AniList returned no Media record"))?;
+    if media.get("format").and_then(serde_json::Value::as_str) == Some("NOVEL") {
+        return Ok(None);
+    }
+    parse_media(media).map(Some).ok_or_else(|| {
+        anyhow::anyhow!("AniList returned a Media record with no usable id or title")
+    })
 }
 
 /// Read one `media` node — the single place a GraphQL media selection becomes local values,
@@ -154,7 +187,7 @@ pub(crate) fn parse_media_metadata(data: &serde_json::Value) -> Option<MediaMeta
 /// `None` for a node with no id or usable title: an entry we can't name, we can't match.
 fn parse_media(media: &serde_json::Value) -> Option<MediaMetadata> {
     let media_id = media.get("id").and_then(serde_json::Value::as_i64)?;
-    let titles = titles_from_media(media);
+    let (titles, own_titles) = titles_from_media(media);
     if titles.is_empty() {
         return None;
     }
@@ -177,6 +210,7 @@ fn parse_media(media: &serde_json::Value) -> Option<MediaMetadata> {
     Some(MediaMetadata {
         media_id,
         titles,
+        own_titles,
         description,
         cover_url,
         start_year: start_year_from_media(media),
@@ -211,8 +245,9 @@ fn parse_media(media: &serde_json::Value) -> Option<MediaMetadata> {
 }
 
 /// Candidate titles for a `media` object: the non-blank romaji/english/native trio first (so
-/// `titles[0]` is a stable "primary"), then every non-blank synonym `AniList` tracks.
-fn titles_from_media(media: &serde_json::Value) -> Vec<String> {
+/// `titles[0]` is a stable "primary"), then every non-blank synonym `AniList` tracks, with how
+/// many of them are the trio.
+fn titles_from_media(media: &serde_json::Value) -> (Vec<String>, usize) {
     let mut titles = Vec::new();
     if let Some(title) = media.get("title") {
         for key in ["romaji", "english", "native"] {
@@ -223,6 +258,7 @@ fn titles_from_media(media: &serde_json::Value) -> Vec<String> {
             }
         }
     }
+    let own = titles.len();
     if let Some(synonyms) = media.get("synonyms").and_then(serde_json::Value::as_array) {
         for s in synonyms {
             if let Some(t) = s.as_str()
@@ -232,7 +268,7 @@ fn titles_from_media(media: &serde_json::Value) -> Vec<String> {
             }
         }
     }
-    titles
+    (titles, own)
 }
 
 /// Publication start year, when `AniList` knows one.
@@ -348,7 +384,7 @@ fn strip_html(input: &str) -> String {
 mod tests {
     use super::{
         AniListStatus, ContentType, MIN_TAG_WEIGHT, SeriesStatus, has_next_chunk, parse_media_list,
-        parse_media_metadata, strip_html,
+        parse_media_metadata, parse_media_metadata_by_id, strip_html,
     };
 
     #[test]
@@ -403,6 +439,10 @@ mod tests {
                 "Only I Level Up",
                 "I Level Up Alone",
             ]
+        );
+        assert_eq!(
+            solo.media.own_titles, 2,
+            "romaji and english, then synonyms"
         );
         assert_eq!(solo.media.tags, vec!["Action", "Fantasy"]);
         assert_eq!(solo.media.authors, vec!["Chugong", "Redice Studio"]);
@@ -512,6 +552,41 @@ mod tests {
         assert_eq!(m.tags, vec!["Action", "Fantasy"]);
         assert_eq!(m.authors, vec!["Chugong"]);
         assert_eq!(m.series_status, SeriesStatus::Ongoing);
+    }
+
+    /// `AniList` files light novels under `type: MANGA` with ids next to their adaptation's
+    /// (150193 the novel, 150194 the manga), so a title search could enrich a manga with the
+    /// novel's cover and description.
+    #[test]
+    fn public_metadata_refuses_a_light_novel() {
+        let media = |format: &str| {
+            serde_json::json!({ "Media": {
+                "id": 150_193, "format": format,
+                "title": { "romaji": "Shared Title", "english": null, "native": null }
+            } })
+        };
+        assert!(parse_media_metadata(&media("NOVEL")).is_none());
+        assert!(parse_media_metadata(&media("MANGA")).is_some());
+    }
+
+    /// Re-verification blocks a mapping on `Ok(None)`. A by-id response whose `Media` was null
+    /// once read as "not a library record", so a record `AniList` failed to return lost its mapping.
+    #[test]
+    fn a_by_id_lookup_with_no_record_is_an_error_not_a_verdict() {
+        assert!(parse_media_metadata_by_id(&serde_json::json!({ "Media": null })).is_err());
+        assert!(parse_media_metadata_by_id(&serde_json::json!({})).is_err());
+        let novel = serde_json::json!({ "Media": {
+            "id": 1, "format": "NOVEL", "title": { "romaji": "Shared Title" }
+        } });
+        assert!(
+            parse_media_metadata_by_id(&novel)
+                .expect("a present record")
+                .is_none()
+        );
+        let untitled = serde_json::json!({ "Media": {
+            "id": 1, "format": "MANGA", "title": { "romaji": null }
+        } });
+        assert!(parse_media_metadata_by_id(&untitled).is_err());
     }
 
     #[test]

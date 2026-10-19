@@ -3,7 +3,8 @@
 
 use super::chapters::{ChapterUpsert, upsert_chapters};
 use super::enrichment::{
-    TagLink, add_series_authors, add_series_tags, add_series_titles, mark_adult_inferred,
+    TagLink, TitleOrigin, add_series_authors, add_series_tags, add_series_titles,
+    mark_adult_inferred,
 };
 use super::metadata::merge_metadata;
 use super::series::{SeriesUpsert, resolve_canonical_series};
@@ -106,7 +107,11 @@ async fn try_ingest(
     let series_id =
         match attached_series(&mut *tx, scanned.provider_id, &scanned.source_path).await? {
             Some(id) => id,
-            None => resolve_canonical_series(&mut tx, &scanned.meta, canonicaliser).await?,
+            None => {
+                resolve_canonical_series(&mut tx, &scanned.meta, canonicaliser)
+                    .await?
+                    .series_id
+            }
         };
     merge_metadata(
         &mut tx,
@@ -117,7 +122,13 @@ async fn try_ingest(
     )
     .await?;
     if !scanned.alt_titles.is_empty() {
-        add_series_titles(&mut tx, series_id, &scanned.alt_titles).await?;
+        add_series_titles(
+            &mut tx,
+            series_id,
+            &scanned.alt_titles,
+            TitleOrigin::Adapter,
+        )
+        .await?;
     }
     if !scanned.tags.is_empty() {
         // Classified from the *raw* scrape, before the blocklist runs. The blocklist exists to

@@ -12,6 +12,7 @@ use crate::provider::Viewer;
 use super::client::AniListClient;
 use super::parse::{
     AniListEntry, MediaMetadata, has_next_chunk, parse_media_list, parse_media_metadata,
+    parse_media_metadata_by_id,
 };
 
 /// `AniList` returns a user's list in chunks and caps `perChunk` at 500.
@@ -20,48 +21,15 @@ const PER_CHUNK: i64 = 500;
 /// The authenticated viewer's id and display name.
 const VIEWER_QUERY: &str = "query { Viewer { id name } }";
 
-/// One page of the viewer's manga list.
-///
-/// The `media` selection deliberately matches [`METADATA_QUERY`] below, not a narrower
-/// matcher-only set, so a list sync can fold full metadata into the matched series for free.
-const MEDIA_LIST_QUERY: &str = "\
-    query ($userId: Int, $chunk: Int, $perChunk: Int) { \
-      MediaListCollection(userId: $userId, type: MANGA, chunk: $chunk, perChunk: $perChunk) { \
-        hasNextChunk \
-        lists { entries { \
-          status progress updatedAt \
-          media { id countryOfOrigin format status startDate { year } \
-                  description(asHtml: false) \
-                  coverImage { extraLarge large } \
-                  title { romaji english native } \
-                  synonyms \
-                  genres \
-                  tags { name rank isMediaSpoiler isAdult } \
-                  averageScore popularity isAdult source \
-                  staff(sort: RELEVANCE, perPage: 5) { edges { node { name { full } } } } } \
-        } } \
-      } \
-    }";
-
-/// Create or update one remote list entry.
-const SAVE_ENTRY_MUTATION: &str = "\
-    mutation ($mediaId: Int, $status: MediaListStatus, $progress: Int) { \
-      SaveMediaListEntry(mediaId: $mediaId, status: $status, progress: $progress) { id } \
-    }";
-
-/// Title search, used to resolve a local series to an `AniList` media id.
-const SEARCH_QUERY: &str = "query ($search: String) { Media(search: $search, type: MANGA) { id } }";
-
-/// The full public media-metadata fragment (no user token required). Shared by the id- and
-/// title-keyed public lookups, which differ only in which variable they bind.
+/// The public media-metadata selection (no user token required), shared by the list query and
+/// both public lookups so none can drift from the parser.
 ///
 /// `genres` and `tags` are two different vocabularies: ~20 coarse terms every provider agrees
 /// on, and `AniList`'s ~600 descriptive ones with a 0-100 `rank`. The recommender needs the
 /// second and weights it by that rank, so they stay distinguishable all the way to the database.
-const METADATA_QUERY: &str = "\
-    query ($id: Int, $search: String) { \
-      Media(id: $id, search: $search, type: MANGA) { \
-        id countryOfOrigin format status startDate { year } \
+macro_rules! media_metadata_fields {
+    () => {
+        "id countryOfOrigin format status startDate { year } \
         description(asHtml: false) \
         coverImage { extraLarge large } \
         title { romaji english native } \
@@ -69,9 +37,52 @@ const METADATA_QUERY: &str = "\
         genres \
         tags { name rank isMediaSpoiler isAdult } \
         averageScore popularity isAdult source \
-        staff(sort: RELEVANCE, perPage: 5) { edges { node { name { full } } } } \
-      } \
+        staff(sort: RELEVANCE, perPage: 5) { edges { node { name { full } } } }"
+    };
+}
+
+/// One page of the viewer's manga list.
+///
+/// The `media` selection is the public-metadata one, so a list sync folds full metadata into the
+/// matched series for free.
+const MEDIA_LIST_QUERY: &str = concat!(
+    "query ($userId: Int, $chunk: Int, $perChunk: Int) { \
+      MediaListCollection(userId: $userId, type: MANGA, chunk: $chunk, perChunk: $perChunk) { \
+        hasNextChunk \
+        lists { entries { status progress updatedAt media { ",
+    media_metadata_fields!(),
+    " } } } } }"
+);
+
+/// Create or update one remote list entry.
+const SAVE_ENTRY_MUTATION: &str = "\
+    mutation ($mediaId: Int, $status: MediaListStatus, $progress: Int) { \
+      SaveMediaListEntry(mediaId: $mediaId, status: $status, progress: $progress) { id } \
     }";
+
+/// Title search, used to resolve a local series to an `AniList` media id. Filtered by format for
+/// the reason given on [`METADATA_BY_TITLE_QUERY`].
+const SEARCH_QUERY: &str = "query ($search: String) { \
+    Media(search: $search, type: MANGA, format_in: [MANGA, ONE_SHOT]) { id } }";
+
+/// Public metadata for a known media id. Unfiltered by format: the id was chosen already, and
+/// the parser refuses a light novel either way.
+const METADATA_BY_ID_QUERY: &str = concat!(
+    "query ($id: Int) { Media(id: $id, type: MANGA) { ",
+    media_metadata_fields!(),
+    " } }"
+);
+
+/// Public metadata for the best title match.
+///
+/// `AniList` files light novels under `type: MANGA`, and a novel and its manga adaptation share
+/// a title, so an unfiltered search returns whichever ranks first. `format_in` keeps the search
+/// to the formats a library holds.
+const METADATA_BY_TITLE_QUERY: &str = concat!(
+    "query ($search: String) { Media(search: $search, type: MANGA, format_in: [MANGA, ONE_SHOT]) { ",
+    media_metadata_fields!(),
+    " } }"
+);
 
 impl AniListClient {
     /// Resolve the authenticated viewer's `AniList` user id and display name (the latter is
@@ -176,22 +187,24 @@ impl AniListClient {
     }
 
     /// Fetch public metadata for a known `AniList` media id — **no user token**. Returns
-    /// `None` when the id no longer resolves.
+    /// `None` when the record is not one a library holds (see [`parse_media_metadata`]).
+    ///
+    /// # Errors
+    /// Transport and GraphQL failures and a null `Media`, an id `AniList` no longer knows included. Unlike the title
+    /// search these are not folded into `None`: re-verification removes a mapping on `None`, and
+    /// an outage must not read as a verdict.
     pub(crate) async fn fetch_metadata_by_id(
         &self,
         media_id: i64,
     ) -> anyhow::Result<Option<MediaMetadata>> {
-        let Ok(data) = self
+        let data = self
             .graphql_public(
                 "metadata_by_id",
-                METADATA_QUERY,
+                METADATA_BY_ID_QUERY,
                 serde_json::json!({ "id": media_id }),
             )
-            .await
-        else {
-            return Ok(None);
-        };
-        Ok(parse_media_metadata(&data))
+            .await?;
+        parse_media_metadata_by_id(&data)
     }
 
     /// Fetch public metadata for a work by title — **no user token**. Returns `None` when
@@ -203,7 +216,7 @@ impl AniListClient {
         let Ok(data) = self
             .graphql_public(
                 "metadata_by_title",
-                METADATA_QUERY,
+                METADATA_BY_TITLE_QUERY,
                 serde_json::json!({ "search": title }),
             )
             .await

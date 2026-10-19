@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM merge_decisions WHERE id IN ( SELECT id FROM merge_decisions WHERE outcome = 'deferred' AND decided_at < now() - make_interval(days => $1) LIMIT $2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6fa67e79e511d24c6712d83a6a15eee25b5a3783519c8fb4c1ce59ee11f888fe"
+}

@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE mapping_reverify_state SET running = true, run_id = gen_random_uuid(), dry_run = $1, started_at = now(), heartbeat_at = now(), finished_at = NULL, checked = 0, failed = 0, removed = 0, unreachable = 0, failures = '[]'::jsonb, error = NULL WHERE id AND (NOT running OR heartbeat_at < now() - make_interval(secs => $2)) RETURNING run_id AS \"run_id!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "run_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "mapping_reverify_state",
+            "name": "run_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bool",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "ba38ea8a20b24fddd16e6a9a472dfb8b9e300a694284a8dead1f0e7680ab8497"
+}

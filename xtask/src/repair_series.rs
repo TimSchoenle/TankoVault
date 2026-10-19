@@ -137,8 +137,12 @@ async fn rebuild_keys(pool: &tankovault_db::PgPool, apply: bool) -> anyhow::Resu
         .await
         .map_err(anyhow::Error::from)?;
     println!(
-        "keys: rewrote {} series and {} alternative titles, dropped {} that collided",
-        report.series_updated, report.titles_updated, report.titles_deduplicated
+        "keys: rewrote {} series, {} alternative titles and {} listing titles, dropped {} that \
+         collided",
+        report.series_updated,
+        report.titles_updated,
+        report.sources_updated,
+        report.titles_deduplicated
     );
     Ok(())
 }
@@ -329,6 +333,9 @@ async fn find_strays(
             normalized_title: normalize_title(&canonical_title),
             similarity: 0.0,
             alt_normalized_titles,
+            // Empty on purpose: every source under survey is scored *against* this series, and
+            // its own listing title would match itself.
+            source_titles: Vec::new(),
             content_type: ContentType::Unknown,
             release_year: None,
             tags: Vec::new(),

@@ -3587,3 +3587,42 @@ async fn only_an_unreferenced_orphan_is_deleted() {
         assert!(left.contains(&kept.as_uuid()), "{kept} must survive");
     }
 }
+
+/// The sweep shortlists a series whose canonical title is another series' *listing* title, and
+/// the pair facts carry the listing titles and `AniList` ids the matcher reads.
+///
+/// Without the listing branch a mirror-created duplicate of an `AniList`-renamed series only met
+/// it through an alias (`docs/MATCHING_OVERHAUL.md` WP3); without the facts the sweep could not
+/// read the listing title as the primary identity it is.
+#[tokio::test]
+async fn the_sweep_blocks_on_listing_titles_and_loads_them() {
+    use tankovault_db::repo::matching::{find_duplicate_pairs, series_match_facts};
+
+    let db = TestDb::spawn().await;
+    let alpha = seed::provider(&db, "alpha").create().await;
+    let renamed = ingest(&db, alpha, &plain("Legend of Star General"), &[1.0]).await;
+    sqlx::query("UPDATE series SET canonical_title = $2, normalized_title = $3 WHERE id = $1")
+        .bind(renamed.as_uuid())
+        .bind("Xing Jiang Chuanqi")
+        .bind(normalize_title("Xing Jiang Chuanqi"))
+        .execute(&db.pool)
+        .await
+        .expect("rename");
+    map_anilist(&db, renamed, "4242").await;
+    let mirror = insert_series_directly(&db, "Legend of Star General").await;
+
+    let pairs = find_duplicate_pairs(&db.pool, 50).await.expect("pairs");
+    assert!(
+        pairs.contains(&(renamed.min(mirror), renamed.max(mirror))),
+        "{pairs:?}"
+    );
+
+    let facts = series_match_facts(&db.pool, &[renamed])
+        .await
+        .expect("facts");
+    assert_eq!(
+        facts[0].source_titles,
+        vec!["legend of star general".to_owned()]
+    );
+    assert_eq!(facts[0].anilist_id.as_deref(), Some("4242"));
+}

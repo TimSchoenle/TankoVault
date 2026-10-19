@@ -19,6 +19,10 @@ pub struct Candidate {
     /// Retrieval can match on a synonym alone; without these the scorer re-scores against a
     /// title the candidate wasn't actually found by, understating an exact alias hit.
     pub alt_normalized_titles: Vec<String>,
+    /// The normalized listing titles of the candidate's sources
+    /// (`series_sources.provider_title_normalized`). What a provider calls the work, so a hit on
+    /// one is a primary identity, unlike a hit on an alternative title.
+    pub source_titles: Vec<String>,
     /// Medium the candidate is recorded under.
     pub content_type: ContentType,
     /// Year the candidate is recorded under, `None` when it has none.
@@ -173,6 +177,21 @@ impl MatchSignals {
         }
         out
     }
+}
+
+/// How the live chapters of two series line up in time: chapters both first saw after both were
+/// already being scanned, joined on whole chapter number, for the source pair that agrees best.
+///
+/// Only first-party discovery times count (`chapters.discovered_at`). Provider publication dates
+/// are useless here: mirrors stamp their own upload date, and pairs that are one work showed a
+/// mean gap of 1,621 days on them.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct LiveTiming {
+    /// Live chapters the best source pair shares.
+    pub shared_live_chapters: i64,
+    /// The median gap between the two discoveries of those chapters, in hours. `None` when no
+    /// source pair shares enough live chapters to say anything.
+    pub median_gap_hours: Option<f64>,
 }
 
 /// The matching outcome.

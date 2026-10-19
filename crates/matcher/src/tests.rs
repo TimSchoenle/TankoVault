@@ -13,6 +13,7 @@ fn cand(sim: f32, ct: ContentType, year: Option<i32>, title: &str) -> Candidate 
         normalized_title: title.to_owned(),
         similarity: sim,
         alt_normalized_titles: Vec::new(),
+        source_titles: Vec::new(),
         content_type: ct,
         release_year: year,
         tags: Vec::new(),
@@ -938,6 +939,8 @@ fn side<'a>(title: &'a str, alts: &'a [String]) -> PairSide<'a> {
         series_id: SeriesId::new(),
         normalized_title: title,
         alt_normalized_titles: alts,
+        source_titles: &[],
+        anilist_id: None,
         content_type: ContentType::Manga,
         release_year: Some(2005),
         tags: &[],
@@ -1099,4 +1102,162 @@ fn a_long_alias_inside_a_subtitled_title_is_still_an_alias_hit() {
         Thresholds::default(),
     );
     assert!(reading.assessment.signals.alias_identity, "{reading:?}");
+}
+
+// --- listing titles, external ids, live timing ------------------------------------------
+
+/// **A listing title is identity.**
+///
+/// A mirror listing could only reach a series AniList had renamed through an alias, which is
+/// discounted below the attach threshold, so registration created a new series that the sweep
+/// then merged: one key, `legend of star general`, drove 37 such merges in production
+/// (`docs/MATCHING_OVERHAUL.md` §2, WP3). Matching the sibling source's listing title attaches it.
+#[test]
+fn a_sibling_sources_listing_title_attaches() {
+    let q = query("legend of star general", ContentType::Unknown, None);
+    let mut renamed = cand(0.2, ContentType::Unknown, None, "xing jiang chuanqi");
+    renamed.source_titles = vec!["legend of star general".to_owned()];
+    let id = renamed.series_id;
+
+    let signals = assess(&q, &renamed).signals;
+    assert!(signals.source_title_identity, "{signals:?}");
+    assert!(
+        !signals.exact_title && !signals.alias_identity,
+        "{signals:?}"
+    );
+    assert_eq!(
+        decide(&q, &[renamed], Thresholds::default()),
+        Decision::Attach(id)
+    );
+
+    // The same title as an alternative is still only evidence.
+    let mut aliased = cand(0.2, ContentType::Unknown, None, "xing jiang chuanqi");
+    aliased.alt_normalized_titles = vec!["legend of star general".to_owned()];
+    assert!(!matches!(
+        decide(&q, &[aliased], Thresholds::default()),
+        Decision::Attach(_)
+    ));
+}
+
+fn sourced<'a>(
+    title: &'a str,
+    sources: &'a [String],
+    alts: &'a [String],
+    anilist: Option<&'a str>,
+) -> PairSide<'a> {
+    PairSide {
+        source_titles: sources,
+        anilist_id: anilist,
+        ..side(title, alts)
+    }
+}
+
+/// In the sweep a listing title on either side reads as a primary identity and merges.
+#[test]
+fn a_listing_title_against_a_canonical_title_merges_in_the_sweep() {
+    let listings = vec!["legend of star general".to_owned()];
+    for (left, right) in [
+        (
+            sourced("xing jiang chuanqi", &listings, &[], None),
+            sourced("legend of star general", &[], &[], None),
+        ),
+        (
+            sourced("legend of star general", &[], &[], None),
+            sourced("xing jiang chuanqi", &listings, &[], None),
+        ),
+    ] {
+        let (reading, verdict) = adjudicate_pair(left, right, 0.1, Thresholds::default());
+        assert!(
+            reading.assessment.signals.source_title_identity,
+            "{reading:?}"
+        );
+        assert!(!reading.assessment.signals.exact_title, "{reading:?}");
+        assert_eq!(verdict.verdict, MergeVerdict::Auto, "{verdict:?}");
+    }
+}
+
+/// An `AniList` id on both sides corroborates an alias when it agrees and holds a title match for
+/// review when it does not.
+///
+/// 1,828 sourced production merges joined two different `AniList` ids, 1,296 of them through an
+/// alias (`docs/MATCHING_OVERHAUL.md` §2).
+#[test]
+fn anilist_ids_corroborate_or_veto() {
+    let alts = vec!["na honjaman level up".to_owned()];
+    let agree = adjudicate_pair(
+        sourced("solo leveling", &[], &alts, Some("105398")),
+        sourced("na honjaman level up", &[], &[], Some("105398")),
+        0.3,
+        Thresholds::default(),
+    );
+    assert!(
+        agree.0.assessment.signals.external_id_agreement,
+        "{agree:?}"
+    );
+    assert_eq!(agree.1.verdict, MergeVerdict::Auto);
+    assert_eq!(agree.1.reason, "corroborated_alias");
+    assert!(
+        agree
+            .0
+            .terms
+            .iter()
+            .any(|t| t.rule == "external_id_agreement"),
+        "the corroboration must be in the explanation: {:?}",
+        agree.0.terms
+    );
+
+    let conflict = adjudicate_pair(
+        sourced("solo leveling", &[], &[], Some("105398")),
+        sourced("solo leveling", &[], &[], Some("151025")),
+        1.0,
+        Thresholds::default(),
+    );
+    assert!(
+        conflict.0.assessment.signals.external_id_conflict,
+        "{conflict:?}"
+    );
+    assert_eq!(conflict.1.verdict, MergeVerdict::Review);
+    assert_eq!(conflict.1.reason, "external_id_conflict");
+
+    // One side unmapped says nothing.
+    let quiet = adjudicate_pair(
+        sourced("solo leveling", &[], &alts, Some("105398")),
+        sourced("na honjaman level up", &[], &[], None),
+        0.3,
+        Thresholds::default(),
+    );
+    let signals = quiet.0.assessment.signals;
+    assert!(!signals.external_id_agreement && !signals.external_id_conflict);
+    assert_eq!(quiet.1.reason, "alias_uncorroborated");
+}
+
+/// Live timing within three days corroborates, over two weeks vetoes, and between says nothing.
+#[test]
+fn live_timing_corroborates_vetoes_or_abstains() {
+    let alts = vec!["na honjaman level up".to_owned()];
+    let read = |gap: Option<f64>| {
+        let (mut reading, verdict) = adjudicate_pair(
+            side("solo leveling", &alts),
+            side("na honjaman level up", &[]),
+            0.3,
+            Thresholds::default(),
+        );
+        assert!(wants_live_timing(&reading, &verdict));
+        apply_live_timing(
+            &mut reading,
+            LiveTiming {
+                shared_live_chapters: 5,
+                median_gap_hours: gap,
+            },
+        );
+        adjudicate(reading.assessment, Thresholds::default())
+    };
+    let agree = read(Some(4.2));
+    assert_eq!(agree.verdict, MergeVerdict::Auto);
+    assert_eq!(agree.reason, "corroborated_alias");
+    let conflict = read(Some(372.0));
+    assert_eq!(conflict.verdict, MergeVerdict::Review);
+    assert_eq!(conflict.reason, "live_timing_conflict");
+    assert_eq!(read(Some(151.0)).reason, "alias_uncorroborated");
+    assert_eq!(read(None).reason, "alias_uncorroborated");
 }

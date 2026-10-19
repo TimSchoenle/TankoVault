@@ -78,16 +78,19 @@ pub async fn upsert_source<'e, E: PgExecutor<'e>>(
     provider_title: Option<&str>,
 ) -> DbResult<(SeriesSourceId, SeriesId)> {
     let row = sqlx::query!(
-        "INSERT INTO series_sources (id, series_id, provider_id, source_path, provider_title) \
-         VALUES ($1,$2,$3,$4,$5) \
+        "INSERT INTO series_sources \
+            (id, series_id, provider_id, source_path, provider_title, provider_title_normalized) \
+         VALUES ($1,$2,$3,$4,$5,$6) \
          ON CONFLICT (provider_id, source_path) DO UPDATE \
-            SET provider_title = EXCLUDED.provider_title \
+            SET provider_title = EXCLUDED.provider_title, \
+                provider_title_normalized = EXCLUDED.provider_title_normalized \
          RETURNING id, series_id",
         SeriesSourceId::new().as_uuid(),
         series_id.as_uuid(),
         provider_id.as_uuid(),
         source_path,
         provider_title,
+        provider_title.map(normalize_title),
     )
     .fetch_one(exec)
     .await?;
@@ -181,18 +184,23 @@ async fn upsert_sources(
     // only for this statement, so cloning each path and title is pure waste (PERF-19).
     let paths: Vec<&str> = rows.iter().map(|(_, p, _)| p.as_str()).collect();
     let titles: Vec<&str> = rows.iter().map(|(_, _, t)| t.as_str()).collect();
+    let normalized: Vec<String> = titles.iter().map(|t| normalize_title(t)).collect();
     sqlx::query!(
-        "INSERT INTO series_sources (id, series_id, provider_id, source_path, provider_title) \
-         SELECT DISTINCT ON (source_path) id, series_id, $2, source_path, provider_title \
-         FROM UNNEST($1::uuid[], $3::uuid[], $4::text[], $5::text[]) \
-              AS t(id, series_id, source_path, provider_title) \
+        "INSERT INTO series_sources \
+            (id, series_id, provider_id, source_path, provider_title, provider_title_normalized) \
+         SELECT DISTINCT ON (source_path) id, series_id, $2, source_path, provider_title, \
+                provider_title_normalized \
+         FROM UNNEST($1::uuid[], $3::uuid[], $4::text[], $5::text[], $6::text[]) \
+              AS t(id, series_id, source_path, provider_title, provider_title_normalized) \
          ON CONFLICT (provider_id, source_path) DO UPDATE \
-            SET provider_title = EXCLUDED.provider_title",
+            SET provider_title = EXCLUDED.provider_title, \
+                provider_title_normalized = EXCLUDED.provider_title_normalized",
         &ids,
         provider_id.as_uuid(),
         &series_ids,
         &paths as _,
         &titles as _,
+        &normalized,
     )
     .execute(conn)
     .await?;

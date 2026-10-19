@@ -348,7 +348,13 @@ pub async fn apply_enrichment(
     .execute(&mut *tx)
     .await?;
     if !enrichment.alt_titles.is_empty() {
-        add_series_titles(&mut tx, series_id, enrichment.alt_titles).await?;
+        add_series_titles(
+            &mut tx,
+            series_id,
+            enrichment.alt_titles,
+            TitleOrigin::AniList,
+        )
+        .await?;
     }
     if !enrichment.tags.is_empty() {
         add_series_tags(&mut tx, series_id, enrichment.tags, blocked).await?;
@@ -360,7 +366,40 @@ pub async fn apply_enrichment(
     Ok(())
 }
 
-/// Add alternative titles (idempotent on the natural key).
+/// Where an alternative title came from (`series_titles.origin`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TitleOrigin {
+    /// A provider adapter's scan.
+    Adapter,
+    /// An `AniList` enrichment.
+    AniList,
+    /// A merge, which copied it from the absorbed series.
+    Merge,
+}
+
+impl TitleOrigin {
+    /// The stored spelling, as `series_titles_origin_check` allows it.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Adapter => "adapter",
+            Self::AniList => "anilist",
+            Self::Merge => "merge",
+        }
+    }
+}
+
+impl From<MetadataSource> for TitleOrigin {
+    fn from(source: MetadataSource) -> Self {
+        match source {
+            MetadataSource::Adapter => Self::Adapter,
+            MetadataSource::AniList => Self::AniList,
+        }
+    }
+}
+
+/// Add alternative titles (idempotent on the natural key), recording `origin` on the rows this
+/// creates. A title the series already holds keeps the provenance it was first filed under.
 ///
 /// Placeholder text ([`alias_is_placeholder`]: `unknown`, `status`, `no alternative titles`) is
 /// dropped rather than stored: it joined unrelated series in production, and every merge copied
@@ -375,6 +414,7 @@ pub async fn add_series_titles(
     conn: &mut sqlx::PgConnection,
     series_id: SeriesId,
     titles: &[(String, String)],
+    origin: TitleOrigin,
 ) -> DbResult<()> {
     // One statement, not one per title, to avoid holding ingest-transaction locks longer.
     // De-duplicated on `normalized` first: `ON CONFLICT DO UPDATE` cannot touch one row twice.
@@ -393,13 +433,14 @@ pub async fn add_series_titles(
     }
 
     sqlx::query!(
-        "INSERT INTO series_titles (series_id, title, normalized) \
-         SELECT $1, u.title, u.normalized \
+        "INSERT INTO series_titles (series_id, title, normalized, origin) \
+         SELECT $1, u.title, u.normalized, $4 \
          FROM UNNEST($2::text[], $3::text[]) AS u(title, normalized) \
          ON CONFLICT (series_id, normalized) DO UPDATE SET title = EXCLUDED.title",
         series_id.as_uuid(),
         &display as &[&str],
         &normalized as &[&str],
+        origin.as_str(),
     )
     .execute(&mut *conn)
     .await?;

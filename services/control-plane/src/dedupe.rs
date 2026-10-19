@@ -400,7 +400,7 @@ async fn run_full_sweep(
 ) -> anyhow::Result<()> {
     let mut rounds = RoundLoop::new();
     let mut total = MergeSweepView::default();
-    total.auto_merged += clean_up_orphans(pool, actor).await?;
+    total.auto_merged += clean_up_orphans(pool, policy, actor).await?;
     matching::advance_full_sweep(pool, claim, rounds.rounds, counters(&total)).await?;
     loop {
         let run = sweep(pool, policy, budget, SweepScope::Full, actor).await?;
@@ -434,11 +434,17 @@ const ORPHAN_DELETE_BATCH: i64 = 1_000;
 /// # Errors
 ///
 /// Database failures. Merges and deletions already committed stay committed.
-async fn clean_up_orphans(pool: &PgPool, actor: Option<UserId>) -> anyhow::Result<i64> {
+async fn clean_up_orphans(
+    pool: &PgPool,
+    thresholds: Thresholds,
+    actor: Option<UserId>,
+) -> anyhow::Result<i64> {
     let ctx = JournalContext {
         sweep_id: Uuid::now_v7(),
         actor,
-        policy: json!({ "rule": "orphan_twin" }),
+        // The thresholds in force, as every journal row carries them, so the replay harness can
+        // read this row like any other.
+        policy: policy_json(thresholds),
     };
     let mut merged = 0_i64;
     loop {
@@ -1038,6 +1044,8 @@ fn evidence_json(
             "title": f.canonical_title,
             "normalized_title": f.normalized_title,
             "alt_normalized_titles": f.alt_normalized_titles,
+            "source_titles": f.source_titles,
+            "anilist_id": f.anilist_id,
             "content_type": f.content_type.as_str(),
             "release_year": f.release_year,
             "tags": f.tags,
@@ -1108,6 +1116,8 @@ fn side(facts: &SeriesMatchFacts) -> PairSide<'_> {
         series_id: facts.series_id,
         normalized_title: &facts.normalized_title,
         alt_normalized_titles: &facts.alt_normalized_titles,
+        source_titles: &facts.source_titles,
+        anilist_id: facts.anilist_id.as_deref(),
         content_type: facts.content_type,
         release_year: facts.release_year,
         tags: &facts.tags,
@@ -1135,6 +1145,8 @@ mod tests {
                 .iter()
                 .map(|t| tankovault_domain::normalize_title(t))
                 .collect(),
+            source_titles: Vec::new(),
+            anilist_id: None,
             content_type: ContentType::Unknown,
             release_year: None,
             tags: Vec::new(),

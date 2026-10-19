@@ -22,12 +22,14 @@ pub(crate) struct TitleMatch<'a> {
     pub(crate) exact: bool,
     pub(crate) compact_equal: bool,
     pub(crate) containment: bool,
-    /// Whether the winning title was an alternative rather than the canonical one.
+    /// Whether the winning title was an alternative rather than a primary one.
     pub(crate) via_alias: bool,
-    /// The textual agreement against the **canonical** title alone, whatever won overall. The
-    /// scorer discounts an alias-only agreement and needs the undiscounted floor to fall back
-    /// to; see [`assess_with`](crate::assess::assess_with).
-    pub(crate) canonical_ratio: f32,
+    /// Whether the winning title was one of the candidate's source listing titles.
+    pub(crate) via_source: bool,
+    /// The best textual agreement against the **primary** titles alone (canonical and listing),
+    /// whatever won overall. The scorer discounts an alias-only agreement and needs the
+    /// undiscounted floor to fall back to; see [`assess_with`](crate::assess::assess_with).
+    pub(crate) primary_ratio: f32,
     /// The candidate title the winning comparison was against. Borrowed from the candidate, so
     /// an explanation can name it without the scorer cloning a string on the hot path.
     pub(crate) matched: &'a str,
@@ -42,14 +44,23 @@ impl Default for TitleMatch<'_> {
             compact_equal: false,
             containment: false,
             via_alias: false,
-            canonical_ratio: 0.0,
+            via_source: false,
+            primary_ratio: 0.0,
             matched: "",
         }
     }
 }
 
-/// Compare the query against the candidate's canonical title **and** each of its alternatives,
-/// keeping the strongest agreement.
+/// Which of a candidate's titles a comparison was against.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Kind {
+    Canonical,
+    Source,
+    Alias,
+}
+
+/// Compare the query against the candidate's canonical title, its sources' listing titles **and**
+/// each of its alternatives, keeping the strongest agreement.
 ///
 /// The trigram lookup that produced this candidate already searches `series_titles`, so a
 /// candidate can be returned entirely on the strength of a synonym. Scoring only the canonical
@@ -67,10 +78,17 @@ pub(crate) fn best_title_match<'a>(
         matched: &candidate.normalized_title,
         ..TitleMatch::default()
     };
-    let titles = std::iter::once((&candidate.normalized_title, false))
-        .chain(candidate.alt_normalized_titles.iter().map(|t| (t, true)));
+    // Primary titles first, so a tie goes to the stronger claim.
+    let titles = std::iter::once((&candidate.normalized_title, Kind::Canonical))
+        .chain(candidate.source_titles.iter().map(|t| (t, Kind::Source)))
+        .chain(
+            candidate
+                .alt_normalized_titles
+                .iter()
+                .map(|t| (t, Kind::Alias)),
+        );
 
-    for (title, is_alias) in titles {
+    for (title, kind) in titles {
         let compact = compact_key(title);
         let exact = !query.is_empty() && query == title;
         let compact_equal = !query_compact.is_empty() && query_compact == compact;
@@ -94,17 +112,18 @@ pub(crate) fn best_title_match<'a>(
             token.max(edit)
         };
 
-        if !is_alias {
-            best.canonical_ratio = ratio;
+        if kind != Kind::Alias {
+            best.primary_ratio = best.primary_ratio.max(ratio);
         }
-        // `>` not `>=`, so the canonical title wins ties against an alternative and
-        // `via_alias` reports the truth rather than whichever synonym happened to be last.
+        // `>` not `>=`, so a primary title wins ties against an alternative and `via_alias`
+        // reports the truth rather than whichever synonym happened to be last.
         if ratio > best.ratio {
             best.ratio = ratio;
             best.edit_ratio = edit;
             best.exact = exact;
             best.compact_equal = compact_equal;
-            best.via_alias = is_alias;
+            best.via_alias = kind == Kind::Alias;
+            best.via_source = kind == Kind::Source;
             best.matched = title;
         }
         // Containment is a property of the pair, not of the winning title: an abbreviated

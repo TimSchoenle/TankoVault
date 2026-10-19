@@ -961,7 +961,7 @@
         "title": "Automatic-merge policy"
       },
       "reason": "reason: {reason}",
-      "rebuildDone": "Rebuilt keys: {series} series, {titles} alternative titles updated.",
+      "rebuildDone": "Rebuilt keys: {series} series, {titles} alternative titles, {sources} listing titles updated.",
       "rebuildKeys": "Rebuild match keys",
       "score": "{percent}% match",
       "seriesUnavailable": "Could not load series: {message}",

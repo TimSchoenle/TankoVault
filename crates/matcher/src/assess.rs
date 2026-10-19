@@ -114,9 +114,12 @@ fn assess_with<'a>(query: &Query, candidate: &'a Candidate, ledger: &mut Ledger)
 
     let query_compact = compact_key(&query.normalized_title);
     let title_match = best_title_match(&query.normalized_title, &query_compact, candidate);
-    signals.exact_title = title_match.exact && !title_match.via_alias;
-    signals.compact_identity = title_match.compact_equal && !title_match.via_alias;
-    let alias_hit = (title_match.exact || title_match.compact_equal) && title_match.via_alias;
+    let canonical_hit = !title_match.via_alias && !title_match.via_source;
+    signals.exact_title = title_match.exact && canonical_hit;
+    signals.compact_identity = title_match.compact_equal && canonical_hit;
+    let identical = title_match.exact || title_match.compact_equal;
+    signals.source_title_identity = identical && title_match.via_source;
+    let alias_hit = identical && title_match.via_alias;
     signals.alias_identity =
         alias_hit && alias_counts_as_identity(title_match.matched, &[&candidate.normalized_title]);
     signals.near_identical =
@@ -148,7 +151,7 @@ fn assess_with<'a>(query: &Query, candidate: &'a Candidate, ledger: &mut Ledger)
     // *maximum* similarity over the canonical title and every alias, so a perfect alias hit
     // arrives from the database as 1.0 and would otherwise defeat the discount by itself.
     let base = if title_match.via_alias {
-        (textual * ALIAS_EVIDENCE_WEIGHT).max(title_match.canonical_ratio)
+        (textual * ALIAS_EVIDENCE_WEIGHT).max(title_match.primary_ratio)
     } else {
         textual
     };
@@ -206,7 +209,7 @@ fn assess_with<'a>(query: &Query, candidate: &'a Candidate, ledger: &mut Ledger)
         }
     }
 
-    // Exact normalized-title equality is decisive — against the canonical title. Against an
+    // Exact normalized-title equality is decisive — against a primary title. Against an
     // alternative it is half a bonus, for the reason the base discount above spells out.
     if title_match.exact || title_match.compact_equal {
         let bonus = if title_match.via_alias { 0.05 } else { 0.1 };
@@ -219,6 +222,8 @@ fn assess_with<'a>(query: &Query, candidate: &'a Candidate, ledger: &mut Ledger)
             };
             let side = if title_match.via_alias {
                 "an alternative title"
+            } else if title_match.via_source {
+                "a source's listing title"
             } else {
                 "the canonical title"
             };

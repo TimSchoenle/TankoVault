@@ -1782,6 +1782,16 @@
             "format": "int64",
             "type": "integer"
           },
+          "sources_scanned": {
+            "description": "Source listing titles read.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "sources_updated": {
+            "description": "Of those, whose listing key was missing or changed.",
+            "format": "int64",
+            "type": "integer"
+          },
           "titles_deduplicated": {
             "description": "Alternative titles dropped because the corrected rules collapsed them onto a key the\nsame series already held.",
             "format": "int64",
@@ -1803,7 +1813,9 @@
           "series_updated",
           "titles_scanned",
           "titles_updated",
-          "titles_deduplicated"
+          "titles_deduplicated",
+          "sources_scanned",
+          "sources_updated"
         ],
         "type": "object"
       },
@@ -2316,7 +2328,7 @@
             "description": "`[{rule, delta, detail}]` — every term the scorer applied, in order."
           },
           "trigger": {
-            "description": "`sweep_new` | `sweep_requeue` | `sweep_recheck` | `operator`.",
+            "description": "`sweep_new` | `sweep_requeue` | `sweep_recheck` | `sweep_twin` | `operator`.",
             "type": "string"
           },
           "undo_breakdown": {
@@ -9209,7 +9221,7 @@
             }
           },
           {
-            "description": "Restrict to one trigger: `operator`, `sweep_new`, `sweep_requeue`, `sweep_recheck`.",
+            "description": "Restrict to one trigger: `operator`, `sweep_new`, `sweep_requeue`, `sweep_recheck`,\n`sweep_twin`.",
             "in": "query",
             "name": "trigger",
             "required": false,

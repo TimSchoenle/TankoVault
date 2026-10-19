@@ -9,7 +9,7 @@
 // Re-exported from tankovault_domain::matching (the ARCH-16 seam `crates/db` names) so
 // `tankovault_matcher::Candidate` and friends still resolve.
 pub use tankovault_domain::matching::{
-    Candidate, Canonicaliser, Decision, MatchSignals, MergeVerdict, Query,
+    Candidate, Canonicaliser, Decision, LiveTiming, MatchSignals, MergeVerdict, Query,
 };
 
 mod assess;
@@ -28,6 +28,9 @@ mod tests;
 
 pub use assess::{assess, explain, score};
 pub use decide::{adjudicate, best_assessment, best_match, decide};
-pub use pair::{PairReading, PairSide, adjudicate_pair, read_pair};
+pub use pair::{
+    LIVE_AGREEMENT_HOURS, LIVE_CONFLICT_HOURS, PairReading, PairSide, adjudicate_pair,
+    apply_live_timing, read_pair, wants_live_timing,
+};
 pub use similarity::token_set_ratio;
 pub use types::{Adjudication, Assessment, Explanation, MergeGuards, ScoreTerm, Thresholds};

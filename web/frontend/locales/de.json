@@ -961,7 +961,7 @@
         "title": "Richtlinie für automatische Zusammenführung"
       },
       "reason": "Grund: {reason}",
-      "rebuildDone": "Schlüssel neu berechnet: {series} Serien, {titles} Alternativtitel aktualisiert.",
+      "rebuildDone": "Schlüssel neu berechnet: {series} Serien, {titles} Alternativtitel, {sources} Listentitel aktualisiert.",
       "rebuildKeys": "Schlüssel neu berechnen",
       "score": "{percent}% Übereinstimmung",
       "seriesUnavailable": "Serie konnte nicht geladen werden: {message}",

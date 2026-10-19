@@ -477,6 +477,7 @@ pub async fn list_suggestions(
                 // No synonym list from `suggest_series_candidates`, so alias rules never fire;
                 // the trigram query already searched `series_titles`, so ranking is unaffected.
                 alt_normalized_titles: Vec::new(),
+                source_titles: Vec::new(),
                 content_type: ct,
                 release_year: r.release_year,
                 tags: Vec::new(),

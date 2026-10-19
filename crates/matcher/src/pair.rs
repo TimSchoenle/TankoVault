@@ -2,7 +2,7 @@
 //! and adjudicate it. One implementation for the duplicate sweep and the offline replay harness,
 //! so a replayed verdict is the verdict the sweep would reach.
 
-use tankovault_domain::matching::{Candidate, MatchSignals, Query};
+use tankovault_domain::matching::{Candidate, LiveTiming, MatchSignals, MergeVerdict, Query};
 use tankovault_domain::{ContentType, SeriesId};
 
 use crate::assess::{alias_counts_as_identity, assess, explain, is_franchise_name};
@@ -20,6 +20,10 @@ pub struct PairSide<'a> {
     pub normalized_title: &'a str,
     /// Its alternative normalized titles.
     pub alt_normalized_titles: &'a [String],
+    /// Its sources' normalized listing titles.
+    pub source_titles: &'a [String],
+    /// Its `AniList` id, when a tracker mapping names one.
+    pub anilist_id: Option<&'a str>,
     /// Its recorded medium.
     pub content_type: ContentType,
     /// Its recorded year.
@@ -116,8 +120,8 @@ pub fn adjudicate_pair(
 #[must_use]
 pub fn read_pair(left: PairSide<'_>, right: PairSide<'_>, trigram: f32) -> PairReading {
     // the reading's class and score, whether the query side was the left series, the winning
-    // title, whether it is an alias
-    let mut best: Option<((u8, f32), bool, &str, bool)> = None;
+    // title, which of the query side's titles it is
+    let mut best: Option<((u8, f32), bool, &str, Origin)> = None;
 
     for query_is_left in [true, false] {
         let (query_side, candidate_side) = if query_is_left {
@@ -131,13 +135,20 @@ pub fn read_pair(left: PairSide<'_>, right: PairSide<'_>, trigram: f32) -> PairR
         // The canonical title goes first and ties are kept (the comparison is strict), so a pair
         // that both a canonical title and an alias explain *in the same class* is reported with
         // the canonical reading's signals.
-        let titles = std::iter::once((query_side.normalized_title, false)).chain(
-            query_side
-                .alt_normalized_titles
-                .iter()
-                .map(|alias| (alias.as_str(), true)),
-        );
-        for (title, from_alias) in titles {
+        let titles = std::iter::once((query_side.normalized_title, Origin::Canonical))
+            .chain(
+                query_side
+                    .source_titles
+                    .iter()
+                    .map(|listing| (listing.as_str(), Origin::Source)),
+            )
+            .chain(
+                query_side
+                    .alt_normalized_titles
+                    .iter()
+                    .map(|alias| (alias.as_str(), Origin::Alias)),
+            );
+        for (title, origin) in titles {
             query.normalized_title.clear();
             query.normalized_title.push_str(title);
             let assessment = assess(&query, &candidate);
@@ -146,16 +157,16 @@ pub fn read_pair(left: PairSide<'_>, right: PairSide<'_>, trigram: f32) -> PairR
                 query_side,
                 candidate_side,
                 title,
-                from_alias,
+                origin,
             );
             let rank = (class(signals), assessment.score);
             if best.is_none_or(|(best_rank, ..)| rank > best_rank) {
-                best = Some((rank, query_is_left, title, from_alias));
+                best = Some((rank, query_is_left, title, origin));
             }
         }
     }
 
-    let (_, query_is_left, title, from_alias) =
+    let (_, query_is_left, title, origin) =
         best.expect("a pair always has at least the two canonical readings");
     let (query_side, candidate_side) = if query_is_left {
         (left, right)
@@ -166,7 +177,7 @@ pub fn read_pair(left: PairSide<'_>, right: PairSide<'_>, trigram: f32) -> PairR
     let candidate = candidate_of(candidate_side, trigram);
     let mut explained = explain(&query, &candidate);
     let scored = explained.assessment.signals;
-    let signals = pair_rules(scored, query_side, candidate_side, title, from_alias);
+    let signals = pair_rules(scored, query_side, candidate_side, title, origin);
     let canonicals = || {
         format!(
             "the canonical titles {:?} and {:?}",
@@ -189,6 +200,22 @@ pub fn read_pair(left: PairSide<'_>, right: PairSide<'_>, trigram: f32) -> PairR
             detail: format!("{} name different editions or arcs", canonicals()),
         });
     }
+    if signals.external_id_agreement || signals.external_id_conflict {
+        let (rule, verb) = if signals.external_id_agreement {
+            ("external_id_agreement", "both map to")
+        } else {
+            ("external_id_conflict", "map to different entries:")
+        };
+        explained.terms.push(ScoreTerm {
+            rule,
+            delta: 0.0,
+            detail: format!(
+                "{verb} AniList {} and {}",
+                query_side.anilist_id.unwrap_or_default(),
+                candidate_side.anilist_id.unwrap_or_default()
+            ),
+        });
+    }
     explained.assessment.signals = signals;
 
     PairReading {
@@ -200,6 +227,50 @@ pub fn read_pair(left: PairSide<'_>, right: PairSide<'_>, trigram: f32) -> PairR
         via_alias: explained.via_alias,
         query_is_left,
     }
+}
+
+/// A median live-chapter gap at or under this many hours reads as one work. Production pairs that
+/// are one work showed a median of 4.2 h.
+pub const LIVE_AGREEMENT_HOURS: f64 = 72.0;
+
+/// A median live-chapter gap over this many hours (two weeks) reads as two works.
+pub const LIVE_CONFLICT_HOURS: f64 = 24.0 * 14.0;
+
+/// Whether a judged pair is worth the live-timing query: an alias hit, or a pair going to review.
+///
+/// Timing is the expensive part of judging a pair and only changes these verdicts: it is what
+/// corroborates an alias, and what an operator would want to see before merging a review pair.
+#[must_use]
+pub fn wants_live_timing(reading: &PairReading, verdict: &Adjudication) -> bool {
+    reading.assessment.signals.alias_identity || verdict.verdict == MergeVerdict::Review
+}
+
+/// Fold the pair's live chapter timing into a reading: a gap of at most
+/// [`LIVE_AGREEMENT_HOURS`] is `live_timing_agreement`, over [`LIVE_CONFLICT_HOURS`]
+/// `live_timing_conflict`, anything between or no timing at all is neither. Absence says nothing:
+/// most works are finished, and back catalogues are bulk-imported.
+pub fn apply_live_timing(reading: &mut PairReading, timing: LiveTiming) {
+    let Some(gap) = timing.median_gap_hours else {
+        return;
+    };
+    let signals = &mut reading.assessment.signals;
+    let rule = if gap <= LIVE_AGREEMENT_HOURS {
+        signals.live_timing_agreement = true;
+        "live_timing_agreement"
+    } else if gap > LIVE_CONFLICT_HOURS {
+        signals.live_timing_conflict = true;
+        "live_timing_conflict"
+    } else {
+        return;
+    };
+    reading.terms.push(ScoreTerm {
+        rule,
+        delta: 0.0,
+        detail: format!(
+            "{} live chapters, median {gap:.1} h apart",
+            timing.shared_live_chapters
+        ),
+    });
 }
 
 fn query_of(side: PairSide<'_>, normalized_title: String) -> Query {
@@ -218,6 +289,7 @@ fn candidate_of(side: PairSide<'_>, similarity: f32) -> Candidate {
         normalized_title: side.normalized_title.to_owned(),
         similarity,
         alt_normalized_titles: side.alt_normalized_titles.to_vec(),
+        source_titles: side.source_titles.to_vec(),
         content_type: side.content_type,
         release_year: side.release_year,
         tags: side.tags.to_vec(),
@@ -238,27 +310,48 @@ const fn class(signals: MatchSignals) -> u8 {
     }
 }
 
-/// Apply the rules that need both sides' canonical titles to one reading's signals.
+/// Which of the query side's titles a reading scored.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Origin {
+    Canonical,
+    Source,
+    Alias,
+}
+
+/// Apply the rules that need both sides' facts to one reading's signals.
 ///
-/// An identity hit through one of the *query* side's alternative titles is relabelled:
+/// An identity hit through one of the *query* side's other titles is relabelled:
 /// `exact_title` and `compact_identity` assert that the two **canonical** titles are the same
 /// string, which is what the console renders as a badge, what the auto-merge journal records as
-/// its justification for deleting a row, and what [`adjudicate`] merges on. Through a synonym it
-/// is an alias hit, held to the alias rules.
+/// its justification for deleting a row, and what [`adjudicate`] merges on. Through a source's
+/// listing title it is `source_title_identity`, still primary; through a synonym it is an alias
+/// hit, held to the alias rules.
+///
+/// Both sides' `AniList` ids are compared here rather than in `assess`, because only a pair has an
+/// id on both sides: an incoming scan has none.
 fn pair_rules(
     mut signals: MatchSignals,
     query_side: PairSide<'_>,
     candidate_side: PairSide<'_>,
     query_title: &str,
-    query_from_alias: bool,
+    origin: Origin,
 ) -> MatchSignals {
     let canonicals = [query_side.normalized_title, candidate_side.normalized_title];
-    let alias_hit = if query_from_alias && (signals.exact_title || signals.compact_identity) {
-        signals.exact_title = false;
-        signals.compact_identity = false;
-        true
-    } else {
-        signals.alias_identity
+    let primary_hit = signals.exact_title || signals.compact_identity;
+    let alias_hit = match origin {
+        Origin::Alias if primary_hit || signals.source_title_identity => {
+            signals.exact_title = false;
+            signals.compact_identity = false;
+            signals.source_title_identity = false;
+            true
+        }
+        Origin::Source if primary_hit => {
+            signals.exact_title = false;
+            signals.compact_identity = false;
+            signals.source_title_identity = true;
+            signals.alias_identity
+        }
+        _ => signals.alias_identity,
     };
     if alias_hit {
         // `assess` already held a candidate-side alias to the candidate's canonical title; this
@@ -268,5 +361,9 @@ fn pair_rules(
     }
     signals.numeric_conflict |= numbers_conflict(canonicals[0], &canonicals[1..]);
     signals.edition_conflict |= editions_conflict(canonicals[0], canonicals[1]);
+    if let (Some(a), Some(b)) = (query_side.anilist_id, candidate_side.anilist_id) {
+        signals.external_id_agreement = a == b;
+        signals.external_id_conflict = a != b;
+    }
     signals
 }

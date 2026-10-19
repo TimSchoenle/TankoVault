@@ -110,8 +110,8 @@ pub async fn merge_series(
     // the undo journal needs: deleting the whole key set on revert would take titles the survivor
     // already answered to.
     let inserted_canonical = sqlx::query_scalar!(
-        "INSERT INTO series_titles (series_id, title, normalized) \
-         SELECT $1, canonical_title, normalized_title FROM series WHERE id = $2 \
+        "INSERT INTO series_titles (series_id, title, normalized, origin) \
+         SELECT $1, canonical_title, normalized_title, 'merge' FROM series WHERE id = $2 \
          ON CONFLICT (series_id, normalized) DO NOTHING \
          RETURNING to_jsonb(series_titles)",
         keep,
@@ -120,8 +120,8 @@ pub async fn merge_series(
     .fetch_all(&mut *tx)
     .await?;
     let inserted_alternatives = sqlx::query_scalar!(
-        "INSERT INTO series_titles (series_id, title, normalized) \
-         SELECT $1, title, normalized FROM series_titles WHERE series_id = $2 \
+        "INSERT INTO series_titles (series_id, title, normalized, origin) \
+         SELECT $1, title, normalized, 'merge' FROM series_titles WHERE series_id = $2 \
          ON CONFLICT (series_id, normalized) DO NOTHING \
          RETURNING to_jsonb(series_titles)",
         keep,

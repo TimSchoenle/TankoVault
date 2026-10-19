@@ -763,6 +763,10 @@ pub struct KeyRebuildView {
     /// Alternative titles dropped because the corrected rules collapsed them onto a key the
     /// same series already held.
     pub titles_deduplicated: i64,
+    /// Source listing titles read.
+    pub sources_scanned: i64,
+    /// Of those, whose listing key was missing or changed.
+    pub sources_updated: i64,
 }
 
 /// One row of the admin Sync console's "Linked accounts" table.

@@ -474,9 +474,12 @@ pub(super) async fn revert_merge_in(
     .execute(&mut **tx)
     .await?;
 
-    // The absorbed series' own children, which cascaded away with it.
+    // The absorbed series' own children, which cascaded away with it. A journal written before
+    // `series_titles.origin` existed has no such key, and a missing key populates as NULL, which
+    // the column refuses; the base record supplies the value the migration gave existing rows.
     sqlx::query!(
-        "INSERT INTO series_titles SELECT * FROM jsonb_populate_recordset(NULL::series_titles, $1)",
+        "INSERT INTO series_titles SELECT * FROM jsonb_populate_recordset( \
+           jsonb_populate_record(NULL::series_titles, '{\"origin\": \"adapter\"}'), $1)",
         undo.titles,
     )
     .execute(&mut **tx)

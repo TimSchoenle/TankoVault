@@ -3955,6 +3955,8 @@ pub mod types {
     #[doc = "  \"required\": ["]
     #[doc = "    \"series_scanned\","]
     #[doc = "    \"series_updated\","]
+    #[doc = "    \"sources_scanned\","]
+    #[doc = "    \"sources_updated\","]
     #[doc = "    \"titles_deduplicated\","]
     #[doc = "    \"titles_scanned\","]
     #[doc = "    \"titles_updated\""]
@@ -3967,6 +3969,16 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"series_updated\": {"]
     #[doc = "      \"description\": \"Of those, whose key the corrected rules changed.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"sources_scanned\": {"]
+    #[doc = "      \"description\": \"Source listing titles read.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int64\""]
+    #[doc = "    },"]
+    #[doc = "    \"sources_updated\": {"]
+    #[doc = "      \"description\": \"Of those, whose listing key was missing or changed.\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
@@ -3995,6 +4007,10 @@ pub mod types {
         pub series_scanned: i64,
         #[doc = "Of those, whose key the corrected rules changed."]
         pub series_updated: i64,
+        #[doc = "Source listing titles read."]
+        pub sources_scanned: i64,
+        #[doc = "Of those, whose listing key was missing or changed."]
+        pub sources_updated: i64,
         #[doc = "Alternative titles dropped because the corrected rules collapsed them onto a key the\nsame series already held."]
         pub titles_deduplicated: i64,
         #[doc = "Alternative titles read."]
@@ -4999,7 +5015,7 @@ pub mod types {
     #[doc = "      \"$ref\": \"#/components/schemas/Value\""]
     #[doc = "    },"]
     #[doc = "    \"trigger\": {"]
-    #[doc = "      \"description\": \"`sweep_new` | `sweep_requeue` | `sweep_recheck` | `operator`.\","]
+    #[doc = "      \"description\": \"`sweep_new` | `sweep_requeue` | `sweep_recheck` | `sweep_twin` | `operator`.\","]
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
     #[doc = "    \"undo_breakdown\": {"]
@@ -5079,7 +5095,7 @@ pub mod types {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub sweep_id: ::std::option::Option<::uuid::Uuid>,
         pub terms: Value,
-        #[doc = "`sweep_new` | `sweep_requeue` | `sweep_recheck` | `operator`."]
+        #[doc = "`sweep_new` | `sweep_requeue` | `sweep_recheck` | `sweep_twin` | `operator`."]
         pub trigger: ::std::string::String,
         #[doc = "Those rows itemised by journal key, largest segment first, empty segments dropped."]
         pub undo_breakdown: ::std::vec::Vec<UndoSegment>,
@@ -20978,6 +20994,8 @@ pub mod types {
         pub struct KeyRebuildView {
             series_scanned: ::std::result::Result<i64, ::std::string::String>,
             series_updated: ::std::result::Result<i64, ::std::string::String>,
+            sources_scanned: ::std::result::Result<i64, ::std::string::String>,
+            sources_updated: ::std::result::Result<i64, ::std::string::String>,
             titles_deduplicated: ::std::result::Result<i64, ::std::string::String>,
             titles_scanned: ::std::result::Result<i64, ::std::string::String>,
             titles_updated: ::std::result::Result<i64, ::std::string::String>,
@@ -20987,6 +21005,8 @@ pub mod types {
                 Self {
                     series_scanned: Err("no value supplied for series_scanned".to_string()),
                     series_updated: Err("no value supplied for series_updated".to_string()),
+                    sources_scanned: Err("no value supplied for sources_scanned".to_string()),
+                    sources_updated: Err("no value supplied for sources_updated".to_string()),
                     titles_deduplicated: Err(
                         "no value supplied for titles_deduplicated".to_string()
                     ),
@@ -21013,6 +21033,26 @@ pub mod types {
             {
                 self.series_updated = value.try_into().map_err(|e| {
                     format!("error converting supplied value for series_updated: {e}")
+                });
+                self
+            }
+            pub fn sources_scanned<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.sources_scanned = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for sources_scanned: {e}")
+                });
+                self
+            }
+            pub fn sources_updated<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.sources_updated = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for sources_updated: {e}")
                 });
                 self
             }
@@ -21055,6 +21095,8 @@ pub mod types {
                 Ok(Self {
                     series_scanned: value.series_scanned?,
                     series_updated: value.series_updated?,
+                    sources_scanned: value.sources_scanned?,
+                    sources_updated: value.sources_updated?,
                     titles_deduplicated: value.titles_deduplicated?,
                     titles_scanned: value.titles_scanned?,
                     titles_updated: value.titles_updated?,
@@ -21066,6 +21108,8 @@ pub mod types {
                 Self {
                     series_scanned: Ok(value.series_scanned),
                     series_updated: Ok(value.series_updated),
+                    sources_scanned: Ok(value.sources_scanned),
+                    sources_updated: Ok(value.sources_updated),
                     titles_deduplicated: Ok(value.titles_deduplicated),
                     titles_scanned: Ok(value.titles_scanned),
                     titles_updated: Ok(value.titles_updated),
@@ -36680,7 +36724,7 @@ impl Client {
     pub fn sweep_all_merge_candidates(&self) -> builder::SweepAllMergeCandidates<'_> {
         builder::SweepAllMergeCandidates::new(self)
     }
-    #[doc = "List merge decisions\n\nThe automatic-merge journal, newest first: the itemised score behind each decision, the rule\nthat produced the verdict, the guards that overrode it, and whether it can still be undone.\n\nSends a `GET` request to `/v1/admin/merge-decisions`\n\nArguments:\n- `blocked`: Only decisions a guard held back: the near misses.\n- `flagged`: Only decisions an operator has flagged wrong.\n- `limit`\n- `offset`\n- `outcome`: Restrict to one outcome: `merged`, `queued`, `requeued`, `reopened`, `withdrawn`,\n`distinct`, `deferred`.\n- `reverted`: Only merges that have since been undone.\n- `revertible`: Only merges that can still be undone.\n- `search`: A series or decision id matches exactly on any of the three ids; any other text is a\ncase-insensitive substring of either title.\n- `series_id`: Only decisions naming this series on either side. Survives the merge — an absorbed id is\nstill on the row that absorbed it, which is the one you go looking for.\n\nA bare `Uuid`, not `SeriesId`: an optional newtype in a query parameter generates a\none-variant `oneOf` that the client generator cannot render.\n- `trigger`: Restrict to one trigger: `operator`, `sweep_new`, `sweep_requeue`, `sweep_recheck`.\n```ignore\nlet response = client.list_merge_decisions()\n    .blocked(blocked)\n    .flagged(flagged)\n    .limit(limit)\n    .offset(offset)\n    .outcome(outcome)\n    .reverted(reverted)\n    .revertible(revertible)\n    .search(search)\n    .series_id(series_id)\n    .trigger(trigger)\n    .send()\n    .await;\n```"]
+    #[doc = "List merge decisions\n\nThe automatic-merge journal, newest first: the itemised score behind each decision, the rule\nthat produced the verdict, the guards that overrode it, and whether it can still be undone.\n\nSends a `GET` request to `/v1/admin/merge-decisions`\n\nArguments:\n- `blocked`: Only decisions a guard held back: the near misses.\n- `flagged`: Only decisions an operator has flagged wrong.\n- `limit`\n- `offset`\n- `outcome`: Restrict to one outcome: `merged`, `queued`, `requeued`, `reopened`, `withdrawn`,\n`distinct`, `deferred`.\n- `reverted`: Only merges that have since been undone.\n- `revertible`: Only merges that can still be undone.\n- `search`: A series or decision id matches exactly on any of the three ids; any other text is a\ncase-insensitive substring of either title.\n- `series_id`: Only decisions naming this series on either side. Survives the merge — an absorbed id is\nstill on the row that absorbed it, which is the one you go looking for.\n\nA bare `Uuid`, not `SeriesId`: an optional newtype in a query parameter generates a\none-variant `oneOf` that the client generator cannot render.\n- `trigger`: Restrict to one trigger: `operator`, `sweep_new`, `sweep_requeue`, `sweep_recheck`,\n`sweep_twin`.\n```ignore\nlet response = client.list_merge_decisions()\n    .blocked(blocked)\n    .flagged(flagged)\n    .limit(limit)\n    .offset(offset)\n    .outcome(outcome)\n    .reverted(reverted)\n    .revertible(revertible)\n    .search(search)\n    .series_id(series_id)\n    .trigger(trigger)\n    .send()\n    .await;\n```"]
     pub fn list_merge_decisions(&self) -> builder::ListMergeDecisions<'_> {
         builder::ListMergeDecisions::new(self)
     }

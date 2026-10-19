@@ -141,6 +141,7 @@ pub(super) fn MergeQueue() -> Element {
                                 &[
                                     ("series", &r.series_updated.to_string()),
                                     ("titles", &r.titles_updated.to_string()),
+                                    ("sources", &r.sources_updated.to_string()),
                                 ],
                             ));
                             reload.bump();

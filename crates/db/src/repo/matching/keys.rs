@@ -17,6 +17,10 @@ pub struct KeyRebuildReport {
     /// Alternative titles dropped because the corrected rules collapsed them onto a key the
     /// same series already had.
     pub titles_deduplicated: i64,
+    /// Sources with a listing title read.
+    pub sources_scanned: i64,
+    /// Of those, whose listing key was missing or changed.
+    pub sources_updated: i64,
 }
 
 /// Re-derive every stored normalized key through `normalizer`, which is
@@ -119,6 +123,48 @@ pub async fn rebuild_normalized_keys(
             } else {
                 report.titles_deduplicated += 1;
             }
+        }
+    }
+
+    // Listing keys. Also the backfill for sources registered before the column existed, which
+    // is why a missing key counts as a changed one.
+    let mut cursor = Uuid::nil();
+    loop {
+        let rows = sqlx::query!(
+            "SELECT id, provider_title AS \"provider_title!\", provider_title_normalized \
+               FROM series_sources \
+              WHERE id > $1 AND provider_title IS NOT NULL ORDER BY id LIMIT $2",
+            cursor,
+            CHUNK,
+        )
+        .fetch_all(pool)
+        .await?;
+        if rows.is_empty() {
+            break;
+        }
+        // One statement per chunk: on the first run after migration 0067 every source needs a
+        // key, which row by row is a round trip per source.
+        let mut ids = Vec::new();
+        let mut keys = Vec::new();
+        for row in &rows {
+            cursor = row.id;
+            report.sources_scanned += 1;
+            let fresh = normalizer(&row.provider_title);
+            if row.provider_title_normalized.as_deref() != Some(fresh.as_str()) {
+                ids.push(row.id);
+                keys.push(fresh);
+            }
+        }
+        if !ids.is_empty() {
+            sqlx::query!(
+                "UPDATE series_sources ss SET provider_title_normalized = u.key \
+                   FROM UNNEST($1::uuid[], $2::text[]) AS u(id, key) WHERE ss.id = u.id",
+                &ids,
+                &keys,
+            )
+            .execute(pool)
+            .await?;
+            report.sources_updated += i64::try_from(ids.len()).unwrap_or(i64::MAX);
         }
     }
 

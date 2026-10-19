@@ -215,6 +215,7 @@ pub fn adjudicate(assessment: Assessment, thresholds: Thresholds) -> Adjudicatio
 ///     // agree completely under all three.
 ///     similarity: 0.2,
 ///     alt_normalized_titles: Vec::new(),
+///     source_titles: Vec::new(),
 ///     content_type: ContentType::Manhwa,
 ///     release_year: Some(2018),
 ///     tags: Vec::new(),
@@ -246,6 +247,7 @@ pub fn adjudicate(assessment: Assessment, thresholds: Thresholds) -> Adjudicatio
 ///     normalized_title: "berserk".to_owned(),
 ///     similarity,
 ///     alt_normalized_titles: Vec::new(),
+///     source_titles: Vec::new(),
 ///     content_type: ContentType::Unknown,
 ///     release_year: None,
 ///     tags: Vec::new(),

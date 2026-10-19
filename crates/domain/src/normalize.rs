@@ -123,6 +123,98 @@ pub fn compact_key(normalized: &str) -> String {
     normalized.chars().filter(|c| !c.is_whitespace()).collect()
 }
 
+/// Normalized alternative titles that name no work.
+///
+/// Every entry was a production alias key that joined unrelated series: placeholders scraped from
+/// an empty metadata cell (`unknown`, `none`, `no alternative titles`), words a site template
+/// prints beside the title (`status`, `sorry`, `please`, `delete`, `encode`, `right`), medium and
+/// genre labels, and language names.
+const PLACEHOLDER_ALIASES: &[&str] = &[
+    "unknown",
+    "status",
+    "none",
+    "untitled",
+    "no alternative titles",
+    "sorry",
+    "please",
+    "delete",
+    "season 2",
+    "manhwa",
+    "manga",
+    "fantasy",
+    "encode",
+    "right",
+    "nihongo",
+    "english",
+    "japanese",
+    "korean",
+    "chinese",
+];
+
+/// Whether an already-[`normalize_title`]d alternative title is placeholder text, not a title.
+///
+/// Empty, or one of the scraped placeholders and template words that joined unrelated series in
+/// production. Such a title is never stored.
+///
+/// ```
+/// use tankovault_domain::normalize::alias_is_placeholder;
+///
+/// assert!(alias_is_placeholder("unknown"));
+/// assert!(alias_is_placeholder("no alternative titles"));
+/// assert!(alias_is_placeholder(""));
+/// assert!(!alias_is_placeholder("kureimoa"));
+/// ```
+#[must_use]
+pub fn alias_is_placeholder(normalized: &str) -> bool {
+    normalized.trim().is_empty() || PLACEHOLDER_ALIASES.contains(&normalized)
+}
+
+/// Shortest compact Latin-script key an alias may have and still identify a work.
+const MIN_ALIAS_CHARS: usize = 8;
+
+/// Shortest compact key a *single-word* Latin-script alias may have: one word is a franchise
+/// (`kaiji`, `overlord`, `boruto`) far more often than it is a whole title.
+const MIN_SINGLE_WORD_ALIAS_CHARS: usize = 10;
+
+/// Shortest compact key an alias in a non-Latin script may have. A CJK or Hangul character
+/// carries a syllable or a morpheme rather than a letter, so the Latin floors would refuse most
+/// native titles (`進撃の巨人` is five characters).
+const MIN_NON_LATIN_ALIAS_CHARS: usize = 3;
+
+/// Whether an already-[`normalize_title`]d alternative title is specific enough to identify a
+/// work.
+///
+/// An alias that fails this never counts as an identity match. Production merged unrelated series
+/// through `unknown` (11 merges into 9 survivors), `status`, `sao` and `x`, and every merge copied
+/// the absorbed side's aliases onto the survivor, so one junk key pulled in the next. A short
+/// alias that is a real title (`Kureimoa` for *Claymore*) is still stored, for search; see
+/// [`alias_is_placeholder`] for what is not.
+///
+/// ```
+/// use tankovault_domain::normalize::alias_is_distinctive;
+///
+/// assert!(alias_is_distinctive("na honjaman level up"));
+/// assert!(alias_is_distinctive("進撃の巨人"));
+/// assert!(!alias_is_distinctive("unknown"));
+/// assert!(!alias_is_distinctive("no alternative titles"));
+/// assert!(!alias_is_distinctive("sao"));
+/// assert!(!alias_is_distinctive("overlord"));
+/// assert!(!alias_is_distinctive("ab cd ef"));
+/// ```
+#[must_use]
+pub fn alias_is_distinctive(normalized: &str) -> bool {
+    if alias_is_placeholder(normalized) {
+        return false;
+    }
+    let compact = compact_key(normalized);
+    let chars = compact.chars().count();
+    if !compact.is_ascii() {
+        return chars >= MIN_NON_LATIN_ALIAS_CHARS;
+    }
+    let single_word = normalized.split_whitespace().nth(1).is_none();
+    chars >= MIN_ALIAS_CHARS && !(single_word && chars < MIN_SINGLE_WORD_ALIAS_CHARS)
+}
+
 /// Map a full-width or ideographic character onto its ASCII equivalent, leaving everything
 /// else alone.
 ///

@@ -2,21 +2,23 @@
 //! asked — the itemised account of how the score was reached.
 
 use tankovault_domain::matching::{Candidate, MatchSignals, Query};
-use tankovault_domain::{ContentType, compact_key};
+use tankovault_domain::{ContentType, alias_is_distinctive, compact_key};
 
-use crate::similarity::{name_set_overlap, numeric_signatures_agree, shares_a_name};
+use crate::edition::editions_conflict;
+use crate::similarity::{
+    is_strict_token_subset, name_set_overlap, numbers_conflict, shares_a_name,
+};
 use crate::title::best_title_match;
 use crate::types::{Assessment, Explanation, ScoreTerm};
 
 /// What a title agreement is worth when it is against an *alternative* title rather than the
 /// canonical one.
 ///
-/// Sized against [`Thresholds`](crate::Thresholds): a perfect but otherwise uncorroborated alias
-/// hit scores `1.0 * 0.75 + 0.05 = 0.80`, which is inside the review band `[low, high)` rather
-/// than above it. One corroborating signal — an agreeing medium, an agreeing release year, a
-/// shared credit — puts it back over `high`. That split is deliberate: the catalogue-stub path
-/// (`register_source_stub`) supplies a title and nothing else, so it can never attach on an
-/// alias alone, while a full scan that agrees on the medium still can.
+/// Sized against [`Thresholds`](crate::Thresholds): a perfect alias hit scores
+/// `1.0 * 0.75 + 0.05 = 0.80`, inside the review band `[low, high)`. Nothing lifts it back out:
+/// the medium, year and credit bonuses that used to are gone (see [`assess_with`]), and
+/// [`decide`](crate::decide) and [`adjudicate`](crate::adjudicate) refuse an alias on its own
+/// whatever it scores. The discount still orders the review queue.
 const ALIAS_EVIDENCE_WEIGHT: f32 = 0.75;
 
 /// Collects the terms of a score, or discards them.
@@ -59,7 +61,8 @@ pub fn score(query: &Query, candidate: &Candidate) -> f32 {
 ///
 /// The signals are not diagnostics: [`Decision::Ambiguous`](crate::Decision::Ambiguous) carries them into the merge queue's
 /// stored reason, the operator console renders them as badges, and [`adjudicate`](crate::adjudicate) refuses to
-/// merge anything automatically without [`MatchSignals::is_structural`]. A caller that only
+/// merge anything automatically without [`MatchSignals::is_primary_identity`] or
+/// [`MatchSignals::is_corroborated_alias`]. A caller that only
 /// wants the number can use [`score`]; one that needs to justify a destructive action after the
 /// fact wants [`explain`].
 #[must_use]
@@ -71,9 +74,9 @@ pub fn assess(query: &Query, candidate: &Candidate) -> Assessment {
 ///
 /// The same arithmetic as [`assess`] — literally the same function — with the running total
 /// itemised. This is what a merge decision record stores, and what makes an automatic merge
-/// auditable rather than merely logged: a score of 1.07-clamped-to-1.0 made of a 0.42 trigram
-/// base, an exact-title bonus and a shared author reads very differently from the same number
-/// made of a 0.97 base and nothing else.
+/// auditable rather than merely logged: a score of 1.0 made of a 0.42 trigram base and an
+/// exact-title bonus reads very differently from the same number made of a 0.97 base and
+/// nothing else.
 #[must_use]
 pub fn explain(query: &Query, candidate: &Candidate) -> Explanation {
     let mut ledger = Ledger::collecting();
@@ -113,30 +116,33 @@ fn assess_with<'a>(query: &Query, candidate: &'a Candidate, ledger: &mut Ledger)
     let title_match = best_title_match(&query.normalized_title, &query_compact, candidate);
     signals.exact_title = title_match.exact && !title_match.via_alias;
     signals.compact_identity = title_match.compact_equal && !title_match.via_alias;
+    let alias_hit = (title_match.exact || title_match.compact_equal) && title_match.via_alias;
     signals.alias_identity =
-        (title_match.exact || title_match.compact_equal) && title_match.via_alias;
+        alias_hit && alias_counts_as_identity(title_match.matched, &[&candidate.normalized_title]);
     signals.near_identical =
         !title_match.exact && !title_match.compact_equal && title_match.edit_ratio >= 0.9;
-    signals.containment = title_match.containment;
+    signals.containment = title_match.containment
+        || (alias_hit && is_franchise_name(title_match.matched, &candidate.normalized_title));
 
-    // Different numbers mean different works. Checked against *every* title the candidate
-    // answers to, so a series whose alternative title carries the same volume number is not
-    // penalised for its canonical title omitting it.
-    signals.numeric_conflict = !numeric_signatures_agree(&query_compact, candidate);
+    // Different numbers or a different edition mean different works. Checked against the title
+    // the query was scored against *and* the candidate's canonical title: a conflict with the
+    // canonical title is a conflict even when an alias agrees.
+    let own_titles = [title_match.matched, candidate.normalized_title.as_str()];
+    signals.numeric_conflict = numbers_conflict(&query.normalized_title, &own_titles);
+    signals.edition_conflict = own_titles
+        .iter()
+        .any(|t| editions_conflict(&query.normalized_title, t));
 
     // Base similarity: the strongest of the trigram score (from the db), the token-set ratio
     // and the compact comparison — each catches a failure the others miss.
     let textual = candidate.similarity.max(title_match.ratio);
 
-    // An exact hit on an *alternative* title is evidence, not identity, and on its own it must
-    // not clear `Thresholds::high`. Aliases are scraped free text: they arrive shredded out of a
+    // An exact hit on an *alternative* title is evidence, not identity, and must not clear
+    // `Thresholds::high`. Aliases are scraped free text: they arrive shredded out of a
     // comma-joined cell, and they are shared across the `(Colored)` and franchise listings of
     // unrelated works. Because attaching a source also files *its* aliases under the series it
     // attached to, one junk alias that attracts one wrong series then attracts everything that
-    // series answers to — a runaway that put 281 unrelated sources on one live row. The discount
-    // drops an uncorroborated alias hit into the review band; a matching medium, release year,
-    // credit or genre set still lifts it back to an automatic attach, which is what the
-    // cross-provider romaji/english case has and a catalogue-stub coincidence does not.
+    // series answers to — a runaway that put 281 unrelated sources on one live row.
     //
     // The trigram score is discounted with the rest, not exempted: `find_candidates` reports the
     // *maximum* similarity over the canonical title and every alias, so a perfect alias hit
@@ -159,19 +165,21 @@ fn assess_with<'a>(query: &Query, candidate: &'a Candidate, ledger: &mut Ledger)
         )
     });
 
-    // Content-type agreement is a strong signal (a manhwa vs. manga split matters).
+    // Medium, year, tags and credits are recorded and explained, and never weighed. Each is
+    // wrong or inconsistent across providers most of the time, and each was exactly what lifted a
+    // discounted alias hit back over the attach and merge thresholds: 12,356 of the automatic
+    // alias merges fired a metadata guard that production had switched off for being too noisy.
+    // A zero-delta term keeps the explanation honest about what was seen.
     if query.content_type != ContentType::Unknown && candidate.content_type != ContentType::Unknown
     {
         if query.content_type == candidate.content_type {
             signals.type_agreement = true;
-            s += 0.08;
-            ledger.term("type_agreement", 0.08, || {
+            ledger.term("type_agreement", 0.0, || {
                 format!("both {}", candidate.content_type.as_str())
             });
         } else {
             signals.type_conflict = true;
-            s -= 0.15;
-            ledger.term("type_conflict", -0.15, || {
+            ledger.term("type_conflict", 0.0, || {
                 format!(
                     "{} against {}",
                     query.content_type.as_str(),
@@ -181,31 +189,20 @@ fn assess_with<'a>(query: &Query, candidate: &'a Candidate, ledger: &mut Ledger)
         }
     }
 
-    // Release-year proximity. Saturating, not `(a - b).abs()`: `release_year` is an unvalidated
-    // `i32` on `GET /v1/admin/sync/suggest`, and `i32::MIN - i32::MAX` overflowed — a panic in
-    // debug *and*, since SEC-11 turned on `overflow-checks` for release, in production too. See
+    // Saturating, not `(a - b).abs()`: `release_year` is an unvalidated `i32` on
+    // `GET /v1/admin/sync/suggest`, and `i32::MIN - i32::MAX` overflowed — a panic in debug *and*,
+    // since SEC-11 turned on `overflow-checks` for release, in production too. See
     // `tests/prop_scoring.rs::score_survives_the_extremes_of_the_release_year_range`.
     if let (Some(a), Some(b)) = (query.release_year, candidate.release_year) {
         let gap = a.saturating_sub(b).saturating_abs();
-        match gap {
-            0 => {
-                signals.year_agreement = true;
-                s += 0.06;
-                ledger.term("year_agreement", 0.06, || format!("both {a}"));
-            }
-            1 => {
-                signals.year_agreement = true;
-                s += 0.03;
-                ledger.term("year_agreement", 0.03, || format!("{a} against {b}"));
-            }
-            d if d >= 3 => {
-                signals.year_conflict = true;
-                s -= 0.05;
-                ledger.term("year_conflict", -0.05, || {
-                    format!("{a} against {b}, {d} years apart")
-                });
-            }
-            _ => {}
+        if gap <= 1 {
+            signals.year_agreement = true;
+            ledger.term("year_agreement", 0.0, || format!("{a} against {b}"));
+        } else if gap >= 3 {
+            signals.year_conflict = true;
+            ledger.term("year_conflict", 0.0, || {
+                format!("{a} against {b}, {gap} years apart")
+            });
         }
     }
 
@@ -240,35 +237,33 @@ fn assess_with<'a>(query: &Query, candidate: &'a Candidate, ledger: &mut Ledger)
         });
     }
 
-    // Genre/tag overlap. A weak signal on its own (genres are coarse and inconsistently
-    // tagged across sites), so the bonus is small and scales with how much the two sets
-    // actually agree rather than firing at full strength on a single shared genre.
     if let Some(overlap) = name_set_overlap(&query.tags, &candidate.tags) {
         signals.tag_overlap = overlap > 0.0;
-        s += 0.05 * overlap;
-        ledger.term("tag_overlap", 0.05 * overlap, || {
+        ledger.term("tag_overlap", 0.0, || {
             format!("{:.0}% of the two tag sets agree", overlap * 100.0)
         });
     }
 
-    // A shared author/artist credit is a strong, low-false-positive signal: two unrelated
-    // works with a similar title essentially never share a real person's name too.
     if shares_a_name(&query.authors, &candidate.authors) {
         signals.shared_author = true;
-        s += 0.1;
-        ledger.term("shared_author", 0.1, || {
+        ledger.term("shared_author", 0.0, || {
             format!("credits agree on at least one of {:?}", query.authors)
         });
     } else if !query.authors.is_empty() && !candidate.authors.is_empty() {
-        // No score term: disagreeing credits are a *guard*, not a penalty. Sizing a penalty
-        // that reliably drops an exact-title pair below the automatic threshold would also
-        // drop honest matches out of the review band, where they belong. `adjudicate` blocks
-        // on the signal instead, which holds the pair for an operator without moving its score.
         signals.author_conflict = true;
         ledger.term("author_conflict", 0.0, || {
             format!(
                 "{:?} against {:?}, none in common",
                 query.authors, candidate.authors
+            )
+        });
+    }
+
+    if signals.edition_conflict {
+        ledger.term("edition_conflict", 0.0, || {
+            format!(
+                "{:?} names a different edition or arc from {:?}",
+                query.normalized_title, candidate.normalized_title
             )
         });
     }
@@ -283,8 +278,8 @@ fn assess_with<'a>(query: &Query, candidate: &'a Candidate, ledger: &mut Ledger)
         s -= 0.3;
         ledger.term("numeric_conflict", -0.3, || {
             format!(
-                "{:?} carries different numbers from every title of the candidate",
-                query.normalized_title
+                "{:?} carries different numbers from {:?} or {:?}",
+                query.normalized_title, title_match.matched, candidate.normalized_title
             )
         });
     }
@@ -298,4 +293,25 @@ fn assess_with<'a>(query: &Query, candidate: &'a Candidate, ledger: &mut Ledger)
         matched: title_match.matched,
         via_alias: title_match.via_alias,
     }
+}
+
+/// Most words an alias may have and still be read as a franchise name when another title
+/// contains it. Past this it is a subtitle-less form of one long title (the light-novel
+/// `I'll Create the Ultimate Golem Together with My Beautiful Hero Disciples…` inside its
+/// subtitled listing), which is the same work.
+const MAX_FRANCHISE_WORDS: usize = 4;
+
+/// Whether `alias` names a franchise rather than a work, against `canonical`: every word of it
+/// is in `canonical`, which says more (`fairy tail` against `fairy tail 100 years quest`).
+pub(crate) fn is_franchise_name(alias: &str, canonical: &str) -> bool {
+    alias.split_whitespace().nth(MAX_FRANCHISE_WORDS).is_none()
+        && is_strict_token_subset(alias, canonical)
+}
+
+/// Whether an identity hit on `alias` counts as `alias_identity`: the alias must be distinctive
+/// ([`alias_is_distinctive`]) and must not be a franchise name of any of `canonicals`. A
+/// franchise hit is containment, not identity: `sao`, `fairy tail` and `tokyo ghoul` each joined
+/// several different works of one franchise in production.
+pub(crate) fn alias_counts_as_identity(alias: &str, canonicals: &[&str]) -> bool {
+    alias_is_distinctive(alias) && !canonicals.iter().any(|c| is_franchise_name(alias, c))
 }

@@ -393,14 +393,24 @@ place to reason about it.
 
 Scores are in `[0, 1]` and come from `tankovault_matcher::score` — the strongest of three views of
 the two titles (the database's trigram similarity, a token-set ratio, and a whitespace-insensitive
-"compact" comparison), adjusted by content-type agreement, release-year proximity, tag overlap and
-shared author credits, and vetoed outright when the two titles carry different numbers.
+"compact" comparison), discounted when the match is against an alternative title, and lowered
+when the two titles carry different numbers. Different numbers also veto an attach or a merge
+outright, as does an edition or arc marker (`gaiden`, `colored`, an `-hen` arc, a trailing season
+letter) on one title and not the other, which does not move the score. Content type, release year, tags and
+credits are recorded on every decision but never move a score: across providers they are wrong
+too often to weigh.
+
+A score alone never attaches or merges. Attaching needs a **primary identity** — the incoming
+title is the series' canonical title or one of its provider listing titles, identical or
+identical modulo whitespace — and merging needs one
+too, or an alternative-title match corroborated by something that is not a title. See
+`tankovault_matcher::decide` and `tankovault_matcher::adjudicate`.
 
 | Key | Default | Services | Notes |
 |---|---|---|---|
-| `TANKOVAULT_MATCHING__HIGH` | `0.85` | worker, sync | At or above this, attach to the existing series outright. **Raising it makes the matcher conservative**: fewer wrong merges, more duplicate series for an operator to reconcile. Lowering it does the reverse, and a wrong merge is the harder one to undo. |
-| `TANKOVAULT_MATCHING__LOW` | `0.6` | worker, sync | At or above this but below `HIGH`, the worker creates the series *and* files a merge candidate for review. Sync ignores this band — it declines to map rather than guessing. |
-| `TANKOVAULT_MATCHING__AUTO_MERGE` | `0.97` | control-plane | At or above this — **and** only when a structural identity rule fired (identical titles, identical modulo whitespace, or an exact hit on a name the series already answers to) — the duplicate sweep merges two *already-existing* series without asking. A separate knob from `HIGH` because it governs a different act: `HIGH` files an incoming source, this one deletes a series row and the id it carries. A score alone never suffices; see `tankovault_matcher::adjudicate`. |
+| `TANKOVAULT_MATCHING__HIGH` | `0.85` | worker, sync | At or above this, and only with a primary identity, the worker attaches to the existing series outright; sync maps a remote entry at or above it. **Raising it makes the matcher conservative**: fewer wrong merges, more duplicate series for an operator to reconcile. Lowering it does the reverse, and a wrong merge is the harder one to undo. |
+| `TANKOVAULT_MATCHING__LOW` | `0.6` | worker, sync | At or above this, and not attached, the worker creates the series *and* files a merge candidate for review. Sync ignores this band — it declines to map rather than guessing. |
+| `TANKOVAULT_MATCHING__AUTO_MERGE` | `0.97` | control-plane | At or above this — **and** only when a primary identity rule fired (identical titles, or identical modulo whitespace) — the duplicate sweep merges two *already-existing* series without asking. A separate knob from `HIGH` because it governs a different act: `HIGH` files an incoming source, this one deletes a series row and the id it carries. A score alone never suffices; see `tankovault_matcher::adjudicate`. |
 | `TANKOVAULT_MATCHING__CANDIDATE_LIMIT` | `10` | worker, sync | Trigram candidates scored per query title. More costs a wider index scan and buys nothing once the true match is in the set. |
 
 #### These five are a baseline, not the last word
@@ -427,8 +437,8 @@ still be different works, and each turns that pair from an automatic merge into 
 row. Every guard is on by default: a guard only ever moves a pair towards an operator, so the
 cost of a wrong one is a queue row and the cost of a missing one is a deleted series.
 
-Switching a guard **off** does not switch the signal off. It still fires, is still scored, and is
-still recorded on the decision journal — it simply stops blocking the merge. Which guard held a
+Switching a guard **off** does not switch the signal off. It still fires and is still recorded on
+the decision journal — it simply stops blocking the merge. Which guard held a
 pair back is on the row in `GET /v1/admin/merge-decisions` (`blocked_by`), so the way to size
 these is to run with them on and read the near misses.
 
@@ -436,7 +446,7 @@ these is to run with them on and read the near misses.
 |---|---|---|---|
 | `TANKOVAULT_MATCHING__BLOCK_AUTO_MERGE_ON_NUMERIC_CONFLICT` | `true` | control-plane | Titles carrying different numbers (`Overlord` against `Overlord 2`) are reported as **distinct** rather than queued. The one guard whose verdict is not "review": queueing a sequel asks an operator to re-derive the one fact the scorer is already certain about. Turning this off makes a sequel merge-eligible on title similarity alone, and nothing else in the scorer distinguishes a sequel from its predecessor. |
 | `TANKOVAULT_MATCHING__BLOCK_AUTO_MERGE_ON_AUTHOR_CONFLICT` | `true` | control-plane | Both series name authors and share none — a remake, a spin-off, or an unrelated work with the same title. Costs nothing on a catalogue whose providers rarely publish credits, because the signal cannot fire without credits on both sides. |
-| `TANKOVAULT_MATCHING__BLOCK_AUTO_MERGE_ON_YEAR_CONFLICT` | `true` | control-plane | Release years three or more years apart. Catches re-serialisations and remakes sharing an exact title; the scorer's own −0.05 penalty is smaller than the +0.1 exact-title bonus and so cannot hold such a pair back on its own. |
+| `TANKOVAULT_MATCHING__BLOCK_AUTO_MERGE_ON_YEAR_CONFLICT` | `true` | control-plane | Release years three or more years apart. Catches re-serialisations and remakes sharing an exact title. The year never moves a score, so this guard is the only way it can hold a pair back. |
 | `TANKOVAULT_MATCHING__BLOCK_AUTO_MERGE_ON_TYPE_CONFLICT` | `true` | control-plane | Both series declare a medium and they disagree (manga against manhwa). Worth switching off on a deployment whose providers infer the medium from the site they scraped it from rather than from the work. |
 
 ### `metadata.priority` — which source owns each field

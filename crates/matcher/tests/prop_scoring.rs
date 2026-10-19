@@ -28,9 +28,11 @@
 )]
 
 use proptest::prelude::*;
+use tankovault_domain::matching::MergeVerdict;
 use tankovault_domain::{ContentType, SeriesId};
 use tankovault_matcher::{
-    Candidate, Decision, Query, Thresholds, best_assessment, best_match, decide, score,
+    Candidate, Decision, PairSide, Query, Thresholds, adjudicate_pair, best_assessment, best_match,
+    decide, score,
 };
 
 /// Titles as the normalizer produces them: lowercase alphanumeric words, single-spaced.
@@ -179,10 +181,10 @@ proptest! {
     /// and `best_match` must report the same score as `best_assessment`.
     ///
     /// Three functions now walk the same scored list. This pins them to one another: the
-    /// decision must be exactly the band the best score falls in, *and* the numeric veto must
-    /// hold in `decide` independently of the penalty `assess` already applied — the penalty is
-    /// sized to drop a realistic sequel pair out of the attach band, which is not the same claim
-    /// as it always doing so.
+    /// decision must be exactly the band the best reading falls in — attach only on a primary
+    /// identity with no veto — *and* the numeric veto must hold in `decide` independently of the
+    /// penalty `assess` already applied, which is sized to drop a realistic sequel pair out of
+    /// the attach band and is not the same claim as it always doing so.
     #[test]
     fn decide_agrees_with_the_best_assessment(
         q in any_query(),
@@ -201,7 +203,13 @@ proptest! {
                 prop_assert_eq!(best_id, id);
                 prop_assert_eq!(best_score, a.score);
 
-                if a.score >= thresholds.high && !a.signals.numeric_conflict {
+                let veto = a.signals.numeric_conflict
+                    || a.signals.edition_conflict
+                    || a.signals.external_id_conflict
+                    || a.signals.live_timing_conflict;
+                if a.signals.numeric_conflict {
+                    prop_assert_eq!(decision, Decision::Create);
+                } else if a.signals.is_primary_identity() && !veto && a.score >= thresholds.high {
                     prop_assert_eq!(decision, Decision::Attach(id));
                 } else if a.score >= thresholds.low {
                     prop_assert_eq!(
@@ -212,6 +220,78 @@ proptest! {
                     prop_assert_eq!(decision, Decision::Create);
                 }
             }
+        }
+    }
+
+    /// Nothing but a primary identity attaches: not a fuzzy score however high, and not an
+    /// alternative title on its own. The fuzzy route attached `Onikakushi-hen` to
+    /// `Onisarashi-hen`; the alias route built the hub series of `docs/MATCHING_OVERHAUL.md` §2.
+    #[test]
+    fn nothing_but_a_primary_identity_attaches(
+        q in any_query(),
+        candidates in prop::collection::vec(any_candidate(), 1..4),
+    ) {
+        if let Decision::Attach(id) = decide(&q, &candidates, Thresholds::default()) {
+            let attached = candidates.iter().find(|c| c.series_id == id).expect("a candidate");
+            prop_assert!(tankovault_matcher::assess(&q, attached).signals.is_primary_identity());
+        }
+    }
+
+    /// Medium, year, tags and credits never move a score: they are recorded and rendered, and
+    /// wrong or inconsistent across providers too often to weigh. They were what lifted an
+    /// alias hit over the merge threshold in 12,356 suspicious production merges.
+    #[test]
+    fn metadata_never_moves_the_score(q in any_query(), c in any_candidate()) {
+        let mut bare_q = q.clone();
+        bare_q.content_type = ContentType::Unknown;
+        bare_q.release_year = None;
+        bare_q.tags.clear();
+        bare_q.authors.clear();
+        let mut bare_c = c.clone();
+        bare_c.content_type = ContentType::Unknown;
+        bare_c.release_year = None;
+        bare_c.tags.clear();
+        bare_c.authors.clear();
+        prop_assert_eq!(score(&q, &c), score(&bare_q, &bare_c));
+    }
+
+    /// An edition marker on one side only never yields an automatic merge, however identical the
+    /// rest of the two series is — the same aliases, the same metadata. A side story, a coloured
+    /// edition and a second arc each resemble the original more closely the better the matcher
+    /// works.
+    #[test]
+    fn an_edition_marker_on_one_side_never_merges_automatically(
+        base in normalized_title(),
+        marker in prop::sample::select(vec![
+            "gaiden", "side story", "colored", "re", "zero", "pilot", "extra", "season", "4 koma",
+            "anthology", "remake", "oneshot",
+        ]),
+        aliases in prop::collection::vec(normalized_title(), 0..3),
+        trigram in 0.0f32..=1.0f32,
+    ) {
+        prop_assume!(!base.is_empty());
+        let marker_words: Vec<&str> = marker.split_whitespace().collect();
+        prop_assume!(!base.split_whitespace().any(|w| marker_words.contains(&w)));
+        let edition = format!("{base} {marker}");
+        let side = |title| PairSide {
+            series_id: SeriesId::new(),
+            normalized_title: title,
+            alt_normalized_titles: &aliases,
+            content_type: ContentType::Manga,
+            release_year: Some(2020),
+            tags: &[],
+            authors: &[],
+        };
+        for (left, right) in [(side(&base), side(&edition)), (side(&edition), side(&base))] {
+            let (reading, verdict) = adjudicate_pair(left, right, trigram, Thresholds::default());
+            prop_assert_ne!(
+                verdict.verdict,
+                MergeVerdict::Auto,
+                "{:?} against {:?}: {:?}",
+                base,
+                edition,
+                reading.assessment
+            );
         }
     }
 

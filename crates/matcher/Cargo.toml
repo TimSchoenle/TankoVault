@@ -9,11 +9,21 @@ description = "Series canonicalisation: pure candidate scoring and merge-band de
 # skip license-checking our own code.
 publish = false
 
+[features]
+# `replay`: reads exported `merge_decisions` rows and re-judges them offline (`xtask
+# matching-replay`, `tests/replay.rs`). Off for the services, which never parse a journal.
+replay = ["dep:serde", "dep:serde_json"]
+
 [dependencies]
 tankovault-domain = { workspace = true }
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
+# Turns `replay` on for this crate's own tests, so `cargo test -p tankovault-matcher` runs the
+# replay suite without a feature flag.
+tankovault-matcher = { path = ".", features = ["replay"] }
 
 [lints]
 workspace = true

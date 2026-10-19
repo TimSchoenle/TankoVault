@@ -8,6 +8,8 @@ mod ci;
 mod config_contract;
 mod config_docs;
 mod coverage;
+#[cfg(feature = "full")]
+mod matching_replay;
 mod notices;
 #[cfg(feature = "full")]
 mod prune_chapters;
@@ -101,7 +103,8 @@ fn main() -> anyhow::Result<()> {
              <repo-lint|install-hooks|coverage-ratchet [--integration] [report.json]|\
              config-contract|config-docs [--check]|notices [--check|--json <path>]|\
              release-plan <bases.json>|--all>\n\
-             ci, migrate, reset, seed, prune-chapters, repair-series, openapi and sqlx-prepare \
+             ci, migrate, reset, seed, prune-chapters, repair-series, matching-replay, openapi and \
+             sqlx-prepare \
              need the \
              default `full` feature."
         );
@@ -128,6 +131,12 @@ async fn compiled_commands(cmd: &str) -> anyhow::Result<()> {
     if cmd == "sqlx-prepare" {
         let check = std::env::args().nth(2).as_deref() == Some("--check");
         return sqlx_prepare(check);
+    }
+
+    // Offline: reads an exported file, never the database.
+    if cmd == "matching-replay" {
+        let args: Vec<String> = std::env::args().skip(2).collect();
+        return matching_replay::run(&matching_replay::Args::parse(&args)?);
     }
 
     // Wrapped straight out of the environment: a DSN carries its password, and `connect`
@@ -166,6 +175,7 @@ async fn compiled_commands(cmd: &str) -> anyhow::Result<()> {
                 "unknown command {other:?}; usage: xtask \
                  <migrate|reset|seed|prune-chapters [--apply]|\
                  repair-series [--split <series-id>] [--apply]|\
+                 matching-replay --input <jsonl> [--out <jsonl>]|\
                  openapi [--check]|\
                  config-contract|config-docs [--check]|notices [--check|--json <path>]|\
                  sqlx-prepare [--check]|\

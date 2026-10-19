@@ -44,7 +44,7 @@ pub use ids::{
 };
 pub use link::{ResolveError, compress_chapter_path, expand_chapter_path, resolve_link};
 pub use metadata_priority::{MetadataField, MetadataPriority, MetadataSource, MetadataValue};
-pub use normalize::{compact_key, normalize_title};
+pub use normalize::{alias_is_distinctive, alias_is_placeholder, compact_key, normalize_title};
 pub use notifications::{
     ChannelPrefs, KindPrefs, NotificationKind, NotificationPrefs, PREFS_VERSION, PrefsError,
     QuietHours, StatusPrefs,

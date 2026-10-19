@@ -17,9 +17,7 @@ use tankovault_db::repo::matching::{
 };
 use tankovault_domain::matching::MergeVerdict;
 use tankovault_domain::{SeriesId, UserId};
-use tankovault_matcher::{
-    Adjudication, Candidate, Explanation, Query, Thresholds, adjudicate, assess, explain,
-};
+use tankovault_matcher::{Adjudication, PairReading, PairSide, Thresholds, adjudicate, read_pair};
 use tracing::Instrument as _;
 use uuid::Uuid;
 
@@ -137,11 +135,7 @@ impl Judged<'_> {
             actor: ctx.actor,
             pair: (self.left.series_id, self.right.series_id),
             titles: (&self.left.canonical_title, &self.right.canonical_title),
-            verdict: match self.verdict.verdict {
-                MergeVerdict::Auto => "auto",
-                MergeVerdict::Review => "review",
-                MergeVerdict::Distinct => "distinct",
-            },
+            verdict: self.verdict.verdict.as_str(),
             reason: self.verdict.reason,
             blocked_by: &self.verdict.blocked_by,
             outcome: payload.outcome,
@@ -857,6 +851,12 @@ fn review_reason(verdict: &Adjudication) -> String {
         "below_auto_merge_threshold" => {
             "duplicate sweep: identical titles, below the automatic-merge threshold".to_owned()
         }
+        "alias_uncorroborated" => {
+            "duplicate sweep: an alternative title matches, and nothing else confirms it".to_owned()
+        }
+        veto @ ("external_id_conflict" | "live_timing_conflict") => {
+            format!("duplicate sweep: titles match, but {veto} says these are different works")
+        }
         guard => format!("duplicate sweep: would have merged automatically, held back by {guard}"),
     }
 }
@@ -950,152 +950,22 @@ async fn load_facts(
     Ok(out)
 }
 
-/// The winning reading of a pair: which title on which side was scored against which, the
-/// resulting assessment, and the itemised terms behind it.
-struct PairReading {
-    assessment: tankovault_matcher::Assessment,
-    base: f32,
-    terms: Vec<tankovault_matcher::ScoreTerm>,
-    matched_query_title: String,
-    matched_candidate_title: String,
-    /// Whether the *candidate* side's matching title was an alternative.
-    via_alias: bool,
-    /// Whether the query side of the winning reading was the left series.
-    query_is_left: bool,
-}
-
-/// Score the pair every way round and keep the best reading, explained.
-///
-/// # Why both directions, and every alias
-///
-/// `Query` carries no alternative titles, so `assess(left, right)` sees only the right side's
-/// synonyms. Correct for a scan — the incoming source genuinely has one title — but here both
-/// sides have synonym lists, and scoring one direction only misses the duplicate whose shared
-/// name sits on the *query* side. Two rounds of canonical-as-query cover canonical-against-
-/// canonical and canonical-against-alias but never compare two aliases, which is the third of
-/// `find_duplicate_pairs`' three collisions: 438 such pairs sat permanently in the review queue
-/// because no structural signal could fire for them.
-///
-/// # Why so little is built inside the loop
-///
-/// A pair with `k` aliases a side is `2(k+1)` readings, and the only thing that varies between
-/// readings of one direction is the query's title. [`assess`] itself allocates nothing, but a
-/// [`Candidate`] and a [`Query`] built per reading clone both sides' alias, tag and author lists
-/// each time — which made the search allocate in proportion to the square of a pair's synonyms
-/// for values it then threw away. Both are now built once per direction.
-///
-/// # Why the winner is re-scored
-///
-/// The search runs on [`assess`], and only the winner is re-run through [`explain`] to itemise
-/// it. Explaining every reading would allocate a term list per alias per direction for a number
-/// the sweep discards.
-///
-/// # Why a structural reading outranks a higher-scoring fuzzy one
-///
-/// `trigram` is the *pair's* similarity, and `pair_similarities` takes it over each side's
-/// alternative titles as well as the two canonical ones — so a pair whose synonym identifies it
-/// hands every reading a number the canonical titles did not earn. `assess` bases a reading on
-/// `max(trigram, textual)`, which lifts the canonical reading to the clamp ceiling with no
-/// identity signal behind it, where it ties with the alias reading that *does* carry one. Ranked
-/// on score alone, the tie went to whichever came first — the canonical one — and the pair was
-/// filed as `no_structural_identity` at 100%, which `adjudicate` can never merge and no later
-/// sweep re-reads any differently. Structure first, then score: an identity rule is the
-/// stronger claim about a pair, and it is the only one an automatic merge may act on.
-fn best_reading(left: &SeriesMatchFacts, right: &SeriesMatchFacts, trigram: f32) -> PairReading {
-    // whether an identity rule fired, the score, whether the query side was the left series,
-    // the winning title, whether it is an alias
-    let mut best: Option<(bool, f32, bool, &str, bool)> = None;
-
-    for query_is_left in [true, false] {
-        let (query_side, candidate_side) = if query_is_left {
-            (left, right)
-        } else {
-            (right, left)
-        };
-        let candidate = candidate_of(candidate_side, trigram);
-        let mut query = query_of(query_side, String::new());
-
-        // The canonical title goes first and ties are kept (the comparison is strict), so a pair
-        // that both a canonical title and an alias explain *in the same class* is reported with
-        // the canonical reading's signals.
-        let titles = std::iter::once((query_side.normalized_title.as_str(), false)).chain(
-            query_side
-                .alt_normalized_titles
-                .iter()
-                .map(|alias| (alias.as_str(), true)),
-        );
-        for (title, from_alias) in titles {
-            query.normalized_title.clear();
-            query.normalized_title.push_str(title);
-            let assessment = assess(&query, &candidate);
-            let rank = (assessment.signals.is_structural(), assessment.score);
-            if best.is_none_or(|(structural, score, ..)| rank > (structural, score)) {
-                best = Some((rank.0, rank.1, query_is_left, title, from_alias));
-            }
-        }
-    }
-
-    // At least one reading always exists: every series has a canonical normalized title.
-    let (_, _, query_is_left, title, from_alias) =
-        best.expect("a pair always has at least the two canonical readings");
-    let (query_side, candidate_side) = if query_is_left {
-        (left, right)
-    } else {
-        (right, left)
-    };
-    let query = query_of(query_side, title.to_owned());
-    let candidate = candidate_of(candidate_side, trigram);
-    let explained = relabel_alias_query(explain(&query, &candidate), from_alias);
-
-    PairReading {
-        assessment: explained.assessment,
-        base: explained.base,
-        terms: explained.terms,
-        matched_query_title: title.to_owned(),
-        matched_candidate_title: explained.matched_candidate_title,
-        via_alias: explained.via_alias,
-        query_is_left,
-    }
-}
-
-fn query_of(facts: &SeriesMatchFacts, normalized_title: String) -> Query {
-    Query {
-        normalized_title,
-        content_type: facts.content_type,
-        release_year: facts.release_year,
-        tags: facts.tags.clone(),
-        authors: facts.authors.clone(),
-    }
-}
-
-fn candidate_of(facts: &SeriesMatchFacts, similarity: f32) -> Candidate {
-    Candidate {
+/// One side of a pair, as the matcher reads it.
+fn side(facts: &SeriesMatchFacts) -> PairSide<'_> {
+    PairSide {
         series_id: facts.series_id,
-        normalized_title: facts.normalized_title.clone(),
-        similarity,
-        alt_normalized_titles: facts.alt_normalized_titles.clone(),
+        normalized_title: &facts.normalized_title,
+        alt_normalized_titles: &facts.alt_normalized_titles,
         content_type: facts.content_type,
         release_year: facts.release_year,
-        tags: facts.tags.clone(),
-        authors: facts.authors.clone(),
+        tags: &facts.tags,
+        authors: &facts.authors,
     }
 }
 
-/// Re-label an identity hit that came from one of the *query* side's alternative titles.
-///
-/// `exact_title` and `compact_identity` assert that the two series' **canonical** titles are the
-/// same string. That claim is what the console renders as a badge and what the auto-merge journal
-/// records as its justification for deleting a row, and it is false when the title that matched
-/// was a synonym. `alias_identity` is the honest signal and is structural just the same, so the
-/// verdict does not move — only the reason given for it.
-fn relabel_alias_query(mut explanation: Explanation, query_from_alias: bool) -> Explanation {
-    let signals = &mut explanation.assessment.signals;
-    if query_from_alias && (signals.exact_title || signals.compact_identity) {
-        signals.alias_identity = true;
-        signals.exact_title = false;
-        signals.compact_identity = false;
-    }
-    explanation
+/// The pair's winning reading; see [`tankovault_matcher::read_pair`].
+fn best_reading(left: &SeriesMatchFacts, right: &SeriesMatchFacts, trigram: f32) -> PairReading {
+    read_pair(side(left), side(right), trigram)
 }
 
 #[cfg(test)]
@@ -1326,7 +1196,7 @@ mod tests {
         assert_eq!(exhaustive.recheck, scheduled.recheck);
     }
 
-    /// A synonym identifies the pair from whichever side it sits on.
+    /// A synonym is found from whichever side it sits on.
     ///
     /// `Query` has no alternative titles, so a sweep that scored the query side's canonical
     /// title alone saw only the *right* side's synonyms. Here the synonym is on the left, and
@@ -1339,17 +1209,16 @@ mod tests {
 
         // Sanity: without the synonym the pair is not an identity match at all.
         let bare_left = facts("Solo Leveling", &[], 1, 10);
+        let bare = best_reading(&bare_left, &right, 0.0).assessment.signals;
         assert!(
-            !best_reading(&bare_left, &right, 0.0)
-                .assessment
-                .signals
-                .is_structural()
+            !bare.alias_identity && !bare.is_primary_identity(),
+            "{bare:?}"
         );
 
         for (a, b) in [(&left, &right), (&right, &left)] {
             let reading = best_reading(a, b, 0.0);
             assert!(
-                reading.assessment.signals.is_structural(),
+                reading.assessment.signals.alias_identity,
                 "{:?}",
                 reading.assessment
             );
@@ -1363,9 +1232,12 @@ mod tests {
     /// every reading. That lifted the canonical reading, which agrees on nothing, to the clamp
     /// ceiling, where it tied with the alias reading that carries the identity and beat it on
     /// iteration order. The row then read "100% match … titles are similar but not the same
-    /// string": no structural signal, so no sweep could ever merge it, and no badge to say which
-    /// title the number came from. The older test above pins the same pair at a trigram of zero,
-    /// which is the one value that hides this.
+    /// string", with no badge to say which title the number came from. The older test above pins
+    /// the same pair at a trigram of zero, which is the one value that hides this.
+    ///
+    /// An alias alone no longer merges (an uncorroborated alias is what built the hub series of
+    /// `docs/MATCHING_OVERHAUL.md` §2), so the pair is reviewed — and must be reviewed as the
+    /// alias hit it is, not as a fuzzy score.
     #[test]
     fn an_alias_identity_is_not_lost_to_the_trigram_it_produced() {
         let left = facts("Solo Leveling", &["Na Honjaman Level Up"], 1, 10);
@@ -1378,7 +1250,9 @@ mod tests {
                 "{:?}",
                 reading.assessment
             );
-            assert_eq!(verdict_for(a, b, 1.0), MergeVerdict::Auto);
+            let verdict = adjudicate(reading.assessment, MatchingConfig::default().thresholds());
+            assert_eq!(verdict.verdict, MergeVerdict::Review);
+            assert_eq!(verdict.reason, "alias_uncorroborated");
         }
     }
 
@@ -1409,7 +1283,7 @@ mod tests {
     ///
     /// `Sorry but I’m not Yuri` and `Sorry But Im Not Yuri` sat in the queue at 0.80 with no
     /// path to ever leaving it. With the corrected normalization their keys are identical, which
-    /// is a structural signal, which is what `adjudicate` requires before merging anything.
+    /// is a primary identity, which is what `adjudicate` requires before merging anything.
     #[test]
     fn the_reported_duplicate_is_merged_automatically() {
         let a = facts("Sorry but I\u{2019}m not Yuri", &[], 1, 12);
@@ -1426,12 +1300,15 @@ mod tests {
     /// The two `KunManga` listings the user reported, scored the way the sweep scores them.
     ///
     /// One series' canonical title is byte-identical to the other's alternative title, which is
-    /// `alias_identity` — structural, so the merge is permitted at all — and the year is within
-    /// a year, so the score reaches the ceiling. Nothing about the *scoring* was ever wrong here:
-    /// the pair sat split for a day because `find_duplicate_pairs` never reached it. This pins
-    /// the half that has to stay true for that fix to have any effect.
+    /// `alias_identity`. The pair sat split for a day because `find_duplicate_pairs` never
+    /// reached it; this pins that, once reached, the sweep reads it as the alias hit it is.
+    ///
+    /// It used to merge on the alias plus an agreeing year. Production showed that route
+    /// (alias, lifted by metadata) behind 12,356 suspicious merges and the contaminated hub
+    /// series in `docs/MATCHING_OVERHAUL.md` §2, so an alias alone is now held for review, and
+    /// merges once a trusted non-title signal agrees.
     #[test]
-    fn the_reported_pair_merges_once_the_sweep_can_reach_it() {
+    fn the_reported_pair_is_held_until_its_alias_is_corroborated() {
         let long = "The Capital\u{2019}s One-Man Army Golem Master\u{2014}Unexpectedly Banished!? \
                     ~Now That I\u{2019}m Free, I\u{2019}ll Create the Ultimate Golem Together \
                     With My Beautiful Hero Disciples. I Don\u{2019}t Care Even if They Beg Me to \
@@ -1450,7 +1327,17 @@ mod tests {
             "{:?}",
             reading.assessment
         );
-        assert_eq!(verdict_for(&subtitled, &bare, 0.4), MergeVerdict::Auto);
+        let thresholds = MatchingConfig::default().thresholds();
+        let held = adjudicate(reading.assessment, thresholds);
+        assert_eq!(held.verdict, MergeVerdict::Review);
+        assert_eq!(held.reason, "alias_uncorroborated");
+
+        let mut corroborated = reading.assessment;
+        corroborated.signals.live_timing_agreement = true;
+        assert_eq!(
+            adjudicate(corroborated, thresholds).verdict,
+            MergeVerdict::Auto
+        );
     }
 
     /// Two series that agree on nothing but a *shared synonym* are still a duplicate.
@@ -1471,11 +1358,12 @@ mod tests {
         // cannot be passing on the canonical titles.
         let bare_left = facts("The Beast Tamer Exiled From His Party", &[], 1, 30);
         let bare_right = facts("Banished Monster Tamer", &[], 1, 24);
+        let bare = best_reading(&bare_left, &bare_right, 0.0)
+            .assessment
+            .signals;
         assert!(
-            !best_reading(&bare_left, &bare_right, 0.0)
-                .assessment
-                .signals
-                .is_structural()
+            !bare.alias_identity && !bare.is_primary_identity(),
+            "{bare:?}"
         );
 
         let reading = best_reading(&left, &right, 0.0);
@@ -1522,7 +1410,7 @@ mod tests {
             reading.assessment
         );
         assert!(
-            reading.assessment.signals.is_structural(),
+            reading.assessment.signals.is_primary_identity(),
             "sanity: titles are identical"
         );
 

@@ -12,8 +12,8 @@ name = "xtask"
 path = "src/main.rs"
 
 # `full` is the developer build and the default. Everything it adds is a command that needs this
-# workspace *compiled* — `migrate`, `reset`, `seed`, `prune-chapters` (a live pool) and `openapi`
-# (the api crate's utoipa schemas). What is left without it are the commands that only read files:
+# workspace *compiled* — `migrate`, `reset`, `seed`, `prune-chapters` (a live pool), `openapi`
+# (the api crate's utoipa schemas) and `matching-replay` (the matcher). What is left without it are the commands that only read files:
 # `ci`, `repo-lint`, `release-plan`, `coverage-ratchet`, `config-docs`, `notices`, `install-hooks`.
 #
 # The split exists for `release-plan`. It is the first thing a release runs and it decides what a
@@ -51,7 +51,8 @@ tankovault-db = { workspace = true, optional = true }
 tankovault-domain = { workspace = true, optional = true }
 # `repair-series` decides which stored sources do not belong by asking the *same* scorer the
 # ingest path asks, rather than by a similarity rule of its own that would drift away from it.
-tankovault-matcher = { workspace = true, optional = true }
+# `replay` is `matching-replay`'s reader for exported sweep decisions.
+tankovault-matcher = { workspace = true, optional = true, features = ["replay"] }
 # The install steps themselves: shared with the shipped `bootstrap` image rather than
 # reimplemented, so "the first admin holds every permission" has one definition.
 tankovault-bootstrap = { workspace = true, optional = true }

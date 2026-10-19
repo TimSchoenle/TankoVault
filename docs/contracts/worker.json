@@ -1444,7 +1444,7 @@
         "env": "TANKOVAULT_MATCHING__HIGH",
         "env_file": "TANKOVAULT_MATCHING__HIGH_FILE",
         "secrets_file": "matching__high",
-        "docs": "At or above this score, attach to the existing series outright.",
+        "docs": "At or above this score, and only when the incoming title is the series' own title under\nan identity rule, the worker attaches to the existing series outright. External sync maps\na remote entry on the score alone.",
         "ty": "f32",
         "values": [],
         "constraint": {
@@ -1467,7 +1467,7 @@
         "env": "TANKOVAULT_MATCHING__LOW",
         "env_file": "TANKOVAULT_MATCHING__LOW_FILE",
         "secrets_file": "matching__low",
-        "docs": "At or above this score but below [`Self::high`], create the series but flag the pair for\noperator review.",
+        "docs": "At or above this score, and not attached, create the series but flag the pair for\noperator review.",
         "ty": "f32",
         "values": [],
         "constraint": {
@@ -1490,7 +1490,7 @@
         "env": "TANKOVAULT_MATCHING__AUTO_MERGE",
         "env_file": "TANKOVAULT_MATCHING__AUTO_MERGE_FILE",
         "secrets_file": "matching__auto_merge",
-        "docs": "At or above this score — **and** only when a structural identity rule fired — the\nduplicate sweep merges two existing series without an operator. A separate knob from\n[`Self::high`]: that files an incoming source, this deletes one that already exists.\nSee `tankovault_matcher::adjudicate` for the structural half of the bar.",
+        "docs": "At or above this score — **and** only when a primary identity rule fired — the\nduplicate sweep merges two existing series without an operator. A separate knob from\n[`Self::high`]: that files an incoming source, this deletes one that already exists.\nSee `tankovault_matcher::adjudicate` for the identity half of the bar.",
         "ty": "f32",
         "values": [],
         "constraint": {
@@ -1594,7 +1594,7 @@
         "env": "TANKOVAULT_MATCHING__BLOCK_AUTO_MERGE_ON_YEAR_CONFLICT",
         "env_file": "TANKOVAULT_MATCHING__BLOCK_AUTO_MERGE_ON_YEAR_CONFLICT_FILE",
         "secrets_file": "matching__block_auto_merge_on_year_conflict",
-        "docs": "Release years three or more years apart. Catches re-serialisations and remakes that share\nan exact title; the scorer's own -0.05 penalty is smaller than the exact-title bonus and\nso cannot hold such a pair back on its own.",
+        "docs": "Release years three or more years apart. Catches re-serialisations and remakes that share\nan exact title. The year never moves a score, so this guard is the only way it can hold a\npair back.",
         "ty": "bool",
         "values": [],
         "constraint": {
@@ -2649,7 +2649,7 @@
         "additionalProperties": false,
         "properties": {
           "auto_merge": {
-            "description": "At or above this score — **and** only when a structural identity rule fired — the\nduplicate sweep merges two existing series without an operator. A separate knob from\n[`Self::high`]: that files an incoming source, this deletes one that already exists.\nSee `tankovault_matcher::adjudicate` for the structural half of the bar.",
+            "description": "At or above this score — **and** only when a primary identity rule fired — the\nduplicate sweep merges two existing series without an operator. A separate knob from\n[`Self::high`]: that files an incoming source, this deletes one that already exists.\nSee `tankovault_matcher::adjudicate` for the identity half of the bar.",
             "type": "number"
           },
           "block_auto_merge_on_author_conflict": {
@@ -2665,7 +2665,7 @@
             "type": "boolean"
           },
           "block_auto_merge_on_year_conflict": {
-            "description": "Release years three or more years apart. Catches re-serialisations and remakes that share\nan exact title; the scorer's own -0.05 penalty is smaller than the exact-title bonus and\nso cannot hold such a pair back on its own.",
+            "description": "Release years three or more years apart. Catches re-serialisations and remakes that share\nan exact title. The year never moves a score, so this guard is the only way it can hold a\npair back.",
             "type": "boolean"
           },
           "candidate_limit": {
@@ -2673,11 +2673,11 @@
             "type": "integer"
           },
           "high": {
-            "description": "At or above this score, attach to the existing series outright.",
+            "description": "At or above this score, and only when the incoming title is the series' own title under\nan identity rule, the worker attaches to the existing series outright. External sync maps\na remote entry on the score alone.",
             "type": "number"
           },
           "low": {
-            "description": "At or above this score but below [`Self::high`], create the series but flag the pair for\noperator review.",
+            "description": "At or above this score, and not attached, create the series but flag the pair for\noperator review.",
             "type": "number"
           }
         },

@@ -58,38 +58,38 @@ fn weak_match_creates_new_series() {
     assert_eq!(decide(&q, &[c], Thresholds::default()), Decision::Create);
 }
 
+/// A disagreeing medium is recorded, and costs nothing.
+///
+/// It used to cost 0.15. Providers guess the medium from the site they scraped (manga against
+/// manhwa against webtoon for one work), so production switched the type guard off, and a
+/// penalty that cannot be trusted as a guard cannot be trusted as a weight either.
 #[test]
-fn content_type_disagreement_penalised() {
+fn content_type_disagreement_is_recorded_not_scored() {
     let q = query("title", ContentType::Manga, None);
     let same = cand(0.8, ContentType::Manga, None, "title");
     let diff = cand(0.8, ContentType::Manhwa, None, "title");
-    assert!(score(&q, &same) > score(&q, &diff));
+    assert!(assess(&q, &diff).signals.type_conflict);
+    assert!((score(&q, &same) - score(&q, &diff)).abs() < 1e-6);
 }
 
+/// **A shared author does not lift an ambiguous match.**
+///
+/// This pinned the opposite until the matching overhaul. The `shared_author` bonus (+0.10),
+/// with the medium and year bonuses, is what lifted a discounted alternative-title hit (0.80)
+/// back over the attach and merge thresholds. Production credits are wrong or spelled
+/// inconsistently across providers most of the time, and the route it opened is the one the
+/// evidence condemns: 12,356 automatic alias merges fired a metadata guard that had been switched
+/// off for noise, and a dozen hub series absorbed 20–100 different works each
+/// (`docs/MATCHING_OVERHAUL.md` §2). The signal is still recorded and rendered.
 #[test]
-fn shared_author_lifts_an_ambiguous_match() {
+fn a_shared_author_does_not_lift_an_ambiguous_match() {
     let mut q = query("solo max leveler", ContentType::Unknown, None);
     q.authors = vec!["Chugong".to_owned()];
     let mut c = cand(0.62, ContentType::Unknown, None, "solo max levelling");
     c.authors = vec!["chugong".to_owned()]; // case-insensitive match
     let without_author = cand(0.62, ContentType::Unknown, None, "solo max levelling");
-    assert!(score(&q, &c) > score(&q, &without_author));
-}
-
-#[test]
-fn tag_overlap_scales_with_agreement() {
-    // A moderate, non-saturating base score (dissimilar-enough titles) so the tag
-    // bonus is visible rather than swallowed by the 1.0 clamp.
-    let mut q = query("silent night guardian tale", ContentType::Unknown, None);
-    q.tags = vec!["Action".to_owned(), "Fantasy".to_owned()];
-    let mut full_overlap = cand(0.3, ContentType::Unknown, None, "silent night watcher");
-    full_overlap.tags = vec!["Action".to_owned(), "Fantasy".to_owned()];
-    let mut partial_overlap = cand(0.3, ContentType::Unknown, None, "silent night watcher");
-    partial_overlap.tags = vec!["Action".to_owned(), "Romance".to_owned()];
-    let no_data = cand(0.3, ContentType::Unknown, None, "silent night watcher");
-
-    assert!(score(&q, &full_overlap) > score(&q, &partial_overlap));
-    assert!(score(&q, &partial_overlap) > score(&q, &no_data));
+    assert!(assess(&q, &c).signals.shared_author);
+    assert!((score(&q, &c) - score(&q, &without_author)).abs() < 1e-6);
 }
 
 #[test]
@@ -112,9 +112,14 @@ fn token_set_ratio_is_order_insensitive() {
     assert!((r - 0.75).abs() < 1e-6, "got {r}");
 }
 
+/// A perfect token-set overlap lifts a weak trigram score to the top of the band — and with no
+/// identity rule behind it, that is a question for the sweep rather than an attach.
+///
+/// It used to attach. The fuzzy route is what attached `Onikakushi-hen` to `Onisarashi-hen` and
+/// `A Year of Marvels: October` to `November`: a high similarity says the titles look alike, not
+/// that they name the same work.
 #[test]
-fn token_set_ratio_lifts_reordered_titles_over_weak_trigram() {
-    // A low raw trigram score but a perfect token-set overlap should still attach.
+fn token_set_ratio_lifts_reordered_titles_into_review() {
     let q = query("another world reincarnation", ContentType::Unknown, None);
     let c = cand(
         0.30,
@@ -123,10 +128,42 @@ fn token_set_ratio_lifts_reordered_titles_over_weak_trigram() {
         "reincarnation another world",
     );
     let id = c.series_id;
-    assert_eq!(
+    assert!(score(&q, &c) >= Thresholds::default().high);
+    assert!(matches!(
         decide(&q, &[c], Thresholds::default()),
-        Decision::Attach(id)
+        Decision::Ambiguous { candidate, .. } if candidate == id
+    ));
+}
+
+/// An identical candidate wins over a reordered one at the same clamped score.
+///
+/// Both reach 1.0, and ranked on score alone the tie went to whichever came last — the reordered
+/// one, which cannot attach — so a source with an exact match in hand was queued instead.
+#[test]
+fn an_identical_candidate_outranks_a_fuzzy_one_at_the_same_score() {
+    let q = query("another world reincarnation", ContentType::Unknown, None);
+    let exact = cand(
+        0.3,
+        ContentType::Unknown,
+        None,
+        "another world reincarnation",
     );
+    let reordered = cand(
+        0.3,
+        ContentType::Unknown,
+        None,
+        "reincarnation another world",
+    );
+    let id = exact.series_id;
+    for candidates in [
+        [exact.clone(), reordered.clone()],
+        [reordered.clone(), exact.clone()],
+    ] {
+        assert_eq!(
+            decide(&q, &candidates, Thresholds::default()),
+            Decision::Attach(id)
+        );
+    }
 }
 
 #[test]
@@ -256,22 +293,26 @@ fn an_uncorroborated_hit_on_an_alternative_title_is_held_for_review() {
     ));
 }
 
-/// One corroborating signal restores the automatic attach an alias hit alone no longer earns.
+/// **An alias hit that agrees on the medium is still held for review.**
 ///
-/// The discount has to leave the cross-provider romaji/english case working, or the catalogue
-/// splits the very series the alias rule exists to join. An agreeing medium is enough — and a
-/// catalogue *stub* (`register_source_stub`) carries a title and nothing else, so the path that
-/// produced the over-attach cannot reach this and the path that needs it can.
+/// This pinned the opposite until the matching overhaul: one agreeing medium, year or credit
+/// lifted an alias hit back to an automatic attach. Those fields are unreliable across
+/// providers, and the alias-plus-metadata route is the one production condemns — 12,356 alias
+/// merges where a disabled metadata guard fired, and hub series that absorbed 20–100 different
+/// works through junk and franchise aliases (`docs/MATCHING_OVERHAUL.md` §2). The cross-provider
+/// romaji/english case is queued and settled by the sweep, which can corroborate it.
 #[test]
-fn an_alias_hit_that_agrees_on_the_medium_still_attaches() {
-    let q = query("na honjaman level up", ContentType::Manhwa, None);
-    let mut c = cand(0.3, ContentType::Manhwa, None, "solo leveling");
+fn an_alias_hit_that_agrees_on_the_medium_is_still_held_for_review() {
+    let mut q = query("na honjaman level up", ContentType::Manhwa, Some(2018));
+    q.authors = vec!["Chugong".to_owned()];
+    let mut c = cand(0.3, ContentType::Manhwa, Some(2018), "solo leveling");
     c.alt_normalized_titles = vec!["na honjaman level up".to_owned()];
+    c.authors = vec!["Chugong".to_owned()];
     let id = c.series_id;
-    assert_eq!(
+    assert!(matches!(
         decide(&q, &[c], Thresholds::default()),
-        Decision::Attach(id)
-    );
+        Decision::Ambiguous { candidate, .. } if candidate == id
+    ));
 }
 
 // --- the numeric veto --------------------------------------------------------------------
@@ -319,6 +360,63 @@ fn spacing_around_a_number_is_not_a_numeric_conflict() {
     let assessment = assess(&q, &c);
     assert!(!assessment.signals.numeric_conflict, "{assessment:?}");
     assert!(assessment.signals.compact_identity, "{assessment:?}");
+}
+
+/// A standalone roman numeral or spelled ordinal is a number; `x`, `v` and `i` are not.
+///
+/// `Overlord` absorbed `Overlord II` in production: neither title carries a digit, so the two
+/// signatures agreed and nothing distinguished the sequel.
+#[test]
+fn roman_numerals_and_ordinals_are_numbers() {
+    assert_eq!(numeric_signature("overlord ii"), vec![2]);
+    assert_eq!(numeric_signature("overlord 2"), vec![2]);
+    assert_eq!(numeric_signature("the second coming"), vec![2]);
+    assert_eq!(numeric_signature("season 2nd"), vec![2]);
+    assert_eq!(numeric_signature("spy x family"), Vec::<u64>::new());
+    assert_eq!(numeric_signature("batman v superman"), Vec::<u64>::new());
+    // Inside a word they are letters.
+    assert_eq!(numeric_signature("viii"), vec![8]);
+    assert_eq!(numeric_signature("vivid strike"), Vec::<u64>::new());
+
+    let q = query("overlord ii", ContentType::Unknown, None);
+    let c = cand(0.9, ContentType::Unknown, None, "overlord");
+    assert!(assess(&q, &c).signals.numeric_conflict);
+    assert_eq!(decide(&q, &[c], Thresholds::default()), Decision::Create);
+}
+
+/// **A sequel's alias on a series does not wave the next sequel through.**
+///
+/// The numeric check used to pass when *any* title of the candidate carried the query's
+/// numbers. Once `douluo dalu 4 zhongji douluo` landed on `Douluo Dalu 5` as an alias, Douluo
+/// Dalu 4 attached to and merged into 5. A conflict with the canonical title is a conflict
+/// whatever an alias says.
+#[test]
+fn an_alias_with_matching_numbers_does_not_excuse_the_canonical_title() {
+    let q = query(
+        "douluo dalu 4 zhongji douluo",
+        ContentType::Manhua,
+        Some(2023),
+    );
+    let mut c = cand(
+        1.0,
+        ContentType::Manhua,
+        Some(2023),
+        "douluo dalu 5 rebirth of tang san",
+    );
+    c.alt_normalized_titles = vec!["douluo dalu 4 zhongji douluo".to_owned()];
+    assert!(assess(&q, &c).signals.numeric_conflict);
+    assert_eq!(decide(&q, &[c], Thresholds::default()), Decision::Create);
+
+    // The same pair as two existing series, read the way the sweep reads it.
+    let left_alts = vec!["douluo dalu 4 zhongji douluo".to_owned()];
+    let (_, verdict) = adjudicate_pair(
+        side("douluo dalu 5 rebirth of tang san", &left_alts),
+        side("douluo dalu 4 zhongji douluo", &[]),
+        1.0,
+        Thresholds::default(),
+    );
+    assert_eq!(verdict.verdict, MergeVerdict::Distinct);
+    assert_eq!(verdict.reason, "numeric_conflict");
 }
 
 /// Leading zeros are not a different number.
@@ -377,17 +475,17 @@ fn edit_distance_counts_characters_not_bytes() {
 
 // --- the merge verdict -------------------------------------------------------------------
 
-/// An automatic, destructive merge needs an identity rule *and* a score — never a score
-/// alone.
+/// An automatic, destructive merge needs a primary identity *and* a score, or a corroborated
+/// alias — never a score alone, and never an alias alone.
 ///
 /// The distinction is the entire safety argument for automating the merge queue. A fuzzy
 /// score can reach the automatic threshold on two different works with similar names, and
-/// those are exactly the pairs an operator must see; a structural signal means the two
-/// titles are the same string under a rule that was written to be conservative.
+/// those are exactly the pairs an operator must see; a primary identity means the two titles
+/// are the same string under a rule that was written to be conservative.
 #[test]
-fn an_automatic_merge_requires_a_structural_signal() {
+fn an_automatic_merge_requires_a_primary_identity_or_a_corroborated_alias() {
     let t = Thresholds::default();
-    let structural = MatchSignals {
+    let identical = MatchSignals {
         compact_identity: true,
         ..MatchSignals::default()
     };
@@ -395,26 +493,80 @@ fn an_automatic_merge_requires_a_structural_signal() {
         near_identical: true,
         ..MatchSignals::default()
     };
+    let alias = MatchSignals {
+        alias_identity: true,
+        ..MatchSignals::default()
+    };
+    let by_id = MatchSignals {
+        external_id_agreement: true,
+        ..alias
+    };
+    let by_timing = MatchSignals {
+        live_timing_agreement: true,
+        ..alias
+    };
 
     let verdict = |score, signals| adjudicate(Assessment { score, signals }, t).verdict;
 
-    assert_eq!(verdict(1.0, structural), MergeVerdict::Auto);
+    assert_eq!(verdict(1.0, identical), MergeVerdict::Auto);
     assert_eq!(verdict(1.0, fuzzy), MergeVerdict::Review);
-    // Structural but not confident enough is still review, not merge.
-    assert_eq!(verdict(0.9, structural), MergeVerdict::Review);
-    // Below the review floor, nothing is recorded at all.
-    assert_eq!(verdict(0.4, structural), MergeVerdict::Distinct);
+    assert_eq!(verdict(1.0, alias), MergeVerdict::Review);
+    assert_eq!(verdict(0.8, by_id), MergeVerdict::Auto);
+    assert_eq!(verdict(0.8, by_timing), MergeVerdict::Auto);
+    // An identity but not confident enough is still review, not merge.
+    assert_eq!(verdict(0.9, identical), MergeVerdict::Review);
+    // Below the review floor, nothing is recorded at all — corroborated or not.
+    assert_eq!(verdict(0.4, identical), MergeVerdict::Distinct);
+    assert_eq!(verdict(0.4, by_timing), MergeVerdict::Distinct);
 
-    // Each of the four "not merged" answers names itself, so a queue row can be triaged
-    // without re-deriving the reason from a score and a bag of signal names.
+    // Each answer names itself, so a queue row can be triaged without re-deriving the reason
+    // from a score and a bag of signal names.
     let reason = |score, signals| adjudicate(Assessment { score, signals }, t).reason;
     assert_eq!(
-        reason(1.0, structural),
+        reason(1.0, identical),
         "structural_identity_above_threshold"
     );
+    assert_eq!(reason(0.8, by_id), "corroborated_alias");
     assert_eq!(reason(1.0, fuzzy), "no_structural_identity");
-    assert_eq!(reason(0.9, structural), "below_auto_merge_threshold");
-    assert_eq!(reason(0.4, structural), "below_review_floor");
+    assert_eq!(reason(1.0, alias), "alias_uncorroborated");
+    assert_eq!(reason(0.9, identical), "below_auto_merge_threshold");
+    assert_eq!(reason(0.4, identical), "below_review_floor");
+}
+
+/// External-id and live-timing conflicts hold even an identical pair for review, and say so.
+#[test]
+fn trusted_conflicts_hold_a_merge_for_review() {
+    let identical = MatchSignals {
+        exact_title: true,
+        ..MatchSignals::default()
+    };
+    for (veto, signals) in [
+        (
+            "external_id_conflict",
+            MatchSignals {
+                external_id_conflict: true,
+                ..identical
+            },
+        ),
+        (
+            "live_timing_conflict",
+            MatchSignals {
+                live_timing_conflict: true,
+                ..identical
+            },
+        ),
+    ] {
+        let held = adjudicate(
+            Assessment {
+                score: 1.0,
+                signals,
+            },
+            Thresholds::default(),
+        );
+        assert_eq!(held.verdict, MergeVerdict::Review, "{veto}");
+        assert_eq!(held.reason, veto);
+        assert_eq!(held.blocked_by, vec![veto]);
+    }
 }
 
 /// Each guard holds an otherwise-automatic merge for review, names itself, and is switchable
@@ -513,7 +665,7 @@ fn a_numeric_conflict_is_never_queued() {
 }
 
 /// The signal labels are persisted in `merge_candidates.reason` and rendered as console
-/// badges, so they are part of the contract rather than debug output.
+/// badges, so they are part of the contract rather than debug output. New ones are appended.
 #[test]
 fn signal_labels_are_stable_and_ordered() {
     let signals = MatchSignals {
@@ -527,13 +679,92 @@ fn signal_labels_are_stable_and_ordered() {
         vec!["compact_identity", "year_conflict", "shared_author"]
     );
     assert_eq!(MatchSignals::default().labels(), Vec::<&str>::new());
-    assert!(signals.is_structural());
+
+    let every = MatchSignals {
+        exact_title: true,
+        compact_identity: true,
+        alias_identity: true,
+        near_identical: true,
+        containment: true,
+        type_agreement: true,
+        type_conflict: true,
+        year_agreement: true,
+        year_conflict: true,
+        shared_author: true,
+        author_conflict: true,
+        tag_overlap: true,
+        numeric_conflict: true,
+        source_title_identity: true,
+        edition_conflict: true,
+        external_id_agreement: true,
+        external_id_conflict: true,
+        live_timing_agreement: true,
+        live_timing_conflict: true,
+    };
+    assert_eq!(
+        every.labels(),
+        vec![
+            "exact_title",
+            "compact_identity",
+            "alias_identity",
+            "near_identical",
+            "containment",
+            "type_agreement",
+            "type_conflict",
+            "year_agreement",
+            "year_conflict",
+            "shared_author",
+            "author_conflict",
+            "tag_overlap",
+            "numeric_conflict",
+            "source_title_identity",
+            "edition_conflict",
+            "external_id_agreement",
+            "external_id_conflict",
+            "live_timing_agreement",
+            "live_timing_conflict",
+        ]
+    );
+}
+
+/// Which signals are identity, and which alias hits count as corroborated.
+#[test]
+fn primary_identity_excludes_an_alias_and_corroboration_needs_a_trusted_signal() {
+    let only = |f: fn(&mut MatchSignals)| {
+        let mut signals = MatchSignals::default();
+        f(&mut signals);
+        signals
+    };
+    assert!(only(|s| s.exact_title = true).is_primary_identity());
+    assert!(only(|s| s.compact_identity = true).is_primary_identity());
+    assert!(only(|s| s.source_title_identity = true).is_primary_identity());
+    assert!(!only(|s| s.alias_identity = true).is_primary_identity());
+    assert!(!only(|s| s.near_identical = true).is_primary_identity());
+
+    assert!(!only(|s| s.alias_identity = true).is_corroborated_alias());
     assert!(
-        !MatchSignals {
-            near_identical: true,
-            ..MatchSignals::default()
-        }
-        .is_structural()
+        only(|s| {
+            s.alias_identity = true;
+            s.external_id_agreement = true;
+        })
+        .is_corroborated_alias()
+    );
+    assert!(
+        only(|s| {
+            s.alias_identity = true;
+            s.live_timing_agreement = true;
+        })
+        .is_corroborated_alias()
+    );
+    // Metadata is not corroboration.
+    assert!(
+        !only(|s| {
+            s.alias_identity = true;
+            s.shared_author = true;
+            s.type_agreement = true;
+            s.year_agreement = true;
+        })
+        .is_corroborated_alias()
     );
 }
 
@@ -541,11 +772,9 @@ fn signal_labels_are_stable_and_ordered() {
 //
 // Everything above asserts on an *ordering* — this candidate outscores that one — or on a
 // band. `cargo mutants` showed that to be too weak to hold the scorer in place: 22 mutants
-// of `score` and its helpers survived the whole suite, including deleting the exact-year
-// bonus outright, flipping the distant-year penalty into a bonus, and turning the tag
-// bonus from `0.05 * overlap` into `0.05 + overlap`. Each one changes what the matcher
-// attaches; none changed an ordering any test compared. The tests below pin the terms
-// themselves, which is the only assertion a weight change cannot slip past.
+// of `score` and its helpers survived the whole suite. The tests below pin the terms
+// themselves, which is the only assertion a weight change cannot slip past — including the
+// zero weight the metadata terms now carry.
 //
 // Two titles that share no token, so the base score is the raw trigram similarity and
 // every bonus below is visible as an exact delta from it.
@@ -557,56 +786,56 @@ fn unrelated_pair(ct: ContentType, year: Option<i32>) -> (Query, Candidate) {
     )
 }
 
-/// Content-type agreement is consulted only when **both** sides know their type.
+/// Content-type agreement is recorded only when **both** sides know their type, and never
+/// moves the score.
 ///
-/// `Unknown` means "not recorded", not "a type that differs from yours" — an adapter that
-/// does not publish a type would otherwise take a 0.15 penalty against every candidate,
-/// which is a third of the way from the ambiguous band to a rejection. Every earlier test
-/// gave both sides a known type, so flipping the `&&` in that guard to `||` survived.
+/// `Unknown` means "not recorded", not "a type that differs from yours": an adapter that does
+/// not publish a type would otherwise show a conflict against every candidate — and the type
+/// guard, when an operator switches it on, would hold every one of them.
 #[test]
-fn content_type_is_ignored_unless_both_sides_know_theirs() {
+fn content_type_is_recorded_only_when_both_sides_know_theirs() {
     let (q, c) = unrelated_pair(ContentType::Manga, None);
+    let signals = assess(&q, &c).signals;
     assert!(
-        (score(&q, &c) - BASE_SIMILARITY).abs() < 1e-6,
-        "an unknown candidate type must be neutral, got {}",
-        score(&q, &c)
+        !signals.type_agreement && !signals.type_conflict,
+        "{signals:?}"
     );
 
     let mut known = c.clone();
     known.content_type = ContentType::Manga;
-    assert!((score(&q, &known) - (BASE_SIMILARITY + 0.08)).abs() < 1e-6);
+    assert!(assess(&q, &known).signals.type_agreement);
+    assert!((score(&q, &known) - BASE_SIMILARITY).abs() < 1e-6);
     known.content_type = ContentType::Manhwa;
-    assert!((score(&q, &known) - (BASE_SIMILARITY - 0.15)).abs() < 1e-6);
+    assert!(assess(&q, &known).signals.type_conflict);
+    assert!((score(&q, &known) - BASE_SIMILARITY).abs() < 1e-6);
 }
 
-/// Release-year proximity is a **signed band**, and the two-year gap is deliberately
-/// neutral rather than a small penalty: reprints, regional releases and the difference
-/// between serialisation and volume publication routinely drift that far.
-///
-/// Nothing asserted on this term at all before — every test either left `release_year`
-/// `None` or gave both sides the same year — so seven mutants of it survived, including
-/// deleting the exact-year arm and turning the distant-year penalty into a bonus.
+/// Release-year proximity is a **band** of signals that never moves the score: within a year
+/// agrees, two years is deliberately neither (reprints, regional releases and serialisation
+/// against volume publication routinely drift that far), three or more conflicts.
 #[test]
-fn release_year_proximity_is_a_signed_band() {
-    for (gap, expected) in [(0, 0.06_f32), (1, 0.03), (2, 0.0), (3, -0.05), (40, -0.05)] {
+fn release_year_proximity_is_a_band_of_signals() {
+    for (gap, agree, conflict) in [
+        (0, true, false),
+        (1, true, false),
+        (2, false, false),
+        (3, false, true),
+        (40, false, true),
+        // Symmetric: a candidate published later is no different from one published earlier.
+        (-3, false, true),
+    ] {
         let (q, mut c) = unrelated_pair(ContentType::Unknown, Some(2018));
         c.release_year = Some(2018 - gap);
-        let s = score(&q, &c);
-        assert!(
-            (s - (BASE_SIMILARITY + expected)).abs() < 1e-6,
-            "a {gap}-year gap must move the score by {expected}, got {s}"
-        );
+        let assessment = assess(&q, &c);
+        assert_eq!(assessment.signals.year_agreement, agree, "{gap}");
+        assert_eq!(assessment.signals.year_conflict, conflict, "{gap}");
+        assert!((assessment.score - BASE_SIMILARITY).abs() < 1e-6, "{gap}");
     }
-
-    // The band is symmetric: a candidate published *later* is no different from one
-    // published earlier by the same margin.
-    let (q, mut c) = unrelated_pair(ContentType::Unknown, Some(2018));
-    c.release_year = Some(2021);
-    assert!((score(&q, &c) - (BASE_SIMILARITY - 0.05)).abs() < 1e-6);
 
     // One side missing a year is "no data", not "an infinite gap".
     let (q, c) = unrelated_pair(ContentType::Unknown, Some(2018));
-    assert!((score(&q, &c) - BASE_SIMILARITY).abs() < 1e-6);
+    let signals = assess(&q, &c).signals;
+    assert!(!signals.year_agreement && !signals.year_conflict);
 }
 
 /// The containment nudge fires in **either** direction and is a bonus, not a penalty.
@@ -632,31 +861,26 @@ fn the_containment_nudge_is_symmetric_and_positive() {
     assert!((backward - expected).abs() < 1e-6, "backward: {backward}");
 }
 
-/// The tag bonus **scales** with agreement rather than firing at full strength.
-///
-/// Genres are coarse and inconsistently tagged across sites, so a single shared "Action"
-/// must not count as much as a complete match. The earlier test asserted only that more
-/// overlap scores higher, which `0.05 + overlap` satisfies just as well as `0.05 *
-/// overlap` — and the additive form gives a *single* shared genre more weight than a
-/// shared author.
+/// Shared genres are recorded and never weighed: genres are coarse and inconsistently tagged
+/// across sites, and two unrelated cultivation manhua share every one of them.
 #[test]
-fn the_tag_bonus_scales_with_the_overlap() {
+fn tag_overlap_is_recorded_not_scored() {
     let (q_base, c_base) = unrelated_pair(ContentType::Unknown, None);
     let mut q = q_base;
     q.tags = vec!["Action".to_owned(), "Fantasy".to_owned()];
 
-    // One shared of three distinct: a Jaccard overlap of 1/3.
     let mut partial = c_base.clone();
     partial.tags = vec!["Action".to_owned(), "Romance".to_owned()];
-    let s = score(&q, &partial);
-    assert!(
-        (s - (BASE_SIMILARITY + 0.05 / 3.0)).abs() < 1e-6,
-        "a one-third overlap must be worth a third of the bonus, got {s}"
-    );
-
     let mut full = c_base.clone();
     full.tags.clone_from(&q.tags);
-    assert!((score(&q, &full) - (BASE_SIMILARITY + 0.05)).abs() < 1e-6);
+    let mut disjoint = c_base;
+    disjoint.tags = vec!["Romance".to_owned()];
+
+    for (c, overlaps) in [(&partial, true), (&full, true), (&disjoint, false)] {
+        let assessment = assess(&q, c);
+        assert_eq!(assessment.signals.tag_overlap, overlaps, "{:?}", c.tags);
+        assert!((assessment.score - BASE_SIMILARITY).abs() < 1e-6);
+    }
 }
 
 /// "No tags on one side" is not "no overlap", and the difference is why this returns
@@ -705,4 +929,174 @@ fn two_untitled_series_are_not_a_perfect_match() {
     let assessment = assess(&q, &c);
     assert!(!assessment.signals.exact_title);
     assert!(!assessment.signals.compact_identity);
+}
+
+// --- title rules: editions, junk aliases, franchise names --------------------------------
+
+fn side<'a>(title: &'a str, alts: &'a [String]) -> PairSide<'a> {
+    PairSide {
+        series_id: SeriesId::new(),
+        normalized_title: title,
+        alt_normalized_titles: alts,
+        content_type: ContentType::Manga,
+        release_year: Some(2005),
+        tags: &[],
+        authors: &[],
+    }
+}
+
+/// **Two arcs of one work are two works.**
+///
+/// `Higurashi no Naku Koro ni Onikakushi-hen` and `…Onisarashi-hen` were merged through their
+/// shared english title, and the fuzzy route attached one arc's listing to the other at ingest:
+/// the titles differ in two letters out of forty.
+#[test]
+fn different_arcs_are_distinct() {
+    let shared = vec!["higurashi when they cry".to_owned()];
+    let (reading, verdict) = adjudicate_pair(
+        side("higurashi no naku koro ni onikakushi hen", &shared),
+        side("higurashi no naku koro ni onisarashi hen", &shared),
+        1.0,
+        Thresholds::default(),
+    );
+    assert!(reading.assessment.signals.edition_conflict, "{reading:?}");
+    assert_eq!(verdict.verdict, MergeVerdict::Distinct);
+    assert_eq!(verdict.reason, "edition_conflict");
+
+    let q = query(
+        "higurashi no naku koro ni onikakushi hen",
+        ContentType::Unknown,
+        None,
+    );
+    let c = cand(
+        0.9,
+        ContentType::Unknown,
+        None,
+        "higurashi no naku koro ni onisarashi hen",
+    );
+    assert!(!matches!(
+        decide(&q, &[c], Thresholds::default()),
+        Decision::Attach(_)
+    ));
+}
+
+/// **`Railgun S` is not `Railgun T`.** A single trailing letter names a season; the two were
+/// merged through the shared english title `A Certain Scientific Railgun`.
+#[test]
+fn a_trailing_season_letter_is_an_edition() {
+    let shared = vec!["a certain scientific railgun".to_owned()];
+    let (_, verdict) = adjudicate_pair(
+        side("toaru kagaku no railgun s", &shared),
+        side("toaru kagaku no railgun t", &shared),
+        1.0,
+        Thresholds::default(),
+    );
+    assert_eq!(verdict.verdict, MergeVerdict::Distinct);
+    assert_eq!(verdict.reason, "edition_conflict");
+}
+
+/// **`Tokyo Ghoul:re` is not `Tokyo Ghoul`.** It carried the franchise name as an alias and was
+/// absorbed through it.
+#[test]
+fn a_sequel_suffix_is_an_edition() {
+    let franchise = vec!["tokyo ghoul".to_owned()];
+    let (reading, verdict) = adjudicate_pair(
+        side("tokyo ghoul", &[]),
+        side("tokyo ghoul re", &franchise),
+        1.0,
+        Thresholds::default(),
+    );
+    assert!(reading.assessment.signals.edition_conflict, "{reading:?}");
+    assert_eq!(verdict.verdict, MergeVerdict::Distinct);
+}
+
+/// **A junk alias is not an identity.** `unknown` alone merged 11 series into 9 survivors:
+/// placeholder text scraped from an empty metadata cell, shared by every series a provider had
+/// no alternative title for.
+#[test]
+fn a_junk_alias_is_not_an_identity() {
+    let junk = vec!["unknown".to_owned()];
+    let (reading, verdict) = adjudicate_pair(
+        side("martial peak", &junk),
+        side("tales of demons and gods", &junk),
+        1.0,
+        Thresholds::default(),
+    );
+    assert!(!reading.assessment.signals.alias_identity, "{reading:?}");
+    assert_ne!(verdict.verdict, MergeVerdict::Auto);
+
+    // At ingest too: a listing whose only match is a junk alias is not an alias hit.
+    let q = query("unknown", ContentType::Unknown, None);
+    let mut c = cand(1.0, ContentType::Unknown, None, "martial peak");
+    c.alt_normalized_titles = junk;
+    assert!(!assess(&q, &c).signals.alias_identity);
+}
+
+/// **A franchise name is not an identity.** Two different Sword Art Online series were merged
+/// through the alias `sao`; `Fairy Tail` absorbed `Fairy Tail: 100 Years Quest` through the
+/// alias `fairy tail` on the sequel. A short alias that another title contains is containment.
+#[test]
+fn a_franchise_alias_is_containment_not_identity() {
+    let sao = vec!["sao".to_owned()];
+    let (reading, verdict) = adjudicate_pair(
+        side("sword art online progressive", &sao),
+        side("sword art online alicization", &sao),
+        1.0,
+        Thresholds::default(),
+    );
+    assert!(!reading.assessment.signals.alias_identity, "{reading:?}");
+    assert_ne!(verdict.verdict, MergeVerdict::Auto);
+
+    let franchise = vec!["fairy tail".to_owned()];
+    for (left, right) in [
+        (
+            side("fairy tail", &[]),
+            side("fairy tail 100 years quest", &franchise),
+        ),
+        (
+            side("fairy tail 100 years quest", &franchise),
+            side("fairy tail", &[]),
+        ),
+    ] {
+        let (reading, verdict) = adjudicate_pair(left, right, 1.0, Thresholds::default());
+        let signals = reading.assessment.signals;
+        assert!(
+            !signals.alias_identity && signals.containment,
+            "{signals:?}"
+        );
+        assert_ne!(verdict.verdict, MergeVerdict::Auto);
+    }
+
+    // The ingest side of the same rule: the incoming listing `Fairy Tail` hits the sequel's
+    // alias, which the sequel's own title contains.
+    let q = query("fairy tail", ContentType::Unknown, None);
+    let mut c = cand(
+        1.0,
+        ContentType::Unknown,
+        None,
+        "fairy tail 100 years quest",
+    );
+    c.alt_normalized_titles = vec!["fairy tail".to_owned()];
+    let signals = assess(&q, &c).signals;
+    assert!(
+        !signals.alias_identity && signals.containment,
+        "{signals:?}"
+    );
+}
+
+/// A long alias contained in a longer subtitled title is the same work, not a franchise: the
+/// light-novel listing and its subtitled form are one series.
+#[test]
+fn a_long_alias_inside_a_subtitled_title_is_still_an_alias_hit() {
+    let short = "ill create the ultimate golem together with my beautiful hero disciples";
+    let long = "the capitals one man army golem master ill create the ultimate golem together \
+                with my beautiful hero disciples";
+    let alts = vec![short.to_owned()];
+    let (reading, _) = adjudicate_pair(
+        side(long, &alts),
+        side(short, &[]),
+        0.4,
+        Thresholds::default(),
+    );
+    assert!(reading.assessment.signals.alias_identity, "{reading:?}");
 }

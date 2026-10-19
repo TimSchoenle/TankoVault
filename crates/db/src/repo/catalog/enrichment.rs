@@ -7,7 +7,9 @@ use sqlx::{FromRow, PgExecutor};
 // `slugify` is the domain's, not a local copy: `TermBlocklist` compares against exactly the key
 // this module writes into `tags.slug`, and a second implementation here is the drift that would
 // make the intake guard fail open.
-use tankovault_domain::{MetadataPriority, MetadataSource, SeriesId, TermBlocklist, slugify};
+use tankovault_domain::{
+    MetadataPriority, MetadataSource, SeriesId, TermBlocklist, alias_is_placeholder, slugify,
+};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -360,9 +362,15 @@ pub async fn apply_enrichment(
 
 /// Add alternative titles (idempotent on the natural key).
 ///
+/// Placeholder text ([`alias_is_placeholder`]: `unknown`, `status`, `no alternative titles`) is
+/// dropped rather than stored: it joined unrelated series in production, and every merge copied
+/// the absorbed side's aliases onto the survivor, so one such key pulled in the next. A short
+/// title that is real (`Kureimoa`) is kept for search; the matcher already refuses it as an
+/// identity.
+///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; unknown `series_id` is a foreign-key violation. Empty or
-/// all-empty-`normalized` titles is a silent `Ok(())`.
+/// [`crate::DbError::Sqlx`] only; unknown `series_id` is a foreign-key violation. No title left
+/// to store is a silent `Ok(())`.
 pub async fn add_series_titles(
     conn: &mut sqlx::PgConnection,
     series_id: SeriesId,
@@ -374,7 +382,7 @@ pub async fn add_series_titles(
     let mut display = Vec::with_capacity(titles.len());
     let mut normalized = Vec::with_capacity(titles.len());
     for (title, norm) in titles {
-        if norm.is_empty() || !seen.insert(norm.as_str()) {
+        if alias_is_placeholder(norm) || !seen.insert(norm.as_str()) {
             continue;
         }
         display.push(title.as_str());

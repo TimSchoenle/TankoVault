@@ -46,7 +46,7 @@ pub struct ReverifyState {
 
 /// Claim the state row for a new run. Returns `false` when a live run holds it.
 ///
-/// A claim whose heartbeat is older than [`ABANDONED_AFTER_SECS`] is taken over: its replica died
+/// A claim whose heartbeat is older than ten minutes is taken over: its replica died
 /// without releasing it, and refusing forever would need a database edit to recover.
 ///
 /// # Errors

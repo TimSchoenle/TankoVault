@@ -162,19 +162,24 @@ pub(crate) fn parse_media_metadata(data: &serde_json::Value) -> Option<MediaMeta
     parse_media(media)
 }
 
-/// [`parse_media_metadata`] for a lookup by id, where a missing `Media` node means the record
-/// could not be read rather than that it is not a library record.
+/// [`parse_media_metadata`] for a lookup by id. Re-verification removes a mapping on `Ok(None)`,
+/// so only a confirmed novel returns it; a record that could not be read is an error.
 ///
 /// # Errors
-/// A `data` object with no `Media` node, or a null one.
+/// No `Media` node, a null one, or a non-novel with no usable id or title.
 pub(crate) fn parse_media_metadata_by_id(
     data: &serde_json::Value,
 ) -> anyhow::Result<Option<MediaMetadata>> {
-    anyhow::ensure!(
-        data.get("Media").is_some_and(|media| !media.is_null()),
-        "AniList returned no Media record"
-    );
-    Ok(parse_media_metadata(data))
+    let media = data
+        .get("Media")
+        .filter(|media| !media.is_null())
+        .ok_or_else(|| anyhow::anyhow!("AniList returned no Media record"))?;
+    if media.get("format").and_then(serde_json::Value::as_str) == Some("NOVEL") {
+        return Ok(None);
+    }
+    parse_media(media).map(Some).ok_or_else(|| {
+        anyhow::anyhow!("AniList returned a Media record with no usable id or title")
+    })
 }
 
 /// Read one `media` node — the single place a GraphQL media selection becomes local values,
@@ -578,6 +583,10 @@ mod tests {
                 .expect("a present record")
                 .is_none()
         );
+        let untitled = serde_json::json!({ "Media": {
+            "id": 1, "format": "MANGA", "title": { "romaji": null }
+        } });
+        assert!(parse_media_metadata_by_id(&untitled).is_err());
     }
 
     #[test]

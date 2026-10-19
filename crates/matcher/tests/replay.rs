@@ -74,3 +74,50 @@ fn confirmed_wrong_merges_are_not_automatic() {
         assert_ne!(replayed.verdict(), "auto", "{}", describe(&row, &replayed));
     }
 }
+
+/// The tally counts stored → replayed transitions, and a row is replayed under the policy it was
+/// decided with: a guard switched on in the stored policy holds a merge the defaults-off row lets
+/// through.
+#[test]
+fn rows_replay_under_their_stored_policy_and_tally_by_transition() {
+    use tankovault_matcher::replay::Tally;
+
+    let mut row = parse_row(
+        r#"{"verdict":"auto","reason":"structural_identity_above_threshold",
+            "evidence":{"trigram_similarity":1.0,
+              "left":{"normalized_title":"phoenix","authors":["osamu tezuka"]},
+              "right":{"normalized_title":"phoenix","authors":["someone else"]}},
+            "policy":{"high":0.85,"low":0.6,"auto_merge":0.97,
+              "guards":{"numeric_conflict":true,"author_conflict":false,
+                        "year_conflict":false,"type_conflict":false}}}"#,
+    )
+    .expect("a row");
+    let lenient = replay(&row);
+    assert_eq!(lenient.verdict(), "auto");
+
+    let mut policy = row.policy.expect("a stored policy");
+    policy.guards.author_conflict = true;
+    row.policy = Some(policy);
+    let strict = replay(&row);
+    assert_eq!(strict.verdict(), "review");
+    assert_eq!(strict.adjudication.reason, "author_conflict");
+
+    row.policy = None;
+    assert_eq!(
+        replay(&row).verdict(),
+        "review",
+        "the defaults switch every guard on"
+    );
+
+    let mut tally = Tally::default();
+    tally.add(&row, &lenient);
+    tally.add(&row, &strict);
+    tally.add(&row, &strict);
+    assert_eq!(tally.total(), 3);
+    assert_eq!(tally.unchanged(), 1);
+    assert_eq!(
+        tally.transitions().collect::<Vec<_>>(),
+        vec![("auto", "auto", 1), ("auto", "review", 2)]
+    );
+    assert!(parse_row("not json").is_err());
+}

@@ -2212,7 +2212,7 @@
         "env": "TANKOVAULT_MATCHING__HIGH",
         "env_file": "TANKOVAULT_MATCHING__HIGH_FILE",
         "secrets_file": "matching__high",
-        "docs": "At or above this score, and only when the incoming title is the series' own title under\nan identity rule, attach to the existing series outright.",
+        "docs": "At or above this score, and only when the incoming title is the series' own title under\nan identity rule, the worker attaches to the existing series outright. External sync maps\na remote entry on the score alone.",
         "ty": "f32",
         "values": [],
         "constraint": {
@@ -2605,7 +2605,7 @@
             "type": "integer"
           },
           "high": {
-            "description": "At or above this score, and only when the incoming title is the series' own title under\nan identity rule, attach to the existing series outright.",
+            "description": "At or above this score, and only when the incoming title is the series' own title under\nan identity rule, the worker attaches to the existing series outright. External sync maps\na remote entry on the score alone.",
             "type": "number"
           },
           "low": {

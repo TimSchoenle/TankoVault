@@ -71,7 +71,8 @@ use tankovault_domain::matching::{Candidate, Canonicaliser, Decision, Query};
 )]
 pub struct MatchingConfig {
     /// At or above this score, and only when the incoming title is the series' own title under
-    /// an identity rule, attach to the existing series outright.
+    /// an identity rule, the worker attaches to the existing series outright. External sync maps
+    /// a remote entry on the score alone.
     #[serde(default = "default_threshold_high")]
     pub high: f32,
     /// At or above this score, and not attached, create the series but flag the pair for

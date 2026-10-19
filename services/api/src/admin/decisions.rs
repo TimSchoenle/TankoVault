@@ -330,7 +330,7 @@ pub async fn revert_merge_decisions(
     let reason = req.reason.trim();
 
     let ordered = tankovault_db::repo::matching::revert_order(&state.pool, &ids).await?;
-    let mut items = Vec::with_capacity(ids.len());
+    let mut items = Vec::new();
     for (id, readiness) in &ordered {
         let item = match readiness {
             RevertReadiness::Reverted | RevertReadiness::NothingToUndo => batch_item(

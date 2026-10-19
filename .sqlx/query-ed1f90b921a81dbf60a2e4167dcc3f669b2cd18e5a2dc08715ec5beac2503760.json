@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM series s WHERE s.id = ANY($1) AND NOT EXISTS (SELECT 1 FROM series_sources x WHERE x.series_id = s.id) AND NOT EXISTS (SELECT 1 FROM watchlist_entries x WHERE x.series_id = s.id) AND NOT EXISTS (SELECT 1 FROM read_progress x WHERE x.series_id = s.id) AND NOT EXISTS (SELECT 1 FROM sync_mappings x WHERE x.series_id = s.id) AND NOT EXISTS (SELECT 1 FROM series_sync_overrides x WHERE x.series_id = s.id) AND NOT EXISTS (SELECT 1 FROM sync_conflicts x WHERE x.series_id = s.id) AND NOT EXISTS (SELECT 1 FROM sync_match_blocks x WHERE x.series_id = s.id) AND NOT EXISTS (SELECT 1 FROM sync_history x WHERE x.series_id = s.id) AND NOT EXISTS (SELECT 1 FROM series_merges x WHERE x.survivor_id = s.id)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ed1f90b921a81dbf60a2e4167dcc3f669b2cd18e5a2dc08715ec5beac2503760"
+}

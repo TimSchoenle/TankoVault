@@ -119,13 +119,17 @@ pub(crate) async fn run(
     Ok(())
 }
 
-/// Pass 1: re-derive `series.normalized_title` and `series_titles.normalized`.
+/// Pass 1: re-derive `series.normalized_title`, `series_titles.normalized` and
+/// `series_sources.provider_title_normalized`.
 async fn rebuild_keys(pool: &tankovault_db::PgPool, apply: bool) -> anyhow::Result<()> {
     let stale: i64 = sqlx::query_scalar(
         "SELECT (SELECT count(*) FROM series WHERE normalized_title \
                    IS DISTINCT FROM tv_normalize_title(canonical_title)) \
               + (SELECT count(*) FROM series_titles WHERE normalized \
-                   IS DISTINCT FROM tv_normalize_title(title))",
+                   IS DISTINCT FROM tv_normalize_title(title)) \
+              + (SELECT count(*) FROM series_sources WHERE provider_title IS NOT NULL \
+                   AND provider_title_normalized \
+                   IS DISTINCT FROM tv_normalize_title(provider_title))",
     )
     .fetch_one(pool)
     .await?;

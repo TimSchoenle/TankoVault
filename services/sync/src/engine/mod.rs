@@ -328,12 +328,12 @@ impl SyncEngine {
         dry_run: bool,
         actor: Option<UserId>,
     ) -> anyhow::Result<bool> {
-        if !self.verifier.claim(dry_run).await? {
+        let Some(run) = self.verifier.claim(dry_run).await? else {
             return Ok(false);
-        }
+        };
         let engine = Arc::clone(self);
         tokio::spawn(
-            async move { engine.verifier.run(dry_run, actor).await }.instrument(
+            async move { engine.verifier.run(run, dry_run, actor).await }.instrument(
                 tracing::info_span!("mapping_reverify", "sentry.op" = "task", dry_run),
             ),
         );
@@ -347,10 +347,10 @@ impl SyncEngine {
         dry_run: bool,
         actor: Option<UserId>,
     ) -> anyhow::Result<bool> {
-        if !self.verifier.claim(dry_run).await? {
+        let Some(run) = self.verifier.claim(dry_run).await? else {
             return Ok(false);
-        }
-        self.verifier.run(dry_run, actor).await;
+        };
+        self.verifier.run(run, dry_run, actor).await;
         Ok(true)
     }
 }

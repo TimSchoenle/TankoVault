@@ -44,77 +44,90 @@ pub struct ReverifyState {
     pub error: Option<String>,
 }
 
-/// Claim the state row for a new run. Returns `false` when a live run holds it.
+/// Claim the state row for a new run. Returns the run's token, or `None` when a live run holds
+/// the claim.
 ///
-/// A claim whose heartbeat is older than ten minutes is taken over: its replica died
-/// without releasing it, and refusing forever would need a database edit to recover.
+/// A claim whose heartbeat is older than ten minutes is taken over: its replica died, or is
+/// stalled, without releasing it, and refusing forever would need a database edit to recover.
+/// The token is what keeps a stalled run that wakes up from writing over its successor: every
+/// later write of a run matches on it.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
-pub async fn begin_reverify<'e, E: PgExecutor<'e>>(exec: E, dry_run: bool) -> DbResult<bool> {
+pub async fn begin_reverify<'e, E: PgExecutor<'e>>(
+    exec: E,
+    dry_run: bool,
+) -> DbResult<Option<Uuid>> {
     let claimed = sqlx::query_scalar!(
         "UPDATE mapping_reverify_state \
-            SET running = true, dry_run = $1, started_at = now(), heartbeat_at = now(), \
+            SET running = true, run_id = gen_random_uuid(), dry_run = $1, started_at = now(), \
+                heartbeat_at = now(), \
                 finished_at = NULL, checked = 0, failed = 0, removed = 0, unreachable = 0, \
                 failures = '[]'::jsonb, error = NULL \
           WHERE id AND (NOT running OR heartbeat_at < now() - make_interval(secs => $2)) \
-         RETURNING id",
+         RETURNING run_id AS \"run_id!\"",
         dry_run,
         ABANDONED_AFTER_SECS,
     )
     .fetch_optional(exec)
     .await?;
-    Ok(claimed.is_some())
+    Ok(claimed)
 }
 
-/// Publish the counters of a run in flight, which also renews its claim.
+/// Publish the counters of run `run`, which also renews its claim. Returns `false` when the
+/// claim was taken over by another run, which this one must then stop for.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
 pub async fn record_reverify_progress<'e, E: PgExecutor<'e>>(
     exec: E,
+    run: Uuid,
     counts: ReverifyCounts,
-) -> DbResult<()> {
-    sqlx::query!(
+) -> DbResult<bool> {
+    let updated = sqlx::query!(
         "UPDATE mapping_reverify_state \
             SET checked = $1, failed = $2, removed = $3, unreachable = $4, heartbeat_at = now() \
-          WHERE id",
+          WHERE id AND running AND run_id = $5",
         counts.checked,
         counts.failed,
         counts.removed,
         counts.unreachable,
+        run,
     )
     .execute(exec)
     .await?;
-    Ok(())
+    Ok(updated.rows_affected() > 0)
 }
 
-/// Release the claim and record how the run ended. **Must run on the failure path too.**
+/// Release run `run`'s claim and record how it ended. **Must run on the failure path too.**
+/// Returns `false`, writing nothing, when another run has taken the claim over.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
 pub async fn finish_reverify<'e, E: PgExecutor<'e>>(
     exec: E,
+    run: Uuid,
     counts: ReverifyCounts,
     failures: &serde_json::Value,
     error: Option<&str>,
-) -> DbResult<()> {
-    sqlx::query!(
+) -> DbResult<bool> {
+    let updated = sqlx::query!(
         "UPDATE mapping_reverify_state \
             SET running = false, finished_at = now(), heartbeat_at = now(), \
                 checked = $1, failed = $2, removed = $3, unreachable = $4, \
                 failures = $5, error = $6 \
-          WHERE id",
+          WHERE id AND running AND run_id = $7",
         counts.checked,
         counts.failed,
         counts.removed,
         counts.unreachable,
         failures,
         error,
+        run,
     )
     .execute(exec)
     .await?;
-    Ok(())
+    Ok(updated.rows_affected() > 0)
 }
 
 /// The current or last run.

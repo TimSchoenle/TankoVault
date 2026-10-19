@@ -1863,6 +1863,41 @@ async fn rebuilding_the_keys_is_idempotent_and_repairs_a_stale_key() {
     assert_eq!(second.series_scanned, first.series_scanned);
 }
 
+/// A rewritten alternative title keeps its origin. The rewrite is an insert and a delete, and
+/// the insert once left `origin` to its `'adapter'` default, so every `AniList` or merge title
+/// whose key changed lost the provenance a cleanup targets it by.
+#[tokio::test]
+async fn rebuilding_the_keys_keeps_an_alternative_titles_origin() {
+    use tankovault_db::repo::matching::rebuild_normalized_keys;
+
+    let db = TestDb::spawn().await;
+    let alpha = seed::provider(&db, "alpha").create().await;
+    let series = ingest(&db, alpha, &plain("Berserk"), &[1.0]).await;
+    sqlx::query(
+        "INSERT INTO series_titles (series_id, title, normalized, origin) \
+         VALUES ($1, 'Kenpuu Denki', 'a key from older rules', 'anilist')",
+    )
+    .bind(series.as_uuid())
+    .execute(&db.pool)
+    .await
+    .expect("stale anilist title");
+
+    let report = rebuild_normalized_keys(&db.pool, normalize_title)
+        .await
+        .expect("rebuild");
+    assert_eq!(report.titles_updated, 1, "{report:?}");
+
+    let origin: String = sqlx::query_scalar(
+        "SELECT origin FROM series_titles WHERE series_id = $1 AND normalized = $2",
+    )
+    .bind(series.as_uuid())
+    .bind(normalize_title("Kenpuu Denki"))
+    .fetch_one(&db.pool)
+    .await
+    .expect("the rewritten title");
+    assert_eq!(origin, "anilist");
+}
+
 // ---------------------------------------------------------------------------
 // Merges: the alias map, and the guard on `merge_series` itself
 // ---------------------------------------------------------------------------
@@ -3564,6 +3599,15 @@ async fn only_an_unreferenced_orphan_is_deleted() {
     watchlist_upsert(&db.pool, reader, watched, WatchStatus::Reading, true)
         .await
         .expect("watch");
+    // A sourceless merge survivor: deleting it would cascade away the row that forwards the
+    // merged id, so links to the absorbed series would stop resolving.
+    let survivor = insert_series_directly(&db, "Survivor Orphan").await;
+    sqlx::query("INSERT INTO series_merges (merged_id, survivor_id) VALUES ($1, $2)")
+        .bind(uuid::Uuid::now_v7())
+        .bind(survivor.as_uuid())
+        .execute(&db.pool)
+        .await
+        .expect("forwarding row");
 
     assert_eq!(
         delete_unreferenced_orphans(&db.pool, 100)
@@ -3583,7 +3627,7 @@ async fn only_an_unreferenced_orphan_is_deleted() {
         .await
         .expect("list");
     assert!(!left.contains(&bare.as_uuid()));
-    for kept in [sourced, mapped, watched] {
+    for kept in [sourced, mapped, watched, survivor] {
         assert!(left.contains(&kept.as_uuid()), "{kept} must survive");
     }
 }

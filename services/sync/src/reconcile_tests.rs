@@ -1157,7 +1157,12 @@ mod verification {
     #[tokio::test]
     async fn a_second_run_is_refused_while_one_holds_the_claim() {
         let f = Fixture::spawn().await;
-        assert!(sync::begin_reverify(&f.db.pool, true).await.expect("claim"));
+        assert!(
+            sync::begin_reverify(&f.db.pool, true)
+                .await
+                .expect("claim")
+                .is_some()
+        );
         assert!(!f.engine.reverify_now(true, None).await.expect("refused"));
     }
 }

@@ -84,7 +84,7 @@ pub async fn rebuild_normalized_keys(
     let mut cursor = (Uuid::nil(), String::new());
     loop {
         let rows = sqlx::query!(
-            "SELECT series_id, title, normalized FROM series_titles \
+            "SELECT series_id, title, normalized, origin FROM series_titles \
              WHERE (series_id, normalized) > ($1, $2) ORDER BY series_id, normalized LIMIT $3",
             cursor.0,
             cursor.1,
@@ -102,12 +102,14 @@ pub async fn rebuild_normalized_keys(
             if fresh == row.normalized {
                 continue;
             }
+            // The origin is carried over: a cleanup targets titles by provenance.
             let inserted = sqlx::query!(
-                "INSERT INTO series_titles (series_id, title, normalized) VALUES ($1,$2,$3) \
-                 ON CONFLICT (series_id, normalized) DO NOTHING",
+                "INSERT INTO series_titles (series_id, title, normalized, origin) \
+                 VALUES ($1,$2,$3,$4) ON CONFLICT (series_id, normalized) DO NOTHING",
                 row.series_id,
                 row.title,
                 fresh,
+                row.origin,
             )
             .execute(pool)
             .await?;

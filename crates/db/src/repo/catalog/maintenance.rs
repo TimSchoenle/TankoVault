@@ -383,9 +383,11 @@ async fn measure(conn: &mut PgConnection, ids: &[Uuid]) -> DbResult<DeletionRepo
     Ok(report)
 }
 
-/// Delete up to `batch` series that nothing refers to: no source, no reader's watchlist entry or
-/// progress, no tracker mapping, sync override, conflict, match block or sync history. Returns
-/// how many.
+/// Delete up to `batch` series that nothing refers to. Returns how many.
+///
+/// Nothing means no source, no reader's watchlist entry or progress, no tracker mapping, sync
+/// override, conflict, match block or sync history, and no merge forwarding to it: deleting a
+/// merge survivor would cascade away the row that resolves the absorbed id.
 ///
 /// These are leftovers of the registration race fixed in `register_chunk` and of the copy bug
 /// fixed in `f686b3b`: nothing will ever scan them, and no reader can lose anything with them.
@@ -414,6 +416,7 @@ pub async fn delete_unreferenced_orphans(pool: &PgPool, batch: i64) -> DbResult<
             AND NOT EXISTS (SELECT 1 FROM sync_conflicts x WHERE x.series_id = s.id) \
             AND NOT EXISTS (SELECT 1 FROM sync_match_blocks x WHERE x.series_id = s.id) \
             AND NOT EXISTS (SELECT 1 FROM sync_history x WHERE x.series_id = s.id) \
+            AND NOT EXISTS (SELECT 1 FROM series_merges x WHERE x.survivor_id = s.id) \
           LIMIT $1 FOR UPDATE OF s SKIP LOCKED",
         batch.max(1),
     )
@@ -431,7 +434,8 @@ pub async fn delete_unreferenced_orphans(pool: &PgPool, batch: i64) -> DbResult<
             AND NOT EXISTS (SELECT 1 FROM series_sync_overrides x WHERE x.series_id = s.id) \
             AND NOT EXISTS (SELECT 1 FROM sync_conflicts x WHERE x.series_id = s.id) \
             AND NOT EXISTS (SELECT 1 FROM sync_match_blocks x WHERE x.series_id = s.id) \
-            AND NOT EXISTS (SELECT 1 FROM sync_history x WHERE x.series_id = s.id)",
+            AND NOT EXISTS (SELECT 1 FROM sync_history x WHERE x.series_id = s.id) \
+            AND NOT EXISTS (SELECT 1 FROM series_merges x WHERE x.survivor_id = s.id)",
         &ids,
     )
     .execute(&mut *tx)

@@ -8,6 +8,7 @@ use tankovault_db::PgPool;
 use tankovault_db::repo::{catalog, sync};
 use tankovault_domain::{SeriesId, UserId};
 use tankovault_matcher::titles_identify;
+use uuid::Uuid;
 
 use super::registry::ProviderRegistry;
 use crate::provider::RemoteMetadata;
@@ -53,23 +54,32 @@ impl MappingVerifier {
         Self { pool, registry }
     }
 
-    /// Claim the run. `false` when another run holds it.
+    /// Claim the run and return its token. `None` when another run holds the claim.
     ///
     /// # Errors
     /// Database failures.
-    pub(crate) async fn claim(&self, dry_run: bool) -> anyhow::Result<bool> {
+    pub(crate) async fn claim(&self, dry_run: bool) -> anyhow::Result<Option<Uuid>> {
         Ok(sync::begin_reverify(&self.pool, dry_run).await?)
     }
 
-    /// The claimed run, start to finish. Always releases the claim.
-    pub(crate) async fn run(&self, dry_run: bool, actor: Option<UserId>) {
+    /// The claimed run `run`, start to finish. Always releases the claim, unless another run
+    /// has taken it over.
+    pub(crate) async fn run(&self, run: Uuid, dry_run: bool, actor: Option<UserId>) {
         let mut counts = sync::ReverifyCounts::default();
         let mut failures = Vec::new();
-        let outcome = self.walk(dry_run, actor, &mut counts, &mut failures).await;
+        let outcome = self
+            .walk(run, dry_run, actor, &mut counts, &mut failures)
+            .await;
         let error = outcome.as_ref().err().map(ToString::to_string);
         let listed = serde_json::to_value(&failures).unwrap_or_default();
-        if let Err(e) = sync::finish_reverify(&self.pool, counts, &listed, error.as_deref()).await {
-            tracing::error!(error = %e, "could not release the mapping re-verification claim");
+        match sync::finish_reverify(&self.pool, run, counts, &listed, error.as_deref()).await {
+            Ok(true) => {}
+            Ok(false) => {
+                tracing::warn!("mapping re-verification claim was taken over; result dropped");
+            }
+            Err(e) => {
+                tracing::error!(error = %e, "could not release the mapping re-verification claim");
+            }
         }
         match outcome {
             Ok(()) => tracing::info!(
@@ -86,6 +96,7 @@ impl MappingVerifier {
 
     async fn walk(
         &self,
+        run: Uuid,
         dry_run: bool,
         actor: Option<UserId>,
         counts: &mut sync::ReverifyCounts,
@@ -146,7 +157,12 @@ impl MappingVerifier {
                         });
                     }
                 }
-                sync::record_reverify_progress(&self.pool, *counts).await?;
+                // A stalled run whose claim was retaken stops here rather than spend the rate
+                // budget beside its successor.
+                anyhow::ensure!(
+                    sync::record_reverify_progress(&self.pool, run, *counts).await?,
+                    "the claim was taken over by another run"
+                );
             }
         }
         Ok(())

@@ -8,10 +8,13 @@
 -- this row is how the operator follows it.
 --
 -- Unlike `metadata_sweep_state`, `running` is a claim: two runs would each spend the rate budget
--- on the same mappings. `heartbeat_at` lets a claim abandoned by a crashed replica be retaken.
+-- on the same mappings. `heartbeat_at` lets a claim abandoned by a crashed replica be retaken;
+-- `run_id` fences the writes of a run whose claim was retaken, so it cannot overwrite its
+-- successor's counters or release its claim.
 CREATE TABLE mapping_reverify_state (
   id           boolean PRIMARY KEY DEFAULT true,
   running      boolean NOT NULL DEFAULT false,
+  run_id       uuid,
   dry_run      boolean NOT NULL DEFAULT true,
   started_at   timestamptz,
   heartbeat_at timestamptz,

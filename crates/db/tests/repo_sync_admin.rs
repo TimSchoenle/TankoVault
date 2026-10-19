@@ -1,5 +1,5 @@
-//! Admin Sync console read models: each test asserts that dropping the scoping predicate it
-//! names fails only that test.
+//! Admin Sync console read models and run state: each read-model test asserts that dropping
+//! the scoping predicate it names fails only that test.
 //!
 //! Gated behind the `integration` feature (requires Docker).
 #![cfg(feature = "integration")]
@@ -542,4 +542,51 @@ async fn suggestions_rank_by_the_best_similarity_across_every_title() {
         .expect("suggest capped");
     assert_eq!(capped.len(), 1);
     assert_eq!(capped[0].title, "Solo Leveling");
+}
+
+/// A run whose claim was retaken writes nothing. Before the run token, a stalled run that
+/// woke up after its claim expired overwrote its successor's counters, and its finish
+/// released the successor's claim so a third run could start beside it.
+#[tokio::test]
+async fn a_superseded_run_cannot_write_over_its_successor() {
+    let db = TestDb::spawn().await;
+    let superseded = sync::begin_reverify(&db.pool, true)
+        .await
+        .expect("claim")
+        .expect("free");
+    sqlx::query(
+        "UPDATE mapping_reverify_state SET heartbeat_at = now() - interval '1 hour' WHERE id",
+    )
+    .execute(&db.pool)
+    .await
+    .expect("age the claim");
+    let current = sync::begin_reverify(&db.pool, false)
+        .await
+        .expect("claim")
+        .expect("the abandoned claim is retaken");
+    assert_ne!(superseded, current);
+
+    let counts = sync::ReverifyCounts {
+        checked: 99,
+        ..sync::ReverifyCounts::default()
+    };
+    assert!(
+        !sync::record_reverify_progress(&db.pool, superseded, counts)
+            .await
+            .expect("progress")
+    );
+    assert!(
+        !sync::finish_reverify(&db.pool, superseded, counts, &serde_json::json!([]), None)
+            .await
+            .expect("finish")
+    );
+    let state = sync::reverify_state(&db.pool).await.expect("state");
+    assert!(state.running, "the successor still holds the claim");
+    assert!(!state.dry_run);
+    assert_eq!(state.counts.checked, 0);
+    assert!(
+        sync::finish_reverify(&db.pool, current, counts, &serde_json::json!([]), None)
+            .await
+            .expect("finish")
+    );
 }

@@ -393,9 +393,10 @@ place to reason about it.
 
 Scores are in `[0, 1]` and come from `tankovault_matcher::score` — the strongest of three views of
 the two titles (the database's trigram similarity, a token-set ratio, and a whitespace-insensitive
-"compact" comparison), discounted when the match is against an alternative title, and vetoed
-outright when the two titles carry different numbers or one carries an edition or arc marker
-(`gaiden`, `colored`, an `-hen` arc, a trailing season letter) the other lacks. Content type, release year, tags and
+"compact" comparison), discounted when the match is against an alternative title, and lowered
+when the two titles carry different numbers. Different numbers also veto an attach or a merge
+outright, as does an edition or arc marker (`gaiden`, `colored`, an `-hen` arc, a trailing season
+letter) on one title and not the other, which does not move the score. Content type, release year, tags and
 credits are recorded on every decision but never move a score: across providers they are wrong
 too often to weigh.
 

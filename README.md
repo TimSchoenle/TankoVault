@@ -259,7 +259,7 @@ confirmation variable, so nothing published carries a destructive command.
 
 | | Supported |
 | --- | --- |
-| Rust | 1.94 minimum, edition 2024; built with 1.99.0 |
+| Rust | 1.94 minimum, edition 2024; built with 1.99.1 |
 | PostgreSQL | 18, with `pgvector` |
 | Redis | 8 |
 | NATS | JetStream |

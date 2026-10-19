@@ -568,7 +568,9 @@ done harm. Each is in the code with its reason.
 - The external-id comparison is pair-level (`read_pair`), not in `Candidate`/`Query`: an incoming
   scan has no `AniList` id, so only the sweep has one on both sides.
 - `format_in` also filters the token-holding search (`SEARCH_QUERY`) the push path resolves
-  through, for the same reason. The parser's `NOVEL` refusal applies to the public lookups only;
+  through, for the same reason. That path (`SeriesResolver::media_id_for_series`) still caches
+  the search's id as a mapping without checking titles, because the search returns only an id;
+  verifying it needs the search to return titles too, and is left as a follow-up. The parser's `NOVEL` refusal applies to the public lookups only;
   list entries are the user's own choice.
 - A failed by-id lookup is now an error rather than `None`, so re-verification never removes a
   mapping because `AniList` was unreachable.

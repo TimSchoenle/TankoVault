@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE series_sources ss SET provider_title_normalized = u.key FROM UNNEST($1::uuid[], $2::text[], $3::text[]) AS u(id, key, title) WHERE ss.id = u.id AND ss.provider_title = u.title",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "TextArray",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8aae99336936be785340f7aaae0ded5ca9fdee033a2f705b17174d0ade14b781"
+}

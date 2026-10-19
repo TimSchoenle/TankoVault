@@ -158,6 +158,7 @@ async fn rebuild_listing_keys(
         // key, which row by row is a round trip per source.
         let mut ids = Vec::new();
         let mut keys = Vec::new();
+        let mut titles = Vec::new();
         for row in &rows {
             cursor = row.id;
             report.sources_scanned += 1;
@@ -165,18 +166,23 @@ async fn rebuild_listing_keys(
             if row.provider_title_normalized.as_deref() != Some(fresh.as_str()) {
                 ids.push(row.id);
                 keys.push(fresh);
+                titles.push(row.provider_title.clone());
             }
         }
         if !ids.is_empty() {
-            sqlx::query!(
+            // Matched on the title read above: a scan that renamed the source since then wrote
+            // the key for its new title, which this one must not overwrite.
+            let updated = sqlx::query!(
                 "UPDATE series_sources ss SET provider_title_normalized = u.key \
-                   FROM UNNEST($1::uuid[], $2::text[]) AS u(id, key) WHERE ss.id = u.id",
+                   FROM UNNEST($1::uuid[], $2::text[], $3::text[]) AS u(id, key, title) \
+                  WHERE ss.id = u.id AND ss.provider_title = u.title",
                 &ids,
                 &keys,
+                &titles,
             )
             .execute(pool)
             .await?;
-            report.sources_updated += i64::try_from(ids.len()).unwrap_or(i64::MAX);
+            report.sources_updated += i64::try_from(updated.rows_affected()).unwrap_or(i64::MAX);
         }
     }
 

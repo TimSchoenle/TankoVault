@@ -3,7 +3,7 @@
 
 use crate::error::DbResult;
 use sqlx::PgExecutor;
-use tankovault_domain::SeriesId;
+use tankovault_domain::{SeriesId, UserId};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -128,6 +128,39 @@ pub async fn finish_reverify<'e, E: PgExecutor<'e>>(
     .execute(exec)
     .await?;
     Ok(updated.rows_affected() > 0)
+}
+
+/// [`super::block_sync_match`] on behalf of run `run`. Returns `false`, writing nothing, when
+/// another run has taken the claim over.
+///
+/// The claim is checked and locked in the same transaction as the block, so a stalled run whose
+/// claim was retaken cannot remove a mapping its successor (perhaps a dry run) was meant to keep.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only.
+pub async fn block_sync_match_for_reverify(
+    pool: &sqlx::PgPool,
+    run: Uuid,
+    provider: &str,
+    external_id: &str,
+    series_id: SeriesId,
+    actor: Option<UserId>,
+    reason: &str,
+) -> DbResult<bool> {
+    let mut tx = pool.begin().await?;
+    let held = sqlx::query_scalar!(
+        "SELECT id FROM mapping_reverify_state WHERE id AND running AND run_id = $1 FOR UPDATE",
+        run,
+    )
+    .fetch_optional(&mut *tx)
+    .await?;
+    if held.is_none() {
+        return Ok(false);
+    }
+    super::decisions::block_sync_match_in(&mut tx, provider, external_id, series_id, actor, reason)
+        .await?;
+    tx.commit().await?;
+    Ok(true)
 }
 
 /// The current or last run.

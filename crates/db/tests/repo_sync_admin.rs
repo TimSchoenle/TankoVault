@@ -545,8 +545,9 @@ async fn suggestions_rank_by_the_best_similarity_across_every_title() {
 }
 
 /// A run whose claim was retaken writes nothing. Before the run token, a stalled run that
-/// woke up after its claim expired overwrote its successor's counters, and its finish
-/// released the successor's claim so a third run could start beside it.
+/// woke up after its claim expired overwrote its successor's counters, removed mappings its
+/// successor (perhaps a dry run) was meant to keep, and its finish released the successor's
+/// claim so a third run could start beside it.
 #[tokio::test]
 async fn a_superseded_run_cannot_write_over_its_successor() {
     let db = TestDb::spawn().await;
@@ -580,6 +581,26 @@ async fn a_superseded_run_cannot_write_over_its_successor() {
             .await
             .expect("finish")
     );
+    assert!(
+        !sync::block_sync_match_for_reverify(
+            &db.pool,
+            superseded,
+            "anilist",
+            "1",
+            SeriesId::from_uuid(uuid::Uuid::now_v7()),
+            None,
+            "stale run",
+        )
+        .await
+        .expect("block"),
+        "a superseded run must not remove a mapping"
+    );
+    let blocks: i64 = sqlx::query_scalar("SELECT count(*) FROM sync_match_blocks")
+        .fetch_one(&db.pool)
+        .await
+        .expect("count blocks");
+    assert_eq!(blocks, 0);
+
     let state = sync::reverify_state(&db.pool).await.expect("state");
     assert!(state.running, "the successor still holds the claim");
     assert!(!state.dry_run);

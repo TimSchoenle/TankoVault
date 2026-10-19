@@ -137,15 +137,19 @@ impl MappingVerifier {
                     if !dry_run {
                         // A block, not a bare delete: the cached remote entry would otherwise
                         // re-seed the mapping on the next reconciliation.
-                        sync::block_sync_match(
-                            &self.pool,
-                            slug,
-                            &external_id,
-                            series_id,
-                            actor,
-                            reason_text(reason),
-                        )
-                        .await?;
+                        anyhow::ensure!(
+                            sync::block_sync_match_for_reverify(
+                                &self.pool,
+                                run,
+                                slug,
+                                &external_id,
+                                series_id,
+                                actor,
+                                reason_text(reason),
+                            )
+                            .await?,
+                            "the claim was taken over by another run"
+                        );
                         counts.removed = counts.removed.saturating_add(1);
                     }
                     if failures.len() < MAX_LISTED_FAILURES {

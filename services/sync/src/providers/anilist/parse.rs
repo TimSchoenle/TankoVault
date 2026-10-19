@@ -143,10 +143,19 @@ fn parse_entry(entry: &serde_json::Value) -> Option<AniListEntry> {
 }
 
 /// Extract [`MediaMetadata`] from a public `Media(...)` GraphQL `data` object (no user token).
-/// Returns `None` when there is no `Media` node or it has no usable id/title.
+/// Returns `None` when there is no `Media` node, it has no usable id/title, or it is a light
+/// novel.
+///
+/// The novel check backs up the title query's `format_in` filter and also covers by-id lookups:
+/// a novel's metadata on a manga would replace its cover, description and status. List entries
+/// are not filtered here, because the user chose them.
 #[must_use]
 pub(crate) fn parse_media_metadata(data: &serde_json::Value) -> Option<MediaMetadata> {
-    parse_media(data.get("Media")?)
+    let media = data.get("Media")?;
+    if media.get("format").and_then(serde_json::Value::as_str) == Some("NOVEL") {
+        return None;
+    }
+    parse_media(media)
 }
 
 /// Read one `media` node — the single place a GraphQL media selection becomes local values,
@@ -512,6 +521,21 @@ mod tests {
         assert_eq!(m.tags, vec!["Action", "Fantasy"]);
         assert_eq!(m.authors, vec!["Chugong"]);
         assert_eq!(m.series_status, SeriesStatus::Ongoing);
+    }
+
+    /// `AniList` files light novels under `type: MANGA` with ids next to their adaptation's
+    /// (150193 the novel, 150194 the manga), so a title search could enrich a manga with the
+    /// novel's cover and description.
+    #[test]
+    fn public_metadata_refuses_a_light_novel() {
+        let media = |format: &str| {
+            serde_json::json!({ "Media": {
+                "id": 150_193, "format": format,
+                "title": { "romaji": "Shared Title", "english": null, "native": null }
+            } })
+        };
+        assert!(parse_media_metadata(&media("NOVEL")).is_none());
+        assert!(parse_media_metadata(&media("MANGA")).is_some());
     }
 
     #[test]

@@ -28,6 +28,7 @@ mod path {
     pub(crate) const REVERT_DECISION: &str = "/v1/sync/decisions/{id}/revert";
     pub(crate) const FLAG_DECISION: &str = "/v1/sync/decisions/{id}/flag";
     pub(crate) const MATCH_BLOCKS: &str = "/v1/sync/match-blocks";
+    pub(crate) const REVERIFY_MAPPINGS: &str = "/v1/sync/mappings/reverify";
 }
 
 /// Who may reach each of this service's routes.
@@ -45,7 +46,7 @@ static INTERNAL_ROUTES: &[tankovault_service::InternalRoute] = {
     use tankovault_service::InternalRoute;
 
     /// Every route on this service has the same permitted caller; this keeps that visible in
-    /// one place rather than repeated eighteen times.
+    /// one place rather than repeated on every row.
     const API: &[&str] = &["api"];
     const fn route(method: Method, path: &'static str) -> InternalRoute {
         InternalRoute {
@@ -74,6 +75,7 @@ static INTERNAL_ROUTES: &[tankovault_service::InternalRoute] = {
         route(Method::POST, path::REVERT_DECISION),
         route(Method::POST, path::FLAG_DECISION),
         route(Method::POST, path::MATCH_BLOCKS),
+        route(Method::POST, path::REVERIFY_MAPPINGS),
     ]
 };
 /// Merge-engine reconciliation tests; needs Docker, hence the feature gate.
@@ -106,8 +108,8 @@ use provider::ExternalProvider;
 use providers::anilist::AniListClient;
 use tankovault_auth::Sealer;
 use tankovault_contracts::sync::{
-    AccountSettings, AccountStatus, AuthorizeUrl, ConflictView, Flagged, HistoryView, ProviderInfo,
-    Removed, Resolved,
+    AccountSettings, AccountStatus, AuthorizeUrl, ConflictView, Flagged, HistoryView,
+    MappingReverifyRequest, MappingReverifyStarted, ProviderInfo, Removed, Resolved,
 };
 use tankovault_domain::{Feature, SeriesId, UserId};
 use tracing::Instrument as _;
@@ -363,6 +365,7 @@ async fn serve_once(
         .route(path::REVERT_DECISION, post(revert_decision))
         .route(path::FLAG_DECISION, post(flag_decision))
         .route(path::MATCH_BLOCKS, post(block_match))
+        .route(path::REVERIFY_MAPPINGS, post(reverify_mappings))
         .with_state(state)
         // Same declarative gate the public API uses: this service is reachable from anywhere on
         // the internal network, so the switch must hold here too, not just at the edge.
@@ -720,6 +723,16 @@ async fn block_match(
         )
         .await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// `POST /v1/sync/mappings/reverify` — start re-verifying every stored mapping in the
+/// background. Answers at once; progress is read from `mapping_reverify_state`.
+async fn reverify_mappings(
+    State(state): State<AppState>,
+    Json(req): Json<MappingReverifyRequest>,
+) -> Result<Json<MappingReverifyStarted>, AppError> {
+    let started = state.engine.start_reverify(req.dry_run, req.actor).await?;
+    Ok(Json(MappingReverifyStarted { started }))
 }
 
 #[cfg(test)]

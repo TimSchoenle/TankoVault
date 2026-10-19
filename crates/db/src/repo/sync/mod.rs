@@ -10,6 +10,7 @@ pub mod decisions;
 pub mod history;
 pub mod mappings;
 pub mod remote_entries;
+pub mod reverify;
 pub mod snapshots;
 
 pub use accounts::*;
@@ -19,4 +20,5 @@ pub use decisions::*;
 pub use history::*;
 pub use mappings::*;
 pub use remote_entries::*;
+pub use reverify::*;
 pub use snapshots::*;

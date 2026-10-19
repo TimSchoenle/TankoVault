@@ -429,3 +429,42 @@ mod tests {
         assert_eq!(ConflictPolicy::default(), ConflictPolicy::NewestWins);
     }
 }
+
+/// Start a re-verification of every stored `AniList` mapping (internal, `api` → `sync`).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct MappingReverifyRequest {
+    /// Report the failing mappings without removing them.
+    pub dry_run: bool,
+    /// The operator who started it, recorded on each match block a real run writes.
+    pub actor: Option<tankovault_domain::UserId>,
+}
+
+/// Whether a re-verification was started (internal, `sync` → `api`).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct MappingReverifyStarted {
+    /// `false` when another run holds the claim.
+    pub started: bool,
+}
+
+/// Why a stored mapping failed re-verification.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum MappingReverifyReason {
+    /// The record is not a format a library holds, such as a light novel, or has no title.
+    NotALibraryRecord,
+    /// None of the record's titles is the series' title or one of its sources' listing titles.
+    TitlesDiffer,
+}
+
+/// One mapping that failed re-verification.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct MappingReverifyFailure {
+    /// The local series.
+    pub series_id: tankovault_domain::SeriesId,
+    /// The provider slug.
+    pub provider: String,
+    /// The provider's id for the record it was mapped to.
+    pub external_id: String,
+    /// Why it failed.
+    pub reason: MappingReverifyReason,
+}

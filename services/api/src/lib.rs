@@ -560,6 +560,10 @@ fn admin_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(admin::admin_sync_unlink))
         .routes(routes!(admin::clear_sync_mapping))
         .routes(routes!(admin::enrichment_status))
+        .routes(routes!(
+            admin::mapping_reverify_status,
+            admin::start_mapping_reverify
+        ))
         // admin
         .routes(routes!(admin::system_stats))
         .routes(routes!(admin::audit_log))

@@ -100,6 +100,43 @@ pub async fn series_needing_metadata<'e, E: PgExecutor<'e>>(
     Ok(rows.into_iter().map(Into::into).collect())
 }
 
+/// The titles a series is identified by: its normalized canonical title and its sources'
+/// normalized listing titles.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SeriesIdentityTitles {
+    /// `series.normalized_title`.
+    pub normalized_title: String,
+    /// Distinct non-null `series_sources.provider_title_normalized`.
+    pub listing_titles: Vec<String>,
+}
+
+/// What an upstream record has to match before it is trusted as this series.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only; an erased series is `Ok(None)`.
+pub async fn series_identity_titles<'e, E: PgExecutor<'e>>(
+    exec: E,
+    series_id: SeriesId,
+) -> DbResult<Option<SeriesIdentityTitles>> {
+    let row = sqlx::query!(
+        r#"SELECT s.normalized_title,
+                  ARRAY(SELECT DISTINCT ss.provider_title_normalized
+                          FROM series_sources ss
+                         WHERE ss.series_id = s.id
+                           AND ss.provider_title_normalized IS NOT NULL
+                         ORDER BY 1) AS "listing_titles!: Vec<String>"
+             FROM series s
+            WHERE s.id = $1"#,
+        series_id.as_uuid(),
+    )
+    .fetch_optional(exec)
+    .await?;
+    Ok(row.map(|r| SeriesIdentityTitles {
+        normalized_title: r.normalized_title,
+        listing_titles: r.listing_titles,
+    }))
+}
+
 /// Record that a series was examined by an enrichment pass that had nothing to write.
 ///
 /// Does not touch `updated_at` — a no-op lookup must not reshuffle listings ordered by it.

@@ -13,6 +13,7 @@ use tankovault_db::repo::sync;
 
 use super::metadata::MetadataWriter;
 use super::registry::ProviderRegistry;
+use super::verify::record_identifies;
 
 /// What the sweep records when there is no provider that can answer without a user token.
 ///
@@ -50,7 +51,8 @@ impl Enricher {
 
     /// Walk the catalogue in batches of `batch_size`, up to `max_series` series, asking every
     /// public-metadata provider for each one's catalogue metadata by cached external id, else
-    /// by canonical title. Never fails the whole sweep on a single series' error.
+    /// by canonical title, accepting a title hit only when its titles identify the series.
+    /// Never fails the whole sweep on a single series' error.
     ///
     /// Every run is published to `metadata_sweep_state` as well as logged, because a log line is
     /// invisible to the operator console and gone once the window rolls — and the two ways this
@@ -154,11 +156,16 @@ impl Enricher {
             let existing = sync::mapping_external_for_series(&self.pool, row.id, slug).await?;
             let meta = match existing {
                 Some(ext) => provider.fetch_public_metadata_by_id(&ext).await?,
-                None => {
-                    provider
-                        .fetch_public_metadata_by_title(&row.canonical_title)
-                        .await?
-                }
+                // A search answers with its best-ranked record, matching or not, and `apply`
+                // writes a mapping as well as metadata, so a wrong hit would be trusted by id
+                // from then on.
+                None => match provider
+                    .fetch_public_metadata_by_title(&row.canonical_title)
+                    .await?
+                {
+                    Some(meta) if record_identifies(&self.pool, row.id, &meta).await? => Some(meta),
+                    _ => None,
+                },
             };
             let Some(meta) = meta else {
                 continue;

@@ -15,6 +15,7 @@ pub use tankovault_domain::matching::{
 mod assess;
 mod decide;
 mod edition;
+mod external;
 mod pair;
 mod similarity;
 mod title;
@@ -28,6 +29,7 @@ mod tests;
 
 pub use assess::{assess, explain, score};
 pub use decide::{adjudicate, best_assessment, best_match, decide};
+pub use external::titles_identify;
 pub use pair::{
     LIVE_AGREEMENT_HOURS, LIVE_CONFLICT_HOURS, PairReading, PairSide, adjudicate_pair,
     apply_live_timing, read_pair, wants_live_timing,

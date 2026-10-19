@@ -670,3 +670,132 @@ pub async fn enrichment_status(
         checked_last_day: coverage.checked_last_day,
     }))
 }
+
+/// Start a mapping re-verification.
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct MappingReverifyStart {
+    /// Report the failing mappings without removing them. Review a dry run before a real one.
+    pub dry_run: bool,
+}
+
+/// What the re-verification of stored `AniList` mappings is doing, or last did.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct MappingReverifyView {
+    /// Whether a run holds the claim. Only one runs at a time.
+    pub running: bool,
+    /// Whether the current or last run only reported.
+    pub dry_run: bool,
+    /// RFC 3339. When the current or last run started.
+    #[schema(example = "2026-10-19T02:00:00Z")]
+    pub started_at: Option<String>,
+    /// RFC 3339. When the last run ended; absent while one is running.
+    #[schema(example = "2026-10-19T05:30:00Z")]
+    pub finished_at: Option<String>,
+    /// Mappings looked up so far.
+    pub checked: i32,
+    /// Of those, the ones whose record does not identify their series.
+    pub failed: i32,
+    /// Of the failed, the ones removed and blocked. Zero on a dry run.
+    pub removed: i32,
+    /// Lookups that errored. Those mappings were left as they were.
+    pub unreachable: i32,
+    /// The failing mappings of the last finished run, at most 1,000.
+    pub failures: Vec<tankovault_contracts::sync::MappingReverifyFailure>,
+    /// How the last run ended when it ended badly.
+    pub error: Option<String>,
+}
+
+/// Get mapping re-verification status
+///
+/// The current or last re-verification of stored `AniList` mappings, with the mappings it
+/// refused.
+#[utoipa::path(
+    get,
+    path = "/v1/admin/sync/mappings/reverify",
+    tag = ADMIN_SYNC_TAG,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "The run's current state", body = MappingReverifyView),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
+    )
+)]
+pub async fn mapping_reverify_status(
+    State(state): State<AppState>,
+    user: AuthUser,
+) -> ApiResult<Json<MappingReverifyView>> {
+    user.require(Permission::SyncAdminRead).await?;
+    let run = tankovault_db::repo::sync::reverify_state(&state.pool).await?;
+    let rfc3339 = |at: Option<time::OffsetDateTime>| {
+        at.and_then(|t| {
+            t.format(&time::format_description::well_known::Rfc3339)
+                .ok()
+        })
+    };
+    // Written by this deployment's sync service only; a row it cannot read is reported as an
+    // empty list rather than failing the whole view.
+    let failures = serde_json::from_value(run.failures).unwrap_or_default();
+    Ok(Json(MappingReverifyView {
+        running: run.running,
+        dry_run: run.dry_run,
+        started_at: rfc3339(run.started_at),
+        finished_at: rfc3339(run.finished_at),
+        checked: run.counts.checked,
+        failed: run.counts.failed,
+        removed: run.counts.removed,
+        unreachable: run.counts.unreachable,
+        failures,
+        error: run.error,
+    }))
+}
+
+/// Re-verify stored mappings
+///
+/// Re-fetch every stored `AniList` mapping by id and refuse the ones whose record is not a
+/// library format (a light novel) or whose titles do not identify the series. A refused
+/// mapping is removed and blocked, so reconciliation does not write it back. Runs in the
+/// background at `AniList`'s rate limit; follow it with the status endpoint.
+#[utoipa::path(
+    post,
+    path = "/v1/admin/sync/mappings/reverify",
+    tag = ADMIN_SYNC_TAG,
+    request_body = MappingReverifyStart,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 202, description = "The run started", body = Ack),
+        (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
+        (status = 403, description = "no second factor is enrolled, a step-up is required, or the caller does not hold the required permission", body = crate::error::ProblemDetails),
+        (status = 409, description = "A run is already in flight", body = crate::error::ProblemDetails),
+    )
+)]
+pub async fn start_mapping_reverify(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Json(req): Json<MappingReverifyStart>,
+) -> ApiResult<(axum::http::StatusCode, Json<Ack>)> {
+    user.require(Permission::SyncAdminWrite).await?;
+    let Json(started): Json<tankovault_contracts::sync::MappingReverifyStarted> = state
+        .sync
+        .post(
+            "/v1/sync/mappings/reverify",
+            &tankovault_contracts::sync::MappingReverifyRequest {
+                dry_run: req.dry_run,
+                actor: Some(user.user_id),
+            },
+        )
+        .await?;
+    if !started.started {
+        return Err(ApiError::Conflict(
+            "a mapping re-verification is already running".to_owned(),
+        ));
+    }
+    audit(
+        &state,
+        &user,
+        "sync.mapping.reverify",
+        "sync_mappings",
+        &serde_json::json!({ "dry_run": req.dry_run }),
+    )
+    .await;
+    Ok((axum::http::StatusCode::ACCEPTED, Json(Ack::default())))
+}

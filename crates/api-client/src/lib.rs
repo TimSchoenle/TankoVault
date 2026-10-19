@@ -4578,6 +4578,271 @@ pub mod types {
             value.parse()
         }
     }
+    #[doc = "One mapping that failed re-verification."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One mapping that failed re-verification.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"external_id\","]
+    #[doc = "    \"provider\","]
+    #[doc = "    \"reason\","]
+    #[doc = "    \"series_id\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"external_id\": {"]
+    #[doc = "      \"description\": \"The provider's id for the record it was mapped to.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"provider\": {"]
+    #[doc = "      \"description\": \"The provider slug.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"reason\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/MappingReverifyReason\""]
+    #[doc = "    },"]
+    #[doc = "    \"series_id\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/SeriesId\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct MappingReverifyFailure {
+        #[doc = "The provider's id for the record it was mapped to."]
+        pub external_id: ::std::string::String,
+        #[doc = "The provider slug."]
+        pub provider: ::std::string::String,
+        pub reason: MappingReverifyReason,
+        pub series_id: SeriesId,
+    }
+    impl MappingReverifyFailure {
+        pub fn builder() -> builder::MappingReverifyFailure {
+            Default::default()
+        }
+    }
+    #[doc = "Why a stored mapping failed re-verification."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Why a stored mapping failed re-verification.\","]
+    #[doc = "  \"type\": \"string\","]
+    #[doc = "  \"enum\": ["]
+    #[doc = "    \"not_a_library_record\","]
+    #[doc = "    \"titles_differ\""]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+    )]
+    pub enum MappingReverifyReason {
+        #[serde(rename = "not_a_library_record")]
+        NotALibraryRecord,
+        #[serde(rename = "titles_differ")]
+        TitlesDiffer,
+    }
+    impl ::std::fmt::Display for MappingReverifyReason {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::NotALibraryRecord => f.write_str("not_a_library_record"),
+                Self::TitlesDiffer => f.write_str("titles_differ"),
+            }
+        }
+    }
+    impl ::std::str::FromStr for MappingReverifyReason {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "not_a_library_record" => Ok(Self::NotALibraryRecord),
+                "titles_differ" => Ok(Self::TitlesDiffer),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+    impl ::std::convert::TryFrom<&str> for MappingReverifyReason {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    impl ::std::convert::TryFrom<&::std::string::String> for MappingReverifyReason {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    impl ::std::convert::TryFrom<::std::string::String> for MappingReverifyReason {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+    #[doc = "Start a mapping re-verification."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Start a mapping re-verification.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"dry_run\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"dry_run\": {"]
+    #[doc = "      \"description\": \"Report the failing mappings without removing them. Review a dry run before a real one.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct MappingReverifyStart {
+        #[doc = "Report the failing mappings without removing them. Review a dry run before a real one."]
+        pub dry_run: bool,
+    }
+    impl MappingReverifyStart {
+        pub fn builder() -> builder::MappingReverifyStart {
+            Default::default()
+        }
+    }
+    #[doc = "What the re-verification of stored `AniList` mappings is doing, or last did."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"What the re-verification of stored `AniList` mappings is doing, or last did.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"checked\","]
+    #[doc = "    \"dry_run\","]
+    #[doc = "    \"failed\","]
+    #[doc = "    \"failures\","]
+    #[doc = "    \"removed\","]
+    #[doc = "    \"running\","]
+    #[doc = "    \"unreachable\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"checked\": {"]
+    #[doc = "      \"description\": \"Mappings looked up so far.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int32\""]
+    #[doc = "    },"]
+    #[doc = "    \"dry_run\": {"]
+    #[doc = "      \"description\": \"Whether the current or last run only reported.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"error\": {"]
+    #[doc = "      \"description\": \"How the last run ended when it ended badly.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"failed\": {"]
+    #[doc = "      \"description\": \"Of those, the ones whose record does not identify their series.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int32\""]
+    #[doc = "    },"]
+    #[doc = "    \"failures\": {"]
+    #[doc = "      \"description\": \"The failing mappings of the last finished run, at most 1,000.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/MappingReverifyFailure\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"finished_at\": {"]
+    #[doc = "      \"description\": \"RFC 3339. When the last run ended; absent while one is running.\","]
+    #[doc = "      \"examples\": ["]
+    #[doc = "        \"2026-10-19T05:30:00Z\""]
+    #[doc = "      ],"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"removed\": {"]
+    #[doc = "      \"description\": \"Of the failed, the ones removed and blocked. Zero on a dry run.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int32\""]
+    #[doc = "    },"]
+    #[doc = "    \"running\": {"]
+    #[doc = "      \"description\": \"Whether a run holds the claim. Only one runs at a time.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"started_at\": {"]
+    #[doc = "      \"description\": \"RFC 3339. When the current or last run started.\","]
+    #[doc = "      \"examples\": ["]
+    #[doc = "        \"2026-10-19T02:00:00Z\""]
+    #[doc = "      ],"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"unreachable\": {"]
+    #[doc = "      \"description\": \"Lookups that errored. Those mappings were left as they were.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"int32\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
+    pub struct MappingReverifyView {
+        #[doc = "Mappings looked up so far."]
+        pub checked: i32,
+        #[doc = "Whether the current or last run only reported."]
+        pub dry_run: bool,
+        #[doc = "How the last run ended when it ended badly."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub error: ::std::option::Option<::std::string::String>,
+        #[doc = "Of those, the ones whose record does not identify their series."]
+        pub failed: i32,
+        #[doc = "The failing mappings of the last finished run, at most 1,000."]
+        pub failures: ::std::vec::Vec<MappingReverifyFailure>,
+        #[doc = "RFC 3339. When the last run ended; absent while one is running."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub finished_at: ::std::option::Option<::std::string::String>,
+        #[doc = "Of the failed, the ones removed and blocked. Zero on a dry run."]
+        pub removed: i32,
+        #[doc = "Whether a run holds the claim. Only one runs at a time."]
+        pub running: bool,
+        #[doc = "RFC 3339. When the current or last run started."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub started_at: ::std::option::Option<::std::string::String>,
+        #[doc = "Lookups that errored. Those mappings were left as they were."]
+        pub unreachable: i32,
+    }
+    impl MappingReverifyView {
+        pub fn builder() -> builder::MappingReverifyView {
+            Default::default()
+        }
+    }
     #[doc = "`MarkRead`"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -21636,6 +21901,306 @@ pub mod types {
             }
         }
         #[derive(Clone, Debug)]
+        pub struct MappingReverifyFailure {
+            external_id: ::std::result::Result<::std::string::String, ::std::string::String>,
+            provider: ::std::result::Result<::std::string::String, ::std::string::String>,
+            reason: ::std::result::Result<super::MappingReverifyReason, ::std::string::String>,
+            series_id: ::std::result::Result<super::SeriesId, ::std::string::String>,
+        }
+        impl ::std::default::Default for MappingReverifyFailure {
+            fn default() -> Self {
+                Self {
+                    external_id: Err("no value supplied for external_id".to_string()),
+                    provider: Err("no value supplied for provider".to_string()),
+                    reason: Err("no value supplied for reason".to_string()),
+                    series_id: Err("no value supplied for series_id".to_string()),
+                }
+            }
+        }
+        impl MappingReverifyFailure {
+            pub fn external_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.external_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for external_id: {e}"));
+                self
+            }
+            pub fn provider<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.provider = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for provider: {e}"));
+                self
+            }
+            pub fn reason<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::MappingReverifyReason>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.reason = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for reason: {e}"));
+                self
+            }
+            pub fn series_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::SeriesId>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.series_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for series_id: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<MappingReverifyFailure> for super::MappingReverifyFailure {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: MappingReverifyFailure,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    external_id: value.external_id?,
+                    provider: value.provider?,
+                    reason: value.reason?,
+                    series_id: value.series_id?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::MappingReverifyFailure> for MappingReverifyFailure {
+            fn from(value: super::MappingReverifyFailure) -> Self {
+                Self {
+                    external_id: Ok(value.external_id),
+                    provider: Ok(value.provider),
+                    reason: Ok(value.reason),
+                    series_id: Ok(value.series_id),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct MappingReverifyStart {
+            dry_run: ::std::result::Result<bool, ::std::string::String>,
+        }
+        impl ::std::default::Default for MappingReverifyStart {
+            fn default() -> Self {
+                Self {
+                    dry_run: Err("no value supplied for dry_run".to_string()),
+                }
+            }
+        }
+        impl MappingReverifyStart {
+            pub fn dry_run<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.dry_run = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for dry_run: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<MappingReverifyStart> for super::MappingReverifyStart {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: MappingReverifyStart,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    dry_run: value.dry_run?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::MappingReverifyStart> for MappingReverifyStart {
+            fn from(value: super::MappingReverifyStart) -> Self {
+                Self {
+                    dry_run: Ok(value.dry_run),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
+        pub struct MappingReverifyView {
+            checked: ::std::result::Result<i32, ::std::string::String>,
+            dry_run: ::std::result::Result<bool, ::std::string::String>,
+            error: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            failed: ::std::result::Result<i32, ::std::string::String>,
+            failures: ::std::result::Result<
+                ::std::vec::Vec<super::MappingReverifyFailure>,
+                ::std::string::String,
+            >,
+            finished_at: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            removed: ::std::result::Result<i32, ::std::string::String>,
+            running: ::std::result::Result<bool, ::std::string::String>,
+            started_at: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            unreachable: ::std::result::Result<i32, ::std::string::String>,
+        }
+        impl ::std::default::Default for MappingReverifyView {
+            fn default() -> Self {
+                Self {
+                    checked: Err("no value supplied for checked".to_string()),
+                    dry_run: Err("no value supplied for dry_run".to_string()),
+                    error: Ok(Default::default()),
+                    failed: Err("no value supplied for failed".to_string()),
+                    failures: Err("no value supplied for failures".to_string()),
+                    finished_at: Ok(Default::default()),
+                    removed: Err("no value supplied for removed".to_string()),
+                    running: Err("no value supplied for running".to_string()),
+                    started_at: Ok(Default::default()),
+                    unreachable: Err("no value supplied for unreachable".to_string()),
+                }
+            }
+        }
+        impl MappingReverifyView {
+            pub fn checked<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.checked = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for checked: {e}"));
+                self
+            }
+            pub fn dry_run<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.dry_run = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for dry_run: {e}"));
+                self
+            }
+            pub fn error<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.error = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for error: {e}"));
+                self
+            }
+            pub fn failed<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.failed = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for failed: {e}"));
+                self
+            }
+            pub fn failures<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::MappingReverifyFailure>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.failures = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for failures: {e}"));
+                self
+            }
+            pub fn finished_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.finished_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for finished_at: {e}"));
+                self
+            }
+            pub fn removed<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.removed = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for removed: {e}"));
+                self
+            }
+            pub fn running<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.running = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for running: {e}"));
+                self
+            }
+            pub fn started_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.started_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for started_at: {e}"));
+                self
+            }
+            pub fn unreachable<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.unreachable = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for unreachable: {e}"));
+                self
+            }
+        }
+        impl ::std::convert::TryFrom<MappingReverifyView> for super::MappingReverifyView {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: MappingReverifyView,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    checked: value.checked?,
+                    dry_run: value.dry_run?,
+                    error: value.error?,
+                    failed: value.failed?,
+                    failures: value.failures?,
+                    finished_at: value.finished_at?,
+                    removed: value.removed?,
+                    running: value.running?,
+                    started_at: value.started_at?,
+                    unreachable: value.unreachable?,
+                })
+            }
+        }
+        impl ::std::convert::From<super::MappingReverifyView> for MappingReverifyView {
+            fn from(value: super::MappingReverifyView) -> Self {
+                Self {
+                    checked: Ok(value.checked),
+                    dry_run: Ok(value.dry_run),
+                    error: Ok(value.error),
+                    failed: Ok(value.failed),
+                    failures: Ok(value.failures),
+                    finished_at: Ok(value.finished_at),
+                    removed: Ok(value.removed),
+                    running: Ok(value.running),
+                    started_at: Ok(value.started_at),
+                    unreachable: Ok(value.unreachable),
+                }
+            }
+        }
+        #[derive(Clone, Debug)]
         pub struct MarkRead {
             all: ::std::result::Result<::std::option::Option<bool>, ::std::string::String>,
             ids: ::std::result::Result<::std::vec::Vec<::uuid::Uuid>, ::std::string::String>,
@@ -36924,6 +37489,14 @@ impl Client {
     pub fn clear_sync_mapping(&self) -> builder::ClearSyncMapping<'_> {
         builder::ClearSyncMapping::new(self)
     }
+    #[doc = "Get mapping re-verification status\n\nThe current or last re-verification of stored `AniList` mappings, with the mappings it\nrefused.\n\nSends a `GET` request to `/v1/admin/sync/mappings/reverify`\n\n```ignore\nlet response = client.mapping_reverify_status()\n    .send()\n    .await;\n```"]
+    pub fn mapping_reverify_status(&self) -> builder::MappingReverifyStatus<'_> {
+        builder::MappingReverifyStatus::new(self)
+    }
+    #[doc = "Re-verify stored mappings\n\nRe-fetch every stored `AniList` mapping by id and refuse the ones whose record is not a\nlibrary format (a light novel) or whose titles do not identify the series. A refused\nmapping is removed and blocked, so reconciliation does not write it back. Runs in the\nbackground at `AniList`'s rate limit; follow it with the status endpoint.\n\nSends a `POST` request to `/v1/admin/sync/mappings/reverify`\n\n```ignore\nlet response = client.start_mapping_reverify()\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn start_mapping_reverify(&self) -> builder::StartMappingReverify<'_> {
+        builder::StartMappingReverify::new(self)
+    }
     #[doc = "Force-pull another user's linked account\n\nOperator-forced pull for another user's linked account.\n\nSends a `POST` request to `/v1/admin/sync/pull`\n\n```ignore\nlet response = client.admin_sync_pull()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn admin_sync_pull(&self) -> builder::AdminSyncPull<'_> {
         builder::AdminSyncPull::new(self)
@@ -42945,6 +43518,138 @@ pub mod builder {
                     ResponseValue::from_response(response).await?,
                 )),
                 403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::mapping_reverify_status`]\n\n[`Client::mapping_reverify_status`]: super::Client::mapping_reverify_status"]
+    #[derive(Debug, Clone)]
+    pub struct MappingReverifyStatus<'a> {
+        client: &'a super::Client,
+    }
+    impl<'a> MappingReverifyStatus<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+        #[doc = "Sends a `GET` request to `/v1/admin/sync/mappings/reverify`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::MappingReverifyView>, Error<types::ProblemDetails>>
+        {
+            let Self { client } = self;
+            let url = format!("{}/v1/admin/sync/mappings/reverify", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "mapping_reverify_status",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+    #[doc = "Builder for [`Client::start_mapping_reverify`]\n\n[`Client::start_mapping_reverify`]: super::Client::start_mapping_reverify"]
+    #[derive(Debug, Clone)]
+    pub struct StartMappingReverify<'a> {
+        client: &'a super::Client,
+        body: Result<types::builder::MappingReverifyStart, String>,
+    }
+    impl<'a> StartMappingReverify<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::MappingReverifyStart>,
+            <V as std::convert::TryInto<types::MappingReverifyStart>>::Error: std::fmt::Display,
+        {
+            self.body = value.try_into().map(From::from).map_err(|s| {
+                format!(
+                    "conversion to `MappingReverifyStart` for body failed: {}",
+                    s
+                )
+            });
+            self
+        }
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::MappingReverifyStart,
+                ) -> types::builder::MappingReverifyStart,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+        #[doc = "Sends a `POST` request to `/v1/admin/sync/mappings/reverify`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::SyncAck>, Error<types::ProblemDetails>> {
+            let Self { client, body } = self;
+            let body = body
+                .and_then(|v| types::MappingReverifyStart::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v1/admin/sync/mappings/reverify", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "start_mapping_reverify",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                202u16 => ResponseValue::from_response(response).await,
+                401u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                403u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                409u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
                 _ => Err(Error::UnexpectedResponse(response)),

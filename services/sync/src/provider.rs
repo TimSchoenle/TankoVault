@@ -140,6 +140,8 @@ pub(crate) trait ExternalProvider: Send + Sync {
     }
 
     /// Fetch public catalogue metadata for a known external id, **without** any user token.
+    /// Returns `Ok(None)` when the record is not one a library holds; a failed lookup is an
+    /// error, never `None`.
     async fn fetch_public_metadata_by_id(
         &self,
         _external_id: &str,

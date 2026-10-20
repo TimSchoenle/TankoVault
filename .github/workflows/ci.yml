@@ -1661,7 +1661,7 @@ jobs:
   # as the amd64 `docker` legs treat `backend-deps-amd64`.
   docker-arm64:
     name: docker build (arm64, ${{ matrix.bin }})
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-26.04-arm
     timeout-minutes: 60
     needs: [changes, lint, docker-deps]
     # `arm64` is false on pull requests, where `docker-deps` builds no arm64 leg and there is no

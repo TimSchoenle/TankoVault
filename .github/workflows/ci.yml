@@ -1570,20 +1570,20 @@ jobs:
           # structure-tested and thrown away. It still inherits the workflow-level
           # `SOURCE_DATE_EPOCH`, because that value is part of the key it looks up.
           provenance: false
-          # Import only — this job deliberately writes no cache. `backend-deps-amd64` is published
-          # by `docker-deps` in this same run at this same commit, which is what makes `COPY . .`
+          # Import only — this job deliberately writes no cache. The tag below is published by
+          # `docker-deps` in this same run at this same commit, which is what makes `COPY . .`
           # inside `builder` a hit; this leg's remaining work is one `COPY` onto `scratch`.
           #
           # Do not add `cache-to`: `mode=max` re-exports imported layers too, so each leg would
           # upload its own copy of the multi-gigabyte `cook` layer. On the Actions cache that
           # evicted `backend-deps` itself; on GHCR it instead makes every later import pull a
           # duplicate chain, which is a slower gate for no benefit either way.
-          # `deps_scope` first: it is what `docker-deps` exported *in this run, at this commit*,
-          # so on a pull request it is the only tag that can hit once this branch touches the
-          # Dockerfile. `backend-deps-amd64` stays as the fallback for the runs that write it.
-          cache-from: |
-            ${{ needs.changes.outputs.deps_scope != '' && format('type=registry,ref={0}:{1}-amd64', needs.changes.outputs.buildcache, needs.changes.outputs.deps_scope) || '' }}
-            type=registry,ref=${{ needs.changes.outputs.buildcache }}:backend-deps-amd64
+          # One tag: the one `docker-deps` exported in this run, or `backend-deps` when it exported
+          # none (a fork). Importing `pr-<number>-deps` and `backend-deps` together made BuildKit
+          # resolve the `backend-deps` lineage and drop the other, so a pull request's `api` leg
+          # compiled `cook` and `builder` again: 47 minutes in run 3645 against 1 on `main`, where
+          # both lines named the same tag.
+          cache-from: type=registry,ref=${{ needs.changes.outputs.buildcache }}:${{ needs.changes.outputs.deps_scope || 'backend-deps' }}-amd64
 
       # The generated documents, on the host: `--target contract` is a `scratch` stage holding
       # nothing but them, so this is a cache hit against the build above plus a layer export. The
@@ -1597,9 +1597,7 @@ jobs:
           target: contract
           outputs: type=local,dest=${{ runner.temp }}/contract-out
           provenance: false
-          cache-from: |
-            ${{ needs.changes.outputs.deps_scope != '' && format('type=registry,ref={0}:{1}-amd64', needs.changes.outputs.buildcache, needs.changes.outputs.deps_scope) || '' }}
-            type=registry,ref=${{ needs.changes.outputs.buildcache }}:backend-deps-amd64
+          cache-from: type=registry,ref=${{ needs.changes.outputs.buildcache }}:${{ needs.changes.outputs.deps_scope || 'backend-deps' }}-amd64
 
       # The checkpoint the labels exist for. See the script for why it reads the image rather than
       # the Dockerfile, and why the embedded document is compared as well.
@@ -1711,10 +1709,8 @@ jobs:
           load: true
           tags: tankovault-${{ matrix.bin }}:ci-arm64
           provenance: false
-          # Same ordering as the amd64 leg: this run's own export first, `main`'s as the fallback.
-          cache-from: |
-            ${{ needs.changes.outputs.deps_scope != '' && format('type=registry,ref={0}:{1}-arm64', needs.changes.outputs.buildcache, needs.changes.outputs.deps_scope) || '' }}
-            type=registry,ref=${{ needs.changes.outputs.buildcache }}:backend-deps-arm64
+          # One tag, for the reason given on the amd64 leg.
+          cache-from: type=registry,ref=${{ needs.changes.outputs.buildcache }}:${{ needs.changes.outputs.deps_scope || 'backend-deps' }}-arm64
 
       # The generated documents, on the host: `--target contract` is a `scratch` stage holding
       # nothing but them, so this is a cache hit against the build above plus a layer export. The
@@ -1728,9 +1724,7 @@ jobs:
           target: contract
           outputs: type=local,dest=${{ runner.temp }}/contract-out
           provenance: false
-          cache-from: |
-            ${{ needs.changes.outputs.deps_scope != '' && format('type=registry,ref={0}:{1}-arm64', needs.changes.outputs.buildcache, needs.changes.outputs.deps_scope) || '' }}
-            type=registry,ref=${{ needs.changes.outputs.buildcache }}:backend-deps-arm64
+          cache-from: type=registry,ref=${{ needs.changes.outputs.buildcache }}:${{ needs.changes.outputs.deps_scope || 'backend-deps' }}-arm64
 
       # The checkpoint the labels exist for. See the script for why it reads the image rather than
       # the Dockerfile, and why the embedded document is compared as well.
@@ -1815,19 +1809,16 @@ jobs:
           load: true
           tags: tankovault-frontend:ci
           provenance: false
-          # The same two tags every other leg reads, in the same order, and **no third**: both are
-          # written from `build-cache`, so they describe one lineage covering both compile chains.
-          # Adding a second lineage back — which is what `frontend-deps-amd64` was — makes BuildKit
-          # resolve one and drop the other, and this leg then recompiles `cook` and `builder` from
-          # cold: 43 minutes here against under a minute for its nine siblings, on every run. The
+          # The one tag every other leg reads. It is written from `build-cache`, so it covers both
+          # compile chains. A second tag is a second lineage, which BuildKit resolves by dropping
+          # one, and this leg then recompiles `cook` and `builder` from cold: 43 minutes here
+          # against under a minute for its nine siblings while `frontend-deps-amd64` existed. The
           # stage comment in `deploy/docker/Dockerfile` carries the measurement.
           #
           # Import only, write neither: a `mode=max` export here re-uploads imported layers too, so
           # it would publish a second copy of the whole chain under this image's own tag and every
           # later import would pull it twice.
-          cache-from: |
-            ${{ needs.changes.outputs.deps_scope != '' && format('type=registry,ref={0}:{1}-amd64', needs.changes.outputs.buildcache, needs.changes.outputs.deps_scope) || '' }}
-            type=registry,ref=${{ needs.changes.outputs.buildcache }}:backend-deps-amd64
+          cache-from: type=registry,ref=${{ needs.changes.outputs.buildcache }}:${{ needs.changes.outputs.deps_scope || 'backend-deps' }}-amd64
 
       # The generated documents, on the host: `--target contract` is a `scratch` stage holding
       # nothing but them, so this is a cache hit against the build above plus a layer export. The
@@ -1841,9 +1832,7 @@ jobs:
           target: contract
           outputs: type=local,dest=${{ runner.temp }}/contract-out
           provenance: false
-          cache-from: |
-            ${{ needs.changes.outputs.deps_scope != '' && format('type=registry,ref={0}:{1}-amd64', needs.changes.outputs.buildcache, needs.changes.outputs.deps_scope) || '' }}
-            type=registry,ref=${{ needs.changes.outputs.buildcache }}:backend-deps-amd64
+          cache-from: type=registry,ref=${{ needs.changes.outputs.buildcache }}:${{ needs.changes.outputs.deps_scope || 'backend-deps' }}-amd64
 
       # The checkpoint the labels exist for. See the script for why it reads the image rather than
       # the Dockerfile, and why the embedded document is compared as well.

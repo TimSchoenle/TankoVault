@@ -40,7 +40,16 @@ RUN cargo install cargo-auditable --locked --version 0.7.5
 # Two recipes: web/frontend is its own workspace, invisible to `cargo metadata` at the root.
 FROM chef AS planner
 COPY . .
-RUN cargo chef prepare --recipe-path /recipe-server.json \
+# The recipe lists every auto-discovered test, bench and example target, so adding or renaming a
+# file under `tests/` changed it and `cook` recompiled all ~590 dependencies (18.7 minutes on
+# amd64) although it builds none of those targets. They are deleted here, before `prepare` reads
+# the tree; `builder` copies the context again and still has them. No manifest declares such a
+# target by path, which this relies on: `prepare` fails on a declared path that is missing.
+RUN for manifest in $(find . -name Cargo.toml); do \
+      dir="${manifest%/Cargo.toml}"; \
+      rm -rf "${dir}/tests" "${dir}/benches" "${dir}/examples"; \
+    done \
+ && cargo chef prepare --recipe-path /recipe-server.json \
  && cd web/frontend \
  && cargo chef prepare --recipe-path /recipe-web.json
 

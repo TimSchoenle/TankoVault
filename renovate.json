@@ -2,6 +2,7 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "github>TimSchoenle/actions//configs/renovate/default",
+    "github>TimSchoenle/actions//configs/renovate/rust-application",
     "customManagers:githubActionsVersions"
   ],
   "packageRules": [
@@ -11,11 +12,16 @@
       "enabled": false
     },
     {
-      "description": "The Rust toolchain moves in one pull request: `rust-toolchain.toml` and the two `FROM` tags in deploy/docker/Dockerfile carry the same version and must not drift apart. Never automerged — a new toolchain brings new clippy lints and new dependency `rust-version` floors, and the only build of the `cfg(windows)` desktop graph runs at release time, not on the pull request. Digest updates (same toolchain, rebuilt) stay ungrouped.",
+      "description": "The shared rust-application preset already moves `rust-toolchain.toml`, the `rust:` `FROM` tag in deploy/docker/Dockerfile and `rust-version` in Cargo.toml in the `rust toolchain` group. This adds the cargo-chef `FROM` tag, which carries the same version and must not drift apart. Never automerged — a new toolchain brings new clippy lints and new dependency `rust-version` floors, and the only build of the `cfg(windows)` desktop graph runs at release time, not on the pull request. Digest updates (same toolchain, rebuilt) stay ungrouped.",
       "matchDepNames": ["rust", "lukemathwalker/cargo-chef"],
       "matchUpdateTypes": ["major", "minor", "patch"],
       "groupName": "rust toolchain",
       "automerge": false
+    },
+    {
+      "description": "Keeps the `rust toolchain` group whole while the cargo-chef tag is inside `minimumReleaseAge`, as the preset does for `rust`: under the default `internalChecksFilter: strict` Renovate would drop the pending tag from a branch that holds ready updates. Matched without `matchUpdateTypes`, because Renovate reads `internalChecksFilter` before an update type exists.",
+      "matchDepNames": ["lukemathwalker/cargo-chef"],
+      "internalChecksFilter": "none"
     },
     {
       "description": "cargo-chef tags are `latest-rust-<rust version>-alpine`, which docker versioning cannot parse; this exposes the Rust version inside the tag so the `rust toolchain` group can move it.",

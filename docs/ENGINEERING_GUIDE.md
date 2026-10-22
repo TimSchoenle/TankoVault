@@ -591,7 +591,7 @@ Everything that can fail, what owns it, and how to run it.
 | licences, advisories, duplicate-version budget, banned crates | `deny.toml` | `cargo deny check` |
 | secrets in history | gitleaks | CI `secrets` job |
 | coverage floor | `xtask coverage-ratchet` | CI `coverage` job |
-| MSRV (1.94) | CI `msrv` job | — |
+| MSRV (`rust-version`, follows the pinned toolchain) | CI `msrv` job | — |
 | every published endpoint is classified by an access-control matrix | `me_access_matrix.rs`, `admin_access_matrix.rs` | `cargo test -p tankovault-api --features integration` (Docker) |
 | every SQL copy of the unread predicate agrees with `ReadProgress::covers` | `repo_tracking.rs` differential | `cargo test -p tankovault-db --features integration` (Docker) |
 | every cached query plans within the cost ceiling | `repo_query_plans.rs` | `cargo test -p tankovault-db --features integration` (Docker) |

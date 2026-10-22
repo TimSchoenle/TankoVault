@@ -257,7 +257,7 @@ by the block naming that crate.
   - aes-kw 0.2.1
   - allocator-api2 0.2.21
   - anyhow 1.0.104
-  - arc-swap 1.9.2
+  - arc-swap 1.9.3
   - argon2 0.5.3
   - argon2 0.6.0
   - asn1-rs 0.6.2

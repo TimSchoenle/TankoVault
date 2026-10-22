@@ -58,7 +58,7 @@ license = "PolyForm-Noncommercial-1.0.0"
 # preset from TimSchoenle/actions) moves it with `channel` in rust-toolchain.toml and the Dockerfile
 # `FROM` tags. The `msrv` CI job builds on it, and it must never drop below what the dependencies
 # need: `sqlx 0.9` alone requires 1.94.0.
-rust-version = "1.94"
+rust-version = "1.99"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

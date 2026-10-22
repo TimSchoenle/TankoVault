@@ -1284,13 +1284,13 @@ dependencies = [
 
 [[package]]
 name = "csp-policy"
-version = "0.2.0"
-source = "git+https://github.com/TimSchoenle/csp-shell?tag=csp-shell-v0.2.0#8e0d90cd955c6e366932bc56d93d4aedd72e1e05"
+version = "0.2.1"
+source = "git+https://github.com/TimSchoenle/csp-shell?tag=csp-shell-v0.2.1#8898438ebdd65e3d7a15641d6f5d0dc98a7a463b"
 
 [[package]]
 name = "csp-shell"
-version = "0.2.0"
-source = "git+https://github.com/TimSchoenle/csp-shell?tag=csp-shell-v0.2.0#8e0d90cd955c6e366932bc56d93d4aedd72e1e05"
+version = "0.2.1"
+source = "git+https://github.com/TimSchoenle/csp-shell?tag=csp-shell-v0.2.1#8898438ebdd65e3d7a15641d6f5d0dc98a7a463b"
 dependencies = [
  "csp-policy",
  "getrandom 0.4.3",

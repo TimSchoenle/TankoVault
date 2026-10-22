@@ -398,7 +398,7 @@ webauthn-rs = { version = "=0.6.1-dev", default-features = false, features = [
 #
 # `cloudflare` is `presets` + `nonce` — the two `TANKOVAULT_FRONTEND__CLOUDFLARE__*` flags and
 # nothing else; the origins for the other services the crate knows about are compiled out.
-csp-shell = { git = "https://github.com/TimSchoenle/csp-shell", tag = "csp-shell-v0.2.0", features = ["cloudflare"] }
+csp-shell = { git = "https://github.com/TimSchoenle/csp-shell", tag = "csp-shell-v0.2.1", features = ["cloudflare"] }
 
 # --- observability ---
 tracing = "0.1"

@@ -12,6 +12,18 @@ GPL-3.0 and distributing the images is *conveying* — and after that by the abs
 `LICENSE` (`OPS-10.4`). Both are resolved: the project is licensed under
 [PolyForm Noncommercial 1.0.0](LICENSE), and merging a release pull request now pushes.
 
+## [11.1.1](https://github.com/TimSchoenle/TankoVault/compare/v11.1.0...v11.1.1) (2026-10-22)
+
+
+### Build System
+
+* **renovate:** let rust-version follow the toolchain via rust-application ([#545](https://github.com/TimSchoenle/TankoVault/issues/545)) ([a8b5c53](https://github.com/TimSchoenle/TankoVault/commit/a8b5c53b636fb7583d62247c97c25440f9104f72))
+
+
+### Dependencies
+
+* **deps:** update lukemathwalker/cargo-chef docker tag to latest-rust-1.99.1-alpine ([#539](https://github.com/TimSchoenle/TankoVault/issues/539)) ([aec2bea](https://github.com/TimSchoenle/TankoVault/commit/aec2bea4b2d691aa26fcecdc55b6d7f3db459924))
+
 ## [11.1.0](https://github.com/TimSchoenle/TankoVault/compare/v11.0.5...v11.1.0) (2026-10-19)
 
 

@@ -81,55 +81,39 @@ pub async fn find_refresh<'e, E: PgExecutor<'e>>(
     }))
 }
 
-/// Revoke a single token by id (normal rotation).
+/// Revoke a single token by id (normal rotation); `true` when this call revoked it.
+///
+/// A compare-and-swap: of two concurrent calls for one token exactly one sees `true`, because
+/// the second blocks on the row lock and then finds `revoked_at` already set. Run inside the
+/// transaction that inserts the successor, so the loser sees that successor once it unblocks.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only. Unknown/already-revoked is `Ok(())` (idempotent retry).
-pub async fn revoke_token<'e, E: PgExecutor<'e>>(exec: E, id: Uuid) -> DbResult<()> {
-    sqlx::query!(
+/// [`crate::DbError::Sqlx`] only. Unknown/already-revoked is `Ok(false)`.
+pub async fn revoke_token<'e, E: PgExecutor<'e>>(exec: E, id: Uuid) -> DbResult<bool> {
+    let done = sqlx::query!(
         "UPDATE refresh_tokens SET revoked_at = now() WHERE id = $1 AND revoked_at IS NULL",
         id,
     )
     .execute(exec)
     .await?;
-    Ok(())
+    Ok(done.rows_affected() == 1)
 }
 
-/// Does `family_id` still hold a token that is usable right now (unrevoked, unexpired)?
+/// Revoke an entire token family (reuse detected → invalidate the lineage), returning how many
+/// tokens were still standing.
 ///
-/// Distinguishes an interrupted rotation from token theft: "presented token is revoked" alone
-/// can't tell a lost-response retry from replay, but a live sibling means the lineage is still
-/// running. Caller (`session.rs::refresh`) pairs this with a tight time bound.
-///
-/// # Errors
-/// [`crate::DbError::Sqlx`] only.
-pub async fn family_has_live_token<'e, E: PgExecutor<'e>>(
-    exec: E,
-    family_id: Uuid,
-) -> DbResult<bool> {
-    let live = sqlx::query_scalar!(
-        "SELECT EXISTS( \
-             SELECT 1 FROM refresh_tokens \
-              WHERE family_id = $1 AND revoked_at IS NULL AND expires_at > now() \
-         ) AS \"live!\"",
-        family_id,
-    )
-    .fetch_one(exec)
-    .await?;
-    Ok(live)
-}
-
-/// Revoke an entire token family (reuse detected → invalidate the lineage).
+/// The count is the liveness test for the rotation grace path: taken by the same statement that
+/// collapses the family, two racing retries cannot both see a live lineage and both reissue.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only. Callers must propagate — swallowing it leaves a compromised
 /// lineage usable.
-pub async fn revoke_family<'e, E: PgExecutor<'e>>(exec: E, family_id: Uuid) -> DbResult<()> {
-    sqlx::query!(
+pub async fn revoke_family<'e, E: PgExecutor<'e>>(exec: E, family_id: Uuid) -> DbResult<u64> {
+    let done = sqlx::query!(
         "UPDATE refresh_tokens SET revoked_at = now() WHERE family_id = $1 AND revoked_at IS NULL",
         family_id,
     )
     .execute(exec)
     .await?;
-    Ok(())
+    Ok(done.rows_affected())
 }

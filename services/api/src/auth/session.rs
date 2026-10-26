@@ -85,22 +85,33 @@ pub async fn refresh(
     let record = tankovault_db::repo::users::find_refresh(&state.pool, &token_hash)
         .await?
         .ok_or(ApiError::Unauthorized)?;
+    let now = OffsetDateTime::now_utc();
+    if record.revoked_at.is_none() && record.expires_at <= now {
+        return Err(ApiError::Unauthorized);
+    }
+
+    // Every write below shares one transaction, and the revoke of the presented token is a
+    // compare-and-swap: a second request racing this rotation blocks on the row until this one
+    // has committed its successor, then loses the swap and takes the reuse path with that
+    // successor visible. Without it both requests rotated and the family forked into two live
+    // lineages. Every early return commits first, so a revocation is never rolled back.
+    let mut tx = tankovault_db::begin(&state.pool).await?;
+    let rotated = record.revoked_at.is_none()
+        && tankovault_db::repo::users::revoke_token(&mut *tx, record.id).await?;
 
     // Reuse detection: presenting an already-rotated token usually means theft, but a raced or
     // interrupted rotation leaves an honest client holding the same evidence — see
     // `ROTATION_GRACE`'s doc before changing anything below.
-    if let Some(revoked_at) = record.revoked_at {
-        // Evaluated before the family is collapsed below — liveness is about the state this
-        // request arrived into, not the one it leaves behind.
-        let raced = OffsetDateTime::now_utc() - revoked_at <= ROTATION_GRACE
-            && tankovault_db::repo::users::family_has_live_token(&state.pool, record.family_id)
-                .await?;
-
+    let mut recovered_race = false;
+    if !rotated {
+        let revoked_at = record.revoked_at.unwrap_or(now);
         // Collapse either way: on theft that's the point; on a race it enforces "one live
-        // token per family" by revoking a successor nobody took delivery of.
-        tankovault_db::repo::users::revoke_family(&state.pool, record.family_id).await?;
-
-        if !raced {
+        // token per family" by revoking a successor nobody took delivery of. The count it
+        // returns is the liveness test, taken atomically with the collapse.
+        let standing =
+            tankovault_db::repo::users::revoke_family(&mut *tx, record.family_id).await?;
+        if now - revoked_at > ROTATION_GRACE || standing == 0 {
+            tankovault_db::commit(tx).await?;
             // The highest-signal security event this service emits — a rotated token replayed
             // means two parties hold the same credential.
             tracing::warn!(
@@ -124,7 +135,41 @@ pub async fn refresh(
             .await;
             return Err(ApiError::Unauthorized);
         }
+        if record.expires_at <= now {
+            tankovault_db::commit(tx).await?;
+            return Err(ApiError::Unauthorized);
+        }
+        recovered_race = true;
+    }
 
+    let user = tankovault_db::repo::users::get(&mut *tx, record.user_id).await?;
+
+    // A suspension applied since this session began must end it, or the holder of a live
+    // refresh cookie could keep minting access tokens until the cookie itself expired.
+    if !user.status.may_authenticate() {
+        tankovault_db::repo::users::revoke_family(&mut *tx, record.family_id).await?;
+        tankovault_db::commit(tx).await?;
+        audit_anonymous(
+            &state,
+            &client,
+            Some(user.id),
+            "auth.refresh",
+            &user.id.as_uuid().to_string(),
+            &serde_json::json!({
+                "reason": "account_suspended",
+                "action_taken": "family_revoked",
+            }),
+            AuditOutcome::Denied,
+        )
+        .await;
+        return Err(ApiError::Suspended);
+    }
+
+    let (jar, resp) =
+        issue_session_tokens_via(&mut *tx, &state, jar, &user, record.family_id).await?;
+    tankovault_db::commit(tx).await?;
+
+    if recovered_race {
         // Audited as a success, separate from theft, so `token_reuse_detected` in the log
         // always means what it claims.
         tracing::info!(
@@ -147,37 +192,7 @@ pub async fn refresh(
         )
         .await;
     }
-
-    if record.expires_at <= OffsetDateTime::now_utc() {
-        return Err(ApiError::Unauthorized);
-    }
-
-    // Rotate: revoke the presented token, mint a new one in the family. A no-op on the grace
-    // path since `revoke_token` is guarded by `revoked_at IS NULL`.
-    tankovault_db::repo::users::revoke_token(&state.pool, record.id).await?;
-    let user = tankovault_db::repo::users::get(&state.pool, record.user_id).await?;
-
-    // A suspension applied since this session began must end it, or the holder of a live
-    // refresh cookie could keep minting access tokens until the cookie itself expired.
-    if !user.status.may_authenticate() {
-        tankovault_db::repo::users::revoke_family(&state.pool, record.family_id).await?;
-        audit_anonymous(
-            &state,
-            &client,
-            Some(user.id),
-            "auth.refresh",
-            &user.id.as_uuid().to_string(),
-            &serde_json::json!({
-                "reason": "account_suspended",
-                "action_taken": "family_revoked",
-            }),
-            AuditOutcome::Denied,
-        )
-        .await;
-        return Err(ApiError::Suspended);
-    }
-
-    issue_session(&state, jar, &user, record.family_id).await
+    Ok((jar, Json(resp)))
 }
 
 /// Log out
@@ -242,20 +257,26 @@ pub(super) async fn issue_session_tokens(
     user: &User,
     family_id: Uuid,
 ) -> ApiResult<(CookieJar, TokenResponse)> {
+    issue_session_tokens_via(&state.pool, state, jar, user, family_id).await
+}
+
+/// As [`issue_session_tokens`], persisting the refresh token through `exec` — a transaction when
+/// the issue has to commit together with a revocation.
+async fn issue_session_tokens_via<'e, E: tankovault_db::PgExecutor<'e>>(
+    exec: E,
+    state: &AppState,
+    jar: CookieJar,
+    user: &User,
+    family_id: Uuid,
+) -> ApiResult<(CookieJar, TokenResponse)> {
     let access = issue_access_token(&state.jwt_secret, user.id, &user.username, state.access_ttl)
         .map_err(|_| ApiError::Internal)?;
 
     let raw_refresh = generate_refresh_token();
     let refresh_hash = hash_refresh_token(&raw_refresh);
     let expires_at = OffsetDateTime::now_utc() + state.refresh_ttl;
-    tankovault_db::repo::users::insert_refresh(
-        &state.pool,
-        user.id,
-        family_id,
-        &refresh_hash,
-        expires_at,
-    )
-    .await?;
+    tankovault_db::repo::users::insert_refresh(exec, user.id, family_id, &refresh_hash, expires_at)
+        .await?;
 
     // `__Host-refresh_token` at `Path=/` when cookies are `Secure`; the unprefixed name at
     // `/v1/auth` only for the local-HTTP opt-out. No `Domain` is set, deliberately.

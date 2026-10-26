@@ -79,13 +79,15 @@ pub(crate) async fn verify_password(
 #[cfg(test)]
 mod tests {
     use super::{hash_password, verify_password};
-    use secrecy::{SecretSlice, SecretString};
+    use secrecy::SecretSlice;
     use std::sync::Arc;
+    use tankovault_auth::generate_handle;
 
     #[tokio::test]
     async fn an_offloaded_hash_verifies_and_rejects_like_the_inline_one() {
-        let pepper = Arc::new(SecretSlice::from(b"pepper".to_vec()));
-        let password = SecretString::from("correct horse battery staple");
+        // Generated, not literal: the test needs no particular value and the scanner flags literals.
+        let pepper = Arc::new(SecretSlice::from(uuid::Uuid::new_v4().as_bytes().to_vec()));
+        let password = generate_handle();
         let hash = hash_password(&password, &pepper).await.expect("hashes");
         assert!(
             verify_password(&password, &hash, &pepper)
@@ -93,7 +95,7 @@ mod tests {
                 .expect("verifies")
         );
         assert!(
-            !verify_password(&SecretString::from("guess"), &hash, &pepper)
+            !verify_password(&generate_handle(), &hash, &pepper)
                 .await
                 .expect("verifies")
         );

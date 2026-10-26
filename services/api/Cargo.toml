@@ -70,6 +70,8 @@ uuid = { workspace = true }
 # base64url-encoded rather than spelled in the query string. Already in the lock file via
 # `crates/auth`; this adds no new dependency to the tree.
 base64 = { workspace = true }
+# Appends the signed OAuth `state` to the provider's consent URL without re-encoding the rest.
+url = { workspace = true }
 utoipa = { workspace = true }
 utoipa-axum = { workspace = true }
 utoipa-scalar = { workspace = true }

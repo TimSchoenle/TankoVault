@@ -52,10 +52,10 @@ pub(crate) enum Route {
         #[route("/account")]
         Account {},
         // AniList's OAuth redirect target (the sync service's `redirect_uri`); reads `?code=`
-        // and exchanges it via the bearer-authenticated callback endpoint. Declared ahead of
-        // `/account/:panel` so its literal segment wins the match.
-        #[route("/account/anilist-callback?:code")]
-        AnilistCallback { code: String },
+        // and the signed `?state=`, and exchanges them via the bearer-authenticated callback
+        // endpoint. Declared ahead of `/account/:panel` so its literal segment wins the match.
+        #[route("/account/anilist-callback?:code&:state")]
+        AnilistCallback { code: String, state: String },
         #[route("/account/:panel")]
         AccountSection { panel: AccountPanel },
         // A panel slug this build has dropped lands on the settings rather than on a 404 — the

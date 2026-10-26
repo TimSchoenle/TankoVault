@@ -1,6 +1,6 @@
 //! External-sync proxy endpoints, keyed by provider.
 
-use crate::error::ApiResult;
+use crate::error::{ApiError, ApiResult};
 use crate::openapi::ME_SYNC_TAG;
 use crate::slug::ProviderSlug;
 use crate::state::{AppState, AuthUser};
@@ -13,6 +13,8 @@ use tankovault_contracts::sync::{
     AccountSettings, AccountStatus, Ack, AuthorizeUrl, ConflictPolicy, ConflictView, HistoryView,
     ProviderInfo, PullReport, PushReport, Removed, Resolved,
 };
+use tankovault_service::AuditEvent;
+use time::OffsetDateTime;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
@@ -47,6 +49,9 @@ pub async fn sync_providers(
 /// Behind a step-up: following this URL grants a third party a standing OAuth token against the
 /// caller's account there, which is an authorisation that outlives the session and is not
 /// revoked by anything this system does.
+///
+/// The URL carries a `state` bound to the caller and the provider, expiring after ten minutes;
+/// the callback refuses a link without the matching one.
 #[utoipa::path(
     get,
     path = "/v1/me/sync/{provider}/authorize",
@@ -61,13 +66,22 @@ pub async fn sync_providers(
 )]
 pub async fn sync_authorize_url(
     State(state): State<AppState>,
-    Elevated(_user): Elevated,
+    Elevated(user): Elevated,
     Path(provider): Path<ProviderSlug>,
 ) -> ApiResult<Json<AuthorizeUrl>> {
-    state
+    let Json(AuthorizeUrl { url }) = state
         .sync
-        .get(&format!("/v1/sync/{provider}/authorize-url"))
-        .await
+        .get::<AuthorizeUrl>(&format!("/v1/sync/{provider}/authorize-url"))
+        .await?;
+    let mut url = url::Url::parse(&url).map_err(|_| ApiError::BadGateway)?;
+    let oauth_state = tankovault_auth::mint_oauth_state(
+        &state.jwt_secret,
+        user.user_id.as_uuid(),
+        provider.as_str(),
+        OffsetDateTime::now_utc(),
+    );
+    url.query_pairs_mut().append_pair("state", &oauth_state);
+    Ok(Json(AuthorizeUrl { url: url.into() }))
 }
 
 /// Get link status for a provider
@@ -134,12 +148,17 @@ pub async fn sync_disconnect(
 #[into_params(parameter_in = Query)]
 pub struct AniListCallback {
     pub code: String,
+    /// The `state` the consent URL from `GET /v1/me/sync/{provider}/authorize` carried.
+    pub state: String,
 }
 
 /// Complete an OAuth link
 ///
 /// Exchanges the authorization `code` and links the caller's account at `provider`. The sync
 /// service answers `204`; [`Ack`] is what `Upstream::decode` synthesises from an empty body.
+///
+/// `state` must be the one minted for this caller and provider, unexpired: a code delivered
+/// to anyone else's session is refused before it reaches the provider.
 #[utoipa::path(
     get,
     path = "/v1/me/sync/{provider}/callback",
@@ -148,6 +167,7 @@ pub struct AniListCallback {
     security(("bearer_auth" = [])),
     responses(
         (status = 200, description = "Linked", body = Ack),
+        (status = 400, description = "`state` missing, foreign or expired", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 404, description = "Unknown provider", body = crate::error::ProblemDetails),
         (status = 409, description = "Account not linked", body = crate::error::ProblemDetails),
@@ -159,6 +179,29 @@ pub async fn sync_callback(
     Path(provider): Path<ProviderSlug>,
     Query(q): Query<AniListCallback>,
 ) -> ApiResult<Json<Ack>> {
+    if tankovault_auth::verify_oauth_state(
+        &state.jwt_secret,
+        &q.state,
+        user.user_id.as_uuid(),
+        provider.as_str(),
+        OffsetDateTime::now_utc(),
+    )
+    .is_err()
+    {
+        state
+            .audit
+            .record(
+                AuditEvent::new("sync.link.state_rejected")
+                    .actor(user.user_id)
+                    .target(provider.as_str())
+                    .denied(),
+            )
+            .await;
+        return Err(ApiError::BadRequest(
+            "the link request is missing, expired or was started by another session; start it again"
+                .to_owned(),
+        ));
+    }
     sync_proxy(
         &state,
         &format!("/v1/sync/{provider}/link"),

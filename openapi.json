@@ -18023,7 +18023,7 @@
     },
     "/v1/me/sync/{provider}/authorize": {
       "get": {
-        "description": "Returns the provider's consent URL (proxied). The body type is shared with the sync\nservice via `tankovault_contracts::sync`.\n\nBehind a step-up: following this URL grants a third party a standing OAuth token against the\ncaller's account there, which is an authorisation that outlives the session and is not\nrevoked by anything this system does.",
+        "description": "Returns the provider's consent URL (proxied). The body type is shared with the sync\nservice via `tankovault_contracts::sync`.\n\nBehind a step-up: following this URL grants a third party a standing OAuth token against the\ncaller's account there, which is an authorisation that outlives the session and is not\nrevoked by anything this system does.\n\nThe URL carries a `state` bound to the caller and the provider, expiring after ten minutes;\nthe callback refuses a link without the matching one.",
         "operationId": "sync_authorize_url",
         "parameters": [
           {
@@ -18081,7 +18081,7 @@
     },
     "/v1/me/sync/{provider}/callback": {
       "get": {
-        "description": "Exchanges the authorization `code` and links the caller's account at `provider`. The sync\nservice answers `204`; [`Ack`] is what `Upstream::decode` synthesises from an empty body.",
+        "description": "Exchanges the authorization `code` and links the caller's account at `provider`. The sync\nservice answers `204`; [`Ack`] is what `Upstream::decode` synthesises from an empty body.\n\n`state` must be the one minted for this caller and provider, unexpired: a code delivered\nto anyone else's session is refused before it reaches the provider.",
         "operationId": "sync_callback",
         "parameters": [
           {
@@ -18100,6 +18100,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "description": "The `state` the consent URL from `GET /v1/me/sync/{provider}/authorize` carried.",
+            "in": "query",
+            "name": "state",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -18112,6 +18121,16 @@
               }
             },
             "description": "Linked"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "`state` missing, foreign or expired"
           },
           "401": {
             "content": {

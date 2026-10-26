@@ -44,16 +44,22 @@ runs:
           exit 0
         fi
 
-        # 120s is roughly ten times what either call costs on a healthy mirror, so a trip here is
-        # evidence of a stall rather than of a slow day. Three attempts bound the worst case at
-        # about six minutes against the 20m47s that prompted this.
+        # A stall and a slow mirror need different limits. `Acquire::http::Timeout` fails a fetch
+        # that receives nothing for 30s, and `Acquire::Retries` refetches it, so a stall is caught
+        # per file within seconds. The wall-clock cap is only the backstop: on 2026-10-26 the
+        # mirror served ~150 KB/s, the 43 MB install needed ~5 minutes, and a 120s cap killed
+        # three attempts that were each still downloading. Finished `.deb`s stay in apt's cache,
+        # so a retried install resumes. Three attempts bound the worst case at 15 minutes, still
+        # under the 20m47s that prompted the bound.
         apt_bounded() {
           for attempt in 1 2 3; do
-            if sudo timeout 120 apt-get "$@"; then
+            if sudo timeout 300 apt-get -o Acquire::http::Timeout=30 -o Acquire::Retries=3 "$@"; then
               return 0
             fi
-            echo "::warning::apt-get $1 stalled or failed (attempt ${attempt}/3); retrying"
-            sleep $((attempt * 5))
+            if [ "$attempt" -lt 3 ]; then
+              echo "::warning::apt-get $1 stalled or failed (attempt ${attempt}/3); retrying"
+              sleep $((attempt * 5))
+            fi
           done
           echo "::error::apt-get $1 did not complete after 3 bounded attempts"
           return 1

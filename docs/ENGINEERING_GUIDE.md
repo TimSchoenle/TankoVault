@@ -246,13 +246,14 @@ one. **[E]** CI's `secrets` job runs gitleaks over the history.
 ### 2.3 SSRF
 
 **[E/R] Anything that fetches a URL someone else chose calls `tankovault_domain::ssrf::validate_str`**
-— or `validate_and_resolve` when the value is being persisted. Do not re-derive the range table.
+— or `validate_and_resolve` when the value is being persisted, or `validate_unpinned` when a
+client that resolves on its own (Chromium, TRAWL) will fetch it. Do not re-derive the range table.
 Enforced by review and by the tests in `crates/domain`; the *call* cannot be enforced
 mechanically, which is why the policy lives in exactly one place and is easy to find.
 
 **Known gap, recorded rather than fixed:** Chrome and TRAWL resolve DNS independently of
-this guard, so the renderer tier needs `--host-resolver-rules` or an egress-restricted network
-namespace. See `SECURITY.md` and audit row SEC-2b.
+this guard, so a rebind still reaches the renderer tier; `render`'s per-request CDP interception
+narrows it, and an egress-restricted network closes it. See `SECURITY.md` and audit row SEC-2b.
 
 ### 2.4 SQL
 

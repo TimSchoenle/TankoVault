@@ -231,7 +231,7 @@ pub const CATALOGUE: &[Metric] = &[
         kind: Kind::Counter,
         unit: Unit::Count,
         emitted_by: "services on the Redis limiter backend",
-        help: "Rate-limit counter-store failures. The limiter fails open, so any non-zero rate means limits are not being enforced.",
+        help: "Rate-limit counter-store failures. Each one falls back to per-replica limits, so a non-zero rate means the effective limit is multiplied by the replica count.",
     },
     Metric {
         name: names::FEATURE_DISABLED,

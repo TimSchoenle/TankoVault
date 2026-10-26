@@ -3,7 +3,8 @@
 //!
 //! Buckets are keyed by **client IP**, never by anything the client supplies — a bearer
 //! token or an untrusted header would let an attacker mint a fresh bucket per request —
-//! unless a verified [`Principal`] extension is present, which the limiter prefers.
+//! unless a verified [`Principal`] extension is present, which the limiter prefers outside
+//! [`RouteClass::Auth`].
 
 pub mod memory;
 #[cfg(feature = "redis")]
@@ -201,9 +202,9 @@ impl RateLimitDecision {
 pub trait RateLimitStore: Send + Sync + 'static {
     /// Charge one request against `key` in `class`.
     ///
-    /// Implementations **must fail open**: a counter-store outage is not a reason to stop
-    /// serving. A denied request is a deliberate decision, never a side effect of
-    /// infrastructure trouble.
+    /// A counter-store outage must never deny by itself: a denied request is a deliberate
+    /// decision, never a side effect of infrastructure trouble. A shared store degrades to
+    /// per-replica limits rather than to none.
     async fn check(&self, class: RouteClass, key: &str) -> RateLimitDecision;
 }
 
@@ -301,13 +302,19 @@ impl RateLimiter {
         Some(Self::new(store, classifier, cfg))
     }
 
-    /// Derive the bucket key for a request.
+    /// Derive the bucket key for a request in `class`.
     ///
     /// Prefers a verified [`Principal`] extension, then the proxy-supplied client IP when
     /// trusted, then the peer address, then a single shared `unknown` bucket — an
     /// unidentifiable caller is exactly the one that should not get a free pass.
-    fn key(&self, req: &Request) -> String {
-        if let Some(Principal(id)) = req.extensions().get::<Principal>() {
+    ///
+    /// [`RouteClass::Auth`] is always keyed by address: accounts are free to create, so keying
+    /// sign-in and reset by principal gave one address a fresh budget per self-registered
+    /// account.
+    fn key(&self, class: RouteClass, req: &Request) -> String {
+        if class != RouteClass::Auth
+            && let Some(Principal(id)) = req.extensions().get::<Principal>()
+        {
             return format!("u:{id}");
         }
         if self.trust_forwarded_for
@@ -408,7 +415,7 @@ pub async fn enforce(
         .map_or(RouteClass::Global, |p| {
             limiter.classifier.classify(&method, p.as_str())
         });
-    let key = limiter.key(&req);
+    let key = limiter.key(class, &req);
 
     let decision = limiter.store.check(class, &key).await;
     if !decision.allowed {
@@ -538,7 +545,7 @@ mod tests {
 
         let mut anonymous = Request::new(axum::body::Body::empty());
         anonymous.extensions_mut().insert(peer);
-        let anonymous_key = limiter.key(&anonymous);
+        let anonymous_key = limiter.key(RouteClass::Global, &anonymous);
 
         let mut alice = Request::new(axum::body::Body::empty());
         alice.extensions_mut().insert(peer);
@@ -548,18 +555,44 @@ mod tests {
         bob.extensions_mut().insert(peer);
         bob.extensions_mut().insert(Principal("bob".to_owned()));
 
-        assert_eq!(limiter.key(&alice), "u:alice");
+        assert_eq!(limiter.key(RouteClass::Global, &alice), "u:alice");
         assert_ne!(
-            limiter.key(&alice),
-            limiter.key(&bob),
+            limiter.key(RouteClass::Global, &alice),
+            limiter.key(RouteClass::Global, &bob),
             "two accounts behind one NAT must not share a budget"
         );
         assert_ne!(
-            limiter.key(&alice),
+            limiter.key(RouteClass::Global, &alice),
             anonymous_key,
             "an identified caller must not fall back to the address bucket"
         );
         assert_eq!(anonymous_key, "ip:203.0.113.7");
+    }
+
+    /// The bug: any valid bearer switched the auth bucket from address to account, so one
+    /// address holding N self-registered accounts got N times the sign-in and reset budget.
+    #[test]
+    fn the_auth_class_is_bucketed_per_address_even_for_an_identified_caller() {
+        let cfg = RateLimitConfig::default();
+        let limiter = RateLimiter::new(
+            Arc::new(crate::ratelimit::memory::MemoryStore::new(&cfg)),
+            RouteClassifier::new(),
+            &cfg,
+        );
+        let peer = ConnectInfo("203.0.113.7:44444".parse::<SocketAddr>().unwrap());
+        let mut alice = Request::new(axum::body::Body::empty());
+        alice.extensions_mut().insert(peer);
+        alice.extensions_mut().insert(Principal("alice".to_owned()));
+        let mut bob = Request::new(axum::body::Body::empty());
+        bob.extensions_mut().insert(peer);
+        bob.extensions_mut().insert(Principal("bob".to_owned()));
+
+        assert_eq!(limiter.key(RouteClass::Auth, &alice), "ip:203.0.113.7");
+        assert_eq!(
+            limiter.key(RouteClass::Auth, &alice),
+            limiter.key(RouteClass::Auth, &bob),
+            "two accounts on one address share the credential budget"
+        );
     }
 
     /// Regression: reading the left-most entry let any caller mint a fresh bucket per

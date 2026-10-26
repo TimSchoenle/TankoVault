@@ -397,7 +397,7 @@ threshold between boundaries would alert on an interpolated number rather than a
 
 | Alert | Fires when | First move |
 |---|---|---|
-| `TankoVaultRateLimiterFailingOpen` | any `rate_limit_store_errors_total` in 10m | **Rate limiting is not being enforced while this fires.** The Redis backend fails open on purpose so a counter-store outage cannot take the edge down — which means login attempts are currently unlimited. Restore Redis. If it will be down a while, either accept the exposure knowingly or set `TANKOVAULT_RATE_LIMIT__BACKEND=memory` for per-replica limiting (effective limit becomes N× the configured one, but finite). |
+| `TankoVaultRateLimiterDegraded` | any `rate_limit_store_errors_total` in 10m | **Limits are per-replica while this fires.** The Redis backend falls back to in-process buckets when Redis is unreachable, so the effective limit is N× the configured one for N replicas — still finite, including on sign-in. Restore Redis; the client reconnects on its own. |
 | `TankoVaultAuthRateLimitSurge` | `auth`-class denials over 0.1/s for 15m | Probably credential stuffing; the limiter is working, so this is not an outage. Rule it out as self-inflicted first — a client looping on a failed refresh looks identical. `auth.login`/`auth.refresh` audit entries tell you whether the attempts name one account (client bug) or many (attack). |
 | `TankoVaultDisabledFeatureStillCalled` | a disabled feature still called after 1h | These are answered `404 feature_disabled`, so users see an empty surface rather than an error. Other replicas converge within `features.refresh_secs` (15s) and the SPA re-reads `/v1/me/capabilities`, so an hour later means a client is not honouring the capability list — a frontend fix, not a flag change. |
 

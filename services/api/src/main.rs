@@ -24,17 +24,6 @@ const AUDIT_PRUNE_BATCH: i64 = 10_000;
 /// one forges tokens outright. 32 bytes is the floor a real deployment must clear.
 const MIN_JWT_SECRET_LEN: usize = 32;
 
-/// Whether this process is running under the production profile.
-///
-/// Keyed off `TANKOVAULT_PROFILE=production`/`prod`; anything else is development, so tests
-/// and the integration harness with short secrets are never blocked.
-fn is_production() -> bool {
-    matches!(
-        std::env::var("TANKOVAULT_PROFILE").as_deref(),
-        Ok("production" | "prod")
-    )
-}
-
 /// Placeholder secrets that ship in this repository, and are therefore public.
 ///
 /// Kept as data rather than a `matches!` inside one caller, since the seed step consults
@@ -218,7 +207,7 @@ async fn serve_once(
 ) -> anyhow::Result<()> {
     // Refuse to boot with a broken trust root: a production deployment must not serve a single
     // request against a missing or brute-forceable JWT secret.
-    validate_auth_secrets(&cfg.auth, is_production())?;
+    validate_auth_secrets(&cfg.auth, tankovault_config::is_production())?;
     // A legal document that cannot be served would 404 on a link the footer publishes from the
     // same config. Refusing here names every bad key, and on a reload keeps the previous runtime.
     let legal = tankovault_api::legal_documents(&cfg.legal)?;
@@ -599,11 +588,9 @@ async fn connect_redis(
     cfg: Option<&tankovault_config::RedisConfig>,
 ) -> Option<fred::clients::Client> {
     let cfg = cfg?;
-    match fred::prelude::Builder::from_config(
+    match tankovault_service::redis::client(
         fred::prelude::Config::from_url(cfg.url.expose_secret()).ok()?,
-    )
-    .build()
-    {
+    ) {
         Ok(client) => match fred::prelude::ClientLike::init(&client).await {
             Ok(_) => {
                 tracing::info!("connected to redis for rate-limit counters and stream tickets");

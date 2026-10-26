@@ -4,6 +4,7 @@
 //! holds a single token bucket per (class, client) in Redis, so the limit means what it
 //! says regardless of how many API replicas are running.
 
+use super::memory::MemoryStore;
 use super::{RateLimitDecision, RateLimitStore, RouteClass};
 use async_trait::async_trait;
 use fred::clients::Client;
@@ -59,6 +60,9 @@ return {allowed, math.floor(tokens), retry_after_ms}
 pub struct RedisStore {
     client: Client,
     policies: [RateLimitPolicy; RouteClass::COUNT],
+    /// Per-replica buckets used while Redis is unreachable, so an outage weakens the limit
+    /// (multiplied by the replica count) instead of removing it — the auth class included.
+    fallback: MemoryStore,
 }
 
 impl RedisStore {
@@ -72,6 +76,7 @@ impl RedisStore {
         Self {
             client,
             policies: RouteClass::ALL.map(|class| class.policy(cfg)),
+            fallback: MemoryStore::new(cfg),
         }
     }
 
@@ -133,20 +138,19 @@ impl RateLimitStore for RedisStore {
                 }
             }
             Err(e) => {
-                // Fail open: a counter-store outage must not take the edge down. This is a
-                // deliberate availability-over-enforcement trade, logged so it is visible
-                // rather than silently unlimited.
+                // Degrade, do not deny: an outage must not take the edge down, and must not
+                // lift the limit either (credential stuffing would ride it out).
                 tracing::warn!(
                     error = %e,
                     class = class.as_str(),
-                    "redis rate-limit check failed; allowing the request"
+                    "redis rate-limit check failed; using per-replica limits"
                 );
                 metrics::counter!(
                     crate::metrics::names::RATE_LIMIT_STORE_ERRORS,
                     "backend" => "redis"
                 )
                 .increment(1);
-                RateLimitDecision::allow(policy.capacity(), 0)
+                self.fallback.check(class, key).await
             }
         }
     }

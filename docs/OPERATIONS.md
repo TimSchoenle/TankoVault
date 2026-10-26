@@ -288,8 +288,9 @@ letting one client spend a whole minute's budget instantly.
 **Backends.** `memory` is process-local: correct for one replica, but with `N` replicas the
 effective limit is `N` times the configured one. `redis` holds one token bucket per
 `(class, client)` in a Lua check-and-consume, so the limit means what it says across a
-fleet. The Redis backend **fails open** — a counter-store outage must not take the edge
-down — and logs plus counts every such failure.
+fleet. When Redis is unreachable the Redis backend **degrades to per-replica limits** — an
+outage must neither take the edge down nor lift the limit — and logs plus counts every such
+failure. Every command is bounded by a 250 ms timeout and the client reconnects with backoff.
 
 > **`trust_forwarded_for` is a security setting.** Enable it *only* behind a reverse proxy
 > that overwrites `X-Forwarded-For`/`X-Real-IP`. With it on and no such proxy, any client
@@ -298,7 +299,9 @@ down — and logs plus counts every such failure.
 Buckets are keyed by client IP, deliberately not by anything the client supplies — keying
 on a bearer token would let an attacker mint a fresh bucket per request by sending a
 different (even invalid) one. A service that has already *verified* a principal in an outer
-layer may insert a `ratelimit::Principal` request extension, which the limiter prefers.
+layer may insert a `ratelimit::Principal` request extension, which the limiter prefers —
+except on the `auth` class, which stays keyed by address because accounts cost nothing to
+create.
 
 ### `security`
 

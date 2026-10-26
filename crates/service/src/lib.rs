@@ -36,6 +36,8 @@ pub mod internal_auth;
 pub mod metrics;
 pub mod problem;
 pub mod ratelimit;
+#[cfg(feature = "redis")]
+pub mod redis;
 pub mod reload;
 // Private: the Sentry client is installed by `init_tracing` and reached through the guard it
 // returns, so there is no second way to switch it on.

@@ -197,6 +197,24 @@ async fn redeem(state: &AppState, ticket: &str) -> ApiResult<Principal> {
     if !principal.status.may_authenticate() {
         return Err(ApiError::Suspended);
     }
+    // The same rule `AuthUser::require_all` applies to every privileged route: no permission is
+    // honoured for an account without a second factor. This route skips that extractor, and
+    // used to skip the rule with it.
+    if !principal.mfa_enrolled {
+        state
+            .audit
+            .record(
+                tankovault_service::AuditEvent::new("authz.denied")
+                    .actor(user_id)
+                    .detail(serde_json::json!({
+                        "reason": "mfa_enrolment_required",
+                        "route": "admin.stream",
+                    }))
+                    .denied(),
+            )
+            .await;
+        return Err(ApiError::MfaEnrolmentRequired);
+    }
     Ok(principal)
 }
 

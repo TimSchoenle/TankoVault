@@ -61,7 +61,9 @@ code change closes it:
 
 ## What the deployment expects of you
 
-`TANKOVAULT_PROFILE=production` refuses to boot without `TANKOVAULT_INTERNAL__TOKEN`, and every
-profile refuses the placeholder secrets published in this repository. That is deliberate: the
+`TANKOVAULT_PROFILE=production` refuses to boot with `internal.identity=off` or a weak
+`auth.jwt_secret`, an unrecognised profile refuses to boot at all, the internal tier identifies
+callers by token unless told otherwise, and every profile refuses the placeholder secrets
+published in this repository. That is deliberate: the
 failure modes those settings produce are silent, and a service that will not start is a better
 outcome than one that starts insecure. See `docs/CONFIGURATION.md`.

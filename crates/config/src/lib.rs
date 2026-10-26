@@ -44,8 +44,8 @@ pub use internal_auth::{
     PeerConfig, ResolvedCaller, ResolvedInternalAuth, ResolvedPeer, ResolvedTls,
 };
 pub use loader::{
-    ConfigError, Explanation, Layer, Loaded, Sources, default_true, explain, is_production, load,
-    load_watched, terrace,
+    ConfigError, Explanation, Layer, Loaded, Profile, Sources, default_true, explain,
+    is_production, load, load_watched, terrace,
 };
 pub use matching::MatchingConfig;
 pub use messaging::{NatsConfig, RedisConfig};

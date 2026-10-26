@@ -102,7 +102,7 @@ than one that surfaces during a deploy.
 | `TANKOVAULT_ANILIST__TOKEN_ENCRYPTION_KEY` | sync | Boot fails. Base64 (standard alphabet) of exactly 32 bytes — `openssl rand -base64 32`. This key seals every user's AniList access and refresh tokens at rest; the previous fallback was 32 zero bytes. |
 | `TANKOVAULT_ANILIST__CLIENT_ID` / `__CLIENT_SECRET` / `__REDIRECT_URI` | sync | Boot fails. |
 | `TANKOVAULT_SEED_ADMIN_PASSWORD` | bootstrap (`seed-admin`), `xtask seed` | The step fails. **`bootstrap` has no default**; `xtask seed` falls back to `changeme12345`, which is a known placeholder the api refuses — a local convenience that cannot survive into a deployment. |
-| `TANKOVAULT_INTERNAL__IDENTITY` | api, control-plane, worker, sync, render, challenge-solver, notifier | **Under `TANKOVAULT_PROFILE=production` only**, boot fails when it is `off`. Elsewhere `off` leaves the internal tier unidentified so local development stays frictionless. See [§3 `internal`](#internal--service-to-service-identity-and-authorisation). |
+| `TANKOVAULT_INTERNAL__IDENTITY` | api, control-plane, worker, sync, render, challenge-solver, notifier | **Under `TANKOVAULT_PROFILE=production` only**, boot fails when it is `off`. Elsewhere an explicit `off` leaves the internal tier unidentified for local development; the default is `token`. See [§3 `internal`](#internal--service-to-service-identity-and-authorisation). |
 | `TANKOVAULT_INTERNAL__CALLER__TOKEN` | api, worker | Boot fails under `identity=token` when the service names a caller without one, or when it is shorter than 32 characters. `openssl rand -hex 32`. |
 | `TANKOVAULT_INTERNAL__PEERS` | control-plane, worker, sync, render, challenge-solver | Boot fails under `identity=token`/`mtls` if a listed peer lacks the credential that mode verifies. An **empty** map is allowed and means "nothing may call me". |
 | `TANKOVAULT_INTERNAL__TLS__CERT` / `__KEY` / `__CA` | all, under `identity=mtls` | Boot fails if any of the three is unset or unreadable. |
@@ -117,7 +117,7 @@ set in a TOML file.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `TANKOVAULT_PROFILE` | *(unset)* | The **only** value with an effect is `production` (case-insensitive). It turns on the production safety posture: `internal.identity=off` becomes a boot failure, and `/scalar` + the OpenAPI document default to **off**. Nothing else reads it. Setting it to `staging`, `prod` or `dev` is the same as leaving it unset — a real trap, because `prod` looks like it should work. |
+| `TANKOVAULT_PROFILE` | *(unset)* | `production` or `prod` (case-insensitive) turns on the production safety posture in every service: `internal.identity=off` becomes a boot failure, the API refuses an empty or short `auth.jwt_secret`, and `/scalar` + the OpenAPI document default to **off**. Unset, `development` or `dev` is development. **Any other value fails the boot** — `staging` used to mean development silently. |
 | `TANKOVAULT_CONFIG` | `config.toml` | Path to the optional TOML layer — a file, or a directory whose `*.toml` entries are merged in name order. A missing file is not an error; a *misspelled path* is therefore also not an error. A named directory that cannot be read **is**. |
 | `TANKOVAULT_SECRETS_DIR` | *(unset)* | Directory of key-named files, one value per file — the shape a Kubernetes `Secret` mounted as a volume has. Unset disables the layer; set-but-unreadable fails the boot, because an operator who named it meant it and booting on defaults instead is the outcome worth avoiding. Entries starting with `.` and anything that is not a regular file are skipped, which is what makes a projected volume's `..data` layout work. |
 | `RUST_LOG` | *(unset)* | Standard `EnvFilter` syntax. When set it **replaces** `TANKOVAULT_TELEMETRY__LOG_FILTER` entirely rather than merging with it. |
@@ -249,7 +249,7 @@ state, and sees the real client because the proxy appends `X-Forwarded-For`).
 | Key | Default | Notes |
 |---|---|---|
 | `TANKOVAULT_RATE_LIMIT__ENABLED` | `true` | `false` leaves the layer unmounted — no per-request cost, and no `X-RateLimit-*` headers. |
-| `TANKOVAULT_RATE_LIMIT__BACKEND` | `memory` | Or `redis`. `memory` is per-replica: with `N` replicas the effective limit is `N` times the configured one. `redis` requires `TANKOVAULT_REDIS__URL` and **fails open** if Redis is unreachable. |
+| `TANKOVAULT_RATE_LIMIT__BACKEND` | `memory` | Or `redis`. `memory` is per-replica: with `N` replicas the effective limit is `N` times the configured one. `redis` requires `TANKOVAULT_REDIS__URL` and degrades to per-replica limits while Redis is unreachable. |
 | `TANKOVAULT_RATE_LIMIT__TRUST_FORWARDED_FOR` | `false` | **Security setting.** Enable *only* behind a proxy that overwrites `X-Forwarded-For`. With it on and no such proxy, any client forges a fresh bucket per request and bypasses the limiter completely. |
 | `TANKOVAULT_RATE_LIMIT__GLOBAL__PER_MINUTE` / `__BURST` | `300` / `60` | Anything without a stricter class. |
 | `TANKOVAULT_RATE_LIMIT__AUTH__PER_MINUTE` / `__BURST` | `10` / `5` | Login, register, reset, refresh — the online-guessing control. |
@@ -574,7 +574,7 @@ of how it proves identity.
 
 | Mode | How a caller is identified | Where it fits |
 |---|---|---|
-| `off` | nobody is identified; every route is open | local development and tests. **Refused under `TANKOVAULT_PROFILE=production`.** |
+| `off` | nobody is identified; every route is open | local development and tests, set explicitly. **Refused under `TANKOVAULT_PROFILE=production`.** |
 | `token` | a per-caller secret in `X-Internal-Token` | compose, bare metal, anything without a certificate authority |
 | `mtls` | the SAN of a verified client certificate | Kubernetes (cert-manager + trust-manager), or anywhere the three files below can be written |
 
@@ -596,7 +596,7 @@ So a caller sets `internal.caller.*`, a callee sets `internal.peers.*`, and `wor
 
 | Key | Default | Services | Notes |
 |---|---|---|---|
-| `TANKOVAULT_INTERNAL__IDENTITY` | `off` | all | `off`, `token` or `mtls`. `off` is refused under `TANKOVAULT_PROFILE=production`. |
+| `TANKOVAULT_INTERNAL__IDENTITY` | `token` | all | `off`, `token` or `mtls`. `off` must be named explicitly and is refused under `TANKOVAULT_PROFILE=production`. Under the `token` default a service with no `internal.peers` admits no caller. |
 | `TANKOVAULT_INTERNAL__CALLER__NAME` | *(unset)* | api, worker | The name this service is known by; must match the key its peers list it under. |
 | `TANKOVAULT_INTERNAL__CALLER__TOKEN` | *(unset)* | api, worker | Required under `identity=token`. Minimum 32 characters, checked in every profile. `openssl rand -hex 32`. Ignored under `mtls`, where the client certificate is the credential. |
 | `TANKOVAULT_INTERNAL__PEERS` | *(empty)* | control-plane, worker, sync, render, challenge-solver | A **map keyed by caller name**, so the environment spelling is `TANKOVAULT_INTERNAL__PEERS__<NAME>__TOKEN` (or `__SAN`) — e.g. `TANKOVAULT_INTERNAL__PEERS__API__TOKEN`. Under `token` each entry needs a `token`; under `mtls` each needs a `san`. A peer carrying the wrong one for the active mode is refused at boot, and so is a key inside an entry that is neither `token` nor `san`: an undeclared one is a credential written under a name nothing reads, which is an authorisation the deployment believes it configured and does not have. The caller names stay open. Because the keys are dynamic, `xtask config-docs` can only see this root — the per-peer keys are documented by this row, not derived. |

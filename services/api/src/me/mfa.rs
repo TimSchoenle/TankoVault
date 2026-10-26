@@ -766,12 +766,12 @@ pub async fn step_up(
             tankovault_db::repo::users::find_credentials(&state.pool, &account.username)
                 .await?
                 .ok_or(ApiError::Unauthorized)?;
-        let ok = tankovault_auth::verify_password(
+        let ok = crate::auth::kdf::verify_password(
             password,
             &credentials.password_hash,
             &state.password_pepper,
         )
-        .map_err(|_| ApiError::Internal)?;
+        .await?;
         if !ok {
             return Err(refuse_step_up(&state, &user, "password").await);
         }

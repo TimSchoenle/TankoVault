@@ -165,8 +165,7 @@ pub async fn change_password(
 ) -> ApiResult<axum::http::StatusCode> {
     crate::auth::validate_password(&body.new_password)?;
 
-    let hash = tankovault_auth::hash_password(&body.new_password, &state.password_pepper)
-        .map_err(|_| ApiError::Internal)?;
+    let hash = crate::auth::kdf::hash_password(&body.new_password, &state.password_pepper).await?;
     tankovault_db::repo::users::update_password(&state.pool, user.user_id, &hash).await?;
     tankovault_db::repo::users::revoke_all_for_user(&state.pool, user.user_id).await?;
     tankovault_db::repo::users::mfa::revoke_step_ups(&state.pool, user.user_id).await?;

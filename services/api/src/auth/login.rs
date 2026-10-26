@@ -8,7 +8,6 @@ use axum::extract::State;
 use axum_extra::extract::cookie::CookieJar;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
-use tankovault_auth::verify_password;
 use tankovault_domain::Feature;
 use tankovault_service::AuditOutcome;
 use utoipa::ToSchema;
@@ -26,6 +25,9 @@ use crate::state::{AppState, ClientContext};
 /// constant-time property breaks silently. Pinned by a test that fails if the two drift.
 const DUMMY_PASSWORD_HASH: &str = "$argon2id$v=19$m=19456,t=2,p=1$\
     c29tZXNhbHRzb21lc2FsdA$YQNhOkeeqk3xJHTvR0mCFcRXA3vsSPT/9ObTNfMlLKw";
+
+/// Longest identifier an account can have: an email address (`validate_email`).
+const MAX_IDENTIFIER_LEN: usize = 254;
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct LoginRequest {
@@ -194,13 +196,34 @@ async fn verify_credentials(
     login: &str,
     password: &SecretString,
 ) -> ApiResult<tankovault_db::repo::users::Credentials> {
+    // No account can have a longer identifier (`validate_email`/`validate_username`), so this
+    // answers nothing an attacker could not already know, and keeps an unbounded value out of
+    // the lookup.
+    if login.len() > MAX_IDENTIFIER_LEN {
+        return Err(refuse(
+            state,
+            client,
+            None,
+            login,
+            "identifier_too_long",
+            AuditOutcome::Failure,
+            ApiError::Unauthorized,
+        )
+        .await);
+    }
+
     // The identifier is recorded on failures so a brute-force campaign can be attributed to
     // its target; the IP is separately gated behind the operator's privacy toggle.
     let Some(creds) = tankovault_db::repo::users::find_credentials(&state.pool, login).await?
     else {
         // Pay the argon2 cost anyway, or the timing gap between known and unknown identifiers
-        // lets an attacker enumerate accounts. Result discarded; only elapsed time matters.
-        let _ = verify_password(password, DUMMY_PASSWORD_HASH, &state.password_pepper);
+        // lets an attacker enumerate accounts. Result discarded; only elapsed time matters —
+        // except a shed request, which must answer as the known branch would.
+        if let Err(ApiError::Unavailable) =
+            super::kdf::verify_password(password, DUMMY_PASSWORD_HASH, &state.password_pepper).await
+        {
+            return Err(ApiError::Unavailable);
+        }
         return Err(refuse(
             state,
             client,
@@ -214,8 +237,8 @@ async fn verify_credentials(
     };
     let uid = Some(creds.user.id);
 
-    let ok = verify_password(password, &creds.password_hash, &state.password_pepper)
-        .map_err(|_| ApiError::Internal)?;
+    let ok =
+        super::kdf::verify_password(password, &creds.password_hash, &state.password_pepper).await?;
     if !ok {
         return Err(refuse(
             state,

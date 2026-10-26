@@ -8,7 +8,7 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
-use tankovault_auth::{generate_refresh_token, hash_password, hash_refresh_token};
+use tankovault_auth::{generate_refresh_token, hash_refresh_token};
 use time::{Duration, OffsetDateTime};
 use utoipa::ToSchema;
 
@@ -171,9 +171,10 @@ pub async fn reset_password(
         ));
     }
 
-    let hash =
-        hash_password(&req.new_password, &state.password_pepper).map_err(|_| ApiError::Internal)?;
+    let hash = super::kdf::hash_password(&req.new_password, &state.password_pepper).await?;
     tankovault_db::repo::users::update_password(&state.pool, record.user_id, &hash).await?;
     tankovault_db::repo::users::revoke_all_for_user(&state.pool, record.user_id).await?;
+    // As `change_password` does: an elevation earned under the old credential must not outlive it.
+    tankovault_db::repo::users::mfa::revoke_step_ups(&state.pool, record.user_id).await?;
     Ok(StatusCode::OK)
 }

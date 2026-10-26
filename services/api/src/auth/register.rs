@@ -9,7 +9,6 @@ use axum::extract::State;
 use axum_extra::extract::cookie::CookieJar;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
-use tankovault_auth::hash_password;
 use tankovault_domain::Feature;
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -17,7 +16,7 @@ use uuid::Uuid;
 use super::session::issue_session_tokens;
 use super::validate::{validate_email, validate_password, validate_username};
 use super::verification::send_verification_email;
-use crate::error::{ApiError, ApiResult};
+use crate::error::ApiResult;
 use crate::mailer;
 use crate::openapi::AUTH_TAG;
 use crate::state::AppState;
@@ -84,8 +83,7 @@ pub async fn register(
     Json(req): Json<RegisterRequest>,
 ) -> ApiResult<(CookieJar, Json<RegisterResponse>)> {
     validate_registration(&req)?;
-    let hash =
-        hash_password(&req.password, &state.password_pepper).map_err(|_| ApiError::Internal)?;
+    let hash = super::kdf::hash_password(&req.password, &state.password_pepper).await?;
     let user = tankovault_db::repo::users::create(
         &state.pool,
         req.email.trim(),

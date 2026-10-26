@@ -509,16 +509,14 @@ async fn a_password_reset_token_can_be_consumed_exactly_once() {
     );
 }
 
-/// Expiry is reported by the lookup and **not** enforced by `consume_password_reset`.
+/// Expiry is reported by the lookup **and** enforced by `consume_password_reset`.
 ///
-/// Worth stating explicitly because the split is easy to misread in either direction. The
-/// repository deliberately answers "is this token known" separately from "is it usable", so the
-/// handler can respond identically for unknown, expired and already-used tokens — which is what
-/// stops the endpoint enumerating whether a reset was ever requested. The consequence is that
-/// **every** caller must repeat the `expires_at` check (`services/api/src/auth/password.rs`
-/// does); a new caller that only checks `consume`'s return value would honour an expired link.
+/// The repository still answers "is this token known" separately, so the handler can respond
+/// identically for unknown, expired and already-used tokens. The consume used to check only
+/// `used_at`, and the handler hashes the new password between its lookup and the consume: a
+/// token that expired while that hash waited for a slot was still honoured.
 #[tokio::test]
-async fn an_expired_reset_token_is_reported_expired_but_the_repository_still_consumes_it() {
+async fn an_expired_reset_token_is_reported_expired_and_cannot_be_consumed() {
     let db = TestDb::spawn().await;
     let user = seed::user(&db, "stale-reset")
         .email("stale-reset@example.test")
@@ -547,8 +545,8 @@ async fn an_expired_reset_token_is_reported_expired_but_the_repository_still_con
         users::consume_password_reset(&db.pool, record.id)
             .await
             .expect("consume"),
-        1,
-        "the expiry gate lives in the handler, not in this statement"
+        0,
+        "an expired reset token must not be consumable"
     );
 }
 

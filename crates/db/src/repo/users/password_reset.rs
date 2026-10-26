@@ -94,13 +94,18 @@ pub async fn find_password_reset<'e, E: PgExecutor<'e>>(
     }))
 }
 
-/// Atomically mark a reset token consumed (single-use). `0` rows means already used.
+/// Atomically mark a reset token consumed (single-use). `0` rows means already used or expired.
+///
+/// The expiry is re-checked here, not only in the caller's lookup: the handler hashes the new
+/// password between the two, and a token must not be honoured past its expiry for as long as
+/// that hash waited.
 ///
 /// # Errors
 /// [`DbError::Sqlx`] only. Losing the race is `Ok(0)`, not an error.
 pub async fn consume_password_reset<'e, E: PgExecutor<'e>>(exec: E, id: Uuid) -> DbResult<u64> {
     let result = sqlx::query!(
-        "UPDATE password_reset_tokens SET used_at = now() WHERE id = $1 AND used_at IS NULL",
+        "UPDATE password_reset_tokens SET used_at = now() \
+         WHERE id = $1 AND used_at IS NULL AND expires_at > now()",
         id,
     )
     .execute(exec)

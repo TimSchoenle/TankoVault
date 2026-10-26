@@ -165,18 +165,20 @@ pub async fn reset_password(
     // Hashed before the token is consumed: a shed (503) under load must not burn the reset link.
     let hash = super::kdf::hash_password(&req.new_password, &state.password_pepper).await?;
 
+    // One transaction: a failure after the token is spent must not leave the password changed
+    // with the old sessions or step-up grants still live, and no link left to retry with.
+    let mut tx = tankovault_db::begin(&state.pool).await?;
     // Atomic `used_at` flip closes the race between concurrent resets; the loser sees 0 rows.
-    let consumed =
-        tankovault_db::repo::users::consume_password_reset(&state.pool, record.id).await?;
+    let consumed = tankovault_db::repo::users::consume_password_reset(&mut *tx, record.id).await?;
     if consumed == 0 {
         return Err(ApiError::BadRequest(
             "invalid or expired reset token".into(),
         ));
     }
-
-    tankovault_db::repo::users::update_password(&state.pool, record.user_id, &hash).await?;
-    tankovault_db::repo::users::revoke_all_for_user(&state.pool, record.user_id).await?;
+    tankovault_db::repo::users::update_password(&mut *tx, record.user_id, &hash).await?;
+    tankovault_db::repo::users::revoke_all_for_user(&mut *tx, record.user_id).await?;
     // As `change_password` does: an elevation earned under the old credential must not outlive it.
-    tankovault_db::repo::users::mfa::revoke_step_ups(&state.pool, record.user_id).await?;
+    tankovault_db::repo::users::mfa::revoke_step_ups(&mut *tx, record.user_id).await?;
+    tankovault_db::commit(tx).await?;
     Ok(StatusCode::OK)
 }

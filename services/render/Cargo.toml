@@ -26,8 +26,9 @@ tankovault-config = { workspace = true }
 terrace-config = { workspace = true, features = ["schema"] }
 tankovault-service = { workspace = true }
 # For the SSRF address policy only. Deliberately not `tankovault-fetch`: this service needs
-# the *table*, not the wreq/BoringSSL client stack the Docker build has to work around.
-tankovault-domain = { workspace = true }
+# the *table*, not the wreq/BoringSSL client stack the Docker build has to work around. `dns`
+# because Chromium resolves names itself, so each one is resolved and vetted here first.
+tankovault-domain = { workspace = true, features = ["dns"] }
 tankovault-solver = { workspace = true, features = ["axum"] }
 axum = { workspace = true }
 tokio = { workspace = true }

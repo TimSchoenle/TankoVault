@@ -3,6 +3,7 @@
 //! unavailable.
 
 mod browser;
+mod intercept;
 mod solver;
 
 // Re-exported into the binary's own root so `crate::config::…` keeps resolving in the modules
@@ -170,11 +171,13 @@ async fn serve_once(
 ///
 /// Chrome fetches the URL verbatim and returns the DOM and cookies, so an unvalidated
 /// target is a full internal-network read (`file:///`, cloud metadata, internal APIs).
-/// Uses the crawler's scheme allowlist plus the forbidden-range check, including IP
-/// literals. This is a Rust-side check on the address as *named*; it does not survive a
+/// Uses the crawler's scheme allowlist plus the forbidden-range check, on an IP literal or on
+/// every address a hostname resolves to. Answers the caller with a `403`; enforcement on the
+/// navigation itself, its redirects and its subresources is [`intercept`]. Neither survives a
 /// DNS rebind, since Chrome resolves independently of this process.
-fn validate_target(raw: &str) -> Result<(), Box<Response>> {
-    tankovault_domain::ssrf::validate_str(raw)
+async fn validate_target(raw: &str) -> Result<(), Box<Response>> {
+    tankovault_domain::ssrf::validate_unpinned(raw)
+        .await
         .map(|_| ())
         .map_err(|e| {
             metrics::counter!("render_requests_total", "result" => "rejected").increment(1);
@@ -195,7 +198,7 @@ async fn render(
     State(state): State<AppState>,
     Json(req): Json<RenderRequest>,
 ) -> impl IntoResponse {
-    if let Err(rejection) = validate_target(&req.url) {
+    if let Err(rejection) = validate_target(&req.url).await {
         return *rejection;
     }
     let url = req.url.clone();

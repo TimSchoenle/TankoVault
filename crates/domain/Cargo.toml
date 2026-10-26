@@ -40,6 +40,8 @@ sqlx = ["dep:sqlx"]
 # `ssrf::validate_and_resolve` / `ssrf::resolve_checked`: the DNS-resolving guard an inbound
 # handler needs before *persisting* an operator-supplied URL. Enabled by `tankovault-fetch`
 # (which re-exports them) and by `services/api`, which needs them without the crawl stack.
+# `ssrf::validate_unpinned` / `ssrf::lookup` are the variant for a target a browser or TRAWL
+# fetches, enabled by `tankovault-solver` and `services/render`.
 dns = ["dep:tokio"]
 # Derives `Describe` on the two types a *configuration* key holds — `MetadataPriority` and the
 # `MetadataSource` its lists are made of. Enabled by `tankovault-config`, which owns the

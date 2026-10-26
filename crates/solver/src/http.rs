@@ -49,12 +49,13 @@ pub const fn solve_route(callers: &'static [&'static str]) -> InternalRoute {
 ///
 /// The URL check is not optional and not the caller's business to remember: this endpoint
 /// fetches a caller-supplied URL, which is an arbitrary-URL fetch primitive for anything
-/// that can reach the port.
+/// that can reach the port. It resolves the host, because the back-end resolves it again on
+/// its own: a literal-only check let `http://redis:6379/` and `http://localhost/` through.
 async fn solve(
     State(solver): State<Arc<dyn ChallengeSolver>>,
     Json(req): Json<SolveRequest>,
 ) -> Response {
-    if let Err(e) = tankovault_domain::ssrf::validate_str(&req.url) {
+    if let Err(e) = tankovault_domain::ssrf::validate_unpinned(&req.url).await {
         metrics::counter!("solve_attempts_total", "result" => "rejected").increment(1);
         tracing::warn!(url = %req.url, error = %e, "refused a solve target");
         // The reason names only the caller's own URL and the policy rule that refused it, which
@@ -109,5 +110,37 @@ async fn solve(
                 .into_response()
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::StaticSolver;
+
+    async fn status_for(url: &str) -> StatusCode {
+        let solver: Arc<dyn ChallengeSolver> = Arc::new(StaticSolver::cleared("ua", 60));
+        let req = SolveRequest {
+            url: url.to_owned(),
+            provider: "p".to_owned(),
+            kind: None,
+        };
+        solve(State(solver), Json(req)).await.status()
+    }
+
+    /// Regression: the solve route checked only IP literals, so a hostname naming loopback or a
+    /// compose peer reached TRAWL, which then fetched it from inside the network.
+    #[tokio::test]
+    async fn refuses_a_hostname_that_resolves_to_loopback() {
+        assert_eq!(
+            status_for("http://localhost:6379/").await,
+            StatusCode::FORBIDDEN
+        );
+        assert_eq!(status_for("http://127.0.0.1/").await, StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn accepts_a_public_ip_literal() {
+        assert_eq!(status_for("http://1.1.1.1/").await, StatusCode::OK);
     }
 }

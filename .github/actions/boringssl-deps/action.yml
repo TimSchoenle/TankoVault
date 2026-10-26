@@ -44,15 +44,33 @@ runs:
           exit 0
         fi
 
+        # The hosted runners point apt at `azure.archive.ubuntu.com`. On 2026-10-26 that mirror
+        # stalled for over an hour, and three retries against the same host all hit the same
+        # stall, so a retry goes to the primary archive instead. The `sed` is a no-op on runners
+        # that use another mirror (the arm64 images use `ports.ubuntu.com`).
+        switched=""
+        use_primary_archive() {
+          [ -z "$switched" ] || return 0
+          switched=1
+          echo "::notice::pointing apt at archive.ubuntu.com for the remaining attempts"
+          sudo sed -i 's|http://azure\.archive\.ubuntu\.com|http://archive.ubuntu.com|g' \
+            /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list 2>/dev/null || true
+          # An install also needs the package index from the new host. 60s, not 120s: it runs
+          # at most once, and a healthy archive answers in seconds.
+          sudo timeout 60 apt-get update || true
+        }
+
         # 120s is roughly ten times what either call costs on a healthy mirror, so a trip here is
-        # evidence of a stall rather than of a slow day. Three attempts bound the worst case at
-        # about six minutes against the 20m47s that prompted this.
+        # evidence of a stall rather than of a slow day. Three attempts per call, plus the one
+        # index refresh above, bound the worst case at about thirteen minutes against the 20m47s
+        # that prompted this, inside the shortest timeout of a job that uses this (30m).
         apt_bounded() {
           for attempt in 1 2 3; do
             if sudo timeout 120 apt-get "$@"; then
               return 0
             fi
             echo "::warning::apt-get $1 stalled or failed (attempt ${attempt}/3); retrying"
+            use_primary_archive
             sleep $((attempt * 5))
           done
           echo "::error::apt-get $1 did not complete after 3 bounded attempts"

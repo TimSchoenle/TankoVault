@@ -49,8 +49,12 @@ runs:
         # per file within seconds. The wall-clock cap is only the backstop: on 2026-10-26 the
         # mirror served ~150 KB/s, the 43 MB download alone took ~5 minutes, and a 120s cap killed
         # three attempts that were each still downloading. Finished `.deb`s stay in apt's cache,
-        # so a retried install resumes. Three attempts bound the worst case at 18 minutes, still
+        # so a retried download resumes. Three attempts bound the worst case at 18 minutes, still
         # under the 20m47s that prompted the bound.
+        #
+        # Only network work runs under the cap. Killing `apt-get install` mid-unpack leaves dpkg
+        # interrupted and every later attempt fails at once ("dpkg was interrupted"), which is
+        # what turned a slow mirror into a red job later the same day.
         apt_bounded() {
           for attempt in 1 2 3; do
             if sudo timeout 360 apt-get -o Acquire::http::Timeout=30 -o Acquire::Retries=3 "$@"; then
@@ -67,4 +71,6 @@ runs:
 
         apt_bounded update
         # shellcheck disable=SC2086 # deliberate word splitting: `missing` is a package list.
-        apt_bounded install -y --no-install-recommends $missing
+        apt_bounded install -y --no-install-recommends --download-only $missing
+        # shellcheck disable=SC2086 # as above.
+        sudo apt-get install -y --no-install-recommends --no-download $missing

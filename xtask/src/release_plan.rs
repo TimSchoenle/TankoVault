@@ -105,6 +105,7 @@ const RULES: &[(&str, Rule)] = &[
     ("release-please-config.json", Rule::Inert),
     (".release-please-manifest.json", Rule::Inert),
     (".coderabbit.yaml", Rule::Inert),
+    (".gitleaksignore", Rule::Inert),
     // `Inert` even though `just regenerate` writes an artefact every image carries. What an image
     // is built *from* is the generator under `crates/config-contract/`, classified `Every` above;
     // this file only spells the command that runs it, and a reworded `[doc(…)]` is not a reason

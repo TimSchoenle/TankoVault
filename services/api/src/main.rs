@@ -558,8 +558,8 @@ fn spawn_credential_sweep(
 }
 
 /// One pass of the credential sweep. Each table is independent: a failure on one is logged and
-/// the others still run, because a sweep that gives up on the first error leaves the *other*
-/// two growing for reasons nothing names.
+/// the others still run, because a sweep that gives up on the first error leaves the *others*
+/// growing for reasons nothing names.
 async fn sweep_once(pool: &tankovault_db::PgPool) {
     use tankovault_db::repo::users::{mfa, webauthn};
 
@@ -577,6 +577,11 @@ async fn sweep_once(pool: &tankovault_db::PgPool) {
         Ok(0) => {}
         Ok(deleted) => tracing::debug!(deleted, "pruned expired step-up grants"),
         Err(e) => tracing::warn!(error = %e, "step-up grant sweep failed"),
+    }
+    match tankovault_db::repo::sync::prune_expired_link_states(pool).await {
+        Ok(0) => {}
+        Ok(deleted) => tracing::debug!(deleted, "pruned abandoned oauth link states"),
+        Err(e) => tracing::warn!(error = %e, "oauth link state sweep failed"),
     }
 }
 

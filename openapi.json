@@ -18023,7 +18023,7 @@
     },
     "/v1/me/sync/{provider}/authorize": {
       "get": {
-        "description": "Returns the provider's consent URL (proxied). The body type is shared with the sync\nservice via `tankovault_contracts::sync`.\n\nBehind a step-up: following this URL grants a third party a standing OAuth token against the\ncaller's account there, which is an authorisation that outlives the session and is not\nrevoked by anything this system does.\n\nThe URL carries a `state` bound to the caller and the provider, expiring after ten minutes;\nthe callback refuses a link without the matching one.",
+        "description": "Returns the provider's consent URL (proxied). The body type is shared with the sync\nservice via `tankovault_contracts::sync`.\n\nBehind a step-up: following this URL grants a third party a standing OAuth token against the\ncaller's account there, which is an authorisation that outlives the session and is not\nrevoked by anything this system does.\n\nThe URL carries a single-use `state` bound to the caller and the provider, expiring after ten\nminutes; the callback refuses a link without the matching one.",
         "operationId": "sync_authorize_url",
         "parameters": [
           {
@@ -18081,7 +18081,7 @@
     },
     "/v1/me/sync/{provider}/callback": {
       "get": {
-        "description": "Exchanges the authorization `code` and links the caller's account at `provider`. The sync\nservice answers `204`; [`Ack`] is what `Upstream::decode` synthesises from an empty body.\n\n`state` must be the one minted for this caller and provider, unexpired: a code delivered\nto anyone else's session is refused before it reaches the provider.",
+        "description": "Exchanges the authorization `code` and links the caller's account at `provider`. The sync\nservice answers `204`; [`Ack`] is what `Upstream::decode` synthesises from an empty body.\n\n`state` must be the one issued to this caller for this provider, unexpired and unused: a code\ndelivered to anyone else's session, or a replayed callback, is refused before it reaches the\nprovider.",
         "operationId": "sync_callback",
         "parameters": [
           {
@@ -18130,7 +18130,7 @@
                 }
               }
             },
-            "description": "`state` missing, foreign or expired"
+            "description": "`state` missing, foreign, expired or already used"
           },
           "401": {
             "content": {

@@ -10,7 +10,6 @@
 
 mod crypto;
 mod error;
-mod oauth_state;
 mod opaque;
 mod password;
 pub mod recovery;
@@ -19,7 +18,6 @@ pub mod totp;
 
 pub use crypto::Sealer;
 pub use error::AuthError;
-pub use oauth_state::{OAUTH_STATE_TTL, mint_oauth_state, verify_oauth_state};
 pub use opaque::{generate_handle, hash_handle};
 pub use password::{hash_password, verify_password};
 pub use token::{

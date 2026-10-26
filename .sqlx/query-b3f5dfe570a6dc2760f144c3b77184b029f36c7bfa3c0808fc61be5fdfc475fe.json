@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM oauth_link_states WHERE token_hash = $1 AND user_id = $2 AND provider = $3 AND expires_at > now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b3f5dfe570a6dc2760f144c3b77184b029f36c7bfa3c0808fc61be5fdfc475fe"
+}

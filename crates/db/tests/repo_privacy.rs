@@ -90,6 +90,12 @@ const NOT_EXPORTED: &[(&str, &str)] = &[
          leg and the second-factor leg of one sign-in",
     ),
     (
+        "oauth_link_states",
+        "an in-flight OAuth link, deleted on use and expired within minutes. Its `token_hash` is \
+         the digest of a live bearer handle that exists only between the consent redirect and \
+         its callback",
+    ),
+    (
         "step_up_grants",
         "live credential material — a grant is what a sensitive action is authorised by, so one \
          reaching an emailed export is an elevation handed to whoever reads the mailbox. The \

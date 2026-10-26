@@ -7,6 +7,7 @@ use crate::state::{AppState, AuthUser};
 use crate::step_up::Elevated;
 use axum::Json;
 use axum::extract::{Path, Query, State};
+use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use std::fmt::Write as _;
 use tankovault_contracts::sync::{
@@ -17,6 +18,9 @@ use tankovault_service::AuditEvent;
 use time::OffsetDateTime;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
+
+/// How long a consent round trip may take.
+const LINK_STATE_TTL: time::Duration = time::Duration::minutes(10);
 
 /// List sync providers
 ///
@@ -50,8 +54,8 @@ pub async fn sync_providers(
 /// caller's account there, which is an authorisation that outlives the session and is not
 /// revoked by anything this system does.
 ///
-/// The URL carries a `state` bound to the caller and the provider, expiring after ten minutes;
-/// the callback refuses a link without the matching one.
+/// The URL carries a single-use `state` bound to the caller and the provider, expiring after ten
+/// minutes; the callback refuses a link without the matching one.
 #[utoipa::path(
     get,
     path = "/v1/me/sync/{provider}/authorize",
@@ -74,13 +78,18 @@ pub async fn sync_authorize_url(
         .get::<AuthorizeUrl>(&format!("/v1/sync/{provider}/authorize-url"))
         .await?;
     let mut url = url::Url::parse(&url).map_err(|_| ApiError::BadGateway)?;
-    let oauth_state = tankovault_auth::mint_oauth_state(
-        &state.jwt_secret,
-        user.user_id.as_uuid(),
+    let handle = tankovault_auth::generate_handle();
+    tankovault_db::repo::sync::insert_link_state(
+        &state.pool,
+        user.user_id,
         provider.as_str(),
-        OffsetDateTime::now_utc(),
-    );
-    url.query_pairs_mut().append_pair("state", &oauth_state);
+        &tankovault_auth::hash_handle(&handle),
+        OffsetDateTime::now_utc() + LINK_STATE_TTL,
+    )
+    .await?;
+    // Deliberate unwrapping: the handle has to travel in the consent URL for the round trip.
+    url.query_pairs_mut()
+        .append_pair("state", handle.expose_secret());
     Ok(Json(AuthorizeUrl { url: url.into() }))
 }
 
@@ -149,7 +158,9 @@ pub async fn sync_disconnect(
 pub struct AniListCallback {
     pub code: String,
     /// The `state` the consent URL from `GET /v1/me/sync/{provider}/authorize` carried.
-    pub state: String,
+    // Single-use, but a bearer value until spent, so wrapped like every other handle.
+    #[param(value_type = String)]
+    pub state: SecretString,
 }
 
 /// Complete an OAuth link
@@ -157,8 +168,9 @@ pub struct AniListCallback {
 /// Exchanges the authorization `code` and links the caller's account at `provider`. The sync
 /// service answers `204`; [`Ack`] is what `Upstream::decode` synthesises from an empty body.
 ///
-/// `state` must be the one minted for this caller and provider, unexpired: a code delivered
-/// to anyone else's session is refused before it reaches the provider.
+/// `state` must be the one issued to this caller for this provider, unexpired and unused: a code
+/// delivered to anyone else's session, or a replayed callback, is refused before it reaches the
+/// provider.
 #[utoipa::path(
     get,
     path = "/v1/me/sync/{provider}/callback",
@@ -167,7 +179,7 @@ pub struct AniListCallback {
     security(("bearer_auth" = [])),
     responses(
         (status = 200, description = "Linked", body = Ack),
-        (status = 400, description = "`state` missing, foreign or expired", body = crate::error::ProblemDetails),
+        (status = 400, description = "`state` missing, foreign, expired or already used", body = crate::error::ProblemDetails),
         (status = 401, description = "authentication required", body = crate::error::ProblemDetails),
         (status = 404, description = "Unknown provider", body = crate::error::ProblemDetails),
         (status = 409, description = "Account not linked", body = crate::error::ProblemDetails),
@@ -179,15 +191,14 @@ pub async fn sync_callback(
     Path(provider): Path<ProviderSlug>,
     Query(q): Query<AniListCallback>,
 ) -> ApiResult<Json<Ack>> {
-    if tankovault_auth::verify_oauth_state(
-        &state.jwt_secret,
-        &q.state,
-        user.user_id.as_uuid(),
+    let consumed = tankovault_db::repo::sync::consume_link_state(
+        &state.pool,
+        user.user_id,
         provider.as_str(),
-        OffsetDateTime::now_utc(),
+        &tankovault_auth::hash_handle(&q.state),
     )
-    .is_err()
-    {
+    .await?;
+    if !consumed {
         state
             .audit
             .record(
@@ -198,7 +209,7 @@ pub async fn sync_callback(
             )
             .await;
         return Err(ApiError::BadRequest(
-            "the link request is missing, expired or was started by another session; start it again"
+            "the link request is missing, expired, already used or was started by another session; start it again"
                 .to_owned(),
         ));
     }

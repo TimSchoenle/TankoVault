@@ -21,7 +21,23 @@ ignore = [
     # being the only accepted algorithm.
     "RUSTSEC-2023-0071",
 
-    # RUSTSEC-2024-0436 — `paste` unmaintained; compile-time-only proc macro, no runtime
-    # surface, no fix available. Reviewed 2026-07-29; re-review 2026-10-29.
-    "RUSTSEC-2024-0436",
+    # RUSTSEC-2026-0387 — timing variability in `crypto-bigint` 0.5.x, reached only through
+    # `elliptic-curve` 0.13 (`jsonwebtoken`'s `rust_crypto` feature and `webauthn-rs`). The fix is
+    # 0.7.6, which the 0.13 curve crates cannot take, so no compatible release exists. Not
+    # exploitable here: JWTs are HS256-only (see RUSTSEC-2023-0071), and WebAuthn only verifies
+    # assertions against stored public keys, so no secret scalar ever passes through it. Reviewed
+    # 2026-10-26; re-review 2027-01-26, when `elliptic-curve` 0.14 reaches `jsonwebtoken` and
+    # `webauthn-rs`, or if the server ever signs with an EC key.
+    "RUSTSEC-2026-0387",
+
+    # RUSTSEC-2026-0391, -0398, -0403 — `zstd` 0.13 / `zstd-safe` 7, held there by `wreq-util`
+    # 3.0.0-rc.14 (`^0.13.3`); the fixes are 0.14.3 / 8.2.0 only. Its sole use is decompressing
+    # TLS certificates through `zstd::stream::read::Decoder::new`, which none of the three reach:
+    # -0391 is only `with_context`, -0398 only the `seekable` feature (not enabled), and -0403 is
+    # the write-side decoder, its advisory exempting `read::Decoder` by name. Reviewed
+    # 2026-10-26; re-review 2027-01-26, when `wreq-util` moves to `zstd` 0.14, or if anything
+    # else in the graph starts depending on `zstd` 0.13.
+    "RUSTSEC-2026-0391",
+    "RUSTSEC-2026-0398",
+    "RUSTSEC-2026-0403",
 ]

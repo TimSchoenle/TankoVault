@@ -11,13 +11,32 @@ ignore = [
     # RUSTSEC-2023-0071 — timing sidechannel in `rsa` 0.9.x, pulled in transitively by
     # `jsonwebtoken`'s `rust_crypto` feature with no HMAC-only alternative and no fixed release.
     # Not exploitable here: `crates/auth/src/token.rs` pins `Algorithm::HS256`, test-enforced,
-    # so no RSA path is ever entered. Reviewed 2026-07-29; re-review 2026-10-29 or if HS256 stops
+    # so no RSA path is ever entered. Reviewed 2026-10-26; re-review 2027-01-26 or if HS256 stops
     # being the only accepted algorithm.
     "RUSTSEC-2023-0071",
 
-    # RUSTSEC-2024-0436 — `paste` unmaintained; compile-time-only proc macro, no runtime
-    # surface, no fix available. Reviewed 2026-07-29; re-review 2026-10-29.
-    "RUSTSEC-2024-0436",
+    # RUSTSEC-2026-0387 — timing variability in `crypto-bigint` 0.5.5, reached through
+    # `p256`/`p384`/`ecdsa` (`jsonwebtoken`, `webauthn-rs`); the fix is 0.7.6 and the RustCrypto
+    # 0.13 elliptic-curve line cannot take it. Not exploitable here: JWTs are HS256 (above), and
+    # WebAuthn only *verifies* — signatures and public keys are public inputs, so a timing
+    # difference leaks nothing. No ECDSA signing key exists in the process. Reviewed 2026-10-26;
+    # re-review 2027-01-26 or when `webauthn-rs` moves to `p256` 0.14.
+    "RUSTSEC-2026-0387",
+
+    # RUSTSEC-2026-0391 (`zstd`), RUSTSEC-2026-0398 and RUSTSEC-2026-0403 (`zstd-safe`) — the
+    # zstd 0.13 / zstd-safe 7 line, held there by `wreq-util` 3.0.0-rc.14 (`zstd = "0.13.3"`,
+    # the newest release). Its only use is TLS certificate decompression for the Firefox
+    # profile (`emulate/compress.rs`), which builds a fresh `zstd::stream::read::Decoder` per
+    # certificate. Not reachable: 0391 needs a reused `with_context` stream, 0398 needs the
+    # `Seekable` API, and 0403's advisory names `stream::read::Decoder` as unaffected. Every
+    # other zstd path (`wreq`'s body decoding) is on the patched 0.14.3 / 8.2.0. Reviewed
+    # 2026-10-26; re-review 2027-01-26 or as soon as a `wreq-util` release accepts zstd 0.14.
+    "RUSTSEC-2026-0391",
+    "RUSTSEC-2026-0398",
+    "RUSTSEC-2026-0403",
+
+    # RUSTSEC-2024-0436 (`paste`, unmaintained) was here until 2026-10-26; nothing in the graph
+    # depends on it any more and cargo-deny reported `advisory-not-detected`.
     # RUSTSEC-2025-0111 (`rustls-pemfile`) and RUSTSEC-2025-0134 ("Tarmageddon", `tokio-tar`)
     # were here until 2026-08-03. Both arrived only through `testcontainers`/`bollard`, which
     # has since dropped them; cargo-deny reported the entries as `advisory-not-detected`, so

@@ -861,6 +861,8 @@ mod tests {
             "clippy.toml",
             "renovate.json",
             ".release-please-manifest.json",
+            ".coderabbit.yaml",
+            ".gitleaksignore",
         ] {
             assert_eq!(classify(path, &packages()), Impact::Inert, "{path}");
         }

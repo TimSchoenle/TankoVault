@@ -16,9 +16,9 @@ reviews:
       - "automatic-release-manager"
 
   # Generated, captured or tool-owned files (see .gitattributes). Review their sources instead.
-  # docs/contracts/*.json stays reviewable on purpose: a removed or renamed key is a breaking change.
+  # Cargo.lock and docs/contracts/*.json stay reviewable on purpose: a lockfile change is how a
+  # dependency enters the build, and a removed or renamed contract key is a breaking change.
   path_filters:
-    - "!**/Cargo.lock"
     - "!CHANGELOG.md"
     - "!.release-please-manifest.json"
     - "!README.md" # rendered from .github/templates/README.md.hbs

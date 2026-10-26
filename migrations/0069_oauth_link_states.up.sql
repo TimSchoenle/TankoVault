@@ -11,3 +11,7 @@ CREATE TABLE oauth_link_states (
 
 -- Drives the expiry sweep: an abandoned consent page leaves its row behind.
 CREATE INDEX oauth_link_states_expiry_idx ON oauth_link_states (expires_at);
+
+-- Serves the `ON DELETE CASCADE` from `users`: without it, account erasure scans this table once
+-- per deleted user (`schema_foreign_key_indexes`).
+CREATE INDEX oauth_link_states_user_idx ON oauth_link_states (user_id);

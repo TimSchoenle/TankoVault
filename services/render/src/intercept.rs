@@ -19,6 +19,7 @@ use chromiumoxide::cdp::browser_protocol::fetch::{
 use chromiumoxide::cdp::browser_protocol::network::ErrorReason;
 use futures::StreamExt;
 use tankovault_domain::ssrf::{self, SsrfError};
+use tokio::sync::Semaphore;
 
 /// What to do with one paused request before any DNS is consulted.
 #[derive(Debug, PartialEq, Eq)]
@@ -49,6 +50,11 @@ pub(crate) fn plan(raw: &str) -> Plan {
     }
 }
 
+/// Caps lookups in flight: `getaddrinfo` runs on the blocking pool and cannot be cancelled, so a
+/// page firing requests at slow-resolving names could otherwise exhaust that pool and stall every
+/// render's pre-flight check.
+static LOOKUPS: Semaphore = Semaphore::const_new(32);
+
 /// The full per-request decision: [`plan`], then a lookup when the host is a name.
 ///
 /// # Errors
@@ -58,6 +64,10 @@ pub(crate) async fn admit(raw: &str) -> Result<(), SsrfError> {
         Plan::Continue => Ok(()),
         Plan::Fail(e) => Err(e),
         Plan::Resolve(host) => {
+            let _slot = LOOKUPS
+                .acquire()
+                .await
+                .map_err(|_| SsrfError::Resolution(host.clone()))?;
             let addrs = ssrf::lookup(&host).await?;
             ssrf::require_all_public(&host, &addrs)
         }

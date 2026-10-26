@@ -162,6 +162,9 @@ pub async fn reset_password(
         ));
     }
 
+    // Hashed before the token is consumed: a shed (503) under load must not burn the reset link.
+    let hash = super::kdf::hash_password(&req.new_password, &state.password_pepper).await?;
+
     // Atomic `used_at` flip closes the race between concurrent resets; the loser sees 0 rows.
     let consumed =
         tankovault_db::repo::users::consume_password_reset(&state.pool, record.id).await?;
@@ -171,7 +174,6 @@ pub async fn reset_password(
         ));
     }
 
-    let hash = super::kdf::hash_password(&req.new_password, &state.password_pepper).await?;
     tankovault_db::repo::users::update_password(&state.pool, record.user_id, &hash).await?;
     tankovault_db::repo::users::revoke_all_for_user(&state.pool, record.user_id).await?;
     // As `change_password` does: an elevation earned under the old credential must not outlive it.

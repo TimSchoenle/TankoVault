@@ -1,0 +1,32 @@
+# gitleaks findings reviewed and accepted, one fingerprint per line (`commit:path:rule:line`).
+#
+# Fingerprints, not a path allowlist: each entry clears one finding in one commit, so a real
+# credential committed beside these files later is still reported.
+#
+# Fuzz seeds added in 701a7cb. Every value is a synthetic fixture: the JWTs are signed with the
+# fuzz target's own test key over made-up claims, and the internal tokens are `0123456789abcdef`
+# repeated to the length floor. Only the scheduled full-history scan reaches this commit.
+701a7cb71d756684fb6c3385d6125a39d807c429:fuzz/seeds/auth_jwt_verify/alg-hs384-hmac256-signed:jwt:1
+701a7cb71d756684fb6c3385d6125a39d807c429:fuzz/seeds/auth_jwt_verify/alg-hs512-hmac256-signed:jwt:1
+701a7cb71d756684fb6c3385d6125a39d807c429:fuzz/seeds/auth_jwt_verify/alg-none-but-signed:jwt:1
+701a7cb71d756684fb6c3385d6125a39d807c429:fuzz/seeds/auth_jwt_verify/alg-none-unsigned:jwt:1
+701a7cb71d756684fb6c3385d6125a39d807c429:fuzz/seeds/auth_jwt_verify/alg-rs256-hmac-signed:jwt:1
+701a7cb71d756684fb6c3385d6125a39d807c429:fuzz/seeds/auth_jwt_verify/bearer-prefixed:jwt:1
+701a7cb71d756684fb6c3385d6125a39d807c429:fuzz/seeds/auth_jwt_verify/exp-missing:jwt:1
+701a7cb71d756684fb6c3385d6125a39d807c429:fuzz/seeds/auth_jwt_verify/exp-negative:jwt:1
+701a7cb71d756684fb6c3385d6125a39d807c429:fuzz/seeds/auth_jwt_verify/exp-not-a-number:jwt:1
+701a7cb71d756684fb6c3385d6125a39d807c429:fuzz/seeds/auth_jwt_verify/expired-long-ago:jwt:1
+701a7cb71d756684fb6c3385d6125a39d807c429:fuzz/seeds/auth_jwt_verify/expired-within-leeway:jwt:1
+701a7cb71d756684fb6c3385d6125a39d807c429:fuzz/seeds/auth_jwt_verify/payload-edited-not-resigned:jwt:1
+701a7cb71d756684fb6c3385d6125a39d807c429:fuzz/seeds/auth_jwt_verify/signature-bitflipped:jwt:1
+701a7cb71d756684fb6c3385d6125a39d807c429:fuzz/seeds/auth_jwt_verify/signature-stripped:jwt:1
+701a7cb71d756684fb6c3385d6125a39d807c429:fuzz/seeds/auth_jwt_verify/signature-truncated:jwt:1
+701a7cb71d756684fb6c3385d6125a39d807c429:fuzz/seeds/auth_jwt_verify/valid-extra-claims:jwt:1
+701a7cb71d756684fb6c3385d6125a39d807c429:fuzz/seeds/auth_jwt_verify/valid-hs256:jwt:1
+701a7cb71d756684fb6c3385d6125a39d807c429:fuzz/seeds/auth_jwt_verify/valid-no-name:jwt:1
+701a7cb71d756684fb6c3385d6125a39d807c429:fuzz/seeds/auth_jwt_verify/valid-sub-almost-a-uuid:jwt:1
+701a7cb71d756684fb6c3385d6125a39d807c429:fuzz/seeds/auth_jwt_verify/valid-sub-empty:jwt:1
+701a7cb71d756684fb6c3385d6125a39d807c429:fuzz/seeds/auth_jwt_verify/valid-sub-not-a-uuid:jwt:1
+701a7cb71d756684fb6c3385d6125a39d807c429:fuzz/seeds/auth_jwt_verify/valid-sub-unicode:jwt:1
+701a7cb71d756684fb6c3385d6125a39d807c429:fuzz/seeds/config_env_load/internal-token-at-the-floor:generic-api-key:1
+701a7cb71d756684fb6c3385d6125a39d807c429:fuzz/seeds/config_env_load/internal-token-one-short:generic-api-key:1

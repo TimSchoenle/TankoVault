@@ -1,0 +1,158 @@
+# yaml-language-server: $schema=https://storage.googleapis.com/coderabbit_public_assets/schema.v2.json
+tone_instructions: "Direct, no filler, no praise."
+
+reviews:
+  profile: assertive
+
+  auto_review:
+    # CodeRabbit cannot filter by head branch, so automated pull requests are
+    # skipped by author: Renovate opens `renovate/*`, the release manager app
+    # opens `release-please--*`. Both the bot login and the bare app slug are
+    # listed because the match is exact.
+    ignore_usernames:
+      - "renovate[bot]"
+      - "renovate"
+      - "automatic-release-manager[bot]"
+      - "automatic-release-manager"
+
+  # Generated, captured or tool-owned files (see .gitattributes). Review their sources instead.
+  # docs/contracts/*.json stays reviewable on purpose: a removed or renamed key is a breaking change.
+  path_filters:
+    - "!**/Cargo.lock"
+    - "!CHANGELOG.md"
+    - "!.release-please-manifest.json"
+    - "!README.md" # rendered from .github/templates/README.md.hbs
+    - "!openapi.json"
+    - "!crates/api-client/src/lib.rs"
+    - "!.sqlx/**"
+    - "!THIRD-PARTY-NOTICES"
+    - "!web/frontend/assets/main.css" # Tailwind output of web/frontend/input.css
+    - "!web/frontend/package-lock.json"
+    - "!crates/adapters/fixtures/**"
+    - "!fuzz/seeds/**"
+    - "!fuzz/corpus/**"
+
+  path_instructions:
+    - path: "{crates,services,xtask}/**/*.rs"
+      instructions: |
+        Internal workspace crates (`publish = false`); no semver obligations. Flag:
+        - `unwrap`, `expect`, `panic!`, `unreachable!`, unchecked indexing or arithmetic that can
+          panic in non-test code; fallible paths return typed (`thiserror`) errors.
+        - Missing rustdoc, `# Errors` (naming reachable variants and what is returned instead of an
+          error) and `# Panics` on public items; comments that narrate the code instead of stating
+          an invariant or security rationale.
+        - Bare `#[allow(...)]`; the workspace requires `#[expect(..., reason = "...")]`.
+        - Any secret held as `String`/`&str`/`Vec<u8>` instead of `secrecy::SecretString` /
+          `SecretSlice<u8>`; new `expose_secret()` calls without justification; any
+          `SerializableSecret` impl; secrets or tokens reaching `tracing` fields, errors or responses.
+        - `reqwest::Client::new` or any HTTP client without connect and request timeouts.
+        - Blocking I/O, CPU-heavy work or `std::sync` locks held across `.await` on the Tokio runtime.
+        - New dependencies or features: justify them; `deny.toml` bans OpenSSL and GPL licences.
+        - Code that would not compile on the MSRV (`rust-version` in Cargo.toml).
+        - A fix without a regression test whose doc comment names the bug.
+        `unsafe_code` is forbidden workspace-wide; do not suggest `unsafe`.
+    - path: "services/**"
+      instructions: |
+        Network services. Check: input validation and size limits on every request body, query and
+        header; error-to-response mapping that does not leak internals; status codes and
+        authorisation on new routes (a new published route needs a row in the access-matrix tests,
+        an internal route an entry in its `RouteTable`, deny by default); outbound calls through
+        `services/api/src/upstream.rs` or explicit internal credentials; timeouts and cancellation
+        on every outbound call; graceful shutdown; metrics label cardinality. OpenAPI-visible
+        changes require regenerated `openapi.json`, and `///` on DTOs is published as API description.
+    - path: "crates/fetch/**"
+      instructions: |
+        Fetches URLs chosen by third parties. Every such URL must pass
+        `tankovault_domain::ssrf::validate_str` / `validate_and_resolve`; flag any re-derived range
+        check, redirect following that bypasses it, and unbounded body reads or decompression.
+        Check rate limiting, `Retry-After`/429 backoff and per-provider emulation stability.
+    - path: "crates/{adapters,solver}/**"
+      instructions: |
+        Parses untrusted third-party HTML/JSON. Flag panics on malformed input, unbounded recursion
+        or allocation, and scraped values used as URLs without SSRF validation.
+    - path: "crates/auth/**"
+      instructions: |
+        Credential handling. Require constant-time comparison (`subtle`) for tokens and codes,
+        CSPRNG for all secrets, no algorithm downgrade or `none` in JWT verification, explicit
+        expiry/audience checks, argon2 parameters not weakened, and no key material in logs or errors.
+    - path: "{crates/db/**,migrations/**}"
+      instructions: |
+        Queries must use the checked `query!`/`query_as!` macros (regenerate `.sqlx/`); no string-built
+        SQL. Compare `citext` columns via `CiText` or `ILIKE`. Predicates duplicated across queries
+        need a differential test. Migrations: provide a matching `.down.sql`, avoid long table locks
+        (prefer `CREATE INDEX CONCURRENTLY`, batched backfills), and never edit a released migration.
+    - path: "services/frontend/**"
+      instructions: |
+        Serves the SPA and proxies `/v1/*`. Never widen the Content-Security-Policy to make code work;
+        check proxy header forwarding (hop-by-hop, `Host`, forwarded-for trust), path handling and
+        cache headers.
+    - path: "web/frontend/**"
+      instructions: |
+        Separate Dioxus workspace (wasm `web` and `desktop` builds, mutually exclusive features);
+        host lints do not apply, its own `clippy.toml` does. Flag `document::eval` (use a typed
+        wrapper in `src/platform/`), any CSP widening, persistence of the access token outside
+        memory, unescaped HTML injection, and platform-specific code outside `src/platform/`.
+        `web/frontend/assets/main.css` is generated; review `input.css`.
+    - path: "xtask/**"
+      instructions: |
+        Developer and CI tooling, not shipped. Panics with clear messages are acceptable; focus on
+        correctness of generators and repo-lint rules, and on not running destructive commands
+        against anything but a developer's own database.
+    - path: "fuzz/**"
+      instructions: |
+        Test-only fuzz harness on nightly. Do not apply library documentation rules; focus on
+        whether the targets exercise meaningful input space and avoid trivially rejected inputs.
+    - path: "deploy/**"
+      instructions: |
+        Images run from `scratch`. Check: base images pinned by digest, non-root user, no secrets in
+        layers or build args, minimal runtime contents, `dev.terrace.config.*` label regions kept
+        generated (`just regenerate`). In `docker-compose.yml`, credentials must be `${VAR:?}`
+        (required), never `${VAR:-default}`; any credential-shaped default must be on the
+        `KNOWN_PLACEHOLDERS` refuse-list.
+    - path: ".github/workflows/**"
+      instructions: |
+        Every third-party action must be pinned to a full commit SHA with a version comment.
+        Require least-privilege `permissions:` at workflow or job level, `persist-credentials: false`
+        on checkout unless pushing, no untrusted `${{ github.event.* }}` interpolation into `run:`,
+        and no `pull_request_target` that checks out or executes PR code.
+    - path: ".github/actions/**"
+      instructions: |
+        Composite actions: pin nested actions by full SHA and pass inputs to `run:` through `env:`,
+        never by direct `${{ inputs.* }}` interpolation.
+    - path: ".github/templates/**"
+      instructions: |
+        Source of the generated README.md. Review rendered wording, links and badge URLs here.
+    - path: "{**/*.sh,xtask/hooks/**,justfile}"
+      instructions: |
+        Require `set -euo pipefail` (or POSIX `set -eu` for `/bin/sh`), quoted expansions, and no
+        reliance on GNU-only flags without a comment.
+
+  pre_merge_checks:
+    title:
+      mode: error
+      requirements: |
+        Must follow Conventional Commits: `type(scope)?!?: subject`. Allowed types: feat, fix, perf,
+        revert, docs, refactor, test, style, ci, build, chore, deps. Scope is the crate or surface
+        changed. Lowercase, imperative subject, no trailing period. release-please derives version
+        bumps and the changelog from this title.
+
+  tools:
+    # Already enforced in CI (`cargo clippy -D warnings` for both workspaces); duplicating it adds noise.
+    clippy:
+      enabled: false
+    # Already enforced in CI (`secrets` job scans full history on every pull request).
+    gitleaks:
+      enabled: false
+    actionlint:
+      enabled: true
+    zizmor:
+      enabled: true
+    shellcheck:
+      enabled: true
+    markdownlint:
+      enabled: true
+    hadolint:
+      enabled: true
+    # Lock and downtime hazards in migrations/; no CI job lints migration safety.
+    squawk:
+      enabled: true

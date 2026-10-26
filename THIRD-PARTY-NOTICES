@@ -10559,7 +10559,7 @@ Applies to:
   - tinystr 0.8.4
   - writeable 0.6.4
   - yoke 0.8.3
-  - yoke-derive 0.8.3
+  - yoke-derive 0.8.4
   - zerofrom 0.1.8
   - zerofrom-derive 0.1.8
   - zerotrie 0.2.5

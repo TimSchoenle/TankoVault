@@ -87,3 +87,10 @@ in api put /v1/me/notification-prefs the `channels` request property `type` chan
 in api put /v1/me/notification-prefs the `kinds` request property `type` changed from `any` to `object`
 in api put /v1/me/notification-prefs the `quiet_hours` request property `type` changed from `any` to `object`
 in api put /v1/me/notification-prefs the `watch_status` request property `type` changed from `any` to `object`
+
+# The AniList link callback accepted any `code` on any session, so an attacker could complete their
+# own consent on a victim's session and receive the victim's reading history (link CSRF). It now
+# requires the signed `state` the consent URL carries; refusing a callback without one is the fix,
+# not a side effect. Consumed only by `web/frontend`'s `/account/anilist-callback` route, updated
+# in the same commit; an old bundle mid-skew gets a 400 and the user restarts the link.
+in api get /v1/me/sync/{provider}/callback added the new required `query` request parameter `state`

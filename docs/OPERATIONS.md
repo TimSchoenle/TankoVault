@@ -1,7 +1,7 @@
-# Operations & Hardening Reference
+# Operations and hardening
 
-Every backend service shares one runtime, `crates/service` (`tankovault-service`). This
-document is the operator-facing reference for what it provides and how to configure it.
+The runtime every backend service shares, `crates/service`: what it provides and how an operator
+configures it.
 
 Configuration is layered (defaults → `$TANKOVAULT_CONFIG` TOML → `TANKOVAULT_*` env →
 `$TANKOVAULT_SECRETS_DIR` files → `TANKOVAULT_<KEY>_FILE`), so every key below has an

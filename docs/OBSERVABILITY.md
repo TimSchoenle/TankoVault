@@ -1,4 +1,4 @@
-# Observability Reference
+# Observability
 
 What this deployment measures, what is collected, which alerts exist, and what to do when each
 one fires.

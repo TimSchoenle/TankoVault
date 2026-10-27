@@ -1,4 +1,7 @@
-# Query latency, September 2026 — progress report
+# Query latency, September 2026: progress report
+
+Which slow queries were fixed locally in September 2026, and which decisions still wait on a
+production measurement.
 
 What was done locally, what was measured, and what is still open. Production has not been
 measured yet: [`2026-09-prod-diagnostics.sql`](2026-09-prod-diagnostics.sql) is waiting to be

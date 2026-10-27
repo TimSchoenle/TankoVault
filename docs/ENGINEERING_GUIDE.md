@@ -1,7 +1,6 @@
 # Engineering guide
 
-The rules this codebase is written to, and — for each one — what would notice if it stopped
-being followed.
+The rules this codebase is written to, and what would notice if each one stopped being followed.
 
 That second half is the point. This repository has a long history of decisions recorded in
 prose that quietly stopped being true: a compose comment claiming production refused a
@@ -149,9 +148,9 @@ is evidence rather than a source diff — the `docker` jobs, which check the **b
 the same generator's output. See [§9](#9-the-configuration-contract).
 
 `README.md` is the sixth, and the only one no `xtask` command produces: it is rendered from
-`.github/templates/README.md.hbs` by a shared action, with the variables
-`.github/scripts/readme-variables.sh` reads out of `Cargo.toml`, `rust-toolchain.toml` and
-`deploy/docker-compose.yml`. Edit the **template**; `auto-fix.yaml`'s `readme` job renders it on
+`.github/templates/README.md.hbs` by a shared action, with the payload `readme-variables` reads out
+of `Cargo.toml` and `docs/`, and the facts `.github/scripts/readme-stack.sh` reads out of
+`rust-toolchain.toml` and `deploy/docker-compose.yml`. Edit the **template**; `auto-fix.yaml`'s `readme` job renders it on
 the pull request and commits the result. **[E]** CI's `readme` job renders in check mode on
 `main` and on fork pull requests, where nothing can commit.
 
@@ -588,7 +587,7 @@ Everything that can fail, what owns it, and how to run it.
 | `THIRD-PARTY-NOTICES` matches both lockfiles | `xtask notices --check` | `cargo run -p xtask -- notices --check` |
 | the published configuration contracts and the Dockerfile's `LABEL` regions match the config roots | `xtask config-contract` | `cargo run -p xtask -- config-contract` (writing is `just regenerate`) |
 | the **built image** carries the contract labels it was built to carry, and embeds the document that was generated with them | CI's `docker` jobs | `bash .github/scripts/verify-config-contract.sh <image> <expected.labels> <expected.json>` (Docker) |
-| `README.md` matches its template | CI's `readme` job | `bash .github/scripts/readme-variables.sh` (prints what CI renders with) |
+| `README.md` matches its template | CI's `readme` job | `bash .github/scripts/readme-stack.sh` (prints the facts the action cannot read) |
 | licences, advisories, duplicate-version budget, banned crates | `deny.toml` | `cargo deny check` |
 | secrets in history | gitleaks | CI `secrets` job |
 | coverage floor | `xtask coverage-ratchet` | CI `coverage` job |

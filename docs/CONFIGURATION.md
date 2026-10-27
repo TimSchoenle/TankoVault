@@ -1,10 +1,7 @@
 # Configuration reference
 
-Every `TANKOVAULT_*` key the deployment reads, what it does, its default, and which services
-consume it. This document exists because the surface was previously discoverable only by
-reading `crates/config/src/lib.rs` and eight per-service `struct Config` definitions —
-`docs/OPERATIONS.md` named three keys out of ~70, and `TANKOVAULT_PROFILE`, which gates the
-production safety checks, appeared nowhere at all.
+Every `TANKOVAULT_*` key the deployment reads: what it does, its default, and which services
+consume it.
 
 `docs/OPERATIONS.md` remains the *behavioural* reference (what the toggles mean, how the
 limiter buckets, what the audit sink records). This is the *surface*: the keys themselves.

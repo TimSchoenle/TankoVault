@@ -1,5 +1,8 @@
 # Watchlist backup and restore
 
+The watchlist backup file: its format, how an import finds each series again, and the limits on a
+restore.
+
 A reader can download their watchlist as a file and restore it — into the same deployment after a
 database wipe, or into a different deployment altogether. This document covers the file format,
 how an import finds each series again, and the limits that make the import safe to expose.

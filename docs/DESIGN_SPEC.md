@@ -1,12 +1,11 @@
-# TankoVault — Design Specification (enhanced)
+# Design system
 
-> **What this is.** The design system the SPA is built to: tokens, component inventory,
-> per-screen breakdowns and interaction rules. It was extracted from the original HTML mockup,
-> which is no longer kept in the tree — this document replaced it, and `web/frontend/input.css`
-> plus `web/frontend/crates/inkstone-ui` are the implementation.
->
-> Source files cite it by section (`DESIGN_SPEC §7.1`), so section numbers here are load-bearing.
-> Where the shipped UI and this document disagree, the code is right and this is the bug.
+The design system the SPA is built to: tokens, component inventory, per-screen breakdowns and
+interaction rules.
+
+`web/frontend/input.css` and `web/frontend/crates/inkstone-ui` are the implementation. Source
+files cite this document by section (`DESIGN_SPEC §7.1`), so section numbers do not change. Where
+the shipped UI and this document disagree, the code is right and this document is the bug.
 
 ---
 

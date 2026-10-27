@@ -1,4 +1,7 @@
-# Matching overhaul — implementation plan
+# Matching overhaul
+
+The rework of automatic series merging and source attachment, which both merged different works
+and missed identical ones. WP0 to WP8 are implemented except WP3c and WP8c.
 
 **Audience:** the engineer or agent implementing this. **Status:** WP0–WP8 are implemented
 except WP3c (mirror groups, conditional) and WP8c (an operator's selection, not code); see

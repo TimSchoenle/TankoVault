@@ -8,7 +8,7 @@ use crate::edition::editions_conflict;
 use crate::similarity::{
     is_strict_token_subset, name_set_overlap, numbers_conflict, shares_a_name,
 };
-use crate::title::best_title_match;
+use crate::title::{TitleMatch, best_title_match};
 use crate::types::{Assessment, Explanation, ScoreTerm};
 
 /// What a title agreement is worth when it is against an *alternative* title rather than the
@@ -103,17 +103,43 @@ struct Scored<'a> {
 }
 
 /// The scorer, shared by [`assess`] and [`explain`].
-#[expect(
-    clippy::too_many_lines,
-    reason = "one arm per scoring rule, each pairing its signal, its weight and the phrase that \
-              explains it. Splitting it would separate a rule from the term it records, which is \
-              exactly the drift the single-implementation design exists to prevent"
-)]
+///
+/// Each step records its signals together with the terms that explain them. The steps run in a
+/// fixed order, which is the order an explanation lists its terms in.
 fn assess_with<'a>(query: &Query, candidate: &'a Candidate, ledger: &mut Ledger) -> Scored<'a> {
-    let mut signals = MatchSignals::default();
-
     let query_compact = compact_key(&query.normalized_title);
     let title_match = best_title_match(&query.normalized_title, &query_compact, candidate);
+    let mut signals = title_signals(query, candidate, &title_match);
+    let base = base_similarity(candidate, &title_match, ledger);
+    let mut s = base;
+    record_medium_and_year(query, candidate, &mut signals, ledger);
+    s += title_bonus(&title_match, ledger);
+    record_tags_and_credits(query, candidate, &mut signals, ledger);
+    if record_conflicts(query, candidate, &title_match, &signals, ledger) {
+        s -= NUMERIC_CONFLICT_PENALTY;
+    }
+
+    Scored {
+        assessment: Assessment {
+            score: s.clamp(0.0, 1.0),
+            signals,
+        },
+        base,
+        matched: title_match.matched,
+        via_alias: title_match.via_alias,
+    }
+}
+
+/// What a numeric conflict takes off the score.
+const NUMERIC_CONFLICT_PENALTY: f32 = 0.3;
+
+/// The signals the title comparison alone decides.
+fn title_signals(
+    query: &Query,
+    candidate: &Candidate,
+    title_match: &TitleMatch<'_>,
+) -> MatchSignals {
+    let mut signals = MatchSignals::default();
     let canonical_hit = !title_match.via_alias && !title_match.via_source;
     signals.exact_title = title_match.exact && canonical_hit;
     signals.compact_identity = title_match.compact_equal && canonical_hit;
@@ -136,6 +162,15 @@ fn assess_with<'a>(query: &Query, candidate: &'a Candidate, ledger: &mut Ledger)
         .iter()
         .any(|t| editions_conflict(&query.normalized_title, t));
 
+    signals
+}
+
+/// The base similarity, discounted when the best agreement was against an alternative title.
+fn base_similarity(
+    candidate: &Candidate,
+    title_match: &TitleMatch<'_>,
+    ledger: &mut Ledger,
+) -> f32 {
     // Base similarity: the strongest of the trigram score (from the db), the token-set ratio
     // and the compact comparison — each catches a failure the others miss.
     let textual = candidate.similarity.max(title_match.ratio);
@@ -155,7 +190,6 @@ fn assess_with<'a>(query: &Query, candidate: &'a Candidate, ledger: &mut Ledger)
     } else {
         textual
     };
-    let mut s = base;
     ledger.term("base_similarity", base, || {
         let via = if title_match.via_alias {
             format!(", discounted to {ALIAS_EVIDENCE_WEIGHT} as an alternative title")
@@ -167,7 +201,16 @@ fn assess_with<'a>(query: &Query, candidate: &'a Candidate, ledger: &mut Ledger)
             candidate.similarity, title_match.ratio
         )
     });
+    base
+}
 
+/// The medium and year signals. Each is recorded and explained, and never weighed.
+fn record_medium_and_year(
+    query: &Query,
+    candidate: &Candidate,
+    signals: &mut MatchSignals,
+    ledger: &mut Ledger,
+) {
     // Medium, year, tags and credits are recorded and explained, and never weighed. Each is
     // wrong or inconsistent across providers most of the time, and each was exactly what lifted a
     // discounted alias hit back over the attach and merge thresholds: 12,356 of the automatic
@@ -208,12 +251,14 @@ fn assess_with<'a>(query: &Query, candidate: &'a Candidate, ledger: &mut Ledger)
             });
         }
     }
+}
 
+/// The bonus a title identity or containment earns, or 0 when there is neither.
+fn title_bonus(title_match: &TitleMatch<'_>, ledger: &mut Ledger) -> f32 {
     // Exact normalized-title equality is decisive — against a primary title. Against an
     // alternative it is half a bonus, for the reason the base discount above spells out.
     if title_match.exact || title_match.compact_equal {
         let bonus = if title_match.via_alias { 0.05 } else { 0.1 };
-        s += bonus;
         ledger.term("title_identity", bonus, || {
             let rule = if title_match.exact {
                 "identical"
@@ -229,19 +274,31 @@ fn assess_with<'a>(query: &Query, candidate: &'a Candidate, ledger: &mut Ledger)
             };
             format!("{rule}, against {side} {:?}", title_match.matched)
         });
+        bonus
     } else if title_match.containment {
         // One title's words are a full subset of the other's (e.g. an abbreviated vs. a
         // fully-subtitled edition of the same work). A modest nudge, deliberately smaller
         // than the exact-match bonus so genuine sequels don't get over-attached.
-        s += 0.05;
-        ledger.term("containment", 0.05, || {
+        let bonus = 0.05;
+        ledger.term("containment", bonus, || {
             format!(
                 "every word of one title appears in {:?}",
                 title_match.matched
             )
         });
+        bonus
+    } else {
+        0.0
     }
+}
 
+/// The tag and credit signals. Each is recorded and explained, and never weighed.
+fn record_tags_and_credits(
+    query: &Query,
+    candidate: &Candidate,
+    signals: &mut MatchSignals,
+    ledger: &mut Ledger,
+) {
     if let Some(overlap) = name_set_overlap(&query.tags, &candidate.tags) {
         signals.tag_overlap = overlap > 0.0;
         ledger.term("tag_overlap", 0.0, || {
@@ -263,7 +320,16 @@ fn assess_with<'a>(query: &Query, candidate: &'a Candidate, ledger: &mut Ledger)
             )
         });
     }
+}
 
+/// The edition and numeric conflict terms. Returns whether the numeric veto applies.
+fn record_conflicts(
+    query: &Query,
+    candidate: &Candidate,
+    title_match: &TitleMatch<'_>,
+    signals: &MatchSignals,
+    ledger: &mut Ledger,
+) -> bool {
     if signals.edition_conflict {
         ledger.term("edition_conflict", 0.0, || {
             format!(
@@ -280,24 +346,14 @@ fn assess_with<'a>(query: &Query, candidate: &'a Candidate, ledger: &mut Ledger)
     // threshold rather than merely out of the attach band, and [`decide`] refuses to attach on
     // it regardless of the arithmetic.
     if signals.numeric_conflict {
-        s -= 0.3;
-        ledger.term("numeric_conflict", -0.3, || {
+        ledger.term("numeric_conflict", -NUMERIC_CONFLICT_PENALTY, || {
             format!(
                 "{:?} carries different numbers from {:?} or {:?}",
                 query.normalized_title, title_match.matched, candidate.normalized_title
             )
         });
     }
-
-    Scored {
-        assessment: Assessment {
-            score: s.clamp(0.0, 1.0),
-            signals,
-        },
-        base,
-        matched: title_match.matched,
-        via_alias: title_match.via_alias,
-    }
+    signals.numeric_conflict
 }
 
 /// Most words an alias may have and still be read as a franchise name when another title

@@ -10,10 +10,9 @@ use uuid::Uuid;
 /// A scan run as the console reads it: the persisted row plus the slug of the provider it was
 /// scoped to.
 ///
-/// Published under the `ScanRun` component name, which is what the generated client and the
-/// frontend already call it. The slug is the addition: a run carrying only `provider_id` renders
-/// as a truncated uuid and cannot be matched against a filter an operator typed, which is why
-/// the panel's provider filter had no effect on anything the live stream pushed.
+/// Published under the `ScanRun` component name. The slug lets the console render the provider
+/// by name and match a run the live stream pushes against the filter an operator typed; a bare
+/// `provider_id` allows neither.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[schema(as = ScanRun)]
 pub struct ScanRunView {
@@ -22,7 +21,7 @@ pub struct ScanRunView {
     /// `null` for a run covering every enabled provider, and once the named provider is
     /// deleted.
     pub provider_id: Option<ProviderId>,
-    /// `null` for an all-provider run, and for a run whose provider has since been deleted.
+    /// `null` for an all-provider run, and for a run whose provider was deleted.
     pub provider_slug: Option<String>,
     /// Whether the run rebuilds the archive or reads the latest feed.
     pub mode: ScanMode,
@@ -53,16 +52,15 @@ pub struct ScanRunView {
 pub struct ScanRunPageView {
     /// The page, newest run first.
     pub items: Vec<ScanRunView>,
-    /// Total matching the current filter, ignoring `limit`/`offset`.
+    /// Total matching the current filter, ignoring `limit` and `offset`.
     pub total: i64,
 }
 
-/// What the scan filter matched, as figures rather than rows.
+/// What the scan filter matched, as figures.
 ///
-/// Scoped by the *same* provider and window the row list uses, so a narrowed filter reports its
-/// own success rate. Rates are left to the reader to divide: publishing `tasks_done` and
-/// `tasks_total` rather than a percentage keeps the panel able to show both the ratio and the
-/// magnitude behind it, which a lone percentage cannot.
+/// Scoped by the same provider and window as the row list, so a narrowed filter reports its own
+/// success rate. The reader divides: `tasks_done` and `tasks_total` let the panel show both the
+/// ratio and the magnitude behind it, which a lone percentage cannot.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ScanSummaryView {
     /// Runs the filter matched.
@@ -73,8 +71,7 @@ pub struct ScanSummaryView {
     pub runs_running: i64,
     /// Of those, finished with at least one task done.
     pub runs_completed: i64,
-    /// Of those, finished with every task failed, which is what marks a run failed rather
-    /// than completed.
+    /// Of those, finished with every task failed, which is what marks a run failed.
     pub runs_failed: i64,
     /// Of those, stopped by an operator.
     pub runs_cancelled: i64,
@@ -84,8 +81,8 @@ pub struct ScanSummaryView {
     pub tasks_done: i64,
     /// Of those, settled as failures.
     pub tasks_failed: i64,
-    /// Failures still in the triage feed, as opposed to `tasks_failed`, which counts every
-    /// failure in the window including the ones an operator has cleared.
+    /// Failures still in the triage feed. `tasks_failed` counts every failure in the window,
+    /// including the ones an operator has cleared.
     pub failures_open: i64,
     /// Summed run wall-clock in seconds; a run in flight counts up to now.
     pub busy_seconds: f64,
@@ -133,15 +130,14 @@ pub struct ProviderScanHealthView {
 
 /// The task-level state of the runs in flight, pushed on the console stream.
 ///
-/// Run counters alone cannot distinguish "working" from "wedged" — both leave `done_tasks`
-/// where it was. These are the figures that can: what a worker is holding, since when, and what
-/// settled most recently.
+/// Run counters alone cannot tell "working" from "wedged", since both leave `done_tasks` where it
+/// was. These figures can: what a worker is holding, since when, and what settled most recently.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ScanActivityView {
     /// One entry per run in flight, and none for a run that has settled.
     pub runs: Vec<RunActivityView>,
     /// The most recently settled tasks of the runs in flight, newest first. Empty when nothing
-    /// is running, which is the honest answer rather than a replay of the last scan.
+    /// is running, instead of a replay of the last scan.
     pub events: Vec<TaskEventView>,
 }
 
@@ -163,9 +159,9 @@ pub struct RunActivityView {
     pub kinds: Vec<String>,
     /// Distinct workers holding a task right now.
     pub workers: i64,
-    /// What the run's oldest held task is doing right now — a
-    /// [`tankovault_domain::ScanStage`] token. `null` when nothing is held, which paired with
-    /// `waiting_since` is how the console tells "working" from "waiting for a worker".
+    /// What the run's oldest held task is doing, as a [`tankovault_domain::ScanStage`] token.
+    /// `null` when nothing is held; with `waiting_since`, that tells the console "working" from
+    /// "waiting for a worker".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stage: Option<String>,
     /// When that task entered that stage. A stage stamp that stops moving is the symptom the run
@@ -179,15 +175,14 @@ pub struct RunActivityView {
     /// What the stage counts up to, where it counts at all.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stage_total: Option<i32>,
-    /// What the stage is working against — a series path, a catalogue page.
+    /// What the stage is working against, such as a series path or a catalogue page.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stage_detail: Option<String>,
     /// When the run's oldest still-queued task was created.
     ///
-    /// With `running_tasks` at zero this is the run's real state: not working, **waiting for a
-    /// worker slot**. A worker runs one task per provider, so a provider's second run queues
-    /// behind its first — and through `state` alone that is indistinguishable from a run that
-    /// has hung, which is exactly the reading it used to get.
+    /// With `running_tasks` at zero, the run is waiting for a worker slot. A worker runs one task
+    /// per provider, so a provider's second run queues behind its first, and through `state`
+    /// alone that looks the same as a run that has hung.
     #[serde(default, with = "time::serde::rfc3339::option")]
     #[schema(value_type = Option<String>)]
     pub waiting_since: Option<OffsetDateTime>,
@@ -204,8 +199,9 @@ pub struct ScanCancelledView {
     pub tasks: i64,
 }
 
-/// Which in-flight runs a bulk cancellation stops. Both fields narrow; a body with neither stops
-/// everything currently queued or running.
+/// Which in-flight runs a bulk cancellation stops.
+///
+/// Both fields narrow. A body with neither stops everything queued or running.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
 pub struct CancelScansBody {
     /// Provider slug.
@@ -222,8 +218,8 @@ pub struct CancelScansBody {
 pub struct ScanRunDetailView {
     /// Where the run's time went, summed over its tasks.
     pub telemetry: RunTelemetryView,
-    /// Summed milliseconds per stage across the run, largest first — the answer to "what was this
-    /// run actually doing for twenty minutes".
+    /// Summed milliseconds per stage across the run, largest first: what the run spent its time
+    /// on.
     pub stages: Vec<StageTotalView>,
     /// Every task of the run, whatever its state.
     pub tasks: Vec<ScanTaskDetailView>,
@@ -232,13 +228,13 @@ pub struct ScanRunDetailView {
 /// A run's time, summed over every task that recorded a breakdown.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct RunTelemetryView {
-    /// Settled tasks carrying a breakdown. Everything else here sums over exactly these, so a run
-    /// from before this instrumentation reports zero rather than a wrong total.
+    /// Settled tasks carrying a breakdown. Every other figure sums over exactly these, so a run
+    /// with no recorded breakdown reports zero, not a wrong total.
     pub tasks_measured: i64,
     /// Summed execution time in milliseconds. Exceeds the run's wall clock when tasks ran
     /// concurrently: it is work performed, not time elapsed.
     pub busy_ms: i64,
-    /// Summed time tasks spent created but unclaimed — queued behind a busy provider.
+    /// Summed time tasks spent created but unclaimed, queued behind a busy provider.
     pub wait_ms: i64,
     /// Outbound requests the run made.
     pub requests: i64,
@@ -252,7 +248,7 @@ pub struct RunTelemetryView {
     pub solver_ms: i64,
     /// Solve attempts, whether or not they succeeded.
     pub solver_calls: i64,
-    /// Responses the provider answered 429/503, each of which widened its spacing thereafter.
+    /// Responses the provider answered with 429 or 503, each of which widened its spacing.
     pub throttled: i64,
 }
 
@@ -286,9 +282,8 @@ pub struct ScanTaskDetailView {
     /// Why it failed, `null` unless it did.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
-    /// The stage the task is in, or the one it ended in. On a failure this is the most useful
-    /// field on the row: it says whether the provider stopped answering or our own ingest
-    /// rejected what it sent.
+    /// The stage the task is in, or the one it ended in. On a failure it says whether the
+    /// provider stopped answering or the ingest rejected what it sent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stage: Option<String>,
     /// When it entered that stage.
@@ -304,7 +299,7 @@ pub struct ScanTaskDetailView {
     /// What the stage is working against: a series path, a catalogue page.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stage_detail: Option<String>,
-    /// `null` for tasks created before the column existed.
+    /// `null` when the task recorded none.
     #[serde(default, with = "time::serde::rfc3339::option")]
     #[schema(value_type = Option<String>)]
     pub created_at: Option<OffsetDateTime>,
@@ -369,13 +364,13 @@ pub struct ClearFailuresBody {
     /// value together with `match_null_error` to clear the group that recorded no error at all.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
-    /// Clear the group whose error is absent. Mutually meaningful with `error`: an omitted
-    /// `error` means "any error", which is not the same request.
+    /// Clear the group whose error is absent. An omitted `error` means "any error", which is a
+    /// different request.
     #[serde(default)]
     pub match_null_error: bool,
 }
 
-/// How many failures a clear actually hid.
+/// How many failures a clear hid.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct FailuresClearedView {
     /// Rows this call acknowledged. Already-cleared rows are excluded, so two operators clearing
@@ -386,7 +381,7 @@ pub struct FailuresClearedView {
 /// One distinct scan failure, with how often it happened and which providers it hit.
 ///
 /// The grouped view of the failure feed: twelve rows of the same broken selector are one
-/// problem, and the flat feed presents them as twelve.
+/// problem, which the flat feed shows as twelve.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct FailureGroupView {
     /// The error text these failures share. `null` groups the failures that recorded none.
@@ -398,8 +393,8 @@ pub struct FailureGroupView {
     pub cleared: i64,
     /// Provider slugs affected, sorted.
     pub providers: Vec<String>,
-    /// Task kinds this error struck, sorted — the same message on a `series` task and on a
-    /// `catalog_page` task is two problems, not one.
+    /// Task kinds this error struck, sorted. The same message on a `series` task and on a
+    /// `catalog_page` task is two problems.
     pub kinds: Vec<String>,
     /// The most recent of them, `null` only if the group is empty.
     #[serde(with = "time::serde::rfc3339::option")]
@@ -407,14 +402,14 @@ pub struct FailureGroupView {
     pub latest_at: Option<OffsetDateTime>,
 }
 
-/// A failed scan task enriched with its run's provider + mode, for the console error feed.
+/// A failed scan task with its run's provider and mode, for the console error feed.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct FailedTaskView {
     /// The failed task.
     pub id: Uuid,
     /// The run it belonged to.
     pub run_id: Uuid,
-    /// Provider slug of the owning run (`None` if the provider was since deleted).
+    /// Provider slug of the owning run, `null` once the provider is deleted.
     pub provider_slug: Option<String>,
     /// Cadence of the owning run: `full` or `fast`.
     pub mode: String,
@@ -438,18 +433,15 @@ pub struct FailedTaskView {
 ///
 /// Published by `services/control-plane` on its internal `POST /internal/scans`, and
 /// republished verbatim by `services/api` on `POST /v1/admin/scans` and
-/// `POST /v1/admin/providers/{id}/resolve`. It lives here, rather than staying a private
-/// struct in the control plane's `main.rs`, for the reason ARCH-10 exists: while the producer
-/// owned the only definition, the API could declare nothing more specific than
-/// `serde_json::Value`, so the console's "N scans queued" was reading a field no compiler had
-/// ever connected to the field the planner writes. Both ends now name this type, so removing
-/// `run_ids` fails to build at the producer *and* the republisher.
+/// `POST /v1/admin/providers/{id}/resolve`. Both ends name this type, so removing `run_ids`
+/// fails to build at the producer and at the republisher, and the console's "N scans queued"
+/// reads the field the planner writes.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[schema(as = ScanTriggered)]
 pub struct ScanTriggeredView {
-    /// One id per provider scanned — one per active provider when the request names none. A
-    /// provider already scanning in this mode contributes the id of that run rather than a new
-    /// one, so an id here means "this run covers your request", not always "this run is new".
+    /// One id per provider scanned, or per active provider when the request names none. A
+    /// provider already scanning in this mode contributes that run's id, so an id here means
+    /// "this run covers your request", not always "this run is new".
     pub run_ids: Vec<ScanRunId>,
 }
 
@@ -485,11 +477,10 @@ mod tests {
         }
     }
 
-    /// The run page is what the history table renders, and the stamps are the part worth
-    /// pinning: they are `OffsetDateTime` behind an RFC 3339 serde attribute, which is the one
-    /// mistake the type system here cannot catch. The two workspaces are related by nothing but
-    /// `openapi.json`, so a field that does not survive its round trip is a value the operator
-    /// silently never sees.
+    /// The history table renders the run page, and its stamps are `OffsetDateTime` behind an
+    /// RFC 3339 serde attribute, a mistake the type system cannot catch. The two workspaces
+    /// share only `openapi.json`, so a field that does not survive its round trip is a value the
+    /// operator never sees.
     #[test]
     fn a_run_page_round_trips() {
         let page = ScanRunPageView {
@@ -545,9 +536,8 @@ mod tests {
         assert_eq!(decoded.providers[0].last_failure_at, Some(an_instant()));
     }
 
-    /// The activity payload arrives over SSE rather than through a typed client call, so serde
-    /// is the only thing checking it — and `target` is free-form JSON the tail reads two keys out
-    /// of, which a stricter round trip would not preserve.
+    /// The activity payload arrives over SSE, not through a typed client call, so serde is the
+    /// only check on it. `target` is free-form JSON the tail reads two keys out of.
     #[test]
     fn a_live_activity_payload_round_trips() {
         let run_id = ScanRunId::new();
@@ -586,8 +576,8 @@ mod tests {
         assert_eq!(decoded.events[0].target["page"], 3);
     }
 
-    /// A failure that recorded no error is a real group the feed shows and an operator can clear,
-    /// so its `null` has to survive as `null` rather than collapsing into an empty string.
+    /// A failure that recorded no error is a group the feed shows and an operator can clear, so
+    /// its `null` has to survive as `null`, not an empty string.
     #[test]
     fn a_failure_and_its_group_round_trip_including_the_null_error() {
         let group = FailureGroupView {
@@ -631,10 +621,10 @@ mod tests {
 
     /// An empty clear body must mean "the whole feed", not "the group with no error".
     ///
-    /// Both halves are load-bearing. `match_null_error` has to default to `false` when the field
-    /// is absent, or every unqualified clear silently narrows to one group. And `error` has to be
-    /// omitted from the wire rather than sent as `null`, because the handler reads an absent
-    /// `error` as "any error" — serialising the `None` would send a different request.
+    /// `match_null_error` defaults to `false` when absent, or every unqualified clear would
+    /// narrow to one group. `error` is omitted from the wire, not sent as `null`, because the
+    /// handler reads an absent `error` as "any error" and a serialised `None` is a different
+    /// request.
     #[test]
     fn an_empty_clear_body_selects_the_whole_feed() {
         let body = ClearFailuresBody::default();

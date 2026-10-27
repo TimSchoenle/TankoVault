@@ -13,9 +13,8 @@ pub const EVENTS_STREAM: &str = "TANKOVAULT_EVENTS";
 
 /// Wildcard subject that the tasks stream binds (`scan.tasks.>`).
 ///
-/// `>` rather than `*` because a task subject carries two tokens — provider and scan mode —
-/// and because it keeps matching [`legacy_task_subject`], the single-token spelling used
-/// before the queue was tiered.
+/// `>`, not `*`, because a task subject carries two tokens after the prefix, provider and scan
+/// mode. It also matches the single token of [`legacy_task_subject`].
 pub const TASKS_SUBJECT_WILDCARD: &str = "scan.tasks.>";
 /// Wildcard subject that the events stream binds (`scan.events.>`).
 pub const EVENTS_SUBJECT_WILDCARD: &str = "scan.events.>";
@@ -26,16 +25,21 @@ pub const EVENTS_SUBJECT_WILDCARD: &str = "scan.events.>";
 /// chapters and costs one task per provider, while a full scan fans out into one task per
 /// catalogue entry. Separate queues let a worker take the fast task first instead of finding
 /// it behind a six-figure backfill backlog.
+///
+/// ```
+/// use tankovault_contracts::{ScanMode, task_subject};
+///
+/// assert_eq!(task_subject("kunmanga", ScanMode::Fast), "scan.tasks.kunmanga.fast");
+/// ```
 #[must_use]
 pub fn task_subject(provider_slug: &str, mode: ScanMode) -> String {
     format!("scan.tasks.{provider_slug}.{}", mode.as_str())
 }
 
-/// The pre-tiering subject, which carried both scan modes for a provider.
+/// Returns the provider-only subject, which carries both scan modes.
 ///
-/// Still consumed: the full-scan lane binds it alongside its own subject, so a task
-/// published by a replica that has not yet been upgraded is executed rather than left in
-/// the stream with no consumer that can reach it.
+/// The full-scan lane binds it alongside its own subject, so a task published by a replica not
+/// yet upgraded is executed, not stranded with no consumer.
 #[must_use]
 pub fn legacy_task_subject(provider_slug: &str) -> String {
     format!("scan.tasks.{provider_slug}")
@@ -50,15 +54,15 @@ pub const PROVIDER_STATE_SUBJECT: &str = "scan.events.provider_state";
 
 /// Core-NATS (non-durable) subject prefix for live per-user notification pushes.
 ///
-/// Live pushes are deliberately best-effort and **not** carried on the durable events
-/// stream: the durable record is the `notifications` row, so a client that is offline
-/// simply misses the push and catches up via its unread count on reconnect. This keeps
-/// `JetStream` free of one-subject-per-user fan-out and avoids retained backlog for users
-/// who are never connected.
+/// Live pushes are best-effort and stay off the durable events stream. The durable record is the
+/// `notifications` row, so an offline client misses the push and catches up from its unread
+/// count on reconnect. That keeps per-user fan-out, and a retained backlog for users who never
+/// connect, out of `JetStream`.
 pub const USER_NOTIFY_SUBJECT_PREFIX: &str = "notify.user";
 
-/// The core-NATS subject a single user's live notifications are published to. The API's
-/// `/v1/me/stream` SSE endpoint subscribes to exactly this subject for the connected user.
+/// Returns the core-NATS subject one user's live notifications are published to.
+///
+/// The API's `/v1/me/stream` SSE endpoint subscribes to this subject for the connected user.
 #[must_use]
 pub fn user_notify_subject(user_id: uuid::Uuid) -> String {
     format!("{USER_NOTIFY_SUBJECT_PREFIX}.{user_id}")
@@ -66,22 +70,20 @@ pub fn user_notify_subject(user_id: uuid::Uuid) -> String {
 
 /// Name prefix for the worker pool's durable consumers on the tasks stream.
 ///
-/// One consumer per provider and scan mode, not a single consumer on the `scan.tasks.*`
-/// wildcard: a wildcard consumer serves the stream in publish order, so a full catalogue scan
-/// would sit at the head of the queue with everything else waiting behind it. It is also a
-/// hard requirement — `JetStream` rejects two consumers whose filter subjects overlap, so
-/// narrow per-lane filters are the only way to have more than one consumer at all.
+/// One consumer per provider and scan mode, not one on the `scan.tasks.*` wildcard: a wildcard
+/// consumer serves the stream in publish order, so a full catalogue scan would hold everything
+/// else behind it. `JetStream` also rejects two consumers whose filter subjects overlap, so
+/// narrow per-lane filters are the only way to run more than one consumer.
 pub const WORKER_CONSUMER_PREFIX: &str = "tankovault-workers";
 
-/// The pre-fairness durable consumer that bound the whole `scan.tasks.*` wildcard.
+/// The durable consumer bound to the whole `scan.tasks.*` wildcard, which an upgrade deletes.
 ///
-/// Frozen as its own constant rather than derived from [`WORKER_CONSUMER_PREFIX`]: it names
-/// a consumer that must be *deleted* on upgrade (its filter overlaps every per-provider
-/// filter, which a work-queue stream refuses), and that removal has to keep working even if
-/// the prefix is ever renamed.
+/// Its filter overlaps every per-lane filter, which a work-queue stream refuses. It is a
+/// constant of its own, not derived from [`WORKER_CONSUMER_PREFIX`], so the deletion keeps
+/// working if the prefix is renamed.
 pub const LEGACY_WILDCARD_WORKER_CONSUMER: &str = "tankovault-workers";
 
-/// The durable consumer the worker pool uses for one provider's tasks in one scan mode.
+/// Returns the durable consumer the worker pool uses for one provider's tasks in one scan mode.
 ///
 /// The mode sits in a fixed position ahead of the slug so the name can be taken apart again
 /// even though a slug may itself contain `-`.
@@ -90,7 +92,7 @@ pub fn worker_consumer(provider_slug: &str, mode: ScanMode) -> String {
     format!("{WORKER_CONSUMER_PREFIX}-{}-{provider_slug}", mode.as_str())
 }
 
-/// The lane a worker consumer name was built for, or `None` if `name` is not one.
+/// Returns the lane a worker consumer name was built for, or `None` if `name` is not one.
 ///
 /// Lets a worker recover the lanes that already exist on the stream, so tasks belonging to a
 /// provider that has since been renamed or deleted still get consumed. The mode sits ahead of
@@ -110,9 +112,8 @@ pub fn worker_consumer(provider_slug: &str, mode: ScanMode) -> String {
 /// let name = worker_consumer("kun-manga", ScanMode::Fast);
 /// assert_eq!(worker_consumer_lane(&name), Some((ScanMode::Fast, "kun-manga")));
 ///
-/// // Anything that is not one of our consumer names is refused rather than half-parsed —
-/// // including the legacy wildcard consumer, which carries no lane and must be *deleted*
-/// // on upgrade rather than adopted.
+/// // Anything that is not one of our consumer names is refused, not half-parsed. That
+/// // includes the legacy wildcard consumer, which carries no lane and is deleted on upgrade.
 /// assert_eq!(worker_consumer_lane("some-other-consumer"), None);
 /// assert_eq!(
 ///     worker_consumer_lane(tankovault_contracts::LEGACY_WILDCARD_WORKER_CONSUMER),
@@ -136,11 +137,19 @@ pub fn worker_consumer_lane(name: &str) -> Option<(ScanMode, &str)> {
     None
 }
 
-/// Whether `slug` can address a provider on the bus.
+/// Returns whether `slug` can address a provider on the bus.
 ///
 /// A slug becomes both the final token of [`task_subject`] and part of a durable consumer
 /// name, and NATS accepts neither `.`, `*`, `>` nor whitespace in either position. Checking
-/// it turns "this provider's tasks silently never dispatch" into a visible rejection.
+/// it turns "this provider's tasks never dispatch" into a visible rejection.
+///
+/// ```
+/// use tankovault_contracts::is_valid_provider_slug;
+///
+/// assert!(is_valid_provider_slug("manga-dex_2"));
+/// assert!(!is_valid_provider_slug("man.ga"));
+/// assert!(!is_valid_provider_slug(""));
+/// ```
 #[must_use]
 pub fn is_valid_provider_slug(slug: &str) -> bool {
     !slug.is_empty()
@@ -167,8 +176,7 @@ mod tests {
             task_subject("kunmanga", ScanMode::Full),
             "scan.tasks.kunmanga.full"
         );
-        // The two modes must be genuinely different queues, or prioritising one over the
-        // other is impossible.
+        // The two modes must be different queues, or neither can be prioritised.
         assert_ne!(
             task_subject("kunmanga", ScanMode::Fast),
             task_subject("kunmanga", ScanMode::Full)
@@ -177,9 +185,8 @@ mod tests {
 
     #[test]
     fn the_legacy_subject_is_not_reused_by_either_mode() {
-        // The full-scan lane binds this alongside its own subject to drain tasks published
-        // before the split; if a mode subject collided with it, one lane would swallow the
-        // other's work.
+        // The full-scan lane binds this alongside its own subject to drain provider-only
+        // tasks; a mode subject equal to it would let one lane swallow the other's work.
         let legacy = legacy_task_subject("kunmanga");
         assert_eq!(legacy, "scan.tasks.kunmanga");
         for mode in ScanMode::all() {
@@ -202,11 +209,11 @@ mod tests {
 
     #[test]
     fn only_per_lane_consumer_names_yield_a_lane() {
-        // The wildcard consumer this replaced shares the prefix exactly; reading a lane out
-        // of it would have the worker filter on a provider called "".
+        // The wildcard consumer shares the prefix exactly; reading a lane out of it would
+        // have the worker filter on a provider called "".
         assert_eq!(worker_consumer_lane(LEGACY_WILDCARD_WORKER_CONSUMER), None);
         assert_eq!(worker_consumer_lane("tankovault-workers-fast-"), None);
-        // Pre-tiering per-provider names carry no mode and are not resumable as a lane.
+        // Provider-only names carry no mode and are not resumable as a lane.
         assert_eq!(worker_consumer_lane("tankovault-workers-kunmanga"), None);
         assert_eq!(worker_consumer_lane(NOTIFIER_CONSUMER), None);
     }

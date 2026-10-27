@@ -1,9 +1,9 @@
 //! Operator-console response bodies for `/v1/admin/*`.
 //!
-//! Converted from `tankovault-db` rows in `services/api` rather than derived directly from them, so
-//! a `SELECT` column rename is a compile error instead of a silent public-API change. Types pin
-//! their `OpenAPI` component name with `#[schema(as = ...)]` where it differs from the Rust name,
-//! since `crates/api-client` and the frontend are generated from those names.
+//! `services/api` converts `tankovault-db` rows into these types, so a `SELECT` column rename is
+//! a compile error, not a silent public-API change. A type whose `OpenAPI` component name differs
+//! from its Rust name pins it with `#[schema(as = ...)]`, since `crates/api-client` and the
+//! frontend are generated from those names.
 
 mod merges;
 mod privacy;

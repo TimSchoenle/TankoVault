@@ -8,10 +8,8 @@ use uuid::Uuid;
 
 /// One row of the operator user directory.
 ///
-/// Carries a grant *count* rather than the grants themselves: the directory is a list, and a
-/// user's actual capabilities are what the detail view is for. The count is enough to answer
-/// "which of these accounts are privileged at all", which is the question the list is scanned
-/// for.
+/// Carries a grant count, not the grants: the detail view shows a user's capabilities, and the
+/// count answers the question the list is scanned for, which accounts are privileged at all.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[schema(as = DirectoryRow)]
 pub struct UserDirectoryRow {
@@ -29,16 +27,16 @@ pub struct UserDirectoryRow {
     pub email_verified: bool,
     /// How many permissions this account holds. `0` is an ordinary reader.
     ///
-    /// Not a measure of *how much* an account may do: the super user holds one grant and can do
-    /// everything, which is what `is_super_user` exists to say.
+    /// It does not measure how much an account may do: the super user holds one grant and can
+    /// do everything, which `is_super_user` reports.
     pub permission_count: i64,
     /// Whether this account holds the super-user grant.
     ///
-    /// Published separately because that grant is deliberately absent from the permission
-    /// catalogue, so a client reconciling grants against the catalogue would otherwise render
-    /// the deployment owner as an account holding nothing.
+    /// Published separately because that grant is absent from the permission catalogue. A
+    /// client reconciling grants against the catalogue would otherwise render the deployment
+    /// owner as an account holding nothing.
     pub is_super_user: bool,
-    /// How many series the user tracks — the cheapest signal of a real, in-use account.
+    /// How many series the user tracks, the cheapest signal of an account in use.
     pub tracked_count: i64,
     /// Its most recent sign-in, `null` for an account that has never signed in.
     #[serde(with = "time::serde::rfc3339::option")]
@@ -50,20 +48,19 @@ pub struct UserDirectoryRow {
     pub created_at: OffsetDateTime,
 }
 
-/// A page of the directory plus the unfiltered-by-page total, so the UI can render
-/// "showing 1–25 of 312" without a second request.
+/// A page of the directory with the total across pages, so the UI can render "showing 1 to 25 of
+/// 312" without a second request.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[schema(as = DirectoryPage)]
 pub struct UserDirectoryPage {
     /// The page, in the directory's own order.
     pub users: Vec<UserDirectoryRow>,
-    /// Total matching the current search, ignoring `limit`/`offset`.
+    /// Total matching the current search, ignoring `limit` and `offset`.
     pub total: i64,
 }
 
-/// Everything the user-detail panel shows, minus the grant list (fetched separately by
-/// `tankovault_db::repo::permissions::list_for_user` so the panel can refresh just that part
-/// after an edit).
+/// Everything the user-detail panel shows except the grant list, which is fetched separately so
+/// the panel can refresh just that part after an edit.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[schema(as = UserDetail)]
 pub struct UserDetailView {
@@ -92,8 +89,8 @@ pub struct UserDetailView {
     #[serde(with = "time::serde::rfc3339")]
     #[schema(value_type = String)]
     pub created_at: OffsetDateTime,
-    /// Live login sessions. Tells an operator whether a suspension will actually take effect
-    /// without also revoking sessions.
+    /// Live login sessions, which tell an operator whether a suspension takes effect without
+    /// also revoking them.
     pub active_sessions: i64,
     /// Series the user tracks.
     pub tracked_count: i64,
@@ -109,9 +106,9 @@ pub struct UserDetailView {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[schema(as = GrantRow)]
 pub struct GrantView {
-    /// The permission token. A string rather than the enum because a row surviving from a
-    /// build that had a capability this one does not must still be *visible* to an
-    /// administrator — that is precisely when they need to see and remove it.
+    /// The permission token. A string, not the enum, because a grant for a capability this
+    /// build does not know must still be visible to an administrator, who then needs to remove
+    /// it.
     pub permission: String,
     /// Whether this build recognises the token. `false` means the grant is inert.
     pub known: bool,
@@ -119,7 +116,7 @@ pub struct GrantView {
     #[serde(with = "time::serde::rfc3339")]
     #[schema(value_type = String)]
     pub granted_at: OffsetDateTime,
-    /// Who granted it, or `None` for a grant made by the migration from the old role model
-    /// or by an administrator since erased.
+    /// Who granted it, `null` for a grant made by a migration or by an administrator since
+    /// erased.
     pub granted_by: Option<String>,
 }

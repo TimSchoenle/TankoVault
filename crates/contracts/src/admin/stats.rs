@@ -16,7 +16,7 @@ pub struct SystemStatsView {
     pub providers_active: i64,
     /// Providers an operator turned off.
     pub providers_disabled: i64,
-    /// Providers in a non-serving health state (degraded/challenged/solving/blocked).
+    /// Providers in a non-serving health state: degraded, challenged, solving or blocked.
     pub providers_unhealthy: i64,
     /// Canonical series, not provider pages.
     pub series_total: i64,
@@ -24,7 +24,7 @@ pub struct SystemStatsView {
     pub sources_total: i64,
     /// Chapter links held, part releases counted separately.
     pub chapters_total: i64,
-    /// Chapters first seen in the last hour, by discovery rather than publication date.
+    /// Chapters first seen in the last hour, by discovery time, not publication date.
     pub chapters_1h: i64,
     /// Chapters first seen in the last 24 hours.
     pub chapters_24h: i64,
@@ -36,7 +36,7 @@ pub struct SystemStatsView {
     pub pending_merges: i64,
     /// Scan runs currently queued or running.
     pub runs_active: i64,
-    /// The subset of `runs_active` that has actually started.
+    /// The subset of `runs_active` that has started.
     pub runs_running: i64,
     /// Tasks waiting for a worker across every run.
     pub tasks_queued: i64,
@@ -46,8 +46,10 @@ pub struct SystemStatsView {
     pub tasks_failed_24h: i64,
 }
 
-/// One row of the per-provider statistics table. Enum columns are text-cast; the provider's
-/// identity fields are joined in so the console renders the table from one fetch.
+/// One row of the per-provider statistics table.
+///
+/// Enum columns are cast to text, and the provider's identity fields are joined in so the console
+/// renders the table from one fetch.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[schema(as = ProviderStat)]
 pub struct ProviderStatView {
@@ -57,13 +59,13 @@ pub struct ProviderStatView {
     pub slug: String,
     /// Its display name.
     pub name: String,
-    /// Provider health state token (`active` | `disabled` | `blocked` | …).
+    /// Provider health state token, such as `active`, `disabled` or `blocked`.
     pub state: String,
-    /// Adapter implementation token (`madara` | `generic_config` | `custom`).
+    /// Adapter implementation token: `madara`, `generic_config` or `custom`.
     pub adapter: String,
     /// Distinct series that have at least one source on this provider.
     pub series_count: i64,
-    /// Source links (series ↔ provider joins) this provider owns.
+    /// Source links, joining a series to this provider, that this provider owns.
     pub source_count: i64,
     /// Source links currently in a non-active state.
     pub blocked_sources: i64,
@@ -98,7 +100,7 @@ pub struct ProviderStatView {
 pub struct AuditView {
     /// The audit row.
     pub id: Uuid,
-    /// Actor username (`None` for system-originated actions or a since-deleted user).
+    /// Actor username, `null` for a system action or a deleted user.
     pub actor: Option<String>,
     /// What was done, as a stable action token.
     pub action: String,
@@ -114,13 +116,12 @@ pub struct AuditView {
 
 /// A page of the audit trail plus how many records the filter matches in total.
 ///
-/// An envelope rather than a bare list, because the trail is deep enough that the console can
-/// only ever hold a window on it, and a window with no total is a pager that cannot say where
-/// it is.
+/// An envelope, not a bare list: the console only ever holds a window on the trail, and a pager
+/// with no total cannot say where it is.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct AuditPageView {
     /// The page, newest record first.
     pub items: Vec<AuditView>,
-    /// Total matching the current filter, ignoring `limit`/`offset`.
+    /// Total matching the current filter, ignoring `limit` and `offset`.
     pub total: i64,
 }

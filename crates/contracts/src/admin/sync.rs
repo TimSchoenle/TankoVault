@@ -58,8 +58,8 @@ pub struct SyncMappingView {
     pub updated_at: OffsetDateTime,
 }
 
-/// One row of the admin Sync console's "Assign queue" — a canonical series that has **no**
-/// external mapping for the given provider yet, so an operator can review and assign one.
+/// One row of the admin Sync console's "Assign queue": a series with no external mapping for the
+/// given provider, for an operator to review and assign.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[schema(as = UnmappedSeriesRow)]
 pub struct UnmappedSeriesView {
@@ -67,7 +67,7 @@ pub struct UnmappedSeriesView {
     pub series_id: Uuid,
     /// Its canonical title.
     pub series_title: String,
-    /// How many local sources back this series (a proxy for how confident a match is worth).
+    /// How many local sources back this series, a proxy for how much a confident match is worth.
     pub source_count: i64,
 }
 
@@ -98,9 +98,9 @@ pub struct RemoteEntryView {
 
 /// One row of the automatic-sync decision journal.
 ///
-/// Covers what `sync_history` never did: the entries that matched no local series, the series
-/// skipped as excluded, the fields both sides already agreed on, and the scored title match
-/// behind every mapping.
+/// Beyond what `sync_history` records, it covers the entries that matched no local series, the
+/// series skipped as excluded, the fields both sides already agreed on, and the scored title
+/// match behind every mapping.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[schema(as = SyncDecision)]
 pub struct SyncDecisionView {
@@ -134,7 +134,7 @@ pub struct SyncDecisionView {
     pub reason: String,
     /// The conflict policy in force, `null` where the decision needed none.
     pub policy: Option<String>,
-    /// Whether anything was actually written. A run is mostly considerations.
+    /// Whether anything was written. Most decisions in a run write nothing.
     pub applied: bool,
     /// The local value before the decision.
     pub local_before: Option<String>,

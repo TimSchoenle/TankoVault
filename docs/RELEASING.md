@@ -245,8 +245,15 @@ or, without the key, against the workflow identity that produced it:
 cosign verify-blob desktop-manifest.json \
   --bundle desktop-manifest.json.cosign.bundle \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  --certificate-identity-regexp '^https://github.com/TimSchoenle/TankoVault/'
+  --certificate-identity 'https://github.com/TimSchoenle/TankoVault/.github/workflows/release-please.yaml@refs/heads/main' \
+  --certificate-github-workflow-trigger push
 ```
+
+The identity is exact on purpose. Any workflow in this repository, on any branch, can obtain a
+certificate whose identity matches a pattern on the repository URL alone; only `release-please.yaml`
+running on `main` signs releases. A release cut by a manual dispatch of that workflow (the recovery
+path in [Why release-please runs twice](#why-release-please-runs-twice)) verifies with
+`--certificate-github-workflow-trigger workflow_dispatch` instead; the identity is the same.
 
 Then check the installer you downloaded against the `sha256` in the manifest — that is the same
 comparison the client makes, in the same order.
@@ -411,12 +418,25 @@ resolves to a different digest per platform, so every key downstream of it diffe
 
 | Tag | Written by | Read by |
 | --- | --- | --- |
-| `backend-deps-<arch>` | `ci.yml` `docker-deps`, off `main` only | every image build in both workflows |
-| `pr-<number>-deps-<arch>` | `ci.yml` `docker-deps`, off an ordinary pull request | that pull request's own image legs |
-| `release-pr-deps-<arch>` | `ci.yml` `docker-deps`, off the release-please branch only | `release-please.yaml`'s warm-up |
-| `release-deps-<arch>` | `release-please.yaml` `release-deps` | the release legs |
+| `backend-deps-<arch>` | `ci.yml` `docker-deps`, on `main` only | `ci.yml`'s image builds, on `main` and on pull requests |
+| `release-deps-<arch>` | `release-please.yaml` `release-deps` | `release-please.yaml` only: its warm-up and its legs |
 
-**Every one of them is written from the Dockerfile's `build-cache` target, and that is a contract
+**The release reads no tag another workflow writes, and no pull request can write one.** A GHCR
+package grants write to the repository's workflows as a whole — there is no per-tag or per-ref
+permission — so any job holding `packages: write` could rewrite every tag, `release-deps-<arch>`
+included, and those layers end up inside signed images. `ci.yml` therefore runs `docker-deps` (its
+only `packages: write` job) on `main` only; pull requests import `backend-deps-<arch>` read-only
+and export nothing. Pull requests used to export `pr-<number>-deps-<arch>` and, on the release
+branch, `release-pr-deps-<arch>`, which the release warm-up imported to skip the workspace
+compile. Both are gone: a pull request that changes the Dockerfile or the dependency graph now
+compiles `builder` in each image leg, and a release compiles the workspace once per architecture.
+
+That holds for the workflows as committed. A branch that edits a workflow to request
+`packages: write` gets it, because the package's Actions access is granted to the repository; no
+workflow file can prevent that, so who may push branches to this repository is part of the cache's
+trust boundary.
+
+**Both are written from the Dockerfile's `build-cache` target, and that is a contract
 rather than a coincidence.** `build-cache` names `builder` and `wasm-builder` in one stage, so a
 single `mode=max` export carries the musl chain and the wasm chain together and any one tag is a
 complete lineage on its own.
@@ -441,8 +461,8 @@ Without the warm-up every leg recompiled the workspace independently.
 
 `SERVICE_BINS` is left at the Dockerfile's default everywhere. Narrowing it to `plan`'s set saved a
 thin-LTO link per unpublished image and cost far more than it saved: the value is part of
-`builder`'s cache key, so a release warm-up cooked under a narrowed one could not read anything
-`ci.yml` writes — including `release-pr-deps-<arch>`, which is the same tree already compiled. The
+`builder`'s cache key, so a release warm-up cooked under a narrowed one missed whenever the plan
+differed from the previous release's. The
 same rule governs `SOURCE_DATE_EPOCH` and `TANKOVAULT_COMMIT`: a build arg the warm-up does not
 pass is a build arg no leg may pass either.
 
@@ -512,6 +532,12 @@ secret as an empty
 string, so `docker/login-action` reports "Username and password required" and
 `create-github-app-token` reports an empty `app-id`, neither of which names the environment as
 the cause. `deployment: false` keeps a secret scope from writing a deployment record per job.
+
+The `release` environment should allow deployments from `main` only (Settings → Environments →
+`release` → Deployment branches and tags → Selected branches: `main`). `release-please.yaml`
+tests `github.ref` itself, but that test lives in the copy of the file being run; a
+`workflow_dispatch` from a branch whose copy dropped it is stopped only by the environment rule,
+which GitHub enforces from the settings rather than from the file.
 
 The maintenance pair is a **repository** secret and deliberately not an environment one. The one
 workflow that commits to a pull request branch — `auto-fix` — runs on every pull request that
@@ -605,10 +631,15 @@ the publish path decides which images that version needs.
 
 ```sh
 cosign verify \
-  --certificate-identity-regexp 'https://github\.com/<owner>/<repo>/\.github/workflows/release-please\.yaml@.*' \
+  --certificate-identity 'https://github.com/TimSchoenle/TankoVault/.github/workflows/release-please.yaml@refs/heads/main' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-github-workflow-trigger push \
   timschoenle/tankovault-api:vX.Y.Z
 ```
+
+`@refs/heads/main`, not `@.*`: the workflow file on any other branch would match a wildcard, and
+`release-please.yaml` signs only from `main`. As with the desktop manifest, a release cut by a
+manual dispatch carries `workflow_dispatch` as its trigger.
 
 `vX.Y.Z` here is a tag that service actually has. If it was not rebuilt for that release the tag
 does not exist — list what does, or read the digest out of the chart:

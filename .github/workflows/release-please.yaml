@@ -60,40 +60,39 @@ name: release-please
 # ---------------------------------------------------------------------------------------------
 # The cache contract with `ci.yml`
 # ---------------------------------------------------------------------------------------------
-# Three tag families on the GHCR `buildcache` repository, all arch-qualified because a BuildKit
+# Two tag families on the GHCR `buildcache` repository, both arch-qualified because a BuildKit
 # cache does not cross architectures:
 #
-#   backend-deps-<arch>     written by `ci.yml`, off `main` only. Read here, never written.
-#   release-pr-deps-<arch>  written by `ci.yml`, off the release-please branch only. Read here.
-#   release-deps-<arch>     written by `release-deps` below. Read by the legs.
+#   backend-deps-<arch>     written by `ci.yml`, off `main` only. Never read or written here.
+#   release-deps-<arch>     written by `release-deps` below. The only tag this file reads.
 #
-# **Every one of them is written from the Dockerfile's `build-cache` target**, so each carries the
-# musl chain and the wasm chain together and any one of them is a complete lineage on its own.
-# That is a contract between the two workflows, not an implementation detail: a build that imports
-# two *partial* lineages resolves one and silently recompiles the other, which is what a separate
-# wasm tag family cost the `frontend` legs on every run of both files. The stage's comment in
-# `deploy/docker/Dockerfile` has the numbers.
+# **Both are written from the Dockerfile's `build-cache` target**, so each carries the musl chain
+# and the wasm chain together and either one is a complete lineage on its own. A build that
+# imports two *partial* lineages resolves one and silently recompiles the other, which is what a
+# separate wasm tag family cost the `frontend` legs on every run of both files. The stage's
+# comment in `deploy/docker/Dockerfile` has the numbers.
 #
-# No tag is written by two workflows, which is deliberate: two `mode=max` exporters in one tag is
-# a write race, not a warm cache. `release-deps-<arch>` exists because this workflow and `ci.yml`
-# both fire on the push that merges a release PR, so `backend-deps-<arch>` is still at the
-# *previous* commit when the legs start.
+# **This workflow reads no tag another workflow writes.** A GHCR package grants write to the
+# repository's workflows as a whole — there is no per-tag or per-ref permission — so a cache tag
+# is only as trustworthy as every job that can hold `packages: write` on it, and the layers it
+# serves end up inside images this workflow signs. `ci.yml` used to export a pull-request tag,
+# `release-pr-deps-<arch>`, from the release PR's compile, and this file imported it along with
+# `backend-deps-<arch>`; both imports are gone, and `ci.yml` no longer grants a pull request
+# `packages: write` at all. `release-deps-<arch>` is written by this workflow only, which runs on
+# `main` only.
 #
-# `release-pr-deps-<arch>` is what makes a release fast, and it is worth understanding why it can
-# hit at all. The release commit rewrites `Cargo.toml` and `Cargo.lock`; all 26 members inherit
-# `version.workspace = true`, so every first-party crate's metadata hash changes and `builder` is
-# always a cold compile of the whole workspace — 26 minutes on arm64, 38 on amd64, once per
-# architecture, on the critical path. But the *release pull request* already contains that exact
-# bump, and `.dockerignore` drops `CHANGELOG.md`, `.github/` and the release-please manifest, so
-# the build context on the PR is byte-identical to the one here. `ci.yml` compiles it there,
-# hours earlier, and this workflow imports the result. `cook` was never the cost: `cargo chef`'s
-# recipe masks local versions to `0.0.1`, so that layer has always hit.
+# The cost is a slower release. The release commit rewrites `Cargo.toml` and `Cargo.lock`; all 26
+# members inherit `version.workspace = true`, so every first-party crate's metadata hash changes
+# and `builder` is a cold compile of the whole workspace — 26 minutes on arm64, 38 on amd64, once
+# per architecture, on the critical path. The release PR's compile was the same tree and used to
+# be imported to skip that; it no longer is. `cook` mostly still hits: `cargo chef`'s recipe masks
+# local versions to `0.0.1`, so the previous release's `release-deps-<arch>` serves it whenever
+# the dependency graph has not moved since.
 #
-# Which is why **no `SERVICE_BINS` is passed anywhere in this file**. It used to carry `plan`'s
-# narrowed set to the warm-up and to both `build-push-action` calls in every leg — saving one
-# thin-LTO link per unpublished image, and costing the import above, because the value is part of
-# `builder`'s cache key and `ci.yml` passes the Dockerfile default. Three call sites had to agree
-# on one string; now all three say nothing and agree with CI as well.
+# **No `SERVICE_BINS` is passed anywhere in this file.** It used to carry `plan`'s narrowed set
+# to the warm-up and to both `build-push-action` calls in every leg — saving one thin-LTO link per
+# unpublished image, at the price of a `builder` cache key that moved with the plan. Three call
+# sites had to agree on one string; now all three say nothing.
 #
 # `SOURCE_DATE_EPOCH` is the same rule and the same three call sites, arrived at from the other
 # direction: buildx propagates it from the environment into the solve as a build arg, so it
@@ -112,6 +111,12 @@ name: release-please
 on:
   push:
     branches: [main]
+  # Does nothing unless dispatched on `main`: `release-please` and `release-pr` test `github.ref`,
+  # and every other job hangs off `release-please`'s outputs. A dispatch from another branch runs
+  # that branch's copy of this file with the `release` environment's secrets and this workflow's
+  # signing identity. The test covers a branch whose copy still carries it; the `release`
+  # environment's deployment-branch rule (docs/RELEASING.md, "Required secrets and variables") is
+  # what holds against one that does not.
   workflow_dispatch:
 
 concurrency:
@@ -155,15 +160,16 @@ env:
 jobs:
   release-please:
     name: tag the release
+    # See the note on `workflow_dispatch` above.
+    if: github.ref == 'refs/heads/main'
     environment:
       name: release
       deployment: false
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    permissions:
-      contents: write # to create release commits and tags
-      issues: write # to create release issues
-      pull-requests: write # to open and maintain the release PR
+    # Nothing in this job uses `GITHUB_TOKEN`: release-please commits, tags and opens pull
+    # requests with the App token minted below, whose own `permission-*` inputs are the grant.
+    permissions: {}
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
@@ -267,7 +273,7 @@ jobs:
           fi
           echo "channel=$channel" >> "$GITHUB_OUTPUT"
 
-      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16 # zizmor: ignore[superfluous-actions,stale-action-refs]
         with:
           toolchain: ${{ steps.toolchain.outputs.channel }}
 
@@ -280,11 +286,34 @@ jobs:
       # `--no-default-features` (see `xtask/Cargo.toml`'s `full` feature) cuts the graph from 654
       # crates to 15, so the no-cache posture is now nearly free rather than the price of it.
       # There is no `apt-get` step for the same reason: `wreq` is no longer in the graph.
+      #
+      # Built, and asked for the deployable set, **before** the Docker Hub login below: compiling
+      # runs every dependency's build script, and none of them should run while a registry
+      # credential sits in `~/.docker/config.json`. `--all` here is not a decision, it is how the
+      # deployable set is asked for: the planner derives it from the Dockerfile's SERVICE_BINS
+      # minus the deploy blacklist, so no list of the services exists in this file.
+      # `GITHUB_OUTPUT` is redirected because this call is a query — only the `plan` step may set
+      # the job's outputs.
+      - name: build the planner and list the deployable set
+        run: |
+          set -euo pipefail
+          cargo build -q -p xtask --no-default-features
+          GITHUB_OUTPUT=/dev/null cargo run -q -p xtask --no-default-features -- release-plan --all \
+            | sed -n 's/^service_bins=//p' > "${RUNNER_TEMP}/service-bins"
+          if [ ! -s "${RUNNER_TEMP}/service-bins" ]; then
+            echo "::error::xtask release-plan --all printed no service_bins"
+            exit 1
+          fi
+
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       # Docker Hub rather than GHCR because the chart pins Docker Hub, so that is the registry
-      # whose tag set has to be the record of what is published.
+      # whose tag set has to be the record of what is published. The images are public, so the
+      # probes would work anonymously; the login is there for the authenticated pull rate limit,
+      # since one plan can probe up to nine images × 25 tags from a shared runner address. Only
+      # the probe step runs while it is held, and the step after it logs out.
       - name: log in to Docker Hub
+        if: vars.RELEASE_REBUILD_ALL != 'true'
         uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -305,11 +334,8 @@ jobs:
           RELEASING: ${{ needs.release-please.outputs.tag_name }}
         run: |
           set -euo pipefail
-          # `--all` here is not a decision, it is how the deployable set is asked for: the planner
-          # derives it from the Dockerfile's SERVICE_BINS minus the deploy blacklist, so no list
-          # of the services exists in this file. `GITHUB_OUTPUT` is redirected because this call
-          # is a query — only the step below may set the job's outputs.
-          bins=$(GITHUB_OUTPUT=/dev/null cargo run -q -p xtask --no-default-features -- release-plan --all | sed -n 's/^service_bins=//p')
+          # Written by `build the planner and list the deployable set`, before the login.
+          bins=$(cat "${RUNNER_TEMP}/service-bins")
           # No `| head`: under `pipefail` an early-exiting reader SIGPIPEs `git tag` and turns a
           # successful read into a failed step. The probe budget below is a counter instead.
           tags=$(git tag --list 'v*' --sort=-v:refname)
@@ -360,6 +386,11 @@ jobs:
           printf '%s' "$bases" > "${RUNNER_TEMP}/bases.json"
           echo "::notice::bases: ${bases}"
 
+      # Before the planner runs again below, and whether or not the probes succeeded.
+      - name: log out of Docker Hub
+        if: always() && vars.RELEASE_REBUILD_ALL != 'true'
+        run: docker logout
+
       # `--all` short-circuits the diff entirely, for the release where the decision cannot be
       # trusted and every image has to be rebuilt by hand.
       - name: decide which images to publish
@@ -386,44 +417,33 @@ jobs:
   # mechanism; there used to be a second `release-wasm-deps` job here, and it was the second
   # lineage.
   #
-  # Without it every leg re-ran `builder` independently. `ci.yml`'s `backend-deps-<arch>` is
-  # written at the *previous* `main` commit, and the release commit changes `Cargo.toml`,
-  # `Cargo.lock` and `CHANGELOG.md` — so `COPY . .` inside `builder` misses and the whole workspace
-  # is compiled again. Eighteen times, in parallel, where two would do.
+  # Without it every leg re-ran `builder` independently. The release commit changes `Cargo.toml`,
+  # `Cargo.lock` and `CHANGELOG.md`, so `COPY . .` inside `builder` misses any earlier export and
+  # the whole workspace is compiled again. Eighteen times, in parallel, where two would do.
   #
-  # `cargo chef`'s recipe masks local package versions (it rewrites them to `0.0.1`), which is why
-  # importing the pre-bump `backend-deps-<arch>` is still worth doing: the `cook` layer is
-  # version-invariant and hits, so this job's worst case is the workspace compile alone.
-  #
-  # `release-pr-deps-<arch>` is the best case — the same tree, already compiled — but it is **only**
-  # a hit if the release pull request's own `ci` finished before the merge, and that is a property
-  # of how the release is merged, not of this file. Merged promptly it is never a hit: release
-  # v3.3.0's branch head was pushed at 08:57:10 and merged at 08:59:22, while the pull request's
-  # `docker build (deps, amd64)` ran until 09:35:55 — 34 minutes after this job had already started
-  # compiling. Both warm-ups then cold-compiled all 573 crates. Waiting for the required `ci` check
-  # on the release pull request is what turns this job from a 26-37 minute compile into an import;
-  # nothing here can substitute for it, because by the time this workflow runs the tree is new and
-  # no completed run has ever seen it.
+  # It imports only its own previous export, `release-deps-<arch>` from the last release. It used
+  # to read `ci.yml`'s `backend-deps-<arch>` and the release pull request's
+  # `release-pr-deps-<arch>` as well; the cache contract at the top of this file says why it no
+  # longer reads any tag another workflow writes. `cargo chef`'s recipe masks local package
+  # versions (it rewrites them to `0.0.1`), so the `cook` layer from the previous release still
+  # hits whenever the dependency graph is unchanged, and this job's usual case is the workspace
+  # compile alone.
   #
   # Its own tag to write, not `backend-deps-<arch>`: `ci.yml` fires on this same push and its
   # `docker-deps` exports to that tag concurrently. Sharing one would be the write race the
-  # `docker-deps` comment describes, and a release build must not be able to poison what CI reads.
-  # `release-pr-deps-<arch>` is only ever read here, which is what keeps that true after the
-  # pull-request export was added.
+  # `docker-deps` comment describes.
   #
-  # **This job is the only place a tag `ci.yml` writes may be read**, and that is the invariant the
-  # legs below depend on. Reading one *there* is a race, not a fallback: `ci.yml` runs on this same
-  # push, its `docker-deps` takes 21-39 minutes, and the legs start the moment this job ends — so
-  # they import `backend-deps-<arch>` while its `mode=max` export is still uploading. BuildKit
-  # discards a record whose blobs it cannot resolve and re-runs the vertex, and the vertex is
-  # `cook`. Measured twice, both times amd64-only and both times exactly while `ci.yml`'s amd64
-  # export was in flight: release v3.3.0 (run 31249584803) lost `frontend` for 30 minutes against
-  # 49 seconds for its siblings, and the release before it (run 31241717361) lost `frontend` and
-  # `worker` for 40 and 38. Both are on the critical path — nothing publishes until every leg is
-  # done. The arm64 legs, whose `ci.yml` export had finished, hit every time.
+  # **The legs below read only the tag this job has just finished writing**, never one `ci.yml`
+  # writes. Reading `backend-deps-<arch>` there was a race as well as a trust problem: `ci.yml`
+  # runs on this same push, its `docker-deps` takes 21-39 minutes, and the legs start the moment
+  # this job ends — so they imported `backend-deps-<arch>` while its `mode=max` export was still
+  # uploading. BuildKit discards a record whose blobs it cannot resolve and re-runs the vertex, and
+  # the vertex is `cook`. Measured twice: release v3.3.0 (run 31249584803) lost `frontend` for 30
+  # minutes against 49 seconds for its siblings, and the release before it (run 31241717361) lost
+  # `frontend` and `worker` for 40 and 38.
   #
   # These tags live in GHCR rather than the Actions cache; `ci.yml`'s `docker-deps` carries the
-  # reasoning, and the two files have to agree because they read each other's tags.
+  # reasoning.
   release-deps:
     name: warm the build cache (${{ matrix.arch }})
     needs: [release-please, plan]
@@ -470,12 +490,9 @@ jobs:
       # never wrote. `BIN` is deliberately absent: no stage up to `builder` reads it, which is
       # what makes one warm-up serve every planned image.
       #
-      # `SERVICE_BINS` is absent too, and that is load-bearing rather than an omission. It used
-      # to carry `plan`'s narrowed set, which saved a thin-LTO link per unpublished image and
-      # cost far more than it saved: the value is part of `builder`'s cache key, so it made this
-      # build unable to read anything `ci.yml` writes — including `release-pr-deps-<arch>`, which
-      # is this same tree already compiled on the release pull request. Leaving the Dockerfile's
-      # default is what makes that import hit.
+      # `SERVICE_BINS` is absent too. It used to carry `plan`'s narrowed set, which saved a
+      # thin-LTO link per unpublished image; the value is part of `builder`'s cache key, so it
+      # also made this build's key differ from the release before it whenever the plan did.
       #
       # `SOURCE_DATE_EPOCH` was the same mistake and cost the same import twice over, which is why
       # it is now a repository constant in this file's `env:` rather than anything derived. As the
@@ -495,21 +512,9 @@ jobs:
           push: false
           outputs: type=cacheonly
           provenance: false
-          # `release-pr-deps-<arch>` first: written by `ci.yml` on the release pull request, whose
-          # build context is byte-identical to this commit's, so on a normal release this is a hit
-          # and the job is an import rather than a 26-crate recompile. The other two are the
-          # fallbacks for when it is absent or stale — a merge that raced another commit onto
-          # `main`, or a release PR whose CI never finished.
-          #
-          # All three are written from this same `build-cache` target, which is what makes reading
-          # three of them safe where reading two in a leg is not: they describe the same vertex
-          # set, so there is no partial lineage for the merge to drop. That agreement is a contract
-          # with `ci.yml` — if a tag here is ever written from a narrower target again, this job
-          # goes back to cold-compiling the half it did not import.
-          cache-from: |
-            type=registry,ref=${{ steps.buildcache.outputs.ref }}:release-pr-deps-${{ matrix.arch }}
-            type=registry,ref=${{ steps.buildcache.outputs.ref }}:release-deps-${{ matrix.arch }}
-            type=registry,ref=${{ steps.buildcache.outputs.ref }}:backend-deps-${{ matrix.arch }}
+          # Its own previous export and nothing else — see the cache contract at the top of this
+          # file for why no tag `ci.yml` writes is read here.
+          cache-from: type=registry,ref=${{ steps.buildcache.outputs.ref }}:release-deps-${{ matrix.arch }}
           cache-to: type=registry,ref=${{ steps.buildcache.outputs.ref }}:release-deps-${{ matrix.arch }},mode=max,compression=zstd,image-manifest=true,oci-mediatypes=true
 
   # One leg per (image, architecture). Both architectures build **natively**: `wreq` compiles
@@ -639,8 +644,8 @@ jobs:
           # second source to add, and a second source here is not free. Two of them is what made
           # the `frontend` legs recompile `cook` and `builder` from cold while their siblings
           # imported the same tag in under a minute; `build-cache` in the Dockerfile carries the
-          # measurement. Anything from `ci.yml` is additionally the race `release-deps` documents,
-          # since that workflow is still running on this same push.
+          # measurement. Anything from `ci.yml` is additionally untrusted and the race
+          # `release-deps` documents, since that workflow is still running on this same push.
           # No `SERVICE_BINS` and no `TANKOVAULT_COMMIT`: a build arg the warm-up did not pass is a
           # build arg a leg must not pass either, or it looks up a key nothing wrote.
           cache-from: type=registry,ref=${{ steps.params.outputs.buildcache }}:release-deps-${{ matrix.arch }}
@@ -890,7 +895,15 @@ jobs:
       # list per tag. `metadata-action` emits every tag for both registries, and each
       # `--tag` is applied to the list built from the same two digests — the digests are
       # content-addressed and therefore identical in both registries.
+      #
+      # The manifest **list** digest is what gets signed, attached to, attested and pinned by the
+      # chart: signing a per-architecture digest would leave the tag most people actually pull
+      # unverifiable. It is read from `--metadata-file` — the descriptor `create` itself pushed —
+      # and every later step addresses the image by that digest. Nothing re-resolves the tag
+      # afterwards: a tag is mutable, so a digest looked up from it later is whatever the tag
+      # points at by then, and this job would sign that.
       - name: create the manifest lists
+        id: digests
         env:
           DOCKERHUB_IMAGE: ${{ steps.names.outputs.dockerhub }}
           GHCR_IMAGE: ${{ steps.names.outputs.ghcr }}
@@ -898,7 +911,11 @@ jobs:
         run: |
           set -euo pipefail
           cd /tmp/digests
-          for image in "$DOCKERHUB_IMAGE" "$GHCR_IMAGE"; do
+          for registry in dockerhub ghcr; do
+            case "$registry" in
+              dockerhub) image="$DOCKERHUB_IMAGE" ;;
+              ghcr) image="$GHCR_IMAGE" ;;
+            esac
             sources=""
             for d in *; do
               sources="${sources} ${image}@sha256:${d}"
@@ -909,29 +926,19 @@ jobs:
                 "${image}:"*) tag_args="${tag_args} --tag ${tag}" ;;
               esac
             done
-            # shellcheck disable=SC2086 -- word splitting is how the accumulated
-            # strings become separate arguments; none of the values contain whitespace.
-            "${RUNNER_TEMP}/registry-retry" docker buildx imagetools create ${tag_args} ${sources}
+            metadata="${RUNNER_TEMP}/manifest-${registry}.json"
+            rm -f "$metadata"
+            # Word splitting is how the accumulated strings become separate arguments;
+            # none of the values contain whitespace.
+            # shellcheck disable=SC2086
+            "${RUNNER_TEMP}/registry-retry" docker buildx imagetools create --metadata-file "$metadata" ${tag_args} ${sources}
+            digest=$(jq -er '."containerimage.descriptor".digest' "$metadata")
+            if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "::error::imagetools create reported no manifest list digest for ${image}"
+              exit 1
+            fi
+            echo "${registry}=${digest}" >> "$GITHUB_OUTPUT"
           done
-
-      # Resolve the manifest **list** digest after creation. This is what gets signed: signing a
-      # per-architecture digest would leave the tag most people actually pull unverifiable.
-      - name: resolve the manifest list digests
-        id: digests
-        env:
-          DOCKERHUB_IMAGE: ${{ steps.names.outputs.dockerhub }}
-          GHCR_IMAGE: ${{ steps.names.outputs.ghcr }}
-          TAG: ${{ needs.release-please.outputs.tag_name }}
-        run: |
-          set -euo pipefail
-          # Spelled out at each call site rather than through a local alias, because that is what
-          # `repo-lint`'s `registry-calls-in-publish-retry` rule reads.
-          dockerhub=$("${RUNNER_TEMP}/registry-retry" docker buildx imagetools inspect "${DOCKERHUB_IMAGE}:${TAG}" --format '{{println .Manifest.Digest}}' | head -n1)
-          ghcr=$("${RUNNER_TEMP}/registry-retry" docker buildx imagetools inspect "${GHCR_IMAGE}:${TAG}" --format '{{println .Manifest.Digest}}' | head -n1)
-          {
-            echo "dockerhub=${dockerhub}"
-            echo "ghcr=${ghcr}"
-          } >> "$GITHUB_OUTPUT"
 
       # Handed to `helm-release` as an artifact, not a job output: this is a matrix of nine and
       # `outputs` on a matrix job is last-writer-wins, so nine legs would deliver one digest.
@@ -961,14 +968,15 @@ jobs:
       # `publish api` at v2.0.0. syft resolves a plain reference through the local Docker daemon
       # *before* it tries the registry, so pulling here is what puts that round trip behind the
       # helper. The SBOM describes the same bytes either way: both paths resolve the
-      # multi-architecture list to this runner's own platform.
+      # multi-architecture list to this runner's own platform. By the digest `create` pushed, not
+      # by tag, so the SBOM describes the list this job signs and attests it against.
       - name: pull the published image for the SBOM
         env:
           GHCR_IMAGE: ${{ steps.names.outputs.ghcr }}
-          TAG: ${{ needs.release-please.outputs.tag_name }}
+          GHCR_DIGEST: ${{ steps.digests.outputs.ghcr }}
         run: |
           set -euo pipefail
-          "${RUNNER_TEMP}/registry-retry" docker pull "${GHCR_IMAGE}:${TAG}"
+          "${RUNNER_TEMP}/registry-retry" docker pull "${GHCR_IMAGE}@${GHCR_DIGEST}"
 
       # A `scratch` image defeats every package-manager-based scanner: there is no apt/apk
       # database, so a running container cannot be mapped back to its dependency set at all.
@@ -977,7 +985,7 @@ jobs:
       - name: SBOM
         uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
-          image: ${{ steps.names.outputs.ghcr }}:${{ needs.release-please.outputs.tag_name }}
+          image: ${{ steps.names.outputs.ghcr }}@${{ steps.digests.outputs.ghcr }}
           format: spdx-json
           artifact-name: sbom-${{ matrix.bin }}.spdx.json
           output-file: sbom-${{ matrix.bin }}.spdx.json
@@ -1990,7 +1998,7 @@ jobs:
     # Skipped, not failed, when there was nothing to release: `desktop-release` only runs behind
     # `release_created`, so on an ordinary push to `main` it reports `skipped` and the previous
     # release's tag — the base this job needs — has been in place for as long as that release has.
-    if: ${{ !cancelled() && needs.release-please.result == 'success' && (needs.desktop-release.result == 'success' || needs.desktop-release.result == 'skipped') }}
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' && needs.release-please.result == 'success' && (needs.desktop-release.result == 'success' || needs.desktop-release.result == 'skipped') }}
     # Required, not decorative: `RELEASE_BOT_*` are `release` environment secrets, and a job that
     # omits the environment reads them as empty strings.
     environment:
@@ -1998,10 +2006,8 @@ jobs:
       deployment: false
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    permissions:
-      contents: write # to push the release branch
-      issues: write # to label the release PR
-      pull-requests: write # to open and maintain the release PR
+    # As in `release-please`: the App token below is the only credential this job writes with.
+    permissions: {}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2

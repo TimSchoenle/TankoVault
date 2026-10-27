@@ -11,6 +11,10 @@
 # diagnostic. Every entry below was proved to fire by temporarily writing the call it forbids;
 # do the same for anything you add. `docs/ENGINEERING_GUIDE.md` §6 has the procedure.
 
+# A component is mostly `rsx!` markup, which runs longer than logic does; 250 lines still holds one
+# screen region. The host workspace keeps clippy's default.
+too-many-lines-threshold = 250
+
 disallowed-macros = [
     { path = "std::dbg", reason = "writes to the browser console outside any structure. Use `tracing`" },
     { path = "std::todo", reason = "a `todo!()` in WASM is an `unreachable` trap that takes the whole app down — there is no unwinding and no recovery (`panic = \"abort\"`)" },

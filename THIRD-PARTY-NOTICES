@@ -369,7 +369,7 @@ by the block naming that crate.
   - hkdf 0.13.0
   - hmac 0.12.1
   - hmac 0.13.0
-  - html5ever 0.39.0
+  - html5ever 0.40.1
   - httparse 1.10.1
   - httpdate 1.0.3
   - hybrid-array 0.4.15
@@ -394,7 +394,7 @@ by the block naming that crate.
   - litrs 1.0.0
   - lock_api 0.4.14
   - log 0.4.34
-  - markup5ever 0.39.0
+  - markup5ever 0.40.0
   - md-5 0.11.0
   - metrics-exporter-prometheus 0.18.3
   - mime 0.3.17
@@ -496,7 +496,7 @@ by the block naming that crate.
   - serde_urlencoded 0.7.1
   - serde_with 3.24.0
   - serde_with_macros 3.24.0
-  - servo_arc 0.4.3
+  - servo_arc 0.5.0
   - sha1 0.10.7
   - sha1 0.11.0
   - sha2 0.10.9
@@ -518,8 +518,8 @@ by the block naming that crate.
   - sqlx-macros-core 0.9.0
   - sqlx-postgres 0.9.0
   - stable_deref_trait 1.2.1
-  - string_cache 0.9.0
-  - string_cache_codegen 0.6.1
+  - string_cache 0.11.0
+  - string_cache_codegen 0.11.2
   - structmeta 0.3.0
   - structmeta-derive 0.3.0
   - syn 2.0.119
@@ -564,7 +564,7 @@ by the block naming that crate.
   - utoipa-scalar 0.4.0
   - uuid 1.28.0
   - version_check 0.9.5
-  - web_atoms 0.2.6
+  - web_atoms 0.3.0
   - whoami 2.1.3
   - x509-cert 0.2.5
   - x509-parser 0.16.0
@@ -2688,11 +2688,11 @@ DEALINGS IN THE SOFTWARE.
 
 Applies to:
 
-  - phf 0.13.1
-  - phf_codegen 0.13.1
-  - phf_generator 0.13.1
-  - phf_macros 0.13.1
-  - phf_shared 0.13.1
+  - phf 0.14.0
+  - phf_codegen 0.14.0
+  - phf_generator 0.14.0
+  - phf_macros 0.14.0
+  - phf_shared 0.14.0
 
 The MIT License (MIT)
 
@@ -4984,7 +4984,7 @@ Mozilla Public License Version 2.0
   - crypto-glue 0.1.15
   - progenitor-client 0.15.1
   - progenitor-impl 0.14.0
-  - selectors 0.38.0
+  - selectors 0.41.0
   - webauthn-attestation-ca 0.6.1-dev
   - webauthn-rs 0.6.1-dev
   - webauthn-rs-core 0.6.1-dev
@@ -5329,7 +5329,7 @@ Exhibit B - "Incompatible With Secondary Licenses" Notice
 
 … continued, for:
 
-  - cssparser 0.37.0
+  - cssparser 0.38.0
   - cssparser-macros 0.7.1
   - dtoa-short 0.3.5
 
@@ -6241,7 +6241,7 @@ third-party/chromium/LICENSE.
 
 Applies to:
 
-  - scraper 0.27.0
+  - scraper 0.29.0
 
 Copyright © 2016, June McEnroe <june@causal.agency>
 Copyright © 2017, Vivek Kushwaha <yoursvivek@gmail.com>

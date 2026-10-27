@@ -724,33 +724,37 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-on-failure: true
 
+      # This manifest is a package and a workspace root, with `crates/inkstone-ui` as a member.
+      # Cargo selects only the root package there by default, so every step below names the whole
+      # workspace; without it, `inkstone-ui` is never tested, linted or documented.
+      #
       # The `lint` job's `cargo fmt --all --check` runs in the host workspace, which this crate is
       # not a member of — so without this line nothing formats it, and three files had already
       # drifted by the time anyone looked.
       - name: rustfmt
         working-directory: web/frontend
-        run: cargo fmt --check
+        run: cargo fmt --all --check
 
       # Host target: these are pure logic tests with no DOM dependency. Anything needing a DOM
       # would need wasm-bindgen-test.
       - name: cargo test (host)
         working-directory: web/frontend
-        run: cargo test
+        run: cargo test --workspace
 
       - name: clippy (pedantic, as declared by the crate)
         working-directory: web/frontend
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
       # The doc-comment gate from `[workspace.lints]`: rustdoc's own lints fire only here.
       - name: rustdoc
         working-directory: web/frontend
         env:
           RUSTDOCFLAGS: '-D warnings'
-        run: cargo doc --no-deps
+        run: cargo doc --workspace --no-deps
 
       - name: cargo check (wasm)
         working-directory: web/frontend
-        run: cargo check --target wasm32-unknown-unknown
+        run: cargo check --workspace --target wasm32-unknown-unknown
 
       # The desktop build links `wry`, which on Linux is `WebKitGTK`. These are the same packages
       # the release job installs and the `.deb`'s `depends` names at runtime.
@@ -764,17 +768,17 @@ jobs:
       # `src/platform/mod.rs` states to the compiler.
       - name: cargo test (desktop)
         working-directory: web/frontend
-        run: cargo test --no-default-features --features desktop
+        run: cargo test --workspace --no-default-features --features desktop
 
       - name: clippy (desktop)
         working-directory: web/frontend
-        run: cargo clippy --no-default-features --features desktop --all-targets -- -D warnings
+        run: cargo clippy --workspace --no-default-features --features desktop --all-targets -- -D warnings
 
       - name: rustdoc (desktop)
         working-directory: web/frontend
         env:
           RUSTDOCFLAGS: '-D warnings'
-        run: cargo doc --no-deps --no-default-features --features desktop
+        run: cargo doc --workspace --no-deps --no-default-features --features desktop
 
   # `assets/main.css` is Tailwind output committed so a build without Node works. Unchecked, a
   # class used in `rsx!` can silently have no style behind it.

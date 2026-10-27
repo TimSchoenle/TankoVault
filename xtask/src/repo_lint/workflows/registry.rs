@@ -99,7 +99,7 @@ pub(in crate::repo_lint) fn registry_calls_in_publish_retry(
                 detail: format!(
                     "the `{job}` job installs `{HELPER}` on {installed} and makes {calls} call(s) \
                      through it, so this rule checks nothing for it; if either was renamed, \
-                     rename it in xtask/src/repo_lint/workflows.rs too"
+                     rename it in xtask/src/repo_lint/workflows/registry.rs too"
                 ),
             });
         }
@@ -178,7 +178,7 @@ pub(in crate::repo_lint) fn image_references_name_their_registry(
             file: PathBuf::from(PUBLISH_WORKFLOW),
             line: 0,
             detail: "no `*_IMAGE` step environment value found, so this rule checks nothing; if \
-                     the keys were renamed, rename them in xtask/src/repo_lint/workflows.rs too"
+                     the keys were renamed, rename them in xtask/src/repo_lint/workflows/registry.rs too"
                 .to_owned(),
         });
     }

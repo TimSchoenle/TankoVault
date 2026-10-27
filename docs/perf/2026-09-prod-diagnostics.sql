@@ -439,7 +439,7 @@ EXPLAIN (ANALYZE, BUFFERS) EXECUTE q_f670e90b2e71(50, 0, NULL, NULL, false, true
 RESET plan_cache_mode;
 
 -- ---------------------------------------------------------------------------
--- scan_summary: crates/db/src/repo/scans.rs::scan_summary (no provider, no window)
+-- scan_summary: crates/db/src/repo/scans/activity.rs::scan_summary (no provider, no window)
 -- .sqlx/query-e84b2d3150a3c716ca94ccd408323481071df95a5f61402216ca301c9affb748.json
 \echo '### scan_summary'
 PREPARE q_e84b2d3150a3 AS
@@ -454,7 +454,7 @@ EXPLAIN (ANALYZE, BUFFERS) EXECUTE q_e84b2d3150a3(NULL, NULL);
 RESET plan_cache_mode;
 
 -- ---------------------------------------------------------------------------
--- provider_scan_health: crates/db/src/repo/scans.rs::provider_scan_health (no window)
+-- provider_scan_health: crates/db/src/repo/scans/activity.rs::provider_scan_health (no window)
 -- .sqlx/query-d1383787d154456f9ddd23840fe8db4bacfada258e0ba2f89b00813c58d99d61.json
 \echo '### provider_scan_health'
 PREPARE q_d1383787d154 AS
@@ -469,7 +469,7 @@ EXPLAIN (ANALYZE, BUFFERS) EXECUTE q_d1383787d154(NULL, 50);
 RESET plan_cache_mode;
 
 -- ---------------------------------------------------------------------------
--- active_run_activity: crates/db/src/repo/scans.rs::active_run_activity
+-- active_run_activity: crates/db/src/repo/scans/activity.rs::active_run_activity
 -- .sqlx/query-da2a4748fb46c7a5896ca30d1e63fafecd77d04c083c341ee4010cd5c24bae63.json
 \echo '### active_run_activity'
 PREPARE q_da2a4748fb46 AS
@@ -480,7 +480,7 @@ EXPLAIN (ANALYZE, BUFFERS, SETTINGS) EXECUTE q_da2a4748fb46;
 EXPLAIN (ANALYZE, BUFFERS, SETTINGS) EXECUTE q_da2a4748fb46;
 
 -- ---------------------------------------------------------------------------
--- failed_tasks: crates/db/src/repo/scans.rs::failed_tasks_filtered (default page)
+-- failed_tasks: crates/db/src/repo/scans/tasks.rs::failed_tasks_filtered (default page)
 -- .sqlx/query-133958ede2699af691e6f247f0d2e1105a5a829653d4b5a6f93527856b711fda.json
 \echo '### failed_tasks'
 PREPARE q_133958ede269 AS
@@ -495,7 +495,7 @@ EXPLAIN (ANALYZE, BUFFERS) EXECUTE q_133958ede269(NULL, NULL, false, 25);
 RESET plan_cache_mode;
 
 -- ---------------------------------------------------------------------------
--- failure_groups: crates/db/src/repo/scans.rs::failure_groups (default page)
+-- failure_groups: crates/db/src/repo/scans/tasks.rs::failure_groups (default page)
 -- .sqlx/query-be2b8afcd02a47e38ae5ca8a50b6f0d873add387e3189bf6da46c763f07adefd.json
 \echo '### failure_groups'
 PREPARE q_be2b8afcd02a AS
@@ -510,7 +510,7 @@ EXPLAIN (ANALYZE, BUFFERS) EXECUTE q_be2b8afcd02a(NULL, NULL, false, 25);
 RESET plan_cache_mode;
 
 -- ---------------------------------------------------------------------------
--- scan_runs_list: crates/db/src/repo/scans.rs::list_runs_filtered (no filter)
+-- scan_runs_list: crates/db/src/repo/scans/runs.rs::list_runs_filtered (no filter)
 -- .sqlx/query-4382a963c0e8f30a160fc5b7219ad7acabe1865e326280bae0e267113638635d.json
 \echo '### scan_runs_list'
 PREPARE q_4382a963c0e8 AS

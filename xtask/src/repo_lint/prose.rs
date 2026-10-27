@@ -189,12 +189,14 @@ struct Fence {
 
 impl Fence {
     /// The fence `line` opens, if it opens one: three or more backticks or tildes, indented by
-    /// at most three spaces.
+    /// at most three spaces. A backtick fence's info string holds no backtick, so a line such as
+    /// ```` ```x``` ```` is a code span, not a fence.
     fn opened_by(line: &str) -> Option<Self> {
         let body = Self::unindented(line)?;
         let marker = body.chars().next().filter(|c| *c == '`' || *c == '~')?;
         let length = body.chars().take_while(|c| *c == marker).count();
-        (length >= 3).then_some(Self { marker, length })
+        let info = &body[length * marker.len_utf8()..];
+        (length >= 3 && !(marker == '`' && info.contains('`'))).then_some(Self { marker, length })
     }
 
     /// Whether `line` closes this fence: the same character, at least as many of it, and nothing
@@ -320,6 +322,17 @@ after \u{2014} the comment
 inner \u{2014} code
 ```
 after \u{2014} the fence
+";
+        assert_eq!(counted_em_dashes(markdown), 1);
+    }
+
+    /// A line of three backticks, text and three more backticks is a code span, but it used to
+    /// open a fence, and every line after it went uncounted until a closing fence turned up.
+    #[test]
+    fn a_backtick_run_with_a_backtick_in_its_info_string_is_a_code_span() {
+        let markdown = "\
+```<!-- example -->```
+after \u{2014} the span
 ";
         assert_eq!(counted_em_dashes(markdown), 1);
     }

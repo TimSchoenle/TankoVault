@@ -111,10 +111,6 @@ fallback glyph. In production this is the placeholder behind a lazy-loaded `cove
 | Body / UI | **IBM Plex Sans** | 400/500/600/700 | All UI text |
 | Data / labels | **IBM Plex Mono** | 400/500/600 | Chapter numbers, counts, timestamps, IDs, uppercase kicker labels, `⌘K` hint |
 
-> The current codebase's `docs/ARCHITECTURE.md` §17.1 names *Clash Display / Zodiak* for display.
-> The mockup uses **Bricolage Grotesque**. Treat Bricolage as the canonical display face and
-> update §17.1 (see plan §3).
-
 **Observed type scale (px):**
 
 | px | Usage |

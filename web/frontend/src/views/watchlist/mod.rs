@@ -3,6 +3,7 @@
 //! (`GET /v1/me/watchlist`, §4.2), so this module holds no comparator over the rows.
 
 mod bulk;
+mod fetch;
 mod grid;
 mod keys;
 mod query;
@@ -11,10 +12,10 @@ mod toolbar;
 
 use crate::api;
 use crate::components::{
-    unmeasured, use_grid_fit, AuthRequired, ErrorBox, GridFit, GridFitProbe, OutcomeLine,
-    ShortcutsOverlay, SkeletonRows,
+    use_grid_fit, AuthRequired, ErrorBox, GridFit, GridFitProbe, OutcomeLine, ShortcutsOverlay,
+    SkeletonRows,
 };
-use crate::hooks::{use_busy, use_outcome, use_reload};
+use crate::hooks::{use_busy, use_outcome, use_reload, Busy};
 use crate::i18n::{use_i18n, Translator};
 use crate::icons::{Ic, Icon};
 use crate::models::*;
@@ -25,7 +26,6 @@ use bulk::BulkBar;
 use dioxus::prelude::*;
 use grid::CoverGrid;
 use inkstone_ui::{button_class, Button, Pill, Size, Tone};
-use progenitor_client::ResponseValue;
 pub(crate) use query::WatchlistQuery;
 use query::{Order, Released, Sort, View};
 use row::{GroupHeader, RowCtx, WatchRow};
@@ -222,7 +222,7 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
     let api = api::use_api();
     let reload = use_reload();
     let syncing = use_busy();
-    let mut outcome = use_outcome();
+    let outcome = use_outcome();
     let nav = navigator();
     // Context, not six threaded props — every handle in `RowCtx` is `Copy`, so this is a
     // lookup, not a clone.
@@ -271,50 +271,7 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
         }
     }));
 
-    let page = use_resource(move || {
-        reload.track();
-        let req = request.read().clone();
-        // In the grid view the bite is whole rows of tiles, and the fetch waits for the first
-        // measurement rather than firing a request the corrected one would immediately replace.
-        let bite = bite_size(req.query.view, fit);
-        let client = api.client();
-        let authed = session.is_authenticated();
-        async move {
-            if !authed {
-                let empty = WatchlistView {
-                    items: Vec::new(),
-                    counts: WatchlistCounts {
-                        reading: 0,
-                        planned: 0,
-                        paused: 0,
-                        completed: 0,
-                        dropped: 0,
-                        all: 0,
-                        source_issues: 0,
-                    },
-                    groups: Vec::new(),
-                    total: 0,
-                    // Offset paging, not keyset: this list refetches its whole window on every
-                    // page rather than appending, which is immune to the shifting-list defect the
-                    // cursor exists to fix and cannot use a cursor to express "rows 120 to 180".
-                    // The token is there for consumers that do append.
-                    next_cursor: None,
-                };
-                return (req, Ok(empty));
-            }
-            let Some(bite) = bite else {
-                return unmeasured().await;
-            };
-            let outcome = watchlist_slice(&client, &req.query, req.limit(bite), req.skipped(bite))
-                .send()
-                .await
-                .map(ResponseValue::into_inner)
-                .map_err(|e| api::friendly_error(i18n, e));
-            // The request travels with its own answer, so the chrome can tell a rendered window
-            // from one still on the wire without a second flag to keep in step.
-            (req, outcome)
-        }
-    });
+    let page = fetch::use_page(request, fit, reload, api, session, i18n);
 
     // Renders from `board`, not the resource directly, so an optimistic mutation has somewhere
     // to write and a refetch doesn't blank the list mid-flight.
@@ -331,24 +288,7 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
         }
     });
 
-    // Best-effort — a down sync service must not take the watchlist with it (same as Discover's facets).
-    let sync_status = use_resource(move || {
-        reload.track();
-        let client = api.client();
-        let authed = session.is_authenticated();
-        async move {
-            if !authed {
-                return None;
-            }
-            client
-                .sync_status()
-                .provider(SYNC_PROVIDER)
-                .send()
-                .await
-                .ok()
-                .map(ResponseValue::into_inner)
-        }
-    });
+    let sync_status = fetch::use_sync_status(reload, api, session);
 
     if !session.is_authenticated() {
         return rsx! { AuthRequired { title: i18n.t("nav.watchlist") } };
@@ -363,41 +303,7 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
         nav.replace(Route::Watchlist { query: next });
     };
 
-    let sync_now = move |_| {
-        if !syncing.claim() {
-            return;
-        }
-        outcome.set(None);
-        let client = api.client();
-        spawn(async move {
-            let opts = SyncOpts {
-                policy: Some(ConflictPolicy::NewestWins),
-            };
-            // Pull before push, or a title just added on the other side gets overwritten.
-            let result = match client
-                .sync_pull()
-                .provider(SYNC_PROVIDER)
-                .body(opts.clone())
-                .send()
-                .await
-            {
-                Ok(_) => client
-                    .sync_push()
-                    .provider(SYNC_PROVIDER)
-                    .body(opts)
-                    .send()
-                    .await
-                    .map(|_| i18n.t("watchlist.synced"))
-                    .map_err(|e| api::friendly_error(i18n, e)),
-                Err(e) => Err(api::friendly_error(i18n, e)),
-            };
-            if result.is_ok() {
-                reload.bump();
-            }
-            outcome.set(Some(result));
-            syncing.release();
-        });
-    };
+    let sync_now = move |_| fetch::sync_both_ways(api, i18n, reload, syncing, outcome);
 
     let snapshot = board.read().clone();
     let counts = snapshot.counts.clone();
@@ -447,40 +353,10 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
         }
     };
 
-    // `total` and the unread sum both come from the filtered view; `counts.all` ignores the
-    // status filter, so mixing it in here would show e.g. "598 titles" over a list of 40.
-    let headline = if counts.is_some() {
-        i18n.args(
-            "watchlist.headline",
-            &[
-                ("titles", &thousands(snapshot.total)),
-                ("chapters", &thousands(unread_total(&snapshot))),
-            ],
-        )
-    } else {
-        String::new()
-    };
+    let headline = headline(i18n, &snapshot);
 
     rsx! {
-        div { class: "ik-page-head",
-            div {
-                h1 { class: "ik-page-title", style: "margin-bottom:2px;", {i18n.t("nav.watchlist")} }
-                div { class: "ik-muted", style: "font-size:13px;", "{headline}" }
-            }
-            div { class: "ik-flex", style: "gap:10px;align-items:center;",
-                {sync_chip(i18n, &sync_status)}
-                Button {
-                    disabled: syncing.is_busy(),
-                    on_click: sync_now,
-                    Ic { icon: Icon::CloudSync, size: 16 }
-                    if syncing.is_busy() {
-                    {i18n.t("watchlist.syncing")}
-                    } else {
-                    {i18n.t("watchlist.sync")}
-                    }
-                }
-            }
-        }
+        {page_head(i18n, &headline, &sync_status, syncing, sync_now)}
         OutcomeLine { outcome: outcome.read().clone() }
 
         StatusTabs { query: query.clone(), counts: counts.clone(), on_change: go }
@@ -515,19 +391,7 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
                 CoverGrid { items: snapshot.items.clone(), selected }
             }
         } else {
-            // The header carries the row's cell classes so both are hidden by the same rule:
-            // the responsive block used to address the header by `nth-child`, which every
-            // column added between them silently shifted.
-            div { class: "ik-wl-head", role: "row",
-                span {}
-                span { {i18n.t("watchlist.col.title")} }
-                span { class: "ik-wl-next", {i18n.t("watchlist.col.nextUnread")} }
-                span { class: "ik-wl-progress", {i18n.t("watchlist.col.progress")} }
-                span { style: "text-align:right;", {i18n.t("watchlist.col.unread")} }
-                {sort_header(i18n, &query, go)}
-                span { class: "ik-wl-sources", {i18n.t("watchlist.col.sources")} }
-                span {}
-            }
+            {list_head(i18n, &query, go)}
             {released_above.clone()}
             div {
                 class: "ik-wl-list",
@@ -644,6 +508,79 @@ pub(crate) fn Watchlist(query: WatchlistQuery) -> Element {
         }
 
         BulkBar { selected, board, reload }
+    }
+}
+
+/// The headline under the page title: titles and unread chapters in the filtered view, or
+/// nothing before the first answer.
+///
+/// `total` and the unread sum both come from the filtered view; `counts.all` ignores the
+/// status filter, so mixing it in here would show e.g. "598 titles" over a list of 40.
+fn headline(i18n: Translator, board: &Board) -> String {
+    if board.counts.is_none() {
+        return String::new();
+    }
+    i18n.args(
+        "watchlist.headline",
+        &[
+            ("titles", &thousands(board.total)),
+            ("chapters", &thousands(unread_total(board))),
+        ],
+    )
+}
+
+/// The page title, the headline, the sync account's chip and the sync button.
+fn page_head(
+    i18n: Translator,
+    headline: &str,
+    sync_status: &Resource<Option<SyncAccountStatus>>,
+    syncing: Busy,
+    on_sync: impl FnMut(MouseEvent) + 'static,
+) -> Element {
+    rsx! {
+        div { class: "ik-page-head",
+            div {
+                h1 { class: "ik-page-title", style: "margin-bottom:2px;", {i18n.t("nav.watchlist")} }
+                div { class: "ik-muted", style: "font-size:13px;", "{headline}" }
+            }
+            div { class: "ik-flex", style: "gap:10px;align-items:center;",
+                {sync_chip(i18n, sync_status)}
+                Button {
+                    disabled: syncing.is_busy(),
+                    on_click: on_sync,
+                    Ic { icon: Icon::CloudSync, size: 16 }
+                    if syncing.is_busy() {
+                    {i18n.t("watchlist.syncing")}
+                    } else {
+                    {i18n.t("watchlist.sync")}
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// The list view's column headers, with the sortable release column.
+///
+/// The header carries the row's cell classes so both are hidden by the same rule:
+/// the responsive block used to address the header by `nth-child`, which every
+/// column added between them silently shifted.
+fn list_head(
+    i18n: Translator,
+    query: &WatchlistQuery,
+    go: impl FnMut(WatchlistQuery) + Clone + 'static,
+) -> Element {
+    rsx! {
+        div { class: "ik-wl-head", role: "row",
+            span {}
+            span { {i18n.t("watchlist.col.title")} }
+            span { class: "ik-wl-next", {i18n.t("watchlist.col.nextUnread")} }
+            span { class: "ik-wl-progress", {i18n.t("watchlist.col.progress")} }
+            span { style: "text-align:right;", {i18n.t("watchlist.col.unread")} }
+            {sort_header(i18n, query, go)}
+            span { class: "ik-wl-sources", {i18n.t("watchlist.col.sources")} }
+            span {}
+        }
     }
 }
 

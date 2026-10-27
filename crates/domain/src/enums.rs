@@ -30,12 +30,10 @@ macro_rules! str_enum {
             $(
                 $(#[$vmeta])*
                 #[serde(rename = $token)]
-                // utoipa needs telling separately: it does not read the `serde(rename)` above,
-                // so without this it publishes the container's `rename_all` applied to the
-                // *variant identifier* — a different string whenever the token is not that
-                // identifier's snake_case (`MangaThemesia` → `manga_themesia`, while the
-                // column, the wire and this enum all say `mangathemesia`). A client generated
-                // from the document then cannot read the value the server actually sends.
+                // utoipa does not read the `serde(rename)` above. Without this it publishes the
+                // container's `rename_all` applied to the variant identifier, a different string
+                // whenever the token is not that identifier in snake_case (`manga_themesia` for
+                // `mangathemesia`), and a generated client cannot read what the server sends.
                 #[schema(rename = $token)]
                 #[cfg_attr(feature = "sqlx", sqlx(rename = $token))]
                 $variant
@@ -275,7 +273,7 @@ str_enum! {
 }
 
 impl AccountStatus {
-    /// Whether an account in this state may sign in and hold a session.
+    /// Returns whether an account in this state may sign in and hold a session.
     #[must_use]
     pub fn may_authenticate(self) -> bool {
         matches!(self, Self::Active)
@@ -295,13 +293,10 @@ mod tests {
 
     /// Every enum publishes exactly the vocabulary it serializes.
     ///
-    /// The defect this pins: the schema derive ignores the per-variant `#[serde(rename)]` and
-    /// fell back to the container's `rename_all`, so `AdapterKind::MangaThemesia` was published
-    /// as `manga_themesia` while the database, the API and this enum all said `mangathemesia`.
-    /// Nothing compared the two vocabularies, so the drift only surfaced as a client generated
-    /// from the document refusing every response that carried such a provider — the console's
-    /// provider and challenge screens both failed with "the server sent something this app
-    /// couldn't read".
+    /// The schema derive ignores a per-variant `#[serde(rename)]` and falls back to the
+    /// container's `rename_all`, which would publish `AdapterKind::MangaThemesia` as
+    /// `manga_themesia` while the database, the API and the enum say `mangathemesia`. A client
+    /// generated from that document refuses every response carrying such a provider.
     #[test]
     fn the_published_vocabulary_is_the_one_serde_writes() {
         let mut covered: Vec<&str> = Vec::new();
@@ -336,9 +331,8 @@ mod tests {
             AccountStatus,
         );
 
-        // The list above is hand-written, so it is checked against the file rather than
-        // trusted: a `str_enum!` nobody adds here would go unchecked, and going unchecked is
-        // the whole failure mode.
+        // The list above is hand-written, so it is checked against the file: a `str_enum!`
+        // nobody adds here would otherwise go unchecked.
         let declared: Vec<&str> = include_str!("enums.rs")
             .lines()
             .filter_map(|line| line.trim_start().strip_prefix("pub enum "))

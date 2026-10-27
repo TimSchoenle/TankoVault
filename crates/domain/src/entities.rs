@@ -41,10 +41,9 @@ pub struct Provider {
     /// How this row relates to the built-in preset catalogue; `None` for a provider an
     /// operator registered by hand.
     pub preset: Option<PresetLink>,
-    /// Wire shape is a plain string (whatever `time`'s serde impl emits), never parsed
-    /// client-side — kept untyped here so the generated frontend type doesn't need a date
-    /// crate (mirrors the `no date crate in the bundle` constraint on the other timestamp
-    /// fields below).
+    /// A plain string on the wire, whatever `time`'s serde impl emits, never parsed by the
+    /// client. Untyped so the generated frontend type needs no date crate, like the other
+    /// timestamp fields below.
     #[serde(with = "time::serde::rfc3339::option")]
     #[schema(value_type = Option<String>)]
     pub last_full_scan_at: Option<OffsetDateTime>,
@@ -60,19 +59,18 @@ pub struct Provider {
 
 /// A provider row's link to the preset catalogue shipped with the build.
 ///
-/// `locked` is the contract the whole feature turns on: while it holds, the installer
-/// overwrites the **preset-owned fields** — `name`, `base_url`, `adapter` and `config` — from
-/// the shipped definition on every rollout, so a selector fix reaches deployments that already
-/// carry the row. Unlocking detaches the row for good; it keeps the slug so the console can
-/// still offer a re-link, but nothing rewrites it again unless an operator asks.
+/// While `locked` holds, the installer overwrites the preset-owned fields (`name`, `base_url`,
+/// `adapter` and `config`) from the shipped definition on every rollout, so a selector fix
+/// reaches deployments that already carry the row. Unlocking detaches the row for good: it keeps
+/// the slug so the console can offer a re-link, but nothing rewrites it unless an operator asks.
 ///
-/// `politeness` and `state` sit outside the lock on purpose, and must stay there: a crawl
-/// budget and a pause are an operator's answer to their own infrastructure, robots policy and
-/// legal position, none of which a shipped preset can know. A lock that silently restored a
-/// rate limit an operator had lowered would be a worse bug than a stale selector.
+/// `politeness` and `state` stay outside the lock: a crawl budget and a pause are an operator's
+/// answer to their own infrastructure, robots policy and legal position, none of which a shipped
+/// preset can know. Silently restoring a rate limit an operator had lowered would be worse than a
+/// stale selector.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct PresetLink {
-    /// The governing preset — the row's own slug for anything the installer created.
+    /// The governing preset, which is the row's own slug for anything the installer created.
     pub slug: String,
     /// Whether the preset-owned fields still follow the shipped definition.
     pub locked: bool,
@@ -84,9 +82,9 @@ pub struct PresetLink {
 
 /// One entry of the preset catalogue bundled with the build, as the installer recorded it.
 ///
-/// Persisted rather than read from `tankovault_adapters`, because the api tier deliberately
-/// does not link the adapter crate (it would drag `BoringSSL` into that image); the install job
-/// writes the catalogue down and every other tier reads it as data.
+/// Persisted, because the api tier does not link `tankovault_adapters`, which would drag
+/// `BoringSSL` into that image. The install job writes the catalogue down and every other tier
+/// reads it as data.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct PresetDefinition {
     /// Catalogue key, which is also the slug of any provider the installer creates from it.
@@ -99,8 +97,8 @@ pub struct PresetDefinition {
     pub adapter: AdapterKind,
     /// Selectors and pagination written onto a locked row on every rollout.
     pub config: serde_json::Value,
-    /// What a *new* provider from this preset starts at. Never re-applied to an existing row —
-    /// see [`PresetLink`] on why politeness is outside the lock.
+    /// What a new provider from this preset starts at. Never re-applied to an existing row; see
+    /// [`PresetLink`] on why politeness is outside the lock.
     pub politeness: Politeness,
     /// When the installer last recorded this entry, which is also the answer to "did my
     /// rollout run the install job at all?".
@@ -198,9 +196,9 @@ pub struct SeriesSource {
 
 /// A chapter link under a [`SeriesSource`]. Never image data.
 ///
-/// Carries no id: `(series_source_id, number)` identifies a chapter, and migration 0055 made that
-/// the primary key. `path` is the **expanded** site-relative link — the repo layer undoes the
-/// prefix compression `chapters.path` is stored with, so nothing above it has to know about it.
+/// Carries no id: `(series_source_id, number)` identifies a chapter and is the primary key.
+/// `path` is the expanded site-relative link: the repo layer undoes the prefix compression
+/// `chapters.path` is stored with, so nothing above it has to know about it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Chapter {
     /// The provider page this link was found on.
@@ -218,10 +216,10 @@ pub struct Chapter {
     pub discovered_at: OffsetDateTime,
 }
 
-/// A user account. The password hash lives only in the `db`/`auth` layers, never here.
+/// A user account. The password hash lives only in the `db` and `auth` layers, never here.
 ///
-/// Carries no authorization state — permissions are resolved per request from a separate
-/// grant store, so an identity record cannot go stale against a revoked grant.
+/// Carries no authorization state: permissions are resolved per request from a separate grant
+/// store, so an identity record cannot go stale against a revoked grant.
 /// [`AccountStatus`] lives here because it is identity, not authorization.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct User {
@@ -329,7 +327,7 @@ pub struct ScanTask {
     pub target: serde_json::Value,
     /// Lifecycle. `Done`, `Failed` and `Skipped` are terminal and no claim can leave them.
     pub state: TaskState,
-    /// Claims taken on this task, incremented by the claim itself rather than by the retry.
+    /// Claims taken on this task, incremented by the claim itself, not by the retry.
     pub attempts: i16,
     /// Worker holding the current claim, `None` before the first one.
     pub worker_id: Option<String>,
@@ -342,7 +340,7 @@ pub struct ScanTask {
 }
 
 impl Provider {
-    /// Resolve a relative path stored under this provider into an absolute URL.
+    /// Resolves a relative path stored under this provider into an absolute URL.
     ///
     /// # Errors
     /// Propagates [`crate::link::ResolveError`] from the resolver.

@@ -1,9 +1,9 @@
 //! Ingest-time adult classification from a provider's own genre chips.
 //!
 //! The authoritative classifier is `AniList`'s `isAdult`, applied by the enrichment sweep. This is
-//! the fallback for everything the sweep has not matched — which is most of a freshly-scanned
-//! catalogue, and permanently so for any series `AniList` does not carry. Without it
-//! `series.is_adult` sits at its `false` default and an unmatched adult series reads as safe.
+//! the fallback for everything the sweep has not matched: most of a freshly scanned catalogue,
+//! and permanently any series `AniList` does not carry. Without it `series.is_adult` sits at its
+//! `false` default and an unmatched adult series reads as safe.
 //!
 //! The two never share a column: see migration 0040 for why an `AniList` refresh must not be able
 //! to clear a verdict this made, and why this may only ever answer "yes".
@@ -13,19 +13,18 @@ use std::collections::HashSet;
 
 /// Genre chips that classify a work as adult, as slugs.
 ///
-/// **Every term here is one that means explicit sexual content and nothing else.** The list is
-/// short on purpose: this gate hides series from readers, and a term that merely *co-occurs*
-/// with adult work buys a little safety by making the catalogue wrong for everyone.
+/// Every term here means explicit sexual content and nothing else. The list is short on
+/// purpose: this gate hides series from readers, and a term that merely co-occurs with adult
+/// work buys a little safety by making the catalogue wrong for everyone.
 ///
-/// Deliberately excluded, and none of these is an oversight:
+/// Excluded on purpose:
 ///
-/// - `ecchi` — suggestive, not explicit; it is the standard chip on mainstream shounen comedy.
-/// - `yaoi`, `yuri`, `bl`, `gl` — these name whose relationship a work is about, not how
-///   explicitly it is depicted. Flagging them adult would hide an entire genre of non-explicit
-///   work behind an age gate on the basis of its characters' gender, which is both wrong about
-///   the content and not a distinction this system should be drawing.
-/// - `mature`, `seinen`, `josei` — audience and tone, routinely applied for violence.
-/// - `doujinshi` — self-published, which says nothing about the content.
+/// - `ecchi`: suggestive, not explicit, and the standard chip on mainstream shounen comedy.
+/// - `yaoi`, `yuri`, `bl`, `gl`: these name whose relationship a work is about, not how
+///   explicitly it is depicted. Flagging them would hide a whole genre of non-explicit work
+///   behind an age gate because of its characters' gender, which is wrong about the content.
+/// - `mature`, `seinen`, `josei`: audience and tone, routinely applied for violence.
+/// - `doujinshi`: self-published, which says nothing about the content.
 ///
 /// If a deployment's providers disagree, that is what the operator's own additions are for.
 pub const DEFAULT_ADULT_TAGS: &[&str] = &[
@@ -47,8 +46,8 @@ pub const DEFAULT_ADULT_TAGS: &[&str] = &[
 ///
 /// Never empty: unlike [`crate::TermBlocklist`], there is no configuration that switches this
 /// off. An operator who wants adult series visible turns on the deployment flag or leaves the
-/// reader's opt-in available — both of which are decisions recorded somewhere a person can
-/// audit, where an emptied classifier would just silently stop classifying.
+/// reader's opt-in available. Both are decisions recorded where a person can audit them, while
+/// an emptied classifier would silently stop classifying.
 #[derive(Debug, Clone)]
 pub struct AdultTagSet {
     slugs: HashSet<String>,
@@ -61,9 +60,9 @@ impl Default for AdultTagSet {
 }
 
 impl AdultTagSet {
-    /// The shipped terms plus an operator's additions.
+    /// Returns the shipped terms plus an operator's additions.
     ///
-    /// Additions only — the shipped set is not removable, per the type's own documentation.
+    /// Additions only: the shipped set cannot be removed.
     /// Terms are slugified, so an operator may write `R-18`, `r18` or `R 18` and mean one thing.
     ///
     /// ```
@@ -94,13 +93,13 @@ impl AdultTagSet {
         }
     }
 
-    /// The shipped terms alone.
+    /// Returns the shipped terms alone.
     #[must_use]
     pub fn defaults() -> Self {
         Self::with_extra(Vec::<String>::new())
     }
 
-    /// Whether this one genre name classifies its series as adult.
+    /// Returns whether this one genre name classifies its series as adult.
     ///
     /// Matches the whole slug, never a substring. `Young Adult` is a real and common chip and
     /// contains `adult`; `Adventure` contains no term here but the next term added might make
@@ -110,7 +109,7 @@ impl AdultTagSet {
         self.slugs.contains(&slugify(name))
     }
 
-    /// Whether any of a scanned series' genres classifies it as adult.
+    /// Returns whether any of a scanned series' genres classifies it as adult.
     #[must_use]
     pub fn classifies_any<I, S>(&self, names: I) -> bool
     where

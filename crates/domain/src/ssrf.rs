@@ -25,7 +25,15 @@ pub enum SsrfError {
     Resolution(String),
 }
 
-/// True if `ip` is in any range we must never connect to from a crawler.
+/// Returns whether `ip` is in a range a crawler must never connect to.
+///
+/// ```
+/// use tankovault_domain::ssrf::is_forbidden_ip;
+///
+/// assert!(is_forbidden_ip("127.0.0.1".parse().unwrap()));
+/// assert!(is_forbidden_ip("10.1.2.3".parse().unwrap()));
+/// assert!(!is_forbidden_ip("93.184.216.34".parse().unwrap()));
+/// ```
 #[must_use]
 pub fn is_forbidden_ip(ip: IpAddr) -> bool {
     match ip {
@@ -57,7 +65,8 @@ fn is_forbidden_v6(ip: Ipv6Addr) -> bool {
         return is_forbidden_v4(v4);
     }
     if let Some(v4) = ip.to_ipv4() {
-        // v4-compatible (deprecated) — treat like the embedded v4 unless it's a pure v6 addr.
+        // v4-compatible, a deprecated form: treated as the embedded v4 unless it is a pure v6
+        // address.
         if !ip.is_loopback() && !ip.is_unspecified() {
             return is_forbidden_v4(v4);
         }
@@ -71,15 +80,14 @@ fn is_forbidden_v6(ip: Ipv6Addr) -> bool {
         || (seg[0] == 0x2001 && seg[1] == 0x0db8) // 2001:db8::/32 documentation
 }
 
-/// Validate the scheme, host presence, and — for an IP-literal authority — the address range.
+/// Validates the scheme, the host's presence and, for an IP-literal authority, the address range.
 ///
-/// Load-bearing, not belt-and-braces: `hyper-util`'s `HttpConnector` short-circuits DNS for an
-/// IP-literal authority, so a custom resolver never sees `http://127.0.0.1/`. Hostnames are
-/// still checked at connect time by `tankovault_fetch::ssrf::SsrfResolver`, which also covers
-/// DNS rebinding.
+/// `hyper-util`'s `HttpConnector` skips DNS for an IP-literal authority, so a custom resolver
+/// never sees `http://127.0.0.1/` and this is the only check on it. Hostnames are checked at
+/// connect time by `tankovault_fetch::ssrf::SsrfResolver`, which also covers DNS rebinding.
 ///
 /// # Errors
-/// [`SsrfError::Scheme`] / [`SsrfError::NoHost`] / [`SsrfError::ForbiddenAddress`].
+/// [`SsrfError::Scheme`], [`SsrfError::NoHost`] or [`SsrfError::ForbiddenAddress`].
 pub fn validate_url(url: &Url) -> Result<(), SsrfError> {
     if !matches!(url.scheme(), "http" | "https") {
         return Err(SsrfError::Scheme(url.scheme().to_owned()));
@@ -96,7 +104,7 @@ pub fn validate_url(url: &Url) -> Result<(), SsrfError> {
     }
 }
 
-/// Parse and validate in one step, for the many callers holding a `&str`.
+/// Parses and validate in one step, for the many callers holding a `&str`.
 ///
 /// # Errors
 /// [`SsrfError::NoHost`] when `raw` is not a URL at all, otherwise as [`validate_url`].
@@ -106,11 +114,11 @@ pub fn validate_str(raw: &str) -> Result<Url, SsrfError> {
     Ok(url)
 }
 
-/// Require every address `host` resolved to to be public.
+/// Requires every address `host` resolved to to be public.
 ///
-/// For a client that resolves the name again on its own — Chromium, TRAWL — and so cannot be
-/// pinned to a vetted subset: one internal answer among public ones is enough for it to connect
-/// there. An empty answer is refused, not waved through.
+/// For a client that resolves the name again on its own, such as Chromium or TRAWL, and so cannot
+/// be pinned to a vetted subset: one internal answer among public ones is enough for it to
+/// connect there. An empty answer is refused.
 ///
 /// # Errors
 /// [`SsrfError::Resolution`] when `addrs` is empty, [`SsrfError::ForbiddenAddress`] when any
@@ -125,20 +133,20 @@ pub fn require_all_public(host: &str, addrs: &[IpAddr]) -> Result<(), SsrfError>
     Ok(())
 }
 
-/// The resolving half of the guard, behind the `dns` feature — it needs a DNS lookup, and
-/// `wasm32` (via `crates/api-client`) must never see `tokio`'s networking.
+/// The resolving half of the guard, behind the `dns` feature: it needs a DNS lookup, and `wasm32`
+/// builds of `crates/api-client` must never see `tokio`'s networking.
 ///
-/// Lives here, not `crates/fetch`, so `services/api` can validate a stored `base_url`
-/// without linking `wreq`/`BoringSSL` — a second TLS stack — into the API binary.
-/// `crates/fetch` re-exports both and keeps its own `wreq::dns::Resolve` adapter, which
-/// re-checks on every redirect hop to close rebinding for outbound fetches.
+/// It lives here, not in `crates/fetch`, so `services/api` can validate a stored `base_url`
+/// without linking `wreq` and `BoringSSL`, a second TLS stack, into the API binary.
+/// `crates/fetch` re-exports both and keeps its own `wreq::dns::Resolve` adapter, which re-checks
+/// on every redirect hop to close rebinding for outbound fetches.
 #[cfg(feature = "dns")]
 mod resolving {
     use super::{SsrfError, is_forbidden_ip, require_all_public, validate_str};
     use std::net::{IpAddr, SocketAddr};
     use url::Url;
 
-    /// Resolve `host` and return only the vetted (public) addresses, erroring if none remain.
+    /// Resolves `host` and return only the vetted (public) addresses, erroring if none remain.
     ///
     /// # Errors
     /// [`SsrfError::Resolution`] on DNS failure, [`SsrfError::ForbiddenAddress`] if every
@@ -154,8 +162,8 @@ mod resolving {
         Ok(allowed)
     }
 
-    /// Validate a URL the way an *inbound* handler must: scheme and address-range pre-flight,
-    /// then a real DNS resolution whose every answer is re-checked.
+    /// Validates a URL the way an *inbound* handler must: scheme and address-range pre-flight, then
+    /// a real DNS resolution whose every answer is re-checked.
     ///
     /// Used where a URL is about to be **stored**, e.g. a provider's `base_url` that scan
     /// workers later hit on a timer. An outbound fetch through `crates/fetch` needs only the
@@ -176,7 +184,7 @@ mod resolving {
         resolve_checked(domain).await.map(|_| ())
     }
 
-    /// Resolve `host` and return every address it answered with, forbidden or not.
+    /// Resolves `host` and return every address it answered with, forbidden or not.
     ///
     /// # Errors
     /// [`SsrfError::Resolution`] on DNS failure.
@@ -187,7 +195,7 @@ mod resolving {
         Ok(addrs.map(|sa| sa.ip()).collect())
     }
 
-    /// Validate a URL that a client which resolves independently is about to fetch.
+    /// Validates a URL that a client which resolves independently is about to fetch.
     ///
     /// Stricter than [`validate_and_resolve`]: every answer must be public
     /// ([`require_all_public`]), since the browser or solver that fetches it picks its own
@@ -280,8 +288,8 @@ mod tests {
         assert!(validate_url(&Url::parse("http://example.com/x").unwrap()).is_ok());
     }
 
-    /// Regression: the connector skips the custom resolver for IP-literal authorities, so
-    /// the range check has to happen here or not at all.
+    /// The connector skips the custom resolver for IP-literal authorities, so the range check
+    /// happens here or not at all.
     #[test]
     fn validate_url_rejects_ip_literals_in_forbidden_ranges() {
         for raw in [
@@ -307,8 +315,8 @@ mod tests {
         assert!(validate_url(&Url::parse("http://[2606:4700:4700::1111]/").unwrap()).is_ok());
     }
 
-    /// Regression: render and challenge-solver checked only IP literals, so a hostname that
-    /// resolved to loopback or a compose peer (`localhost`, `redis`) was fetched unchecked.
+    /// A hostname that resolves to loopback or a compose peer (`localhost`, `redis`) is refused,
+    /// not only an IP literal.
     #[test]
     fn require_all_public_refuses_a_name_resolving_internally() {
         let loopback = [IpAddr::from_str("127.0.0.1").unwrap()];

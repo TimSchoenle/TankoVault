@@ -1,6 +1,6 @@
-//! Strongly-typed UUID v7 identifiers, one newtype per aggregate, so a `SeriesId` can never
-//! be passed where a `ProviderId` is expected. All ids are UUID v7 — time-sortable and
-//! generated in-app.
+//! Strongly typed UUID v7 identifiers, one newtype per aggregate, so a `SeriesId` can never be
+//! passed where a `ProviderId` is expected. All ids are UUID v7: time-sortable and generated in
+//! the application.
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -15,19 +15,19 @@ macro_rules! id_type {
         pub struct $name(pub Uuid);
 
         impl $name {
-            /// Mint a fresh, time-sortable identifier.
+            /// Mints a fresh, time-sortable identifier.
             #[must_use]
             pub fn new() -> Self {
                 Self(Uuid::now_v7())
             }
 
-            /// Wrap an existing UUID (e.g. one read back from the database).
+            /// Wraps an existing UUID (e.g. one read back from the database).
             #[must_use]
             pub const fn from_uuid(id: Uuid) -> Self {
                 Self(id)
             }
 
-            /// The inner UUID.
+            /// Returns the inner UUID.
             #[must_use]
             pub const fn as_uuid(self) -> Uuid {
                 self.0
@@ -72,10 +72,8 @@ id_type!(
     /// Identifies a [`crate::entities::SeriesSource`].
     SeriesSourceId
 );
-// No `ChapterId`. Migration 0055 dropped `chapters.id`: nothing ever referenced it — no foreign
-// key, no `chapter_id` column, and no wire field — so it was 16 bytes of heap plus a
-// random-UUID index earning nothing. A chapter is identified by `(series_source_id, number_milli)`,
-// which is now the primary key. See `docs/CHAPTER_STORAGE.md`.
+// No `ChapterId`: a chapter is identified by its primary key, `(series_source_id, number_milli)`.
+// See `docs/CHAPTER_STORAGE.md`.
 id_type!(
     /// Identifies a user account.
     UserId

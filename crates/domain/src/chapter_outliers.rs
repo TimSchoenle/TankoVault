@@ -2,14 +2,13 @@
 //!
 //! Aggregator sites publish stray entries that are not releases: a slug carrying a date
 //! (`chapter-180302`), a year (`chapter-2025`), a number lifted from the series title
-//! (`Demon-Lord-2099` → `chapter-2099`), or an uploader's typo. The adapter parses them
-//! correctly — the source really does say that — so the listing has to be judged as a whole.
+//! (`Demon-Lord-2099` becomes `chapter-2099`), or an uploader's typo. The adapter parses them
+//! correctly, since the source does say that, so the listing has to be judged as a whole.
 
 /// How aggressively a listing's trailing entries are judged implausible.
 ///
-/// Every threshold is expressed relative to the listing's own rhythm rather than as an absolute
-/// chapter number: real series run from single chapters to `Martial Peak`'s ~3,900, so any fixed
-/// ceiling is wrong for one end of that range or the other.
+/// Every threshold is relative to the listing's own rhythm: real series run from single chapters
+/// to `Martial Peak`'s 3,900 or so, so any fixed ceiling is wrong for one end of that range.
 #[derive(Debug, Clone, Copy)]
 pub struct OutlierPolicy {
     /// Smallest listing worth judging. Below this there is no rhythm to compare against.
@@ -20,8 +19,8 @@ pub struct OutlierPolicy {
     pub min_gap: f64,
     /// A jump is suspicious past this multiple of the listing's typical spacing.
     pub gap_factor: f64,
-    /// Numbers per entry, as a multiple of typical spacing, past which a run is judged noise
-    /// rather than a continuation.
+    /// Numbers per entry, as a multiple of typical spacing, past which a run is judged noise,
+    /// not a continuation.
     pub sparse_factor: f64,
     /// Ceiling on the fraction of a listing that may be rejected.
     pub max_rejected_fraction: f64,
@@ -38,13 +37,13 @@ impl Default for OutlierPolicy {
             // has to clear more than that before it is evidence of anything.
             min_gap: 10.0,
             gap_factor: 20.0,
-            // Measured against the full catalogue: at 20x, dense trailing runs — a renumbered
-            // arc restarting at 505 after 359 — stay, while scattered entries go. Lowering it
-            // toward 10x starts taking real renumberings with it.
+            // Measured against the full catalogue: at 20x, dense trailing runs such as a
+            // renumbered arc restarting at 505 after 359 stay, while scattered entries go. Toward
+            // 10x it starts taking real renumberings with it.
             sparse_factor: 20.0,
             // Junk is always a small minority. A quarter of a listing being implausible means
-            // the numbering was misread wholesale, which is an adapter bug to fix rather than
-            // data to silently drop.
+            // the numbering was misread wholesale, which is an adapter bug to fix, not data to
+            // drop silently.
             max_rejected_fraction: 0.25,
         }
     }
@@ -57,13 +56,21 @@ struct Entry {
     number: f64,
 }
 
-/// Indices of the entries in `numbers` judged implausible, ascending.
+/// Returns the indices of the entries in `numbers` judged implausible, ascending.
 ///
 /// `numbers[i]` is the chapter number of the caller's `i`th entry, in any order. An empty result
 /// means the whole listing is plausible.
 ///
+/// ```
+/// use tankovault_domain::{OutlierPolicy, implausible_indices};
+///
+/// let mut listing: Vec<f64> = (1..=60).map(f64::from).collect();
+/// listing.push(180_302.0);
+/// assert_eq!(implausible_indices(&listing, &OutlierPolicy::default()), vec![60]);
+/// ```
+///
 /// # Panics
-/// Never. Non-finite numbers are dropped from consideration rather than compared.
+/// Never. Non-finite numbers are left out of the comparison.
 #[must_use]
 pub fn implausible_indices(numbers: &[f64], policy: &OutlierPolicy) -> Vec<usize> {
     let mut sorted: Vec<Entry> = numbers
@@ -85,14 +92,13 @@ pub fn implausible_indices(numbers: &[f64], policy: &OutlierPolicy) -> Vec<usize
     rejected
 }
 
-/// The length of the plausible prefix of `sorted`, or `None` if all of it is plausible.
+/// Returns the length of the plausible prefix of `sorted`, or `None` if all of it is plausible.
 ///
-/// Peels from the top down, one suspicious jump at a time, rather than picking the lowest
-/// suspicious jump and judging everything above it in one go. The difference is load-bearing:
-/// with a single extreme stray in the listing (`Martial Peak`'s `chapter-34922`), the span from
-/// any lower cut point up to that stray is enormous, so a one-shot judgement calls every entry
-/// above the lowest jump sparse and takes real chapters with it. Peeling removes the stray
-/// first, then re-judges what is left against its own span.
+/// Peels from the top down, one suspicious jump at a time. Judging everything above the lowest
+/// suspicious jump in one go fails on a single extreme stray (`Martial Peak`'s `chapter-34922`):
+/// the span from any lower cut point up to it is enormous, so every entry above the lowest jump
+/// looks sparse and real chapters go with it. Peeling removes the stray first, then re-judges
+/// what is left against its own span.
 fn plausible_len(sorted: &[Entry], policy: &OutlierPolicy) -> Option<usize> {
     if sorted.len() < policy.min_sample {
         return None;
@@ -112,8 +118,8 @@ fn plausible_len(sorted: &[Entry], policy: &OutlierPolicy) -> Option<usize> {
         if rejected + run > budget {
             break;
         }
-        // Span measured from the last retained chapter, so a single detached entry — the common
-        // case — has a span at all. `run` is non-zero by construction of `topmost_jump`.
+        // Span measured from the last retained chapter, so a single detached entry, the common
+        // case, has a span at all. `run` is non-zero by construction of `topmost_jump`.
         let span = sorted[end - 1].number - sorted[start - 1].number;
         #[expect(
             clippy::cast_precision_loss,
@@ -134,8 +140,8 @@ fn plausible_len(sorted: &[Entry], policy: &OutlierPolicy) -> Option<usize> {
 
 /// How many entries one scan may reject from a listing of `len`.
 ///
-/// At least one, so the single-stray case — by far the most common — is never budgeted out of
-/// existence on a short listing.
+/// At least one, so the single stray, by far the most common case, is never budgeted out on a
+/// short listing.
 #[expect(
     clippy::cast_precision_loss,
     clippy::cast_possible_truncation,
@@ -154,12 +160,12 @@ fn topmost_jump(sorted: &[Entry], suspicious_gap: f64) -> Option<usize> {
         .find(|&i| sorted[i].number - sorted[i - 1].number > suspicious_gap)
 }
 
-/// The listing's typical spacing: the median gap between consecutive numbers, floored at 1.
+/// Returns the listing's typical spacing: the median gap between consecutive numbers, floored at 1.
 ///
 /// Median, not mean, because the strays this module exists to find are exactly the values that
-/// would drag a mean. Floored at 1 because a listing numbered in fractions (`0.01, 0.02, …`, seen
-/// on sources that index pages rather than chapters) otherwise reports a spacing so fine that
-/// every later whole chapter looks like a jump.
+/// would drag a mean. Floored at 1 because a listing numbered in fractions (`0.01, 0.02, …`, from
+/// sources that index pages, not chapters) otherwise reports a spacing so fine that every later
+/// whole chapter looks like a jump.
 fn typical_spacing(sorted: &[Entry]) -> Option<f64> {
     let mut gaps: Vec<f64> = sorted
         .windows(2)
@@ -213,8 +219,8 @@ mod tests {
         assert_eq!(rejected(&run(1, 200)), Vec::<f64>::new());
     }
 
-    /// Ordinary numbering holes — a pulled chapter, a double release — must survive. The whole
-    /// value of the rule is that it fires on strays and not on these.
+    /// Ordinary numbering holes, such as a pulled chapter or a double release, survive. The rule
+    /// fires on strays and not on these.
     #[test]
     fn small_holes_are_not_jumps() {
         let listing = [1.0, 2.0, 3.0, 7.0, 8.0, 9.0, 15.0, 16.0, 17.0, 18.0];
@@ -222,7 +228,7 @@ mod tests {
     }
 
     /// A site that renumbers an arc leaves a dense run above a large jump. It is a real
-    /// continuation and is kept — density, not jump size, is what separates it from noise.
+    /// continuation and is kept: density, not jump size, separates it from noise.
     #[test]
     fn a_dense_run_above_a_jump_is_a_renumbering_not_noise() {
         let mut listing = run(1, 359);
@@ -230,10 +236,9 @@ mod tests {
         assert_eq!(rejected(&listing), Vec::<f64>::new());
     }
 
-    /// Pins the bug that top-down peeling exists to prevent. `Martial Peak` lists 3,862
-    /// contiguous chapters, then 4855, 4856, 21622 and 34922. Judged in one pass from the
-    /// lowest suspicious jump, the span up to 34922 makes the entire tail look sparse and the
-    /// legitimate top of the run is rejected with it; peeled from the top, each segment is
+    /// `Martial Peak` lists 3,862 contiguous chapters, then 4855, 4856, 21622 and 34922. Judged
+    /// in one pass from the lowest suspicious jump, the span up to 34922 makes the whole tail
+    /// look sparse and rejects the top of the run with it. Peeled from the top, each segment is
     /// measured against its own span.
     #[test]
     fn peeling_from_the_top_does_not_widen_a_cut_below_it() {
@@ -242,9 +247,9 @@ mod tests {
         assert_eq!(rejected(&listing), vec![4855.0, 4856.0, 21622.0, 34922.0]);
     }
 
-    /// Strays arrive in clusters as well as alone — date-derived slugs on one source ran
-    /// 25025, 25028, 26028, 27028, 28028 above a 61-chapter series. The 3-number gap inside
-    /// the cluster is not itself suspicious, so peeling has to keep descending past it.
+    /// Strays arrive in clusters as well as alone, such as date-derived slugs 25025, 25028,
+    /// 26028, 27028 and 28028 above a 61-chapter series. The 3-number gap inside the cluster is
+    /// not itself suspicious, so peeling has to keep descending past it.
     #[test]
     fn a_cluster_of_strays_is_rejected_whole() {
         let mut listing = run(1, 61);
@@ -268,7 +273,7 @@ mod tests {
         );
     }
 
-    /// Sources that number pages rather than chapters produce a body spaced in hundredths.
+    /// Sources that number pages, not chapters, produce a body spaced in hundredths.
     /// Without the floor under typical spacing, the suspicious-jump threshold collapses to
     /// fractions of a chapter and every ordinary chapter above the body is rejected.
     #[test]

@@ -28,11 +28,10 @@ fn is_elided_though_alphanumeric(c: char) -> bool {
 
 /// `is_elided_though_alphanumeric` is the folder's actual behaviour, not an assumption about it.
 ///
-/// `"\u{363}"` reached `a_title_with_a_surviving_alphanumeric_character_yields_a_non_empty_key`
-/// as a fresh seed and failed it: the property assumed `char::is_alphanumeric` was the class of
-/// characters that survives normalization, and it is not. Sweeping every scalar value turns the
-/// next divergence into a deterministic failure naming the character, rather than a red CI run
-/// on whichever branch happens to draw the seed.
+/// `char::is_alphanumeric` is not the class of characters that survives normalization:
+/// `"\u{363}"` is alphanumeric and elided. Sweeping every scalar value makes a divergence a
+/// deterministic failure naming the character, not a red CI run on whichever branch draws the
+/// seed.
 #[test]
 fn an_alphanumeric_character_is_elided_only_if_it_is_listed_above() {
     for codepoint in 0..=0x0010_FFFF_u32 {
@@ -68,8 +67,8 @@ proptest! {
         let _ = normalize_title(&title);
     }
 
-    /// Whitespace canonicity: single-space-separated, no leading/trailing space — trigram
-    /// similarity runs over this string, so a stray space is a silent scoring difference.
+    /// Whitespace is canonical: single spaces, none leading or trailing. Trigram similarity
+    /// runs over this string, so a stray space is a silent scoring difference.
     #[test]
     fn normalize_title_is_whitespace_canonical(title in ".*") {
         let key = normalize_title(&title);
@@ -82,15 +81,12 @@ proptest! {
     /// A title with at least one alphanumeric character the folder *keeps* always yields a
     /// non-empty key.
     ///
-    /// `normalize.rs` claims "never empty from non-empty input", but that's only true after
-    /// the noise-word fallback — `"!!!"` strips to `""` before the fallback runs. This weaker
-    /// claim is the one matching actually depends on.
+    /// Non-empty input alone does not give a non-empty key: `"!!!"` strips to `""`. This is the
+    /// claim matching depends on.
     ///
-    /// The exclusion is not the property being weakened to bury a failure: `is_alphanumeric` is
-    /// true for combining marks, which normalization elides on purpose, so "alphanumeric" was
-    /// never the class of characters that survives. What is left is the claim with teeth — a
-    /// surviving character is never erased by its *context*, which is what the noise-word
-    /// filter would otherwise do to a title of nothing but noise words.
+    /// `is_alphanumeric` is true for combining marks, which normalization elides, so the
+    /// property is stated over kept characters. A kept character is never erased by its
+    /// context, which the noise-word filter would otherwise do to a title of only noise words.
     #[test]
     fn a_title_with_a_surviving_alphanumeric_character_yields_a_non_empty_key(title in ".*") {
         prop_assume!(title
@@ -113,7 +109,7 @@ proptest! {
         );
     }
 
-    /// Every token in the key must be alphanumeric — anything else means a separator survived
+    /// Every token in the key is alphanumeric. Anything else means a separator survived
     /// stripping and would be indexed as part of a word.
     #[test]
     fn every_token_of_the_key_is_alphanumeric(title in ".*") {

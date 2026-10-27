@@ -12,8 +12,8 @@ use serde::Deserialize;
 
 /// An upstream that can supply series metadata.
 ///
-/// Closed by design: adding a source is a code change anyway, so there's no value in accepting
-/// arbitrary strings — only the risk of a typo read as deliberate de-prioritisation.
+/// Closed: adding a source is a code change anyway, and an open string would only add the risk
+/// of a typo read as deliberate de-prioritisation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize)]
 #[serde(rename_all = "lowercase")]
 // `schema` on reports these two spellings as the values a `metadata.priority` list accepts.
@@ -37,7 +37,7 @@ pub enum MetadataSource {
 }
 
 impl MetadataSource {
-    /// The stable wire/config spelling.
+    /// Returns the stable wire/config spelling.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -67,13 +67,13 @@ pub enum MetadataField {
     ReleaseYear,
 }
 
-/// Whether a candidate value is an actual answer rather than a placeholder.
+/// Whether a candidate value is an answer, not a placeholder.
 ///
 /// Defined per type so "upstream had no opinion" has one meaning: a blank string and an
-/// `Unknown` enum are both absences, and letting either count as an answer is exactly how a
-/// placeholder outranks real data.
+/// `Unknown` enum are both absences, and counting either as an answer lets a placeholder
+/// outrank real data.
 pub trait MetadataValue {
-    /// Whether this value carries information a source is entitled to win with.
+    /// Returns whether this value carries information a source is entitled to win with.
     fn is_answer(&self) -> bool;
 }
 
@@ -153,7 +153,7 @@ pub struct MetadataPriority {
 }
 
 impl MetadataPriority {
-    /// The default preference: `AniList` wins, then the scraping adapters.
+    /// Returns the default preference: `AniList` wins, then the scraping adapters.
     #[must_use]
     pub fn default_order() -> Vec<MetadataSource> {
         vec![MetadataSource::AniList, MetadataSource::Adapter]
@@ -174,14 +174,14 @@ impl MetadataPriority {
         if list.is_empty() { &self.default } else { list }
     }
 
-    /// Pick the winning source and value for `field`: the first source in its priority order
+    /// Picks the winning source and value for `field`: the first source in its priority order
     /// supplying a real value wins.
     ///
     /// Candidates are scanned in the caller's order within one source, so a writer listing its
     /// own incoming value before the stored one refreshes a field it already owns.
     ///
-    /// If no prioritised source matches, any present candidate is used as a last resort, so
-    /// a partial order (say `[adapter]`) de-prioritises other sources rather than discarding
+    /// If no prioritised source matches, any present candidate is used as a last resort, so a
+    /// partial order such as `[adapter]` de-prioritises the other sources without discarding
     /// them.
     #[must_use]
     pub fn resolve<T: MetadataValue + Clone>(
@@ -289,8 +289,8 @@ mod tests {
         assert_eq!(winner.as_deref(), Some("scraped blurb"));
     }
 
-    /// A source left out of a field's order is de-prioritised, not discarded — otherwise
-    /// narrowing one field's list would silently drop metadata nothing else supplies.
+    /// A source left out of a field's order is de-prioritised, not discarded, or narrowing one
+    /// field's list would silently drop metadata nothing else supplies.
     #[test]
     fn an_unlisted_source_is_still_used_as_a_last_resort() {
         let cfg = MetadataPriority {
@@ -343,8 +343,8 @@ mod tests {
     }
 
     /// `Unknown` is the adapters' hardcoded "no selector for this", not a classification. Read
-    /// as an answer it outranks `AniList`'s real one, which is how every enriched `content_type`
-    /// used to revert to `unknown` on the next scan.
+    /// as an answer, it would outrank `AniList`'s real one and revert every enriched
+    /// `content_type` to `unknown` on the next scan.
     #[test]
     fn an_unknown_enum_variant_is_an_absence_not_an_answer() {
         let cfg = MetadataPriority::default();
@@ -357,8 +357,8 @@ mod tests {
         );
         assert_eq!(winner, Some((MetadataSource::AniList, ContentType::Manhwa)));
 
-        // And with nothing but placeholders, nobody wins — writing `unknown` back over a real
-        // stored value is the same bug from the other side.
+        // With nothing but placeholders nobody wins, so `unknown` is never written back over a
+        // real stored value.
         assert_eq!(
             cfg.resolve(
                 MetadataField::ContentType,

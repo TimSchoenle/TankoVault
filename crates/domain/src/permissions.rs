@@ -70,11 +70,11 @@ pub enum Permission {
     /// deployment-wide catalogue totals. Distinct from public browsing, which needs no grant.
     #[serde(rename = "catalogue.read")]
     CatalogueRead,
-    /// Delete series from the catalogue — one at a time, in bulk, or the whole thing.
+    /// Delete series from the catalogue: one at a time, in bulk, or the whole thing.
     ///
-    /// Deliberately *not* implied by `merge.write`, which also removes series: a merge folds one
-    /// row into another and keeps every reader's progress, while this discards both. It is the
-    /// only capability in the system that can empty the deployment.
+    /// Not implied by `merge.write`, which also removes series: a merge folds one row into
+    /// another and keeps every reader's progress, while this discards both. It is the only
+    /// capability that can empty the deployment.
     #[serde(rename = "catalogue.delete")]
     CatalogueDelete,
 
@@ -95,7 +95,7 @@ pub enum Permission {
     SyncAdminWrite,
     /// Read the automatic-sync decision journal across every user: what each reconciliation
     /// matched, wrote, skipped, and why. Separate from `sync.admin.read` because it discloses
-    /// every reader's progress *history* rather than the current state of their links.
+    /// every reader's progress history, not just the current state of their links.
     #[serde(rename = "sync.audit")]
     SyncAudit,
     /// Undo a sync decision, or flag one wrong and refuse the match it made.
@@ -126,9 +126,8 @@ pub enum Permission {
     /// Progress, complete or reject a data-subject request, and run an erasure on its behalf.
     #[serde(rename = "privacy.write")]
     PrivacyWrite,
-    /// Export another person's personal data in order to fulfil an access request. Separated
-    /// from `privacy.write` because it is the one action that *discloses* the whole record
-    /// rather than administering the queue.
+    /// Export another person's personal data to fulfil an access request. Separate from
+    /// `privacy.write` because it discloses the whole record instead of administering the queue.
     #[serde(rename = "privacy.export")]
     PrivacyExport,
 
@@ -150,18 +149,18 @@ pub enum Permission {
     ///
     /// The deployment owner, held by the first account the bootstrap migrator creates and by
     /// nobody else. It is not in [`Permission::grantable`], so no catalogue, preset or seed
-    /// loop can hand it out, and the permission editor refuses it explicitly — a holder of
-    /// `users.permissions` can escalate anyone to everything *enumerable*, but cannot mint an
+    /// loop can hand it out, and the permission editor refuses it explicitly. A holder of
+    /// `users.permissions` can escalate anyone to everything enumerable, but cannot mint an
     /// account that outlives the next capability the codebase gains.
     ///
-    /// Declared last on purpose: the variant order is the sort order of a stored grant set, so
-    /// appending leaves every existing serialised set byte-identical.
+    /// Declared last: the variant order is the sort order of a stored grant set, so appending
+    /// leaves every existing serialised set byte-identical.
     #[serde(rename = "system.superuser")]
     SuperUser,
 }
 
 impl Permission {
-    /// Every permission this build defines, in declaration order.
+    /// Returns every permission this build defines, in declaration order.
     ///
     /// Includes [`Self::SuperUser`], so parsing and exhaustiveness checks see the whole enum.
     /// Anything that *hands out* a permission wants [`Self::grantable`] instead.
@@ -204,12 +203,12 @@ impl Permission {
         ]
     }
 
-    /// Every permission an administrator may grant: [`Self::all`] minus [`Self::SuperUser`], in
-    /// the same order — what the admin UI lists.
+    /// Returns every permission an administrator may grant: [`Self::all`] minus
+    /// [`Self::SuperUser`], in the same order. The admin UI lists these.
     ///
-    /// This exclusion is the enforcement point for "one super user, minted by the migrator". A
-    /// catalogue, a preset expansion or a seed loop built from this list cannot grant it, and
-    /// none of them has to remember not to.
+    /// This exclusion enforces "one super user, minted by the migrator": a catalogue, preset
+    /// expansion or seed loop built from this list cannot grant it, and none has to remember not
+    /// to.
     #[must_use]
     pub fn grantable() -> Vec<Self> {
         Self::all()
@@ -219,21 +218,20 @@ impl Permission {
             .collect()
     }
 
-    /// Whether exercising this capability changes durable state, or reaches into another
+    /// Returns whether exercising this capability changes durable state, or reaches into another
     /// person's account.
     ///
     /// Consulted by the API's authorization funnel, which demands a fresh second-factor
-    /// presentation (a "step-up") before any mutating capability is exercised. Reading the
-    /// console is left alone: an administrator who had to re-authenticate to load a dashboard
-    /// would keep a standing elevation open all day, which is worse than not prompting at all.
+    /// presentation, a step-up, before any mutating capability is exercised. Reading the console
+    /// is left alone: an administrator who had to re-authenticate to load a dashboard would keep
+    /// a standing elevation open all day, which is worse than not prompting at all.
     ///
-    /// Exhaustive by construction — a capability added later does not compile until it is
-    /// classified here, which is the point. Guessing from the token's `.write` suffix would
-    /// leave `scans.run`, `merge.revert` and `users.sessions` silently on the read side.
+    /// The match is exhaustive, so a new capability does not compile until it is classified
+    /// here. Guessing from a `.write` suffix would leave `scans.run`, `merge.revert` and
+    /// `users.sessions` on the read side.
     ///
-    /// `privacy.export` counts as mutating despite reading nothing of this system's own: it
-    /// discloses another person's entire record, which is the single highest-consequence thing
-    /// an operator can do with one request.
+    /// `privacy.export` counts as mutating although it changes nothing here: it discloses
+    /// another person's entire record, the highest-consequence thing one request can do.
     #[must_use]
     pub const fn is_mutating(self) -> bool {
         match self {
@@ -273,13 +271,13 @@ impl Permission {
         }
     }
 
-    /// Whether this is the grant that answers every check.
+    /// Returns whether this is the grant that answers every check.
     #[must_use]
     pub const fn is_super_user(self) -> bool {
         matches!(self, Self::SuperUser)
     }
 
-    /// The persisted wire token (`<surface>.<action>`), stable forever — renaming one
+    /// Returns the persisted wire token, `<surface>.<action>`, which never changes: renaming one
     /// orphans every stored grant that used the old string.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
@@ -320,7 +318,7 @@ impl Permission {
         }
     }
 
-    /// The admin UI's grouping heading for this permission.
+    /// Returns the admin UI's grouping heading for this permission.
     #[must_use]
     pub const fn group(self) -> PermissionGroup {
         match self {
@@ -342,9 +340,9 @@ impl Permission {
             Self::SyncAdminRead | Self::SyncAdminWrite | Self::SyncAudit | Self::SyncRevert => {
                 PermissionGroup::Sync
             }
-            // `SuperUser` is never rendered — the editor lists `grantable()` — but it is
-            // grouped with the other privilege-over-people capabilities so the answer is not a
-            // lie if it ever is.
+            // `SuperUser` is never rendered, since the editor lists `grantable()`, but it is
+            // grouped with the other privilege-over-people capabilities so the answer stays true
+            // if it ever is.
             Self::UsersRead
             | Self::UsersWrite
             | Self::UsersPermissions
@@ -359,8 +357,8 @@ impl Permission {
         }
     }
 
-    /// Shown next to the toggle in the permission editor. Lives here, not in the frontend,
-    /// so it can never describe a capability the backend no longer has.
+    /// Shown next to the toggle in the permission editor. It lives here, not in the frontend,
+    /// so it can never describe a capability the backend lacks.
     #[must_use]
     pub const fn description(self) -> &'static str {
         match self {
@@ -419,8 +417,8 @@ impl fmt::Display for Permission {
     }
 }
 
-/// A stored or submitted token names no known capability — most likely a grant surviving a
-/// rollback. Treated as "not held" rather than a failure, so it can only narrow access.
+/// A stored or submitted token names no known capability, most likely a grant surviving a
+/// rollback. It reads as "not held", not as a failure, so it can only narrow access.
 #[derive(Debug, Clone, thiserror::Error)]
 #[error("unknown permission: {token:?}")]
 pub struct ParsePermissionError {
@@ -467,7 +465,7 @@ pub enum PermissionGroup {
 }
 
 impl PermissionGroup {
-    /// The token this group serializes to, which is also its section key in the console.
+    /// Returns the token this group serializes to, which is also its section key in the console.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -491,16 +489,16 @@ impl fmt::Display for PermissionGroup {
 
 /// A named bundle offered in the permission editor as a starting point.
 ///
-/// Not persisted and never consulted during an authorization decision — see the module docs
-/// on why this is not a role by another name.
+/// Not persisted and never consulted during an authorization decision; the module docs explain
+/// why this is not a role by another name.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum PermissionPreset {
     /// No permissions at all: an ordinary reader, which is what every new account is.
     Reader,
     /// Day-to-day operation of the catalogue: read everything operational, run scans, work
-    /// the merge queue. Deliberately excludes anything that touches *people* — no user
-    /// administration, no privacy queue, no cross-user sync writes.
+    /// the merge queue. It excludes anything that touches people: no user administration, no
+    /// privacy queue, no cross-user sync writes.
     Operator,
     /// Everything an operator can do, plus provider lifecycle, user administration, the
     /// privacy queue and feature flags. Full control of the deployment.
@@ -508,13 +506,13 @@ pub enum PermissionPreset {
 }
 
 impl PermissionPreset {
-    /// Every preset, weakest first.
+    /// Returns every preset, weakest first.
     #[must_use]
     pub const fn all() -> &'static [Self] {
         &[Self::Reader, Self::Operator, Self::Administrator]
     }
 
-    /// The token this preset is named by in the console and in audit records.
+    /// Returns the token this preset is named by in the console and in audit records.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -524,7 +522,7 @@ impl PermissionPreset {
         }
     }
 
-    /// The permissions this preset expands to.
+    /// Returns the permissions this preset expands to.
     #[must_use]
     pub fn permissions(self) -> Vec<Permission> {
         match self {
@@ -550,9 +548,9 @@ impl PermissionPreset {
                 Permission::AuditRead,
                 Permission::FlagsRead,
             ],
-            // "Everything grantable", not an enumerated list — a hand-maintained one would
-            // silently exclude a new capability from the administrator preset. Not `all()`:
-            // the preset must never expand to the super user grant.
+            // Everything grantable, not an enumerated list, which would silently exclude a new
+            // capability from the administrator preset. Not `all()`: the preset must never
+            // expand to the super user grant.
             Self::Administrator => Permission::grantable(),
         }
     }
@@ -586,15 +584,16 @@ impl FromStr for PermissionPreset {
 pub struct PermissionSet(BTreeSet<Permission>);
 
 impl PermissionSet {
-    /// An empty set, which is what an account with no grants holds.
+    /// Returns an empty set, which is what an account with no grants holds.
     #[must_use]
     pub fn new() -> Self {
         Self(BTreeSet::new())
     }
 
-    /// Build from stored tokens, silently dropping any this build does not recognise — a
-    /// stale row can only narrow access, never grant something unknown. Each drop is
-    /// reported via `on_unknown` for logging.
+    /// Builds from stored tokens, dropping any this build does not recognise.
+    ///
+    /// A stale row can only narrow access, never grant something unknown. Each drop is reported
+    /// through `on_unknown` for logging.
     pub fn from_tokens<I, S>(tokens: I, mut on_unknown: impl FnMut(&str)) -> Self
     where
         I: IntoIterator<Item = S>,
@@ -612,37 +611,38 @@ impl PermissionSet {
         Self(set)
     }
 
-    /// Whether this principal holds `permission`.
+    /// Returns whether this principal holds `permission`.
     ///
     /// A super user holds everything, including capabilities added after their grant was
-    /// written — the one implication in the model, and the reason
-    /// [`Permission::SuperUser`] cannot be handed out through the API.
+    /// written. That is the one implication in the model, and why [`Permission::SuperUser`]
+    /// cannot be handed out through the API.
     #[must_use]
     pub fn has(&self, permission: Permission) -> bool {
         self.is_super_user() || self.0.contains(&permission)
     }
 
-    /// Whether this principal *is* the super user, as opposed to holding a permission through
-    /// one. Every site that writes or displays grants needs this rather than [`Self::has`],
-    /// which cannot tell the two apart.
+    /// Returns whether this principal is the super user.
+    ///
+    /// Every site that writes or displays grants needs this, since [`Self::has`] cannot tell a
+    /// super user from a holder of the permission.
     #[must_use]
     pub fn is_super_user(&self) -> bool {
         self.0.contains(&Permission::SuperUser)
     }
 
-    /// Whether this principal holds *every* listed permission.
+    /// Returns whether this principal holds *every* listed permission.
     #[must_use]
     pub fn has_all(&self, permissions: &[Permission]) -> bool {
         permissions.iter().all(|p| self.has(*p))
     }
 
-    /// Whether this principal holds *any* listed permission — a union check, not a specific right.
+    /// Returns whether this principal holds any of the listed permissions.
     #[must_use]
     pub fn has_any(&self, permissions: &[Permission]) -> bool {
         permissions.iter().any(|p| self.has(*p))
     }
 
-    /// Whether this principal holds nothing at all.
+    /// Returns whether this principal holds nothing at all.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
@@ -659,12 +659,12 @@ impl PermissionSet {
         self.0.insert(permission)
     }
 
-    /// The held permissions in canonical order.
+    /// Returns the held permissions in canonical order.
     pub fn iter(&self) -> impl Iterator<Item = Permission> + '_ {
         self.0.iter().copied()
     }
 
-    /// The held permissions as their persisted tokens, for storage and audit detail.
+    /// Returns the held permissions as their persisted tokens, for storage and audit detail.
     #[must_use]
     pub fn tokens(&self) -> Vec<&'static str> {
         self.0.iter().map(|p| p.as_str()).collect()

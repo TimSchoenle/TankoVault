@@ -160,12 +160,16 @@ fn counted_em_dashes(markdown: &str) -> usize {
             }
             continue;
         }
-        if in_comment || line.contains("<!--") {
+        if in_comment {
             in_comment = !line.contains("-->");
             continue;
         }
         if let Some(open) = Fence::opened_by(line) {
             fence = Some(open);
+            continue;
+        }
+        if line.contains("<!--") {
+            in_comment = !line.contains("-->");
             continue;
         }
         if line.starts_with('|') || line.starts_with('>') || is_numbered_item(line) {
@@ -303,6 +307,19 @@ after \u{2014} the fences
 ```rust
 -->
 after \u{2014} the comment
+";
+        assert_eq!(counted_em_dashes(markdown), 1);
+    }
+
+    /// A fence whose info string held `<!--` opened an HTML comment instead, and with no `-->`
+    /// to close it every line after the fence went uncounted.
+    #[test]
+    fn a_fence_whose_info_string_holds_a_comment_marker_is_still_a_fence() {
+        let markdown = "\
+```html <!--
+inner \u{2014} code
+```
+after \u{2014} the fence
 ";
         assert_eq!(counted_em_dashes(markdown), 1);
     }

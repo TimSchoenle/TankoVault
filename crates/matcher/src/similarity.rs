@@ -1,31 +1,29 @@
 //! Pure string and numeric similarity primitives. No domain knowledge lives here.
 
-/// Shortest compact title for which the edit-distance comparison is consulted at all.
+/// The shortest compact title the edit-distance comparison is consulted for.
 ///
-/// Below this length a one-character difference is a large fraction of the title, and the ratio
-/// stops discriminating: `berserk` and `berserl` differ by one character out of seven, which
-/// would score 0.857 and attach two unrelated works. Long titles are the opposite case — two
-/// distinct works whose names differ by two characters over twenty essentially do not occur,
-/// while providers producing exactly that from a typo or a transliteration choice are routine.
+/// Below this length one character is a large fraction of the title and the ratio stops
+/// discriminating: `berserk` and `berserl` differ by one character in seven, which scores 0.857
+/// and would attach two unrelated works. Long titles are the opposite case. Two distinct works
+/// whose names differ by two characters in twenty are rare, while providers producing exactly
+/// that from a typo or a transliteration choice are routine.
 const MIN_EDIT_LEN: usize = 12;
 
-/// Longest compact title the edit-distance comparison is computed for.
+/// The longest compact title the edit-distance comparison is computed for.
 ///
 /// The comparison is `O(n·m)` and runs per candidate title inside the ingest transaction. Past
-/// this length the trigram similarity is already a good measure (there is plenty of text for it
-/// to work with) and the quadratic cost is not worth paying on a hot path.
+/// this length the trigram similarity has enough text to be a good measure on its own.
 const MAX_EDIT_LEN: usize = 160;
 
 /// A pair whose lengths differ by more than this fraction of the longer one cannot reach a
 /// useful edit ratio, so the DP is skipped without running it.
 const EDIT_LENGTH_SLACK: usize = 6;
 
-/// Normalised edit similarity of two compact keys, in `[0,1]`, or `0.0` when the pair is
-/// outside the window this comparison is meaningful in.
+/// Returns the normalised edit similarity of two compact keys in `[0,1]`, or `0.0` when the
+/// pair is outside the window where the comparison means anything.
 ///
-/// The guards are the whole design. See [`MIN_EDIT_LEN`], [`MAX_EDIT_LEN`] and
-/// [`EDIT_LENGTH_SLACK`] for why each one is there; without them this is both a
-/// false-positive generator on short titles and a quadratic cost on a hot path.
+/// [`MIN_EDIT_LEN`] keeps it from matching short unrelated titles, and [`MAX_EDIT_LEN`] and
+/// [`EDIT_LENGTH_SLACK`] keep its quadratic cost off the hot path.
 #[must_use]
 #[expect(
     clippy::cast_precision_loss,
@@ -37,8 +35,8 @@ pub(crate) fn edit_ratio(a: &str, b: &str) -> f32 {
     if short < MIN_EDIT_LEN || long > MAX_EDIT_LEN {
         return 0.0;
     }
-    // A length gap alone bounds the achievable ratio at `1 - gap/long`, so a pair that cannot
-    // clear the bar is rejected before the DP runs at all.
+    // A length gap alone bounds the ratio at `1 - gap/long`, so a pair that cannot clear the bar
+    // is rejected before the DP runs.
     if long - short > long / EDIT_LENGTH_SLACK {
         return 0.0;
     }
@@ -46,11 +44,11 @@ pub(crate) fn edit_ratio(a: &str, b: &str) -> f32 {
     1.0 - (distance as f32 / long as f32)
 }
 
-/// Levenshtein distance over `char`s, two rows at a time.
+/// Returns the Levenshtein distance between `a` and `b` over `char`s, two rows at a time.
 ///
-/// Over `char`s rather than bytes because the inputs are normalized titles, which keep CJK and
-/// Hangul verbatim: a byte-wise distance would count one different ideograph as three edits and
-/// score two Japanese titles as far apart as two unrelated ones.
+/// Normalized titles keep CJK and Hangul verbatim. A byte-wise distance would count one
+/// different ideograph as three edits and score two Japanese titles as far apart as two
+/// unrelated ones.
 pub(crate) fn edit_distance(a: &str, b: &str) -> usize {
     let b_chars: Vec<char> = b.chars().collect();
     let mut previous: Vec<usize> = (0..=b_chars.len()).collect();
@@ -69,19 +67,20 @@ pub(crate) fn edit_distance(a: &str, b: &str) -> usize {
     previous[b_chars.len()]
 }
 
-/// Whether `query` carries different numbers from any of `titles`.
+/// Returns whether `query` carries different numbers from any of `titles`.
 ///
-/// The caller passes the titles the query must agree with — the one it was scored against and
-/// the candidate's canonical title — never "any title the candidate answers to": that let a
-/// sequel's alias on a series wave every further sequel through (Douluo Dalu 4 merged into 5
-/// through the alias `douluo dalu 4 zhongji douluo`).
+/// `titles` are the titles the query must agree with: the one it was scored against and the
+/// candidate's canonical title. Any title the candidate answers to is too wide, since one
+/// sequel's alias on a series would then wave every further sequel through.
 pub(crate) fn numbers_conflict(query: &str, titles: &[&str]) -> bool {
     let signature = numeric_signature(query);
     titles.iter().any(|t| numeric_signature(t) != signature)
 }
 
-/// Roman numerals read as numbers when they stand alone. `i`, `v` and `x` are left out: as
-/// tokens they are far more often a pronoun, `versus` and the `×` of `Spy × Family`.
+/// Roman numerals that read as numbers when they stand alone.
+///
+/// `i`, `v` and `x` are left out: as tokens they are far more often a pronoun, `versus` and the
+/// `×` of `Spy × Family`.
 const ROMAN_NUMERALS: &[(&str, u64)] = &[
     ("ii", 2),
     ("iii", 3),
@@ -92,8 +91,10 @@ const ROMAN_NUMERALS: &[(&str, u64)] = &[
     ("ix", 9),
 ];
 
-/// Spelled ordinals read as numbers. `first` is left out: it names the original far less often
-/// than it is part of a title (`First Love`), and the original rarely carries a number at all.
+/// Spelled ordinals that read as numbers.
+///
+/// `first` is left out: it is part of a title (`First Love`) far more often than it names the
+/// original, which rarely carries a number at all.
 const ORDINALS: &[(&str, u64)] = &[
     ("second", 2),
     ("third", 3),
@@ -106,14 +107,14 @@ const ORDINALS: &[(&str, u64)] = &[
     ("tenth", 10),
 ];
 
-/// The numbers a normalized title carries, in order.
+/// Returns the numbers a normalized title carries, in order.
 ///
-/// Digit runs are read as if the title were compact — a run continues across a space — so
-/// `10nen` and `10 nen` produce the same signature and only a genuine difference registers:
-/// `overlord` against `overlord 2`, volume 3 against volume 4. Parsed rather than compared as
-/// text so `001` and `1` agree, and saturating so a 40-digit run cannot panic under the release
-/// profile's overflow checks (SEC-11). A standalone roman numeral or spelled ordinal is a number
-/// too, so `Overlord II` and `Overlord 2` agree with each other and conflict with `Overlord`.
+/// A digit run continues across a space, as if the title were compact, so `10nen` and `10 nen`
+/// agree and only a different number registers: `overlord` against `overlord 2`, volume 3
+/// against volume 4. Runs are parsed, so `001` and `1` agree, and saturate, so a 40-digit run
+/// cannot panic under the release profile's overflow checks. A standalone roman numeral or
+/// spelled ordinal is a number too: `Overlord II` and `Overlord 2` agree, and both conflict
+/// with `Overlord`.
 pub(crate) fn numeric_signature(normalized: &str) -> Vec<u64> {
     let mut out = Vec::new();
     let mut current: Option<u64> = None;
@@ -141,9 +142,8 @@ pub(crate) fn numeric_signature(normalized: &str) -> Vec<u64> {
     out
 }
 
-/// The Jaccard overlap of two case-insensitive name sets, in `[0,1]`, or `None` when either
-/// side has nothing to compare (so the caller can skip the bonus entirely rather than
-/// treating "no data" as "no overlap").
+/// Returns the Jaccard overlap of two case-insensitive name sets in `[0,1]`, or `None` when
+/// either side is empty, so a caller can tell missing data from no overlap.
 #[must_use]
 #[expect(
     clippy::cast_precision_loss,
@@ -155,32 +155,38 @@ pub(crate) fn name_set_overlap(a: &[String], b: &[String]) -> Option<f32> {
     }
     let sa: std::collections::BTreeSet<String> = a.iter().map(|s| s.to_lowercase()).collect();
     let sb: std::collections::BTreeSet<String> = b.iter().map(|s| s.to_lowercase()).collect();
-    // Both slices are non-empty by the guard above, so the union has at least one member and
-    // the division cannot be `0 / 0`. A `union == 0` arm stood here and was unreachable.
+    // Both slices are non-empty, so the union has a member and the division cannot be `0 / 0`.
     let union = sa.union(&sb).count();
     Some(sa.intersection(&sb).count() as f32 / union as f32)
 }
 
-/// Whether `a` and `b` share at least one name, compared case-insensitively.
+/// Returns whether `a` and `b` share at least one name, compared case-insensitively.
 #[must_use]
 pub(crate) fn shares_a_name(a: &[String], b: &[String]) -> bool {
     a.iter()
         .any(|x| b.iter().any(|y| x.eq_ignore_ascii_case(y)))
 }
 
-/// Token-set ratio: the Jaccard overlap of the two titles' word sets, in `[0,1]`.
+/// Returns the Jaccard overlap of the two titles' word sets, in `[0,1]`.
 ///
-/// Order- and duplicate-insensitive, so "life starting in another world" and "another world
-/// starting life" score identically. Pure and DB-free.
+/// Word order and repeats do not count, so "life starting in another world" and "another world
+/// starting life" score the same. Two titles with no words score 0.
+///
+/// ```
+/// use tankovault_matcher::token_set_ratio;
+///
+/// assert_eq!(token_set_ratio("solo leveling", "leveling solo"), 1.0);
+/// assert_eq!(token_set_ratio("solo leveling", "solo leveling ragnarok"), 2.0 / 3.0);
+/// assert_eq!(token_set_ratio("", " "), 0.0);
+/// ```
 #[must_use]
 #[expect(
     clippy::cast_precision_loss,
     reason = "word-set sizes are title token counts, orders of magnitude below f32's exact range"
 )]
 pub fn token_set_ratio(a: &str, b: &str) -> f32 {
-    // Guards against `0 / 0`: two whitespace-only titles produce two empty token sets, and the
-    // resulting `NaN` would propagate through every later term in `score` and compare false
-    // against both thresholds.
+    // Two whitespace-only titles give two empty sets. Their `0 / 0` would be a `NaN` that
+    // passes through every later term in `score` and compares false against both thresholds.
     let sa: std::collections::BTreeSet<&str> = a.split_whitespace().collect();
     let sb: std::collections::BTreeSet<&str> = b.split_whitespace().collect();
     let union = sa.union(&sb).count();
@@ -190,8 +196,9 @@ pub fn token_set_ratio(a: &str, b: &str) -> f32 {
     sa.intersection(&sb).count() as f32 / union as f32
 }
 
-/// Whether every word of `needle` also appears in `haystack` (both space-separated), with
-/// `needle` having at least two tokens (so a single shared word is not treated as containment).
+/// Returns whether every word of `needle` also appears in `haystack`.
+///
+/// `needle` needs at least two words, so one shared word is not containment.
 pub(crate) fn is_token_subset(needle: &str, haystack: &str) -> bool {
     let sn: std::collections::BTreeSet<&str> = needle.split_whitespace().collect();
     if sn.len() < 2 {
@@ -201,7 +208,8 @@ pub(crate) fn is_token_subset(needle: &str, haystack: &str) -> bool {
     sn.is_subset(&sh)
 }
 
-/// Whether every word of `needle` appears in `haystack` and `haystack` has words `needle` lacks.
+/// Returns whether every word of `needle` appears in `haystack` and `haystack` has words `needle`
+/// lacks.
 pub(crate) fn is_strict_token_subset(needle: &str, haystack: &str) -> bool {
     let sn: std::collections::BTreeSet<&str> = needle.split_whitespace().collect();
     let sh: std::collections::BTreeSet<&str> = haystack.split_whitespace().collect();

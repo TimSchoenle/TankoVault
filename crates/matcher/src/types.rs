@@ -12,9 +12,9 @@ pub struct Thresholds {
     /// The review floor. Below it a pair is not queued at all: `decide` creates a new series
     /// and [`adjudicate`](crate::adjudicate) reports [`MergeVerdict::Distinct`].
     pub low: f32,
-    /// At or above this score — **and** only with a primary identity, and only with every
-    /// enabled [`MergeGuards`] silent — two series that already exist separately are merged
-    /// without asking. See [`adjudicate`](crate::adjudicate).
+    /// At or above this score, two existing series are merged without asking, provided they
+    /// share a primary identity and every enabled [`MergeGuards`] guard is silent. See
+    /// [`adjudicate`](crate::adjudicate).
     pub auto_merge: f32,
     /// Which vetoes are switched on for this deployment.
     pub guards: MergeGuards,
@@ -22,29 +22,24 @@ pub struct Thresholds {
 
 /// Signals that veto an automatic merge, each switchable.
 ///
-/// A score is a single number and cannot express "these titles agree and the works do not". Each
-/// guard names a specific way two series can score identically and still be different works, and
-/// each is separately switchable because the evidence behind it varies by catalogue: a deployment
-/// whose providers rarely publish credits gains nothing from [`Self::author_conflict`] and pays
-/// for it in review-queue length.
+/// A score cannot express "these titles agree and the works do not". Each guard names one way
+/// two series can score identically and still be different works. Each is switchable because
+/// the evidence behind it varies by catalogue: a deployment whose providers rarely publish
+/// credits gains nothing from [`Self::author_conflict`] and pays for it in review-queue length.
 ///
-/// Switching one **off** does not switch the signal off — it still fires and is still recorded
-/// on the decision — it only stops that signal blocking the merge. The author, year and medium
-/// signals no longer move a score, so those three guards are the only way they can affect a
-/// verdict at all.
+/// Switching a guard off does not silence its signal. The signal still fires and is still
+/// recorded on the decision; it only stops blocking the merge. The author, year and medium
+/// signals never move a score, so these guards are the only way those signals reach a verdict.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[expect(
     clippy::struct_excessive_bools,
-    reason = "the flat bools are the point, for the same reason MatchSignals' are: this is a \
-              Copy record of which guards are switched on, each field read by name and each \
-              deserialised from its own configuration key. The lint's suggested remedy — a \
-              state machine or two-variant enums — would turn four independent switches into \
-              something a config file cannot express one at a time."
+    reason = "four independent switches, each deserialised from its own configuration key; an \
+              enum or a state machine could not be set one key at a time"
 )]
 pub struct MergeGuards {
-    /// Titles carrying different numbers are reported [`MergeVerdict::Distinct`] rather than
-    /// merely un-mergeable: queueing a sequel asks an operator to re-derive the one fact the
-    /// scorer is already certain about. This is the only guard whose verdict is not `Review`.
+    /// Titles carrying different numbers are reported [`MergeVerdict::Distinct`], not held for
+    /// review: queueing a sequel asks an operator to re-derive the one fact the scorer is
+    /// certain of. This is the only guard whose verdict is not `Review`.
     pub numeric_conflict: bool,
     /// Both sides name authors and share none.
     pub author_conflict: bool,
@@ -55,9 +50,10 @@ pub struct MergeGuards {
 }
 
 impl Default for MergeGuards {
-    /// Every guard on. A guard only ever moves a pair *towards* review, so the safe default is
-    /// the strict one: the cost of a wrong guard is one queue row, the cost of a missing one is
-    /// a deleted series.
+    /// Returns every guard on.
+    ///
+    /// A guard only ever moves a pair towards review, so the strict default is the safe one: a
+    /// wrong guard costs one queue row, and a missing one costs a deleted series.
     fn default() -> Self {
         Self {
             numeric_conflict: true,
@@ -69,8 +65,25 @@ impl Default for MergeGuards {
 }
 
 impl MergeGuards {
-    /// The guards that fired for `signals`, as their stable slugs, excluding the numeric veto —
-    /// which is not a downgrade but an outright [`MergeVerdict::Distinct`] and is handled first.
+    /// Returns the slugs of the enabled guards that fired for `signals`.
+    ///
+    /// The numeric veto is left out: it yields [`MergeVerdict::Distinct`], not a review, and
+    /// [`adjudicate`](crate::adjudicate) applies it first.
+    ///
+    /// ```
+    /// use tankovault_domain::matching::MatchSignals;
+    /// use tankovault_matcher::MergeGuards;
+    ///
+    /// let signals = MatchSignals {
+    ///     year_conflict: true,
+    ///     numeric_conflict: true,
+    ///     ..MatchSignals::default()
+    /// };
+    /// assert_eq!(MergeGuards::default().blocking(signals), vec!["year_conflict"]);
+    ///
+    /// let lenient = MergeGuards { year_conflict: false, ..MergeGuards::default() };
+    /// assert!(lenient.blocking(signals).is_empty());
+    /// ```
     #[must_use]
     pub fn blocking(self, signals: MatchSignals) -> Vec<&'static str> {
         let mut out = Vec::new();
@@ -146,25 +159,25 @@ pub struct Explanation {
     pub terms: Vec<ScoreTerm>,
     /// The query-side title that produced the winning comparison.
     pub matched_query_title: String,
-    /// The candidate-side title it won against — the canonical one unless [`Self::via_alias`].
+    /// The candidate-side title it won against.
     pub matched_candidate_title: String,
-    /// Whether the winning candidate title was an alternative rather than the canonical one.
+    /// Whether the winning candidate title was one of its alternative titles.
     pub via_alias: bool,
 }
 
 /// A merge verdict with the rule that produced it.
 ///
-/// The slug matters as much as the verdict: "not merged" is the answer for many different
-/// reasons — below the review floor, below the automatic threshold, no identity, an alias alone,
-/// a veto, or a guard — and an operator triaging a queue of thousands needs to know which,
-/// without re-deriving it from a score and a bag of signal names.
+/// The slug matters as much as the verdict. "Not merged" has many causes: below the review
+/// floor, below the automatic threshold, no identity, an alias alone, a veto or a guard. An
+/// operator triaging thousands of queue rows needs to know which without re-deriving it from a
+/// score and a list of signal names.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Adjudication {
     /// What to do with the pair.
     pub verdict: MergeVerdict,
     /// Stable slug for the rule that decided it.
     pub reason: &'static str,
-    /// Every enabled guard that fired. Non-empty means an otherwise-automatic merge was held
-    /// back — or would have been, had the score reached the threshold.
+    /// Every enabled guard that fired. Non-empty means an otherwise automatic merge was held
+    /// back, or would have been had the score reached the threshold.
     pub blocked_by: Vec<&'static str>,
 }

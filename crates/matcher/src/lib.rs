@@ -1,13 +1,16 @@
 //! # tankovault-matcher
 //!
-//! Series canonicalisation scoring (`docs/ARCHITECTURE.md` §10, steps 3–4): pure and DB-free, this crate scores
-//! [`Candidate`]s against a [`Query`] and returns a [`Decision`] via the [`Canonicaliser`] port
-//! defined in [`tankovault_domain::matching`], so `crates/db` can ask for a decision without
-//! linking a scorer (ARCH-16). [`adjudicate`] answers the separate question of merging two
-//! series that already exist, and [`adjudicate_pair`] asks it the way the duplicate sweep does.
+//! Scores a scanned title against the existing series and decides whether to attach, review or
+//! create (`docs/ARCHITECTURE.md` §10, steps 3 and 4).
+//!
+//! The crate is pure and has no database. [`decide`] scores [`Candidate`]s against a [`Query`]
+//! and returns a [`Decision`]. `crates/db` asks for that decision through the [`Canonicaliser`]
+//! port in [`tankovault_domain::matching`], so it never links a scorer. [`adjudicate`] decides
+//! whether two existing series are one work, and [`adjudicate_pair`] asks it the way the
+//! duplicate sweep does.
 
-// Re-exported from tankovault_domain::matching (the ARCH-16 seam `crates/db` names) so
-// `tankovault_matcher::Candidate` and friends still resolve.
+// The port's types live in the domain crate, where `crates/db` names them. Re-exporting them
+// lets a caller of this crate import the whole surface from one place.
 pub use tankovault_domain::matching::{
     Candidate, Canonicaliser, Decision, LiveTiming, MatchSignals, MergeVerdict, Query,
 };

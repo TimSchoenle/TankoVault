@@ -6,18 +6,16 @@ use tankovault_domain::matching::{Candidate, Decision, MatchSignals, MergeVerdic
 use crate::assess::assess;
 use crate::types::{Adjudication, Assessment, Thresholds};
 
-/// The best candidate for `query` (as [`best_assessment`] ranks them), with its score, or `None`
-/// when there are no candidates.
+/// Returns the best candidate for `query`, as [`best_assessment`] ranks them, with its score.
 ///
-/// Unlike [`decide`], this reports the raw best so a caller working across
-/// several title variants (e.g. romaji/english/native) can pick the global maximum before
-/// applying its own threshold.
+/// No threshold is applied, so a caller scoring several title variants (romaji, english,
+/// native) can pick the overall maximum before applying its own.
 #[must_use]
 pub fn best_match(query: &Query, candidates: &[Candidate]) -> Option<(SeriesId, f32)> {
     best_assessment(query, candidates).map(|(id, a)| (id, a.score))
 }
 
-/// As [`best_match`], but keeping the signals that produced the winning reading.
+/// Returns the best candidate for `query` with the signals that produced its score.
 ///
 /// A candidate with a primary identity outranks one without, whatever the scores: a reordered
 /// title (`another world reincarnation` against `reincarnation another world`) reaches the same
@@ -35,12 +33,11 @@ pub fn best_assessment(query: &Query, candidates: &[Candidate]) -> Option<(Serie
         })
 }
 
-/// What to do about two series that **already exist** as separate rows, and why.
+/// Decides what to do about two series that already exist as separate rows, and why.
 ///
-/// [`decide`] answers a different question — where an incoming source belongs, before anything
-/// is written. This one is asked by the merge queue and by the automatic-merge sweep, and its
-/// affirmative is destructive: [`MergeVerdict::Auto`] ends with one of the two ids no longer
-/// existing.
+/// [`decide`] places an incoming source before anything is written. This asks a different
+/// question for the merge queue and the automatic-merge sweep, and its affirmative is
+/// destructive: [`MergeVerdict::Auto`] ends with one of the two ids gone.
 ///
 /// In order:
 ///
@@ -50,13 +47,13 @@ pub fn best_assessment(query: &Query, candidates: &[Candidate]) -> Option<(Serie
 /// 3. An external-id or live-timing conflict holds the pair for review, naming itself.
 /// 4. A primary identity ([`MatchSignals::is_primary_identity`](crate::MatchSignals::is_primary_identity))
 ///    at or above [`Thresholds::auto_merge`] merges, as does a corroborated alias
-///    ([`MatchSignals::is_corroborated_alias`](crate::MatchSignals::is_corroborated_alias)) — unless
-///    an enabled [`MergeGuards`](crate::MergeGuards) guard fired.
+///    ([`MatchSignals::is_corroborated_alias`](crate::MatchSignals::is_corroborated_alias)),
+///    unless an enabled [`MergeGuards`](crate::MergeGuards) guard fired.
 /// 5. An alias on its own, a primary identity below the threshold, and a fuzzy score with no
 ///    identity at all are each reviewed, under their own reason.
 ///
-/// The returned [`Adjudication`] carries the slug of the rule that decided it, because "not
-/// merged" has several meanings and a queue row showing only a score cannot be triaged.
+/// The [`Adjudication`] names the rule that decided it, since a queue row showing only a score
+/// cannot be triaged.
 ///
 /// ```
 /// use tankovault_domain::matching::{MatchSignals, MergeVerdict};
@@ -113,9 +110,8 @@ pub fn best_assessment(query: &Query, candidates: &[Candidate]) -> Option<(Serie
 #[must_use]
 pub fn adjudicate(assessment: Assessment, thresholds: Thresholds) -> Adjudication {
     let Assessment { score, signals } = assessment;
-    // Not merely "do not merge automatically": these pairs are reported as distinct rather than
-    // queued, because queueing them asks an operator to re-derive the one fact the scorer is
-    // already certain about.
+    // These pairs are reported distinct, not queued: queueing them asks an operator to re-derive
+    // the one fact the scorer is certain of.
     for (fired, veto) in [
         (
             thresholds.guards.numeric_conflict && signals.numeric_conflict,
@@ -177,23 +173,22 @@ pub fn adjudicate(assessment: Assessment, thresholds: Thresholds) -> Adjudicatio
     verdict(MergeVerdict::Auto, merged)
 }
 
-/// Decide how to canonicalise the query given its candidates and thresholds.
+/// Decides how to canonicalise the query given its candidates and thresholds.
 ///
-/// Three outcomes, and the middle one is why this is a function rather than a comparison. Only
-/// a **primary identity** — the incoming title is the candidate's canonical title or one of its
-/// listing titles, under an identity rule — at or above [`Thresholds::high`] attaches. Anything
-/// else at or above [`Thresholds::low`] creates the series *and* queues the pair for the sweep,
+/// Only a primary identity at or above [`Thresholds::high`] attaches: the incoming title equals
+/// the candidate's canonical title or one of its listing titles under an identity rule. Anything
+/// else at or above [`Thresholds::low`] creates the series and queues the pair for the sweep,
 /// which decides with both sides' full facts. Below `low`, or with a numeric conflict, a new
-/// canonical series is created and nothing is queued.
+/// series is created and nothing is queued.
 ///
-/// A fuzzy score alone no longer attaches, however high: the trigram and edit paths are what
-/// attached `Onikakushi-hen` to `Onisarashi-hen` and `October` to `November`. An alias hit alone
-/// does not either. Any veto (numeric, edition, external id, live timing) refuses the attach.
+/// A fuzzy score never attaches, however high: trigram and edit distance cannot tell
+/// `Onikakushi-hen` from `Onisarashi-hen` or `October` from `November`. An alias hit alone does
+/// not attach either, and any veto (numeric, edition, external id, live timing) refuses it.
 ///
 /// Only the best candidate is considered (see [`best_assessment`]), so a long candidate list
 /// cannot outvote it.
 ///
-/// The realistic case — the same work listed by a second provider:
+/// The same work listed by a second provider attaches:
 ///
 /// ```
 /// use tankovault_domain::{ContentType, SeriesId};
@@ -210,9 +205,9 @@ pub fn adjudicate(assessment: Assessment, thresholds: Thresholds) -> Adjudicatio
 /// let same_work = Candidate {
 ///     series_id: existing,
 ///     normalized_title: "solo leveling".to_owned(),
-///     // Even a poor raw trigram score attaches here: [`score`] takes the *strongest* of the
-///     // trigram similarity, a token-set ratio and a compact comparison, and identical titles
-///     // agree completely under all three.
+///     // A poor trigram score still attaches: the scorer takes the strongest of the trigram
+///     // similarity, a token-set ratio and a compact comparison, and identical titles agree
+///     // completely under the last two.
 ///     similarity: 0.2,
 ///     alt_normalized_titles: Vec::new(),
 ///     source_titles: Vec::new(),
@@ -227,8 +222,8 @@ pub fn adjudicate(assessment: Assessment, thresholds: Thresholds) -> Adjudicatio
 /// );
 /// ```
 ///
-/// Without an identity the score only chooses between review and a new series. Unrelated titles
-/// with every other signal absent, so the score *is* the trigram similarity:
+/// Without an identity the score only chooses between review and a new series. Here the titles
+/// are unrelated and every other signal is absent, so the score is the trigram similarity:
 ///
 /// ```
 /// use tankovault_domain::{ContentType, SeriesId};
@@ -277,10 +272,9 @@ pub fn decide(query: &Query, candidates: &[Candidate], thresholds: Thresholds) -
     let Some((id, a)) = best_assessment(query, candidates) else {
         return Decision::Create;
     };
-    // The numeric veto is restated here rather than left to the arithmetic in `assess`: the
-    // penalty is sized to drop a realistic sequel pair out of the bands, but "sized to" is not
-    // "guaranteed to", and filing a sequel's sources under its predecessor is silent and
-    // expensive to undo.
+    // The numeric penalty in `assess` is sized to drop a sequel pair out of the bands, not
+    // guaranteed to. Filing a sequel's sources under its predecessor is silent and expensive to
+    // undo, so the veto is checked again here.
     if a.signals.numeric_conflict {
         return Decision::Create;
     }
@@ -297,7 +291,7 @@ pub fn decide(query: &Query, candidates: &[Candidate], thresholds: Thresholds) -
     Decision::Create
 }
 
-/// Whether any signal fired that says the two are different works.
+/// Returns whether any signal fired that says the two are different works.
 pub(crate) const fn has_veto(signals: MatchSignals) -> bool {
     signals.numeric_conflict
         || signals.edition_conflict

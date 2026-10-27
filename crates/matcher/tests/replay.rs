@@ -40,8 +40,7 @@ const PRIMARY_IDENTITY: [&str; 3] = ["exact_title", "compact_identity", "source_
 /// distinct.
 ///
 /// A merge that rested on an alternative title alone is held for review until external-id or
-/// live-timing corroboration exists for it (WP4/WP5 of `docs/MATCHING_OVERHAUL.md`). That is the
-/// price of no longer merging on an alias alone, and it is a review row, not a lost merge.
+/// live-timing corroboration exists for it. That costs a review row, not a lost merge.
 #[test]
 fn confirmed_correct_merges_are_kept_or_reviewed() {
     for (row, replayed) in corpus("confirmed_same") {
@@ -62,12 +61,11 @@ fn confirmed_correct_merges_are_kept_or_reviewed() {
     }
 }
 
-/// **No merge confirmed wrong in production replays as automatic.**
+/// No merge confirmed wrong replays as automatic.
 ///
-/// Each row is a merge the sweep performed and a human confirmed wrong — a sequel absorbed
-/// through an alias, an arc or edition absorbed through a shared english title, two works joined
-/// by a junk or franchise alias. Every one of them was lifted over the merge threshold by an
-/// agreeing medium, year or credit, with the metadata guards switched off.
+/// Each row is a merge a human confirmed wrong: a sequel absorbed through an alias, an arc or
+/// edition absorbed through a shared english title, or two works joined by a junk or franchise
+/// alias.
 #[test]
 fn confirmed_wrong_merges_are_not_automatic() {
     for (row, replayed) in corpus("confirmed_wrong") {
@@ -75,9 +73,9 @@ fn confirmed_wrong_merges_are_not_automatic() {
     }
 }
 
-/// The tally counts stored → replayed transitions, and a row is replayed under the policy it was
-/// decided with: a guard switched on in the stored policy holds a merge the defaults-off row lets
-/// through.
+/// The tally counts stored-to-replayed transitions, and a row is replayed under the policy it was
+/// decided with: a guard switched on in the stored policy holds a merge the row without a policy
+/// lets through.
 #[test]
 fn rows_replay_under_their_stored_policy_and_tally_by_transition() {
     use tankovault_matcher::replay::Tally;

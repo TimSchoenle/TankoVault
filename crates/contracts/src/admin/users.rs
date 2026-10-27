@@ -1,0 +1,125 @@
+//! The user directory, one user's detail, and their permission grants.
+
+use serde::{Deserialize, Serialize};
+use tankovault_domain::AccountStatus;
+use time::OffsetDateTime;
+use utoipa::ToSchema;
+use uuid::Uuid;
+
+/// One row of the operator user directory.
+///
+/// Carries a grant *count* rather than the grants themselves: the directory is a list, and a
+/// user's actual capabilities are what the detail view is for. The count is enough to answer
+/// "which of these accounts are privileged at all", which is the question the list is scanned
+/// for.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[schema(as = DirectoryRow)]
+pub struct UserDirectoryRow {
+    /// The account.
+    #[schema(value_type = String)]
+    pub id: Uuid,
+    /// Its sign-in address.
+    pub email: String,
+    /// Its display handle.
+    pub username: String,
+    /// Whether it may authenticate at all.
+    pub status: AccountStatus,
+    /// Whether the address has been confirmed. An unverified account that has existed for
+    /// months is usually an abandoned registration.
+    pub email_verified: bool,
+    /// How many permissions this account holds. `0` is an ordinary reader.
+    ///
+    /// Not a measure of *how much* an account may do: the super user holds one grant and can do
+    /// everything, which is what `is_super_user` exists to say.
+    pub permission_count: i64,
+    /// Whether this account holds the super-user grant.
+    ///
+    /// Published separately because that grant is deliberately absent from the permission
+    /// catalogue, so a client reconciling grants against the catalogue would otherwise render
+    /// the deployment owner as an account holding nothing.
+    pub is_super_user: bool,
+    /// How many series the user tracks — the cheapest signal of a real, in-use account.
+    pub tracked_count: i64,
+    /// Its most recent sign-in, `null` for an account that has never signed in.
+    #[serde(with = "time::serde::rfc3339::option")]
+    #[schema(value_type = Option<String>)]
+    pub last_login_at: Option<OffsetDateTime>,
+    /// When it was registered.
+    #[serde(with = "time::serde::rfc3339")]
+    #[schema(value_type = String)]
+    pub created_at: OffsetDateTime,
+}
+
+/// A page of the directory plus the unfiltered-by-page total, so the UI can render
+/// "showing 1–25 of 312" without a second request.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[schema(as = DirectoryPage)]
+pub struct UserDirectoryPage {
+    /// The page, in the directory's own order.
+    pub users: Vec<UserDirectoryRow>,
+    /// Total matching the current search, ignoring `limit`/`offset`.
+    pub total: i64,
+}
+
+/// Everything the user-detail panel shows, minus the grant list (fetched separately by
+/// `tankovault_db::repo::permissions::list_for_user` so the panel can refresh just that part
+/// after an edit).
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[schema(as = UserDetail)]
+pub struct UserDetailView {
+    /// The account.
+    #[schema(value_type = String)]
+    pub id: Uuid,
+    /// Its sign-in address.
+    pub email: String,
+    /// Its display handle.
+    pub username: String,
+    /// Whether it may authenticate at all.
+    pub status: AccountStatus,
+    /// Whether the address has been confirmed.
+    pub email_verified: bool,
+    /// What an operator gave when suspending, `null` while the account is active.
+    pub suspension_reason: Option<String>,
+    /// When it was suspended, `null` while it is active.
+    #[serde(with = "time::serde::rfc3339::option")]
+    #[schema(value_type = Option<String>)]
+    pub suspended_at: Option<OffsetDateTime>,
+    /// Its most recent sign-in, `null` for an account that has never signed in.
+    #[serde(with = "time::serde::rfc3339::option")]
+    #[schema(value_type = Option<String>)]
+    pub last_login_at: Option<OffsetDateTime>,
+    /// When it was registered.
+    #[serde(with = "time::serde::rfc3339")]
+    #[schema(value_type = String)]
+    pub created_at: OffsetDateTime,
+    /// Live login sessions. Tells an operator whether a suspension will actually take effect
+    /// without also revoking sessions.
+    pub active_sessions: i64,
+    /// Series the user tracks.
+    pub tracked_count: i64,
+    /// Linked external trackers, so an operator can see the account has third-party
+    /// credentials at rest before deciding to erase it.
+    pub linked_accounts: i64,
+    /// Unresolved data-subject requests filed by this user. An account with an open erasure
+    /// request must not be quietly edited.
+    pub open_privacy_requests: i64,
+}
+
+/// A single grant, with its provenance, for the user-detail view.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[schema(as = GrantRow)]
+pub struct GrantView {
+    /// The permission token. A string rather than the enum because a row surviving from a
+    /// build that had a capability this one does not must still be *visible* to an
+    /// administrator — that is precisely when they need to see and remove it.
+    pub permission: String,
+    /// Whether this build recognises the token. `false` means the grant is inert.
+    pub known: bool,
+    /// When the grant was made.
+    #[serde(with = "time::serde::rfc3339")]
+    #[schema(value_type = String)]
+    pub granted_at: OffsetDateTime,
+    /// Who granted it, or `None` for a grant made by the migration from the old role model
+    /// or by an administrator since erased.
+    pub granted_by: Option<String>,
+}

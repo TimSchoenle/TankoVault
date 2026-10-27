@@ -75,10 +75,10 @@ impl AuditEvent {
         self
     }
 
-    /// Name the affected entity.
+    /// Name the affected entity, cut to [`MAX_FIELD_LEN`] bytes.
     #[must_use]
     pub fn target(mut self, target: impl Into<String>) -> Self {
-        self.target = Some(target.into());
+        self.target = Some(bounded(target.into()));
         self
     }
 
@@ -112,10 +112,28 @@ impl AuditEvent {
     /// toggles, so callers may always pass what they have.
     #[must_use]
     pub fn client(mut self, ip: Option<String>, user_agent: Option<String>) -> Self {
-        self.ip = ip;
-        self.user_agent = user_agent;
+        self.ip = ip.map(bounded);
+        self.user_agent = user_agent.map(bounded);
         self
     }
+}
+
+/// Longest string an audit record keeps in a free-text column.
+///
+/// Unauthenticated callers choose `target` (a sign-in identifier) and the user agent, and every
+/// failed attempt is a row; unbounded, each one could write up to the request body cap.
+pub const MAX_FIELD_LEN: usize = 512;
+
+/// `value` cut to at most [`MAX_FIELD_LEN`] bytes, on a character boundary.
+fn bounded(mut value: String) -> String {
+    if value.len() > MAX_FIELD_LEN {
+        let mut end = MAX_FIELD_LEN;
+        while !value.is_char_boundary(end) {
+            end -= 1;
+        }
+        value.truncate(end);
+    }
+    value
 }
 
 /// Destination for audit records.
@@ -214,7 +232,21 @@ mod postgres {
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
+
+    /// A failed sign-in stores the presented identifier, which used to be written whole — up to
+    /// the 1 MiB body cap per unauthenticated request.
+    #[test]
+    fn caller_chosen_fields_are_bounded_on_a_character_boundary() {
+        let event = AuditEvent::new("auth.login")
+            .target("é".repeat(MAX_FIELD_LEN))
+            .client(Some("x".repeat(10_000)), Some("y".repeat(10_000)));
+        let target = event.target.expect("set");
+        assert!(target.len() <= MAX_FIELD_LEN);
+        assert!(target.chars().all(|c| c == 'é'));
+        assert_eq!(event.user_agent.expect("set").len(), MAX_FIELD_LEN);
+    }
 
     #[tokio::test]
     async fn noop_sink_accepts_everything() {

@@ -141,6 +141,22 @@ pub async fn connect_with(options: PgConnectOptions, settings: PoolSettings) -> 
     Ok(pool)
 }
 
+/// Begin a transaction under the pool's own statement ceiling.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only.
+pub async fn begin(pool: &PgPool) -> DbResult<sqlx::Transaction<'static, sqlx::Postgres>> {
+    Ok(pool.begin().await?)
+}
+
+/// Commit `tx`.
+///
+/// # Errors
+/// [`crate::DbError::Sqlx`] only; the transaction is rolled back.
+pub async fn commit(tx: sqlx::Transaction<'static, sqlx::Postgres>) -> DbResult<()> {
+    Ok(tx.commit().await?)
+}
+
 /// Begin a transaction whose statements run under `ceiling` rather than the pool's own.
 ///
 /// For work that is off the request path by design and slower than the route class it is

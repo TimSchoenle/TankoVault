@@ -16,7 +16,7 @@ use inkstone_ui::{button_class, Size, Tone};
 const PROVIDER: &str = "anilist";
 
 #[component]
-pub(crate) fn AnilistCallback(code: String) -> Element {
+pub(crate) fn AnilistCallback(code: String, state: String) -> Element {
     let session = use_session();
     let i18n = use_i18n();
     let api = api::use_api();
@@ -29,6 +29,7 @@ pub(crate) fn AnilistCallback(code: String) -> Element {
             return;
         }
         let code = code.clone();
+        let state = state.clone();
         let client = api.client();
         spawn(async move {
             let result = match session.token_value() {
@@ -38,6 +39,7 @@ pub(crate) fn AnilistCallback(code: String) -> Element {
                     .sync_callback()
                     .provider(PROVIDER)
                     .code(code)
+                    .state(state)
                     .send()
                     .await
                     .map(|_| ())

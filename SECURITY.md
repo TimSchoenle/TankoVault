@@ -45,9 +45,22 @@ metrics port, which are not request-facing surfaces.
 This is tracked, not secret. It is here because a deployment is affected by it today and no
 code change closes it:
 
-- **Renderer DNS rebinding.** The SSRF guard validates and re-resolves in-process, but Chromium
-  and TRAWL resolve independently, so a name that answers differently on a second lookup can
-  still reach an internal address from the `render` tier.
+- **Renderer DNS rebinding.** `render` and `challenge-solver` resolve every target hostname and
+  refuse it unless *every* answer is public (`ssrf::validate_unpinned`), and `render` applies the
+  same check to each request Chromium makes — redirects and subresources included — through CDP
+  `Fetch` interception on the browser target. What remains:
+
+  - Chromium and TRAWL resolve independently of that check, so a name that answers differently
+    on a second lookup can still reach an internal address from either tier.
+  - Inside TRAWL, redirects and subresources are not checked at all: it is a third-party image
+    this repository does not control.
+  - Traffic CDP `Fetch` never pauses — WebSocket, WebRTC, `<link rel=preconnect>` — is not
+    checked in `render` either.
+
+  The reference compose file narrows what any of these can reach: `render`, `challenge-solver`
+  and `trawl` sit on their own `solver` network with only `worker` beside them, and `trawl`
+  reaches Redis over a separate network that neither service joins. Postgres, NATS, `api`,
+  `sync` and `control-plane` are not addressable from that tier.
 
   Chromium's `--host-resolver-rules` does not close it: that is a *launch* flag, and
   `BrowserManager` launches one browser lazily and reuses it for the life of the process.
@@ -57,11 +70,14 @@ code change closes it:
   block URLs and rewrite headers, but nothing in it overrides DNS for one target. So the
   options are a browser per request, a resolver the container controls, or an egress-restricted
   network namespace. **The last is the cheapest, and it is a deployment change rather than a
-  patch** — restrict the `render` container's egress to the public internet.
+  patch** — restrict the `render`, `challenge-solver` and `trawl` containers' egress to the
+  public internet. Outside the reference compose file that is still the operator's job.
 
 ## What the deployment expects of you
 
-`TANKOVAULT_PROFILE=production` refuses to boot without `TANKOVAULT_INTERNAL__TOKEN`, and every
-profile refuses the placeholder secrets published in this repository. That is deliberate: the
+`TANKOVAULT_PROFILE=production` refuses to boot with `internal.identity=off` or a weak
+`auth.jwt_secret`, an unrecognised profile refuses to boot at all, the internal tier identifies
+callers by token unless told otherwise, and every profile refuses the placeholder secrets
+published in this repository. That is deliberate: the
 failure modes those settings produce are silent, and a service that will not start is a better
 outcome than one that starts insecure. See `docs/CONFIGURATION.md`.

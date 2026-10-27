@@ -36,7 +36,7 @@ impl Leadership {
 /// exposed exactly here, into the client config.
 pub(crate) async fn connect(url: &SecretString) -> anyhow::Result<Client> {
     let config = Config::from_url(url.expose_secret())?;
-    let client = Builder::from_config(config).build()?;
+    let client = tankovault_service::redis::client(config)?;
     client.init().await?;
     Ok(client)
 }

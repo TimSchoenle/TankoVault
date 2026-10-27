@@ -496,7 +496,7 @@ fn me_gates() -> Vec<Gate> {
         },
         get(
             "/v1/me/sync/{provider}/callback",
-            "/v1/me/sync/anilist/callback?code=matrix",
+            "/v1/me/sync/anilist/callback?code=matrix&state=matrix",
         ),
         gate(
             "POST",

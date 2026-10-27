@@ -2,7 +2,8 @@ name: auto-fix
 
 # The **one** workflow that fixes a pull request mechanically and commits the result: both
 # lockfiles, clippy's machine-applicable suggestions, `cargo fmt`, the four generated artefacts
-# — in one job, in one commit — and `README.md`, rendered from its template in a job of its own.
+# — built by one job and committed by another, in one commit — and `README.md`, rendered from its
+# template in a job of its own.
 #
 # The dividing line for what belongs here is *determinism*, not convenience. Everything below has
 # exactly one correct output given the tree, so a bot's answer is byte-identical to a human's and
@@ -39,6 +40,31 @@ name: auto-fix
 # Accepted is not the same as unmeasured. That cost was twenty-odd minutes until 2026-08-05, and
 # almost none of it was work: the `clippy --fix` step's flags disagreed with the cache the job
 # restores, so it rebuilt the entire dependency graph every run — see that step for the numbers.
+#
+# ---------------------------------------------------------------------------------------------
+# Why the job that builds never holds the token that writes
+# ---------------------------------------------------------------------------------------------
+# `fix` runs `cargo update`, `clippy --fix`, `xtask` and `npm ci`: every dependency's build
+# script, proc macro and package install hook executes there, and Renovate opens the pull
+# requests that bump those dependencies. Until the split, that job also minted the App token and
+# wrote it into the `origin` URL in `.git/config` — so one compromised crate or npm release could
+# read a `contents: write` credential off the disk (or out of the runner's memory) and push to
+# any branch no ruleset protects, with `harden-runner` only auditing the egress.
+#
+# The two halves are now separate jobs, and the boundary between them is a file, not a token:
+#
+# - `fix` checks out with the read-only `GITHUB_TOKEN`, persists no credential, runs every build
+#   and generator, and uploads the result as a `git diff --binary` patch. The App secrets are
+#   never in scope, so there is nothing for a build script to steal.
+# - `commit` builds nothing and executes nothing from the tree or the artefact. It re-creates the
+#   exact tree `fix` started from, refuses any patch that touches a path outside `FIX_PATHS` or
+#   carries anything but regular-file content, applies it, and only then mints the App token —
+#   which reaches the GraphQL commit action as an input and is never written to `.git/config`.
+#
+# What a compromised build can still do is put content into the patch, inside the paths this
+# workflow commits anyway, on this pull request's branch, as a bot commit a reviewer sees. That is
+# the residue of a bot that commits generated code at all; what it can no longer do is write
+# anywhere else.
 #
 # ---------------------------------------------------------------------------------------------
 # What it fixes, and why a bot may
@@ -242,80 +268,76 @@ jobs:
     # Forks cannot read the app secrets, and a fork PR must not be able to make this repository
     # commit on its behalf. Skipping is correct: a fork's drift is the author's to fix.
     if: ${{ needs.changes.outputs.relevant == 'true' && github.event.pull_request.head.repo.full_name == github.repository }}
-    permissions: {}
+    # Read-only, and the only credential this job ever holds. Every dependency's build script runs
+    # here; see "Why the job that builds never holds the token that writes" at the top.
+    permissions:
+      contents: read # to check out the branch and its base
+    outputs:
+      changed: ${{ steps.patch.outputs.changed }}
+      head: ${{ steps.base.outputs.head }}
+      base: ${{ steps.base.outputs.sha }}
+      tree: ${{ steps.base.outputs.tree }}
+    # What the patch may touch: source, the two lockfiles and the generated artefacts. Must equal
+    # `commit`'s copy, which is the one that is enforced — a path here that is missing there fails
+    # that job rather than being committed. `docs/contracts` is nine artefacts, one per published
+    # image, and the one entry that is a *directory of* them, so a service added to
+    # `crates/config-contract` is carried back without touching this line. Nothing else in this
+    # job is meant to change — `npm ci` can touch `package-lock.json` — and anything outside this
+    # list that changed is a bug to see in a red gate, not to commit silently.
+    env:
+      FIX_PATHS: "Cargo.lock web/frontend/Cargo.lock crates services xtask fuzz openapi.json THIRD-PARTY-NOTICES docs/contracts web/frontend/src web/frontend/assets/main.css"
     steps:
+      # `audit`, not `block`. This job's egress is rustup, the crates.io index and its CDN, the
+      # Actions cache, the runner's apt mirrors, `install-action`'s release downloads, the npm
+      # registry and Node's dist — and whatever `cargo-about` and the build scripts reach — so an
+      # allowlist derived by reading this file would be a guess, and a wrong guess fails the job on
+      # the first host it missed. The credential `block` would have guarded no longer lives here.
       - name: Harden Runner
         uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
         with:
           egress-policy: audit
 
-      # A GitHub App token, not `GITHUB_TOKEN`: a push made with the default token does not trigger
-      # workflows, so the fixes would land without re-running the checks that wanted them —
-      # leaving the pull request red on a problem that has already been solved.
-      #
-      # `ACTIONS_MAINTENANCE_*` rather than `RELEASE_BOT_*`: those are `release` *environment*
-      # secrets, and this job runs on every pull request. Naming that environment here would put a
-      # secret scope that exists for publishing behind a job any pull request can start.
-      - name: Generate Bot Token
-        id: generate_token
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
-        with:
-          app-id: ${{ secrets.ACTIONS_MAINTENANCE_APP_ID }}
-          private-key: ${{ secrets.ACTIONS_MAINTENANCE_PRIVATE_KEY }}
-          # Narrowed to the one permission this job uses (zizmor `github-app`). By default the
-          # minted token inherits *every* permission the app's installation holds, so a
-          # compromised step here — a malicious build script reached through a dependency, say —
-          # would hold the bot's full authority for the life of the token. It commits files to the
-          # PR branch, and `contents: write` is that and nothing else.
-          permission-contents: write
-
+      # Full history, which is also every branch: the step below merges the base from
+      # `refs/remotes/origin/*`, so it needs neither a shallow-clone merge base nor a credential
+      # to fetch one with.
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          token: ${{ steps.generate_token.outputs.token }}
           ref: ${{ github.event.pull_request.head.ref }}
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           persist-credentials: false
-          # Full history: the step below merges the base branch, and a shallow clone has no
-          # merge base to do it against.
           fetch-depth: 0
 
       # See the note at the top of this file: everything below regenerates artefacts that record
       # the workspace version, and `ci.yml` judges them on the merge with the base — so this job
       # has to stand on that same tree or it regenerates a version CI never sees.
       #
-      # The remote is re-pointed at an authenticated URL rather than checking out with
-      # `persist-credentials: true`: this way the credential in `.git/config` is the *narrowed*
-      # app token above (`contents: write`, nothing else) rather than the job's `GITHUB_TOKEN`,
-      # and it is the same token the commit step pushes with.
+      # `head`, `sha` and `tree` are what `commit` re-creates this tree from and checks it against:
+      # the patch below is a diff from this exact tree, and applying it to any other is refused
+      # rather than fuzzed.
       #
       # A conflicting merge is a human's call, and aborting leaves the branch exactly as its
       # author pushed it — which is recoverable, where a bot-resolved conflict is not.
       - name: merge the base branch, which is the tree CI judges
         id: base
         env:
-          GH_TOKEN: ${{ steps.generate_token.outputs.token }}
           BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git remote set-url origin \
-            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          git fetch --no-tags origin "$BASE_REF"
-          # Recorded before the merge and before the early exit below, because the step after this
-          # one diffs against it and both paths out of here have to leave it set.
-          echo "sha=$(git rev-parse FETCH_HEAD)" >> "$GITHUB_OUTPUT"
-          if git merge-base --is-ancestor FETCH_HEAD HEAD; then
+          base=$(git rev-parse --verify "refs/remotes/origin/${BASE_REF}^{commit}")
+          echo "sha=${base}" >> "$GITHUB_OUTPUT"
+          echo "head=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          if git merge-base --is-ancestor "$base" HEAD; then
             echo "::notice::already contains $BASE_REF"
-            exit 0
-          fi
-          if ! git merge --no-edit FETCH_HEAD; then
+          elif ! git merge --no-edit "$base"; then
             git merge --abort
             echo "::error::this branch conflicts with $BASE_REF and cannot be brought up to \
             date automatically; merge or rebase it by hand, then push"
             exit 1
           fi
+          echo "tree=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
 
       # `clippy --fix` rewrites `.rs` files and nothing else, and what it would rewrite is a
       # function of the sources, `clippy.toml` and the compiler — so a branch that touches none of
@@ -496,8 +518,8 @@ jobs:
 
       # The nine committed contracts, and only those. `just regenerate` would also rewrite the
       # Dockerfile's `LABEL` regions, and three lines a human pasted are not something a bot
-      # should edit unreviewed — `deploy/docker/Dockerfile` is deliberately not in the
-      # `file_pattern` below either. `xtask config-contract` names that diff in the gate, and
+      # should edit unreviewed — `deploy/docker/Dockerfile` is deliberately not in `FIX_PATHS`
+      # either. `xtask config-contract` names that diff in the gate, and
       # naming it is the whole fix.
       - name: regenerate the configuration contracts
         run: just contract-json
@@ -507,16 +529,214 @@ jobs:
         with:
           node-version: "24"
 
+      # `--ignore-scripts`: the only install hook in the lockfile is `@parcel/watcher`'s
+      # build-from-source fallback, which the Tailwind CLI needs for `--watch` and not for a
+      # one-shot build — the prebuilt platform package is an ordinary optional dependency and
+      # installs regardless. Verified byte-identical `main.css` with and without the hook.
       - name: rebuild the Tailwind output
         working-directory: web/frontend
         run: |
           set -euo pipefail
-          npm ci
+          npm ci --ignore-scripts
           npm run css:build
 
-      # One commit for every fix above, which is the point of this workflow existing once rather
-      # than three times: a reviewer sees a single bot commit, and there is no second push to lose
-      # a race with.
+      # Everything above, as one patch against the tree the merge step recorded. Staged first so
+      # that a file a generator *created* — a new `docs/contracts/*.json` — is in it; `--no-renames`
+      # because `commit` refuses a rename outright, and a deletion plus a creation says the same
+      # thing in a form it can check path by path.
+      - name: package the fixes as a patch
+        id: patch
+        run: |
+          set -euo pipefail
+          read -ra paths <<< "$FIX_PATHS"
+          git add --all -- "${paths[@]}"
+          git diff --cached --binary --no-renames HEAD -- "${paths[@]}" > "${RUNNER_TEMP}/fixes.patch"
+          if [ -s "${RUNNER_TEMP}/fixes.patch" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            git diff --cached --stat HEAD -- "${paths[@]}"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::nothing to fix; the tree already matches every generator"
+          fi
+
+      # One day is ample: `commit` reads it minutes from now, in this same run, and nothing else
+      # should.
+      - name: upload the patch
+        if: steps.patch.outputs.changed == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mechanical-fixes
+          path: ${{ runner.temp }}/fixes.patch
+          if-no-files-found: error
+          retention-days: 1
+
+  # Commits what `fix` built, and builds nothing itself. Nothing in this job executes code from
+  # the checkout or from the artefact — `git merge` and `git apply` only — and the App token is
+  # minted after the patch has been checked and applied, so no step that reads untrusted input
+  # runs while it exists. Skipped when `fix` found nothing, so a clean pull request mints no
+  # token at all.
+  commit:
+    name: commit the mechanical fixes
+    runs-on: ubuntu-latest
+    needs: [fix]
+    timeout-minutes: 10
+    if: ${{ needs.fix.outputs.changed == 'true' }}
+    permissions:
+      contents: read # to check out the branch; the write happens with the App token below
+    # The enforced copy of `fix`'s list — see the note there. Read by the patch check and by the
+    # commit action's `file_pattern`, so what is checked and what is committed cannot diverge.
+    env:
+      FIX_PATHS: "Cargo.lock web/frontend/Cargo.lock crates services xtask fuzz openapi.json THIRD-PARTY-NOTICES docs/contracts web/frontend/src web/frontend/assets/main.css"
+    steps:
+      # `audit`, not `block`: the artefact service hands out storage URLs whose hosts are not a
+      # documented fixed list, and a guessed allowlist that misses one drops the commit silently
+      # as far as the author can tell. Nothing in this job runs third-party code but pinned
+      # actions.
+      - name: Harden Runner
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      # The patch is a diff from the tree `fix` merged, so it is applied to that tree and no other:
+      # same head, same base commit, and the resulting tree hash compared rather than assumed.
+      #
+      # A head that moved since `fix` checked out is not an error. The push that moved it is a
+      # `synchronize` event, and with `cancel-in-progress: false` its run is already queued behind
+      # this one and will fix the head that now exists — committing this patch on top of it would
+      # write files generated from a tree the branch no longer has.
+      #
+      # The three values come from `fix`'s outputs and are shape-checked before git sees them,
+      # since that job is the one this boundary exists to distrust.
+      - name: re-create the tree the fixes were built on
+        id: tree
+        env:
+          HEAD_SHA: ${{ needs.fix.outputs.head }}
+          BASE_SHA: ${{ needs.fix.outputs.base }}
+          TREE: ${{ needs.fix.outputs.tree }}
+        run: |
+          set -euo pipefail
+          for value in "$HEAD_SHA" "$BASE_SHA" "$TREE"; do
+            if [[ ! "$value" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "::error::\`fix\` reported a malformed object id; refusing to continue"
+              exit 1
+            fi
+          done
+          if [ "$(git rev-parse HEAD)" != "$HEAD_SHA" ]; then
+            echo "::notice::the branch moved after the fixes were built; the run queued for the new head commits instead"
+            echo "current=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if ! git merge-base --is-ancestor "$BASE_SHA" HEAD; then
+            git merge --no-edit "$BASE_SHA"
+          fi
+          if [ "$(git rev-parse 'HEAD^{tree}')" != "$TREE" ]; then
+            echo "::error::the merge produced a different tree from the one the fixes were built on"
+            exit 1
+          fi
+          echo "current=true" >> "$GITHUB_OUTPUT"
+
+      # Outside the checkout, so nothing in the artefact can land in the tree except through the
+      # check below.
+      - name: download the patch
+        if: steps.tree.outputs.current == 'true'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: mechanical-fixes
+          path: ${{ runner.temp }}/fixes
+
+      # The patch was written by the job that runs every dependency's build script, so it is
+      # treated as hostile input: a compromised build could put anything in it. Three checks,
+      # each closing a way out of "regular-file content inside `FIX_PATHS`":
+      #
+      # - `--summary` admits only creations and deletions of regular files. A symlink or gitlink
+      #   mode, a mode change, a rename or a copy is refused — the first two could point the
+      #   commit at content outside the allowed paths, and `fix` emits none of the rest.
+      # - Every path `--numstat` reports must be one of `FIX_PATHS` or under one. A rename's
+      #   `-z` record carries an empty path here and is refused by the same test.
+      # - `git apply` itself refuses `..` components and writes through a symlink.
+      #
+      # Paths are printed with `%q`, so a newline in one cannot forge a workflow command.
+      - name: check the patch and apply it
+        if: steps.tree.outputs.current == 'true'
+        env:
+          PATCH: ${{ runner.temp }}/fixes/fixes.patch
+        run: |
+          set -euo pipefail
+          git apply --check "$PATCH"
+          # Captured, not piped into `grep -q`: an early exit there would SIGPIPE `git apply`, and
+          # under `pipefail` that turns a refusal into a pass.
+          summary=$(git apply --summary "$PATCH")
+          if [ -n "$summary" ] && grep -vqE '^ (create|delete) mode 100(644|755) ' <<< "$summary"; then
+            echo "::error::the patch carries a change other than regular-file content; refusing it"
+            exit 1
+          fi
+          read -ra allowed <<< "$FIX_PATHS"
+          checked=0
+          while IFS= read -r -d '' record; do
+            checked=$((checked + 1))
+            path=${record#*$'\t'}
+            path=${path#*$'\t'}
+            permitted=false
+            case "$path" in
+              '' | /* | ../* | */../* | */..) ;;
+              *)
+                for prefix in "${allowed[@]}"; do
+                  if [ "$path" = "$prefix" ] || [ "${path#"$prefix"/}" != "$path" ]; then
+                    permitted=true
+                    break
+                  fi
+                done
+                ;;
+            esac
+            if [ "$permitted" != true ]; then
+              printf '::error::the patch touches %q, outside the paths this job may commit\n' "$path"
+              exit 1
+            fi
+          done < <(git apply --numstat -z "$PATCH")
+          # A process substitution's exit status is lost, so an empty listing is the only sign
+          # `--numstat` failed; `fix` uploads a patch only when it is non-empty.
+          if [ "$checked" -eq 0 ]; then
+            echo "::error::the patch lists no paths; refusing to apply what could not be checked"
+            exit 1
+          fi
+          git apply "$PATCH"
+          git status --short
+
+      # A GitHub App token, not `GITHUB_TOKEN`: a push made with the default token does not trigger
+      # workflows, so the fixes would land without re-running the checks that wanted them —
+      # leaving the pull request red on a problem that has already been solved.
+      #
+      # `ACTIONS_MAINTENANCE_*` rather than `RELEASE_BOT_*`: those are `release` *environment*
+      # secrets, and this job runs on every pull request. Naming that environment here would put a
+      # secret scope that exists for publishing behind a job any pull request can start.
+      #
+      # Minted only now, after the last step that reads the artefact, and passed to the commit
+      # action as an input — never into the `origin` URL or anywhere else in `.git/config`.
+      - name: Generate Bot Token
+        id: generate_token
+        if: steps.tree.outputs.current == 'true'
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ secrets.ACTIONS_MAINTENANCE_APP_ID }}
+          private-key: ${{ secrets.ACTIONS_MAINTENANCE_PRIVATE_KEY }}
+          # Narrowed to the one permission this job uses (zizmor `github-app`). By default the
+          # minted token inherits *every* permission the app's installation holds. It commits
+          # files to the PR branch, and `contents: write` is that and nothing else.
+          permission-contents: write
+
+      # One commit for every fix `fix` made, which is the point of this workflow existing once
+      # rather than three times: a reviewer sees a single bot commit, and there is no second push
+      # to lose a race with.
       #
       # The shared action writes through the GraphQL commit API, so the commit is *verified* — a
       # bot commit that `git log --show-signature` can attribute, which a locally-signed push from
@@ -525,27 +745,19 @@ jobs:
       # loudly instead of being silently overwritten. Losing that race is self-healing: the push
       # that won it is itself a `synchronize` event, so this workflow runs again on the head that
       # now exists.
-      #
-      # `file_pattern` is scoped to source, the two lockfiles and the generated artefacts rather
-      # than the whole tree. `docs/contracts` is nine of them — one per published image — and it
-      # is the one entry that is a *directory of* artefacts, so a service added to
-      # `crates/config-contract` is carried back without touching this line. Nothing else in this job is meant to change — `npm ci` can touch
-      # `package-lock.json` — and anything outside this list that changed is a bug to see in a red
-      # gate, not to commit silently.
-      #
-      # No `if:` guard: the action detects an unchanged tree itself and commits nothing.
       - name: Commit the fixes
+        if: steps.tree.outputs.current == 'true'
         uses: TimSchoenle/actions/actions/common/commit-changes@8da2713994ba2b5f542e7e3334db287b1e22854a # tag=actions-common-commit-changes-v1.5.9
         with:
           commit_message: "style: apply the mechanical fixes (lockfiles, clippy --fix, fmt, regenerated artefacts)"
           token: ${{ steps.generate_token.outputs.token }}
           branch: ${{ github.event.pull_request.head.ref }}
-          file_pattern: "Cargo.lock web/frontend/Cargo.lock crates services xtask fuzz openapi.json THIRD-PARTY-NOTICES docs/contracts web/frontend/src web/frontend/assets/main.css"
+          file_pattern: ${{ env.FIX_PATHS }}
 
   # `README.md`, rendered from its template and committed back to the branch.
   #
-  # `needs: [changes, fix]` is **ordering, not a dependency**. Both jobs commit to the pull
-  # request's branch, and the shared action passes the head it read as `expectedHeadOid`, so two
+  # `needs: [changes, fix, commit]` is **ordering, not a dependency**. This job and `commit` both
+  # write to the pull request's branch, and the shared action passes the head it read as `expectedHeadOid`, so two
   # of them writing at once means one fails on a moved parent — a red gate whose cause is a race
   # nobody can see in the diff. Running them in series costs a minute on the pull requests where
   # both have something to do, and there is nothing to reason about afterwards. It is also why
@@ -554,14 +766,14 @@ jobs:
   # top of this file says what the three-workflow version of this cost.
   #
   # `!failure()` rather than `success()`: `fix` skips on a pull request with no Rust in it, and
-  # a README that changed on such a branch is exactly the branch this job is for. A *failed*
-  # `fix` is different — it may have left the tree half-fixed, and rendering on top of that
-  # commits a README nobody asked for.
+  # `commit` whenever there is nothing to commit, and a README that changed on such a branch is
+  # exactly the branch this job is for. A *failed* `fix` or `commit` is different — the branch may
+  # be half-fixed, and rendering on top of that commits a README nobody asked for.
   readme:
     name: render the README
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: [changes, fix]
+    needs: [changes, fix, commit]
     # Forks get no app secrets, so there would be no token to commit with. `ci.yml`'s `readme`
     # job is what covers them: it renders in check mode and fails on a stale file.
     if: ${{ !failure() && !cancelled() && needs.changes.outputs.readme == 'true' && github.event.pull_request.head.repo.full_name == github.repository }}
@@ -573,20 +785,9 @@ jobs:
         with:
           egress-policy: audit
 
-      # An App installation token for the same two reasons `fix` uses one: the commit is
-      # verified, and — unlike one made with `GITHUB_TOKEN` — it re-triggers the checks on the
-      # branch it lands on. Narrowed to the one permission this job uses.
-      - name: Generate Bot Token
-        id: generate_token
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
-        with:
-          app-id: ${{ secrets.ACTIONS_MAINTENANCE_APP_ID }}
-          private-key: ${{ secrets.ACTIONS_MAINTENANCE_PRIVATE_KEY }}
-          permission-contents: write
-
       # The head of the branch, not the merge commit: the render has to read the `Cargo.toml`
       # the pull request proposes, and the commit has to land on top of what is there now —
-      # including whatever `fix` just committed.
+      # including whatever `commit` just committed.
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -599,6 +800,19 @@ jobs:
       - name: collect the README variables
         id: variables
         run: echo "json=$(bash .github/scripts/readme-variables.sh)" >> "$GITHUB_OUTPUT"
+
+      # An App installation token for the same two reasons `commit` uses one: the commit is
+      # verified, and — unlike one made with `GITHUB_TOKEN` — it re-triggers the checks on the
+      # branch it lands on. Narrowed to the one permission this job uses, and minted after the
+      # script above for the reason `commit` mints late: no step that runs code from the tree
+      # executes while the token exists.
+      - name: Generate Bot Token
+        id: generate_token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ secrets.ACTIONS_MAINTENANCE_APP_ID }}
+          private-key: ${{ secrets.ACTIONS_MAINTENANCE_PRIVATE_KEY }}
+          permission-contents: write
 
       # Commits only when the render actually changed the file, so an unrelated pull request
       # that merely touched `Cargo.toml` makes no commit and no API call.
@@ -631,14 +845,14 @@ jobs:
   # that ran and said so.
   #
   # `if: always()` rather than `success()`, which would inherit the skips. It fails only on a real
-  # `failure` or `cancelled`; a skipped `fix` or `readme` is a pull request with nothing to fix,
-  # which is a pass. Same shape, and the same reasoning, as `ci.yml`'s `ci` gate.
+  # `failure` or `cancelled`; a skipped `fix`, `commit` or `readme` is a pull request with nothing
+  # to fix, which is a pass. Same shape, and the same reasoning, as `ci.yml`'s `ci` gate.
   auto-fix:
     name: apply the mechanical fixes
     runs-on: ubuntu-latest
     timeout-minutes: 5
     if: always()
-    needs: [changes, fix, readme]
+    needs: [changes, fix, commit, readme]
     permissions: {}
     steps:
       - name: verdict

@@ -1083,6 +1083,7 @@ async fn the_console_stream_opens_for_a_permitted_operator() {
     let user = app
         .seed_user("streamok", &[Permission::ScansRead], AccountStatus::Active)
         .await;
+    let _factor = app.seed_totp(user).await;
     let ticket = app.stream_ticket(user).await;
 
     let opened = status_of(
@@ -1094,6 +1095,32 @@ async fn the_console_stream_opens_for_a_permitted_operator() {
     )
     .await;
     assert_eq!(opened, StatusCode::OK);
+}
+
+/// The stream skips `AuthUser`, and with it the rule that no permission counts for an account
+/// without a second factor: an unenrolled operator could read live console data here that every
+/// other admin route refuses them.
+#[tokio::test]
+async fn the_console_stream_refuses_an_operator_without_a_second_factor() {
+    let app = TestApp::spawn_with(TestConfig::new().without_rate_limiting()).await;
+    let user = app
+        .seed_user(
+            "streamnomfa",
+            &[Permission::ScansRead],
+            AccountStatus::Active,
+        )
+        .await;
+    let ticket = app.stream_ticket(user).await;
+
+    let refused = status_of(
+        &app,
+        "GET",
+        &format!("/v1/admin/stream?ticket={ticket}"),
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(refused, StatusCode::FORBIDDEN);
 }
 
 #[tokio::test]

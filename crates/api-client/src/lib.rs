@@ -38312,11 +38312,11 @@ impl Client {
     pub fn sync_disconnect(&self) -> builder::SyncDisconnect<'_> {
         builder::SyncDisconnect::new(self)
     }
-    #[doc = "Get a provider's OAuth consent URL\n\nReturns the provider's consent URL (proxied). The body type is shared with the sync\nservice via `tankovault_contracts::sync`.\n\nBehind a step-up: following this URL grants a third party a standing OAuth token against the\ncaller's account there, which is an authorisation that outlives the session and is not\nrevoked by anything this system does.\n\nSends a `GET` request to `/v1/me/sync/{provider}/authorize`\n\nArguments:\n- `provider`: Provider slug\n```ignore\nlet response = client.sync_authorize_url()\n    .provider(provider)\n    .send()\n    .await;\n```"]
+    #[doc = "Get a provider's OAuth consent URL\n\nReturns the provider's consent URL (proxied). The body type is shared with the sync\nservice via `tankovault_contracts::sync`.\n\nBehind a step-up: following this URL grants a third party a standing OAuth token against the\ncaller's account there, which is an authorisation that outlives the session and is not\nrevoked by anything this system does.\n\nThe URL carries a single-use `state` bound to the caller and the provider, expiring after ten\nminutes; the callback refuses a link without the matching one.\n\nSends a `GET` request to `/v1/me/sync/{provider}/authorize`\n\nArguments:\n- `provider`: Provider slug\n```ignore\nlet response = client.sync_authorize_url()\n    .provider(provider)\n    .send()\n    .await;\n```"]
     pub fn sync_authorize_url(&self) -> builder::SyncAuthorizeUrl<'_> {
         builder::SyncAuthorizeUrl::new(self)
     }
-    #[doc = "Complete an OAuth link\n\nExchanges the authorization `code` and links the caller's account at `provider`. The sync\nservice answers `204`; [`Ack`] is what `Upstream::decode` synthesises from an empty body.\n\nSends a `GET` request to `/v1/me/sync/{provider}/callback`\n\nArguments:\n- `provider`: Provider slug\n- `code`\n```ignore\nlet response = client.sync_callback()\n    .provider(provider)\n    .code(code)\n    .send()\n    .await;\n```"]
+    #[doc = "Complete an OAuth link\n\nExchanges the authorization `code` and links the caller's account at `provider`. The sync\nservice answers `204`; [`Ack`] is what `Upstream::decode` synthesises from an empty body.\n\n`state` must be the one issued to this caller for this provider, unexpired and unused: a code\ndelivered to anyone else's session, or a replayed callback, is refused before it reaches the\nprovider.\n\nSends a `GET` request to `/v1/me/sync/{provider}/callback`\n\nArguments:\n- `provider`: Provider slug\n- `code`\n- `state`: The `state` the consent URL from `GET /v1/me/sync/{provider}/authorize` carried.\n```ignore\nlet response = client.sync_callback()\n    .provider(provider)\n    .code(code)\n    .state(state)\n    .send()\n    .await;\n```"]
     pub fn sync_callback(&self) -> builder::SyncCallback<'_> {
         builder::SyncCallback::new(self)
     }
@@ -50190,6 +50190,7 @@ pub mod builder {
         client: &'a super::Client,
         provider: Result<::std::string::String, String>,
         code: Result<::std::string::String, String>,
+        state: Result<::std::string::String, String>,
     }
     impl<'a> SyncCallback<'a> {
         pub fn new(client: &'a super::Client) -> Self {
@@ -50197,6 +50198,7 @@ pub mod builder {
                 client: client,
                 provider: Err("provider was not initialized".to_string()),
                 code: Err("code was not initialized".to_string()),
+                state: Err("state was not initialized".to_string()),
             }
         }
         pub fn provider<V>(mut self, value: V) -> Self
@@ -50217,6 +50219,15 @@ pub mod builder {
             });
             self
         }
+        pub fn state<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.state = value.try_into().map_err(|_| {
+                "conversion to `:: std :: string :: String` for state failed".to_string()
+            });
+            self
+        }
         #[doc = "Sends a `GET` request to `/v1/me/sync/{provider}/callback`"]
         pub async fn send(
             self,
@@ -50225,9 +50236,11 @@ pub mod builder {
                 client,
                 provider,
                 code,
+                state,
             } = self;
             let provider = provider.map_err(Error::InvalidRequest)?;
             let code = code.map_err(Error::InvalidRequest)?;
+            let state = state.map_err(Error::InvalidRequest)?;
             let url = format!(
                 "{}/v1/me/sync/{}/callback",
                 client.baseurl,
@@ -50247,6 +50260,7 @@ pub mod builder {
                     ::reqwest::header::HeaderValue::from_static("application/json"),
                 )
                 .query(&progenitor_client::QueryParam::new("code", &code))
+                .query(&progenitor_client::QueryParam::new("state", &state))
                 .headers(header_map)
                 .build()?;
             let info = OperationInfo {
@@ -50258,6 +50272,9 @@ pub mod builder {
             let response = result?;
             match response.status().as_u16() {
                 200u16 => ResponseValue::from_response(response).await,
+                400u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
                 401u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),

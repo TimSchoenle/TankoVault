@@ -106,6 +106,25 @@ pub fn validate_str(raw: &str) -> Result<Url, SsrfError> {
     Ok(url)
 }
 
+/// Require every address `host` resolved to to be public.
+///
+/// For a client that resolves the name again on its own — Chromium, TRAWL — and so cannot be
+/// pinned to a vetted subset: one internal answer among public ones is enough for it to connect
+/// there. An empty answer is refused, not waved through.
+///
+/// # Errors
+/// [`SsrfError::Resolution`] when `addrs` is empty, [`SsrfError::ForbiddenAddress`] when any
+/// address is forbidden.
+pub fn require_all_public(host: &str, addrs: &[IpAddr]) -> Result<(), SsrfError> {
+    if addrs.is_empty() {
+        return Err(SsrfError::Resolution(host.to_owned()));
+    }
+    if addrs.iter().any(|ip| is_forbidden_ip(*ip)) {
+        return Err(SsrfError::ForbiddenAddress(host.to_owned()));
+    }
+    Ok(())
+}
+
 /// The resolving half of the guard, behind the `dns` feature — it needs a DNS lookup, and
 /// `wasm32` (via `crates/api-client`) must never see `tokio`'s networking.
 ///
@@ -115,8 +134,9 @@ pub fn validate_str(raw: &str) -> Result<Url, SsrfError> {
 /// re-checks on every redirect hop to close rebinding for outbound fetches.
 #[cfg(feature = "dns")]
 mod resolving {
-    use super::{SsrfError, is_forbidden_ip, validate_str};
-    use std::net::SocketAddr;
+    use super::{SsrfError, is_forbidden_ip, require_all_public, validate_str};
+    use std::net::{IpAddr, SocketAddr};
+    use url::Url;
 
     /// Resolve `host` and return only the vetted (public) addresses, erroring if none remain.
     ///
@@ -155,10 +175,39 @@ mod resolving {
         };
         resolve_checked(domain).await.map(|_| ())
     }
+
+    /// Resolve `host` and return every address it answered with, forbidden or not.
+    ///
+    /// # Errors
+    /// [`SsrfError::Resolution`] on DNS failure.
+    pub async fn lookup(host: &str) -> Result<Vec<IpAddr>, SsrfError> {
+        let addrs = tokio::net::lookup_host((host, 0))
+            .await
+            .map_err(|_| SsrfError::Resolution(host.to_owned()))?;
+        Ok(addrs.map(|sa| sa.ip()).collect())
+    }
+
+    /// Validate a URL that a client which resolves independently is about to fetch.
+    ///
+    /// Stricter than [`validate_and_resolve`]: every answer must be public
+    /// ([`require_all_public`]), since the browser or solver that fetches it picks its own
+    /// address. A rebind between this lookup and theirs is not closed here (`SECURITY.md`).
+    ///
+    /// # Errors
+    /// As [`super::validate_url`], plus [`SsrfError::Resolution`] /
+    /// [`SsrfError::ForbiddenAddress`].
+    pub async fn validate_unpinned(raw: &str) -> Result<Url, SsrfError> {
+        let url = validate_str(raw)?;
+        if let Some(domain) = url.domain() {
+            let addrs = lookup(domain).await?;
+            require_all_public(domain, &addrs)?;
+        }
+        Ok(url)
+    }
 }
 
 #[cfg(feature = "dns")]
-pub use resolving::{resolve_checked, validate_and_resolve};
+pub use resolving::{lookup, resolve_checked, validate_and_resolve, validate_unpinned};
 
 #[cfg(test)]
 mod tests {
@@ -256,6 +305,28 @@ mod tests {
     fn validate_url_accepts_public_ip_literals() {
         assert!(validate_url(&Url::parse("http://1.1.1.1/").unwrap()).is_ok());
         assert!(validate_url(&Url::parse("http://[2606:4700:4700::1111]/").unwrap()).is_ok());
+    }
+
+    /// Regression: render and challenge-solver checked only IP literals, so a hostname that
+    /// resolved to loopback or a compose peer (`localhost`, `redis`) was fetched unchecked.
+    #[test]
+    fn require_all_public_refuses_a_name_resolving_internally() {
+        let loopback = [IpAddr::from_str("127.0.0.1").unwrap()];
+        assert_eq!(
+            require_all_public("localhost", &loopback),
+            Err(SsrfError::ForbiddenAddress("localhost".to_owned()))
+        );
+        let mixed = [
+            IpAddr::from_str("93.184.216.34").unwrap(),
+            IpAddr::from_str("172.18.0.5").unwrap(),
+        ];
+        assert!(require_all_public("rebind.example", &mixed).is_err());
+        assert!(matches!(
+            require_all_public("empty.example", &[]),
+            Err(SsrfError::Resolution(_))
+        ));
+        let public = [IpAddr::from_str("93.184.216.34").unwrap()];
+        assert!(require_all_public("example.com", &public).is_ok());
     }
 
     #[test]

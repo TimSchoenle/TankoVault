@@ -1,7 +1,7 @@
 //! Opaque bearer handles, and the digest they are stored as.
 //!
-//! Four credentials in this system share one shape: a refresh token, the handle a pending
-//! sign-in is resumed by, a step-up grant, and a recovery code. None is user-chosen, all are
+//! Five credentials in this system share one shape: a refresh token, the handle a pending
+//! sign-in is resumed by, a step-up grant, a recovery code, and an OAuth link `state`. None is user-chosen, all are
 //! high-entropy, and all are stored as a digest so the row is not itself a usable credential.
 //!
 //! They share this module because the *stored representation* has to be identical across them

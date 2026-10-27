@@ -18,11 +18,15 @@ use crate::ConfigError;
 pub enum IdentityMode {
     /// No identity at all: every caller is anonymous and every route is open.
     ///
-    /// Local development and tests only; refused under `TANKOVAULT_PROFILE=production`.
-    #[default]
+    /// Local development and tests only, and only when named explicitly; refused under
+    /// `TANKOVAULT_PROFILE=production`.
     Off,
     /// A per-caller bearer token. The portable mode — compose, bare metal, anything without a
     /// certificate authority.
+    ///
+    /// The default: a deployment that forgot to choose must not end up with an open internal
+    /// tier, which is what defaulting to [`Self::Off`] did outside the production profile.
+    #[default]
     Token,
     /// A verified client certificate; the caller is its SAN. Certificates come from files, so
     /// this works anywhere they can be written — cert-manager and trust-manager mount them in
@@ -486,9 +490,27 @@ mod tests {
 
     #[test]
     fn off_is_refused_in_production_only() {
-        let cfg = InternalAuthConfig::default();
+        let cfg = InternalAuthConfig {
+            identity: IdentityMode::Off,
+            ..Default::default()
+        };
         assert!(cfg.resolve(false).is_ok());
         assert!(cfg.resolve(true).is_err());
+    }
+
+    /// The default was `off`, so any deployment that forgot `TANKOVAULT_PROFILE=production`
+    /// served every internal route to anything that could open a socket.
+    #[test]
+    fn an_unconfigured_service_identifies_callers_and_admits_none() {
+        let resolved = InternalAuthConfig::default()
+            .resolve(false)
+            .expect("the default resolves in every profile");
+        assert_eq!(resolved.mode, IdentityMode::Token);
+        assert!(
+            resolved.peers.is_empty(),
+            "no peer is admitted until one is named"
+        );
+        assert!(InternalAuthConfig::default().resolve(true).is_ok());
     }
 
     /// Each mode needs its own material. Carrying a token into `mtls` (or a SAN into `token`)

@@ -3,6 +3,7 @@
 //! Re-exports are globs so `#[utoipa::path]`'s generated `__path_<handler>` items resolve
 //! alongside each handler in `lib.rs`'s route table.
 
+pub(crate) mod kdf;
 pub mod login;
 pub mod mfa;
 pub mod passkey;

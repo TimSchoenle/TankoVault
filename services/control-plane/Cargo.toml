@@ -30,7 +30,7 @@ tankovault-config = { workspace = true }
 terrace-config = { workspace = true, features = ["schema"] }
 # Redis/NATS URLs arrive from config as `SecretString`.
 secrecy = { workspace = true }
-tankovault-service = { workspace = true, features = ["db"] }
+tankovault-service = { workspace = true, features = ["db", "redis"] }
 tokio-util = { workspace = true }
 tankovault-db = { workspace = true }
 tankovault-recsys = { workspace = true }

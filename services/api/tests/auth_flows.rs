@@ -194,6 +194,57 @@ async fn a_raced_rotation_is_recovered_rather_than_ending_the_session() {
     );
 }
 
+/// Two refreshes racing on one token leave exactly one live token in the family.
+///
+/// # The bug this pins
+///
+/// Rotation was read-then-write: both requests found the token unrevoked, both revoked it (the
+/// second as a no-op) and both inserted a successor, forking the family into two live
+/// lineages — the second one invisible to reuse detection on the first.
+#[tokio::test]
+async fn concurrent_refreshes_of_one_token_do_not_fork_the_family() {
+    let app = TestApp::spawn().await;
+
+    let registered = app
+        .request(post(
+            "/v1/auth/register",
+            None,
+            Some(json!({
+                "email": "rowan@example.test",
+                "username": "rowan",
+                "password": "correct horse battery",
+            })),
+        ))
+        .await;
+    assert_eq!(registered.status(), StatusCode::OK);
+    let first = refresh_cookie(&registered).expect("registration issues a refresh cookie");
+
+    let (a, b) = tokio::join!(
+        app.request(post("/v1/auth/refresh", Some(&first), None)),
+        app.request(post("/v1/auth/refresh", Some(&first), None)),
+    );
+    assert_eq!(a.status(), StatusCode::OK, "the winner rotates");
+    assert_eq!(
+        b.status(),
+        StatusCode::OK,
+        "the loser is a raced rotation inside the grace window, not theft"
+    );
+
+    let user = tankovault_db::repo::users::find_credentials(&app.db.pool, "rowan")
+        .await
+        .expect("query")
+        .expect("registered")
+        .user;
+    let live = tankovault_db::repo::users::list_sessions(&app.db.pool, user.id)
+        .await
+        .expect("query");
+    assert_eq!(
+        live.len(),
+        1,
+        "a raced rotation must collapse to one live token, not fork the family"
+    );
+}
+
 /// The grace window requires a *live* family, not just a recent revocation.
 ///
 /// A time bound alone would let a deliberately shut-down lineage be re-opened by a token

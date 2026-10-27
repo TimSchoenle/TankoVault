@@ -32,8 +32,9 @@ tracing = { workspace = true }
 
 axum = { workspace = true, optional = true }
 metrics = { workspace = true, optional = true }
-# The SSRF address policy for the solve target. Pure and I/O-free — see the module docs there.
-tankovault-domain = { workspace = true, optional = true }
+# The SSRF address policy for the solve target. `dns` because TRAWL and Chromium resolve the
+# name themselves, so a hostname has to be resolved and vetted here too, not only an IP literal.
+tankovault-domain = { workspace = true, optional = true, features = ["dns"] }
 # Only for the shared RFC 9457 error shape the `/v1/solve` route emits (ARCH-12); pulled in with
 # the `axum` feature so trait-only consumers stay free of the whole service runtime.
 tankovault-service = { workspace = true, optional = true }

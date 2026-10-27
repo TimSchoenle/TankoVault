@@ -44,21 +44,38 @@ runs:
           exit 0
         fi
 
-        # 120s is roughly ten times what either call costs on a healthy mirror, so a trip here is
-        # evidence of a stall rather than of a slow day. Three attempts bound the worst case at
-        # about six minutes against the 20m47s that prompted this.
+        # A stall and a slow mirror need different limits. `Acquire::http::Timeout` fails a fetch
+        # that receives nothing for 30s, and `Acquire::Retries` refetches it, so a stall is caught
+        # per file within seconds. The wall-clock cap is only the backstop, and it is one deadline
+        # shared by every call and attempt rather than a cap per attempt: on 2026-10-26 the mirror
+        # served 50-150 KB/s, and a 360s cap per attempt killed three attempts in a row that were
+        # each still fetching the same 28.8 MB package. A slow download that is progressing now
+        # gets the whole budget; a fast failure is retried inside it. 18 minutes stays under the
+        # 20m47s that prompted the bound.
+        #
+        # Only network work runs under the cap. Killing `apt-get install` mid-unpack leaves dpkg
+        # interrupted and every later attempt fails at once ("dpkg was interrupted").
+        deadline=$((SECONDS + 1080))
         apt_bounded() {
           for attempt in 1 2 3; do
-            if sudo timeout 120 apt-get "$@"; then
+            remaining=$((deadline - SECONDS))
+            if [ "$remaining" -le 0 ]; then
+              break
+            fi
+            if sudo timeout "$remaining" apt-get -o Acquire::http::Timeout=30 -o Acquire::Retries=3 "$@"; then
               return 0
             fi
-            echo "::warning::apt-get $1 stalled or failed (attempt ${attempt}/3); retrying"
-            sleep $((attempt * 5))
+            if [ "$attempt" -lt 3 ]; then
+              echo "::warning::apt-get $1 failed (attempt ${attempt}/3); retrying"
+              sleep $((attempt * 5))
+            fi
           done
-          echo "::error::apt-get $1 did not complete after 3 bounded attempts"
+          echo "::error::apt-get $1 did not complete within the 18-minute apt budget"
           return 1
         }
 
         apt_bounded update
         # shellcheck disable=SC2086 # deliberate word splitting: `missing` is a package list.
-        apt_bounded install -y --no-install-recommends $missing
+        apt_bounded install -y --no-install-recommends --download-only $missing
+        # shellcheck disable=SC2086 # as above.
+        sudo apt-get install -y --no-install-recommends --no-download $missing

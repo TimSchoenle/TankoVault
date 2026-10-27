@@ -5728,6 +5728,7 @@ dependencies = [
  "tokio-stream",
  "tokio-util",
  "tracing",
+ "url",
  "utoipa",
  "utoipa-axum",
  "utoipa-scalar",

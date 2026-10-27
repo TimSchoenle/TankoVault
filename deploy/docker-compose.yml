@@ -175,6 +175,8 @@ services:
   redis:
     image: redis:8-alpine@sha256:0bf6577d7774e592b29d093e3ac9390eb91e13d72c21e506afce736de5e0eeb0
     deploy: { resources: { limits: { memory: 256m } } }
+    # `trawl-cache` is how TRAWL reaches its cookie jar without joining `default`.
+    networks: [default, trawl-cache]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -212,6 +214,7 @@ services:
       start_period: 90s
     shm_size: 1gb
     deploy: { resources: { limits: { memory: 2g } } }
+    networks: [solver, trawl-cache]
     depends_on:
       redis: { condition: service_healthy }
 
@@ -386,6 +389,8 @@ services:
       # Ops listener on 8085; Prometheus scrape on the isolated metrics port (default :9090).
       # Neither is published: compose can't map one host port to 2 replicas.
       TANKOVAULT_BIND_ADDR: 0.0.0.0:8085
+    # `solver` for the two solver-hosting services, `default` for everything else it uses.
+    networks: [default, solver]
     depends_on:
       migrate: { condition: service_completed_successfully }
       nats: { condition: service_healthy }
@@ -452,6 +457,7 @@ services:
       <<: [*telemetry, *internal-from-worker]
       TANKOVAULT_TELEMETRY__SERVICE_NAME: challenge-solver
       TANKOVAULT_SOLVER__TRAWL_ENDPOINT: http://trawl:8191
+    networks: [solver]
     depends_on:
       trawl: { condition: service_healthy }
 
@@ -478,6 +484,7 @@ services:
     environment:
       <<: [*telemetry, *internal-from-worker]
       TANKOVAULT_TELEMETRY__SERVICE_NAME: render
+    networks: [solver]
 
   # ---- Frontend (Dioxus WASM SPA served by the axum `frontend` server) ---------------
   frontend:
@@ -506,7 +513,8 @@ volumes:
   pgdata:
 
 networks:
-  # The implicit default network, configured rather than replaced — no service names a network.
+  # The implicit default network, configured rather than replaced. A service that names no
+  # network joins only this one; the solver tier names its own below.
   #
   # IPv6 is on because provider origins disagree about IPv4. Four of the Keyoapp installs answer
   # an IPv4 client with a bare nginx `404` on every route, `/` included, while serving the same
@@ -519,3 +527,14 @@ networks:
   # not assumed. Docker Engine 27+ is required for `enable_ipv6` to allocate a subnet on its own.
   default:
     enable_ipv6: true
+  # The tier that fetches URLs someone else chose: `render`, `challenge-solver`, `trawl`, plus
+  # `worker`, their only caller. The in-process SSRF guard cannot see a DNS rebind or traffic
+  # CDP does not intercept (SECURITY.md), so what a browser here can address is limited to these
+  # peers and the internet — not Postgres, NATS, Redis or the other internal services. Not
+  # `internal`: providers are on the internet. IPv6 for the reason given on `default`.
+  solver:
+    enable_ipv6: true
+  # TRAWL's cookie jar, and nothing else: the one internal dependency of the solver tier, kept
+  # off `solver` so `render` and `challenge-solver` cannot address Redis.
+  trawl-cache:
+    internal: true

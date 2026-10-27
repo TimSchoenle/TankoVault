@@ -45,6 +45,14 @@ use std::fmt;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProviderSlug(String);
 
+impl ProviderSlug {
+    /// The validated slug.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
 impl fmt::Display for ProviderSlug {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)

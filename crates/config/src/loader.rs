@@ -47,10 +47,11 @@ pub fn terrace() -> Terrace {
 /// Load a typed config for a service.
 ///
 /// # Errors
-/// Returns [`ConfigError`] if a required value is missing, a value fails to parse, a
-/// file-backed source cannot be read, or one key is supplied by more than one of the last
-/// three layers.
+/// Returns [`ConfigError`] if `TANKOVAULT_PROFILE` names no known profile, a required value is
+/// missing, a value fails to parse, a file-backed source cannot be read, or one key is supplied
+/// by more than one of the last three layers.
 pub fn load<T: DeserializeOwned>() -> Result<T, ConfigError> {
+    Profile::from_env()?;
     terrace().load()
 }
 
@@ -59,6 +60,7 @@ pub fn load<T: DeserializeOwned>() -> Result<T, ConfigError> {
 /// # Errors
 /// As [`load`].
 pub fn load_watched<T: DeserializeOwned>() -> Result<Loaded<T>, ConfigError> {
+    Profile::from_env()?;
     terrace().load_watched()
 }
 
@@ -84,11 +86,92 @@ pub fn default_true() -> bool {
     true
 }
 
-/// Whether the process runs under the production profile; one spelling so guards cannot
-/// drift apart.
+/// The deployment profile named by `TANKOVAULT_PROFILE`.
+///
+/// Parsed in exactly one place. Two hand-written checks once disagreed on `prod` and on letter
+/// case, so one value switched the API's secret checks on while leaving internal auth off, and
+/// another did the reverse.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Profile {
+    /// Unset, `development` or `dev`.
+    Development,
+    /// `production` or `prod`.
+    Production,
+}
+
+impl Profile {
+    /// Parse a raw `TANKOVAULT_PROFILE` value, trimmed and case-insensitive.
+    ///
+    /// # Errors
+    /// [`ConfigError::Invalid`] for any other value: a profile nobody recognises must stop the
+    /// boot rather than quietly mean "development".
+    pub fn parse(raw: Option<&str>) -> Result<Self, ConfigError> {
+        let value = raw.map(str::trim).unwrap_or_default().to_ascii_lowercase();
+        match value.as_str() {
+            "" | "development" | "dev" => Ok(Self::Development),
+            "production" | "prod" => Ok(Self::Production),
+            _ => Err(ConfigError::Invalid(
+                "TANKOVAULT_PROFILE must be `production`, `prod`, `development`, `dev` or unset"
+                    .to_owned(),
+            )),
+        }
+    }
+
+    /// The profile this process runs under.
+    ///
+    /// # Errors
+    /// As [`Self::parse`], and for a value that is not valid Unicode.
+    pub fn from_env() -> Result<Self, ConfigError> {
+        match std::env::var("TANKOVAULT_PROFILE") {
+            Ok(raw) => Self::parse(Some(&raw)),
+            Err(std::env::VarError::NotPresent) => Ok(Self::Development),
+            Err(std::env::VarError::NotUnicode(_)) => Err(ConfigError::Invalid(
+                "TANKOVAULT_PROFILE is not valid Unicode".to_owned(),
+            )),
+        }
+    }
+}
+
+/// Whether the process runs under the production profile; every production guard is spelled in
+/// terms of this.
+///
+/// An unrecognised profile answers `true`, so a guard consulted before [`load`] has refused the
+/// boot fails closed.
 #[must_use]
 pub fn is_production() -> bool {
-    std::env::var("TANKOVAULT_PROFILE").is_ok_and(|p| p.eq_ignore_ascii_case("production"))
+    Profile::from_env().map_or(true, |p| p == Profile::Production)
+}
+
+#[cfg(test)]
+mod profile_tests {
+    use super::Profile;
+
+    /// `prod` and letter case used to be read differently by the API and the config crate, so a
+    /// single value turned one set of production guards on and the other off.
+    #[test]
+    fn every_spelling_of_a_profile_parses_the_same_everywhere() {
+        for raw in ["production", "Production", "PRODUCTION", "prod", " prod "] {
+            assert_eq!(
+                Profile::parse(Some(raw)).unwrap(),
+                Profile::Production,
+                "{raw}"
+            );
+        }
+        for raw in [None, Some(""), Some("development"), Some("Dev")] {
+            assert_eq!(
+                Profile::parse(raw).unwrap(),
+                Profile::Development,
+                "{raw:?}"
+            );
+        }
+    }
+
+    /// `staging` used to mean "development" silently, disarming every production guard.
+    #[test]
+    fn an_unknown_profile_is_refused() {
+        assert!(Profile::parse(Some("staging")).is_err());
+        assert!(Profile::parse(Some("production-eu")).is_err());
+    }
 }
 
 #[cfg(test)]

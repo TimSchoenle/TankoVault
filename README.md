@@ -260,7 +260,7 @@ separate claims that happen to agree today.
 
 | Document | Purpose |
 | --- | --- |
-| [Challenge handling](docs/CHALLENGE_HANDLING.md) | The open workstreams of the bot-management tier (design §9): session lifecycle, making a dark provider visible, clearance-cookie scoping, and fingerprint coherence between the solver browser and wreq. |
+| [Challenge handling](docs/CHALLENGE_HANDLING.md) | All seven workstreams of the bot-management tier (design §9), from detection to a shared session store, with the status of each. |
 | [Chapter storage](docs/CHAPTER_STORAGE.md) | Where the chapters table's 1.2 GB goes, and the change in migration 0055_chapter_storage that roughly halves it so a running scan stops evicting the Postgres working set. |
 | [Configuration reference](docs/CONFIGURATION.md) | Every TANKOVAULT_* key the deployment reads: what it does, its default, and which services consume it. |
 | [Design system](docs/DESIGN_SPEC.md) | The design system the SPA is built to: tokens, component inventory, per-screen breakdowns and interaction rules. |

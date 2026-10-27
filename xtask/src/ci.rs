@@ -112,11 +112,15 @@ const GATES: &[Gate] = &[
     // It builds two ways from one tree (`web`, the default, and `desktop`), and a check of one
     // proves nothing about the other, so both feature sets are gated. Same set and same order as
     // CI's `frontend` job.
+    //
+    // The frontend manifest is a package and a workspace root at once, with `crates/inkstone-ui`
+    // as a member. Cargo selects only the root package there by default, so every gate names the
+    // whole workspace: without it, `inkstone-ui` is never tested, linted or documented.
     Gate {
         name: "frontend fmt",
         step: Step::Cargo {
             dir: "web/frontend",
-            args: &["fmt", "--check"],
+            args: &["fmt", "--all", "--check"],
             env: &[],
         },
     },
@@ -124,7 +128,7 @@ const GATES: &[Gate] = &[
         name: "frontend test",
         step: Step::Cargo {
             dir: "web/frontend",
-            args: &["test"],
+            args: &["test", "--workspace"],
             env: &[],
         },
     },
@@ -132,7 +136,14 @@ const GATES: &[Gate] = &[
         name: "frontend clippy",
         step: Step::Cargo {
             dir: "web/frontend",
-            args: &["clippy", "--all-targets", "--", "-D", "warnings"],
+            args: &[
+                "clippy",
+                "--workspace",
+                "--all-targets",
+                "--",
+                "-D",
+                "warnings",
+            ],
             env: &[],
         },
     },
@@ -140,7 +151,7 @@ const GATES: &[Gate] = &[
         name: "frontend rustdoc",
         step: Step::Cargo {
             dir: "web/frontend",
-            args: &["doc", "--no-deps"],
+            args: &["doc", "--workspace", "--no-deps"],
             env: &[("RUSTDOCFLAGS", "-D warnings")],
         },
     },
@@ -148,7 +159,7 @@ const GATES: &[Gate] = &[
         name: "frontend wasm",
         step: Step::Cargo {
             dir: "web/frontend",
-            args: &["check", "--target", "wasm32-unknown-unknown"],
+            args: &["check", "--workspace", "--target", "wasm32-unknown-unknown"],
             env: &[],
         },
     },
@@ -156,7 +167,13 @@ const GATES: &[Gate] = &[
         name: "frontend desktop test",
         step: Step::Cargo {
             dir: "web/frontend",
-            args: &["test", "--no-default-features", "--features", "desktop"],
+            args: &[
+                "test",
+                "--workspace",
+                "--no-default-features",
+                "--features",
+                "desktop",
+            ],
             env: &[],
         },
     },
@@ -166,6 +183,7 @@ const GATES: &[Gate] = &[
             dir: "web/frontend",
             args: &[
                 "clippy",
+                "--workspace",
                 "--no-default-features",
                 "--features",
                 "desktop",
@@ -183,6 +201,7 @@ const GATES: &[Gate] = &[
             dir: "web/frontend",
             args: &[
                 "doc",
+                "--workspace",
                 "--no-deps",
                 "--no-default-features",
                 "--features",
@@ -359,6 +378,19 @@ mod tests {
         assert_eq!(
             rustdoc_without_flags, 0,
             "a frontend rustdoc gate without `RUSTDOCFLAGS=-D warnings` only reports"
+        );
+        let root_package_only: Vec<&str> = frontend
+            .iter()
+            .filter(|g| {
+                matches!(&g.step, Step::Cargo { args, .. }
+                    if !args.contains(&"--workspace") && !args.contains(&"--all"))
+            })
+            .map(|g| g.name)
+            .collect();
+        assert_eq!(
+            root_package_only,
+            Vec::<&str>::new(),
+            "a frontend gate without `--workspace` (`--all` for fmt) skips `inkstone-ui`"
         );
     }
 }

@@ -1,13 +1,13 @@
 //! Serde round-trip properties for the shared wire contracts.
 //!
-//! `crates/contracts` types are both the producer's return value and the consumer's parse
-//! target, so every one belongs in this file — nothing else proves it survives the trip.
+//! Each `crates/contracts` type is both the producer's return value and the consumer's parse
+//! target, so every one belongs in this file: nothing else proves it survives the trip.
 //!
-//! These types deliberately do not derive `PartialEq` (several carry `serde_json::Value`), so
-//! the round trip is asserted on the serialized form: `to_value(x) == to_value(from_value(…))`.
-//! That is the right check, since it is the serialized form that crosses the wire — it catches
-//! a field that serializes but does not deserialize, a one-sided `rename`, or a
-//! `skip_serializing_if` whose default does not survive a decode.
+//! These types do not derive `PartialEq`, since several carry `serde_json::Value`, so the round
+//! trip is asserted on the serialized form: `to_value(x) == to_value(from_value(…))`. The
+//! serialized form is what crosses the wire, so this catches a field that serializes but does not
+//! deserialize, a one-sided `rename`, or a `skip_serializing_if` whose default does not survive a
+//! decode.
 
 use proptest::prelude::*;
 use serde::Serialize;
@@ -37,8 +37,8 @@ fn survives_the_wire<T: Serialize + DeserializeOwned>(value: &T) -> Result<(), T
     Ok(())
 }
 
-/// Timestamps inside the range RFC 3339 can represent, at nanosecond precision — the precision
-/// the `time::serde::rfc3339` codec actually writes, so a truncating round trip would show up.
+/// Timestamps inside the range RFC 3339 can represent, at the nanosecond precision the
+/// `time::serde::rfc3339` codec writes, so a truncating round trip shows up.
 fn timestamp() -> impl Strategy<Value = OffsetDateTime> {
     (0i64..4_000_000_000i64, 0u32..1_000_000_000u32).prop_map(|(secs, nanos)| {
         OffsetDateTime::from_unix_timestamp_nanos(
@@ -132,7 +132,7 @@ proptest! {
     }
 
     /// `published_at` is the interesting field: it uses `rfc3339::option`, so a `None` must
-    /// survive as `None` rather than becoming `null`-then-decode-error.
+    /// survive as `None`, not become a `null` that fails to decode.
     #[test]
     fn a_chapter_discovered_event_survives_the_wire(
         provider_slug in provider_slug(),
@@ -162,10 +162,9 @@ proptest! {
         })?;
     }
 
-    /// A `chapter.discovered` published by a worker that predates the paywall fields must still
-    /// decode — the two services deploy separately, and an event stuck mid-flight across the
-    /// upgrade would otherwise poison the consumer. Absent means `free`, which is what every
-    /// message written before the fields existed meant.
+    /// A `chapter.discovered` from a worker that predates the paywall fields still decodes. The
+    /// two services deploy separately, and an event in flight across the upgrade would otherwise
+    /// poison the consumer. Absent fields mean `free`.
     #[test]
     fn a_chapter_discovered_event_without_the_access_fields_decodes_as_free(
         provider_slug in provider_slug(),
@@ -236,10 +235,8 @@ proptest! {
     fn sync_account_settings_survive_the_wire(
         linked in any::<bool>(),
         auto_sync_enabled in any::<bool>(),
-        // Drawn from `ConflictPolicy::ALL` rather than from a list of token literals. The
-        // literals were this test's own third copy of the vocabulary — the very drift the
-        // typed policy exists to remove — and a policy added to the enum would not have been
-        // exercised here at all.
+        // Drawn from `ConflictPolicy::ALL`, so a policy added to the enum is exercised here
+        // without a third copy of the vocabulary.
         conflict_policy in prop::sample::select(sync::ConflictPolicy::ALL.to_vec()),
         pending_conflicts in any::<i64>(),
     ) {
@@ -262,9 +259,8 @@ proptest! {
     }
 
     /// The durable consumer name is built from `(mode, slug)` and taken apart again to recover
-    /// lanes for providers that have since been renamed. The existing test does this for one
-    /// hand-picked slug; the general contract is that *every* valid slug survives — including
-    /// one that itself begins with a mode token, which is precisely where a naive split fails.
+    /// lanes for providers that have since been renamed. Every valid slug survives, including
+    /// one that begins with a mode token, which is where a naive split fails.
     #[test]
     fn a_worker_consumer_name_round_trips_through_its_lane(
         slug in provider_slug(),
@@ -279,9 +275,8 @@ proptest! {
         );
     }
 
-    /// A slug that deliberately collides with the mode token. `worker_consumer` documents that
-    /// "the mode sits in a fixed position ahead of the slug so the name can be taken apart
-    /// again even though a slug may itself contain `-`" — this is that claim, executed.
+    /// A slug that starts with a mode token still decomposes, because `worker_consumer` puts the
+    /// mode in a fixed position ahead of the slug.
     #[test]
     fn a_slug_that_starts_with_a_mode_token_still_decomposes(
         tail in "[a-z0-9][a-z0-9_-]{0,12}",

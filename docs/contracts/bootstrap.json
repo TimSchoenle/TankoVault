@@ -49,7 +49,7 @@
         "env": "TANKOVAULT_DATABASE__URL",
         "env_file": "TANKOVAULT_DATABASE__URL_FILE",
         "secrets_file": "database__url",
-        "docs": "e.g. `postgres://user:pass@host:5432/tankovault`.\n\nA [`SecretString`]: the DSN carries the password, and this struct's `Debug` is nested\ninside state routinely logged with `?`.",
+        "docs": "The connection URL, such as `postgres://user:pass@host:5432/tankovault`.",
         "ty": "SecretString",
         "values": [],
         "constraint": {
@@ -248,7 +248,7 @@
             "type": "integer"
           },
           "url": {
-            "description": "e.g. `postgres://user:pass@host:5432/tankovault`.\n\nA [`SecretString`]: the DSN carries the password, and this struct's `Debug` is nested\ninside state routinely logged with `?`.",
+            "description": "The connection URL, such as `postgres://user:pass@host:5432/tankovault`.",
             "type": "string",
             "writeOnly": true
           }
@@ -277,7 +277,7 @@
       {
         "name": "RUST_LOG",
         "owner": "tracing",
-        "docs": "Verbosity, as `tracing` directives — `info`, `tankovault_api=debug,info`. Read by `EnvFilter::try_from_default_env`, which is consulted *before* `telemetry.log_filter` and wins over it when set.",
+        "docs": "Verbosity, as `tracing` directives such as `info` or `tankovault_api=debug,info`. Read by `EnvFilter::try_from_default_env`, which is consulted *before* `telemetry.log_filter` and wins over it when set.",
         "ty": "String",
         "values": [],
         "constraint": {

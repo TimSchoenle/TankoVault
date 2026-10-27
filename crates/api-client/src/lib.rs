@@ -462,13 +462,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "A queue entry as the operator sees it: the subject's identity (while they still exist) and\nwho is handling it.\n\nThe subject-facing fields are a nested `request` rather than `#[serde(flatten)]`. Flattening\nreads better on the wire, but `utoipa` cannot describe it: a flattened field contributes no\nproperties to the generated schema, so the typed client ended up with a struct missing every\nfield the queue actually renders. A nested object is honest about its shape and survives\ncode generation."]
+    #[doc = "A queue entry as the operator sees it: the subject's identity (while they still exist) and\nwho is handling it.\n\nThe subject-facing fields are a nested `request`, not `#[serde(flatten)]`: `utoipa` gives a\nflattened field no properties in the generated schema, so the typed client would lack every\nfield the queue renders."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"A queue entry as the operator sees it: the subject's identity (while they still exist) and\\nwho is handling it.\\n\\nThe subject-facing fields are a nested `request` rather than `#[serde(flatten)]`. Flattening\\nreads better on the wire, but `utoipa` cannot describe it: a flattened field contributes no\\nproperties to the generated schema, so the typed client ended up with a struct missing every\\nfield the queue actually renders. A nested object is honest about its shape and survives\\ncode generation.\","]
+    #[doc = "  \"description\": \"A queue entry as the operator sees it: the subject's identity (while they still exist) and\\nwho is handling it.\\n\\nThe subject-facing fields are a nested `request`, not `#[serde(flatten)]`: `utoipa` gives a\\nflattened field no properties in the generated schema, so the typed client would lack every\\nfield the queue renders.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"needs_export\","]
@@ -491,11 +491,11 @@ pub mod types {
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"needs_export\": {"]
-    #[doc = "      \"description\": \"Whether fulfilling this request means disclosing the subject's data export, i.e.\\nwhether the queue should offer the \\\"release export\\\" action on this row.\\n\\nDerived server-side from `RequestKind::needs_export` for the same reason `overdue` is\\ncomputed in SQL: the console used to re-derive it from `kind` in its own `match`\\n(FRONTEND F10), so the set of kinds that disclose an export lived in two places with\\nnothing connecting them — and the one the operator sees is the one that decides which\\nbutton appears. The server refuses the call either way, so the divergence would have\\nshown as a button that does nothing rather than as a disclosure; still a bug, and one\\nno test could reach.\","]
+    #[doc = "      \"description\": \"Whether fulfilling this request means disclosing the subject's data export, which is\\nwhether the queue offers the \\\"release export\\\" action on this row.\\n\\nDerived on the server from `RequestKind::needs_export`, so the set of kinds that\\ndisclose an export lives in one place and the button the operator sees matches what the\\nserver accepts.\","]
     #[doc = "      \"type\": \"boolean\""]
     #[doc = "    },"]
     #[doc = "    \"overdue\": {"]
-    #[doc = "      \"description\": \"Whether the Art. 12(3) deadline has passed with the request still open. Computed in\\nSQL against `now()` so the queue cannot disagree with itself about what is late\\ndepending on when a client's clock says it rendered.\","]
+    #[doc = "      \"description\": \"Whether the Art. 12(3) deadline has passed with the request still open. Computed in SQL\\nagainst `now()`, so the queue agrees with itself about what is late whatever a client's\\nclock says.\","]
     #[doc = "      \"type\": \"boolean\""]
     #[doc = "    },"]
     #[doc = "    \"request\": {"]
@@ -516,7 +516,7 @@ pub mod types {
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"username\": {"]
-    #[doc = "      \"description\": \"The subject's username. `None` means the account is gone — for a completed erasure\\nthat is the expected end state, not missing data.\","]
+    #[doc = "      \"description\": \"The subject's username. `null` means the account is gone, which for a completed erasure\\nis the expected end state, not missing data.\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
@@ -534,9 +534,9 @@ pub mod types {
         #[doc = "The subject's address, `null` once they have been erased."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub email: ::std::option::Option<::std::string::String>,
-        #[doc = "Whether fulfilling this request means disclosing the subject's data export, i.e.\nwhether the queue should offer the \"release export\" action on this row.\n\nDerived server-side from `RequestKind::needs_export` for the same reason `overdue` is\ncomputed in SQL: the console used to re-derive it from `kind` in its own `match`\n(FRONTEND F10), so the set of kinds that disclose an export lived in two places with\nnothing connecting them — and the one the operator sees is the one that decides which\nbutton appears. The server refuses the call either way, so the divergence would have\nshown as a button that does nothing rather than as a disclosure; still a bug, and one\nno test could reach."]
+        #[doc = "Whether fulfilling this request means disclosing the subject's data export, which is\nwhether the queue offers the \"release export\" action on this row.\n\nDerived on the server from `RequestKind::needs_export`, so the set of kinds that\ndisclose an export lives in one place and the button the operator sees matches what the\nserver accepts."]
         pub needs_export: bool,
-        #[doc = "Whether the Art. 12(3) deadline has passed with the request still open. Computed in\nSQL against `now()` so the queue cannot disagree with itself about what is late\ndepending on when a client's clock says it rendered."]
+        #[doc = "Whether the Art. 12(3) deadline has passed with the request still open. Computed in SQL\nagainst `now()`, so the queue agrees with itself about what is late whatever a client's\nclock says."]
         pub overdue: bool,
         pub request: RequestRow,
         #[doc = "Operator who resolved it, if resolved."]
@@ -545,7 +545,7 @@ pub mod types {
         #[doc = "The subject's id, or `None` once they have been erased."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub user_id: ::std::option::Option<::std::string::String>,
-        #[doc = "The subject's username. `None` means the account is gone — for a completed erasure\nthat is the expected end state, not missing data."]
+        #[doc = "The subject's username. `null` means the account is gone, which for a completed erasure\nis the expected end state, not missing data."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub username: ::std::option::Option<::std::string::String>,
     }
@@ -554,13 +554,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "When a change to a tunable actually reaches a reader.\n\nThe console shows this on every row, because it is the most likely way this surface fails a\nuser: someone raises a value baked into stored model data, sees no change, raises it again,\nand concludes the page is broken — when the truth is that the old value is what is\nphysically stored."]
+    #[doc = "When a change to a tunable actually reaches a reader.\n\nThe console shows this on every row. Without it, someone raises a value baked into stored\nmodel data, sees no change, raises it again and concludes the page is broken, when the old\nvalue is what is stored."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"When a change to a tunable actually reaches a reader.\\n\\nThe console shows this on every row, because it is the most likely way this surface fails a\\nuser: someone raises a value baked into stored model data, sees no change, raises it again,\\nand concludes the page is broken — when the truth is that the old value is what is\\nphysically stored.\","]
+    #[doc = "  \"description\": \"When a change to a tunable actually reaches a reader.\\n\\nThe console shows this on every row. Without it, someone raises a value baked into stored\\nmodel data, sees no change, raises it again and concludes the page is broken, when the old\\nvalue is what is stored.\","]
     #[doc = "  \"type\": \"string\","]
     #[doc = "  \"enum\": ["]
     #[doc = "    \"immediately\","]
@@ -679,13 +679,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "A page of the audit trail plus how many records the filter matches in total.\n\nAn envelope rather than a bare list, because the trail is deep enough that the console can\nonly ever hold a window on it, and a window with no total is a pager that cannot say where\nit is."]
+    #[doc = "A page of the audit trail plus how many records the filter matches in total.\n\nAn envelope, not a bare list: the console only ever holds a window on the trail, and a pager\nwith no total cannot say where it is."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"A page of the audit trail plus how many records the filter matches in total.\\n\\nAn envelope rather than a bare list, because the trail is deep enough that the console can\\nonly ever hold a window on it, and a window with no total is a pager that cannot say where\\nit is.\","]
+    #[doc = "  \"description\": \"A page of the audit trail plus how many records the filter matches in total.\\n\\nAn envelope, not a bare list: the console only ever holds a window on the trail, and a pager\\nwith no total cannot say where it is.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"items\","]
@@ -700,7 +700,7 @@ pub mod types {
     #[doc = "      }"]
     #[doc = "    },"]
     #[doc = "    \"total\": {"]
-    #[doc = "      \"description\": \"Total matching the current filter, ignoring `limit`/`offset`.\","]
+    #[doc = "      \"description\": \"Total matching the current filter, ignoring `limit` and `offset`.\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    }"]
@@ -712,7 +712,7 @@ pub mod types {
     pub struct AuditPageView {
         #[doc = "The page, newest record first."]
         pub items: ::std::vec::Vec<AuditView>,
-        #[doc = "Total matching the current filter, ignoring `limit`/`offset`."]
+        #[doc = "Total matching the current filter, ignoring `limit` and `offset`."]
         pub total: i64,
     }
     impl AuditPageView {
@@ -740,7 +740,7 @@ pub mod types {
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
     #[doc = "    \"actor\": {"]
-    #[doc = "      \"description\": \"Actor username (`None` for system-originated actions or a since-deleted user).\","]
+    #[doc = "      \"description\": \"Actor username, `null` for a system action or a deleted user.\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
@@ -773,7 +773,7 @@ pub mod types {
     pub struct AuditView {
         #[doc = "What was done, as a stable action token."]
         pub action: ::std::string::String,
-        #[doc = "Actor username (`None` for system-originated actions or a since-deleted user)."]
+        #[doc = "Actor username, `null` for a system action or a deleted user."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub actor: ::std::option::Option<::std::string::String>,
         #[doc = "When the action was recorded."]
@@ -988,13 +988,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "Which browser the fetch stack impersonates at the TLS/HTTP2 layer.\n\nProviders sit behind Cloudflare/DDoS-Guard, which fingerprint the TLS `ClientHello` and\nthe HTTP/2 SETTINGS frame and compare them against the `User-Agent` header. A mismatch\nis a stronger signal than an unknown client, so the whole profile — cipher suites,\nextension order, ALPS, header order and casing, and the user-agent itself — is picked as\none unit from a browser family rather than assembled field by field.\n\nFamilies, not versions: the concrete build is resolved to whatever the emulation\ncatalogue currently considers newest, so bumping the catalogue does not require a\ndatabase migration or an API-schema change."]
+    #[doc = "Which browser the fetch stack impersonates at the TLS/HTTP2 layer.\n\nProviders sit behind Cloudflare or DDoS-Guard, which fingerprint the TLS `ClientHello` and the\nHTTP/2 SETTINGS frame and compare them against the `User-Agent` header. A mismatch is a\nstronger signal than an unknown client, so the whole profile is picked as one unit from a\nbrowser family: cipher suites, extension order, ALPS, header order and casing, and the\nuser-agent itself.\n\nFamilies, not versions: the concrete build resolves to whatever the emulation catalogue\nconsiders newest, so bumping the catalogue needs no database migration or API-schema change."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Which browser the fetch stack impersonates at the TLS/HTTP2 layer.\\n\\nProviders sit behind Cloudflare/DDoS-Guard, which fingerprint the TLS `ClientHello` and\\nthe HTTP/2 SETTINGS frame and compare them against the `User-Agent` header. A mismatch\\nis a stronger signal than an unknown client, so the whole profile — cipher suites,\\nextension order, ALPS, header order and casing, and the user-agent itself — is picked as\\none unit from a browser family rather than assembled field by field.\\n\\nFamilies, not versions: the concrete build is resolved to whatever the emulation\\ncatalogue currently considers newest, so bumping the catalogue does not require a\\ndatabase migration or an API-schema change.\","]
+    #[doc = "  \"description\": \"Which browser the fetch stack impersonates at the TLS/HTTP2 layer.\\n\\nProviders sit behind Cloudflare or DDoS-Guard, which fingerprint the TLS `ClientHello` and the\\nHTTP/2 SETTINGS frame and compare them against the `User-Agent` header. A mismatch is a\\nstronger signal than an unknown client, so the whole profile is picked as one unit from a\\nbrowser family: cipher suites, extension order, ALPS, header order and casing, and the\\nuser-agent itself.\\n\\nFamilies, not versions: the concrete build resolves to whatever the emulation catalogue\\nconsiders newest, so bumping the catalogue needs no database migration or API-schema change.\","]
     #[doc = "  \"type\": \"string\","]
     #[doc = "  \"enum\": ["]
     #[doc = "    \"chrome\","]
@@ -1147,13 +1147,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "Which in-flight runs a bulk cancellation stops. Both fields narrow; a body with neither stops\neverything currently queued or running."]
+    #[doc = "Which in-flight runs a bulk cancellation stops.\n\nBoth fields narrow. A body with neither stops everything queued or running."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Which in-flight runs a bulk cancellation stops. Both fields narrow; a body with neither stops\\neverything currently queued or running.\","]
+    #[doc = "  \"description\": \"Which in-flight runs a bulk cancellation stops.\\n\\nBoth fields narrow. A body with neither stops everything queued or running.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"mode\": {"]
@@ -1701,13 +1701,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "Where a notification is allowed to go.\n\nNo `email` switch, deliberately. The notifier's email channel addresses *operator* recipients\nconfigured on the deployment, not the reader, so a per-reader email toggle would have nothing\nto switch — which is exactly what the three preferences this document replaced were."]
+    #[doc = "Where a notification is allowed to go.\n\nNo `email` switch: the notifier's email channel addresses operator recipients configured on\nthe deployment, not the reader, so a per-reader email toggle would have nothing to switch."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Where a notification is allowed to go.\\n\\nNo `email` switch, deliberately. The notifier's email channel addresses *operator* recipients\\nconfigured on the deployment, not the reader, so a per-reader email toggle would have nothing\\nto switch — which is exactly what the three preferences this document replaced were.\","]
+    #[doc = "  \"description\": \"Where a notification is allowed to go.\\n\\nNo `email` switch: the notifier's email channel addresses operator recipients configured on\\nthe deployment, not the reader, so a per-reader email toggle would have nothing to switch.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"in_app\": {"]
@@ -1851,7 +1851,7 @@ pub mod types {
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"match_null_error\": {"]
-    #[doc = "      \"description\": \"Clear the group whose error is absent. Mutually meaningful with `error`: an omitted\\n`error` means \\\"any error\\\", which is not the same request.\","]
+    #[doc = "      \"description\": \"Clear the group whose error is absent. An omitted `error` means \\\"any error\\\", which is a\\ndifferent request.\","]
     #[doc = "      \"type\": \"boolean\""]
     #[doc = "    },"]
     #[doc = "    \"provider\": {"]
@@ -1880,7 +1880,7 @@ pub mod types {
         #[doc = "One error group, exactly as the grouped feed reported it. Send `error` with a `null`\nvalue together with `match_null_error` to clear the group that recorded no error at all."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub error: ::std::option::Option<::std::string::String>,
-        #[doc = "Clear the group whose error is absent. Mutually meaningful with `error`: an omitted\n`error` means \"any error\", which is not the same request."]
+        #[doc = "Clear the group whose error is absent. An omitted `error` means \"any error\", which is a\ndifferent request."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub match_null_error: ::std::option::Option<bool>,
         #[doc = "Provider slug."]
@@ -1958,13 +1958,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "How to settle a local/remote disagreement when a series exists on both sides\n(design v2 §B.3).\n\n# Why this is here rather than in `services/sync`\n\nIt was a `pub(crate)` enum in the sync service and a **bare string** on the wire, which put\nthe vocabulary in three places that nothing connected: the service's enum, a prose list in\nthis file's doc comment, and a closed enumeration the frontend maintained by hand\n(FRONTEND F10). A policy added to the service would have compiled everywhere and then\nsilently failed to appear in the picker; a token misspelled in the frontend would have been\nrejected by the service at the far end of a round trip, if at all. Declaring it once here —\nwhere `utoipa` publishes it, `progenitor` generates it and the frontend consumes the\ngenerated form — makes the compiler the connection in both directions.\n\nThe JSON representation is unchanged: `snake_case`, the same four tokens the wire always\ncarried. What changed is that the *schema* now says so, so an unknown token is a `422` at\nthe edge instead of a value that reaches the merge and is quietly read as `newest_wins`."]
+    #[doc = "How to settle a local and remote disagreement when a series exists on both sides\n(design v2 §B.3).\n\nDeclared once here, where `utoipa` publishes it and `progenitor` generates the frontend's\ncopy, so a policy added to the service appears in the picker and a misspelled token fails to\ncompile. The schema names the four `snake_case` tokens, so an unknown token is a `422` at\nthe edge, not a value read as `newest_wins` in the merge."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"How to settle a local/remote disagreement when a series exists on both sides\\n(design v2 §B.3).\\n\\n# Why this is here rather than in `services/sync`\\n\\nIt was a `pub(crate)` enum in the sync service and a **bare string** on the wire, which put\\nthe vocabulary in three places that nothing connected: the service's enum, a prose list in\\nthis file's doc comment, and a closed enumeration the frontend maintained by hand\\n(FRONTEND F10). A policy added to the service would have compiled everywhere and then\\nsilently failed to appear in the picker; a token misspelled in the frontend would have been\\nrejected by the service at the far end of a round trip, if at all. Declaring it once here —\\nwhere `utoipa` publishes it, `progenitor` generates it and the frontend consumes the\\ngenerated form — makes the compiler the connection in both directions.\\n\\nThe JSON representation is unchanged: `snake_case`, the same four tokens the wire always\\ncarried. What changed is that the *schema* now says so, so an unknown token is a `422` at\\nthe edge instead of a value that reaches the merge and is quietly read as `newest_wins`.\","]
+    #[doc = "  \"description\": \"How to settle a local and remote disagreement when a series exists on both sides\\n(design v2 §B.3).\\n\\nDeclared once here, where `utoipa` publishes it and `progenitor` generates the frontend's\\ncopy, so a policy added to the service appears in the picker and a misspelled token fails to\\ncompile. The schema names the four `snake_case` tokens, so an unknown token is a `422` at\\nthe edge, not a value read as `newest_wins` in the merge.\","]
     #[doc = "  \"type\": \"string\","]
     #[doc = "  \"enum\": ["]
     #[doc = "    \"local_wins\","]
@@ -2041,13 +2041,13 @@ pub mod types {
             value.parse()
         }
     }
-    #[doc = "One pending conflict awaiting the user's decision (design v2 §B.6 `GET /v1/me/sync/conflicts`).\n\nProduced by `services/sync` from a repository row and re-published verbatim by\n`services/api`. It lives here rather than on the row struct for the reason given in\n[`crate::admin`]: a `SELECT` column rename must not be able to rewrite the public API\nwithout a compile error. The published component name is pinned to `ConflictRow` — the\nmove is an internal layering fix and must not rename anything on the wire."]
+    #[doc = "One pending conflict awaiting the user's decision (design v2 §B.6 `GET /v1/me/sync/conflicts`).\n\n`services/sync` builds it from a repository row and `services/api` re-publishes it verbatim.\nIt is a type of its own for the reason given in [`crate::admin`], and keeps the published\ncomponent name `ConflictRow`."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"One pending conflict awaiting the user's decision (design v2 §B.6 `GET /v1/me/sync/conflicts`).\\n\\nProduced by `services/sync` from a repository row and re-published verbatim by\\n`services/api`. It lives here rather than on the row struct for the reason given in\\n[`crate::admin`]: a `SELECT` column rename must not be able to rewrite the public API\\nwithout a compile error. The published component name is pinned to `ConflictRow` — the\\nmove is an internal layering fix and must not rename anything on the wire.\","]
+    #[doc = "  \"description\": \"One pending conflict awaiting the user's decision (design v2 §B.6 `GET /v1/me/sync/conflicts`).\\n\\n`services/sync` builds it from a repository row and `services/api` re-publishes it verbatim.\\nIt is a type of its own for the reason given in [`crate::admin`], and keeps the published\\ncomponent name `ConflictRow`.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"detected_at\","]
@@ -2538,13 +2538,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "A page of the directory plus the unfiltered-by-page total, so the UI can render\n\"showing 1–25 of 312\" without a second request."]
+    #[doc = "A page of the directory with the total across pages, so the UI can render \"showing 1 to 25 of\n312\" without a second request."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"A page of the directory plus the unfiltered-by-page total, so the UI can render\\n\\\"showing 1–25 of 312\\\" without a second request.\","]
+    #[doc = "  \"description\": \"A page of the directory with the total across pages, so the UI can render \\\"showing 1 to 25 of\\n312\\\" without a second request.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"total\","]
@@ -2552,7 +2552,7 @@ pub mod types {
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"total\": {"]
-    #[doc = "      \"description\": \"Total matching the current search, ignoring `limit`/`offset`.\","]
+    #[doc = "      \"description\": \"Total matching the current search, ignoring `limit` and `offset`.\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
@@ -2569,7 +2569,7 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct DirectoryPage {
-        #[doc = "Total matching the current search, ignoring `limit`/`offset`."]
+        #[doc = "Total matching the current search, ignoring `limit` and `offset`."]
         pub total: i64,
         #[doc = "The page, in the directory's own order."]
         pub users: ::std::vec::Vec<DirectoryRow>,
@@ -2579,13 +2579,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "One row of the operator user directory.\n\nCarries a grant *count* rather than the grants themselves: the directory is a list, and a\nuser's actual capabilities are what the detail view is for. The count is enough to answer\n\"which of these accounts are privileged at all\", which is the question the list is scanned\nfor."]
+    #[doc = "One row of the operator user directory.\n\nCarries a grant count, not the grants: the detail view shows a user's capabilities, and the\ncount answers the question the list is scanned for, which accounts are privileged at all."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"One row of the operator user directory.\\n\\nCarries a grant *count* rather than the grants themselves: the directory is a list, and a\\nuser's actual capabilities are what the detail view is for. The count is enough to answer\\n\\\"which of these accounts are privileged at all\\\", which is the question the list is scanned\\nfor.\","]
+    #[doc = "  \"description\": \"One row of the operator user directory.\\n\\nCarries a grant count, not the grants: the detail view shows a user's capabilities, and the\\ncount answers the question the list is scanned for, which accounts are privileged at all.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"created_at\","]
@@ -2616,7 +2616,7 @@ pub mod types {
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
     #[doc = "    \"is_super_user\": {"]
-    #[doc = "      \"description\": \"Whether this account holds the super-user grant.\\n\\nPublished separately because that grant is deliberately absent from the permission\\ncatalogue, so a client reconciling grants against the catalogue would otherwise render\\nthe deployment owner as an account holding nothing.\","]
+    #[doc = "      \"description\": \"Whether this account holds the super-user grant.\\n\\nPublished separately because that grant is absent from the permission catalogue. A\\nclient reconciling grants against the catalogue would otherwise render the deployment\\nowner as an account holding nothing.\","]
     #[doc = "      \"type\": \"boolean\""]
     #[doc = "    },"]
     #[doc = "    \"last_login_at\": {"]
@@ -2627,7 +2627,7 @@ pub mod types {
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"permission_count\": {"]
-    #[doc = "      \"description\": \"How many permissions this account holds. `0` is an ordinary reader.\\n\\nNot a measure of *how much* an account may do: the super user holds one grant and can do\\neverything, which is what `is_super_user` exists to say.\","]
+    #[doc = "      \"description\": \"How many permissions this account holds. `0` is an ordinary reader.\\n\\nIt does not measure how much an account may do: the super user holds one grant and can\\ndo everything, which `is_super_user` reports.\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
@@ -2635,7 +2635,7 @@ pub mod types {
     #[doc = "      \"$ref\": \"#/components/schemas/AccountStatus\""]
     #[doc = "    },"]
     #[doc = "    \"tracked_count\": {"]
-    #[doc = "      \"description\": \"How many series the user tracks — the cheapest signal of a real, in-use account.\","]
+    #[doc = "      \"description\": \"How many series the user tracks, the cheapest signal of an account in use.\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
@@ -2657,15 +2657,15 @@ pub mod types {
         pub email_verified: bool,
         #[doc = "The account."]
         pub id: ::std::string::String,
-        #[doc = "Whether this account holds the super-user grant.\n\nPublished separately because that grant is deliberately absent from the permission\ncatalogue, so a client reconciling grants against the catalogue would otherwise render\nthe deployment owner as an account holding nothing."]
+        #[doc = "Whether this account holds the super-user grant.\n\nPublished separately because that grant is absent from the permission catalogue. A\nclient reconciling grants against the catalogue would otherwise render the deployment\nowner as an account holding nothing."]
         pub is_super_user: bool,
         #[doc = "Its most recent sign-in, `null` for an account that has never signed in."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub last_login_at: ::std::option::Option<::std::string::String>,
-        #[doc = "How many permissions this account holds. `0` is an ordinary reader.\n\nNot a measure of *how much* an account may do: the super user holds one grant and can do\neverything, which is what `is_super_user` exists to say."]
+        #[doc = "How many permissions this account holds. `0` is an ordinary reader.\n\nIt does not measure how much an account may do: the super user holds one grant and can\ndo everything, which `is_super_user` reports."]
         pub permission_count: i64,
         pub status: AccountStatus,
-        #[doc = "How many series the user tracks — the cheapest signal of a real, in-use account."]
+        #[doc = "How many series the user tracks, the cheapest signal of an account in use."]
         pub tracked_count: i64,
         #[doc = "Its display handle."]
         pub username: ::std::string::String,
@@ -2851,13 +2851,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "A failed scan task enriched with its run's provider + mode, for the console error feed."]
+    #[doc = "A failed scan task with its run's provider and mode, for the console error feed."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"A failed scan task enriched with its run's provider + mode, for the console error feed.\","]
+    #[doc = "  \"description\": \"A failed scan task with its run's provider and mode, for the console error feed.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"attempts\","]
@@ -2907,7 +2907,7 @@ pub mod types {
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
     #[doc = "    \"provider_slug\": {"]
-    #[doc = "      \"description\": \"Provider slug of the owning run (`None` if the provider was since deleted).\","]
+    #[doc = "      \"description\": \"Provider slug of the owning run, `null` once the provider is deleted.\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
@@ -2941,7 +2941,7 @@ pub mod types {
         pub kind: ::std::string::String,
         #[doc = "Cadence of the owning run: `full` or `fast`."]
         pub mode: ::std::string::String,
-        #[doc = "Provider slug of the owning run (`None` if the provider was since deleted)."]
+        #[doc = "Provider slug of the owning run, `null` once the provider is deleted."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub provider_slug: ::std::option::Option<::std::string::String>,
         #[doc = "The run it belonged to."]
@@ -2952,13 +2952,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "One distinct scan failure, with how often it happened and which providers it hit.\n\nThe grouped view of the failure feed: twelve rows of the same broken selector are one\nproblem, and the flat feed presents them as twelve."]
+    #[doc = "One distinct scan failure, with how often it happened and which providers it hit.\n\nThe grouped view of the failure feed: twelve rows of the same broken selector are one\nproblem, which the flat feed shows as twelve."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"One distinct scan failure, with how often it happened and which providers it hit.\\n\\nThe grouped view of the failure feed: twelve rows of the same broken selector are one\\nproblem, and the flat feed presents them as twelve.\","]
+    #[doc = "  \"description\": \"One distinct scan failure, with how often it happened and which providers it hit.\\n\\nThe grouped view of the failure feed: twelve rows of the same broken selector are one\\nproblem, which the flat feed shows as twelve.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"cleared\","]
@@ -2985,7 +2985,7 @@ pub mod types {
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"kinds\": {"]
-    #[doc = "      \"description\": \"Task kinds this error struck, sorted — the same message on a `series` task and on a\\n`catalog_page` task is two problems, not one.\","]
+    #[doc = "      \"description\": \"Task kinds this error struck, sorted. The same message on a `series` task and on a\\n`catalog_page` task is two problems.\","]
     #[doc = "      \"type\": \"array\","]
     #[doc = "      \"items\": {"]
     #[doc = "        \"type\": \"string\""]
@@ -3018,7 +3018,7 @@ pub mod types {
         #[doc = "The error text these failures share. `null` groups the failures that recorded none."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub error: ::std::option::Option<::std::string::String>,
-        #[doc = "Task kinds this error struck, sorted — the same message on a `series` task and on a\n`catalog_page` task is two problems, not one."]
+        #[doc = "Task kinds this error struck, sorted. The same message on a `series` task and on a\n`catalog_page` task is two problems."]
         pub kinds: ::std::vec::Vec<::std::string::String>,
         #[doc = "The most recent of them, `null` only if the group is empty."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
@@ -3031,13 +3031,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "How many failures a clear actually hid."]
+    #[doc = "How many failures a clear hid."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"How many failures a clear actually hid.\","]
+    #[doc = "  \"description\": \"How many failures a clear hid.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"cleared\""]
@@ -3728,7 +3728,7 @@ pub mod types {
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
     #[doc = "    \"granted_by\": {"]
-    #[doc = "      \"description\": \"Who granted it, or `None` for a grant made by the migration from the old role model\\nor by an administrator since erased.\","]
+    #[doc = "      \"description\": \"Who granted it, `null` for a grant made by a migration or by an administrator since\\nerased.\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
@@ -3739,7 +3739,7 @@ pub mod types {
     #[doc = "      \"type\": \"boolean\""]
     #[doc = "    },"]
     #[doc = "    \"permission\": {"]
-    #[doc = "      \"description\": \"The permission token. A string rather than the enum because a row surviving from a\\nbuild that had a capability this one does not must still be *visible* to an\\nadministrator — that is precisely when they need to see and remove it.\","]
+    #[doc = "      \"description\": \"The permission token. A string, not the enum, because a grant for a capability this\\nbuild does not know must still be visible to an administrator, who then needs to remove\\nit.\","]
     #[doc = "      \"type\": \"string\""]
     #[doc = "    }"]
     #[doc = "  }"]
@@ -3750,12 +3750,12 @@ pub mod types {
     pub struct GrantRow {
         #[doc = "When the grant was made."]
         pub granted_at: ::std::string::String,
-        #[doc = "Who granted it, or `None` for a grant made by the migration from the old role model\nor by an administrator since erased."]
+        #[doc = "Who granted it, `null` for a grant made by a migration or by an administrator since\nerased."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub granted_by: ::std::option::Option<::std::string::String>,
         #[doc = "Whether this build recognises the token. `false` means the grant is inert."]
         pub known: bool,
-        #[doc = "The permission token. A string rather than the enum because a row surviving from a\nbuild that had a capability this one does not must still be *visible* to an\nadministrator — that is precisely when they need to see and remove it."]
+        #[doc = "The permission token. A string, not the enum, because a grant for a capability this\nbuild does not know must still be visible to an administrator, who then needs to remove\nit."]
         pub permission: ::std::string::String,
     }
     impl GrantRow {
@@ -3944,13 +3944,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "What a normalized-key rebuild changed.\n\n`normalized_title` is a persisted matching key, so a change to the normalization rules only\nreaches rows that happen to be re-scanned until this runs."]
+    #[doc = "What a normalized-key rebuild changed.\n\n`normalized_title` is a persisted matching key, so until this runs, a change to the\nnormalization rules reaches only rows that are re-scanned."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"What a normalized-key rebuild changed.\\n\\n`normalized_title` is a persisted matching key, so a change to the normalization rules only\\nreaches rows that happen to be re-scanned until this runs.\","]
+    #[doc = "  \"description\": \"What a normalized-key rebuild changed.\\n\\n`normalized_title` is a persisted matching key, so until this runs, a change to the\\nnormalization rules reaches only rows that are re-scanned.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"series_scanned\","]
@@ -3968,7 +3968,7 @@ pub mod types {
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
     #[doc = "    \"series_updated\": {"]
-    #[doc = "      \"description\": \"Of those, whose key the corrected rules changed.\","]
+    #[doc = "      \"description\": \"Of those, the ones whose key the current rules changed.\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
@@ -3978,12 +3978,12 @@ pub mod types {
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
     #[doc = "    \"sources_updated\": {"]
-    #[doc = "      \"description\": \"Of those, whose listing key was missing or changed.\","]
+    #[doc = "      \"description\": \"Of those, the ones whose listing key was missing or changed.\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
     #[doc = "    \"titles_deduplicated\": {"]
-    #[doc = "      \"description\": \"Alternative titles dropped because the corrected rules collapsed them onto a key the\\nsame series already held.\","]
+    #[doc = "      \"description\": \"Alternative titles dropped because the current rules collapsed them onto a key the same\\nseries already held.\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
@@ -3993,7 +3993,7 @@ pub mod types {
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
     #[doc = "    \"titles_updated\": {"]
-    #[doc = "      \"description\": \"Of those, whose key the corrected rules changed.\","]
+    #[doc = "      \"description\": \"Of those, the ones whose key the current rules changed.\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    }"]
@@ -4005,17 +4005,17 @@ pub mod types {
     pub struct KeyRebuildView {
         #[doc = "Canonical titles read."]
         pub series_scanned: i64,
-        #[doc = "Of those, whose key the corrected rules changed."]
+        #[doc = "Of those, the ones whose key the current rules changed."]
         pub series_updated: i64,
         #[doc = "Source listing titles read."]
         pub sources_scanned: i64,
-        #[doc = "Of those, whose listing key was missing or changed."]
+        #[doc = "Of those, the ones whose listing key was missing or changed."]
         pub sources_updated: i64,
-        #[doc = "Alternative titles dropped because the corrected rules collapsed them onto a key the\nsame series already held."]
+        #[doc = "Alternative titles dropped because the current rules collapsed them onto a key the same\nseries already held."]
         pub titles_deduplicated: i64,
         #[doc = "Alternative titles read."]
         pub titles_scanned: i64,
-        #[doc = "Of those, whose key the corrected rules changed."]
+        #[doc = "Of those, the ones whose key the current rules changed."]
         pub titles_updated: i64,
     }
     impl KeyRebuildView {
@@ -4917,13 +4917,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "Lifetime reading figures for the Home and Profile headline (frontend §9.3).\n\nEverything here is derived from stored progress markers. There is no per-chapter read-event\nlog, so a daily \"streak\" is omitted rather than fabricated from what is left."]
+    #[doc = "Lifetime reading figures for the Home and Profile headline (frontend §9.3).\n\nEvery figure is derived from stored progress markers. There is no per-chapter read log, so\nthere is no daily streak."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Lifetime reading figures for the Home and Profile headline (frontend §9.3).\\n\\nEverything here is derived from stored progress markers. There is no per-chapter read-event\\nlog, so a daily \\\"streak\\\" is omitted rather than fabricated from what is left.\","]
+    #[doc = "  \"description\": \"Lifetime reading figures for the Home and Profile headline (frontend §9.3).\\n\\nEvery figure is derived from stored progress markers. There is no per-chapter read log, so\\nthere is no daily streak.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"chapters_read\","]
@@ -4980,13 +4980,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "A pending merge candidate, enriched with everything the console needs to triage it without\nopening both series (`docs/ARCHITECTURE.md` §11 `GET /v1/admin/merge-candidates`).\n\nThe counts and `suggested_keep` are not decoration. Acting on a candidate means choosing\nwhich of the two rows survives, and the absorbed id *stops existing* — every bookmark,\nnotification and external tracker mapping naming it breaks. The right answer is whichever\nseries carries more of the catalogue, which is a comparison the server can make once instead\nof an operator eyeballing it per row."]
+    #[doc = "A pending merge candidate, enriched with everything the console needs to triage it without\nopening both series (`docs/ARCHITECTURE.md` §11 `GET /v1/admin/merge-candidates`).\n\nActing on a candidate means choosing which row survives, and the absorbed id stops existing:\nevery bookmark, notification and tracker mapping naming it breaks. The counts and\n`suggested_keep` let the server pick the series carrying more of the catalogue once, instead\nof an operator comparing them per row."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"A pending merge candidate, enriched with everything the console needs to triage it without\\nopening both series (`docs/ARCHITECTURE.md` §11 `GET /v1/admin/merge-candidates`).\\n\\nThe counts and `suggested_keep` are not decoration. Acting on a candidate means choosing\\nwhich of the two rows survives, and the absorbed id *stops existing* — every bookmark,\\nnotification and external tracker mapping naming it breaks. The right answer is whichever\\nseries carries more of the catalogue, which is a comparison the server can make once instead\\nof an operator eyeballing it per row.\","]
+    #[doc = "  \"description\": \"A pending merge candidate, enriched with everything the console needs to triage it without\\nopening both series (`docs/ARCHITECTURE.md` §11 `GET /v1/admin/merge-candidates`).\\n\\nActing on a candidate means choosing which row survives, and the absorbed id stops existing:\\nevery bookmark, notification and tracker mapping naming it breaks. The counts and\\n`suggested_keep` let the server pick the series carrying more of the catalogue once, instead\\nof an operator comparing them per row.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"candidate_chapters\","]
@@ -5032,7 +5032,7 @@ pub mod types {
     #[doc = "      \"format\": \"uuid\""]
     #[doc = "    },"]
     #[doc = "    \"reason\": {"]
-    #[doc = "      \"description\": \"The rule that put the pair here, `null` for a row from before the journal existed.\","]
+    #[doc = "      \"description\": \"The rule that put the pair here, `null` for a row the journal does not cover.\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
@@ -5061,7 +5061,7 @@ pub mod types {
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
     #[doc = "    \"signals\": {"]
-    #[doc = "      \"description\": \"Stable slugs for the scoring rules that fired — `exact_title`, `compact_identity`,\\n`alias_identity`, `near_identical`, `shared_author`, and so on. Rendered as badges; the\\nset is `tankovault_domain::matching::MatchSignals::labels`.\","]
+    #[doc = "      \"description\": \"Stable slugs for the scoring rules that fired, such as `exact_title`, `compact_identity`\\nand `alias_identity`. Rendered as badges; the set is\\n`tankovault_domain::matching::MatchSignals::labels`.\","]
     #[doc = "      \"type\": \"array\","]
     #[doc = "      \"items\": {"]
     #[doc = "        \"type\": \"string\""]
@@ -5091,7 +5091,7 @@ pub mod types {
         pub created_at: ::std::string::String,
         #[doc = "The queue row, which is what a resolve call names."]
         pub id: ::uuid::Uuid,
-        #[doc = "The rule that put the pair here, `null` for a row from before the journal existed."]
+        #[doc = "The rule that put the pair here, `null` for a row the journal does not cover."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub reason: ::std::option::Option<::std::string::String>,
         #[doc = "Similarity in `[0,1]` after every scoring term."]
@@ -5103,7 +5103,7 @@ pub mod types {
         pub series_sources: i64,
         #[doc = "Its canonical title."]
         pub series_title: ::std::string::String,
-        #[doc = "Stable slugs for the scoring rules that fired — `exact_title`, `compact_identity`,\n`alias_identity`, `near_identical`, `shared_author`, and so on. Rendered as badges; the\nset is `tankovault_domain::matching::MatchSignals::labels`."]
+        #[doc = "Stable slugs for the scoring rules that fired, such as `exact_title`, `compact_identity`\nand `alias_identity`. Rendered as badges; the set is\n`tankovault_domain::matching::MatchSignals::labels`."]
         pub signals: ::std::vec::Vec<::std::string::String>,
         pub suggested_keep: SeriesId,
         #[doc = "When a sweep last re-scored the row in place."]
@@ -5114,13 +5114,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "One row of the automatic-merge decision journal.\n\nThe journal answers the question a score cannot: *why*. `terms` itemises how the number was\nreached, `reason` names the rule that turned it into a verdict, `blocked_by` names the guards\nthat overrode it, and `evidence` carries both sides' facts and which title actually matched."]
+    #[doc = "One row of the automatic-merge decision journal.\n\nThe journal answers the question a score cannot: why. `terms` itemises how the number was\nreached, `reason` names the rule that turned it into a verdict, `blocked_by` names the guards\nthat overrode it, and `evidence` carries both sides' facts and which titles matched."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"One row of the automatic-merge decision journal.\\n\\nThe journal answers the question a score cannot: *why*. `terms` itemises how the number was\\nreached, `reason` names the rule that turned it into a verdict, `blocked_by` names the guards\\nthat overrode it, and `evidence` carries both sides' facts and which title actually matched.\","]
+    #[doc = "  \"description\": \"One row of the automatic-merge decision journal.\\n\\nThe journal answers the question a score cannot: why. `terms` itemises how the number was\\nreached, `reason` names the rule that turned it into a verdict, `blocked_by` names the guards\\nthat overrode it, and `evidence` carries both sides' facts and which titles matched.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"base_score\","]
@@ -5210,7 +5210,7 @@ pub mod types {
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
     #[doc = "    \"outcome\": {"]
-    #[doc = "      \"description\": \"What was actually done, which is not always the verdict: `merged`, `queued`, `requeued`,\\n`reopened`, `withdrawn`, `distinct`, `deferred`.\","]
+    #[doc = "      \"description\": \"What was done, which is not always the verdict: `merged`, `queued`, `requeued`,\\n`reopened`, `withdrawn`, `distinct`, `deferred`.\","]
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
     #[doc = "    \"policy\": {"]
@@ -5331,7 +5331,7 @@ pub mod types {
         pub left_id: SeriesId,
         #[doc = "Left title as it read then, kept even after the series is absorbed."]
         pub left_title: ::std::string::String,
-        #[doc = "What was actually done, which is not always the verdict: `merged`, `queued`, `requeued`,\n`reopened`, `withdrawn`, `distinct`, `deferred`."]
+        #[doc = "What was done, which is not always the verdict: `merged`, `queued`, `requeued`,\n`reopened`, `withdrawn`, `distinct`, `deferred`."]
         pub outcome: ::std::string::String,
         pub policy: Value,
         #[doc = "The stable slug of the rule that produced the verdict."]
@@ -5512,20 +5512,20 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "Whether an exhaustive duplicate sweep was started.\n\nReturned by `POST /v1/admin/merge-candidates/sweep-all`. The run is detached, so this answers\nonly whether one *started*: it draws rounds until every shortlist has been walked out, which\nis far longer than a request may be held open for. What the run goes on to do — rounds,\ncounters and how it ended — is on `GET /v1/admin/merge-candidates/sweep-all`."]
+    #[doc = "Whether an exhaustive duplicate sweep was started.\n\nReturned by `POST /v1/admin/merge-candidates/sweep-all`. The run is detached, so this says\nonly whether one started: it draws rounds until every shortlist is walked out, far longer\nthan a request may be held open. Its rounds, counters and outcome are on\n`GET /v1/admin/merge-candidates/sweep-all`."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Whether an exhaustive duplicate sweep was started.\\n\\nReturned by `POST /v1/admin/merge-candidates/sweep-all`. The run is detached, so this answers\\nonly whether one *started*: it draws rounds until every shortlist has been walked out, which\\nis far longer than a request may be held open for. What the run goes on to do — rounds,\\ncounters and how it ended — is on `GET /v1/admin/merge-candidates/sweep-all`.\","]
+    #[doc = "  \"description\": \"Whether an exhaustive duplicate sweep was started.\\n\\nReturned by `POST /v1/admin/merge-candidates/sweep-all`. The run is detached, so this says\\nonly whether one started: it draws rounds until every shortlist is walked out, far longer\\nthan a request may be held open. Its rounds, counters and outcome are on\\n`GET /v1/admin/merge-candidates/sweep-all`.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"started\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"started\": {"]
-    #[doc = "      \"description\": \"`false` when a live run already held the claim. The correct response is to watch that\\nrun, not to retry: it is doing this one's work, and starting a second would spend the\\nautomatic-merge ceiling twice over.\","]
+    #[doc = "      \"description\": \"`false` when a live run already held the claim. Watch that run instead of retrying: it\\nis doing this one's work, and a second would spend the automatic-merge ceiling twice.\","]
     #[doc = "      \"type\": \"boolean\""]
     #[doc = "    }"]
     #[doc = "  }"]
@@ -5534,7 +5534,7 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct MergeFullSweepView {
-        #[doc = "`false` when a live run already held the claim. The correct response is to watch that\nrun, not to retry: it is doing this one's work, and starting a second would spend the\nautomatic-merge ceiling twice over."]
+        #[doc = "`false` when a live run already held the claim. Watch that run instead of retrying: it\nis doing this one's work, and a second would spend the automatic-merge ceiling twice."]
         pub started: bool,
     }
     impl MergeFullSweepView {
@@ -5542,13 +5542,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "One knob of the automatic-merge policy, as the console shows it.\n\nAssembled by the control plane rather than by the API, because the effective value is the\nstored override *layered over this deployment's configured* `matching` block — and the\ncontrol plane is the service that holds both. An API that resolved it against the compiled\nregistry instead would report a default the sweep does not use."]
+    #[doc = "One knob of the automatic-merge policy, as the console shows it.\n\nThe control plane assembles it, because the effective value is the stored override layered\nover this deployment's configured `matching` block, and only the control plane holds both.\nResolved against the compiled registry, it would report a default the sweep does not use."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"One knob of the automatic-merge policy, as the console shows it.\\n\\nAssembled by the control plane rather than by the API, because the effective value is the\\nstored override *layered over this deployment's configured* `matching` block — and the\\ncontrol plane is the service that holds both. An API that resolved it against the compiled\\nregistry instead would report a default the sweep does not use.\","]
+    #[doc = "  \"description\": \"One knob of the automatic-merge policy, as the console shows it.\\n\\nThe control plane assembles it, because the effective value is the stored override layered\\nover this deployment's configured `matching` block, and only the control plane holds both.\\nResolved against the compiled registry, it would report a default the sweep does not use.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"applies\","]
@@ -5568,7 +5568,7 @@ pub mod types {
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
     #[doc = "    \"default_value\": {"]
-    #[doc = "      \"description\": \"What this deployment falls back to when no override is stored — its configured\\n`matching` value, which is the compiled default unless the deployment set it. This is\\nwhat resetting the knob returns it to, so it is not the same number as the compiled\\ndefault and must not be shown as one.\","]
+    #[doc = "      \"description\": \"What this deployment falls back to when no override is stored: its configured `matching`\\nvalue, which is the compiled default only when the deployment left it unset. Resetting\\nthe knob returns it to this value, so never show it as the compiled default.\","]
     #[doc = "      \"type\": \"number\","]
     #[doc = "      \"format\": \"double\""]
     #[doc = "    },"]
@@ -5577,11 +5577,11 @@ pub mod types {
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
     #[doc = "    \"key\": {"]
-    #[doc = "      \"description\": \"The persisted key, e.g. `matching.auto_merge`.\","]
+    #[doc = "      \"description\": \"The persisted key, such as `matching.auto_merge`.\","]
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
     #[doc = "    \"kind\": {"]
-    #[doc = "      \"description\": \"`ratio` for the threshold, `toggle` for a guard — what the console renders, a field or a\\nswitch.\","]
+    #[doc = "      \"description\": \"`ratio` for the threshold, rendered as a field, or `toggle` for a guard, rendered as a\\nswitch.\","]
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
     #[doc = "    \"max\": {"]
@@ -5602,7 +5602,7 @@ pub mod types {
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"overridden\": {"]
-    #[doc = "      \"description\": \"Whether an operator has explicitly decided this one, as opposed to it following the\\ndeployment's configuration.\","]
+    #[doc = "      \"description\": \"Whether an operator set this knob explicitly. `false` means it follows the deployment's\\nconfiguration.\","]
     #[doc = "      \"type\": \"boolean\""]
     #[doc = "    },"]
     #[doc = "    \"title\": {"]
@@ -5636,13 +5636,13 @@ pub mod types {
     pub struct MergePolicyKnob {
         #[doc = "When a change reaches the sweep. Every knob here is `next_sweep`."]
         pub applies: ::std::string::String,
-        #[doc = "What this deployment falls back to when no override is stored — its configured\n`matching` value, which is the compiled default unless the deployment set it. This is\nwhat resetting the knob returns it to, so it is not the same number as the compiled\ndefault and must not be shown as one."]
+        #[doc = "What this deployment falls back to when no override is stored: its configured `matching`\nvalue, which is the compiled default only when the deployment left it unset. Resetting\nthe knob returns it to this value, so never show it as the compiled default."]
         pub default_value: f64,
         #[doc = "What the value does, written to be read immediately before someone changes production."]
         pub description: ::std::string::String,
-        #[doc = "The persisted key, e.g. `matching.auto_merge`."]
+        #[doc = "The persisted key, such as `matching.auto_merge`."]
         pub key: ::std::string::String,
-        #[doc = "`ratio` for the threshold, `toggle` for a guard — what the console renders, a field or a\nswitch."]
+        #[doc = "`ratio` for the threshold, rendered as a field, or `toggle` for a guard, rendered as a\nswitch."]
         pub kind: ::std::string::String,
         #[doc = "Inclusive upper bound."]
         pub max: f64,
@@ -5651,7 +5651,7 @@ pub mod types {
         #[doc = "Why it was last changed, if the operator said."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub note: ::std::option::Option<::std::string::String>,
-        #[doc = "Whether an operator has explicitly decided this one, as opposed to it following the\ndeployment's configuration."]
+        #[doc = "Whether an operator set this knob explicitly. `false` means it follows the deployment's\nconfiguration."]
         pub overridden: bool,
         #[doc = "Section-local label."]
         pub title: ::std::string::String,
@@ -5938,13 +5938,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "What undoing an automatic merge put back, and what it took off the survivor.\n\nThe last three counts are not part of the merge's inverse. A revert is an operator saying the\ntwo rows are different works, and it acts on that: the names both rows answered to come off\nthe survivor, and the sources those names attracted go back with their chapters. Reported\nbecause it happens without review — the survivor loses rows nobody listed first."]
+    #[doc = "What undoing an automatic merge put back, and what it took off the survivor.\n\nThe last three counts are not part of the merge's inverse. A revert says the two rows are\ndifferent works and acts on it: the names both rows answered to come off the survivor, and\nthe sources those names attracted go back with their chapters. They are reported because\nthis happens without review, so the survivor loses rows nobody listed first."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"What undoing an automatic merge put back, and what it took off the survivor.\\n\\nThe last three counts are not part of the merge's inverse. A revert is an operator saying the\\ntwo rows are different works, and it acts on that: the names both rows answered to come off\\nthe survivor, and the sources those names attracted go back with their chapters. Reported\\nbecause it happens without review — the survivor loses rows nobody listed first.\","]
+    #[doc = "  \"description\": \"What undoing an automatic merge put back, and what it took off the survivor.\\n\\nThe last three counts are not part of the merge's inverse. A revert says the two rows are\\ndifferent works and acts on it: the names both rows answered to come off the survivor, and\\nthe sources those names attracted go back with their chapters. They are reported because\\nthis happens without review, so the survivor loses rows nobody listed first.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"chapters_returned\","]
@@ -5980,7 +5980,7 @@ pub mod types {
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
     #[doc = "    \"sources_returned\": {"]
-    #[doc = "      \"description\": \"Sources moved off the survivor and back onto the restored series, because their provider\\ntitle *is* one of those shared names.\","]
+    #[doc = "      \"description\": \"Sources moved off the survivor and back onto the restored series, because their provider\\ntitle is one of those shared names.\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
@@ -5988,7 +5988,7 @@ pub mod types {
     #[doc = "      \"$ref\": \"#/components/schemas/SeriesId\""]
     #[doc = "    },"]
     #[doc = "    \"titles_removed\": {"]
-    #[doc = "      \"description\": \"Alternative titles removed from the survivor because the restored series answers to them\\ntoo. Left in place, these have the next scan re-attaching what the revert just separated:\\nsuppression binds the duplicate sweep, not the create-time attach path.\","]
+    #[doc = "      \"description\": \"Alternative titles removed from the survivor because the restored series answers to them\\ntoo. Left in place, they would let the next scan re-attach what the revert separated,\\nsince suppression binds the duplicate sweep, not the create-time attach path.\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    }"]
@@ -6007,10 +6007,10 @@ pub mod types {
         pub restored_id: SeriesId,
         #[doc = "Rows restored or moved back off the survivor."]
         pub rows_restored: i64,
-        #[doc = "Sources moved off the survivor and back onto the restored series, because their provider\ntitle *is* one of those shared names."]
+        #[doc = "Sources moved off the survivor and back onto the restored series, because their provider\ntitle is one of those shared names."]
         pub sources_returned: i64,
         pub survivor_id: SeriesId,
-        #[doc = "Alternative titles removed from the survivor because the restored series answers to them\ntoo. Left in place, these have the next scan re-attaching what the revert just separated:\nsuppression binds the duplicate sweep, not the create-time attach path."]
+        #[doc = "Alternative titles removed from the survivor because the restored series answers to them\ntoo. Left in place, they would let the next scan re-attach what the revert separated,\nsince suppression binds the duplicate sweep, not the create-time attach path."]
         pub titles_removed: i64,
     }
     impl MergeReverted {
@@ -6040,17 +6040,17 @@ pub mod types {
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"auto_merged\": {"]
-    #[doc = "      \"description\": \"Pairs merged without asking, because a structural identity rule fired *and* the score\\ncleared the automatic-merge threshold.\","]
+    #[doc = "      \"description\": \"Pairs merged without asking, because a structural identity rule fired and the score\\ncleared the automatic-merge threshold.\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
     #[doc = "    \"blocked\": {"]
-    #[doc = "      \"description\": \"Pairs an auto-merge guard held back: identical titles, a score above the automatic\\nthreshold, and a signal saying the two are different works anyway. These are the near\\nmisses, and they are the rows to read first — each is either a duplicate the guard is\\ncosting you or a merge the guard just prevented.\","]
+    #[doc = "      \"description\": \"Pairs an auto-merge guard held back: identical titles, a score above the automatic\\nthreshold, and a signal saying the two are different works anyway. Read these first:\\neach is either a duplicate the guard is costing you or a wrong merge it prevented.\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
     #[doc = "    \"chains_deferred\": {"]
-    #[doc = "      \"description\": \"Pairs skipped because a merge earlier in this same run absorbed one of their two series.\\n\\nTheir facts were loaded before that merge and are now stale, so re-judging them here would\\nscore the survivor as it was rather than as it is. A three-way duplicate therefore takes\\nmore than one pass; non-zero means another pass has something to do, and the scheduler\\nruns one rather than leaving the chain until the next tick.\","]
+    #[doc = "      \"description\": \"Pairs skipped because a merge earlier in this same run absorbed one of their two series.\\n\\nTheir facts were loaded before that merge, so re-judging them would score the survivor as\\nit was. A three-way duplicate therefore takes more than one pass. Non-zero means another\\npass has work, and the scheduler runs it without waiting for the next tick.\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
@@ -6070,7 +6070,7 @@ pub mod types {
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
     #[doc = "    \"queued\": {"]
-    #[doc = "      \"description\": \"Pairs the sweep put in the review queue that had never been there.\\n\\nCounted apart from `requeued` because only these lengthen the queue: the sweep re-scores\\nrows that are already open on every run, and folding those into one \\\"queued\\\" number\\nreports a queue growing by hundreds when it grew by tens. Net change in queue length is\\n`queued + reopened - withdrawn`.\","]
+    #[doc = "      \"description\": \"Pairs the sweep put in the review queue that had never been there.\\n\\nCounted apart from `requeued` because only these lengthen the queue: every run re-scores\\nthe rows already open, and one combined count would report a queue growing by hundreds\\nwhen it grew by tens. The net change in queue length is `queued + reopened - withdrawn`.\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
@@ -6080,7 +6080,7 @@ pub mod types {
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
     #[doc = "    \"requeued\": {"]
-    #[doc = "      \"description\": \"Rows already open that this sweep re-scored in place. The queue is no longer for these.\","]
+    #[doc = "      \"description\": \"Rows already open that this sweep re-scored in place. They do not lengthen the queue.\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
@@ -6095,11 +6095,11 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct MergeSweepView {
-        #[doc = "Pairs merged without asking, because a structural identity rule fired *and* the score\ncleared the automatic-merge threshold."]
+        #[doc = "Pairs merged without asking, because a structural identity rule fired and the score\ncleared the automatic-merge threshold."]
         pub auto_merged: i64,
-        #[doc = "Pairs an auto-merge guard held back: identical titles, a score above the automatic\nthreshold, and a signal saying the two are different works anyway. These are the near\nmisses, and they are the rows to read first — each is either a duplicate the guard is\ncosting you or a merge the guard just prevented."]
+        #[doc = "Pairs an auto-merge guard held back: identical titles, a score above the automatic\nthreshold, and a signal saying the two are different works anyway. Read these first:\neach is either a duplicate the guard is costing you or a wrong merge it prevented."]
         pub blocked: i64,
-        #[doc = "Pairs skipped because a merge earlier in this same run absorbed one of their two series.\n\nTheir facts were loaded before that merge and are now stale, so re-judging them here would\nscore the survivor as it was rather than as it is. A three-way duplicate therefore takes\nmore than one pass; non-zero means another pass has something to do, and the scheduler\nruns one rather than leaving the chain until the next tick."]
+        #[doc = "Pairs skipped because a merge earlier in this same run absorbed one of their two series.\n\nTheir facts were loaded before that merge, so re-judging them would score the survivor as\nit was. A three-way duplicate therefore takes more than one pass. Non-zero means another\npass has work, and the scheduler runs it without waiting for the next tick."]
         pub chains_deferred: i64,
         #[doc = "Pairs skipped because the sweep's per-run automatic-merge budget was exhausted. Non-zero\nmeans the next sweep has more to do, not that anything failed."]
         pub deferred: i64,
@@ -6107,11 +6107,11 @@ pub mod types {
         pub distinct: i64,
         #[doc = "Pairs re-scored. The shortlist is produced by blocking on the whitespace-insensitive\ntitle key, so this is far smaller than the number of series."]
         pub pairs_examined: i64,
-        #[doc = "Pairs the sweep put in the review queue that had never been there.\n\nCounted apart from `requeued` because only these lengthen the queue: the sweep re-scores\nrows that are already open on every run, and folding those into one \"queued\" number\nreports a queue growing by hundreds when it grew by tens. Net change in queue length is\n`queued + reopened - withdrawn`."]
+        #[doc = "Pairs the sweep put in the review queue that had never been there.\n\nCounted apart from `requeued` because only these lengthen the queue: every run re-scores\nthe rows already open, and one combined count would report a queue growing by hundreds\nwhen it grew by tens. The net change in queue length is `queued + reopened - withdrawn`."]
         pub queued: i64,
         #[doc = "Pairs the scorer had closed as distinct that enrichment has brought back into review."]
         pub reopened: i64,
-        #[doc = "Rows already open that this sweep re-scored in place. The queue is no longer for these."]
+        #[doc = "Rows already open that this sweep re-scored in place. They do not lengthen the queue."]
         pub requeued: i64,
         #[doc = "Open queue rows removed because re-scoring with everything now known about both series\nput the pair below the review floor."]
         pub withdrawn: i64,
@@ -6829,13 +6829,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "A reader's notification preferences, stored as `users.notification_prefs`.\n\nEvery field defaults, so an absent, partial or legacy document decodes to the product\ndefaults rather than an error: a preference read must never fail the request it decorates.\nThe pre-v1 document (`{\"new_chapters\": …, \"email\": …, \"digest\": …}`) therefore decodes to\nfull defaults — those keys were never read by anything, so nothing observable is lost."]
+    #[doc = "A reader's notification preferences, stored as `users.notification_prefs`.\n\nEvery field defaults, so an absent, partial or legacy document decodes to the product\ndefaults: a preference read must never fail the request it decorates. The pre-v1 document\n(`{\"new_chapters\": …, \"email\": …, \"digest\": …}`) decodes to full defaults, since nothing reads\nthose keys."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"A reader's notification preferences, stored as `users.notification_prefs`.\\n\\nEvery field defaults, so an absent, partial or legacy document decodes to the product\\ndefaults rather than an error: a preference read must never fail the request it decorates.\\nThe pre-v1 document (`{\\\"new_chapters\\\": …, \\\"email\\\": …, \\\"digest\\\": …}`) therefore decodes to\\nfull defaults — those keys were never read by anything, so nothing observable is lost.\","]
+    #[doc = "  \"description\": \"A reader's notification preferences, stored as `users.notification_prefs`.\\n\\nEvery field defaults, so an absent, partial or legacy document decodes to the product\\ndefaults: a preference read must never fail the request it decorates. The pre-v1 document\\n(`{\\\"new_chapters\\\": …, \\\"email\\\": …, \\\"digest\\\": …}`) decodes to full defaults, since nothing reads\\nthose keys.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"channels\": {"]
@@ -7694,13 +7694,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "A named bundle offered in the permission editor as a starting point.\n\nNot persisted and never consulted during an authorization decision — see the module docs\non why this is not a role by another name."]
+    #[doc = "A named bundle offered in the permission editor as a starting point.\n\nNot persisted and never consulted during an authorization decision; the module docs explain\nwhy this is not a role by another name."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"A named bundle offered in the permission editor as a starting point.\\n\\nNot persisted and never consulted during an authorization decision — see the module docs\\non why this is not a role by another name.\","]
+    #[doc = "  \"description\": \"A named bundle offered in the permission editor as a starting point.\\n\\nNot persisted and never consulted during an authorization decision; the module docs explain\\nwhy this is not a role by another name.\","]
     #[doc = "  \"type\": \"string\","]
     #[doc = "  \"enum\": ["]
     #[doc = "    \"reader\","]
@@ -7772,13 +7772,13 @@ pub mod types {
             value.parse()
         }
     }
-    #[doc = "Crawl politeness parameters for one provider.\n\n**`rps` and `concurrency` are enforced per worker process, not fleet-wide.** The fetch\nstack is built per provider inside each worker, so the load a provider actually sees is\n`rps × replicas`. Sizing a provider's budget means dividing the intended aggregate by the\nreplica count; scaling workers out without lowering these raises the real crawl rate.\n(A cross-replica token bucket in Redis is the documented follow-up — see\n`crates/fetch/src/ratelimit.rs`.)"]
+    #[doc = "Crawl politeness parameters for one provider.\n\n`rps` and `concurrency` are enforced per worker process, not fleet-wide. The fetch stack is\nbuilt per provider inside each worker, so a provider sees `rps × replicas`. Size a budget by\ndividing the intended aggregate by the replica count; scaling workers out without lowering\nthese raises the real crawl rate."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Crawl politeness parameters for one provider.\\n\\n**`rps` and `concurrency` are enforced per worker process, not fleet-wide.** The fetch\\nstack is built per provider inside each worker, so the load a provider actually sees is\\n`rps × replicas`. Sizing a provider's budget means dividing the intended aggregate by the\\nreplica count; scaling workers out without lowering these raises the real crawl rate.\\n(A cross-replica token bucket in Redis is the documented follow-up — see\\n`crates/fetch/src/ratelimit.rs`.)\","]
+    #[doc = "  \"description\": \"Crawl politeness parameters for one provider.\\n\\n`rps` and `concurrency` are enforced per worker process, not fleet-wide. The fetch stack is\\nbuilt per provider inside each worker, so a provider sees `rps × replicas`. Size a budget by\\ndividing the intended aggregate by the replica count; scaling workers out without lowering\\nthese raises the real crawl rate.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"concurrency\": {"]
@@ -7802,7 +7802,7 @@ pub mod types {
     #[doc = "      \"format\": \"double\""]
     #[doc = "    },"]
     #[doc = "    \"user_agent\": {"]
-    #[doc = "      \"description\": \"User-agent sent on ordinary (non-challenge) requests — **only when `emulation` is\\n`None`**. An emulated client sends the user-agent belonging to its profile, because\\na custom string over a browser TLS fingerprint is exactly the mismatch WAFs look for.\","]
+    #[doc = "      \"description\": \"User-agent sent on ordinary, non-challenge requests, used only when `emulation` is\\n`None`. An emulated client sends its profile's user-agent, because a custom string over a\\nbrowser TLS fingerprint is the mismatch WAFs look for.\","]
     #[doc = "      \"type\": \"string\""]
     #[doc = "    }"]
     #[doc = "  },"]
@@ -7823,7 +7823,7 @@ pub mod types {
         #[doc = "Requests per second, per worker process (see the type-level note on fleet totals)."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub rps: ::std::option::Option<f64>,
-        #[doc = "User-agent sent on ordinary (non-challenge) requests — **only when `emulation` is\n`None`**. An emulated client sends the user-agent belonging to its profile, because\na custom string over a browser TLS fingerprint is exactly the mismatch WAFs look for."]
+        #[doc = "User-agent sent on ordinary, non-challenge requests, used only when `emulation` is\n`None`. An emulated client sends its profile's user-agent, because a custom string over a\nbrowser TLS fingerprint is the mismatch WAFs look for."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub user_agent: ::std::option::Option<::std::string::String>,
     }
@@ -7843,13 +7843,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "The politeness block as a *request body* carries it.\n\nMirrors [`Politeness`] field for field and differs in exactly one way: an absent `emulation`\nmeans *no* emulation, where [`Politeness`] reads an absent key as [`BrowserEmulation::Chrome`].\n\nThat asymmetry is load-bearing on both sides, which is why the two shapes cannot be one type.\n[`Politeness`] is also the stored JSONB document, and a row written before emulation existed\ncarries no such key — reading it as \"no emulation\" would put an upgraded install back to\ncrawling as an identifiable bot. A client generated from this API's schema, meanwhile, has no\nway to *send* an explicit `null`: `Option` fields are omitted when they are `None`. So if\nabsent meant Chrome here too, choosing \"no emulation\" in the console would silently put the\nprovider back on Chrome and report the save as successful.\n\nKept in step with [`Politeness`] by the exhaustive `From` below (a new stored field fails to\ncompile) and by `every_stored_field_survives_the_request_shape` (a new field hardcoded to\nsilence that failure)."]
+    #[doc = "The politeness block as a request body carries it.\n\nMirrors [`Politeness`] field for field and differs in one way: an absent `emulation` means no\nemulation, where [`Politeness`] reads an absent key as [`BrowserEmulation::Chrome`].\n\nBoth readings are needed, so the shapes cannot be one type. [`Politeness`] is also the stored\nJSONB document, and a stored row without the key must keep crawling under emulation, not as\nan identifiable bot. A client generated from this API's schema cannot send an explicit `null`,\nsince `Option` fields are omitted when `None`. If absent meant Chrome here too, choosing \"no\nemulation\" in the console would silently keep Chrome and report the save as successful.\n\nThe exhaustive `From` below fails to compile on a new stored field, and\n`every_stored_field_survives_the_request_shape` catches one hardcoded to silence it."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"The politeness block as a *request body* carries it.\\n\\nMirrors [`Politeness`] field for field and differs in exactly one way: an absent `emulation`\\nmeans *no* emulation, where [`Politeness`] reads an absent key as [`BrowserEmulation::Chrome`].\\n\\nThat asymmetry is load-bearing on both sides, which is why the two shapes cannot be one type.\\n[`Politeness`] is also the stored JSONB document, and a row written before emulation existed\\ncarries no such key — reading it as \\\"no emulation\\\" would put an upgraded install back to\\ncrawling as an identifiable bot. A client generated from this API's schema, meanwhile, has no\\nway to *send* an explicit `null`: `Option` fields are omitted when they are `None`. So if\\nabsent meant Chrome here too, choosing \\\"no emulation\\\" in the console would silently put the\\nprovider back on Chrome and report the save as successful.\\n\\nKept in step with [`Politeness`] by the exhaustive `From` below (a new stored field fails to\\ncompile) and by `every_stored_field_survives_the_request_shape` (a new field hardcoded to\\nsilence that failure).\","]
+    #[doc = "  \"description\": \"The politeness block as a request body carries it.\\n\\nMirrors [`Politeness`] field for field and differs in one way: an absent `emulation` means no\\nemulation, where [`Politeness`] reads an absent key as [`BrowserEmulation::Chrome`].\\n\\nBoth readings are needed, so the shapes cannot be one type. [`Politeness`] is also the stored\\nJSONB document, and a stored row without the key must keep crawling under emulation, not as\\nan identifiable bot. A client generated from this API's schema cannot send an explicit `null`,\\nsince `Option` fields are omitted when `None`. If absent meant Chrome here too, choosing \\\"no\\nemulation\\\" in the console would silently keep Chrome and report the save as successful.\\n\\nThe exhaustive `From` below fails to compile on a new stored field, and\\n`every_stored_field_survives_the_request_shape` catches one hardcoded to silence it.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"concurrency\": {"]
@@ -7873,7 +7873,7 @@ pub mod types {
     #[doc = "      \"format\": \"double\""]
     #[doc = "    },"]
     #[doc = "    \"user_agent\": {"]
-    #[doc = "      \"description\": \"User-agent sent on ordinary (non-challenge) requests — only when `emulation` is absent.\","]
+    #[doc = "      \"description\": \"User-agent sent on ordinary, non-challenge requests, used only when `emulation` is absent.\","]
     #[doc = "      \"type\": \"string\""]
     #[doc = "    }"]
     #[doc = "  }"]
@@ -7893,7 +7893,7 @@ pub mod types {
         #[doc = "Requests per second, per worker process (see [`Politeness`] on fleet totals)."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub rps: ::std::option::Option<f64>,
-        #[doc = "User-agent sent on ordinary (non-challenge) requests — only when `emulation` is absent."]
+        #[doc = "User-agent sent on ordinary, non-challenge requests, used only when `emulation` is absent."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub user_agent: ::std::option::Option<::std::string::String>,
     }
@@ -7953,13 +7953,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "One entry of the preset catalogue bundled with the build, as the installer recorded it.\n\nPersisted rather than read from `tankovault_adapters`, because the api tier deliberately\ndoes not link the adapter crate (it would drag `BoringSSL` into that image); the install job\nwrites the catalogue down and every other tier reads it as data."]
+    #[doc = "One entry of the preset catalogue bundled with the build, as the installer recorded it.\n\nPersisted, because the api tier does not link `tankovault_adapters`, which would drag\n`BoringSSL` into that image. The install job writes the catalogue down and every other tier\nreads it as data."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"One entry of the preset catalogue bundled with the build, as the installer recorded it.\\n\\nPersisted rather than read from `tankovault_adapters`, because the api tier deliberately\\ndoes not link the adapter crate (it would drag `BoringSSL` into that image); the install job\\nwrites the catalogue down and every other tier reads it as data.\","]
+    #[doc = "  \"description\": \"One entry of the preset catalogue bundled with the build, as the installer recorded it.\\n\\nPersisted, because the api tier does not link `tankovault_adapters`, which would drag\\n`BoringSSL` into that image. The install job writes the catalogue down and every other tier\\nreads it as data.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"adapter\","]
@@ -8058,13 +8058,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "A provider row's link to the preset catalogue shipped with the build.\n\n`locked` is the contract the whole feature turns on: while it holds, the installer\noverwrites the **preset-owned fields** — `name`, `base_url`, `adapter` and `config` — from\nthe shipped definition on every rollout, so a selector fix reaches deployments that already\ncarry the row. Unlocking detaches the row for good; it keeps the slug so the console can\nstill offer a re-link, but nothing rewrites it again unless an operator asks.\n\n`politeness` and `state` sit outside the lock on purpose, and must stay there: a crawl\nbudget and a pause are an operator's answer to their own infrastructure, robots policy and\nlegal position, none of which a shipped preset can know. A lock that silently restored a\nrate limit an operator had lowered would be a worse bug than a stale selector."]
+    #[doc = "A provider row's link to the preset catalogue shipped with the build.\n\nWhile `locked` holds, the installer overwrites the preset-owned fields (`name`, `base_url`,\n`adapter` and `config`) from the shipped definition on every rollout, so a selector fix\nreaches deployments that already carry the row. Unlocking detaches the row for good: it keeps\nthe slug so the console can offer a re-link, but nothing rewrites it unless an operator asks.\n\n`politeness` and `state` stay outside the lock: a crawl budget and a pause are an operator's\nanswer to their own infrastructure, robots policy and legal position, none of which a shipped\npreset can know. Silently restoring a rate limit an operator had lowered would be worse than a\nstale selector."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"A provider row's link to the preset catalogue shipped with the build.\\n\\n`locked` is the contract the whole feature turns on: while it holds, the installer\\noverwrites the **preset-owned fields** — `name`, `base_url`, `adapter` and `config` — from\\nthe shipped definition on every rollout, so a selector fix reaches deployments that already\\ncarry the row. Unlocking detaches the row for good; it keeps the slug so the console can\\nstill offer a re-link, but nothing rewrites it again unless an operator asks.\\n\\n`politeness` and `state` sit outside the lock on purpose, and must stay there: a crawl\\nbudget and a pause are an operator's answer to their own infrastructure, robots policy and\\nlegal position, none of which a shipped preset can know. A lock that silently restored a\\nrate limit an operator had lowered would be a worse bug than a stale selector.\","]
+    #[doc = "  \"description\": \"A provider row's link to the preset catalogue shipped with the build.\\n\\nWhile `locked` holds, the installer overwrites the preset-owned fields (`name`, `base_url`,\\n`adapter` and `config`) from the shipped definition on every rollout, so a selector fix\\nreaches deployments that already carry the row. Unlocking detaches the row for good: it keeps\\nthe slug so the console can offer a re-link, but nothing rewrites it unless an operator asks.\\n\\n`politeness` and `state` stay outside the lock: a crawl budget and a pause are an operator's\\nanswer to their own infrastructure, robots policy and legal position, none of which a shipped\\npreset can know. Silently restoring a rate limit an operator had lowered would be worse than a\\nstale selector.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"locked\","]
@@ -8076,7 +8076,7 @@ pub mod types {
     #[doc = "      \"type\": \"boolean\""]
     #[doc = "    },"]
     #[doc = "    \"slug\": {"]
-    #[doc = "      \"description\": \"The governing preset — the row's own slug for anything the installer created.\","]
+    #[doc = "      \"description\": \"The governing preset, which is the row's own slug for anything the installer created.\","]
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
     #[doc = "    \"synced_at\": {"]
@@ -8094,7 +8094,7 @@ pub mod types {
     pub struct PresetLink {
         #[doc = "Whether the preset-owned fields still follow the shipped definition."]
         pub locked: bool,
-        #[doc = "The governing preset — the row's own slug for anything the installer created."]
+        #[doc = "The governing preset, which is the row's own slug for anything the installer created."]
         pub slug: ::std::string::String,
         #[doc = "When those fields were last written from the preset."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
@@ -8492,7 +8492,7 @@ pub mod types {
     #[doc = "      \"$ref\": \"#/components/schemas/ProviderId\""]
     #[doc = "    },"]
     #[doc = "    \"last_full_scan_at\": {"]
-    #[doc = "      \"description\": \"Wire shape is a plain string (whatever `time`'s serde impl emits), never parsed\\nclient-side — kept untyped here so the generated frontend type doesn't need a date\\ncrate (mirrors the `no date crate in the bundle` constraint on the other timestamp\\nfields below).\","]
+    #[doc = "      \"description\": \"A plain string on the wire, whatever `time`'s serde impl emits, never parsed by the\\nclient. Untyped so the generated frontend type needs no date crate, like the other\\ntimestamp fields below.\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
@@ -8533,7 +8533,7 @@ pub mod types {
         #[doc = "When the provider was registered."]
         pub created_at: ::std::string::String,
         pub id: ProviderId,
-        #[doc = "Wire shape is a plain string (whatever `time`'s serde impl emits), never parsed\nclient-side — kept untyped here so the generated frontend type doesn't need a date\ncrate (mirrors the `no date crate in the bundle` constraint on the other timestamp\nfields below)."]
+        #[doc = "A plain string on the wire, whatever `time`'s serde impl emits, never parsed by the\nclient. Untyped so the generated frontend type needs no date crate, like the other\ntimestamp fields below."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub last_full_scan_at: ::std::option::Option<::std::string::String>,
         #[doc = "Site name as an operator reads it in the console."]
@@ -8751,13 +8751,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "One row of the per-provider statistics table. Enum columns are text-cast; the provider's\nidentity fields are joined in so the console renders the table from one fetch."]
+    #[doc = "One row of the per-provider statistics table.\n\nEnum columns are cast to text, and the provider's identity fields are joined in so the console\nrenders the table from one fetch."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"One row of the per-provider statistics table. Enum columns are text-cast; the provider's\\nidentity fields are joined in so the console renders the table from one fetch.\","]
+    #[doc = "  \"description\": \"One row of the per-provider statistics table.\\n\\nEnum columns are cast to text, and the provider's identity fields are joined in so the console\\nrenders the table from one fetch.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"adapter\","]
@@ -8774,7 +8774,7 @@ pub mod types {
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"adapter\": {"]
-    #[doc = "      \"description\": \"Adapter implementation token (`madara` | `generic_config` | `custom`).\","]
+    #[doc = "      \"description\": \"Adapter implementation token: `madara`, `generic_config` or `custom`.\","]
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
     #[doc = "    \"blocked_sources\": {"]
@@ -8851,12 +8851,12 @@ pub mod types {
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
     #[doc = "    \"source_count\": {"]
-    #[doc = "      \"description\": \"Source links (series ↔ provider joins) this provider owns.\","]
+    #[doc = "      \"description\": \"Source links, joining a series to this provider, that this provider owns.\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
     #[doc = "    \"state\": {"]
-    #[doc = "      \"description\": \"Provider health state token (`active` | `disabled` | `blocked` | …).\","]
+    #[doc = "      \"description\": \"Provider health state token, such as `active`, `disabled` or `blocked`.\","]
     #[doc = "      \"type\": \"string\""]
     #[doc = "    }"]
     #[doc = "  }"]
@@ -8865,7 +8865,7 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct ProviderStat {
-        #[doc = "Adapter implementation token (`madara` | `generic_config` | `custom`)."]
+        #[doc = "Adapter implementation token: `madara`, `generic_config` or `custom`."]
         pub adapter: ::std::string::String,
         #[doc = "Source links currently in a non-active state."]
         pub blocked_sources: i64,
@@ -8898,9 +8898,9 @@ pub mod types {
         pub series_count: i64,
         #[doc = "Its slug, joined in so the table renders from one fetch."]
         pub slug: ::std::string::String,
-        #[doc = "Source links (series ↔ provider joins) this provider owns."]
+        #[doc = "Source links, joining a series to this provider, that this provider owns."]
         pub source_count: i64,
-        #[doc = "Provider health state token (`active` | `disabled` | `blocked` | …)."]
+        #[doc = "Provider health state token, such as `active`, `disabled` or `blocked`."]
         pub state: ::std::string::String,
     }
     impl ProviderStat {
@@ -9001,13 +9001,13 @@ pub mod types {
             value.parse()
         }
     }
-    #[doc = "A provider entry for the Discover filter list: identity plus how many distinct series it\ncarries, so the UI can show \"Provider (N)\" options without exposing operator-only\nconfig/politeness."]
+    #[doc = "A provider entry for the Discover filter list: its identity and how many series it carries,\nwithout the operator-only configuration and politeness."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"A provider entry for the Discover filter list: identity plus how many distinct series it\\ncarries, so the UI can show \\\"Provider (N)\\\" options without exposing operator-only\\nconfig/politeness.\","]
+    #[doc = "  \"description\": \"A provider entry for the Discover filter list: its identity and how many series it carries,\\nwithout the operator-only configuration and politeness.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"id\","]
@@ -9161,13 +9161,13 @@ pub mod types {
             value.parse()
         }
     }
-    #[doc = "A nightly window, expressed in minutes from local midnight.\n\nMinutes plus a fixed UTC offset rather than an IANA zone: the alternative is a timezone\ndatabase in a crate that deliberately has no I/O, to move a quiet window by an hour twice a\nyear. The client sends the offset its browser reports."]
+    #[doc = "A nightly window, expressed in minutes from local midnight.\n\nMinutes plus a fixed UTC offset, not an IANA zone, which would need a timezone database in a\ncrate with no I/O to move a quiet window by an hour twice a year. The client sends the offset\nits browser reports."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"A nightly window, expressed in minutes from local midnight.\\n\\nMinutes plus a fixed UTC offset rather than an IANA zone: the alternative is a timezone\\ndatabase in a crate that deliberately has no I/O, to move a quiet window by an hour twice a\\nyear. The client sends the offset its browser reports.\","]
+    #[doc = "  \"description\": \"A nightly window, expressed in minutes from local midnight.\\n\\nMinutes plus a fixed UTC offset, not an IANA zone, which would need a timezone database in a\\ncrate with no I/O to move a quiet window by an hour twice a year. The client sends the offset\\nits browser reports.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"enabled\": {"]
@@ -9424,13 +9424,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "Which kind of recommendation-model build to run.\n\nLives here rather than in either service because both sides of the internal hop parse it: the\nAPI validates the operator's request body and the control plane acts on it. A hand-mirrored\nsecond copy is the drift this crate exists to prevent."]
+    #[doc = "Which kind of recommendation-model build to run.\n\nBoth sides of the internal hop parse it: the API validates the operator's request body and the\ncontrol plane acts on it. One shared type keeps the two from drifting."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Which kind of recommendation-model build to run.\\n\\nLives here rather than in either service because both sides of the internal hop parse it: the\\nAPI validates the operator's request body and the control plane acts on it. A hand-mirrored\\nsecond copy is the drift this crate exists to prevent.\","]
+    #[doc = "  \"description\": \"Which kind of recommendation-model build to run.\\n\\nBoth sides of the internal hop parse it: the API validates the operator's request body and the\\ncontrol plane acts on it. One shared type keeps the two from drifting.\","]
     #[doc = "  \"type\": \"string\","]
     #[doc = "  \"enum\": ["]
     #[doc = "    \"incremental\","]
@@ -9497,13 +9497,13 @@ pub mod types {
             value.parse()
         }
     }
-    #[doc = "What one recommendation-model build request did.\n\nReturned by `POST /v1/admin/recommendations/rebuild`, produced by the control plane that\nactually runs the build.\n\nThe build runs detached, so this answers only whether one was *started*: a build takes\nminutes to hours and no request may be held open for it. What it went on to do — stage,\nprogress, counts, and how it ended — is on `GET /v1/admin/recommendations/health`."]
+    #[doc = "What one recommendation-model build request did.\n\nReturned by `POST /v1/admin/recommendations/rebuild`, produced by the control plane that runs\nthe build.\n\nThe build runs detached, so this says only whether one started: a build takes minutes to\nhours, and no request may be held open that long. Its stage, progress, counts and outcome are\non `GET /v1/admin/recommendations/health`."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"What one recommendation-model build request did.\\n\\nReturned by `POST /v1/admin/recommendations/rebuild`, produced by the control plane that\\nactually runs the build.\\n\\nThe build runs detached, so this answers only whether one was *started*: a build takes\\nminutes to hours and no request may be held open for it. What it went on to do — stage,\\nprogress, counts, and how it ended — is on `GET /v1/admin/recommendations/health`.\","]
+    #[doc = "  \"description\": \"What one recommendation-model build request did.\\n\\nReturned by `POST /v1/admin/recommendations/rebuild`, produced by the control plane that runs\\nthe build.\\n\\nThe build runs detached, so this says only whether one started: a build takes minutes to\\nhours, and no request may be held open that long. Its stage, progress, counts and outcome are\\non `GET /v1/admin/recommendations/health`.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"generation\","]
@@ -9516,7 +9516,7 @@ pub mod types {
     #[doc = "      \"format\": \"int32\""]
     #[doc = "    },"]
     #[doc = "    \"started\": {"]
-    #[doc = "      \"description\": \"`false` when another build already held the claim. The correct response is to wait for\\nit, not to retry: the other build is doing this one's work, and `generation` is zero\\nbecause this call started nothing.\","]
+    #[doc = "      \"description\": \"`false` when another build already held the claim. Wait for it instead of retrying: it is\\ndoing this one's work, and `generation` is zero because this call started nothing.\","]
     #[doc = "      \"type\": \"boolean\""]
     #[doc = "    }"]
     #[doc = "  }"]
@@ -9527,7 +9527,7 @@ pub mod types {
     pub struct RecsysBuildView {
         #[doc = "The generation the build claimed and will write under."]
         pub generation: i32,
-        #[doc = "`false` when another build already held the claim. The correct response is to wait for\nit, not to retry: the other build is doing this one's work, and `generation` is zero\nbecause this call started nothing."]
+        #[doc = "`false` when another build already held the claim. Wait for it instead of retrying: it is\ndoing this one's work, and `generation` is zero because this call started nothing."]
         pub started: bool,
     }
     impl RecsysBuildView {
@@ -9715,13 +9715,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "What a data subject is exercising (GDPR Chapter III). Mirrors the `gdpr_request_kind` SQL\nenum, whose `sqlx`-typed counterpart stays in `tankovault_db` — this crate must not depend\non the driver."]
+    #[doc = "The right a data subject is exercising (GDPR Chapter III).\n\nMirrors the `gdpr_request_kind` SQL enum. Its `sqlx`-typed counterpart stays in\n`tankovault_db`, because this crate must not depend on the driver."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"What a data subject is exercising (GDPR Chapter III). Mirrors the `gdpr_request_kind` SQL\\nenum, whose `sqlx`-typed counterpart stays in `tankovault_db` — this crate must not depend\\non the driver.\","]
+    #[doc = "  \"description\": \"The right a data subject is exercising (GDPR Chapter III).\\n\\nMirrors the `gdpr_request_kind` SQL enum. Its `sqlx`-typed counterpart stays in\\n`tankovault_db`, because this crate must not depend on the driver.\","]
     #[doc = "  \"type\": \"string\","]
     #[doc = "  \"enum\": ["]
     #[doc = "    \"access\","]
@@ -9848,7 +9848,7 @@ pub mod types {
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
     #[doc = "    \"resolution_note\": {"]
-    #[doc = "      \"description\": \"How it was resolved, or — for a rejection — why. Art. 12(4) obliges the controller to\\ngive reasons for a refusal, so a rejected request without this is incomplete.\","]
+    #[doc = "      \"description\": \"How it was resolved, or for a rejection, why. Art. 12(4) obliges the controller to give\\nreasons for a refusal, so a rejected request without this is incomplete.\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
@@ -9880,7 +9880,7 @@ pub mod types {
         pub kind: RequestKind,
         #[doc = "When it was filed, which is what the Art. 12(3) deadline runs from."]
         pub requested_at: ::std::string::String,
-        #[doc = "How it was resolved, or — for a rejection — why. Art. 12(4) obliges the controller to\ngive reasons for a refusal, so a rejected request without this is incomplete."]
+        #[doc = "How it was resolved, or for a rejection, why. Art. 12(4) obliges the controller to give\nreasons for a refusal, so a rejected request without this is incomplete."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub resolution_note: ::std::option::Option<::std::string::String>,
         #[doc = "When it settled, `null` while it is still open."]
@@ -10154,7 +10154,7 @@ pub mod types {
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
     #[doc = "    \"stage\": {"]
-    #[doc = "      \"description\": \"What the run's oldest held task is doing right now — a\\n[`tankovault_domain::ScanStage`] token. `null` when nothing is held, which paired with\\n`waiting_since` is how the console tells \\\"working\\\" from \\\"waiting for a worker\\\".\","]
+    #[doc = "      \"description\": \"What the run's oldest held task is doing, as a [`tankovault_domain::ScanStage`] token.\\n`null` when nothing is held; with `waiting_since`, that tells the console \\\"working\\\" from\\n\\\"waiting for a worker\\\".\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
@@ -10168,7 +10168,7 @@ pub mod types {
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"stage_detail\": {"]
-    #[doc = "      \"description\": \"What the stage is working against — a series path, a catalogue page.\","]
+    #[doc = "      \"description\": \"What the stage is working against, such as a series path or a catalogue page.\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
@@ -10191,7 +10191,7 @@ pub mod types {
     #[doc = "      \"format\": \"int32\""]
     #[doc = "    },"]
     #[doc = "    \"waiting_since\": {"]
-    #[doc = "      \"description\": \"When the run's oldest still-queued task was created.\\n\\nWith `running_tasks` at zero this is the run's real state: not working, **waiting for a\\nworker slot**. A worker runs one task per provider, so a provider's second run queues\\nbehind its first — and through `state` alone that is indistinguishable from a run that\\nhas hung, which is exactly the reading it used to get.\","]
+    #[doc = "      \"description\": \"When the run's oldest still-queued task was created.\\n\\nWith `running_tasks` at zero, the run is waiting for a worker slot. A worker runs one task\\nper provider, so a provider's second run queues behind its first, and through `state`\\nalone that looks the same as a run that has hung.\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
@@ -10218,13 +10218,13 @@ pub mod types {
         pub run_id: ScanRunId,
         #[doc = "Tasks a worker is holding right now."]
         pub running_tasks: i64,
-        #[doc = "What the run's oldest held task is doing right now — a\n[`tankovault_domain::ScanStage`] token. `null` when nothing is held, which paired with\n`waiting_since` is how the console tells \"working\" from \"waiting for a worker\"."]
+        #[doc = "What the run's oldest held task is doing, as a [`tankovault_domain::ScanStage`] token.\n`null` when nothing is held; with `waiting_since`, that tells the console \"working\" from\n\"waiting for a worker\"."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub stage: ::std::option::Option<::std::string::String>,
         #[doc = "When that task entered that stage. A stage stamp that stops moving is the symptom the run\ncounters cannot show."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub stage_at: ::std::option::Option<::std::string::String>,
-        #[doc = "What the stage is working against — a series path, a catalogue page."]
+        #[doc = "What the stage is working against, such as a series path or a catalogue page."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub stage_detail: ::std::option::Option<::std::string::String>,
         #[doc = "Progress inside the stage, where the stage counts anything."]
@@ -10233,7 +10233,7 @@ pub mod types {
         #[doc = "What the stage counts up to, where it counts at all."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub stage_total: ::std::option::Option<i32>,
-        #[doc = "When the run's oldest still-queued task was created.\n\nWith `running_tasks` at zero this is the run's real state: not working, **waiting for a\nworker slot**. A worker runs one task per provider, so a provider's second run queues\nbehind its first — and through `state` alone that is indistinguishable from a run that\nhas hung, which is exactly the reading it used to get."]
+        #[doc = "When the run's oldest still-queued task was created.\n\nWith `running_tasks` at zero, the run is waiting for a worker slot. A worker runs one task\nper provider, so a provider's second run queues behind its first, and through `state`\nalone that looks the same as a run that has hung."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub waiting_since: ::std::option::Option<::std::string::String>,
         #[doc = "Distinct workers holding a task right now."]
@@ -10384,17 +10384,17 @@ pub mod types {
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
     #[doc = "    \"tasks_measured\": {"]
-    #[doc = "      \"description\": \"Settled tasks carrying a breakdown. Everything else here sums over exactly these, so a run\\nfrom before this instrumentation reports zero rather than a wrong total.\","]
+    #[doc = "      \"description\": \"Settled tasks carrying a breakdown. Every other figure sums over exactly these, so a run\\nwith no recorded breakdown reports zero, not a wrong total.\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
     #[doc = "    \"throttled\": {"]
-    #[doc = "      \"description\": \"Responses the provider answered 429/503, each of which widened its spacing thereafter.\","]
+    #[doc = "      \"description\": \"Responses the provider answered with 429 or 503, each of which widened its spacing.\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
     #[doc = "    \"wait_ms\": {"]
-    #[doc = "      \"description\": \"Summed time tasks spent created but unclaimed — queued behind a busy provider.\","]
+    #[doc = "      \"description\": \"Summed time tasks spent created but unclaimed, queued behind a busy provider.\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    }"]
@@ -10416,11 +10416,11 @@ pub mod types {
         pub solver_calls: i64,
         #[doc = "Milliseconds spent waiting on a challenge solver."]
         pub solver_ms: i64,
-        #[doc = "Settled tasks carrying a breakdown. Everything else here sums over exactly these, so a run\nfrom before this instrumentation reports zero rather than a wrong total."]
+        #[doc = "Settled tasks carrying a breakdown. Every other figure sums over exactly these, so a run\nwith no recorded breakdown reports zero, not a wrong total."]
         pub tasks_measured: i64,
-        #[doc = "Responses the provider answered 429/503, each of which widened its spacing thereafter."]
+        #[doc = "Responses the provider answered with 429 or 503, each of which widened its spacing."]
         pub throttled: i64,
-        #[doc = "Summed time tasks spent created but unclaimed — queued behind a busy provider."]
+        #[doc = "Summed time tasks spent created but unclaimed, queued behind a busy provider."]
         pub wait_ms: i64,
     }
     impl RunTelemetryView {
@@ -10428,13 +10428,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "The task-level state of the runs in flight, pushed on the console stream.\n\nRun counters alone cannot distinguish \"working\" from \"wedged\" — both leave `done_tasks`\nwhere it was. These are the figures that can: what a worker is holding, since when, and what\nsettled most recently."]
+    #[doc = "The task-level state of the runs in flight, pushed on the console stream.\n\nRun counters alone cannot tell \"working\" from \"wedged\", since both leave `done_tasks` where it\nwas. These figures can: what a worker is holding, since when, and what settled most recently."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"The task-level state of the runs in flight, pushed on the console stream.\\n\\nRun counters alone cannot distinguish \\\"working\\\" from \\\"wedged\\\" — both leave `done_tasks`\\nwhere it was. These are the figures that can: what a worker is holding, since when, and what\\nsettled most recently.\","]
+    #[doc = "  \"description\": \"The task-level state of the runs in flight, pushed on the console stream.\\n\\nRun counters alone cannot tell \\\"working\\\" from \\\"wedged\\\", since both leave `done_tasks` where it\\nwas. These figures can: what a worker is holding, since when, and what settled most recently.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"events\","]
@@ -10442,7 +10442,7 @@ pub mod types {
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"events\": {"]
-    #[doc = "      \"description\": \"The most recently settled tasks of the runs in flight, newest first. Empty when nothing\\nis running, which is the honest answer rather than a replay of the last scan.\","]
+    #[doc = "      \"description\": \"The most recently settled tasks of the runs in flight, newest first. Empty when nothing\\nis running, instead of a replay of the last scan.\","]
     #[doc = "      \"type\": \"array\","]
     #[doc = "      \"items\": {"]
     #[doc = "        \"$ref\": \"#/components/schemas/TaskEventView\""]
@@ -10461,7 +10461,7 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct ScanActivityView {
-        #[doc = "The most recently settled tasks of the runs in flight, newest first. Empty when nothing\nis running, which is the honest answer rather than a replay of the last scan."]
+        #[doc = "The most recently settled tasks of the runs in flight, newest first. Empty when nothing\nis running, instead of a replay of the last scan."]
         pub events: ::std::vec::Vec<TaskEventView>,
         #[doc = "One entry per run in flight, and none for a run that has settled."]
         pub runs: ::std::vec::Vec<RunActivityView>,
@@ -10584,13 +10584,13 @@ pub mod types {
             value.parse()
         }
     }
-    #[doc = "A scan run as the console reads it: the persisted row plus the slug of the provider it was\nscoped to.\n\nPublished under the `ScanRun` component name, which is what the generated client and the\nfrontend already call it. The slug is the addition: a run carrying only `provider_id` renders\nas a truncated uuid and cannot be matched against a filter an operator typed, which is why\nthe panel's provider filter had no effect on anything the live stream pushed."]
+    #[doc = "A scan run as the console reads it: the persisted row plus the slug of the provider it was\nscoped to.\n\nPublished under the `ScanRun` component name. The slug lets the console render the provider\nby name and match a run the live stream pushes against the filter an operator typed; a bare\n`provider_id` allows neither."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"A scan run as the console reads it: the persisted row plus the slug of the provider it was\\nscoped to.\\n\\nPublished under the `ScanRun` component name, which is what the generated client and the\\nfrontend already call it. The slug is the addition: a run carrying only `provider_id` renders\\nas a truncated uuid and cannot be matched against a filter an operator typed, which is why\\nthe panel's provider filter had no effect on anything the live stream pushed.\","]
+    #[doc = "  \"description\": \"A scan run as the console reads it: the persisted row plus the slug of the provider it was\\nscoped to.\\n\\nPublished under the `ScanRun` component name. The slug lets the console render the provider\\nby name and match a run the live stream pushes against the filter an operator typed; a bare\\n`provider_id` allows neither.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"created_at\","]
@@ -10633,7 +10633,7 @@ pub mod types {
     #[doc = "      \"$ref\": \"#/components/schemas/ProviderId\""]
     #[doc = "    },"]
     #[doc = "    \"provider_slug\": {"]
-    #[doc = "      \"description\": \"`null` for an all-provider run, and for a run whose provider has since been deleted.\","]
+    #[doc = "      \"description\": \"`null` for an all-provider run, and for a run whose provider was deleted.\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
@@ -10673,7 +10673,7 @@ pub mod types {
         pub mode: ScanMode,
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub provider_id: ::std::option::Option<ProviderId>,
-        #[doc = "`null` for an all-provider run, and for a run whose provider has since been deleted."]
+        #[doc = "`null` for an all-provider run, and for a run whose provider was deleted."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub provider_slug: ::std::option::Option<::std::string::String>,
         #[doc = "When the first task was claimed, `null` while the run is still queued."]
@@ -10776,7 +10776,7 @@ pub mod types {
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"stages\": {"]
-    #[doc = "      \"description\": \"Summed milliseconds per stage across the run, largest first — the answer to \\\"what was this\\nrun actually doing for twenty minutes\\\".\","]
+    #[doc = "      \"description\": \"Summed milliseconds per stage across the run, largest first: what the run spent its time\\non.\","]
     #[doc = "      \"type\": \"array\","]
     #[doc = "      \"items\": {"]
     #[doc = "        \"$ref\": \"#/components/schemas/StageTotalView\""]
@@ -10798,7 +10798,7 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct ScanRunDetailView {
-        #[doc = "Summed milliseconds per stage across the run, largest first — the answer to \"what was this\nrun actually doing for twenty minutes\"."]
+        #[doc = "Summed milliseconds per stage across the run, largest first: what the run spent its time\non."]
         pub stages: ::std::vec::Vec<StageTotalView>,
         #[doc = "Every task of the run, whatever its state."]
         pub tasks: ::std::vec::Vec<ScanTaskDetailView>,
@@ -10887,7 +10887,7 @@ pub mod types {
     #[doc = "      }"]
     #[doc = "    },"]
     #[doc = "    \"total\": {"]
-    #[doc = "      \"description\": \"Total matching the current filter, ignoring `limit`/`offset`.\","]
+    #[doc = "      \"description\": \"Total matching the current filter, ignoring `limit` and `offset`.\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    }"]
@@ -10899,7 +10899,7 @@ pub mod types {
     pub struct ScanRunPageView {
         #[doc = "The page, newest run first."]
         pub items: ::std::vec::Vec<ScanRun>,
-        #[doc = "Total matching the current filter, ignoring `limit`/`offset`."]
+        #[doc = "Total matching the current filter, ignoring `limit` and `offset`."]
         pub total: i64,
     }
     impl ScanRunPageView {
@@ -10907,13 +10907,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "What the scan filter matched, as figures rather than rows.\n\nScoped by the *same* provider and window the row list uses, so a narrowed filter reports its\nown success rate. Rates are left to the reader to divide: publishing `tasks_done` and\n`tasks_total` rather than a percentage keeps the panel able to show both the ratio and the\nmagnitude behind it, which a lone percentage cannot."]
+    #[doc = "What the scan filter matched, as figures.\n\nScoped by the same provider and window as the row list, so a narrowed filter reports its own\nsuccess rate. The reader divides: `tasks_done` and `tasks_total` let the panel show both the\nratio and the magnitude behind it, which a lone percentage cannot."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"What the scan filter matched, as figures rather than rows.\\n\\nScoped by the *same* provider and window the row list uses, so a narrowed filter reports its\\nown success rate. Rates are left to the reader to divide: publishing `tasks_done` and\\n`tasks_total` rather than a percentage keeps the panel able to show both the ratio and the\\nmagnitude behind it, which a lone percentage cannot.\","]
+    #[doc = "  \"description\": \"What the scan filter matched, as figures.\\n\\nScoped by the same provider and window as the row list, so a narrowed filter reports its own\\nsuccess rate. The reader divides: `tasks_done` and `tasks_total` let the panel show both the\\nratio and the magnitude behind it, which a lone percentage cannot.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"busy_seconds\","]
@@ -10936,7 +10936,7 @@ pub mod types {
     #[doc = "      \"format\": \"double\""]
     #[doc = "    },"]
     #[doc = "    \"failures_open\": {"]
-    #[doc = "      \"description\": \"Failures still in the triage feed, as opposed to `tasks_failed`, which counts every\\nfailure in the window including the ones an operator has cleared.\","]
+    #[doc = "      \"description\": \"Failures still in the triage feed. `tasks_failed` counts every failure in the window,\\nincluding the ones an operator has cleared.\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
@@ -10972,7 +10972,7 @@ pub mod types {
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
     #[doc = "    \"runs_failed\": {"]
-    #[doc = "      \"description\": \"Of those, finished with every task failed, which is what marks a run failed rather\\nthan completed.\","]
+    #[doc = "      \"description\": \"Of those, finished with every task failed, which is what marks a run failed.\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
@@ -11014,7 +11014,7 @@ pub mod types {
     pub struct ScanSummaryView {
         #[doc = "Summed run wall-clock in seconds; a run in flight counts up to now."]
         pub busy_seconds: f64,
-        #[doc = "Failures still in the triage feed, as opposed to `tasks_failed`, which counts every\nfailure in the window including the ones an operator has cleared."]
+        #[doc = "Failures still in the triage feed. `tasks_failed` counts every failure in the window,\nincluding the ones an operator has cleared."]
         pub failures_open: i64,
         #[doc = "Creation time of the oldest matching run, `null` when the filter matched none."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
@@ -11028,7 +11028,7 @@ pub mod types {
         pub runs_cancelled: i64,
         #[doc = "Of those, finished with at least one task done."]
         pub runs_completed: i64,
-        #[doc = "Of those, finished with every task failed, which is what marks a run failed rather\nthan completed."]
+        #[doc = "Of those, finished with every task failed, which is what marks a run failed."]
         pub runs_failed: i64,
         #[doc = "Of those, still waiting to start."]
         pub runs_queued: i64,
@@ -11077,7 +11077,7 @@ pub mod types {
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"created_at\": {"]
-    #[doc = "      \"description\": \"`null` for tasks created before the column existed.\","]
+    #[doc = "      \"description\": \"`null` when the task recorded none.\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
@@ -11115,7 +11115,7 @@ pub mod types {
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
     #[doc = "    \"stage\": {"]
-    #[doc = "      \"description\": \"The stage the task is in, or the one it ended in. On a failure this is the most useful\\nfield on the row: it says whether the provider stopped answering or our own ingest\\nrejected what it sent.\","]
+    #[doc = "      \"description\": \"The stage the task is in, or the one it ended in. On a failure it says whether the\\nprovider stopped answering or the ingest rejected what it sent.\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
@@ -11186,7 +11186,7 @@ pub mod types {
         #[doc = "When a worker last took it, `null` while queued."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub claimed_at: ::std::option::Option<::std::string::String>,
-        #[doc = "`null` for tasks created before the column existed."]
+        #[doc = "`null` when the task recorded none."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub created_at: ::std::option::Option<::std::string::String>,
         #[doc = "Milliseconds between claim and settle: time someone was."]
@@ -11202,7 +11202,7 @@ pub mod types {
         pub id: ::uuid::Uuid,
         #[doc = "What the task was asked to do: a catalogue page, a series, a latest feed."]
         pub kind: ::std::string::String,
-        #[doc = "The stage the task is in, or the one it ended in. On a failure this is the most useful\nfield on the row: it says whether the provider stopped answering or our own ingest\nrejected what it sent."]
+        #[doc = "The stage the task is in, or the one it ended in. On a failure it says whether the\nprovider stopped answering or the ingest rejected what it sent."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub stage: ::std::option::Option<::std::string::String>,
         #[doc = "When it entered that stage."]
@@ -11290,20 +11290,20 @@ pub mod types {
             self.0.fmt(f)
         }
     }
-    #[doc = "What the control plane answers when a scan is planned: the runs it created.\n\nPublished by `services/control-plane` on its internal `POST /internal/scans`, and\nrepublished verbatim by `services/api` on `POST /v1/admin/scans` and\n`POST /v1/admin/providers/{id}/resolve`. It lives here, rather than staying a private\nstruct in the control plane's `main.rs`, for the reason ARCH-10 exists: while the producer\nowned the only definition, the API could declare nothing more specific than\n`serde_json::Value`, so the console's \"N scans queued\" was reading a field no compiler had\never connected to the field the planner writes. Both ends now name this type, so removing\n`run_ids` fails to build at the producer *and* the republisher."]
+    #[doc = "What the control plane answers when a scan is planned: the runs it created.\n\nPublished by `services/control-plane` on its internal `POST /internal/scans`, and\nrepublished verbatim by `services/api` on `POST /v1/admin/scans` and\n`POST /v1/admin/providers/{id}/resolve`. Both ends name this type, so removing `run_ids`\nfails to build at the producer and at the republisher, and the console's \"N scans queued\"\nreads the field the planner writes."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"What the control plane answers when a scan is planned: the runs it created.\\n\\nPublished by `services/control-plane` on its internal `POST /internal/scans`, and\\nrepublished verbatim by `services/api` on `POST /v1/admin/scans` and\\n`POST /v1/admin/providers/{id}/resolve`. It lives here, rather than staying a private\\nstruct in the control plane's `main.rs`, for the reason ARCH-10 exists: while the producer\\nowned the only definition, the API could declare nothing more specific than\\n`serde_json::Value`, so the console's \\\"N scans queued\\\" was reading a field no compiler had\\never connected to the field the planner writes. Both ends now name this type, so removing\\n`run_ids` fails to build at the producer *and* the republisher.\","]
+    #[doc = "  \"description\": \"What the control plane answers when a scan is planned: the runs it created.\\n\\nPublished by `services/control-plane` on its internal `POST /internal/scans`, and\\nrepublished verbatim by `services/api` on `POST /v1/admin/scans` and\\n`POST /v1/admin/providers/{id}/resolve`. Both ends name this type, so removing `run_ids`\\nfails to build at the producer and at the republisher, and the console's \\\"N scans queued\\\"\\nreads the field the planner writes.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"run_ids\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"run_ids\": {"]
-    #[doc = "      \"description\": \"One id per provider scanned — one per active provider when the request names none. A\\nprovider already scanning in this mode contributes the id of that run rather than a new\\none, so an id here means \\\"this run covers your request\\\", not always \\\"this run is new\\\".\","]
+    #[doc = "      \"description\": \"One id per provider scanned, or per active provider when the request names none. A\\nprovider already scanning in this mode contributes that run's id, so an id here means\\n\\\"this run covers your request\\\", not always \\\"this run is new\\\".\","]
     #[doc = "      \"type\": \"array\","]
     #[doc = "      \"items\": {"]
     #[doc = "        \"$ref\": \"#/components/schemas/ScanRunId\""]
@@ -11315,7 +11315,7 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct ScanTriggered {
-        #[doc = "One id per provider scanned — one per active provider when the request names none. A\nprovider already scanning in this mode contributes the id of that run rather than a new\none, so an id here means \"this run covers your request\", not always \"this run is new\"."]
+        #[doc = "One id per provider scanned, or per active provider when the request names none. A\nprovider already scanning in this mode contributes that run's id, so an id here means\n\"this run covers your request\", not always \"this run is new\"."]
         pub run_ids: ::std::vec::Vec<ScanRunId>,
     }
     impl ScanTriggered {
@@ -12950,13 +12950,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "Whether a user has linked a provider and, when linked, who they are connected as.\n\nAlways `200`: an unlinked account reads `{ \"linked\": false }` rather than 404ing, so the\nUI can render \"not connected\" without treating it as an error.\n\nPublished as `SyncAccountStatus` rather than under its Rust name: `tankovault_domain`\nhas an `AccountStatus` too (whether a *user account* is active or suspended), and two\nunrelated types sharing one `OpenAPI` component name means the last one registered silently\nreplaces the other — which is exactly what happened when the domain enum was introduced.\nThe qualifier is on this one because it is the more specific of the two: an\nexternal-tracker link status, not an account's own state."]
+    #[doc = "Whether a user has linked a provider and, when linked, who they are connected as.\n\nAlways `200`: an unlinked account reads `{ \"linked\": false }`, so the UI renders \"not\nconnected\" without treating it as an error.\n\nPublished as `SyncAccountStatus` because `tankovault_domain` has an `AccountStatus` too,\nfor whether a user account is active or suspended. Two types sharing one `OpenAPI`\ncomponent name means the last one registered silently replaces the other. The qualifier\ngoes on this one as the more specific of the two."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Whether a user has linked a provider and, when linked, who they are connected as.\\n\\nAlways `200`: an unlinked account reads `{ \\\"linked\\\": false }` rather than 404ing, so the\\nUI can render \\\"not connected\\\" without treating it as an error.\\n\\nPublished as `SyncAccountStatus` rather than under its Rust name: `tankovault_domain`\\nhas an `AccountStatus` too (whether a *user account* is active or suspended), and two\\nunrelated types sharing one `OpenAPI` component name means the last one registered silently\\nreplaces the other — which is exactly what happened when the domain enum was introduced.\\nThe qualifier is on this one because it is the more specific of the two: an\\nexternal-tracker link status, not an account's own state.\","]
+    #[doc = "  \"description\": \"Whether a user has linked a provider and, when linked, who they are connected as.\\n\\nAlways `200`: an unlinked account reads `{ \\\"linked\\\": false }`, so the UI renders \\\"not\\nconnected\\\" without treating it as an error.\\n\\nPublished as `SyncAccountStatus` because `tankovault_domain` has an `AccountStatus` too,\\nfor whether a user account is active or suspended. Two types sharing one `OpenAPI`\\ncomponent name means the last one registered silently replaces the other. The qualifier\\ngoes on this one as the more specific of the two.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"linked\""]
@@ -13032,13 +13032,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "Acknowledgement for a sync route that answers `204 No Content`.\n\n`services/sync` returns a bare `204` for linking an account and for patching settings;\n`services/api` republishes those as `200 {\"ok\": true}` because its `Upstream::decode`\nsynthesises this body for an empty upstream response. That synthesis is the contract, not\nan accident: naming it here means a change to either side breaks a type rather than\nsilently altering what the SPA receives. `ok` is always `true` — a failure is a status\ncode, never a `false` here."]
+    #[doc = "Acknowledgement for a sync route that answers `204 No Content`.\n\n`services/sync` returns a bare `204` for linking an account and for patching settings.\n`services/api` republishes those as `200 {\"ok\": true}`, because its `Upstream::decode`\nsynthesises this body for an empty upstream response. Naming the body here makes that\nsynthesis part of the contract, so a change on either side breaks a type before it reaches\nthe SPA."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Acknowledgement for a sync route that answers `204 No Content`.\\n\\n`services/sync` returns a bare `204` for linking an account and for patching settings;\\n`services/api` republishes those as `200 {\\\"ok\\\": true}` because its `Upstream::decode`\\nsynthesises this body for an empty upstream response. That synthesis is the contract, not\\nan accident: naming it here means a change to either side breaks a type rather than\\nsilently altering what the SPA receives. `ok` is always `true` — a failure is a status\\ncode, never a `false` here.\","]
+    #[doc = "  \"description\": \"Acknowledgement for a sync route that answers `204 No Content`.\\n\\n`services/sync` returns a bare `204` for linking an account and for patching settings.\\n`services/api` republishes those as `200 {\\\"ok\\\": true}`, because its `Upstream::decode`\\nsynthesises this body for an empty upstream response. Naming the body here makes that\\nsynthesis part of the contract, so a change on either side breaks a type before it reaches\\nthe SPA.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"ok\""]
@@ -13062,13 +13062,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "One row of the automatic-sync decision journal.\n\nCovers what `sync_history` never did: the entries that matched no local series, the series\nskipped as excluded, the fields both sides already agreed on, and the scored title match\nbehind every mapping."]
+    #[doc = "One row of the automatic-sync decision journal.\n\nBeyond what `sync_history` records, it covers the entries that matched no local series, the\nseries skipped as excluded, the fields both sides already agreed on, and the scored title\nmatch behind every mapping."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"One row of the automatic-sync decision journal.\\n\\nCovers what `sync_history` never did: the entries that matched no local series, the series\\nskipped as excluded, the fields both sides already agreed on, and the scored title match\\nbehind every mapping.\","]
+    #[doc = "  \"description\": \"One row of the automatic-sync decision journal.\\n\\nBeyond what `sync_history` records, it covers the entries that matched no local series, the\\nseries skipped as excluded, the fields both sides already agreed on, and the scored title\\nmatch behind every mapping.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"action\","]
@@ -13103,7 +13103,7 @@ pub mod types {
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"applied\": {"]
-    #[doc = "      \"description\": \"Whether anything was actually written. A run is mostly considerations.\","]
+    #[doc = "      \"description\": \"Whether anything was written. Most decisions in a run write nothing.\","]
     #[doc = "      \"type\": \"boolean\""]
     #[doc = "    },"]
     #[doc = "    \"decided_at\": {"]
@@ -13272,7 +13272,7 @@ pub mod types {
         #[doc = "The remote side of that ancestor."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub ancestor_remote: ::std::option::Option<::std::string::String>,
-        #[doc = "Whether anything was actually written. A run is mostly considerations."]
+        #[doc = "Whether anything was written. Most decisions in a run write nothing."]
         pub applied: bool,
         #[doc = "When the decision was taken."]
         pub decided_at: ::std::string::String,
@@ -13501,13 +13501,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "Outcome of a pull (provider → local)."]
+    #[doc = "The outcome of a pull from the provider into the local library."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Outcome of a pull (provider → local).\","]
+    #[doc = "  \"description\": \"The outcome of a pull from the provider into the local library.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"fetched\","]
@@ -13556,13 +13556,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "Outcome of a push (local → provider)."]
+    #[doc = "The outcome of a push from the local library to the provider."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Outcome of a push (local → provider).\","]
+    #[doc = "  \"description\": \"The outcome of a push from the local library to the provider.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"considered\","]
@@ -13603,13 +13603,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "Whether unlinking an account or clearing a mapping actually removed anything."]
+    #[doc = "Whether unlinking an account or clearing a mapping removed anything."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Whether unlinking an account or clearing a mapping actually removed anything.\","]
+    #[doc = "  \"description\": \"Whether unlinking an account or clearing a mapping removed anything.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"removed\""]
@@ -13788,7 +13788,7 @@ pub mod types {
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"chapters_1h\": {"]
-    #[doc = "      \"description\": \"Chapters first seen in the last hour, by discovery rather than publication date.\","]
+    #[doc = "      \"description\": \"Chapters first seen in the last hour, by discovery time, not publication date.\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
@@ -13828,7 +13828,7 @@ pub mod types {
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
     #[doc = "    \"providers_unhealthy\": {"]
-    #[doc = "      \"description\": \"Providers in a non-serving health state (degraded/challenged/solving/blocked).\","]
+    #[doc = "      \"description\": \"Providers in a non-serving health state: degraded, challenged, solving or blocked.\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
@@ -13838,7 +13838,7 @@ pub mod types {
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
     #[doc = "    \"runs_running\": {"]
-    #[doc = "      \"description\": \"The subset of `runs_active` that has actually started.\","]
+    #[doc = "      \"description\": \"The subset of `runs_active` that has started.\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
@@ -13878,7 +13878,7 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct SystemStats {
-        #[doc = "Chapters first seen in the last hour, by discovery rather than publication date."]
+        #[doc = "Chapters first seen in the last hour, by discovery time, not publication date."]
         pub chapters_1h: i64,
         #[doc = "Chapters first seen in the last 24 hours."]
         pub chapters_24h: i64,
@@ -13894,11 +13894,11 @@ pub mod types {
         pub providers_disabled: i64,
         #[doc = "Every provider row, whatever its state."]
         pub providers_total: i64,
-        #[doc = "Providers in a non-serving health state (degraded/challenged/solving/blocked)."]
+        #[doc = "Providers in a non-serving health state: degraded, challenged, solving or blocked."]
         pub providers_unhealthy: i64,
         #[doc = "Scan runs currently queued or running."]
         pub runs_active: i64,
-        #[doc = "The subset of `runs_active` that has actually started."]
+        #[doc = "The subset of `runs_active` that has started."]
         pub runs_running: i64,
         #[doc = "Canonical series, not provider pages."]
         pub series_total: i64,
@@ -15205,13 +15205,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "One segment of a merge's undo journal.\n\n`kind` is the journal's own field name rather than a display string: a later journal version\ncan add a segment without the console needing a release to render it, and the wording lives\non the reading side where the reader's language is known."]
+    #[doc = "One segment of a merge's undo journal.\n\n`kind` is the journal's own field name, not a display string. A later journal version can add\na segment without a console release, and the wording lives on the reading side, where the\nreader's language is known."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"One segment of a merge's undo journal.\\n\\n`kind` is the journal's own field name rather than a display string: a later journal version\\ncan add a segment without the console needing a release to render it, and the wording lives\\non the reading side where the reader's language is known.\","]
+    #[doc = "  \"description\": \"One segment of a merge's undo journal.\\n\\n`kind` is the journal's own field name, not a display string. A later journal version can add\\na segment without a console release, and the wording lives on the reading side, where the\\nreader's language is known.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"kind\","]
@@ -15243,13 +15243,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "One row of the admin Sync console's \"Assign queue\" — a canonical series that has **no**\nexternal mapping for the given provider yet, so an operator can review and assign one."]
+    #[doc = "One row of the admin Sync console's \"Assign queue\": a series with no external mapping for the\ngiven provider, for an operator to review and assign."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"One row of the admin Sync console's \\\"Assign queue\\\" — a canonical series that has **no**\\nexternal mapping for the given provider yet, so an operator can review and assign one.\","]
+    #[doc = "  \"description\": \"One row of the admin Sync console's \\\"Assign queue\\\": a series with no external mapping for the\\ngiven provider, for an operator to review and assign.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"series_id\","]
@@ -15267,7 +15267,7 @@ pub mod types {
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
     #[doc = "    \"source_count\": {"]
-    #[doc = "      \"description\": \"How many local sources back this series (a proxy for how confident a match is worth).\","]
+    #[doc = "      \"description\": \"How many local sources back this series, a proxy for how much a confident match is worth.\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    }"]
@@ -15281,7 +15281,7 @@ pub mod types {
         pub series_id: ::uuid::Uuid,
         #[doc = "Its canonical title."]
         pub series_title: ::std::string::String,
-        #[doc = "How many local sources back this series (a proxy for how confident a match is worth)."]
+        #[doc = "How many local sources back this series, a proxy for how much a confident match is worth."]
         pub source_count: i64,
     }
     impl UnmappedSeriesRow {
@@ -15366,13 +15366,13 @@ pub mod types {
             Default::default()
         }
     }
-    #[doc = "Everything the user-detail panel shows, minus the grant list (fetched separately by\n`tankovault_db::repo::permissions::list_for_user` so the panel can refresh just that part\nafter an edit)."]
+    #[doc = "Everything the user-detail panel shows except the grant list, which is fetched separately so\nthe panel can refresh just that part after an edit."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Everything the user-detail panel shows, minus the grant list (fetched separately by\\n`tankovault_db::repo::permissions::list_for_user` so the panel can refresh just that part\\nafter an edit).\","]
+    #[doc = "  \"description\": \"Everything the user-detail panel shows except the grant list, which is fetched separately so\\nthe panel can refresh just that part after an edit.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"active_sessions\","]
@@ -15388,7 +15388,7 @@ pub mod types {
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"active_sessions\": {"]
-    #[doc = "      \"description\": \"Live login sessions. Tells an operator whether a suspension will actually take effect\\nwithout also revoking sessions.\","]
+    #[doc = "      \"description\": \"Live login sessions, which tell an operator whether a suspension takes effect without\\nalso revoking them.\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
@@ -15457,7 +15457,7 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct UserDetail {
-        #[doc = "Live login sessions. Tells an operator whether a suspension will actually take effect\nwithout also revoking sessions."]
+        #[doc = "Live login sessions, which tell an operator whether a suspension takes effect without\nalso revoking them."]
         pub active_sessions: i64,
         #[doc = "When it was registered."]
         pub created_at: ::std::string::String,

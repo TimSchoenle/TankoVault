@@ -22,7 +22,7 @@ pub struct DecisionRow {
     /// The decision's id, absent from hand-written fixtures.
     #[serde(default)]
     pub id: Option<String>,
-    /// A fixture's note naming the production case it stands for. Not part of the export.
+    /// A fixture's note naming the case it stands for. The export does not carry it.
     #[serde(default)]
     pub case: Option<String>,
     /// `auto` | `review` | `distinct`, as stored.
@@ -128,7 +128,7 @@ pub struct PolicyGuards {
 }
 
 impl Policy {
-    /// The stored policy as matcher thresholds.
+    /// Returns the stored policy as matcher thresholds.
     #[must_use]
     pub const fn thresholds(self) -> Thresholds {
         Thresholds {
@@ -171,14 +171,14 @@ pub struct Replayed {
 }
 
 impl Replayed {
-    /// The current verdict's stored slug.
+    /// Returns the current verdict's stored slug.
     #[must_use]
     pub const fn verdict(&self) -> &'static str {
         self.adjudication.verdict.as_str()
     }
 }
 
-/// Parse one exported line.
+/// Parses one exported line.
 ///
 /// # Errors
 /// The line is not a JSON object of the [`DecisionRow`] shape.
@@ -186,8 +186,8 @@ pub fn parse_row(line: &str) -> Result<DecisionRow, serde_json::Error> {
     serde_json::from_str(line)
 }
 
-/// Re-judge `row` with the current matcher, under the policy the row was decided with (the
-/// defaults when it recorded none).
+/// Re-judges `row` with the current matcher, under the policy it was decided with or the
+/// defaults when it recorded none.
 #[must_use]
 pub fn replay(row: &DecisionRow) -> Replayed {
     let thresholds = row
@@ -224,7 +224,7 @@ pub struct Tally {
 }
 
 impl Tally {
-    /// Record one replayed row.
+    /// Records one replayed row.
     pub fn add(&mut self, row: &DecisionRow, replayed: &Replayed) {
         *self
             .transitions
@@ -232,20 +232,20 @@ impl Tally {
             .or_default() += 1;
     }
 
-    /// Every `(stored, replayed, count)`, ordered by stored then replayed verdict.
+    /// Returns every `(stored, replayed, count)`, ordered by stored then replayed verdict.
     pub fn transitions(&self) -> impl Iterator<Item = (&str, &'static str, u64)> {
         self.transitions
             .iter()
             .map(|((old, new), count)| (old.as_str(), *new, *count))
     }
 
-    /// Rows replayed in total.
+    /// Returns the number of rows replayed.
     #[must_use]
     pub fn total(&self) -> u64 {
         self.transitions.values().sum()
     }
 
-    /// Rows whose replayed verdict equals the stored one.
+    /// Returns the number of rows whose replayed verdict equals the stored one.
     #[must_use]
     pub fn unchanged(&self) -> u64 {
         self.transitions

@@ -13,46 +13,42 @@
 //! * **Every change needs an elevation once a factor exists.** The prompt is inline rather than
 //!   a route of its own, so the list the reader is editing stays visible behind the question.
 
+mod enrolment;
+
+use enrolment::Mfa;
+
 use crate::api;
-use crate::components::{
-    async_block, use_step_up_gate, Field, InlineConfirm, PanelCard, StepUpGate, StepUpGuard,
-};
-use crate::hooks::{use_busy, use_reload, Reload};
+use crate::components::{async_block, Field, InlineConfirm, PanelCard, StepUpGate, StepUpGuard};
+use crate::hooks::{use_busy, Reload};
 use crate::i18n::use_i18n;
 use crate::icons::Icon;
 use crate::state::step_up::use_step_up;
 use crate::state::use_session;
 use crate::util::iso_date;
-use crate::webauthn::{self, CeremonyError};
-use crate::wire::types::{
-    SecurityKeyRegisterFinish, SecurityKeyRegisterStart, SecurityKeyRename, TotpConfirm,
-};
+use crate::webauthn::{self};
+use crate::wire::types::SecurityKeyRename;
 use dioxus::prelude::*;
 use inkstone_ui::{Button, Tone};
 use progenitor_client::ResponseValue;
-use webauthn_rs_proto::CreationChallengeResponse;
 #[component]
 pub(crate) fn MfaCard() -> Element {
+    let form = Mfa::use_new();
     let session = use_session();
-    let i18n = use_i18n();
-    let api = api::use_api();
-    let reload = use_reload();
-    let busy = use_busy();
-    // Both: the gate drives the prompt, and removing a factor has to drop the grant that factor
-    // earned — the server revokes it, so keeping it here would only mean retrying with a dead
-    // token.
-    let step_up = use_step_up();
-    let gate = use_step_up_gate();
-
-    let mut error = use_signal(|| Option::<String>::None);
-    let mut info = use_signal(|| Option::<String>::None);
-    // The one and only sight of a freshly issued secret.
-    let mut pending_secret = use_signal(|| Option::<(String, String)>::None);
-    let mut confirm_code = use_signal(String::new);
-    // The one and only sight of a recovery-code set.
-    let mut fresh_codes = use_signal(Vec::<String>::new);
-    let mut key_label = use_signal(String::new);
     let mut removing_totp = use_signal(|| false);
+    let Mfa {
+        i18n,
+        api,
+        reload,
+        busy,
+        gate,
+        error,
+        info,
+        pending_secret,
+        mut confirm_code,
+        mut fresh_codes,
+        mut key_label,
+        ..
+    } = form;
 
     let status = use_resource(move || {
         reload.track();
@@ -77,182 +73,11 @@ pub(crate) fn MfaCard() -> Element {
         .and_then(|r| r.as_ref().ok().map(|s| s.enrolled))
         .unwrap_or(false);
 
-    // Every write below funnels through this, so the "a 403 means prompt, not fail" rule is
-    // written once. A handler that reported the raw problem instead would show the reader
-    // "insufficient privileges" for an action they are perfectly entitled to take.
-    //
-    // Takes the *classified* refusal and the message rather than the error itself: every
-    // generated operation has its own error type, so one callback cannot accept them all — and
-    // one callback is the point.
-    let handle_refusal = use_callback(move |(refused, message): (api::Refusal, String)| {
-        if gate.refused(refused) {
-            error.set(None);
-        } else {
-            error.set(Some(message));
-        }
-    });
-
-    let begin_totp = use_callback(move |()| {
-        if !busy.claim() {
-            return;
-        }
-        error.set(None);
-        info.set(None);
-        let client = gate.client(api);
-        spawn(async move {
-            match client.begin_totp().send().await {
-                Ok(res) => {
-                    let issued = ResponseValue::into_inner(res);
-                    pending_secret.set(Some((issued.secret, issued.provisioning_uri)));
-                }
-                Err(e) => handle_refusal.call(refusal(i18n, e)),
-            }
-            busy.release();
-        });
-    });
-
-    let confirm_totp = use_callback(move |()| {
-        if !busy.claim() {
-            return;
-        }
-        error.set(None);
-        let code = confirm_code.read().trim().to_owned();
-        let client = api.client();
-        spawn(async move {
-            match client
-                .confirm_totp()
-                .body(TotpConfirm { code })
-                .send()
-                .await
-            {
-                Ok(res) => {
-                    fresh_codes.set(ResponseValue::into_inner(res).codes);
-                    pending_secret.set(None);
-                    confirm_code.set(String::new());
-                    info.set(Some(i18n.t("mfa.totp.enrolled")));
-                    reload.bump();
-                }
-                Err(e) => error.set(Some(match api::error_status(&e) {
-                    Some(401) => i18n.t("mfa.error.wrongCode"),
-                    _ => api::friendly_error(i18n, e),
-                })),
-            }
-            busy.release();
-        });
-    });
-
-    let register_key = use_callback(move |()| {
-        if !busy.claim() {
-            return;
-        }
-        error.set(None);
-        info.set(None);
-        let label = key_label.read().trim().to_owned();
-        let client = gate.client(api);
-        // The finish leg needs no elevation — the ceremony it completes was already gated — so
-        // it goes through the ordinary client.
-        let plain = api.client();
-
-        spawn(async move {
-            let started = match client
-                .security_key_register_start()
-                .body(SecurityKeyRegisterStart {
-                    label: if label.is_empty() { None } else { Some(label) },
-                })
-                .send()
-                .await
-            {
-                Ok(res) => ResponseValue::into_inner(res),
-                Err(e) => {
-                    handle_refusal.call(refusal(i18n, e));
-                    busy.release();
-                    return;
-                }
-            };
-
-            // The authenticator. Everything from here can end in a shrug — a reader who walked
-            // away from the prompt has changed nothing, and the card must look like it.
-            let challenge: CreationChallengeResponse =
-                match webauthn::parse_challenge(started.options) {
-                    Ok(challenge) => challenge,
-                    Err(e) => return ceremony_failed(&e, error, busy, i18n),
-                };
-            let credential = match webauthn::create(challenge).await {
-                Ok(credential) => credential,
-                Err(e) => return ceremony_failed(&e, error, busy, i18n),
-            };
-            let envelope = match webauthn::to_envelope(&credential) {
-                Ok(envelope) => envelope,
-                Err(e) => return ceremony_failed(&e, error, busy, i18n),
-            };
-
-            match plain
-                .security_key_register_finish()
-                .body(SecurityKeyRegisterFinish {
-                    ceremony_id: started.ceremony_id,
-                    credential: envelope,
-                })
-                .send()
-                .await
-            {
-                Ok(res) => {
-                    let registered = ResponseValue::into_inner(res);
-                    // Present only when this was the account's *first* factor. Shown here or
-                    // nowhere: the API will not send them again.
-                    if let Some(codes) = registered.recovery_codes {
-                        fresh_codes.set(codes);
-                    }
-                    key_label.set(String::new());
-                    info.set(Some(i18n.t("mfa.key.added")));
-                    reload.bump();
-                }
-                Err(e) => error.set(Some(match api::error_status(&e) {
-                    Some(409) => i18n.t("mfa.error.alreadyRegistered"),
-                    _ => api::friendly_error(i18n, e),
-                })),
-            }
-            busy.release();
-        });
-    });
-
-    let regenerate = use_callback(move |()| {
-        if !busy.claim() {
-            return;
-        }
-        error.set(None);
-        let client = gate.client(api);
-        spawn(async move {
-            match client.regenerate_recovery_codes().send().await {
-                Ok(res) => {
-                    fresh_codes.set(ResponseValue::into_inner(res).codes);
-                    reload.bump();
-                }
-                Err(e) => handle_refusal.call(refusal(i18n, e)),
-            }
-            busy.release();
-        });
-    });
-
-    let remove_totp = use_callback(move |()| {
-        if !busy.claim() {
-            return;
-        }
-        error.set(None);
-        let client = gate.client(api);
-        spawn(async move {
-            match client.delete_totp().send().await {
-                Ok(_) => {
-                    // The grant that authorised this was revoked with the factor, server-side.
-                    // Dropping it here too keeps the client from retrying with a dead token.
-                    step_up.clear();
-                    info.set(Some(i18n.t("mfa.totp.removed")));
-                    reload.bump();
-                }
-                Err(e) => handle_refusal.call(refusal(i18n, e)),
-            }
-            busy.release();
-        });
-    });
+    let start_app_enrolment = use_callback(move |()| form.start_app_enrolment());
+    let finish_app_enrolment = use_callback(move |()| form.finish_app_enrolment());
+    let register_key = use_callback(move |()| form.register_key());
+    let regenerate = use_callback(move |()| form.regenerate());
+    let remove_totp = use_callback(move |()| form.remove_totp());
 
     let available = webauthn::is_available();
 
@@ -349,19 +174,19 @@ pub(crate) fn MfaCard() -> Element {
                                 autocomplete: "one-time-code",
                                 value: confirm_code(),
                                 on_input: move |v| confirm_code.set(v),
-                                on_enter: move |()| confirm_totp.call(()),
+                                on_enter: move |()| finish_app_enrolment.call(()),
                             }
                             Button {
                                 tone: Tone::Primary,
                                 disabled: busy.is_busy(),
-                                on_click: move |_| confirm_totp.call(()),
+                                on_click: move |_| finish_app_enrolment.call(()),
                                 {i18n.t("mfa.totp.confirm")}
                             }
                         }
                     } else {
                         Button {
                             disabled: busy.is_busy(),
-                            on_click: move |_| gate.attempt(move || begin_totp.call(())),
+                            on_click: move |_| gate.attempt(move || start_app_enrolment.call(())),
                             {i18n.t("mfa.totp.add")}
                         }
                     }
@@ -584,31 +409,6 @@ fn SecurityKeyRow(
             }
         }
     }
-}
-
-fn refusal(
-    i18n: crate::i18n::Translator,
-    err: progenitor_client::Error<crate::wire::types::ProblemDetails>,
-) -> (api::Refusal, String) {
-    (api::Refusal::of(&err), api::friendly_error(i18n, err))
-}
-
-/// Report a ceremony outcome and release the busy latch.
-///
-/// [`CeremonyError::Cancelled`] clears the error line rather than writing to it, for the reason
-/// the passkey card gives: a ceremony the reader chose to stop is not a broken feature.
-fn ceremony_failed(
-    outcome: &CeremonyError,
-    mut error: Signal<Option<String>>,
-    busy: crate::hooks::Busy,
-    i18n: crate::i18n::Translator,
-) {
-    if matches!(outcome, CeremonyError::Cancelled) {
-        error.set(None);
-    } else {
-        error.set(Some(i18n.t(outcome.key())));
-    }
-    busy.release();
 }
 
 /// The provisioning URI as a scannable QR code.

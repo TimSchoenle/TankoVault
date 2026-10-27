@@ -167,92 +167,59 @@ jobs:
           set -euo pipefail
           echo "ref=ghcr.io/${GITHUB_REPOSITORY,,}/buildcache" >> "$GITHUB_OUTPUT"
 
-      # Which cache tag `docker-deps` may export to, or empty for "export nothing". Read that
-      # job's comment for why a pull request must not write `backend-deps-<arch>`.
+      # Which cache tag `docker-deps` may export to, or empty for "export nothing" — in which case
+      # `docker-deps` does not run at all. Read that job's comment for why a pull request must not
+      # write any tag on the `buildcache` package.
       #
-      # `release-pr-deps-<arch>` is the one pull-request export, and it is what stops a release
-      # compiling a tree this workflow has already compiled. The release PR's *build context* is
-      # byte-identical to the merge commit's — `.dockerignore` drops `CHANGELOG.md`, `.github/`
-      # and the release-please manifest, which leaves the `Cargo.toml` version bump and the
-      # synced `Cargo.lock`, and merging changes neither — so `release-please.yaml`'s warm-up
-      # imports this instead of recompiling all 26 workspace crates on both architectures while
-      # this workflow compiles the same thing beside it. A stale or absent tag is a slow release,
-      # not a broken one: the warm-up rebuilds and the legs read what it exports.
+      # **Only `main` exports, and only to `backend-deps-<arch>`.** A GHCR package grants write to
+      # a repository's workflows, not to a ref or a tag, so a token with `packages: write` can
+      # rewrite every tag on it — including `release-deps-<arch>`, which `release-please.yaml`
+      # builds signed images from. A pull request's `docker-deps` holds that token while BuildKit
+      # compiles the branch's dependency graph, and Renovate opens the branches that bump it, so a
+      # pull request may hold no `packages: write` here at all. That retired the two pull-request
+      # exports this step used to choose: `pr-<number>-deps-<arch>` (a pull request's own image
+      # legs) and `release-pr-deps-<arch>` (the release PR's compile, which the release warm-up
+      # used to import).
       #
-      # Safe only because of *which* branch, and both halves of that are load-bearing.
+      # `refs/heads/main` is tested, not only the event: `workflow_dispatch` runs on any branch, and
+      # the old `else backend-deps` exported a dispatched branch's unreviewed layers into the tag
+      # every pull request builds on.
       #
-      # The `Release Please Branches: Trusted Bots Only` ruleset restricts creation, update,
-      # deletion and non-fast-forward on `refs/heads/release-please--**` to two bypass Apps and
-      # requires signed commits, so no human push can reach this tag.
+      # What it costs is pull-request wall clock. With no export of its own, a pull request that
+      # touches the Dockerfile or the dependency graph misses `backend-deps-<arch>` and each of
+      # `docker`, `docker-frontend` and `docker-arm64` compiles the `builder` chain itself (one
+      # measured run: api 38m, render 40m, frontend 40m, in parallel). A pull request that leaves
+      # both alone is a hit on `main`'s export, as before. And the release warm-up no longer reads
+      # the release PR's compile, so a release recompiles the workspace crates once per
+      # architecture in `release-deps`.
       #
-      # That ruleset governs refs in *this* repository only. `github.head_ref` is the pull
-      # request's head **branch name**, which for a fork is a name its author chose freely — a
-      # fork branch called `release-please--branches--main` matches the prefix and is governed by
-      # nothing. So the head repository is checked as well, and the prefix test only means
-      # anything after it. A fork's `GITHUB_TOKEN` is read-only and its export would 403 anyway,
-      # but that is a consequence of how Actions issues tokens, not a rule this file states, and
-      # the tag is an input to the workflow that publishes signed images.
-      # This step also decides the architecture set, because the answer is the same predicate.
-      #
-      # arm64 is native-only — no QEMU, since BoringSSL under emulation costs upwards of an hour
-      # an image — so warming it is a second full compile of the workspace: 30 minutes beside the
-      # amd64 leg, on a runner nothing else in the graph waits for. Ordinary pull requests no
-      # longer pay it. What that gives up is narrower than the warning on `docker-arm64`, which is
-      # about arm64 breaking at a *tag*: `main` still builds both architectures, and no tag is cut
-      # from a commit `main` has not built, so a bad arm64 merge surfaces minutes after the merge
-      # rather than at release. A pull request stops catching it before the merge.
-      #
-      # **A pull request exports too, to a tag of its own, and that is what stops the same build
-      # running four times.** Until it did, `deps_scope` was empty on an ordinary pull request, so
-      # this warm-up compiled for 37 minutes and published nothing — and each of `docker`,
-      # `docker-frontend` and `docker-arm64`, which wait on it, then rebuilt the identical chain
-      # because `backend-deps-<arch>` off `main` is keyed on `main`'s Dockerfile and misses the
-      # moment this branch touches it. Measured on one such run: warm-up 37m, then api 38m,
-      # render 40m and frontend 40m, all after it. 78 minutes of wall clock for 37 minutes of
-      # work done four times.
-      #
-      # `pr-<number>-deps` rather than one shared pull-request tag: two `mode=max` exporters
-      # writing one tag is the write race this file warns about elsewhere, and concurrent pull
-      # requests would be exactly that. One tag per pull request per architecture is bounded by
-      # the number of open pull requests, and each is rewritten rather than added to on a push.
-      # Nothing prunes them yet, which is a housekeeping debt, not a correctness one.
-      #
-      # The fork check governs the export for the reason spelled out above this step, and it now
-      # governs three tag families rather than one.
+      # This step also decides the architecture set. arm64 is native-only — no QEMU, since
+      # BoringSSL under emulation costs upwards of an hour an image — so warming it is a second
+      # full compile of the workspace: 30 minutes beside the amd64 leg, on a runner nothing else
+      # in the graph waits for. Pull requests do not pay it. What that gives up is narrower than
+      # the warning on `docker-arm64`, which is about arm64 breaking at a *tag*: `main` still
+      # builds both architectures, and no tag is cut from a commit `main` has not built, so a bad
+      # arm64 merge surfaces minutes after the merge rather than at release. A pull request stops
+      # catching it before the merge.
       - name: decide the deps cache scope and architecture set
         id: depsscope
         env:
           EVENT: ${{ github.event_name }}
           FULL: ${{ steps.decide.outputs.full }}
-          HEAD_REF: ${{ github.head_ref }}
-          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
-          THIS_REPO: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
           scope=''
-          release_pr=false
-          if [ "$EVENT" = "pull_request" ]; then
-            if [ "$HEAD_REPO" = "$THIS_REPO" ]; then
-              case "$HEAD_REF" in
-                release-please--*) scope='release-pr-deps'; release_pr=true ;;
-                *) scope="pr-${PR_NUMBER}-deps" ;;
-              esac
-            fi
-          else
+          if [ "$EVENT" != "pull_request" ] && [ "$GITHUB_REF" = "refs/heads/main" ]; then
             scope='backend-deps'
           fi
           echo "scope=$scope" >> "$GITHUB_OUTPUT"
           echo "::notice::deps cache export scope: ${scope:-none}"
 
-          # arm64 no longer follows `scope`, because `scope` is now set on ordinary pull requests
-          # too. It follows what a *later* run reads: `backend-deps-arm64` off `main` and
-          # `release-pr-deps-arm64` off the release pull request, which `release-please.yaml`
-          # imports instead of recompiling the identical tree. An ordinary pull request's arm64
-          # leg is read by nothing after the run ends.
+          # arm64 follows the event, not `scope`: a dispatched full run on a branch still builds
+          # arm64, importing `main`'s `backend-deps-arm64`, and exports nothing.
           amd64='{"arch":"amd64","runner":"ubuntu-latest"}'
           arm64='{"arch":"arm64","runner":"ubuntu-24.04-arm"}'
-          if [ "$EVENT" != "pull_request" ] || [ "$FULL" = "true" ] || [ "$release_pr" = "true" ]; then
+          if [ "$EVENT" != "pull_request" ] || [ "$FULL" = "true" ]; then
             echo "arm64=true" >> "$GITHUB_OUTPUT"
             echo "arches=[${amd64},${arm64}]" >> "$GITHUB_OUTPUT"
           else
@@ -360,7 +327,7 @@ jobs:
 
       # Version comes from `rust-toolchain.toml` via the `changes` job; naming it here is how the
       # two drift apart.
-      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16 # zizmor: ignore[superfluous-actions,stale-action-refs]
         with:
           toolchain: ${{ needs.changes.outputs.toolchain }}
           components: rustfmt, clippy
@@ -432,7 +399,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16 # zizmor: ignore[superfluous-actions,stale-action-refs]
         with:
           toolchain: ${{ needs.changes.outputs.toolchain }}
       # Saver for the `test` group — the widest codegen build in the workflow, so what it stores
@@ -512,7 +479,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16 # zizmor: ignore[superfluous-actions,stale-action-refs]
         with:
           toolchain: ${{ needs.changes.outputs.toolchain }}
       # Its own group, measured rather than assumed: `--all-features` resolves a wider dependency
@@ -595,7 +562,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16 # zizmor: ignore[superfluous-actions,stale-action-refs]
         with:
           toolchain: ${{ needs.changes.outputs.toolchain }}
       # `SQLX_OFFLINE=false` re-derives the workspace crates against the live database, but that is
@@ -644,7 +611,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16 # zizmor: ignore[superfluous-actions,stale-action-refs]
         with:
           toolchain: ${{ needs.changes.outputs.toolchain }}
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
@@ -742,7 +709,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16 # zizmor: ignore[superfluous-actions,stale-action-refs]
         with:
           toolchain: ${{ needs.changes.outputs.toolchain }}
           targets: wasm32-unknown-unknown
@@ -881,7 +848,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16 # zizmor: ignore[superfluous-actions,stale-action-refs]
         with:
           toolchain: ${{ needs.changes.outputs.msrv }}
       # Its own group, and it must stay that way: this leg builds on the MSRV compiler with
@@ -931,7 +898,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16 # zizmor: ignore[superfluous-actions,stale-action-refs]
         with:
           toolchain: ${{ needs.changes.outputs.toolchain }}
           components: llvm-tools-preview
@@ -1028,7 +995,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16 # zizmor: ignore[superfluous-actions,stale-action-refs]
         with:
           toolchain: ${{ needs.changes.outputs.toolchain }}
           components: llvm-tools-preview
@@ -1120,7 +1087,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16 # zizmor: ignore[superfluous-actions,stale-action-refs]
         with:
           toolchain: ${{ needs.changes.outputs.toolchain }}
       # Reads the `test` group and writes nothing: mutants rebuilds the same test binaries, and
@@ -1207,7 +1174,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16 # zizmor: ignore[superfluous-actions,stale-action-refs]
         with:
           toolchain: ${{ needs.changes.outputs.toolchain }}
       # Its own group, and small: this job compiles `xtask` and nothing else, so what it is really
@@ -1268,7 +1235,7 @@ jobs:
       # source and tracks current stable, so under the project's pin `cargo install` refuses and
       # the job fails without ever reading an advisory. Auditing reads `Cargo.lock`, not the
       # workspace, so the result is unaffected.
-      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16 # zizmor: ignore[superfluous-actions,stale-action-refs]
         with:
           toolchain: stable
 
@@ -1300,7 +1267,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16 # zizmor: ignore[superfluous-actions,stale-action-refs]
         with:
           toolchain: ${{ needs.changes.outputs.toolchain }}
 
@@ -1415,9 +1382,9 @@ jobs:
   #
   # The tag is **arch-qualified** because a BuildKit cache is not portable across architectures:
   # the `chef` base resolves to a different digest per platform, so every key downstream of it
-  # differs and an amd64 export is a guaranteed miss on an arm64 build. `release-please.yaml`
-  # builds all nine images for both architectures and imports these tags; while the tag was
-  # unqualified its nine arm64 legs silently got nothing and cooked ~600 crates each.
+  # differs and an amd64 export is a guaranteed miss on an arm64 build. While the tag was
+  # unqualified, `release-please.yaml` — which then imported it — built nine arm64 images that
+  # silently got nothing and cooked ~600 crates each.
   #
   # `platforms` is stated rather than left to default to the host, here and at every consumer, so
   # the key a warm-up writes and the key a consumer looks up are visibly the same thing.
@@ -1426,20 +1393,22 @@ jobs:
   # caches — `mode=max` on both architectures held ~9.5 GB of a 10 GB Actions budget — and the
   # budget is per repository and LRU, so they were evicting the Rust caches every other job here
   # depends on and then being evicted in turn. GHCR is unmetered for public packages, is not
-  # LRU-evicted, and one tag is readable from pull requests, from `main` and from
-  # `release-please.yaml` without the ref scoping the Actions cache imposes. `image-manifest` and
+  # LRU-evicted, and one tag is readable from pull requests and from `main` without the ref
+  # scoping the Actions cache imposes. (`release-please.yaml` reads none of this file's tags;
+  # its own `release-deps` job says why.) `image-manifest` and
   # `oci-mediatypes` are both required: GHCR rejects the cache manifest BuildKit writes without
   # them.
   #
-  # `cache-to` only off `main`, because a registry tag has no ref scoping to protect it: a pull
-  # request exporting here would publish unreviewed layers into the tag every branch and every
-  # release then builds on. Pull requests keep *importing* — including forks, whose read-only
-  # token still pulls a public package, and whose miss is a slow build rather than a failure
-  # since BuildKit treats an unreadable `cache-from` as a warning.
-  #
-  # The single exception is the release-please branch, which exports to `release-pr-deps-<arch>`
-  # instead — a different tag, so it can never overwrite what `main` wrote. The `changes` job's
-  # `decide the deps cache scope` step holds that rule and the branch protection it depends on.
+  # **Runs, and exports, only off `main`** — `changes` sets `deps_scope` on a push, schedule or
+  # dispatch whose ref is `refs/heads/main` and nowhere else, and this job is skipped when it is
+  # empty. A registry tag has no ref scoping to protect it, and a GHCR package has no per-tag
+  # permission either: the `packages: write` this job needs to export is write to every tag on
+  # `buildcache`, `release-deps-<arch>` included, while BuildKit runs the branch's build scripts.
+  # So no pull request runs this job, and none holds `packages: write` anywhere in this file.
+  # Pull requests still *import* `backend-deps-<arch>` in their image legs with `packages: read`
+  # — including forks, whose read-only token still pulls a public package, and whose miss is a
+  # slow build rather than a failure since BuildKit treats an unreadable `cache-from` as a
+  # warning. The `changes` step that sets the scope says what that costs a pull request.
   #
   # Deliberately **not** `needs: lint`. A warm-up is not a gate: nothing it produces reaches a
   # registry, and `docker`, `docker-arm64` and `docker-frontend` all still wait on `lint`. Gating
@@ -1452,13 +1421,13 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     needs: [changes]
-    if: ${{ !cancelled() && !failure() && needs.changes.outputs.docker == 'true' }}
+    if: ${{ !cancelled() && !failure() && needs.changes.outputs.docker == 'true' && needs.changes.outputs.deps_scope != '' }}
     permissions:
       contents: read # to check out the build context
-      packages: write # to export the layer cache to ghcr.io
+      packages: write # to export the layer cache to ghcr.io; never granted on a pull request, see above
     strategy:
       fail-fast: false
-      # amd64 always; arm64 off pull requests. `changes` owns the rule and says why.
+      # Both architectures, since this job runs off `main` only. `changes` owns the rule.
       matrix:
         include: ${{ fromJSON(needs.changes.outputs.arches) }}
     steps:
@@ -1501,17 +1470,12 @@ jobs:
           push: false
           outputs: type=cacheonly
           provenance: false
-          # `release-pr-deps-<arch>` is imported here as well as by `release-please.yaml`, and it
-          # matters most on the one push where this job is otherwise at its worst: merging a
-          # release PR changes `Cargo.toml` and `Cargo.lock`, every workspace crate's metadata
-          # hash with them, so `builder` misses `backend-deps-<arch>` and recompiles all 26 —
-          # 43 minutes, beside `release-please.yaml` compiling the identical tree. The PR run
-          # already did that work under a key this push can read.
-          cache-from: |
-            type=registry,ref=${{ needs.changes.outputs.buildcache }}:backend-deps-${{ matrix.arch }}
-            type=registry,ref=${{ needs.changes.outputs.buildcache }}:release-pr-deps-${{ matrix.arch }}
-          # The tag comes from `changes`, which is where the rule for choosing it lives.
-          cache-to: ${{ needs.changes.outputs.deps_scope != '' && format('type=registry,ref={0}:{1}-{2},mode=max,compression=zstd,image-manifest=true,oci-mediatypes=true', needs.changes.outputs.buildcache, needs.changes.outputs.deps_scope, matrix.arch) || '' }}
+          # Its own previous export only. Nothing else on `buildcache` is written by a run this
+          # job can trust more than itself.
+          cache-from: type=registry,ref=${{ needs.changes.outputs.buildcache }}:backend-deps-${{ matrix.arch }}
+          # The tag comes from `changes`, which is where the rule for choosing it lives; the job
+          # does not run when it is empty.
+          cache-to: type=registry,ref=${{ needs.changes.outputs.buildcache }}:${{ needs.changes.outputs.deps_scope }}-${{ matrix.arch }},mode=max,compression=zstd,image-manifest=true,oci-mediatypes=true
 
   docker:
     name: docker build (${{ matrix.bin }})
@@ -1578,11 +1542,10 @@ jobs:
           # upload its own copy of the multi-gigabyte `cook` layer. On the Actions cache that
           # evicted `backend-deps` itself; on GHCR it instead makes every later import pull a
           # duplicate chain, which is a slower gate for no benefit either way.
-          # One tag: the one `docker-deps` exported in this run, or `backend-deps` when it exported
-          # none (a fork). Importing `pr-<number>-deps` and `backend-deps` together made BuildKit
-          # resolve the `backend-deps` lineage and drop the other, so a pull request's `api` leg
-          # compiled `cook` and `builder` again: 47 minutes in run 3645 against 1 on `main`, where
-          # both lines named the same tag.
+          # One tag: the one `docker-deps` exported in this run off `main`, or `main`'s last
+          # `backend-deps` on a pull request, where `docker-deps` does not run. Importing two
+          # lineages at once made BuildKit resolve one and drop the other (47 minutes in run 3645
+          # against 1 on `main`), so a second `cache-from` line here is not a free fallback.
           cache-from: type=registry,ref=${{ needs.changes.outputs.buildcache }}:${{ needs.changes.outputs.deps_scope || 'backend-deps' }}-amd64
 
       # The generated documents, on the host: `--target contract` is a `scratch` stage holding

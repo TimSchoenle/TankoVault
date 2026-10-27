@@ -160,12 +160,12 @@ fn counted_em_dashes(markdown: &str) -> usize {
             }
             continue;
         }
-        if let Some(open) = Fence::opened_by(line) {
-            fence = Some(open);
-            continue;
-        }
         if in_comment || line.contains("<!--") {
             in_comment = !line.contains("-->");
+            continue;
+        }
+        if let Some(open) = Fence::opened_by(line) {
+            fence = Some(open);
             continue;
         }
         if line.starts_with('|') || line.starts_with('>') || is_numbered_item(line) {
@@ -290,6 +290,19 @@ tilde \u{2014} block
 still \u{2014} code
 ~~~
 after \u{2014} the fences
+";
+        assert_eq!(counted_em_dashes(markdown), 1);
+    }
+
+    /// A fence line inside an HTML comment used to open a fence, so every line after the
+    /// comment was skipped as code until a matching fence turned up, and the budget went unchecked.
+    #[test]
+    fn a_fence_inside_an_html_comment_opens_nothing() {
+        let markdown = "\
+<!--
+```rust
+-->
+after \u{2014} the comment
 ";
         assert_eq!(counted_em_dashes(markdown), 1);
     }

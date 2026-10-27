@@ -1,9 +1,9 @@
 //! The recommendation model, as pure functions over plain data.
 //!
-//! No `sqlx`, no `axum`, no I/O: everything here is testable — and property-testable — without a
-//! database, and the same code serves a full catalogue rebuild and a single-series repair.
-//! `crates/db/src/repo/recsys` reads and writes; `services/worker` drives; this crate decides
-//! what a series *is* and how close two of them are.
+//! The crate does no I/O, so every function is tested without a database, and the same code
+//! serves a full catalogue rebuild and a single-series repair. `crates/db/src/repo/recsys` reads
+//! and writes, `services/worker` drives the build, and this crate decides what a series is and
+//! how close two series are.
 //!
 //! The pipeline, in the order the builder runs it:
 //!
@@ -17,11 +17,10 @@
 //! 4. [`similarity`] scores and explains a candidate pair exactly, against the sparse vectors the
 //!    embedding was derived from.
 //!
-//! The reader's half is two more modules, used by the request path rather than the builder:
-//! [`mod@affinity`] turns watchlist status and reading depth into one number per series, and
+//! The request path uses two more modules: [`mod@affinity`] turns watchlist status and reading depth into one number per series, and
 //! [`ranking`] blends the retrieval paths and diversifies the result.
 //!
-//! Retrieval itself is not here: it is an HNSW search, which belongs to Postgres.
+//! Retrieval is an HNSW search in Postgres, outside this crate.
 
 pub mod affinity;
 pub mod embedding;
@@ -39,21 +38,20 @@ pub use weighting::{apply_idf, idf, normalise};
 
 /// The width of the dense space, and the type of `series_embedding.embedding`.
 ///
-/// A constant rather than a parameter because the column is declared `halfvec(128)`: changing it
-/// is a column-type change and a full re-embed, not a tuning knob, and a mismatch between this
-/// and the schema is a write that fails at run time on every row.
+/// The column is declared `halfvec(128)`, so changing this is a column-type change and a full
+/// re-embed. A mismatch with the schema fails every write at run time.
 pub const EMBEDDING_DIMS: usize = 128;
 
 /// How many features may shape the dense space.
 ///
-/// The projection's input dimension, and therefore the side of the covariance matrix: at 2 048
-/// that is ~32 MB, which is the whole of the builder's non-streaming memory. Features past the
-/// cap (by document frequency) still score and explain — they simply do not steer the geometry.
+/// The projection's input dimension, and so the side of the covariance matrix. At 2,048 the
+/// matrix is about 32 MB, the whole of the builder's non-streaming memory. Features past the cap,
+/// by document frequency, still score and explain but do not shape the geometry.
 pub const DENSE_INPUT_CAP: usize = 2_048;
 
 /// Orthogonal-iteration passes when solving for the basis.
 ///
-/// Convergence is geometric in the ratio between consecutive eigenvalues. This is well past the
-/// point where the *ranking* the basis produces stops moving, which is a far weaker requirement
-/// than converging the eigenvectors themselves.
+/// Convergence is geometric in the ratio between consecutive eigenvalues. 32 passes is well past
+/// the point where the ranking the basis produces stops moving, which needs far less than
+/// converged eigenvectors.
 pub const BASIS_ITERATIONS: usize = 32;

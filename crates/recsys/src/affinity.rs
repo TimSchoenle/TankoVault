@@ -1,28 +1,22 @@
 //! How much a reader cares about a series, as one number in `[-1, 1]`.
 //!
-//! Everything here is derived from signals the product already collects — watchlist status,
-//! reading depth, when either last moved. There is no rating column and this design does not add
-//! one: implicit feedback is sufficient and does not require asking users to do work.
+//! Affinity comes from signals the product already collects: watchlist status, reading depth,
+//! and when either last moved. There is no rating column, so a reader is never asked to rate.
 
 use tankovault_domain::{Tunable, WatchStatus};
 
 /// The shape of the affinity curve, as an operator has it set.
 ///
-/// Threaded in as a parameter rather than read from a global: these are pure functions, and a
-/// process-wide value would make them untestable at any setting but the live one — and would put
-/// a lock acquisition inside a loop over a reader's whole watchlist.
-///
-/// [`Default`] reads the compiled defaults out of [`Tunable`], so there is no second copy of the
-/// numbers to drift from the registry the console edits.
+/// [`Default`] reads the compiled defaults from [`Tunable`], the registry the console edits.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AffinityParams {
-    /// Affinity for a finished series — the reference the others are read against.
+    /// Affinity for a finished series, the reference the other bases are read against.
     pub base_completed: f32,
     /// Base for a series currently being read, before depth scaling.
     pub base_reading: f32,
     /// Base for a paused series, before depth scaling.
     pub base_paused: f32,
-    /// Base for a plan-to-read entry: intent, not taste, so it takes no depth scaling.
+    /// Base for a plan-to-read entry. It records intent, not taste, so depth does not scale it.
     pub base_planned: f32,
     /// Affinity for a series abandoned immediately. Negative.
     pub dropped_floor: f32,
@@ -30,23 +24,21 @@ pub struct AffinityParams {
     pub dropped_span: f32,
     /// Chapters at which a reader counts as fully committed.
     ///
-    /// Depth is measured in *absolute chapters*, not as a fraction of the series. A fraction
-    /// punishes the reader at chapter 300 of a 900-chapter ongoing for being two thirds from an
-    /// end that does not exist yet, which is the opposite of what the data means.
+    /// Depth is measured in absolute chapters, not as a fraction of the series. A fraction would
+    /// score a reader at chapter 300 of a 900-chapter ongoing series as two thirds from an end
+    /// that does not exist yet.
     pub engagement_knee: f32,
     /// Days after which a signal counts half as much.
     pub recency_half_life_days: f32,
     /// The floor the recency decay never falls through.
     ///
-    /// An unfloored decay collapses a dormant reader's profile to noise. An all-time favourite
-    /// read five years ago is still evidence about taste; it is simply weaker evidence than last
-    /// week.
+    /// Without a floor, a dormant reader's profile decays to noise. A favourite read five years ago
+    /// is weaker evidence about taste than last week, but still evidence.
     pub recency_floor: f32,
 }
 
 impl Default for AffinityParams {
     fn default() -> Self {
-        // Narrowing from the registry's `f64`: every one of these ranges is far inside `f32`.
         #[expect(
             clippy::cast_possible_truncation,
             reason = "affinity ranges are all within [-1, 3650]"
@@ -78,14 +70,19 @@ pub struct Interaction {
     pub age_days: f32,
 }
 
-/// Reading depth on `[0, 1]`, log-scaled.
+/// Returns reading depth on `[0, 1]`, log-scaled and reaching 1 at `knee` chapters.
 ///
-/// Logarithmic because the difference between chapter 3 and chapter 30 says far more about
-/// whether someone is invested than the difference between chapter 300 and chapter 330.
+/// Chapter 3 against chapter 30 says far more about investment than chapter 300 against 330,
+/// hence the logarithm. The result never exceeds 1, which `user_series_affinity.engagement`
+/// requires. A non-positive count is depth 0, and a knee below 1 is treated as 1.
 ///
-/// The saturation at 1 is part of the contract, not a rounding detail: the knee is *the* point at
-/// which a reader counts as fully committed, and `user_series_affinity.engagement` is constrained
-/// to `[0, 1]` on that basis. Anything past the knee is still just committed.
+/// ```
+/// use tankovault_recsys::affinity::engagement;
+///
+/// assert!(engagement(0, 60.0).abs() < f32::EPSILON);
+/// assert!(engagement(3, 60.0) < engagement(30, 60.0));
+/// assert!((engagement(5_000, 60.0) - 1.0).abs() < f32::EPSILON);
+/// ```
 #[must_use]
 pub fn engagement(chapters_read: i64, knee: f32) -> f32 {
     if chapters_read <= 0 {
@@ -96,36 +93,32 @@ pub fn engagement(chapters_read: i64, knee: f32) -> f32 {
         reason = "chapter counts are far below f32's exact-integer range at any plausible length"
     )]
     let read = chapters_read as f32;
-    // The registry floors the knee at five, but a caller can construct params by hand; a knee at
-    // or below zero would divide by a non-positive logarithm and produce a sign flip rather than
-    // an error.
+    // The registry floors the knee at five, but params can be built by hand, and a knee at or
+    // below zero would flip the sign.
     ((read + 1.0).ln() / (knee.max(1.0) + 1.0).ln()).min(1.0)
 }
 
-/// Exponential decay with a floor, so old favourites still count for something.
+/// Returns `0.5^(age / half_life)`, never below `floor`, so an old favourite still counts.
 #[must_use]
 pub fn recency(age_days: f32, half_life_days: f32, floor: f32) -> f32 {
     let decayed = 0.5_f32.powf(age_days.max(0.0) / half_life_days.max(f32::EPSILON));
     decayed.max(floor)
 }
 
-/// The reader's affinity for one series.
+/// Returns the reader's affinity for one series.
 ///
 /// # `dropped` is not one signal
 ///
 /// Dropped at chapter 3 means "wrong for me". Dropped at chapter 150 means "I liked this for a
-/// long time and then it declined" — which is a *positive* statement about everything except the
-/// ending. Treating both as `-1` is the classic mistake here, and it actively poisons the profile
-/// of anyone who reads long series, because the long series they gave up on are exactly the ones
-/// they read most of.
+/// long time and then it declined", which is positive about everything except the ending. Scoring
+/// both `-1` would point a long-series reader's strongest negatives at what they read most of.
 ///
 /// So `dropped` interpolates: strongly negative when abandoned early, barely negative when
 /// abandoned deep.
 ///
 /// # `planned` is intent, not taste
 ///
-/// A plan-to-read list is aspirational and full of things people never open. It must not outweigh
-/// a series someone actually read two hundred chapters of, so it sits below every status that
+/// A plan-to-read list is full of things people never open, so it sits below every status that
 /// implies contact with the work.
 #[must_use]
 pub fn affinity(interaction: Interaction, params: &AffinityParams) -> f32 {
@@ -138,10 +131,9 @@ pub fn affinity(interaction: Interaction, params: &AffinityParams) -> f32 {
 
     let base = match interaction.status {
         WatchStatus::Completed => params.base_completed,
-        // Scaled by depth: someone two chapters into a series is telling you much less than
-        // someone two hundred chapters in, and both are "reading". The 0.4 floor is the share a
-        // held series keeps regardless of depth, and is deliberately not a knob — it is what
-        // makes "reading" mean something at chapter one.
+        // Two chapters in says much less than two hundred, and both are "reading". The 0.4 is the
+        // share a held series keeps at any depth, so "reading" means something at chapter one;
+        // it is not a tunable.
         WatchStatus::Reading => params.base_reading * depth.mul_add(0.6, 0.4),
         WatchStatus::Paused => params.base_paused * depth.mul_add(0.6, 0.4),
         WatchStatus::Planned => params.base_planned,
@@ -181,11 +173,7 @@ mod tests {
         super::recency(age_days, p.recency_half_life_days, p.recency_floor)
     }
 
-    /// **Dropping something after 150 chapters is not the same signal as dropping it after 3.**
-    ///
-    /// The bug this pins: a flat `dropped = -1` poisons the profile of anyone who reads long
-    /// series, because the long series they abandoned are the ones they read most of — so their
-    /// strongest negative signal ends up pointing at exactly what they like.
+    /// Dropping a series after 150 chapters is a far weaker negative than dropping it after 3.
     #[test]
     fn dropping_deep_is_a_far_weaker_negative_than_dropping_early() {
         let early = affinity(at(WatchStatus::Dropped, 3));
@@ -202,7 +190,7 @@ mod tests {
         );
     }
 
-    /// Intent must not outweigh contact with the work.
+    /// A plan to read counts for less than any status with chapters read.
     #[test]
     fn a_plan_to_read_counts_for_less_than_anything_actually_read() {
         let planned = affinity(at(WatchStatus::Planned, 0));
@@ -228,8 +216,7 @@ mod tests {
         }
     }
 
-    /// Depth is absolute, not a fraction: this is what stops a reader 300 chapters into a
-    /// 900-chapter ongoing from being scored as less invested than one who finished a oneshot.
+    /// Reading deeper raises affinity.
     #[test]
     fn reading_deeper_raises_affinity() {
         let shallow = affinity(at(WatchStatus::Reading, 2));
@@ -249,17 +236,8 @@ mod tests {
         assert!((engagement(5_000) - engagement(1_000)).abs() < 0.6);
     }
 
-    /// **Depth never exceeds 1, at any knee.**
-    ///
-    /// The bug: `engagement` was a bare `ln(read + 1) / ln(knee + 1)`, which passes 1 the moment a
-    /// reader goes past the knee — 199 chapters against the shipped knee of 60 gives 1.2888544.
-    /// `affinity` clamped its own copy, so the score stayed sane and nothing showed until the
-    /// value was *stored*: `user_series_affinity.engagement` is `CHECK (… <= 1)`, so every taste
-    /// profile rebuild for a reader with one long series 500'd, and the reader could never load
-    /// their recommendations at all.
-    ///
-    /// The whole knee range is swept because the ceiling is a property of the function, not of the
-    /// shipped default.
+    /// Depth never exceeds 1 at any knee, since `user_series_affinity.engagement` is
+    /// `CHECK (… <= 1)` and a stored value above it fails the taste-profile rebuild.
     #[test]
     fn engagement_stays_within_the_range_the_affinity_table_accepts() {
         for knee in [5.0, 60.0, 1_000.0] {
@@ -273,7 +251,7 @@ mod tests {
         }
     }
 
-    /// An old favourite is weaker evidence, never no evidence.
+    /// Recency decays to its floor and never to zero.
     #[test]
     fn recency_decays_to_a_floor_and_not_to_zero() {
         assert!((recency(0.0) - 1.0).abs() < 1e-6);
@@ -285,8 +263,7 @@ mod tests {
         );
     }
 
-    /// Recency scales, it does not invert: a stale positive stays positive and a stale negative
-    /// stays negative.
+    /// Recency scales a signal and never changes its sign.
     #[test]
     fn decay_never_changes_a_signals_sign() {
         for age in [0.0, 90.0, 400.0, 5_000.0] {
@@ -305,13 +282,8 @@ mod tests {
         }
     }
 
-    /// **Every knob on this curve has to move the number.**
-    ///
-    /// The bug this pins is §8.4's: a value published in the tuning console that reaches nothing.
-    /// An operator changes it, sees no difference, changes it again, and concludes the page is
-    /// broken — which is indistinguishable from the page actually being broken. One assertion per
-    /// field, because a parameter struct that is threaded through but only half consumed looks
-    /// wired from every angle except the output.
+    /// Every field of [`AffinityParams`] moves the number it names, so no tunable in the console
+    /// is inert. One assertion per field.
     #[test]
     fn changing_any_affinity_parameter_changes_the_number_it_names() {
         let reading = Interaction {

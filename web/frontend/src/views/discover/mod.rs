@@ -10,164 +10,29 @@
 mod active;
 mod filters;
 mod query;
+mod requests;
+mod window;
 
 use crate::api;
 use crate::components::{
     unmeasured, use_grid_fit, CoverCard, ErrorBox, ErrorLine, GridFitProbe, SkeletonGrid,
 };
-use crate::hooks::use_reload;
+use crate::hooks::{use_reload, Reload};
 use crate::i18n::{use_i18n, Translator};
 use crate::icons::{Ic, Icon};
-use crate::models::*;
 use crate::util::thousands;
 use crate::Route;
 use active::ActiveFilters;
 use dioxus::prelude::*;
 use filters::FilterPanel;
 use inkstone_ui::Button;
-use progenitor_client::ResponseValue;
-use query::{DiscoverFilters, YEAR_MAX, YEAR_MIN};
+use query::DiscoverFilters;
 pub(crate) use query::{DiscoverQuery, Sort, Tracking};
-use std::collections::{BTreeSet, HashMap, VecDeque};
+use std::collections::{BTreeSet, HashMap};
+use window::{released_height, Edge, Fetch, Held};
 /// How many *rows* of covers one fetched page holds. How many series that is depends on how
 /// many columns the window fits — see [`crate::components::use_grid_fit`].
 const PAGE_ROWS: usize = 4;
-
-/// Most covers one window keeps mounted at a time.
-///
-/// A sentinel with no ceiling turns a 54 000-title catalogue into an unbounded DOM: nothing is
-/// released as it scrolls past, so the cost of the screen grows for as long as the reader keeps
-/// going. At the ceiling the window *slides* instead — the page furthest above the viewport is
-/// released, a spacer holds its measured height open, and scrolling back into that spacer fetches
-/// it again. The DOM stays bounded and neither direction costs the reader a click.
-const WINDOW_ITEMS: usize = 600;
-
-/// Which end of the window a request belongs to.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Edge {
-    /// A page released earlier, fetched back as the reader scrolls up and prepended.
-    Head,
-    /// New ground below the window, appended. The end the reader pages into.
-    Tail,
-}
-
-/// One request: which catalogue page, and enough of the window to tell whether the answer still
-/// belongs to it.
-///
-/// Separate from [`Held`] because the window slides *without* asking for anything — releasing a
-/// page is not a fetch, and a request keyed on the whole window would issue one for a page the
-/// window already holds. `generation` keeps two otherwise identical requests distinguishable, so
-/// a response can never be merged into the window that replaced it.
-#[derive(Clone, PartialEq)]
-struct Fetch {
-    generation: usize,
-    filters: DiscoverFilters,
-    size: usize,
-    /// 0-based catalogue page index.
-    page: usize,
-    edge: Edge,
-    /// Whether the server should count the matches. Only a window's first page asks: every later
-    /// page has the same filters, so its count would be the same answer paid for again.
-    with_total: bool,
-}
-
-/// The pages one window holds, and where in the catalogue they sit.
-///
-/// The page size is part of it because a window is *expressed* in pages: a resize that changes the
-/// size makes every page boundary in the loaded list wrong, so the window is rebuilt at the
-/// reader's current anchor rather than continued at a size the pages before it were never fetched
-/// at.
-#[derive(Clone, PartialEq)]
-struct Held {
-    generation: usize,
-    filters: DiscoverFilters,
-    size: usize,
-    /// The first page this window ever asked for. Nothing above it was ever rendered, so there is
-    /// no measured height to hold its place — that is what `Back to start` is for.
-    origin: usize,
-    /// The first page still held.
-    start: usize,
-    /// The held pages, in catalogue order, starting at [`Held::start`].
-    pages: VecDeque<Vec<SeriesSummary>>,
-}
-
-impl Held {
-    /// An empty window anchored at the page containing catalogue item `at`.
-    fn new(generation: usize, filters: DiscoverFilters, size: usize, at: usize) -> Self {
-        let origin = at / size.max(1);
-        Self {
-            generation,
-            filters,
-            size,
-            origin,
-            start: origin,
-            pages: VecDeque::new(),
-        }
-    }
-
-    /// The catalogue index of the first card held.
-    fn first(&self) -> usize {
-        self.start.saturating_mul(self.size)
-    }
-
-    /// Cards held, across every page.
-    fn count(&self) -> usize {
-        self.pages.iter().map(Vec::len).sum()
-    }
-
-    /// Whether an anchor falls inside what the window holds.
-    ///
-    /// This is what separates "the reader scrolled" from "the reader jumped": an anchor the window
-    /// already covers is a scroll position to record, and one outside it is a request to rebuild
-    /// the window there — which is how a deep link and the back button reach the same code path.
-    /// Scrolling up into the released span is neither, because the markers only ever name a page
-    /// that is still held.
-    fn covers(&self, at: usize) -> bool {
-        let span = self.pages.len().saturating_mul(self.size);
-        at >= self.first() && at < self.first().saturating_add(span)
-    }
-
-    /// Pages the window keeps before it releases from the other end.
-    ///
-    /// Never under two: a window of one page would release the page the reader is looking at to
-    /// make room for the one below it.
-    fn capacity(&self) -> usize {
-        (WINDOW_ITEMS / self.size.max(1)).max(2)
-    }
-
-    /// Pages released above the window — the span the spacer has to hold open.
-    fn released(&self) -> usize {
-        self.start.saturating_sub(self.origin)
-    }
-}
-
-/// The height a released run of pages has to leave behind, from what those pages measured while
-/// they were mounted.
-///
-/// A page with no measurement falls back to the mean of the ones there are: every page in a window
-/// is the same whole rows of the same cards, so the mean *is* the height — the fallback only
-/// covers a page released before its observer first reported.
-fn released_height(heights: &HashMap<usize, f64>, from: usize, to: usize) -> f64 {
-    if to <= from || heights.is_empty() {
-        return 0.0;
-    }
-    #[expect(
-        clippy::cast_precision_loss,
-        reason = "a map of page heights, one entry per page of a bounded window"
-    )]
-    let mean = heights.values().sum::<f64>() / heights.len() as f64;
-    (from..to)
-        .map(|page| heights.get(&page).copied().unwrap_or(mean))
-        .sum()
-}
-
-/// The match count a page response reports, if it reports one.
-///
-/// Absent when the request asked the server not to count, which every page after a window's
-/// first does; the window keeps the total its first page reported.
-fn header_total(value: Option<&str>) -> Option<i64> {
-    value.and_then(|v| v.parse::<i64>().ok())
-}
 
 /// Discover screen.
 #[component]
@@ -178,7 +43,7 @@ pub(crate) fn Discover(query: DiscoverQuery) -> Element {
     let nav = navigator();
     let fit = use_grid_fit(PAGE_ROWS);
 
-    let mut panel_open = use_signal(|| true);
+    let panel_open = use_signal(|| true);
     let mut held = use_signal(|| Option::<Held>::None);
     let mut fetch = use_signal(|| Option::<Fetch>::None);
     let mut generation = use_signal(|| 0usize);
@@ -199,34 +64,7 @@ pub(crate) fn Discover(query: DiscoverQuery) -> Element {
     let mut on_screen = use_signal(BTreeSet::<usize>::new);
     let mut restore = use_signal(|| false);
 
-    // Degrades to an empty facet on failure rather than blocking the screen — a missing
-    // tag/provider filter is cheaper than an error state.
-    let tags_res = use_resource(move || {
-        let client = api.client();
-        async move {
-            client
-                .tags()
-                .send()
-                .await
-                .map(ResponseValue::into_inner)
-                .unwrap_or_default()
-        }
-    });
-    let all_tags: Vec<TagFacet> = tags_res.read_unchecked().clone().unwrap_or_default();
-
-    let providers_res = use_resource(move || {
-        let client = api.client();
-        async move {
-            client
-                .providers()
-                .send()
-                .await
-                .map(ResponseValue::into_inner)
-                .unwrap_or_default()
-        }
-    });
-    let all_providers: Vec<PublicProvider> =
-        providers_res.read_unchecked().clone().unwrap_or_default();
+    let (all_tags, all_providers) = requests::use_facets(api);
 
     // The route is the source of truth, so this is the one place a window is built: a filter
     // change, a resize, a deep link and the back button all reach it as "the current window does
@@ -245,14 +83,7 @@ pub(crate) fn Discover(query: DiscoverQuery) -> Element {
         let next = *generation.peek() + 1;
         generation.set(next);
         let window = Held::new(next, query.filters.clone(), size, query.at);
-        fetch.set(Some(Fetch {
-            generation: next,
-            filters: window.filters.clone(),
-            size,
-            page: window.start,
-            edge: Edge::Tail,
-            with_total: true,
-        }));
+        fetch.set(Some(window.first_fetch()));
         held.set(Some(window));
         merged.set(None);
         heights.write().clear();
@@ -274,64 +105,7 @@ pub(crate) fn Discover(query: DiscoverQuery) -> Element {
             let Some(request) = current else {
                 return unmeasured().await;
             };
-            let filters = &request.filters;
-            let mut builder = client.list();
-            if let Some(content_type) = filters.types.first() {
-                builder = builder.content_type(content_type.token());
-            }
-            if let Some(status) = filters.statuses.first() {
-                builder = builder.status(status.token());
-            }
-            if let Some(provider) = filters.provider.clone() {
-                builder = builder.provider(provider);
-            }
-            if !filters.inc.is_empty() {
-                builder = builder.tag(filters.inc.clone());
-            }
-            if !filters.exc.is_empty() {
-                builder = builder.exclude_tag(filters.exc.clone());
-            }
-            if filters.year_min > YEAR_MIN {
-                builder = builder.year_min(filters.year_min);
-            }
-            if filters.year_max < YEAR_MAX {
-                builder = builder.year_max(filters.year_max);
-            }
-            if filters.min_chapters > 0 {
-                builder = builder.min_chapters(filters.min_chapters);
-            }
-            if let Some(tracking) = filters.tracking.param() {
-                builder = builder.tracking(tracking);
-            }
-            let outcome = builder
-                .sort(filters.sort.token())
-                .page(i64::try_from(request.page).unwrap_or(i64::MAX))
-                .limit(i64::try_from(request.size).unwrap_or(24))
-                .with_total(request.with_total)
-                .send()
-                .await
-                .map(|r| {
-                    let total = header_total(
-                        r.headers()
-                            .get("x-total-count")
-                            .and_then(|v| v.to_str().ok()),
-                    );
-                    let next_cursor = r
-                        .headers()
-                        .get("x-next-cursor")
-                        .and_then(|v| v.to_str().ok())
-                        .and_then(|s| s.parse::<i64>().ok());
-                    SeriesPage {
-                        items: r.into_inner(),
-                        total,
-                        next_cursor,
-                    }
-                })
-                .map_err(|e| api::friendly_error(i18n, e));
-            // The request travels with its own answer, success or failure. A response that outlived
-            // the window it was asked for is then simply not the current one, rather than a page
-            // merged into a list it does not belong to.
-            (request, outcome)
+            requests::page(&client, request, i18n).await
         }
     });
 
@@ -345,8 +119,7 @@ pub(crate) fn Discover(query: DiscoverQuery) -> Element {
         if merged.peek().as_ref() == Some(answered) {
             return;
         }
-        let mut released_tail = false;
-        {
+        let released_tail = {
             let mut window = held.write();
             let Some(window) = window.as_mut() else {
                 return;
@@ -354,29 +127,8 @@ pub(crate) fn Discover(query: DiscoverQuery) -> Element {
             if window.generation != answered.generation {
                 return;
             }
-            match answered.edge {
-                Edge::Tail => {
-                    window.pages.push_back(data.items.clone());
-                    // Release from the head to make room. The spacer above grows by exactly the
-                    // height the released page occupied, so the document keeps its shape.
-                    while window.pages.len() > window.capacity() {
-                        window.pages.pop_front();
-                        window.start += 1;
-                    }
-                }
-                Edge::Head => {
-                    window.pages.push_front(data.items.clone());
-                    window.start = answered.page;
-                    while window.pages.len() > window.capacity() {
-                        window.pages.pop_back();
-                        // The window no longer holds the end of the result set, so the sentinel
-                        // below it has something to ask for again. Without this the list stayed
-                        // "finished" after one scroll up and the released tail never came back.
-                        released_tail = true;
-                    }
-                }
-            }
-        }
+            window.absorb(answered.edge, answered.page, data.items.clone())
+        };
         merged.set(Some(answered.clone()));
         if let Some(reported) = data.total {
             total.set(reported);
@@ -432,28 +184,13 @@ pub(crate) fn Discover(query: DiscoverQuery) -> Element {
         if in_flight {
             return;
         }
-        let request = {
-            let borrowed = held.peek();
-            let Some(window) = borrowed.as_ref() else {
-                return;
-            };
-            let page = match edge {
-                Edge::Tail => window.start + window.pages.len(),
-                // Nothing above the window's origin was ever rendered, so there is no height to
-                // hold its place and no spacer to scroll into.
-                Edge::Head if window.start > window.origin => window.start - 1,
-                Edge::Head => return,
-            };
-            Fetch {
-                generation: window.generation,
-                filters: window.filters.clone(),
-                size: window.size,
-                page,
-                edge,
-                with_total: false,
-            }
-        };
-        fetch.set(Some(request));
+        let request = held
+            .peek()
+            .as_ref()
+            .and_then(|window| window.next_fetch(edge));
+        if let Some(request) = request {
+            fetch.set(Some(request));
+        }
     };
 
     let discover_class = if *panel_open.read() {
@@ -461,39 +198,12 @@ pub(crate) fn Discover(query: DiscoverQuery) -> Element {
     } else {
         "ik-discover collapsed"
     };
-    let sort_now = query.filters.sort;
-    let sort_filters = query.filters.clone();
     let head_filters = query.filters.clone();
     let panel_filters = query.filters.clone();
     let chip_filters = query.filters.clone();
 
     rsx! {
-        div { class: "ik-results-head",
-            button {
-                class: "ik-panel-toggle",
-                title: i18n.t("discover.toggleFilters"),
-                onclick: move |_| {
-                    let cur = *panel_open.peek();
-                    panel_open.set(!cur);
-                },
-                Ic { icon: Icon::Tune, size: 18 }
-            }
-            h1 { class: "ik-page-title", {i18n.t("nav.discover")} }
-            span { class: "ik-rail-spacer", style: "flex:1;" }
-            label { class: "ik-muted", style: "font-size:13px;", {i18n.t("discover.sortLabel")} }
-            select {
-                class: "ik-select",
-                value: "{sort_now.token()}",
-                onchange: move |e| {
-                    let mut next = sort_filters.clone();
-                    next.sort = Sort::parse(&e.value());
-                    on_filters(next);
-                },
-                for s in Sort::ALL {
-                    option { value: "{s.token()}", selected: sort_now == s, {i18n.t(s.label_key())} }
-                }
-            }
-        }
+        {results_head(i18n, panel_open, &query.filters, on_filters)}
 
         ActiveFilters {
             filters: chip_filters,
@@ -526,33 +236,7 @@ pub(crate) fn Discover(query: DiscoverQuery) -> Element {
                 } else if count == 0 {
                     {empty_state(i18n, &head_filters, origin > 0, on_filters)}
                 } else {
-                    div { class: "ik-count-line",
-                        {
-                            i18n.args(
-                                "discover.countLine",
-                                &[
-                                    ("first", &thousands(i64::try_from(first + 1).unwrap_or(0))),
-                                    ("last", &thousands(i64::try_from(first + count).unwrap_or(0))),
-                                    ("total", &thousands(*total.read())),
-                                ],
-                            )
-                        }
-                        // A window that does not start at the top was opened from a link, or has
-                        // slid; either way the top of the result set is a jump, not a scroll.
-                        if start > 0 {
-                            {
-                                let filters = head_filters.clone();
-                                rsx! {
-                                    button {
-                                        class: "ik-scroll-more",
-                                        r#type: "button",
-                                        onclick: move |_| on_filters(filters.clone()),
-                                        {i18n.t("discover.backToStart")}
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    {count_line(i18n, first, count, *total.read(), start, &head_filters, on_filters)}
                     div { class: "ik-scroll-pages",
                         // The span released above the window, held open at the height it had while
                         // it was mounted — without it, releasing a page scrolls the covers out from
@@ -654,28 +338,124 @@ pub(crate) fn Discover(query: DiscoverQuery) -> Element {
                             },
                         }
                     }
-                    div { class: "ik-scroll-foot",
-                        if let Some(message) = failure.clone() {
-                            ErrorLine { message }
-                            button {
-                                class: "ik-scroll-more",
-                                r#type: "button",
-                                onclick: move |_| reload.bump(),
-                                {i18n.t("common.tryAgain")}
-                            }
-                        } else if in_flight {
-                            span { {i18n.t("discover.loadingMore")} }
-                        } else if more {
-                            // Keyboard-reachable equivalent of the scroll sentinel, and the
-                            // fallback when the observer never re-fires.
-                            button {
-                                class: "ik-scroll-more",
-                                r#type: "button",
-                                onclick: move |_| ask(Edge::Tail),
-                                {i18n.t("discover.loadMore")}
-                            }
-                        } else {
-                            span { {i18n.t("discover.endOfResults")} }
+                    {scroll_foot(i18n, failure.as_deref(), in_flight, more, reload, ask)}
+                }
+            }
+        }
+    }
+}
+
+/// The foot of the results: a failed page's retry, the loading line, the load-more button, or
+/// the end of the result set.
+fn scroll_foot(
+    i18n: Translator,
+    failure: Option<&str>,
+    in_flight: bool,
+    more: bool,
+    reload: Reload,
+    mut ask: impl FnMut(Edge) + Clone + 'static,
+) -> Element {
+    rsx! {
+        div { class: "ik-scroll-foot",
+            if let Some(message) = failure {
+                ErrorLine { message: message.to_owned() }
+                button {
+                    class: "ik-scroll-more",
+                    r#type: "button",
+                    onclick: move |_| reload.bump(),
+                    {i18n.t("common.tryAgain")}
+                }
+            } else if in_flight {
+                span { {i18n.t("discover.loadingMore")} }
+            } else if more {
+                // Keyboard-reachable equivalent of the scroll sentinel, and the
+                // fallback when the observer never re-fires.
+                button {
+                    class: "ik-scroll-more",
+                    r#type: "button",
+                    onclick: move |_| ask(Edge::Tail),
+                    {i18n.t("discover.loadMore")}
+                }
+            } else {
+                span { {i18n.t("discover.endOfResults")} }
+            }
+        }
+    }
+}
+
+/// The results heading: the filter panel's toggle, the page title and the sort control.
+fn results_head(
+    i18n: Translator,
+    mut panel_open: Signal<bool>,
+    filters: &DiscoverFilters,
+    mut on_filters: impl FnMut(DiscoverFilters) + Clone + 'static,
+) -> Element {
+    let sort_now = filters.sort;
+    let sort_filters = filters.clone();
+    rsx! {
+    div { class: "ik-results-head",
+        button {
+            class: "ik-panel-toggle",
+            title: i18n.t("discover.toggleFilters"),
+            onclick: move |_| {
+                let cur = *panel_open.peek();
+                panel_open.set(!cur);
+            },
+            Ic { icon: Icon::Tune, size: 18 }
+        }
+        h1 { class: "ik-page-title", {i18n.t("nav.discover")} }
+        span { class: "ik-rail-spacer", style: "flex:1;" }
+        label { class: "ik-muted", style: "font-size:13px;", {i18n.t("discover.sortLabel")} }
+        select {
+            class: "ik-select",
+            value: "{sort_now.token()}",
+            onchange: move |e| {
+                let mut next = sort_filters.clone();
+                next.sort = Sort::parse(&e.value());
+                on_filters(next);
+            },
+            for s in Sort::ALL {
+                option { value: "{s.token()}", selected: sort_now == s, {i18n.t(s.label_key())} }
+            }
+        }
+    }
+    }
+}
+
+/// Which cards of how many are on screen, with a jump back to the top of the result set.
+fn count_line(
+    i18n: Translator,
+    first: usize,
+    count: usize,
+    total: i64,
+    start: usize,
+    filters: &DiscoverFilters,
+    mut on_filters: impl FnMut(DiscoverFilters) + Clone + 'static,
+) -> Element {
+    let head_filters = filters.clone();
+    rsx! {
+        div { class: "ik-count-line",
+            {
+                i18n.args(
+                    "discover.countLine",
+                    &[
+                        ("first", &thousands(i64::try_from(first + 1).unwrap_or(0))),
+                        ("last", &thousands(i64::try_from(first + count).unwrap_or(0))),
+                        ("total", &thousands(total)),
+                    ],
+                )
+            }
+            // A window that does not start at the top was opened from a link, or has
+            // slid; either way the top of the result set is a jump, not a scroll.
+            if start > 0 {
+                {
+                    let filters = head_filters.clone();
+                    rsx! {
+                        button {
+                            class: "ik-scroll-more",
+                            r#type: "button",
+                            onclick: move |_| on_filters(filters.clone()),
+                            {i18n.t("discover.backToStart")}
                         }
                     }
                 }
@@ -725,6 +505,8 @@ fn empty_state(
 
 #[cfg(test)]
 mod tests {
+    use super::requests::header_total;
+    use super::window::WINDOW_ITEMS;
     use super::*;
 
     /// A page fetched with `with_total=false` carries no `X-Total-Count`. The count line used to

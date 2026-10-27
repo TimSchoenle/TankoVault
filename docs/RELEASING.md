@@ -418,14 +418,14 @@ resolves to a different digest per platform, so every key downstream of it diffe
 
 | Tag | Written by | Read by |
 | --- | --- | --- |
-| `backend-deps-<arch>` | `ci.yml` `docker-deps`, off `main` only | `ci.yml`'s image builds, on `main` and on pull requests |
+| `backend-deps-<arch>` | `ci.yml` `docker-deps`, on `main` only | `ci.yml`'s image builds, on `main` and on pull requests |
 | `release-deps-<arch>` | `release-please.yaml` `release-deps` | `release-please.yaml` only: its warm-up and its legs |
 
 **The release reads no tag another workflow writes, and no pull request can write one.** A GHCR
 package grants write to the repository's workflows as a whole — there is no per-tag or per-ref
 permission — so any job holding `packages: write` could rewrite every tag, `release-deps-<arch>`
 included, and those layers end up inside signed images. `ci.yml` therefore runs `docker-deps` (its
-only `packages: write` job) off `main` alone; pull requests import `backend-deps-<arch>` read-only
+only `packages: write` job) on `main` only; pull requests import `backend-deps-<arch>` read-only
 and export nothing. Pull requests used to export `pr-<number>-deps-<arch>` and, on the release
 branch, `release-pr-deps-<arch>`, which the release warm-up imported to skip the workspace
 compile. Both are gone: a pull request that changes the Dockerfile or the dependency graph now

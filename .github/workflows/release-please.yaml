@@ -928,8 +928,9 @@ jobs:
             done
             metadata="${RUNNER_TEMP}/manifest-${registry}.json"
             rm -f "$metadata"
-            # shellcheck disable=SC2086 -- word splitting is how the accumulated
-            # strings become separate arguments; none of the values contain whitespace.
+            # Word splitting is how the accumulated strings become separate arguments;
+            # none of the values contain whitespace.
+            # shellcheck disable=SC2086
             "${RUNNER_TEMP}/registry-retry" docker buildx imagetools create --metadata-file "$metadata" ${tag_args} ${sources}
             digest=$(jq -er '."containerimage.descriptor".digest' "$metadata")
             if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then

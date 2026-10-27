@@ -70,29 +70,57 @@ pub(super) fn doc_comments_open_with_the_fact(root: &Path) -> Vec<Finding> {
 }
 
 /// The 1-based lines of `source` whose doc comment text opens with a banned phrase.
+///
+/// Line doc comments (`///`, `//!`) are read line by line. A block doc comment (`/**`, `/*!`) is
+/// read from its opening line through its `*/`, with each interior line's leading `*` dropped.
+/// Ordinary comments are not doc comments and are skipped.
 fn banned_openers(source: &str) -> Vec<(usize, &'static str)> {
-    source
-        .lines()
-        .enumerate()
-        .filter_map(|(index, line)| {
-            let trimmed = line.trim_start();
-            let body = ["///", "//!", "*"]
+    let mut findings = Vec::new();
+    let mut in_block_doc = false;
+    for (index, line) in source.lines().enumerate() {
+        let trimmed = line.trim_start();
+        let body = if in_block_doc {
+            in_block_doc = !trimmed.contains("*/");
+            Some(trimmed.strip_prefix('*').unwrap_or(trimmed))
+        } else if let Some(rest) = block_doc_opening(trimmed) {
+            in_block_doc = !rest.contains("*/");
+            Some(rest)
+        } else {
+            ["///", "//!"]
                 .iter()
-                .find_map(|marker| trimmed.strip_prefix(marker))?
-                .trim_start();
-            BANNED_OPENERS
-                .iter()
-                .find(|opener| body.starts_with(**opener))
-                .map(|opener| (index + 1, *opener))
-        })
-        .collect()
+                .find_map(|marker| trimmed.strip_prefix(marker))
+                .filter(|rest| !rest.starts_with('/'))
+        };
+        let Some(body) = body else {
+            continue;
+        };
+        let body = body.trim_start();
+        if let Some(opener) = BANNED_OPENERS
+            .iter()
+            .find(|opener| body.starts_with(**opener))
+        {
+            findings.push((index + 1, *opener));
+        }
+    }
+    findings
+}
+
+/// The text after a block doc comment's opening marker, or `None` when `line` does not open one.
+///
+/// `/**/` and a run of three or more asterisks open ordinary comments, as in rustc.
+fn block_doc_opening(line: &str) -> Option<&str> {
+    if let Some(rest) = line.strip_prefix("/*!") {
+        return Some(rest);
+    }
+    let rest = line.strip_prefix("/**")?;
+    (!rest.starts_with('*') && !rest.starts_with('/')).then_some(rest)
 }
 
 /// **A budgeted document uses at most five em dashes as punctuation.**
 ///
 /// A dash setting off a genuine aside is correct; past five, they are doing a full stop's work.
-/// Tables, blockquotes, numbered lists, HTML comments and code are not counted, which matches the
-/// shell check in PROSE.md.
+/// Tables, blockquotes, numbered lists, HTML comments and code are not counted, as in the shell
+/// check in PROSE.md. A fence closes only on its own character and at least its own length.
 ///
 /// # Errors
 ///
@@ -122,15 +150,18 @@ pub(super) fn documents_keep_the_em_dash_budget(root: &Path) -> anyhow::Result<V
 
 /// The em dashes PROSE.md's check counts in `markdown`.
 fn counted_em_dashes(markdown: &str) -> usize {
-    let mut in_fence = false;
+    let mut fence: Option<Fence> = None;
     let mut in_comment = false;
     let mut count = 0;
     for line in markdown.lines() {
-        if line.starts_with("```") {
-            in_fence = !in_fence;
+        if let Some(open) = fence {
+            if open.is_closed_by(line) {
+                fence = None;
+            }
             continue;
         }
-        if in_fence {
+        if let Some(open) = Fence::opened_by(line) {
+            fence = Some(open);
             continue;
         }
         if in_comment || line.contains("<!--") {
@@ -143,6 +174,40 @@ fn counted_em_dashes(markdown: &str) -> usize {
         count += without_inline_code(line).matches('\u{2014}').count();
     }
     count
+}
+
+/// A code fence: its character and how many of it opened the block.
+#[derive(Clone, Copy)]
+struct Fence {
+    marker: char,
+    length: usize,
+}
+
+impl Fence {
+    /// The fence `line` opens, if it opens one: three or more backticks or tildes, indented by
+    /// at most three spaces.
+    fn opened_by(line: &str) -> Option<Self> {
+        let body = Self::unindented(line)?;
+        let marker = body.chars().next().filter(|c| *c == '`' || *c == '~')?;
+        let length = body.chars().take_while(|c| *c == marker).count();
+        (length >= 3).then_some(Self { marker, length })
+    }
+
+    /// Whether `line` closes this fence: the same character, at least as many of it, and nothing
+    /// after them but whitespace.
+    fn is_closed_by(self, line: &str) -> bool {
+        let Some(body) = Self::unindented(line) else {
+            return false;
+        };
+        let length = body.chars().take_while(|c| *c == self.marker).count();
+        length >= self.length && body[length * self.marker.len_utf8()..].trim().is_empty()
+    }
+
+    /// `line` without its indentation, or `None` when four or more spaces make it a code line.
+    fn unindented(line: &str) -> Option<&str> {
+        let indent = line.len() - line.trim_start_matches(' ').len();
+        (indent <= 3).then(|| &line[indent..])
+    }
 }
 
 /// Whether `line` opens a numbered list item, `1. ` and the like.
@@ -162,10 +227,28 @@ mod tests {
 
     #[test]
     fn an_opener_is_found_in_every_doc_marker() {
-        let source = "/// This function adds.\n//! Note that it blocks.\n * Simply put.\n";
+        let source = "/// This function adds.\n//! Note that it blocks.\n";
         assert_eq!(
             banned_openers(source),
-            vec![(1, "This function"), (2, "Note that"), (3, "Simply ")]
+            vec![(1, "This function"), (2, "Note that")]
+        );
+    }
+
+    #[test]
+    fn block_doc_comments_are_checked_and_ordinary_blocks_are_not() {
+        let source = concat!(
+            "/** This function adds. */\n",
+            "/*!\n",
+            " * Note that it blocks.\n",
+            " */\n",
+            "/*\n",
+            " * Simply a plain block.\n",
+            " */\n",
+            "/*** Simply a plain block too. */\n",
+        );
+        assert_eq!(
+            banned_openers(source),
+            vec![(1, "This function"), (3, "Note that")]
         );
     }
 
@@ -191,6 +274,24 @@ fenced \u{2014} block
 ```
 ";
         assert_eq!(counted_em_dashes(markdown), 2);
+    }
+
+    #[test]
+    fn a_fence_closes_only_on_its_own_marker_and_length() {
+        let markdown = "\
+````markdown
+```
+inner \u{2014} example
+```
+````
+~~~
+tilde \u{2014} block
+~~~ trailing text does not close it
+still \u{2014} code
+~~~
+after \u{2014} the fences
+";
+        assert_eq!(counted_em_dashes(markdown), 1);
     }
 
     #[test]

@@ -1,8 +1,7 @@
 # Challenge handling
 
-The open workstreams of the bot-management tier (design §9): session lifecycle, making a dark
-provider visible, clearance-cookie scoping, and fingerprint coherence between the solver browser
-and `wreq`.
+All seven workstreams of the bot-management tier (design §9), from detection to a shared session
+store, with the status of each.
 
 Read [`docs/ENGINEERING_GUIDE.md`](ENGINEERING_GUIDE.md) first. Every workstream below assumes the
 house rules — `#[expect]` over `#[allow]`, short comments except where they carry risk, and a fix

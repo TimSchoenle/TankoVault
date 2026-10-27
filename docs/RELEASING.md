@@ -1,5 +1,8 @@
 # Releasing
 
+How a release is cut from conventional commits, then signed and published as multi-architecture
+images.
+
 TankoVault releases are automated end to end by [release-please]. Nothing here is run by hand:
 you write conventional commits, release-please maintains a release pull request, and merging
 that pull request tags the repository and publishes the multi-architecture images **that

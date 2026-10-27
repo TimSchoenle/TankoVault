@@ -294,15 +294,16 @@ jobs:
             compose:
               - *workflows
               - 'deploy/docker-compose.yml'
-            # Everything the rendered `README.md` is a function of: the template, the script that
-            # collects the variables, and the three files it reads them out of. The artefact
+            # Everything the rendered `README.md` is a function of: the template, the stack script,
+            # the files the payload is read out of, and `docs/` for the documentation table. The artefact
             # itself is listed too, so a hand-edit of a generated document fails the gate that
             # would otherwise only notice it the next time an input moved.
             readme:
               - *workflows
               - '.github/templates/README.md.hbs'
-              - '.github/scripts/readme-variables.sh'
+              - '.github/scripts/readme-stack.sh'
               - 'README.md'
+              - 'docs/**'
               - 'Cargo.toml'
               - 'rust-toolchain.toml'
               - 'deploy/docker-compose.yml'
@@ -372,7 +373,7 @@ jobs:
 
       - name: clippy
         if: needs.changes.outputs.rust == 'true'
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
       # The invariants no compiler sees — a CSP and the HTML it governs, a secret published in the
       # compose file and the code that refuses it. Unconditional, unlike clippy: it reads HTML,
@@ -1358,17 +1359,27 @@ jobs:
 
       # Invoked through `bash` rather than executed: this repository is authored on Windows,
       # where git does not record the executable bit.
-      - name: collect the README variables
+      - name: collect the stack facts
+        id: stack
+        run: |
+          set -euo pipefail
+          json="$(bash .github/scripts/readme-stack.sh)"
+          echo "json=${json}" >> "$GITHUB_OUTPUT"
+
+      - name: collect the README payload
         id: variables
-        run: echo "json=$(bash .github/scripts/readme-variables.sh)" >> "$GITHUB_OUTPUT"
+        uses: TimSchoenle/actions/actions/common/readme-variables@c071f9070c9bd98541262e7a35c628e330b2a9e3 # pending actions-common-readme-variables release, see TimSchoenle/actions#1957
+        with:
+          branch: ${{ github.event.repository.default_branch }}
+          extra: ${{ steps.stack.outputs.json }}
 
       - name: README.md matches its template
-        uses: TimSchoenle/actions/actions/common/render-template@8da2713994ba2b5f542e7e3334db287b1e22854a # tag=actions-common-render-template-v1.2.9
+        uses: TimSchoenle/actions/actions/common/render-template@495fd50fd4a5ae3d9fb1496c96eada74c6f2529a # tag=actions-common-render-template-v3.0.0
         with:
           template: .github/templates/README.md.hbs
           output: README.md
-          variables: ${{ steps.variables.outputs.json }}
-          check: true
+          variables: ${{ steps.variables.outputs.variables }}
+          check: 'true'
 
   # The one compile every image below is built on. `cook` and `builder` are the entire wall clock
   # of an image build; everything above them is a `COPY` onto `scratch`.

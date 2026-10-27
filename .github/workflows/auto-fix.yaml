@@ -62,7 +62,7 @@ name: auto-fix
 #   which reaches the GraphQL commit action as an input and is never written to `.git/config`.
 #
 # `readme` and `readme-commit` are the same split for `README.md`: the render runs
-# `readme-variables.sh` from the branch without a credential, and the job that mints the token
+# `readme-stack.sh` from the branch without a credential, and the job that mints the token
 # commits a patch that may touch `README.md` and nothing else.
 #
 # What a compromised build can still do is put content into the patch, inside the paths this
@@ -93,9 +93,9 @@ name: auto-fix
 # failed earlier in the same job.
 #
 # `README.md` is the fifth, and the reason the `readme` job below is a job rather than a step: it
-# is rendered from `.github/templates/README.md.hbs` with the numbers
-# `.github/scripts/readme-variables.sh` reads out of `Cargo.toml`, `rust-toolchain.toml` and the
-# compose file, and it needs neither a toolchain nor a cache to do it. Its inputs are a different
+# is rendered from `.github/templates/README.md.hbs` with the payload `readme-variables` reads out
+# of `Cargo.toml` and `docs/`, plus the facts `.github/scripts/readme-stack.sh` reads out of
+# `rust-toolchain.toml` and the compose file, and it needs neither a toolchain nor a cache to do it. Its inputs are a different
 # set of paths from everything above — a Postgres bump in the compose file changes the README and
 # nothing else here — so putting it in `fix` would spend a workspace compile on a two-line diff.
 #
@@ -248,15 +248,16 @@ jobs:
               - 'docs/contracts/**'
               - 'justfile'
               - 'web/frontend/**'
-            # Everything `README.md` is a function of: the template, the script that collects the
-            # variables, the three files those variables are read out of, and the rendered file
+            # Everything `README.md` is a function of: the template, the stack script, the files
+            # the payload is read out of, `docs/` for the documentation table, and the rendered file
             # itself — so that a hand-edit of a generated document is undone by the job that
             # would have overwritten it rather than surviving until the next unrelated render.
             readme:
               - '.github/workflows/auto-fix.yaml'
               - '.github/templates/README.md.hbs'
-              - '.github/scripts/readme-variables.sh'
+              - '.github/scripts/readme-stack.sh'
               - 'README.md'
+              - 'docs/**'
               - 'Cargo.toml'
               - 'rust-toolchain.toml'
               - 'deploy/docker-compose.yml'
@@ -768,7 +769,7 @@ jobs:
 
   # `README.md`, rendered from its template by this job and committed back to the branch by
   # `readme-commit` below — the same boundary as `fix` and `commit`, for the same reason. The render
-  # runs `.github/scripts/readme-variables.sh` from the pull request's head, so this job is the one
+  # runs `.github/scripts/readme-stack.sh` from the pull request's head, so this job is the one
   # that executes branch code and must never hold the App token; `readme-commit` holds it and
   # executes nothing from the tree. The hand-off is a `create-patch` artefact scoped to
   # `README.md`, and `readme-commit` refuses any other path.
@@ -820,18 +821,28 @@ jobs:
 
       # Invoked through `bash` rather than executed: this repository is authored on Windows,
       # where git does not record the executable bit.
-      - name: collect the README variables
+      - name: collect the stack facts
+        id: stack
+        run: |
+          set -euo pipefail
+          json="$(bash .github/scripts/readme-stack.sh)"
+          echo "json=${json}" >> "$GITHUB_OUTPUT"
+
+      - name: collect the README payload
         id: variables
-        run: echo "json=$(bash .github/scripts/readme-variables.sh)" >> "$GITHUB_OUTPUT"
+        uses: TimSchoenle/actions/actions/common/readme-variables@c071f9070c9bd98541262e7a35c628e330b2a9e3 # pending actions-common-readme-variables release, see TimSchoenle/actions#1957
+        with:
+          branch: ${{ github.event.repository.default_branch }}
+          extra: ${{ steps.stack.outputs.json }}
 
       # The same pin `ci.yml`'s `readme` job checks the file with, so the render committed here
       # and the render that gate compares against are the same renderer.
       - name: render README.md
-        uses: TimSchoenle/actions/actions/common/render-template@8da2713994ba2b5f542e7e3334db287b1e22854a # tag=actions-common-render-template-v1.2.9
+        uses: TimSchoenle/actions/actions/common/render-template@495fd50fd4a5ae3d9fb1496c96eada74c6f2529a # tag=actions-common-render-template-v3.0.0
         with:
           template: .github/templates/README.md.hbs
           output: README.md
-          variables: ${{ steps.variables.outputs.json }}
+          variables: ${{ steps.variables.outputs.variables }}
 
       # Scoped to the one file this job renders, so nothing else the script might have touched
       # reaches the patch. Uploaded even when empty; `has_changes` is what gates `readme-commit`.

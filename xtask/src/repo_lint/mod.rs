@@ -13,6 +13,7 @@ mod frontend;
 mod gitattributes;
 mod metrics;
 mod notices;
+mod prose;
 mod secrets;
 mod text;
 mod tls;
@@ -69,9 +70,11 @@ pub(crate) fn run(root: &Path) -> anyhow::Result<()> {
     findings.extend(floors::coverage_floors_parse(root)?);
     findings.extend(gitattributes::generated_artefacts_check_out_as_lf(root)?);
     findings.extend(tls::every_service_installs_a_crypto_provider(root)?);
+    findings.extend(prose::doc_comments_open_with_the_fact(root));
+    findings.extend(prose::documents_keep_the_em_dash_budget(root)?);
 
     if findings.is_empty() {
-        println!("repo-lint: 26 rules, no violations");
+        println!("repo-lint: 28 rules, no violations");
         return Ok(());
     }
 

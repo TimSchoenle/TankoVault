@@ -87,8 +87,8 @@ cargo test -p tankovault-db -p tankovault-api -p tankovault-sync --features inte
    `THIRD-PARTY-NOTICES`, `docs/contracts/*.json`. Run `cargo run -p xtask -- openapi` /
    `-- notices`; the nine `docs/contracts/*.json` are `just regenerate`. `README.md` is
    generated too, by CI rather than by `xtask`: edit `.github/templates/README.md.hbs`, and let
-   `auto-fix.yaml` render it. `bash .github/scripts/readme-variables.sh` prints the values it is
-   rendered with.
+   `auto-fix.yaml` render it. The payload is `Cargo.toml` and `docs/`, read by `readme-variables`,
+   plus `bash .github/scripts/readme-stack.sh` for the toolchain and service majors.
 7. **`web/frontend` is a separate workspace and inherits nothing from the host** — not lints, not
    `clippy.toml`. It is a workspace *root* with one member of its own,
    `crates/inkstone-ui` (the design system's components, extracted so they can be lifted into

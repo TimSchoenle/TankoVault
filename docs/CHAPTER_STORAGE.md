@@ -1,4 +1,7 @@
-# Chapter storage — where the space goes, and what to do about it
+# Chapter storage
+
+Where the `chapters` table's 1.2 GB goes, and the change in migration `0055_chapter_storage` that
+roughly halves it so a running scan stops evicting the Postgres working set.
 
 `chapters` is the largest table in the deployment; `deploy/docker-compose.yml` records that it
 "passed 1.2 GB" while sizing Postgres, against a container capped at 1 GB with 256 MB of
@@ -6,9 +9,6 @@
 residency* question. The comment beside the Postgres tuning in that file already names the
 symptom: "a running scan's chapter inserts evict the working set continuously", and the dashboard
 and trigram statements went from 40–140 ms warm to 1.0–3.3 s cold because of it.
-
-This document is the measured breakdown of that 1.2 GB and the staged change that roughly halves
-it.
 
 **Status: implemented**, as migration `0055_chapter_storage` plus the repo-layer rewrite that
 goes with it — with one deliberate exception, §3b, which was dropped after inspection and is kept

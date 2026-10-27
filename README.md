@@ -1,24 +1,12 @@
 <!--
-Generated from .github/templates/README.md.hbs — edit that file, not this one. The `readme` job
-in .github/workflows/auto-fix.yaml renders it on every pull request and commits the result back to
-the branch; a push to `main`, and a pull request from a fork, are covered by the `readme` job in
-.github/workflows/ci.yml, which renders with `check: true` and fails on a stale file rather than
-writing one.
+Generated from .github/templates/README.md.hbs. Edit that file, not this one. The `readme` job in
+.github/workflows/auto-fix.yaml renders it on every pull request and commits the result back to
+the branch. The `readme` job in .github/workflows/ci.yml renders it with `check: 'true'` and fails
+on a stale file, which covers a push to `main` and a pull request from a fork.
 
-Variables come from .github/scripts/readme-variables.sh, which reads them out of the files that
-own them:
-
-    version      [workspace.package] version, from Cargo.toml
-    license      [workspace.package] license, from Cargo.toml
-    description  [workspace.package] description, from Cargo.toml
-    edition      [workspace.package] edition, from Cargo.toml
-    msrv         [workspace.package] rust-version, from Cargo.toml
-    toolchain    [toolchain] channel, from rust-toolchain.toml
-    postgres     the major of the postgres service image, from deploy/docker-compose.yml
-    redis        the major of the redis service image, from deploy/docker-compose.yml
-
-Run that script to see what CI will render with. Everything else here is prose and belongs in
-this file: a number with a home elsewhere is injected, a sentence is written.
+The payload comes from TimSchoenle/actions' `readme-variables`, which reads `Cargo.toml` and
+indexes `docs/`. `stack.*` comes from .github/scripts/readme-stack.sh, which reads the toolchain
+channel and the compose file's PostgreSQL and Redis majors; run it to see those values.
 -->
 # TankoVault
 
@@ -272,18 +260,24 @@ separate claims that happen to agree today.
 
 | Document | Purpose |
 | --- | --- |
-| [docs/design.md](docs/design.md) | The architecture and build specification other documents cite by section |
-| [docs/ENGINEERING_GUIDE.md](docs/ENGINEERING_GUIDE.md) | The rules the code is written to, and what enforces each one. Read before changing anything |
-| [docs/OPERATIONS.md](docs/OPERATIONS.md) | Running the fleet: scaling, failure modes, runbooks |
-| [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | Every `TANKOVAULT_*` key, its default, and which services read it |
-| [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md) | The metric catalogue and what is worth alerting on |
-| [docs/PROVIDERS.md](docs/PROVIDERS.md) | Provider adapters: the trait, the config-driven case, and onboarding one |
-| [docs/CHALLENGE_HANDLING.md](docs/CHALLENGE_HANDLING.md) | Interstitial detection and the solver tier behind it |
-| [docs/CHAPTER_STORAGE.md](docs/CHAPTER_STORAGE.md) | How chapter links are stored and resolved |
-| [docs/READING_PROGRESS_AND_SYNC.md](docs/READING_PROGRESS_AND_SYNC.md) | Read progress and the AniList push and pull |
-| [docs/RECOMMENDATIONS.md](docs/RECOMMENDATIONS.md) | The recommendation model, feature by feature |
-| [docs/DESIGN_SPEC.md](docs/DESIGN_SPEC.md) | The SPA's design system; frontend source files cite it by section |
-| [docs/RELEASING.md](docs/RELEASING.md) | How a release is cut, signed and published |
+| [Challenge handling](docs/CHALLENGE_HANDLING.md) | The open workstreams of the bot-management tier (design §9): session lifecycle, making a dark provider visible, clearance-cookie scoping, and fingerprint coherence between the solver browser and wreq. |
+| [Chapter storage](docs/CHAPTER_STORAGE.md) | Where the chapters table's 1.2 GB goes, and the change in migration 0055_chapter_storage that roughly halves it so a running scan stops evicting the Postgres working set. |
+| [Configuration reference](docs/CONFIGURATION.md) | Every TANKOVAULT_* key the deployment reads: what it does, its default, and which services consume it. |
+| [Design system](docs/DESIGN_SPEC.md) | The design system the SPA is built to: tokens, component inventory, per-screen breakdowns and interaction rules. |
+| [Engineering guide](docs/ENGINEERING_GUIDE.md) | The rules this codebase is written to, and what would notice if each one stopped being followed. |
+| [Matching overhaul](docs/MATCHING_OVERHAUL.md) | The rework of automatic series merging and source attachment, which both merged different works and missed identical ones. WP0 to WP8 are implemented except WP3c and WP8c. |
+| [Observability](docs/OBSERVABILITY.md) | What this deployment measures, what is collected, which alerts exist, and what to do when each one fires. |
+| [Operations and hardening](docs/OPERATIONS.md) | The runtime every backend service shares, crates/service: what it provides and how an operator configures it. |
+| [Providers](docs/PROVIDERS.md) | How a provider site is onboarded, as configuration for a layout family TankoVault already parses or as a custom SourceAdapter, and how each is pinned by fixture tests. |
+| [Reading progress and external sync](docs/READING_PROGRESS_AND_SYNC.md) | How read progress is stored for whole chapters and part releases, and how it syncs with AniList under a per-user conflict policy. |
+| [Recommendations](docs/RECOMMENDATIONS.md) | The recommendation model: item features and embeddings, the reader's taste profile, retrieval and ranking, and the tuning registry behind them. |
+| [Releasing](docs/RELEASING.md) | How a release is cut from conventional commits, then signed and published as multi-architecture images. |
+| [Watchlist backup and restore](docs/WATCHLIST_BACKUP.md) | The watchlist backup file: its format, how an import finds each series again, and the limits on a restore. |
+| [Architecture](docs/design.md) | The architecture and build specification other documents cite by section: the services, the data model, the crawl and solve pipeline, and the library choices behind them. |
+| [Query latency, September 2026: progress report](docs/perf/2026-09-latency-report.md) | Which slow queries were fixed locally in September 2026, and which decisions still wait on a production measurement. |
+| [Query latency, September 2026: local measurements](docs/perf/2026-09-local-measurements.md) | Which catalogue statements are expensive by shape, and what a cold cache costs, measured on a local catalogue. |
+| [Discover browse latency](docs/perf/BROWSE_REDESIGN.md) | The measured redesign of the Discover browse queries, shipped as migration 0060_series_browse. |
+| [Stored unread state](docs/perf/UNREAD_DENORMALISATION.md) | Per-entry unread state stored instead of computed on every request, shipped as migration 0058_watchlist_unread. |
 | [docs/contracts/](docs/contracts/) | The nine published configuration contracts, one per image |
 | [deploy/README.md](deploy/README.md) | The Dockerfile's stages, the compose stack, and the one-shot install steps |
 | [web/frontend/README.md](web/frontend/README.md) | The SPA: design system, generated API client, i18n rules |

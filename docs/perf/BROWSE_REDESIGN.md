@@ -1,4 +1,6 @@
-# Discover/browse latency: measured redesign proposal
+# Discover browse latency
+
+The measured redesign of the Discover browse queries, shipped as migration `0060_series_browse`.
 
 Status: **implemented** (migration `0060_series_browse`, the rewritten statements in
 `repo/catalog/browse.rs`, `with_total` on `GET /v1/series`). Sections 1–7 are the proposal as it

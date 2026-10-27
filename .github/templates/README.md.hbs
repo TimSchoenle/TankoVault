@@ -1,35 +1,23 @@
 <!--
-Generated from .github/templates/README.md.hbs — edit that file, not this one. The `readme` job
-in .github/workflows/auto-fix.yaml renders it on every pull request and commits the result back to
-the branch; a push to `main`, and a pull request from a fork, are covered by the `readme` job in
-.github/workflows/ci.yml, which renders with `check: true` and fails on a stale file rather than
-writing one.
+Generated from .github/templates/README.md.hbs. Edit that file, not this one. The `readme` job in
+.github/workflows/auto-fix.yaml renders it on every pull request and commits the result back to
+the branch. The `readme` job in .github/workflows/ci.yml renders it with `check: 'true'` and fails
+on a stale file, which covers a push to `main` and a pull request from a fork.
 
-Variables come from .github/scripts/readme-variables.sh, which reads them out of the files that
-own them:
-
-    version      [workspace.package] version, from Cargo.toml
-    license      [workspace.package] license, from Cargo.toml
-    description  [workspace.package] description, from Cargo.toml
-    edition      [workspace.package] edition, from Cargo.toml
-    msrv         [workspace.package] rust-version, from Cargo.toml
-    toolchain    [toolchain] channel, from rust-toolchain.toml
-    postgres     the major of the postgres service image, from deploy/docker-compose.yml
-    redis        the major of the redis service image, from deploy/docker-compose.yml
-
-Run that script to see what CI will render with. Everything else here is prose and belongs in
-this file: a number with a home elsewhere is injected, a sentence is written.
+The payload comes from TimSchoenle/actions' `readme-variables`, which reads `Cargo.toml` and
+indexes `docs/`. `stack.*` comes from .github/scripts/readme-stack.sh, which reads the toolchain
+channel and the compose file's PostgreSQL and Redis majors; run it to see those values.
 -->
-# TankoVault
+# {{ repo.name }}
 
-{{description}}
+{{ repo.description }}
 
-[![Release](https://img.shields.io/github/v/release/TimSchoenle/TankoVault?sort=semver)](https://github.com/TimSchoenle/TankoVault/releases)
+[![Release](https://img.shields.io/github/v/release/{{ repo.slug }}?sort=semver)]({{ repo.url }}/releases)
 [![Chart](https://img.shields.io/badge/dynamic/yaml?url=https%3A%2F%2Ftimschoenle.github.io%2Fhelm-charts%2Findex.yaml&query=%24.entries.tankovault%5B0%5D.version&label=chart)](https://github.com/TimSchoenle/helm-charts/tree/main/charts/tankovault)
-[![CI](https://img.shields.io/github/actions/workflow/status/TimSchoenle/TankoVault/ci.yml?branch=main)](https://github.com/TimSchoenle/TankoVault/actions/workflows/ci.yml)
-[![Coverage](https://codecov.io/gh/TimSchoenle/TankoVault/graph/badge.svg)](https://codecov.io/gh/TimSchoenle/TankoVault)
-[![License](https://img.shields.io/static/v1?label=license&message={{license}}&color=blue)](LICENSE)
-[![Rust](https://img.shields.io/static/v1?label=rust&message={{msrv}}%2B&color=orange)](https://www.rust-lang.org)
+[![CI](https://img.shields.io/github/actions/workflow/status/{{ repo.slug }}/ci.yml?branch={{ repo.branch }})]({{ repo.url }}/actions/workflows/ci.yml)
+[![Coverage](https://codecov.io/gh/{{ repo.slug }}/graph/badge.svg)](https://codecov.io/gh/{{ repo.slug }})
+[![License](https://img.shields.io/static/v1?label=license&message={{ repo.license }}&color=blue)](LICENSE)
+[![Rust](https://img.shields.io/static/v1?label=rust&message={{ toolchain.msrv }}%2B&color=orange)](https://www.rust-lang.org)
 
 ## What this is
 
@@ -102,8 +90,8 @@ when it publishes a port, so exposing one of those would put it on every interfa
 Nine images per release, each a `linux/amd64` + `linux/arm64` manifest list, on two registries:
 
 ```bash
-docker pull ghcr.io/timschoenle/tankovault/api:v{{version}}
-docker pull docker.io/timschoenle/tankovault-api:v{{version}}
+docker pull ghcr.io/timschoenle/tankovault/api:{{ release.tag }}
+docker pull docker.io/timschoenle/tankovault-api:{{ release.tag }}
 ```
 
 Substitute `api` for `bootstrap`, `challenge-solver`, `control-plane`, `frontend`, `notifier`,
@@ -134,7 +122,7 @@ the desktop platform. It talks to an `api` instance you already run.
 ### From source
 
 ```bash
-git clone https://github.com/TimSchoenle/TankoVault.git
+git clone {{ repo.url }}.git
 cd TankoVault
 cargo build
 ```
@@ -259,9 +247,9 @@ confirmation variable, so nothing published carries a destructive command.
 
 | | Supported |
 | --- | --- |
-| Rust | {{msrv}} minimum, edition {{edition}}; built with {{toolchain}} |
-| PostgreSQL | {{postgres}}, with `pgvector` |
-| Redis | {{redis}} |
+| Rust | {{ toolchain.msrv }} minimum, edition {{ toolchain.edition }}; built with {{ stack.channel }} |
+| PostgreSQL | {{ stack.postgres }}, with `pgvector` |
+| Redis | {{ stack.redis }} |
 | NATS | JetStream |
 | Platforms | `linux/amd64`, `linux/arm64` |
 
@@ -272,19 +260,8 @@ separate claims that happen to agree today.
 
 | Document | Purpose |
 | --- | --- |
-| [docs/design.md](docs/design.md) | The architecture and build specification other documents cite by section |
-| [docs/ENGINEERING_GUIDE.md](docs/ENGINEERING_GUIDE.md) | The rules the code is written to, and what enforces each one. Read before changing anything |
-| [docs/OPERATIONS.md](docs/OPERATIONS.md) | Running the fleet: scaling, failure modes, runbooks |
-| [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | Every `TANKOVAULT_*` key, its default, and which services read it |
-| [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md) | The metric catalogue and what is worth alerting on |
-| [docs/PROVIDERS.md](docs/PROVIDERS.md) | Provider adapters: the trait, the config-driven case, and onboarding one |
-| [docs/CHALLENGE_HANDLING.md](docs/CHALLENGE_HANDLING.md) | Interstitial detection and the solver tier behind it |
-| [docs/CHAPTER_STORAGE.md](docs/CHAPTER_STORAGE.md) | How chapter links are stored and resolved |
-| [docs/READING_PROGRESS_AND_SYNC.md](docs/READING_PROGRESS_AND_SYNC.md) | Read progress and the AniList push and pull |
-| [docs/RECOMMENDATIONS.md](docs/RECOMMENDATIONS.md) | The recommendation model, feature by feature |
-| [docs/DESIGN_SPEC.md](docs/DESIGN_SPEC.md) | The SPA's design system; frontend source files cite it by section |
-| [docs/RELEASING.md](docs/RELEASING.md) | How a release is cut, signed and published |
-| [docs/contracts/](docs/contracts/) | The nine published configuration contracts, one per image |
+{{#each docs}}{{#if summary}}| [{{ title }}]({{ path }}) | {{ mdCell summary }} |
+{{/if}}{{/each}}| [docs/contracts/](docs/contracts/) | The nine published configuration contracts, one per image |
 | [deploy/README.md](deploy/README.md) | The Dockerfile's stages, the compose stack, and the one-shot install steps |
 | [web/frontend/README.md](web/frontend/README.md) | The SPA: design system, generated API client, i18n rules |
 | [openapi.json](openapi.json) | The REST API specification, generated from the handlers |
@@ -303,7 +280,7 @@ instructions and the supported versions.
 
 ## License
 
-[{{license}}](LICENSE). Source available, not open source. Use, modify and redistribute it for
+[{{ repo.license }}](LICENSE). Source available, not open source. Use, modify and redistribute it for
 any noncommercial purpose; commercial use needs a separate licence from the copyright holder.
 Charities, schools, public research bodies and government institutions count as noncommercial
 however they are funded.

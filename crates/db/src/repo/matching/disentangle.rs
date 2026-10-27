@@ -10,8 +10,8 @@
 //! were complaining about stay exactly where they were, and watches the next scan re-attach
 //! anything the alias still matches.
 //!
-//! This module is the rest of the action. It runs when an operator reverts, because that is the
-//! moment the system is told the two rows are different works.
+//! What follows completes the revert. It runs when an operator reverts, because that is the moment
+//! the system is told the two rows are different works.
 //!
 //! # The shared names are the evidence, and the whole of it
 //!

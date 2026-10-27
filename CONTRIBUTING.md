@@ -131,8 +131,9 @@ TANKOVAULT_FRONTEND__NOTICES_JSON_PATH=target/THIRD-PARTY-NOTICES.json
 
 **The README.** `README.md` is rendered from `.github/templates/README.md.hbs`; edit the
 template, never the document. The numbers it quotes — the edition, the MSRV, the pinned
-toolchain, the Postgres and Redis majors — are injected from `Cargo.toml`,
-`rust-toolchain.toml` and `deploy/docker-compose.yml` by `.github/scripts/readme-variables.sh`,
+toolchain, the Postgres and Redis majors — are injected from `Cargo.toml` by the shared
+`readme-variables` action, and from `rust-toolchain.toml` and `deploy/docker-compose.yml` by
+`.github/scripts/readme-stack.sh`,
 so bumping any of those carries the documentation with it. CI renders the template and commits
 the result to your pull request; a hand-edited `README.md` is reverted by that commit, and fails
 the `readme` job outright on a fork.

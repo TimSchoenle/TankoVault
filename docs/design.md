@@ -1,6 +1,7 @@
-# TankoVault — Manga Source Aggregator & Tracker
+# Architecture
 
-**Implementation & Handoff Specification (v1.0)**
+The architecture and build specification other documents cite by section: the services, the data
+model, the crawl and solve pipeline, and the library choices behind them.
 
 A fully-Rust, multi-microservice system that indexes manga/manhwa/manhua metadata across many
 provider sites, links (never mirrors) their sources, and layers a user tracking, notification, and

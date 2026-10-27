@@ -1,4 +1,7 @@
-# Query latency, September 2026 — local measurements (Phase 0)
+# Query latency, September 2026: local measurements
+
+Which catalogue statements are expensive by shape, and what a cold cache costs, measured on a local
+catalogue.
 
 Companion to [`2026-09-prod-diagnostics.sql`](2026-09-prod-diagnostics.sql). These numbers come
 from a local catalogue, **not production**. They say which statements are expensive by shape and

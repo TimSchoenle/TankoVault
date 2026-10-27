@@ -232,7 +232,7 @@ wreq-util = { version = "3.0.0-rc.14", default-features = false, features = ["em
 # first member of a multi-member stream and reports EOF — see `base.rs::decode_gzip`. Already in
 # the graph as `wreq-util`'s own dependency, so naming it here adds an edge, not a crate.
 flate2 = "1"
-scraper = "0.27"
+scraper = "0.29"
 governor = "0.10"
 url = "2.5"
 # Headless-browser driver for the optional `render` service (design §9). Default

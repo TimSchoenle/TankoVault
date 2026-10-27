@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 rust-version.workspace = true
-description = "Shared NATS message/event schemas, HTTP wire contracts and subject naming."
+description = "Shared NATS message and event schemas, HTTP wire contracts, and subject naming."
 # Not published: this is a workspace-internal crate. Also what lets `cargo deny`
 # skip license-checking our own code.
 publish = false

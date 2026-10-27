@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 rust-version.workspace = true
-description = "Axum HTTP edge: public read/write + admin, auth, resolved links, SSE."
+description = "The HTTP API on Axum: public reads and writes, administration, authentication, resolved links and server-sent events."
 # Not published: this is a workspace-internal crate. Also what lets `cargo deny`
 # skip license-checking our own code.
 publish = false

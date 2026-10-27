@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 rust-version.workspace = true
-description = "Scan worker: executes tasks via adapters + fetch stack, upserts deltas idempotently."
+description = "Scan worker: runs scan tasks through the provider adapters and the fetch stack, and upserts what changed idempotently."
 # Not published: this is a workspace-internal crate. Also what lets `cargo deny`
 # skip license-checking our own code.
 publish = false

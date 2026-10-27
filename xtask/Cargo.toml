@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 rust-version.workspace = true
-description = "Developer tasks: db migrate, reset, seed; OpenAPI spec + api-client generation."
+description = "Developer tasks: the local CI gates and repository lint, database maintenance, and generation of the OpenAPI spec, API client and configuration contracts."
 publish = false
 
 [[bin]]

@@ -305,16 +305,28 @@ pub async fn revert_merge(pool: &sqlx::PgPool, undo: &MergeUndo) -> DbResult<()>
 ///
 /// # Errors
 /// As [`revert_merge`].
-#[expect(
-    clippy::too_many_lines,
-    reason = "one statement per table, in the order the foreign keys require. Splitting it to \
-              satisfy a line count would hide that order, which is the only thing about this \
-              function that is easy to get wrong"
-)]
 pub(super) async fn revert_merge_in(
     tx: &mut Transaction<'_, Postgres>,
     undo: &MergeUndo,
 ) -> DbResult<()> {
+    check_revertible(tx, undo).await?;
+    restore_absorbed_series(tx, undo).await?;
+    move_sources_back(tx, undo).await?;
+    remove_created_rows(tx, undo).await?;
+    restore_overwritten_rows(tx, undo).await?;
+    restore_cascaded_children(tx, undo).await?;
+    repoint_rows_back(tx, undo).await?;
+    reopen_candidates(tx, undo).await?;
+    remove_forwarding(tx, undo).await?;
+    mark_derived_state_stale(tx, undo).await?;
+    Ok(())
+}
+
+/// Refuses a journal this build cannot apply, a merge already reverted, and a survivor that has
+/// itself been merged away since.
+async fn check_revertible(tx: &mut Transaction<'_, Postgres>, undo: &MergeUndo) -> DbResult<()> {
+    let keep = undo.survivor_id;
+    let drop = undo.absorbed_id;
     if undo.version != UNDO_VERSION {
         return Err(crate::error::DbError::Conflict(format!(
             "undo journal version {} cannot be applied by this build (expected {UNDO_VERSION})",
@@ -326,9 +338,6 @@ pub(super) async fn revert_merge_in(
             "undo journal carries no absorbed series row".to_owned(),
         ));
     };
-
-    let keep = undo.survivor_id;
-    let drop = undo.absorbed_id;
 
     let live = sqlx::query_scalar!(
         "SELECT count(*) AS \"count!\" FROM series WHERE id = $1",
@@ -360,7 +369,14 @@ pub(super) async fn revert_merge_in(
             },
         )));
     }
+    Ok(())
+}
 
+/// Re-inserts the absorbed series' own row.
+async fn restore_absorbed_series(
+    tx: &mut Transaction<'_, Postgres>,
+    undo: &MergeUndo,
+) -> DbResult<()> {
     // The absorbed series itself. Named column by column because `search_vec` is generated and
     // cannot be inserted into; `jsonb_populate_record` still supplies the values, so the types
     // round-trip through the composite type rather than through a hand-written cast.
@@ -380,7 +396,12 @@ pub(super) async fn revert_merge_in(
     )
     .execute(&mut **tx)
     .await?;
+    Ok(())
+}
 
+/// Moves the absorbed series' sources back to it.
+async fn move_sources_back(tx: &mut Transaction<'_, Postgres>, undo: &MergeUndo) -> DbResult<()> {
+    let drop = undo.absorbed_id;
     // Sources go back by id, so a source added to the survivor since the merge stays put.
     sqlx::query!(
         "UPDATE series_sources SET series_id = $1 WHERE id = ANY($2)",
@@ -389,7 +410,11 @@ pub(super) async fn revert_merge_in(
     )
     .execute(&mut **tx)
     .await?;
+    Ok(())
+}
 
+/// Deletes the rows the merge created on the survivor, and only those.
+async fn remove_created_rows(tx: &mut Transaction<'_, Postgres>, undo: &MergeUndo) -> DbResult<()> {
     // Rows the merge created on the survivor, and only those.
     sqlx::query!(
         "DELETE FROM series_titles t USING jsonb_populate_recordset(NULL::series_titles, $1) x \
@@ -436,7 +461,15 @@ pub(super) async fn revert_merge_in(
     )
     .execute(&mut **tx)
     .await?;
+    Ok(())
+}
 
+/// Restores the survivor's rows in the tables the merge overwrote.
+async fn restore_overwritten_rows(
+    tx: &mut Transaction<'_, Postgres>,
+    undo: &MergeUndo,
+) -> DbResult<()> {
+    let keep = undo.survivor_id;
     // The three overwritten tables: clear the survivor at every key the absorbed side carried,
     // then put back exactly what the survivor held there. A key the survivor did not hold is
     // simply not re-inserted, which is how the created rows are removed by the same pair.
@@ -494,7 +527,14 @@ pub(super) async fn revert_merge_in(
     )
     .execute(&mut **tx)
     .await?;
+    Ok(())
+}
 
+/// Re-inserts the absorbed series' child rows, which cascaded away with it.
+async fn restore_cascaded_children(
+    tx: &mut Transaction<'_, Postgres>,
+    undo: &MergeUndo,
+) -> DbResult<()> {
     // The absorbed series' own children, which cascaded away with it. A journal written before
     // `series_titles.origin` existed has no such key, and a missing key populates as NULL, which
     // the column refuses; the base record supplies the value the migration gave existing rows.
@@ -557,7 +597,13 @@ pub(super) async fn revert_merge_in(
     )
     .execute(&mut **tx)
     .await?;
+    Ok(())
+}
 
+/// Points the rows the merge re-pointed back at the absorbed series.
+async fn repoint_rows_back(tx: &mut Transaction<'_, Postgres>, undo: &MergeUndo) -> DbResult<()> {
+    let keep = undo.survivor_id;
+    let drop = undo.absorbed_id;
     // Re-pointed rows, by the primary keys the merge recorded.
     sqlx::query!(
         "UPDATE sync_history SET series_id = $1 WHERE id = ANY($2)",
@@ -601,7 +647,11 @@ pub(super) async fn revert_merge_in(
     )
     .execute(&mut **tx)
     .await?;
+    Ok(())
+}
 
+/// Reopens the merge candidates this merge closed.
+async fn reopen_candidates(tx: &mut Transaction<'_, Postgres>, undo: &MergeUndo) -> DbResult<()> {
     // The candidates this merge closed go back to open. Guarded on the outcome so a pair an
     // operator has dismissed *since* the merge is not silently reopened by the revert.
     sqlx::query!(
@@ -613,7 +663,13 @@ pub(super) async fn revert_merge_in(
     )
     .execute(&mut **tx)
     .await?;
+    Ok(())
+}
 
+/// Undoes the path compression, then removes the forwarding address.
+async fn remove_forwarding(tx: &mut Transaction<'_, Postgres>, undo: &MergeUndo) -> DbResult<()> {
+    let keep = undo.survivor_id;
+    let drop = undo.absorbed_id;
     // Undo the path compression, then remove the forwarding address itself — in that order, so
     // there is no instant in which an alias points at a series that no longer forwards.
     sqlx::query!(
@@ -630,7 +686,16 @@ pub(super) async fn revert_merge_in(
     )
     .execute(&mut **tx)
     .await?;
+    Ok(())
+}
 
+/// Queues both series' recommendation state, and every affected taste profile, to be rebuilt.
+async fn mark_derived_state_stale(
+    tx: &mut Transaction<'_, Postgres>,
+    undo: &MergeUndo,
+) -> DbResult<()> {
+    let keep = undo.survivor_id;
+    let drop = undo.absorbed_id;
     // Both series' feature digests have changed again, and every affected taste profile is
     // derived from a watchlist this transaction has just moved.
     sqlx::query!(
@@ -651,6 +716,5 @@ pub(super) async fn revert_merge_in(
     )
     .execute(&mut **tx)
     .await?;
-
     Ok(())
 }

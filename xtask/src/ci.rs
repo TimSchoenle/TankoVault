@@ -259,7 +259,7 @@ pub(crate) fn run(workspace_root: &std::path::Path) -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{GATES, Step};
+    use super::{GATES, Gate, Step};
 
     /// `cargo test --all-targets` silently excludes doc tests; folding the two gates into one
     /// invocation to save a build would reintroduce that silently.
@@ -392,6 +392,17 @@ mod tests {
         assert_eq!(
             rustdoc_without_flags, 0,
             "a frontend rustdoc gate without `RUSTDOCFLAGS=-D warnings` only reports"
+        );
+        let (rustdoc_desktop, rustdoc_web): (Vec<&&Gate>, Vec<&&Gate>) = frontend
+            .iter()
+            .filter(|g| matches!(&g.step, Step::Cargo { args, .. } if args.first() == Some(&"doc")))
+            .partition(
+                |g| matches!(&g.step, Step::Cargo { args, .. } if args.contains(&"desktop")),
+            );
+        assert_eq!(
+            (rustdoc_web.len(), rustdoc_desktop.len()),
+            (1, 1),
+            "each feature set compiles different code, so each needs exactly one rustdoc gate"
         );
         let root_package_only: Vec<&str> = frontend
             .iter()

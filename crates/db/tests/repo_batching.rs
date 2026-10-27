@@ -67,7 +67,7 @@ async fn dedup_claim_many_on_an_empty_list_is_a_no_op() {
     let claimed = tracking::dedup_claim_many(&db.pool, &[], series, 1.0)
         .await
         .expect("empty claim");
-    assert!(claimed.is_empty());
+    assert_eq!(claimed, vec![]);
 }
 
 #[tokio::test]

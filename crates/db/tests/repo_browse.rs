@@ -884,11 +884,9 @@ async fn the_per_series_reads_are_alphabetical_and_empty_when_unset() {
             .expect("authors")
             .is_empty()
     );
-    assert!(
-        list_series_titles(&db.pool, punpun)
-            .await
-            .expect("titles")
-            .is_empty()
+    assert_eq!(
+        list_series_titles(&db.pool, punpun).await.expect("titles"),
+        Vec::<String>::new()
     );
 
     // An unknown id is an empty list rather than an error, which is what lets the series

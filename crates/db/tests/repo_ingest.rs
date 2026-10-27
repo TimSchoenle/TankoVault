@@ -264,12 +264,12 @@ async fn an_empty_chapter_list_is_a_no_op() {
     )
     .await
     .expect("an empty listing still ingests the series itself");
-    assert!(outcome.new_chapters.is_empty());
+    assert_eq!(outcome.new_chapters, Vec::<f64>::new());
 
     let direct = upsert_chapters(&db.pool, outcome.source_id, "/manga/solo-leveling", &[])
         .await
         .expect("the batch helper short-circuits");
-    assert!(direct.is_empty());
+    assert_eq!(direct, Vec::<f64>::new());
 }
 
 /// A chapter whose paywall lifts must lose its unlock time in the same write.

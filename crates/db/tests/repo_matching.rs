@@ -2868,8 +2868,8 @@ async fn the_decision_journal_batch_round_trips_arrays_and_documents() {
         "the lower id's title must be the one stored against it",
     );
     assert_eq!(withdrawn.right_title, "higher");
-    assert!(withdrawn.signals.is_empty());
-    assert!(withdrawn.blocked_by.is_empty());
+    assert_eq!(withdrawn.signals, Vec::<String>::new());
+    assert_eq!(withdrawn.blocked_by, Vec::<String>::new());
 }
 
 /// **A batch must refuse two entries naming one pair rather than sending them to the database.**

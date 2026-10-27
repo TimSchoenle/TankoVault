@@ -1004,7 +1004,7 @@ async fn the_minted_ticket_is_the_one_the_stream_accepts() {
         .await;
     assert_eq!(status, StatusCode::OK);
     let ticket = body["ticket"].as_str().expect("a ticket value").to_owned();
-    assert!(!ticket.is_empty());
+    assert_ne!(ticket, "", "the ticket must not be empty");
     assert!(
         body["expires_in"]
             .as_u64()

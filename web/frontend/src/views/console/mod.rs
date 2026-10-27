@@ -51,7 +51,7 @@ use std::str::FromStr;
 ///
 /// A newtype over [`Reload`] rather than reusing it directly: in prop position it says "the
 /// shared console cadence", not "this panel's own reload", so a tick-driven panel still has
-/// something distinct to hand [`ErrorBox`] as its retry action.
+/// something distinct to hand [`ErrorBox`](crate::components::ErrorBox) as its retry action.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct RefreshTick(Reload);
 
@@ -724,9 +724,8 @@ fn RailCount(entity: ConsoleEntity, counts: Option<SystemStats>) -> Element {
 // moved focus to the top bar's catalogue search, which looks up *series*, on a screen whose rows
 // are providers, runs and accounts. `⌘K` still reaches that box from here, as it does everywhere.
 
-/// The pill class encoding a run state. The wording comes from
-/// [`RunStateExt::label_key`](crate::models::RunStateExt::label_key), so the colour and the
-/// text cannot drift apart into two different enumerations.
+/// The pill class encoding a run state. The wording comes from [`RunStateExt::label_key`], so the
+/// colour and the text cannot drift apart into two different enumerations.
 pub(super) fn run_state_pill(state: RunState) -> &'static str {
     match state {
         RunState::Completed => "ik-pill jade",

@@ -407,7 +407,7 @@ pub(crate) struct Release {
 /// Anything less is a duplicate key among siblings, and dioxus's keyed diff answers that by
 /// diffing one old node twice: the second pass reads a mount the first already took and panics
 /// `invalid key` inside `dioxus-core`, aborting the whole app rather than returning an error.
-/// See [`tests::a_series_carried_by_two_sources_is_one_row_with_one_key`].
+/// The test `a_series_carried_by_two_sources_is_one_row_with_one_key` pins it.
 fn feed_row_key(release: &Release) -> String {
     release.series_id.to_string()
 }

@@ -89,8 +89,8 @@ pub(crate) fn async_view<T: 'static>(
     }
 }
 
-/// [`async_view`] with a fixed-height [`SkeletonBlock`] as its loading state — the shape every
-/// console panel and sidebar card wants.
+/// [`async_view`] with a fixed-height [`SkeletonBlock`](fn@SkeletonBlock) as its loading state —
+/// the shape every console panel and sidebar card wants.
 pub(crate) fn async_block<T: 'static>(
     resource: &Resource<Result<T, String>>,
     reload: Reload,

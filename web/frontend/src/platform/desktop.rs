@@ -486,8 +486,8 @@ fn fitted_inner_size(available: (f64, f64)) -> Option<(f64, f64)> {
 /// monitor the window will land on — [`STARTUP_INNER_SIZE`] is that placeholder, and this runs
 /// once from the first render, when the monitor is knowable.
 ///
-/// **Awaiting it is load-bearing, not tidiness.** [`crate::app::AppRoot`] holds the UI back until
-/// this resolves, because a screen that mounts while the window is still the placeholder measures
+/// **Awaiting it is load-bearing, not tidiness.** `app::AppRoot` holds the UI back until this
+/// resolves, because a screen that mounts while the window is still the placeholder measures
 /// the placeholder's geometry — and [`crate::components::use_grid_fit`] turns exactly that
 /// measurement into a page size. Discover fetched a 1280px window's worth of covers, the resize
 /// widened the grid under them, and the correction never landed: every page was laid out short,
@@ -606,7 +606,7 @@ fn raise(summary: &str, body: &str) -> std::thread::JoinHandle<()> {
 /// The name these notifications go out under.
 ///
 /// The compiled default, not the operator's configured name, and deliberately: it is written
-/// into `HKCU\Software\Classes\AppUserModelId\<id>` as `DisplayName` by [`register_app_id`]
+/// into `HKCU\Software\Classes\AppUserModelId\<id>` as `DisplayName` by `register_app_id`
 /// and into the `.desktop` entry on Linux, both of which the OS reads long after this process
 /// is gone. A name that followed a server it may not have reached yet would rewrite the
 /// registration on every launch and disagree with whatever the reader last silenced.

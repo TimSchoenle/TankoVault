@@ -177,7 +177,8 @@ fn origin() -> String {
 /// ends up in access logs and browser history, so it must be worthless once read back.
 ///
 /// Hand-built since `EventSource` bypasses the generated client, so no compiler checks this
-/// against the API; see [`tests::the_stream_url_uses_the_parameter_the_published_document_declares`].
+/// against the API. The test `the_stream_url_uses_the_parameter_the_published_document_declares`
+/// pins it to `openapi.json`.
 pub(crate) fn stream_url(ticket: &str) -> String {
     format!("/v1/me/stream?ticket={ticket}")
 }

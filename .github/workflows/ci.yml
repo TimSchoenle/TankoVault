@@ -741,6 +741,13 @@ jobs:
         working-directory: web/frontend
         run: cargo clippy --all-targets -- -D warnings
 
+      # The doc-comment gate from `[workspace.lints]`: rustdoc's own lints fire only here.
+      - name: rustdoc
+        working-directory: web/frontend
+        env:
+          RUSTDOCFLAGS: '-D warnings'
+        run: cargo doc --no-deps
+
       - name: cargo check (wasm)
         working-directory: web/frontend
         run: cargo check --target wasm32-unknown-unknown
@@ -762,6 +769,12 @@ jobs:
       - name: clippy (desktop)
         working-directory: web/frontend
         run: cargo clippy --no-default-features --features desktop --all-targets -- -D warnings
+
+      - name: rustdoc (desktop)
+        working-directory: web/frontend
+        env:
+          RUSTDOCFLAGS: '-D warnings'
+        run: cargo doc --no-deps --no-default-features --features desktop
 
   # `assets/main.css` is Tailwind output committed so a build without Node works. Unchecked, a
   # class used in `rsx!` can silently have no style behind it.

@@ -18,7 +18,7 @@ trip one.
 ## 1. Summary
 
 The automatic merge system (`crates/matcher`, `crates/db/src/repo/matching`,
-`services/control-plane/src/dedupe.rs`) and the ingest attach path
+`services/control-plane/src/dedupe/`) and the ingest attach path
 (`crates/db/src/repo/catalog/{series,sources,ingest}.rs`) both merge works that are different and
 miss works that are the same. The production evidence says the causes are, in order of damage:
 
@@ -138,14 +138,14 @@ production bug it pins (quote the titles from this document).
 ### WP0 — Offline replay harness (do first; every later package is measured with it)
 
 **Why.** `merge_decisions.evidence` stores both sides' full facts for every sweep decision
-(`services/control-plane/src/dedupe.rs::evidence_json`). That is enough to re-adjudicate every
+(`services/control-plane/src/dedupe/journal.rs::evidence_json`). That is enough to re-adjudicate every
 historical merge offline with a changed matcher, without a database.
 
 **Change.**
 - `xtask/src/` — new subcommand `matching-replay --input <jsonl> [--out <jsonl>]`. Reads rows
   exported by Appendix A query A10, rebuilds both `SeriesMatchFacts`-equivalents from
   `evidence.left` / `evidence.right`, runs the same `best_reading` logic as the sweep (lift
-  `best_reading`, `query_of`, `candidate_of` out of `services/control-plane/src/dedupe.rs` into
+  `best_reading`, `query_of`, `candidate_of` out of `services/control-plane/src/dedupe/` into
   `crates/matcher` as a pure `adjudicate_pair(left, right, trigram, thresholds)` so the harness
   and the sweep share one implementation), and reports old verdict → new verdict counts plus the
   changed rows.
@@ -179,7 +179,7 @@ replay of the export (differences come only from facts that changed since; list 
    to `labels()` (order is persisted). Replace `is_structural()` with two methods:
    `is_primary_identity()` (`exact_title || compact_identity || source_title_identity`) and
    `is_corroborated_alias()` (`alias_identity && (external_id_agreement || live_timing_agreement)`).
-   Grep every caller of `is_structural` (`dedupe.rs::best_reading` ranks by it) and decide per
+   Grep every caller of `is_structural` (`dedupe/pass.rs::best_reading` ranks by it) and decide per
    call site; `best_reading` should rank primary identity, then corroborated alias, then score.
 3. `decide`: implement §3.2 ingest table. `Attach` requires primary identity and no veto.
 4. `adjudicate`: implement §3.2 sweep table. New reason slugs: `alias_uncorroborated`,
@@ -356,7 +356,7 @@ signal means nothing.
   joined on whole chapter number, best (smallest median gap) source pair with ≥ 3 shared live
   chapters. Indexes: `chapters_source_disc_access_idx (series_source_id, discovered_at DESC)`
   already exists; confirm the plan in `repo_query_plans`.
-- `services/control-plane/src/dedupe.rs::judge`: call it for pairs whose best reading is an alias
+- `services/control-plane/src/dedupe/pass.rs::judge`: call it for pairs whose best reading is an alias
   hit or a review candidate (not for every pair — it is the expensive part), map ≤ 72 h to
   `live_timing_agreement`, > 14 days to `live_timing_conflict`, store the numbers in `evidence`.
 - Do not use `chapters.published_at` anywhere in matching: prod showed a mean 1,621-day gap on
@@ -392,7 +392,7 @@ within hours → agreement; two works with overlapping chapter numbers 1–100 d
 
 ### WP7 — Merge journal hygiene
 
-`dedupe.rs` writes a `merge_decisions` row with outcome `deferred` every time the per-run merge
+`dedupe/journal.rs` writes a `merge_decisions` row with outcome `deferred` every time the per-run merge
 ceiling defers a pair, so the same pair is journalled on every run (1,800,193 rows). Change it to
 journal a deferral only when the pair has no deferred row newer than its last scoring, and add a
 retention delete for `outcome = 'deferred'` rows older than 14 days (a maintenance task next to
@@ -825,7 +825,7 @@ ORDER BY m.survivor_id, m.decided_at DESC;
 | Candidate retrieval | `crates/db/src/repo/matching/candidates.rs` (`MAX_KEY_FANOUT` in `mod.rs`) |
 | Duplicate shortlist, pair facts | `crates/db/src/repo/matching/pairs.rs` |
 | Merge, undo, disentangle, journal | `crates/db/src/repo/matching/{merge,undo,disentangle,decisions}.rs` |
-| Sweep | `services/control-plane/src/dedupe.rs` (`best_reading`, `judge`, `evidence_json`) |
+| Sweep | `services/control-plane/src/dedupe/` (`best_reading`, `judge`, `evidence_json`) |
 | Ingest attach and alias filing | `crates/db/src/repo/catalog/{ingest,series,sources}.rs`, `enrichment.rs::add_series_titles` |
 | Catalogue registration from scans | `services/worker/src/engine/{scans,tasks}.rs` → `register_source_stubs` |
 | AniList enrichment | `services/sync/src/engine/{enrich,metadata}.rs`, `services/sync/src/providers/anilist/{graphql,parse}.rs` |

@@ -92,7 +92,7 @@ pub(super) fn the_notices_url_is_the_one_the_server_publishes(
     root: &Path,
 ) -> anyhow::Result<Vec<Finding>> {
     const RULE: &str = "notices-url-matches-the-route";
-    const SERVER: &str = "services/frontend/src/main.rs";
+    const SERVER: &str = "services/frontend/src/routes.rs";
     const SPA: &str = "web/frontend/src/views/licenses.rs";
     /// The plain-text document, then the structured inventory the screen renders.
     const PAIRS: [&str; 2] = ["NOTICES_ROUTE", "NOTICES_JSON_ROUTE"];
@@ -255,7 +255,7 @@ mod tests {
         };
 
         let (text, json) = ("/third-party-notices", "/third-party-notices.json");
-        write(&server, "main.rs", text, json);
+        write(&server, "routes.rs", text, json);
         write(&spa, "licenses.rs", text, json);
         assert!(
             the_notices_url_is_the_one_the_server_publishes(&root)

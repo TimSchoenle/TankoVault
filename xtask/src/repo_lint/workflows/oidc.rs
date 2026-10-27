@@ -54,7 +54,7 @@ pub(in crate::repo_lint) fn the_oidc_token_carries_no_newline(
             line: 0,
             detail: format!(
                 "no line writes `{OIDC_TOKEN_FILE}`, so this rule checks nothing; if the token \
-                 file was renamed, rename it in xtask/src/repo_lint/workflows.rs too"
+                 file was renamed, rename it in xtask/src/repo_lint/workflows/oidc.rs too"
             ),
         });
     }

@@ -5,7 +5,7 @@
 //! the other — they are siblings over `tankovault-domain`, and db's dependency list is
 //! deliberately narrow (ARCH-16).
 //!
-//! Why the hop exists at all is the same reason `crates/contracts/src/admin.rs` gives for the
+//! Why the hop exists at all is the same reason `crates/contracts/src/admin/mod.rs` gives for the
 //! console: a `SELECT` column rename must be a compile error, not a silent rewrite of the public
 //! API. `services/api` re-publishes these bodies verbatim, so before this module the two ends
 //! agreed only by field names happening to match, and a renamed column surfaced as a `502` from

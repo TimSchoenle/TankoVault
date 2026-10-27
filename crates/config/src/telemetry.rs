@@ -5,25 +5,21 @@ use terrace_config::schema::Describe;
 
 use crate::sentry::SentryConfig;
 
-/// Observability / telemetry settings shared by every service.
+/// Observability settings shared by every service.
 #[derive(Debug, Clone, Deserialize, Describe)]
 pub struct TelemetryConfig {
-    /// Logical service name reported in traces/metrics.
+    /// Service name reported in traces and metrics.
     pub service_name: String,
-    /// **`TANKOVAULT_TELEMETRY__OTLP_ENDPOINT` is removed** (it silently did nothing); setting
-    /// it is now a hard config error. Re-add only with a real `OpenTelemetryLayer`.
-    ///
-    /// `RUST_LOG`-style filter (e.g. `info,tankovault=debug`).
+    /// `tracing` filter directives, such as `info,tankovault=debug`. `RUST_LOG` wins when set.
     #[serde(default = "TelemetryConfig::default_log_filter")]
     pub log_filter: String,
-    /// Emit structured JSON logs (production) vs. pretty logs (dev).
+    /// Emit structured JSON logs, for production, in place of the human-readable format.
     #[serde(default)]
     pub json_logs: bool,
-    /// Sentry error reporting and performance tracing. Off unless configured; see
-    /// [`SentryConfig`].
+    /// Sentry error reporting and performance tracing, off unless configured.
     ///
-    /// Nested here rather than beside `metrics` because it is a sink for the same `tracing`
-    /// stream `log_filter` governs: a record the filter drops never reaches Sentry either.
+    /// Sentry reads the same `tracing` stream as the logs, so a record `log_filter` drops never
+    /// reaches it.
     #[serde(default)]
     #[config(nested)]
     pub sentry: SentryConfig,

@@ -7,34 +7,33 @@ use terrace_config::schema::Describe;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Describe)]
 #[serde(rename_all = "lowercase")]
 pub enum RateLimitBackend {
-    /// Process-local counters; correct for one replica, but the effective limit multiplies
-    /// by replica count behind a load balancer.
+    /// Process-local counters. Behind a load balancer the effective limit multiplies by the
+    /// replica count.
     #[default]
     Memory,
-    /// Shared counters in Redis, so the limit holds across every replica. Fails **open** if
-    /// Redis is unreachable — a counter-store outage must not take the edge down.
+    /// Shared counters in Redis, so the limit holds across every replica. Fails **open** while
+    /// Redis is unreachable, so a counter-store outage does not take the edge down.
     Redis,
 }
 
-/// A token-bucket policy: sustained refill rate ([`Self::per_minute`]) plus bucket depth
-/// ([`Self::burst`]). A burst below the sustained rate is normal, not a misconfiguration.
+/// A token-bucket policy: a sustained refill rate ([`Self::per_minute`]) and a bucket depth
+/// ([`Self::burst`]). A burst below the sustained rate is normal.
 #[derive(Debug, Clone, Copy, Deserialize, Describe)]
 pub struct RateLimitPolicy {
-    /// Sustained requests allowed per minute per client key; the bucket's refill rate.
+    /// Sustained requests allowed per minute per client key, which is the bucket's refill rate.
     pub per_minute: u32,
-    /// Bucket depth: the most requests a client may spend back-to-back.
+    /// The most requests a client may spend back-to-back.
     pub burst: u32,
 }
 
 impl RateLimitPolicy {
-    /// Construct a policy directly (used for defaults and in tests).
+    /// Returns a policy refilling `per_minute` with a bucket of `burst`.
     #[must_use]
     pub const fn new(per_minute: u32, burst: u32) -> Self {
         Self { per_minute, burst }
     }
 
-    /// Bucket capacity, clamped to at least 1 so a misconfigured `0` doesn't reject every
-    /// request forever.
+    /// Returns the bucket capacity, at least 1, so a `burst` of `0` does not reject every request.
     #[must_use]
     pub const fn capacity(&self) -> u32 {
         if self.burst == 0 { 1 } else { self.burst }
@@ -43,14 +42,13 @@ impl RateLimitPolicy {
 
 /// Inbound request rate limiting for a service's HTTP edge.
 ///
-/// Distinct from the *outbound* crawl politeness in `tankovault_domain::pacing`, which paces
-/// requests this system makes to third-party providers.
+/// The outbound pacing of requests to providers is `tankovault_domain::pacing`.
 #[derive(Debug, Clone, Deserialize, Describe)]
 pub struct RateLimitConfig {
-    /// Enforce limits. When `false` the layer is not mounted at all (no per-request cost).
+    /// Enforce limits. When `false` the layer is not mounted and costs nothing per request.
     #[serde(default = "crate::default_true")]
     pub enabled: bool,
-    /// Counter store. See [`RateLimitBackend`].
+    /// Where the counters live.
     #[config(values)]
     #[serde(default)]
     pub backend: RateLimitBackend,
@@ -58,18 +56,18 @@ pub struct RateLimitConfig {
     #[config(nested)]
     #[serde(default = "RateLimitConfig::default_global")]
     pub global: RateLimitPolicy,
-    /// Credential-handling routes (login, register, reset, refresh); the online-guessing
-    /// control, deliberately far below [`Self::global`].
+    /// Credential-handling routes: login, register, reset and refresh. It is the control on
+    /// online guessing, so it sits far below [`Self::global`].
     #[config(nested)]
     #[serde(default = "RateLimitConfig::default_auth")]
     pub auth: RateLimitPolicy,
-    /// Routes that are cheap to call and expensive to serve (data export, scan triggers,
-    /// sync push/pull).
+    /// Routes that are cheap to call and expensive to serve: data export, scan triggers, sync
+    /// push and pull.
     #[config(nested)]
     #[serde(default = "RateLimitConfig::default_expensive")]
     pub expensive: RateLimitPolicy,
-    /// Trust `X-Forwarded-For`/`X-Real-IP` for the client key. **Only behind a reverse proxy
-    /// that overwrites these** — otherwise any client can forge a fresh identity and bypass
+    /// Take the client key from `X-Forwarded-For` or `X-Real-IP`. Enable it **only behind a
+    /// reverse proxy that overwrites both**; otherwise any client forges a fresh key and bypasses
     /// the limiter.
     #[serde(default)]
     pub trust_forwarded_for: bool,
@@ -83,8 +81,7 @@ impl RateLimitConfig {
         RateLimitPolicy::new(10, 5)
     }
     fn default_expensive() -> RateLimitPolicy {
-        // Kept well below `global`, but loose enough that a couple of back-to-back scans or
-        // an export alongside a sync do not trip it.
+        // Loose enough for two back-to-back scans, or an export alongside a sync.
         RateLimitPolicy::new(30, 10)
     }
 }

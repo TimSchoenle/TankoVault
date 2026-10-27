@@ -1,10 +1,9 @@
-//! The `TankoVault` dialect of [`terrace_config`], and the shared `serde`-default helpers used
-//! across this crate.
+//! The `TankoVault` dialect of [`terrace_config`], and the `serde` default helpers this crate
+//! shares.
 //!
-//! The layering itself — the TOML fragments, the `TANKOVAULT_*` environment layer, the
-//! secrets-directory provider, the `_FILE` indirection and the shadow-key rejection — belongs
-//! to `terrace-config`. What stays here is the one thing that is ours: which environment names
-//! this deployment spells, and which of them a file may not supply.
+//! `terrace-config` owns the layering: the TOML fragments, the `TANKOVAULT_*` environment layer,
+//! the secrets-directory provider, the `_FILE` indirection and the shadow-key rejection. This
+//! module names the environment variables and says which of them a file may not supply.
 
 use serde::de::DeserializeOwned;
 use terrace_config::Terrace;
@@ -15,27 +14,23 @@ pub use terrace_config::{Error as ConfigError, Loaded, Sources};
 /// The prefix every configuration variable carries.
 const PREFIX: &str = "TANKOVAULT_";
 
-/// The loader every service boots through.
+/// Returns the loader every service boots through.
 ///
 /// Layers, lowest precedence first: struct defaults, TOML at `$TANKOVAULT_CONFIG` (a file, or
 /// every `*.toml` in it if it names a directory), `TANKOVAULT_`-prefixed `__`-nested
 /// environment variables, `$TANKOVAULT_SECRETS_DIR`, and `TANKOVAULT_<KEY>_FILE` indirection.
 /// The last three are mutually exclusive per key: a key supplied by two of them is refused at
-/// boot rather than resolved by precedence.
+/// boot.
 ///
 /// A reserved key is read straight from the environment, before or outside the layered config,
-/// so a file may not supply one — naming it from a secrets directory or a `_FILE` variable is
-/// refused rather than ignored, because an ignored key is exactly the silent misconfiguration
-/// the file layers exist to remove. `TANKOVAULT_CONFIG` and `TANKOVAULT_SECRETS_DIR` are
-/// reserved by `terrace-config` itself, since both are read to decide what the layers *are*.
-///
-/// Every name below is a **literal on purpose**, including the two `Terrace::new(PREFIX)` would
-/// have derived anyway: `xtask config-docs` reads the documented surface out of the literals in
-/// this tree, so a variable that exists only as a derivation inside a dependency, or only as an
-/// element of a `const` array, is one no row of `docs/CONFIGURATION.md` can be held to.
+/// so a file may not supply one. A secrets directory or a `_FILE` variable naming one fails the
+/// boot. `TANKOVAULT_CONFIG` and `TANKOVAULT_SECRETS_DIR` are reserved by `terrace-config`
+/// itself, since both decide what the layers are.
 #[must_use]
 pub fn terrace() -> Terrace {
     Terrace::new(PREFIX)
+        // Every name is a literal, including the two `Terrace::new(PREFIX)` derives: `xtask
+        // config-docs` reads the documented variables from the literals in this tree.
         .config_var("TANKOVAULT_CONFIG")
         .secrets_dir_var("TANKOVAULT_SECRETS_DIR")
         // Read by `is_production`, which every production guard is spelled in terms of.
@@ -44,10 +39,10 @@ pub fn terrace() -> Terrace {
         .reserve("TANKOVAULT_CONFIRM_RESET")
 }
 
-/// Load a typed config for a service.
+/// Loads a service's typed config from every layer.
 ///
 /// # Errors
-/// Returns [`ConfigError`] if `TANKOVAULT_PROFILE` names no known profile, a required value is
+/// [`ConfigError`] if `TANKOVAULT_PROFILE` names no known profile, a required value is
 /// missing, a value fails to parse, a file-backed source cannot be read, or one key is supplied
 /// by more than one of the last three layers.
 pub fn load<T: DeserializeOwned>() -> Result<T, ConfigError> {
@@ -55,7 +50,7 @@ pub fn load<T: DeserializeOwned>() -> Result<T, ConfigError> {
     terrace().load()
 }
 
-/// Load a typed config and everything a reload needs to load it again.
+/// Loads a typed config and everything a reload needs to load it again.
 ///
 /// # Errors
 /// As [`load`].
@@ -64,23 +59,18 @@ pub fn load_watched<T: DeserializeOwned>() -> Result<Loaded<T>, ConfigError> {
     terrace().load_watched()
 }
 
-/// Report which layer supplied each key, without loading a config.
+/// Reports which layer supplied each key, without loading a config.
 ///
-/// Re-reads the layers at the moment it is called, so it is as valid inside a reload as at
-/// boot. It carries **no configuration value** — only key paths and the layers they came from
-/// — which is what makes it safe to log, and `tankovault-service`'s reload module is the one
-/// caller that does.
+/// Re-reads the layers when called, so it is as valid inside a reload as at boot. It carries
+/// key paths and the layers they came from, and no configuration value, so it is safe to log.
 ///
 /// # Errors
-/// As [`load`], except that a key supplied by more than one layer is reported rather than
-/// refused: an explanation of a configuration that fails to load is the case worth having.
+/// As [`load`], except that a key supplied by more than one layer is reported, not refused.
 pub fn explain() -> Result<Explanation, ConfigError> {
     terrace().explain()
 }
 
-/// Shared `serde` default for fields that are on unless explicitly disabled.
-///
-/// One spelling so no service re-derives it wrong (`cookie_secure` once defaulted to *off*).
+/// Returns `true`: the `serde` default for a field that is on unless disabled.
 #[must_use]
 pub fn default_true() -> bool {
     true
@@ -88,9 +78,8 @@ pub fn default_true() -> bool {
 
 /// The deployment profile named by `TANKOVAULT_PROFILE`.
 ///
-/// Parsed in exactly one place. Two hand-written checks once disagreed on `prod` and on letter
-/// case, so one value switched the API's secret checks on while leaving internal auth off, and
-/// another did the reverse.
+/// [`Profile::parse`] is the only parser, so every production guard reads the same value the
+/// same way.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Profile {
     /// Unset, `development` or `dev`.
@@ -100,11 +89,11 @@ pub enum Profile {
 }
 
 impl Profile {
-    /// Parse a raw `TANKOVAULT_PROFILE` value, trimmed and case-insensitive.
+    /// Parses a raw `TANKOVAULT_PROFILE` value, trimmed and case-insensitive.
     ///
     /// # Errors
-    /// [`ConfigError::Invalid`] for any other value: a profile nobody recognises must stop the
-    /// boot rather than quietly mean "development".
+    /// [`ConfigError::Invalid`] for any other value, so an unrecognised profile stops the boot
+    /// instead of meaning development.
     pub fn parse(raw: Option<&str>) -> Result<Self, ConfigError> {
         let value = raw.map(str::trim).unwrap_or_default().to_ascii_lowercase();
         match value.as_str() {
@@ -117,7 +106,7 @@ impl Profile {
         }
     }
 
-    /// The profile this process runs under.
+    /// Returns the profile this process runs under.
     ///
     /// # Errors
     /// As [`Self::parse`], and for a value that is not valid Unicode.
@@ -132,11 +121,10 @@ impl Profile {
     }
 }
 
-/// Whether the process runs under the production profile; every production guard is spelled in
-/// terms of this.
+/// Returns whether the process runs under the production profile.
 ///
-/// An unrecognised profile answers `true`, so a guard consulted before [`load`] has refused the
-/// boot fails closed.
+/// Every production guard calls this. An unrecognised profile answers `true`, so a guard
+/// consulted before [`load`] has refused the boot fails closed.
 #[must_use]
 pub fn is_production() -> bool {
     Profile::from_env().map_or(true, |p| p == Profile::Production)
@@ -146,8 +134,7 @@ pub fn is_production() -> bool {
 mod profile_tests {
     use super::Profile;
 
-    /// `prod` and letter case used to be read differently by the API and the config crate, so a
-    /// single value turned one set of production guards on and the other off.
+    /// Every accepted spelling, in any letter case, parses to the same profile.
     #[test]
     fn every_spelling_of_a_profile_parses_the_same_everywhere() {
         for raw in ["production", "Production", "PRODUCTION", "prod", " prod "] {
@@ -166,7 +153,8 @@ mod profile_tests {
         }
     }
 
-    /// `staging` used to mean "development" silently, disarming every production guard.
+    /// An unknown profile is refused, so it cannot disarm the production guards by meaning
+    /// development.
     #[test]
     fn an_unknown_profile_is_refused() {
         assert!(Profile::parse(Some("staging")).is_err());
@@ -191,18 +179,17 @@ mod tests {
     }
 
     /// A sandbox over the real dialect, so every name these tests arrange is the name
-    /// [`super::terrace`] reads — a variable spelled out by hand would keep passing after the
-    /// prefix moved, while testing something nothing reads.
+    /// [`super::terrace`] reads. A name spelled out by hand would keep passing after the prefix
+    /// changed.
     fn harness() -> Harness {
         Harness::over(super::terrace())
     }
 
-    /// The dialect, end to end: the prefix, the `__` nesting, and the defaults that fill in
-    /// around what the environment supplied. `terrace-config` owns the layering and tests it;
-    /// what these pin is that this crate wires it to the names an operator actually sets.
+    /// The prefix, the `__` nesting, and the defaults around what the environment supplied.
+    /// `terrace-config` tests the layering itself; these tests pin the names an operator sets.
     ///
-    /// `load()` rather than `jail.load()` throughout, because the entry point every service
-    /// boots through is half of what is under test here.
+    /// They call `load()`, not `jail.load()`, because the entry point every service boots
+    /// through is under test too.
     #[test]
     fn env_overrides_and_defaults_apply() {
         harness().run(|jail| {
@@ -225,12 +212,10 @@ mod tests {
     }
 
     /// A mounted secret outranks the TOML layer, so a `ConfigMap` carrying a placeholder DSN
-    /// cannot win over the `Secret` that carries the real one — through the variable names
-    /// *this* crate configures, which is the half a dependency cannot pin.
+    /// cannot win over the `Secret` that carries the real one.
     ///
-    /// The layer is asserted as well as the value: the two spellings differ, so a `secret` the
-    /// TOML happened to duplicate would produce the expected string from the wrong source and
-    /// pin nothing.
+    /// The test asserts the layer as well as the value, because a value the TOML duplicated would
+    /// match from the wrong source.
     #[test]
     fn a_secrets_directory_outranks_the_toml_layer() {
         harness().run(|jail| {
@@ -255,12 +240,11 @@ mod tests {
     /// The two process-level keys are reserved, so a mounted file naming one fails the boot
     /// instead of being read by nobody.
     ///
-    /// `TANKOVAULT_PROFILE` decides whether the production guards run at all, and it is read by
-    /// [`super::is_production`] long before a figment exists. A `Secret` supplying it would have
-    /// left a deployment believing it had set the profile while every guard saw it unset.
+    /// `TANKOVAULT_PROFILE` decides whether the production guards run, and
+    /// [`super::is_production`] reads it before a figment exists. A `Secret` supplying it would
+    /// set a profile no guard sees.
     ///
-    /// The file name is spelled verbatim on purpose: what is under test is a *name* the loader
-    /// must refuse, so deriving it from the key would beg the question.
+    /// The file name is spelled out, because the name is what the loader must refuse.
     #[test]
     fn a_process_level_key_cannot_come_from_a_file() {
         harness().run(|jail| {

@@ -490,7 +490,7 @@ fn relaunch_after_install(target: &Path) {
 /// Re-verify everything about the staged update and decide what to run.
 ///
 /// `flavour` is passed rather than read, because the relauncher's own path says nothing about
-/// the install it is updating — see [`flavour_of`].
+/// the install it is updating. See `flavour_of`.
 ///
 /// # Errors
 /// A catalogue key naming the check that refused it; the caller's response to all of them is the

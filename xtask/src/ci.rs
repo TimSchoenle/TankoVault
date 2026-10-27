@@ -137,6 +137,14 @@ const GATES: &[Gate] = &[
         },
     },
     Gate {
+        name: "frontend rustdoc",
+        step: Step::Cargo {
+            dir: "web/frontend",
+            args: &["doc", "--no-deps"],
+            env: &[("RUSTDOCFLAGS", "-D warnings")],
+        },
+    },
+    Gate {
         name: "frontend wasm",
         step: Step::Cargo {
             dir: "web/frontend",
@@ -167,6 +175,20 @@ const GATES: &[Gate] = &[
                 "warnings",
             ],
             env: &[],
+        },
+    },
+    Gate {
+        name: "frontend desktop rustdoc",
+        step: Step::Cargo {
+            dir: "web/frontend",
+            args: &[
+                "doc",
+                "--no-deps",
+                "--no-default-features",
+                "--features",
+                "desktop",
+            ],
+            env: &[("RUSTDOCFLAGS", "-D warnings")],
         },
     },
 ];
@@ -303,9 +325,10 @@ mod tests {
     /// `cargo fmt --all` at the root reach none of it — it once ran nowhere at all for exactly
     /// that reason, and three of its files had drifted out of rustfmt before anyone looked.
     ///
-    /// Six, not three: it builds two ways from one source tree, and a gate that only ever
-    /// compiles the default `web` feature says nothing about the `desktop` one that
-    /// `release-please.yaml` ships to readers.
+    /// Eight: it builds two ways from one source tree, and a gate that only ever compiles the
+    /// default `web` feature says nothing about the `desktop` one that `release-please.yaml`
+    /// ships to readers. Rustdoc runs under both, because each build documents modules the other
+    /// compiles out.
     #[test]
     fn the_frontend_gates_run_in_the_frontend() {
         let frontend: Vec<_> = GATES
@@ -314,14 +337,28 @@ mod tests {
             .collect();
         assert_eq!(
             frontend.len(),
-            6,
-            "the frontend needs fmt, test, clippy and wasm gates, plus test and clippy for the \
-             desktop feature set"
+            8,
+            "the frontend needs fmt, test, clippy, rustdoc and wasm gates, plus test, clippy and \
+             rustdoc for the desktop feature set"
         );
         let desktop = frontend
             .iter()
             .filter(|g| matches!(&g.step, Step::Cargo { args, .. } if args.contains(&"desktop")))
             .count();
-        assert_eq!(desktop, 2, "the desktop feature set needs test and clippy");
+        assert_eq!(
+            desktop, 3,
+            "the desktop feature set needs test, clippy and rustdoc"
+        );
+        let rustdoc_without_flags = frontend
+            .iter()
+            .filter(|g| {
+                matches!(&g.step, Step::Cargo { args, env, .. }
+                    if args.first() == Some(&"doc") && !env.contains(&("RUSTDOCFLAGS", "-D warnings")))
+            })
+            .count();
+        assert_eq!(
+            rustdoc_without_flags, 0,
+            "a frontend rustdoc gate without `RUSTDOCFLAGS=-D warnings` only reports"
+        );
     }
 }

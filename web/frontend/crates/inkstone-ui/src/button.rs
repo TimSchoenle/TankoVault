@@ -9,8 +9,10 @@ use dioxus::prelude::*;
 /// `<form>` wants — the HTML default is `submit`, and inside a form that reloads the page.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum ButtonType {
+    /// A plain button, with no effect on a surrounding form.
     #[default]
     Button,
+    /// A button that submits its form.
     Submit,
 }
 

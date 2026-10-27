@@ -75,6 +75,7 @@ impl Size {
 /// The spacing scale. A closed set, so spacing cannot drift into arbitrary pixel values.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum Gap {
+    /// No space.
     None,
     /// Glyph to its label.
     Xs,
@@ -90,21 +91,28 @@ pub enum Gap {
 /// Cross-axis alignment.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum Align {
+    /// At the leading edge.
     Start,
+    /// Centred.
     #[default]
     Center,
     /// Text of different sizes sharing one line.
     Baseline,
+    /// At the trailing edge.
     End,
+    /// Filling the cross axis.
     Stretch,
 }
 
 /// Main-axis distribution.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum Justify {
+    /// Packed at the leading edge.
     #[default]
     Start,
+    /// Packed in the centre.
     Center,
+    /// Packed at the trailing edge.
     End,
     /// First item left, last item right — the toolbar shape.
     Between,

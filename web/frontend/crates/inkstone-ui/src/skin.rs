@@ -30,72 +30,132 @@ use std::sync::Arc;
 #[non_exhaustive]
 pub enum Part {
     // Controls
+    /// A button with a text label.
     Button,
+    /// A square button that carries only a glyph.
     IconButton,
+    /// A single-line text input.
     Input,
+    /// A drop-down select.
     Select,
+    /// A range slider.
     Range,
+    /// A checkbox.
     Checkbox,
+    /// A labelled form field: its label, control, hint and error.
     Field,
+    /// The label of a [`Part::Field`].
     FieldLabel,
+    /// The help text under a field's control.
     FieldHint,
+    /// The validation message under a field's control.
     FieldError,
+    /// A segmented control: a row of mutually exclusive choices.
     Seg,
+    /// One choice in a [`Part::Seg`].
     SegItem,
+    /// A labelled slider with its current value.
     SliderRow,
+    /// The label of a [`Part::SliderRow`].
     SliderLabel,
+    /// The current value shown in a [`Part::SliderRow`].
     SliderValue,
+    /// A search box: its glyph, input and hit count.
     SearchField,
+    /// The glyph inside a [`Part::SearchField`].
     SearchIcon,
+    /// The text input inside a [`Part::SearchField`].
     SearchInput,
+    /// The hit count inside a [`Part::SearchField`].
     SearchHits,
     // Status
+    /// A compact label for a status or category.
     Pill,
+    /// A toggleable filter token.
     Chip,
+    /// A dot that shows a state by its colour.
     StatusDot,
     // Layout
+    /// A horizontal flex line.
     Row,
+    /// A vertical flex column.
     Stack,
+    /// A bordered block of content.
     Tile,
+    /// A bordered region with a head and a body.
     Panel,
+    /// The heading line of a [`Part::Panel`].
     PanelHead,
+    /// The trailing controls of a [`Part::PanelHead`].
     PanelHeadEnd,
+    /// A titled region of a page.
     Section,
+    /// The heading line of a [`Part::Section`].
     SectionHead,
+    /// The trailing controls of a [`Part::SectionHead`].
     SectionHeadEnd,
+    /// The title in a [`Part::SectionHead`].
     SectionLabel,
+    /// A two-column list of keys and values.
     DefinitionList,
+    /// A key in a [`Part::DefinitionList`].
     DefinitionKey,
+    /// A horizontal rule between regions.
     Divider,
     // Data
+    /// The container that bounds and scrolls a [`Part::Table`].
     TableWrap,
+    /// A data table.
     Table,
+    /// A table cell holding a number, aligned for comparison.
     NumericCell,
+    /// Text that screen readers announce and the page does not show.
     VisuallyHidden,
     // Feedback
+    /// A placeholder block shown while content loads.
     Skeleton,
+    /// A placeholder line in a loading list.
     SkeletonRow,
+    /// A grid of placeholder cards.
     SkeletonGrid,
+    /// One placeholder card in a [`Part::SkeletonGrid`].
     SkeletonCard,
+    /// The cover image placeholder in a [`Part::SkeletonCard`].
     SkeletonCover,
+    /// The text placeholder in a [`Part::SkeletonCard`].
     SkeletonCardBody,
+    /// The message shown when loaded content has no entries.
     Empty,
+    /// The box shown when content failed to load, with a retry control.
     Error,
+    /// The message inside a [`Part::Error`].
     ErrorLine,
+    /// A one-line report of an action's success or failure.
     Outcome,
     // Overlay
+    /// The backdrop behind a [`Part::Modal`].
     ModalScrim,
+    /// A dialog over the page.
     Modal,
+    /// The title line of a [`Part::Modal`].
     ModalHead,
+    /// The explanatory text under a modal's title.
     ModalIntro,
+    /// The content of a [`Part::Modal`].
     ModalBody,
+    /// The action line of a [`Part::Modal`].
     ModalFoot,
     // Navigation
+    /// A tab strip.
     Tabs,
+    /// The container that scrolls an overflowing [`Part::Tabs`].
     TabsScroll,
+    /// One tab in a [`Part::Tabs`].
     Tab,
+    /// The count beside a tab's label.
     TabCount,
     // Typography
+    /// Text in the monospace face.
     Mono,
 }
 
@@ -142,12 +202,19 @@ pub enum Flag {
 #[derive(Clone, Copy, PartialEq, Debug)]
 #[non_exhaustive]
 pub enum Variant {
+    /// Adds nothing.
     None,
+    /// What the part means.
     Tone(Tone),
+    /// How large the part is.
     Size(Size),
+    /// The space between the part's children.
     Gap(Gap),
+    /// How the part's children line up on the cross axis.
     Align(Align),
+    /// How the part's children are spread on the main axis.
     Justify(Justify),
+    /// A boolean state the part is in.
     Flag(Flag),
 }
 

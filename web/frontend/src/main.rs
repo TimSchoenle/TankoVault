@@ -12,8 +12,6 @@ mod api;
 mod app;
 mod build_info;
 mod components;
-/// The log, the crash reports and the unclean-shutdown marker. Desktop only: a browser tab that
-/// dies leaves a console entry behind, and a native window that dies leaves nothing.
 #[cfg(feature = "desktop")]
 mod diagnostics;
 mod hooks;
@@ -24,8 +22,6 @@ mod models;
 mod platform;
 mod state;
 mod title;
-/// Keeping an installed desktop client current from the GitHub releases. Desktop only: a served
-/// SPA is updated by reloading it.
 #[cfg(feature = "desktop")]
 mod update;
 mod util;

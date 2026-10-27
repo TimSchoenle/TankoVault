@@ -178,7 +178,7 @@ fn parse(stored: &Stored) -> Option<Channel> {
 /// One bound, or `None` if this client could never compare a candidate against it.
 ///
 /// Prerelease and build metadata are rejected rather than compared, so a bound accepts exactly
-/// the set [`super::discover::version_of`] offers — a bound that cannot be compared against a
+/// the set `discover::version_of` offers — a bound that cannot be compared against a
 /// candidate is not a bound.
 fn plain_version(value: &str) -> Option<semver::Version> {
     let version = semver::Version::parse(value.trim()).ok()?;

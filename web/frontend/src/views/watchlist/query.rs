@@ -287,8 +287,8 @@ impl fmt::Display for WatchlistQuery {
     }
 }
 
-/// `all` is the `All` tab; anything unrecognised is too, rather than silently falling back to
-/// `Reading` (what [`WatchStatusExt::parse`] would do) and hiding most of the list.
+/// `all` and any unrecognised token both select the `All` tab, so a mistyped URL shows the whole
+/// list.
 fn parse_status(token: &str) -> Option<WatchStatus> {
     if token == "all" {
         return None;

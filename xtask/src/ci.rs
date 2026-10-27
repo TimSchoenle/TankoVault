@@ -368,6 +368,20 @@ mod tests {
             desktop, 3,
             "the desktop feature set needs test, clippy and rustdoc"
         );
+        let desktop_with_web: Vec<&str> = frontend
+            .iter()
+            .filter(|g| {
+                matches!(&g.step, Step::Cargo { args, .. }
+                    if args.contains(&"desktop") && !args.contains(&"--no-default-features"))
+            })
+            .map(|g| g.name)
+            .collect();
+        assert_eq!(
+            desktop_with_web,
+            Vec::<&str>::new(),
+            "a desktop gate without `--no-default-features` also enables `web`, the default, and \
+             the two features are mutually exclusive"
+        );
         let rustdoc_without_flags = frontend
             .iter()
             .filter(|g| {

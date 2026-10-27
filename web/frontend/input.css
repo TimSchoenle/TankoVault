@@ -1,5 +1,5 @@
 /*
- * TankoVault design system — Tailwind v4 entrypoint (DESIGN_SPEC §2–5).
+ * TankoVault design system — Tailwind v4 entrypoint (`docs/DESIGN_SYSTEM.md` §2–5).
  *
  * The Tailwind CLI compiles this file into the committed `assets/main.css`:
  *   npm run css:build   (one-shot, minified)   /   npm run css:watch (dev)
@@ -163,7 +163,7 @@
   --star-ink: #7a5c0c;
 }
 
-/* ---- Appearance knobs (DESIGN_SPEC §8) — CSS-variable swaps on <html>[data-*] ----
+/* ---- Appearance knobs (`docs/DESIGN_SYSTEM.md` §8) — CSS-variable swaps on <html>[data-*] ----
  * Persisted to localStorage and re-applied on boot (see components.rs / account.rs).
  * The defaults (vermilion / standard / ink) live in :root above, so an unset knob is a
  * no-op. Accent values are read verbatim from the mockup's `_accents()` map. */
@@ -210,7 +210,7 @@ a { color: inherit; text-decoration: none; }
 }
 
 /* ============================================================================
- * App shell — sidebar rail + top command bar (DESIGN_SPEC §6.1)
+ * App shell — sidebar rail + top command bar (`docs/DESIGN_SYSTEM.md` §6.1)
  * ========================================================================== */
 .ik-app { display: grid; grid-template-columns: var(--rail-w) 1fr; min-height: calc(100vh - var(--chrome-h)); }
 /* The desktop build's outermost element (`app::AppRoot`), which the web build never renders.
@@ -1117,7 +1117,7 @@ a { color: inherit; text-decoration: none; }
 }
 
 /* ============================================================================
- * Discover — two-pane filter panel + results (DESIGN_SPEC §7.2)
+ * Discover — two-pane filter panel + results (`docs/DESIGN_SYSTEM.md` §7.2)
  * ========================================================================== */
 .ik-discover { display: grid; grid-template-columns: 298px 1fr; gap: 24px; align-items: start; }
 .ik-discover.collapsed { grid-template-columns: 1fr; }

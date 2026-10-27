@@ -1,4 +1,4 @@
-# Full end-to-end local stack (design §19): Postgres, Redis, NATS, TRAWL, a migrate/seed
+# Full end-to-end local stack (`docs/ARCHITECTURE.md` §19): Postgres, Redis, NATS, TRAWL, a migrate/seed
 # step, every TankoVault backend service, and the frontend, all built from deploy/docker/Dockerfile.
 # Run: docker compose -f deploy/docker-compose.yml up --build, then open http://localhost:3000.
 #
@@ -361,7 +361,7 @@ services:
       TANKOVAULT_TELEMETRY__SERVICE_NAME: control-plane
       TANKOVAULT_DATABASE__URL: *db-url
       TANKOVAULT_NATS__URL: nats://nats:4222
-      TANKOVAULT_REDIS__URL: redis://redis:6379 # singleton-scheduler leader election (design §12)
+      TANKOVAULT_REDIS__URL: redis://redis:6379 # singleton-scheduler leader election (`docs/ARCHITECTURE.md` §12)
       # Duplicate-sweep budgets. The defaults are sized for a catalogue in a steady state, where
       # a sweep has a handful of pairs to judge; a first pass over an unswept catalogue is a
       # different job, and the merge ceiling binds on every run until the backlog is gone. Raise
@@ -461,7 +461,7 @@ services:
     depends_on:
       trawl: { condition: service_healthy }
 
-  # Optional headless-render tier (design §9); doubles as a ChallengeSolver back-end on /v1/solve.
+  # Optional headless-render tier (`docs/ARCHITECTURE.md` §9); doubles as a ChallengeSolver back-end on /v1/solve.
   render:
     deploy: { resources: { limits: { memory: 2g } } }
     shm_size: 1gb

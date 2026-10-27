@@ -37,7 +37,7 @@ pub struct CandidateFilter {
 
 /// List merge candidates
 ///
-/// The canonicalisation review queue (design §10), highest confidence first.
+/// The canonicalisation review queue (`docs/ARCHITECTURE.md` §10), highest confidence first.
 #[utoipa::path(
     get,
     path = "/v1/admin/merge-candidates",
@@ -76,7 +76,7 @@ pub struct MergeRequest {
 
 /// Merge two series
 ///
-/// Transactional re-parent + title/tag/progress/sync union (design §10).
+/// Transactional re-parent + title/tag/progress/sync union (`docs/ARCHITECTURE.md` §10).
 #[utoipa::path(
     post,
     path = "/v1/admin/series/merge",

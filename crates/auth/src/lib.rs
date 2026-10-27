@@ -1,4 +1,4 @@
-//! Framework-agnostic authentication primitives (design §16): argon2id password hashing, HS256
+//! Framework-agnostic authentication primitives (`docs/ARCHITECTURE.md` §16): argon2id password hashing, HS256
 //! access tokens, opaque refresh tokens, AES-256-GCM sealing for tokens at rest, and the
 //! second-factor primitives (RFC 6238 TOTP, recovery codes). Every credential type is
 //! `secrecy`-wrapped; non-secret derived values (PHC hash, token digest, ciphertext) keep plain

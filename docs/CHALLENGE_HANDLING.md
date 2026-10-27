@@ -1,9 +1,9 @@
 # Challenge handling
 
-All seven workstreams of the bot-management tier (design §9), from detection to a shared session
-store, with the status of each.
+All seven workstreams of the bot-management tier, from detection to a shared session store, with the status of each.
 
-Read [`docs/ENGINEERING_GUIDE.md`](ENGINEERING_GUIDE.md) first. Every workstream below assumes the
+The tier itself is specified in [`docs/ARCHITECTURE.md`](ARCHITECTURE.md) §9. Read
+[`docs/ENGINEERING_GUIDE.md`](ENGINEERING_GUIDE.md) first. Every workstream below assumes the
 house rules — `#[expect]` over `#[allow]`, short comments except where they carry risk, and a fix
 that could silently return gets a test whose doc comment says what the bug was.
 
@@ -73,7 +73,7 @@ point (`…/orchestrate/`, `chl_page`) counts, alongside the untouched `cf_chl_o
 - [`crates/solver/src/detection.rs`](../crates/solver/src/detection.rs) — `loads_challenge_orchestration`, the narrowed branch, the doctest contract, and `the_js_detections_beacon_is_not_a_challenge`
 - [`crates/solver/tests/prop_detection.rs`](../crates/solver/tests/prop_detection.rs) — the marker generator emits the orchestration URL and the beacon as separate fragments, so the differential property still reaches the `CloudflareJs` branch
 - [`fuzz/dictionaries/solver.dict`](../fuzz/dictionaries/solver.dict) and the `cloudflare-jsd-beacon-on-content` seed
-- [`docs/design.md`](design.md) — the marker list in the spec, which is what seeded the mistake
+- [`docs/ARCHITECTURE.md`](ARCHITECTURE.md) — the marker list in the spec, which is what seeded the mistake
 
 The real `403` block page now classifies as `CloudflareManaged` through the status+header fallback,
 which is the more accurate label and still buys a solve. That is deliberate: a residential-proxy

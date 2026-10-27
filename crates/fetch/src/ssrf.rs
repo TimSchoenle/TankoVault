@@ -1,4 +1,4 @@
-//! SSRF guard — critical for this system (design §16).
+//! SSRF guard — critical for this system (`docs/ARCHITECTURE.md` §16).
 //!
 //! Workers and the "test adapter" endpoint fetch operator-supplied URLs. The guard:
 //! - allows only `http`/`https`,

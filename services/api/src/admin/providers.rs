@@ -521,7 +521,7 @@ pub struct TestAdapterRequest {
 /// Dry-run a provider's adapter
 ///
 /// Dry-run the provider's adapter against the live site and return the parsed sample so
-/// operators can fix selectors without a deploy (design §11/§17). Bounded by a timeout;
+/// operators can fix selectors without a deploy (`docs/ARCHITECTURE.md` §11/§17). Bounded by a timeout;
 /// SSRF and rate limits are enforced by the injected fetch stack.
 ///
 /// The body is deliberately free-form JSON: it is a diagnostic dump whose shape follows

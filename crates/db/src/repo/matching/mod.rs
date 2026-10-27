@@ -1,4 +1,4 @@
-//! Candidate lookup for series canonicalisation (design §10, step 2), plus the merge-candidate
+//! Candidate lookup for series canonicalisation (`docs/ARCHITECTURE.md` §10, step 2), plus the merge-candidate
 //! queue an ambiguous match feeds and the duplicate sweep that keeps it honest.
 //!
 //! This layer returns raw trigram candidates and performs whatever the caller's

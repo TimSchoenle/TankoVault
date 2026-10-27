@@ -2198,7 +2198,7 @@
         "type": "object"
       },
       "MergeCandidateView": {
-        "description": "A pending merge candidate, enriched with everything the console needs to triage it without\nopening both series (design §11 `GET /v1/admin/merge-candidates`).\n\nThe counts and `suggested_keep` are not decoration. Acting on a candidate means choosing\nwhich of the two rows survives, and the absorbed id *stops existing* — every bookmark,\nnotification and external tracker mapping naming it breaks. The right answer is whichever\nseries carries more of the catalogue, which is a comparison the server can make once instead\nof an operator eyeballing it per row.",
+        "description": "A pending merge candidate, enriched with everything the console needs to triage it without\nopening both series (`docs/ARCHITECTURE.md` §11 `GET /v1/admin/merge-candidates`).\n\nThe counts and `suggested_keep` are not decoration. Acting on a candidate means choosing\nwhich of the two rows survives, and the absorbed id *stops existing* — every bookmark,\nnotification and external tracker mapping naming it breaks. The right answer is whichever\nseries carries more of the catalogue, which is a comparison the server can make once instead\nof an operator eyeballing it per row.",
         "properties": {
           "candidate_chapters": {
             "description": "Chapter links under that side.",
@@ -8052,7 +8052,7 @@
     "contact": {
       "name": "TankoVault contributors"
     },
-    "description": "Axum HTTP edge: public read/write + admin, auth, resolved links, SSE.",
+    "description": "The HTTP API on Axum: public reads and writes, administration, authentication, resolved links and server-sent events.",
     "license": {
       "name": ""
     },
@@ -8063,7 +8063,7 @@
   "paths": {
     "/v1/admin/audit": {
       "get": {
-        "description": "A filtered, paged window on the privileged-action trail (design §16), newest first.\n\nEvery filter is applied in SQL. The console cannot filter client-side here on purpose: it\nholds one page, and a filter over one page silently answers a different question than the\none asked — the defect `users/activity.rs` shipped.",
+        "description": "A filtered, paged window on the privileged-action trail (`docs/ARCHITECTURE.md` §16), newest first.\n\nEvery filter is applied in SQL. The console cannot filter client-side here on purpose: it\nholds one page, and a filter over one page silently answers a different question than the\none asked — the defect `users/activity.rs` shipped.",
         "operationId": "audit_log",
         "parameters": [
           {
@@ -9101,7 +9101,7 @@
     },
     "/v1/admin/merge-candidates": {
       "get": {
-        "description": "The canonicalisation review queue (design §10), highest confidence first.",
+        "description": "The canonicalisation review queue (`docs/ARCHITECTURE.md` §10), highest confidence first.",
         "operationId": "list_merge_candidates",
         "parameters": [
           {
@@ -11021,7 +11021,7 @@
     },
     "/v1/admin/providers/{id}/test": {
       "post": {
-        "description": "Dry-run the provider's adapter against the live site and return the parsed sample so\noperators can fix selectors without a deploy (design §11/§17). Bounded by a timeout;\nSSRF and rate limits are enforced by the injected fetch stack.\n\nThe body is deliberately free-form JSON: it is a diagnostic dump whose shape follows\nwhatever the adapter managed to parse, and the console renders it verbatim. It is still\ndeclared as a schema so the generated client can return it, rather than forcing callers\nonto an untyped side channel.",
+        "description": "Dry-run the provider's adapter against the live site and return the parsed sample so\noperators can fix selectors without a deploy (`docs/ARCHITECTURE.md` §11/§17). Bounded by a timeout;\nSSRF and rate limits are enforced by the injected fetch stack.\n\nThe body is deliberately free-form JSON: it is a diagnostic dump whose shape follows\nwhatever the adapter managed to parse, and the console renders it verbatim. It is still\ndeclared as a schema so the generated client can return it, rather than forcing callers\nonto an untyped side channel.",
         "operationId": "test_adapter",
         "parameters": [
           {
@@ -11435,7 +11435,7 @@
     },
     "/v1/admin/scan-failures": {
       "get": {
-        "description": "The most recently failed scan tasks with their errors, for triaging stuck providers and\nbroken selectors (design §17.2.7). The grouped view is `/v1/admin/scan-failures/grouped`.",
+        "description": "The most recently failed scan tasks with their errors, for triaging stuck providers and\nbroken selectors (`docs/ARCHITECTURE.md` §17.2.7). The grouped view is `/v1/admin/scan-failures/grouped`.",
         "operationId": "scan_failures",
         "parameters": [
           {
@@ -12325,7 +12325,7 @@
     },
     "/v1/admin/series/merge": {
       "post": {
-        "description": "Transactional re-parent + title/tag/progress/sync union (design §10).",
+        "description": "Transactional re-parent + title/tag/progress/sync union (`docs/ARCHITECTURE.md` §10).",
         "operationId": "merge_series",
         "requestBody": {
           "content": {
@@ -12464,7 +12464,7 @@
         "operationId": "admin_stream",
         "parameters": [
           {
-            "description": "Single-use ticket from `POST /v1/me/stream-ticket`, passed as a query parameter because\nthe browser `EventSource` API cannot attach an `Authorization` header (design §17.4).\n\nWas the raw access token until SEC-8. A query string is recorded by `TraceLayer` as a\nspan field, preserved verbatim by the frontend proxy, written to every reverse-proxy\naccess log and kept in browser history — so the credential that rides here must be worth\nnothing by the time anyone reads it back. This one is spent by the request that carries\nit, expires in 30 seconds, and opens nothing but this stream.",
+            "description": "Single-use ticket from `POST /v1/me/stream-ticket`, passed as a query parameter because\nthe browser `EventSource` API cannot attach an `Authorization` header (`docs/ARCHITECTURE.md` §17.4).\n\nWas the raw access token until SEC-8. A query string is recorded by `TraceLayer` as a\nspan field, preserved verbatim by the frontend proxy, written to every reverse-proxy\naccess log and kept in browser history — so the credential that rides here must be worth\nnothing by the time anyone reads it back. This one is spent by the request that carries\nit, expires in 30 seconds, and opens nothing but this stream.",
             "in": "query",
             "name": "ticket",
             "required": true,
@@ -17647,11 +17647,11 @@
     },
     "/v1/me/stream": {
       "get": {
-        "description": "Server-Sent Events of live per-user notifications (design §14, §17.4). Authenticated by a\nsingle-use `ticket` query parameter obtained from `POST /v1/me/stream-ticket` — not the\n`Authorization` header, which `EventSource` cannot set. It subscribes to the ticket's own\nuser's core-NATS subject and relays each `UserNotification` as a `notification` SSE event,\nwith a periodic keep-alive comment so proxies keep the connection open. Ownership is\nimplicit: the subscription is scoped to the user the ticket was minted for.\n\nThe ticket is consumed here, so `EventSource`'s *automatic* reconnect cannot re-open this\nstream — the client has to mint a new ticket per attempt (`web/frontend/src/live.rs` does).\nThat is a feature rather than a cost: re-minting goes through `AuthUser`, so a suspension\napplied mid-stream is caught by the mint call as well as by the check below.",
+        "description": "Server-Sent Events of live per-user notifications (`docs/ARCHITECTURE.md` §14, §17.4). Authenticated by a\nsingle-use `ticket` query parameter obtained from `POST /v1/me/stream-ticket` — not the\n`Authorization` header, which `EventSource` cannot set. It subscribes to the ticket's own\nuser's core-NATS subject and relays each `UserNotification` as a `notification` SSE event,\nwith a periodic keep-alive comment so proxies keep the connection open. Ownership is\nimplicit: the subscription is scoped to the user the ticket was minted for.\n\nThe ticket is consumed here, so `EventSource`'s *automatic* reconnect cannot re-open this\nstream — the client has to mint a new ticket per attempt (`web/frontend/src/live.rs` does).\nThat is a feature rather than a cost: re-minting goes through `AuthUser`, so a suspension\napplied mid-stream is caught by the mint call as well as by the check below.",
         "operationId": "stream",
         "parameters": [
           {
-            "description": "Single-use ticket from `POST /v1/me/stream-ticket`, passed as a query parameter because\nthe browser `EventSource` API cannot attach an `Authorization` header (design §17.4).\n\nWas the raw access token until SEC-8. A query string is recorded by `TraceLayer` as a\nspan field, preserved verbatim by the frontend proxy, written to every reverse-proxy\naccess log and kept in browser history — so the credential that rides here must be worth\nnothing by the time anyone reads it back. This one is spent by the request that carries\nit, expires in 30 seconds, and opens nothing but this stream.",
+            "description": "Single-use ticket from `POST /v1/me/stream-ticket`, passed as a query parameter because\nthe browser `EventSource` API cannot attach an `Authorization` header (`docs/ARCHITECTURE.md` §17.4).\n\nWas the raw access token until SEC-8. A query string is recorded by `TraceLayer` as a\nspan field, preserved verbatim by the frontend proxy, written to every reverse-proxy\naccess log and kept in browser history — so the credential that rides here must be worth\nnothing by the time anyone reads it back. This one is spent by the request that carries\nit, expires in 30 seconds, and opens nothing but this stream.",
             "in": "query",
             "name": "ticket",
             "required": true,

@@ -555,7 +555,7 @@ async fn run_task(engine: Arc<Engine>, msg: tankovault_bus::BrokerMessage, task:
     }
     // Republish progress after the task settles (done or failed) so the control-plane
     // aggregator can finalise the run and the console can relay live progress over NATS
-    // (design §12).
+    // (`docs/ARCHITECTURE.md` §12).
     engine.report_progress(task.run_id).await;
     if let Err(e) = msg.ack().await {
         tracing::warn!(error = %e, "failed to ack message");

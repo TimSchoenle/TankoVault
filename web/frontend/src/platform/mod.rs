@@ -210,7 +210,7 @@ pub(crate) fn preferred_language() -> Option<String> {
     imp::preferred_language()
 }
 
-/// Absolute base URL for API calls (design §19).
+/// Absolute base URL for API calls (`docs/ARCHITECTURE.md` §19).
 ///
 /// On web this is the origin the SPA was served from, which is the API's own. Desktop has no
 /// served origin, so it is the server the reader connected to at first run; empty until then,

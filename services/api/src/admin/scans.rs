@@ -246,7 +246,7 @@ pub struct FailureQuery {
 /// List recent scan failures
 ///
 /// The most recently failed scan tasks with their errors, for triaging stuck providers and
-/// broken selectors (design §17.2.7). The grouped view is `/v1/admin/scan-failures/grouped`.
+/// broken selectors (`docs/ARCHITECTURE.md` §17.2.7). The grouped view is `/v1/admin/scan-failures/grouped`.
 #[utoipa::path(
     get,
     path = "/v1/admin/scan-failures",

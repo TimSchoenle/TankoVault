@@ -80,7 +80,7 @@ pub struct FeedItem {
     pub discovered_at: OffsetDateTime,
 }
 
-/// The reader's new-chapter feed: what is unread on their watchlist (design §11).
+/// The reader's new-chapter feed: what is unread on their watchlist (`docs/ARCHITECTURE.md` §11).
 ///
 /// Chapters strictly above their progress marker on a watched series, most recently discovered
 /// first — **one row per chapter, not per source**.

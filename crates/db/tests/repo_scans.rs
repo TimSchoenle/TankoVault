@@ -3,7 +3,7 @@
 //! # What is actually at stake here
 //!
 //! The task row is the truth for **progress and audit**; `JetStream` is the truth for dispatch
-//! (design §2). That split means these eleven statements are the only record of how much of a scan
+//! (`docs/ARCHITECTURE.md` §2). That split means these eleven statements are the only record of how much of a scan
 //! has happened, and delivery is **at-least-once** — a worker sees the same task twice whenever an
 //! ack is lost or an ack deadline lapses. So every statement here has to be idempotent under
 //! replay, and the interesting failures are all arithmetic rather than type errors:

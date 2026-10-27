@@ -153,7 +153,7 @@ fn measure_for(route: &Route) -> &'static str {
     }
 }
 
-/// Keep an access token in memory for as long as the tab is open (design §17.4).
+/// Keep an access token in memory for as long as the tab is open (`docs/ARCHITECTURE.md` §17.4).
 ///
 /// Runs once on boot — adopting a token from the httpOnly refresh cookie so a page reload
 /// stays signed in — and then again shortly before each token expires.
@@ -323,7 +323,7 @@ fn use_source_order_sync() {
 }
 
 /// Subscribe to the per-user SSE stream while signed in, keeping the rail's unread badge
-/// current (design §14, §17.4).
+/// current (`docs/ARCHITECTURE.md` §14, §17.4).
 ///
 /// `use_resource` restarts when the signed-in account changes — dropping the previous
 /// `EventSource` and closing its connection — so a sign-out tears the stream down and a sign-in

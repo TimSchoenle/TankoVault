@@ -1,4 +1,4 @@
-//! The `SourceAdapter` contract and its value types (design §7).
+//! The `SourceAdapter` contract and its value types (`docs/ARCHITECTURE.md` §7).
 
 use crate::error::AdapterError;
 use async_trait::async_trait;

@@ -1,4 +1,4 @@
-//! Home dashboard (`DESIGN_SPEC` §7.1) — the signed-in reader's landing screen. Greeting +
+//! Home dashboard (`docs/DESIGN_SYSTEM.md` §7.1) — the signed-in reader's landing screen. Greeting +
 //! lifetime stat tiles, a continue-reading rail and a day-grouped "New in your watchlist" feed.
 //! Signed out, the same route is [`GuestHome`] instead, and signed in with an empty watchlist it
 //! is [`FirstRun`]: every section here is derived from a watchlist, so until one exists there is

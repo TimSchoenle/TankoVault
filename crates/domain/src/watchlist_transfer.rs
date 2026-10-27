@@ -1,8 +1,8 @@
 //! Portable watchlist entries: what a watchlist backup identifies a series by, and the pure rules
 //! for validating an entry, matching it against a catalogue and merging it into a watchlist.
 //!
-//! Nothing here carries a database id. A backup has to survive the catalogue it was taken from —
-//! a wiped database, or a different deployment with different uuids — so an entry names its
+//! Nothing here carries a database id. A backup has to survive the catalogue it was taken from,
+//! through a wiped database or a different deployment with different uuids, so an entry names its
 //! series only by what another catalogue can rediscover on its own: the provider pages it was
 //! read on, external tracker ids, and its titles.
 
@@ -64,7 +64,7 @@ pub struct PortableProgress {
 }
 
 impl PortableProgress {
-    /// Whether this is the "nothing read" state, which is not worth a row.
+    /// Returns whether this is the "nothing read" state, which is not worth a row.
     #[must_use]
     pub fn is_empty(self) -> bool {
         self.whole == 0.0 && self.part.is_none()
@@ -112,7 +112,7 @@ impl EntryError {
         }
     }
 
-    /// Prefix the field with the entry's position in its document.
+    /// Prefixes the field with the entry's position in its document.
     #[must_use]
     pub fn at_entry(self, index: usize) -> Self {
         Self {
@@ -169,13 +169,13 @@ fn check_progress(progress: PortableProgress) -> Result<(), EntryError> {
 }
 
 impl PortableEntry {
-    /// Check every bound a document entry must meet before anything reads it.
+    /// Checks every bound a document entry must meet before anything reads it.
     ///
-    /// A backup is a file the reader may have edited, or been handed, so every length is bounded
-    /// here rather than trusted to the database: the limits are what keep one import's memory and
-    /// statement size proportional to the entry count.
+    /// A backup is a file the reader may have edited or been handed, so every length is bounded
+    /// here, not left to the database: the limits keep one import's memory and statement size
+    /// proportional to the entry count.
     ///
-    /// Source URLs are only ever *compared* against configured provider hosts; nothing fetches
+    /// Source URLs are only ever compared against configured provider hosts; nothing fetches
     /// them, so they need no SSRF check. Credentials embedded in one are still refused, because
     /// a URL carrying `user:pass@` is not a page a crawler found and should not be persisted.
     ///
@@ -216,7 +216,7 @@ impl PortableEntry {
         Ok(())
     }
 
-    /// Drop or trim whatever in a catalogue-derived entry would fail [`Self::validate`].
+    /// Drops or trim whatever in a catalogue-derived entry would fail [`Self::validate`].
     ///
     /// An export is built from catalogue rows the crawler wrote, not from input this module
     /// checked, and one over-long alternative title must not make a reader's whole backup
@@ -258,10 +258,10 @@ impl PortableEntry {
         Some(self)
     }
 
-    /// A stable key for this entry, so importing the same backup twice queues it once.
+    /// Returns a stable key for this entry, so importing the same backup twice queues it once.
     ///
-    /// Derived from the strongest identifier present — an external id, then a source page, then
-    /// the title — and from the smallest one of that kind, so reordering a document's lists does
+    /// Derived from the strongest identifier present (an external id, then a source page, then
+    /// the title) and from the smallest one of that kind, so reordering a document's lists does
     /// not change it.
     #[must_use]
     pub fn identity_key(&self) -> String {
@@ -284,7 +284,7 @@ impl PortableEntry {
         format!("title:{}", compact_key(&normalize_title(&self.title)))
     }
 
-    /// The whitespace-insensitive title keys this entry could match by.
+    /// Returns the whitespace-insensitive title keys this entry could match by.
     #[must_use]
     pub fn title_keys(&self) -> Vec<String> {
         let mut keys: Vec<String> = std::iter::once(&self.title)
@@ -320,8 +320,8 @@ fn validate_external(external: &ExternalRef) -> Result<(), EntryError> {
     Ok(())
 }
 
-/// A title without control characters, trimmed and cut to [`MAX_TITLE_BYTES`] on a character
-/// boundary; `None` when nothing is left.
+/// Returns a title without control characters, trimmed and cut to [`MAX_TITLE_BYTES`] on a
+/// character boundary; `None` when nothing is left.
 fn clean_title(title: &str) -> Option<String> {
     let mut out = String::new();
     for c in title.trim().chars().filter(|c| !c.is_control()) {
@@ -375,7 +375,7 @@ pub struct CatalogueProvider {
     pub base_url: String,
 }
 
-/// The host a URL is matched by: lower-case, without a leading `www.`.
+/// Returns the host a URL is matched by: lower-case, without a leading `www.`.
 fn host_key(url: &Url) -> Option<String> {
     let host = url.host_str()?.to_ascii_lowercase();
     Some(
@@ -412,7 +412,8 @@ impl ProviderIndex {
         index
     }
 
-    /// Every `(provider, source_path)` this reference could be stored under, most specific first.
+    /// Returns every `(provider, source_path)` this reference could be stored under, most specific
+    /// first.
     ///
     /// Two independent routes, because each survives a change the other does not: the slug and
     /// path survive a provider moving domain (`base_url` is the one row that changes), and the
@@ -456,7 +457,7 @@ pub enum MatchedBy {
     ExternalId,
     /// A provider page already attached to the series.
     Source,
-    /// A unique title match — the weakest route, reported so the reader can check it.
+    /// A unique title match, the weakest route, reported so the reader can check it.
     Title,
 }
 
@@ -482,8 +483,8 @@ pub struct Resolved {
     pub pinned_source: Option<SeriesSourceId>,
 }
 
-/// Match one entry against the catalogue: external ids, then source pages, then — only when
-/// `match_titles` — a title that names exactly one series.
+/// Matches one entry against the catalogue: external ids, then source pages, then, when
+/// `match_titles` is set, a title that names exactly one series.
 ///
 /// Title matching is opt-in and must be unique because titles are where two different works
 /// collide; attaching a reader's progress to the wrong series is worse than leaving it pending.
@@ -581,7 +582,8 @@ pub struct EntryWrite {
     pub pinned_source: Option<SeriesSourceId>,
 }
 
-/// The progress to write for `local` given `imported`, or `None` when nothing should change.
+/// Returns the progress to write for `local` given `imported`, or `None` when nothing should
+/// change.
 ///
 /// Under [`ConflictPolicy::KeepLocal`] progress only advances: each frontier takes the higher of
 /// the two, and a part frontier left behind by the whole one is dropped, preserving the
@@ -636,13 +638,13 @@ pub struct Plan {
     pub title_matches: Vec<usize>,
 }
 
-/// Decide what importing `entries` into a watchlist holding `local` should write.
+/// Decides what importing `entries` into a watchlist holding `local` should write.
 ///
 /// `resolved[i]` is `entries[i]`'s match. `local_progress` covers every series the reader has
-/// progress on, tracked or not: a progress row can outlive its watchlist entry, and an import
-/// that re-adds the series must merge with it rather than write over it. The first entry matching a series wins; a later one is
-/// reported as a duplicate rather than applied over it, so the outcome does not depend on which
-/// of two conflicting rows a document happened to list last.
+/// progress on, tracked or not: a progress row can outlive its watchlist entry, and an import that
+/// re-adds the series merges with it instead of writing over it. The first entry matching a series
+/// wins and a later one is reported as a duplicate, so the outcome does not depend on which of two
+/// conflicting rows a document lists last.
 ///
 /// # Panics
 /// When `resolved` and `entries` differ in length.
@@ -858,7 +860,7 @@ mod tests {
     }
 
     /// Title matching is how two different works get conflated, so an ambiguous title must
-    /// leave the entry unmatched rather than pick one.
+    /// leave the entry unmatched instead of picking one.
     #[test]
     fn an_ambiguous_title_matches_nothing() {
         let index = ProviderIndex::default();

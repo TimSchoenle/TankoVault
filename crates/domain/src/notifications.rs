@@ -18,9 +18,9 @@ const MAX_OFFSET_MINUTES: i16 = 18 * 60;
 
 /// What a notification is about.
 ///
-/// Deliberately *not* a `PostgreSQL` enum. The read path has to keep rendering rows written by a
-/// newer notifier than itself, so an unrecognised token has to survive the round trip as text
-/// rather than fail a cast on the way out of the database.
+/// Not a `PostgreSQL` enum: the read path keeps rendering rows written by a newer notifier than
+/// itself, so an unrecognised token survives the round trip as text instead of failing a cast on
+/// the way out of the database.
 #[derive(
     Debug,
     Clone,
@@ -51,7 +51,7 @@ pub enum NotificationKind {
 }
 
 impl NotificationKind {
-    /// The wire token, byte-identical to the `notifications.kind` value.
+    /// Returns the wire token, byte-identical to the `notifications.kind` value.
     #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
@@ -63,7 +63,7 @@ impl NotificationKind {
         }
     }
 
-    /// Every variant, in declaration order.
+    /// Returns every variant, in declaration order.
     #[must_use]
     pub fn all() -> &'static [Self] {
         &[
@@ -133,9 +133,9 @@ pub enum PrefsError {
 /// A reader's notification preferences, stored as `users.notification_prefs`.
 ///
 /// Every field defaults, so an absent, partial or legacy document decodes to the product
-/// defaults rather than an error: a preference read must never fail the request it decorates.
-/// The pre-v1 document (`{"new_chapters": …, "email": …, "digest": …}`) therefore decodes to
-/// full defaults — those keys were never read by anything, so nothing observable is lost.
+/// defaults: a preference read must never fail the request it decorates. The pre-v1 document
+/// (`{"new_chapters": …, "email": …, "digest": …}`) decodes to full defaults, since nothing reads
+/// those keys.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(default)]
 pub struct NotificationPrefs {
@@ -167,17 +167,17 @@ impl Default for NotificationPrefs {
 }
 
 impl NotificationPrefs {
-    /// Whether `kind`, about a series the reader has in `status`, earns a durable notification.
+    /// Returns whether `kind`, about a series the reader has in `status`, earns a durable
+    /// notification.
     #[must_use]
     pub fn allows(&self, kind: NotificationKind, status: WatchStatus) -> bool {
         self.channels.in_app && self.kinds.allows(kind) && self.watch_status.allows(status)
     }
 
-    /// Whether the best-effort live push should fire at `at`.
+    /// Returns whether the best-effort live push should fire at `at`.
     ///
-    /// Separate from [`Self::allows`] on purpose: quiet hours silence the *nudge*, never the
-    /// durable row — waking up to an empty inbox because the notifier ran at 03:00 would be a
-    /// data-loss bug wearing a preference's clothes.
+    /// Separate from [`Self::allows`]: quiet hours silence the nudge, never the durable row. An
+    /// empty inbox in the morning because the notifier ran at 03:00 would be data loss.
     #[must_use]
     pub fn allows_live(&self, at: OffsetDateTime) -> bool {
         self.channels.live && !self.quiet_hours.covers(at)
@@ -229,7 +229,7 @@ impl Default for KindPrefs {
 }
 
 impl KindPrefs {
-    /// Whether a notification of `kind` may be raised for this reader.
+    /// Returns whether a notification of `kind` may be raised for this reader.
     #[must_use]
     pub fn allows(&self, kind: NotificationKind) -> bool {
         match kind {
@@ -278,7 +278,7 @@ impl Default for StatusPrefs {
 }
 
 impl StatusPrefs {
-    /// Whether a series held at `status` may raise a notification.
+    /// Returns whether a series held at `status` may raise a notification.
     #[must_use]
     pub fn allows(&self, status: WatchStatus) -> bool {
         match status {
@@ -293,9 +293,8 @@ impl StatusPrefs {
 
 /// Where a notification is allowed to go.
 ///
-/// No `email` switch, deliberately. The notifier's email channel addresses *operator* recipients
-/// configured on the deployment, not the reader, so a per-reader email toggle would have nothing
-/// to switch — which is exactly what the three preferences this document replaced were.
+/// No `email` switch: the notifier's email channel addresses operator recipients configured on
+/// the deployment, not the reader, so a per-reader email toggle would have nothing to switch.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(default)]
 pub struct ChannelPrefs {
@@ -316,9 +315,9 @@ impl Default for ChannelPrefs {
 
 /// A nightly window, expressed in minutes from local midnight.
 ///
-/// Minutes plus a fixed UTC offset rather than an IANA zone: the alternative is a timezone
-/// database in a crate that deliberately has no I/O, to move a quiet window by an hour twice a
-/// year. The client sends the offset its browser reports.
+/// Minutes plus a fixed UTC offset, not an IANA zone, which would need a timezone database in a
+/// crate with no I/O to move a quiet window by an hour twice a year. The client sends the offset
+/// its browser reports.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(default)]
 pub struct QuietHours {
@@ -345,10 +344,10 @@ impl Default for QuietHours {
 }
 
 impl QuietHours {
-    /// Whether `at` falls inside the window.
+    /// Returns whether `at` falls inside the window.
     ///
-    /// An unrepresentable offset and `start == end` both yield `false` — a malformed or empty
-    /// window must fail open, since failing closed silences a reader indefinitely.
+    /// An unrepresentable offset and `start == end` both yield `false`: a malformed or empty
+    /// window fails open, since failing closed silences a reader indefinitely.
     #[must_use]
     pub fn covers(&self, at: OffsetDateTime) -> bool {
         if !self.enabled || self.start_minute == self.end_minute {
@@ -400,9 +399,9 @@ mod tests {
         assert!(!prefs.allows(NotificationKind::NewChapter, WatchStatus::Completed));
     }
 
-    /// The pre-v1 document was three keys nothing ever read. Decoding it must land on the
-    /// defaults rather than on `false` for every unmentioned switch, which is what a
-    /// field-level `#[serde(default)]` on `bool` would have produced.
+    /// The pre-v1 document is three keys nothing reads. It decodes to the defaults, not to
+    /// `false` for every unmentioned switch, which a field-level `#[serde(default)]` on `bool`
+    /// would produce.
     #[test]
     fn a_legacy_document_decodes_to_the_defaults() {
         let legacy = r#"{"new_chapters": false, "email": true, "digest": false}"#;

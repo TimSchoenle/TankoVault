@@ -1,7 +1,7 @@
 //! Outbound request pacing: a minimum gap, plus an adaptive penalty for provider push-back.
 //!
-//! Lives here rather than in `tankovault-fetch` so that a caller like `services/sync` can pace
-//! its requests without linking the browser-emulating crawl stack.
+//! It lives in the domain crate so a caller like `services/sync` can pace its requests without
+//! linking the browser-emulating crawl stack in `tankovault-fetch`.
 
 use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
@@ -28,8 +28,8 @@ impl Default for PacingPolicy {
             // A half-second of extra spacing is a large correction at crawl rates of a few rps,
             // and small enough that a single stray 429 costs almost nothing.
             step: Duration::from_millis(500),
-            // 8s (~0.125 rps) is the ceiling: past this the provider is refusing us, not
-            // rate-limiting us — the backoff layer's problem, not the pacer's.
+            // 8s (about 0.125 rps) is the ceiling. Past it the provider is refusing us, not
+            // rate-limiting us, which is the backoff layer's problem.
             max: Duration::from_secs(8),
             recovery: Duration::from_secs(60),
         }
@@ -56,11 +56,10 @@ pub struct Pacer {
 }
 
 impl Pacer {
-    /// A pacer enforcing at least `min_interval` between requests, adapting under `policy`.
+    /// Returns a pacer enforcing at least `min_interval` between requests, adapting under `policy`.
     ///
-    /// A zero `min_interval` is legal and means "no floor of our own" — the penalty still
-    /// applies, which is the configuration [`crate::pacing`]'s crawler consumer uses because its
-    /// floor comes from the provider's configured crawl delay instead.
+    /// A zero `min_interval` means no floor of our own while the penalty still applies. The
+    /// crawler uses it, since its floor comes from the provider's configured crawl delay.
     #[must_use]
     pub fn new(min_interval: Duration, policy: PacingPolicy) -> Self {
         Self {
@@ -74,17 +73,17 @@ impl Pacer {
         }
     }
 
-    /// Lock the state.
+    /// Locks the state.
     ///
-    /// Poisoning is recovered from rather than propagated: the state is three plain values with
-    /// no invariant a panicking thread could have broken, and refusing to make requests for the
-    /// rest of a process' life is a far worse failure than resuming with a stale penalty.
+    /// Recovers from poisoning: the state is three plain values with no invariant a panicking
+    /// thread could break, and refusing requests for the rest of the process is a far worse
+    /// failure than resuming with a stale penalty.
     fn state(&self) -> std::sync::MutexGuard<'_, State> {
         self.state.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// Decay the penalty if the provider has been quiet for a full recovery window, and return
-    /// the current extra spacing.
+    /// Decays the penalty if the provider has been quiet for a full recovery window, and return the
+    /// current extra spacing.
     ///
     /// Use this where the caller already has its own spacing floor and wants the wider of the
     /// two; use [`Self::reserve`] where the pacer owns the schedule.
@@ -94,18 +93,18 @@ impl Pacer {
         state.penalty
     }
 
-    /// Claim the next slot and return how long the caller must wait before using it.
+    /// Claims the next slot and returns how long the caller must wait before using it.
     ///
-    /// The slot is claimed whether or not the caller actually waits, so two concurrent callers
-    /// get two consecutive slots rather than the same one.
+    /// The slot is claimed whether or not the caller waits, so two concurrent callers get two
+    /// consecutive slots.
     pub fn reserve(&self, now: Instant) -> Duration {
         let mut state = self.state();
         Self::decay(&mut state, self.policy, now);
         let gap = self.min_interval + state.penalty;
 
         let earliest = match state.next_allowed {
-            // A slot in the past means the pacer has been idle; start the schedule from now
-            // rather than letting unused slots accumulate into a burst allowance.
+            // A slot in the past means the pacer has been idle. The schedule restarts from now,
+            // so unused slots never accumulate into a burst allowance.
             Some(at) if at > now => at,
             _ => now,
         };
@@ -113,11 +112,11 @@ impl Pacer {
         earliest.saturating_duration_since(now)
     }
 
-    /// Record a throttle signal, widening the spacing.
+    /// Records a throttle signal, widening the spacing.
     ///
-    /// `retry_after` is honoured as a floor, not taken verbatim — a smaller value doesn't undo
-    /// an already-larger penalty — and clamped to [`PacingPolicy::max`] so a hostile or
-    /// mistyped header cannot park a worker for hours.
+    /// `retry_after` is honoured as a floor, so a smaller value never undoes a larger penalty,
+    /// and is clamped to [`PacingPolicy::max`], so a hostile or mistyped header cannot park a
+    /// worker for hours.
     pub fn penalise(&self, now: Instant, retry_after: Option<Duration>) {
         let mut state = self.state();
         let grown = if state.penalty.is_zero() {
@@ -162,8 +161,8 @@ mod tests {
         assert_eq!(pacer.reserve(Instant::now()), Duration::ZERO);
     }
 
-    /// Two callers at the same instant get *consecutive* slots — a mutex held across the
-    /// sleep would instead serialise every caller behind the whole queue.
+    /// Two callers at the same instant get consecutive slots. A mutex held across the sleep
+    /// would serialise every caller behind the whole queue.
     #[test]
     fn concurrent_callers_get_consecutive_slots() {
         let pacer = Pacer::new(Duration::from_secs(1), policy());
@@ -245,7 +244,7 @@ mod tests {
 
         let after_one = start + Duration::from_secs(61);
         assert_eq!(pacer.penalty(after_one), Duration::from_millis(500));
-        // Halving 500ms yields less than `step`, which means "recovered" rather than a floor of
+        // Halving 500ms yields less than `step`, which reads as recovered, not as a floor of
         // 250ms that never clears.
         let after_two = after_one + Duration::from_secs(61);
         assert_eq!(pacer.penalty(after_two), Duration::ZERO);

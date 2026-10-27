@@ -8,23 +8,21 @@ use utoipa::ToSchema;
 
 /// Hard upper bound on requests-per-second for any single provider, per worker process.
 ///
-/// Raised from 4.0 deliberately: a worker executes one scan task at a time, so this ceiling —
-/// not the task loop — is what bounds catalogue-scan throughput. The aggregate a provider sees
-/// is still `rps × replicas`, so this is the *per-process* half of a budget that has to be
-/// divided by the replica count before it means anything.
+/// A worker executes one scan task at a time, so this ceiling, not the task loop, bounds
+/// catalogue-scan throughput. A provider sees `rps × replicas`, so this is the per-process half
+/// of a budget that has to be divided by the replica count.
 pub const MAX_RPS: f64 = 8.0;
 /// Hard **lower** bound on requests-per-second: one request every 1000 seconds.
 ///
-/// A floor, not just a ceiling: the consumer turns `rps` into a *period*, and a non-positive
-/// value's reciprocal overflows `Duration::from_secs_f64`, which panics rather than saturating.
-/// Anything below this is indistinguishable from "off", which is what `active` is for.
+/// The consumer turns `rps` into a period, and a non-positive value's reciprocal overflows
+/// `Duration::from_secs_f64`, which panics. Anything below this is indistinguishable from "off",
+/// which is what `active` is for.
 pub const MIN_RPS: f64 = 0.001;
 /// Hard upper bound on concurrent in-flight requests for any single provider, per worker
 /// process.
 ///
-/// Raised from 8 alongside [`MAX_RPS`], and the pairing is not incidental: in-flight requests
-/// are what let a crawl actually reach its `rps` when provider latency is high, so lifting one
-/// without the other leaves the rate unreachable.
+/// Paired with [`MAX_RPS`]: in-flight requests are what let a crawl reach its `rps` when
+/// provider latency is high, so lifting one without the other leaves the rate unreachable.
 pub const MAX_CONCURRENCY: u32 = 16;
 /// Default identifiable crawler user-agent.
 ///
@@ -35,15 +33,14 @@ pub const DEFAULT_USER_AGENT: &str =
 
 /// Which browser the fetch stack impersonates at the TLS/HTTP2 layer.
 ///
-/// Providers sit behind Cloudflare/DDoS-Guard, which fingerprint the TLS `ClientHello` and
-/// the HTTP/2 SETTINGS frame and compare them against the `User-Agent` header. A mismatch
-/// is a stronger signal than an unknown client, so the whole profile — cipher suites,
-/// extension order, ALPS, header order and casing, and the user-agent itself — is picked as
-/// one unit from a browser family rather than assembled field by field.
+/// Providers sit behind Cloudflare or DDoS-Guard, which fingerprint the TLS `ClientHello` and the
+/// HTTP/2 SETTINGS frame and compare them against the `User-Agent` header. A mismatch is a
+/// stronger signal than an unknown client, so the whole profile is picked as one unit from a
+/// browser family: cipher suites, extension order, ALPS, header order and casing, and the
+/// user-agent itself.
 ///
-/// Families, not versions: the concrete build is resolved to whatever the emulation
-/// catalogue currently considers newest, so bumping the catalogue does not require a
-/// database migration or an API-schema change.
+/// Families, not versions: the concrete build resolves to whatever the emulation catalogue
+/// considers newest, so bumping the catalogue needs no database migration or API-schema change.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum BrowserEmulation {
@@ -56,19 +53,17 @@ pub enum BrowserEmulation {
     Safari,
     /// Edge on Windows.
     Edge,
-    /// `OkHttp` — the Android HTTP client. For providers whose mobile API is friendlier
-    /// than their web front end.
+    /// `OkHttp`, the Android HTTP client, for providers whose mobile API is friendlier than
+    /// their web front end.
     OkHttp,
 }
 
 /// Crawl politeness parameters for one provider.
 ///
-/// **`rps` and `concurrency` are enforced per worker process, not fleet-wide.** The fetch
-/// stack is built per provider inside each worker, so the load a provider actually sees is
-/// `rps × replicas`. Sizing a provider's budget means dividing the intended aggregate by the
-/// replica count; scaling workers out without lowering these raises the real crawl rate.
-/// (A cross-replica token bucket in Redis is the documented follow-up — see
-/// `crates/fetch/src/ratelimit.rs`.)
+/// `rps` and `concurrency` are enforced per worker process, not fleet-wide. The fetch stack is
+/// built per provider inside each worker, so a provider sees `rps × replicas`. Size a budget by
+/// dividing the intended aggregate by the replica count; scaling workers out without lowering
+/// these raises the real crawl rate.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct Politeness {
     /// Requests per second, per worker process (see the type-level note on fleet totals).
@@ -80,9 +75,9 @@ pub struct Politeness {
     /// Minimum delay between requests, in milliseconds.
     #[serde(default)]
     pub crawl_delay_ms: u64,
-    /// User-agent sent on ordinary (non-challenge) requests — **only when `emulation` is
-    /// `None`**. An emulated client sends the user-agent belonging to its profile, because
-    /// a custom string over a browser TLS fingerprint is exactly the mismatch WAFs look for.
+    /// User-agent sent on ordinary, non-challenge requests, used only when `emulation` is
+    /// `None`. An emulated client sends its profile's user-agent, because a custom string over a
+    /// browser TLS fingerprint is the mismatch WAFs look for.
     #[serde(default = "Politeness::default_user_agent")]
     pub user_agent: String,
     /// Browser to impersonate, or `None` to crawl as an identifiable bot using `user_agent`.
@@ -92,8 +87,7 @@ pub struct Politeness {
 
 impl Politeness {
     // The default is what an unconfigured provider crawls at, so it is a policy choice, not a
-    // placeholder: doubled from 1.0/2 to match the raised ceilings rather than leaving every
-    // provider that nobody has tuned sitting at the old budget.
+    // placeholder, sized against the ceilings above.
     fn default_rps() -> f64 {
         2.0
     }
@@ -112,11 +106,11 @@ impl Politeness {
         Some(BrowserEmulation::Chrome)
     }
 
-    /// Clamp all tunables into policy — `crates/fetch` takes these numbers without
-    /// re-validating them, so the result must be usable regardless of what was configured.
+    /// Clamps all tunables into policy.
     ///
-    /// A non-finite `rps` is replaced rather than clamped: `NaN` satisfies neither `>` nor
-    /// `<`, and `f64::clamp` returns `NaN` unchanged, so it would pass every guard here untouched.
+    /// `crates/fetch` takes these numbers without re-validating them, so the result must be
+    /// usable whatever was configured. A non-finite `rps` is replaced, not clamped: `NaN`
+    /// satisfies neither `>` nor `<`, and `f64::clamp` returns `NaN` unchanged.
     #[must_use]
     pub fn clamped(mut self) -> Self {
         self.rps = if self.rps.is_finite() {
@@ -141,22 +135,19 @@ impl Default for Politeness {
     }
 }
 
-/// The politeness block as a *request body* carries it.
+/// The politeness block as a request body carries it.
 ///
-/// Mirrors [`Politeness`] field for field and differs in exactly one way: an absent `emulation`
-/// means *no* emulation, where [`Politeness`] reads an absent key as [`BrowserEmulation::Chrome`].
+/// Mirrors [`Politeness`] field for field and differs in one way: an absent `emulation` means no
+/// emulation, where [`Politeness`] reads an absent key as [`BrowserEmulation::Chrome`].
 ///
-/// That asymmetry is load-bearing on both sides, which is why the two shapes cannot be one type.
-/// [`Politeness`] is also the stored JSONB document, and a row written before emulation existed
-/// carries no such key — reading it as "no emulation" would put an upgraded install back to
-/// crawling as an identifiable bot. A client generated from this API's schema, meanwhile, has no
-/// way to *send* an explicit `null`: `Option` fields are omitted when they are `None`. So if
-/// absent meant Chrome here too, choosing "no emulation" in the console would silently put the
-/// provider back on Chrome and report the save as successful.
+/// Both readings are needed, so the shapes cannot be one type. [`Politeness`] is also the stored
+/// JSONB document, and a stored row without the key must keep crawling under emulation, not as
+/// an identifiable bot. A client generated from this API's schema cannot send an explicit `null`,
+/// since `Option` fields are omitted when `None`. If absent meant Chrome here too, choosing "no
+/// emulation" in the console would silently keep Chrome and report the save as successful.
 ///
-/// Kept in step with [`Politeness`] by the exhaustive `From` below (a new stored field fails to
-/// compile) and by `every_stored_field_survives_the_request_shape` (a new field hardcoded to
-/// silence that failure).
+/// The exhaustive `From` below fails to compile on a new stored field, and
+/// `every_stored_field_survives_the_request_shape` catches one hardcoded to silence it.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct PolitenessInput {
     /// Requests per second, per worker process (see [`Politeness`] on fleet totals).
@@ -168,7 +159,7 @@ pub struct PolitenessInput {
     /// Minimum delay between requests, in milliseconds.
     #[serde(default)]
     pub crawl_delay_ms: u64,
-    /// User-agent sent on ordinary (non-challenge) requests — only when `emulation` is absent.
+    /// User-agent sent on ordinary, non-challenge requests, used only when `emulation` is absent.
     #[serde(default = "Politeness::default_user_agent")]
     pub user_agent: String,
     /// Browser to impersonate. Absent (or null) crawls as an identifiable bot using `user_agent`.
@@ -178,10 +169,10 @@ pub struct PolitenessInput {
 
 impl Default for PolitenessInput {
     fn default() -> Self {
-        // Deliberately not `Politeness::default()`: this must agree with what an empty `{}` body
-        // deserializes to, and that carries no `emulation` key — which here is "no emulation".
-        // A request that omits the block *entirely* is a different statement, and the handler
-        // that receives `None` answers it with the server's defaults rather than with this.
+        // Not `Politeness::default()`: this must agree with what an empty `{}` body deserializes
+        // to, and that carries no `emulation` key, which here means no emulation. A request that
+        // omits the block entirely is a different statement, which the handler answers with the
+        // server's defaults.
         Self {
             rps: Politeness::default_rps(),
             concurrency: Politeness::default_concurrency(),
@@ -236,10 +227,10 @@ mod tests {
         assert_eq!(p.concurrency, 1);
     }
 
-    /// A clamped rate must survive being turned into a period. `rps: 0` used to clamp to
-    /// `f64::MIN_POSITIVE`, whose reciprocal overflowed `Duration::from_secs_f64` and panicked
-    /// the worker at fetcher construction; `NaN` hit the same panic by skipping the guard
-    /// entirely, since it satisfies neither `>` nor `<=`.
+    /// A clamped rate survives being turned into a period. A rate clamped to
+    /// `f64::MIN_POSITIVE` would overflow `Duration::from_secs_f64` and panic the worker at
+    /// fetcher construction, and `NaN` would skip the guard, since it satisfies neither `>` nor
+    /// `<=`.
     #[test]
     fn a_clamped_rate_survives_conversion_to_a_period() {
         for rps in [
@@ -300,10 +291,9 @@ mod tests {
         assert!(p.emulation.is_none());
     }
 
-    /// A request that names no emulation is asking for none — the opposite of what the same
-    /// absence means in a stored document, and the whole reason the two shapes are two types.
-    /// `Default` has to agree with an empty body, since a caller cannot tell which one a server
-    /// used to fill the gaps.
+    /// A request that names no emulation asks for none, the opposite of what the same absence
+    /// means in a stored document. `Default` has to agree with an empty body, since a caller
+    /// cannot tell which of the two a server used to fill the gaps.
     #[test]
     fn a_request_without_emulation_means_no_emulation() {
         let sparse: PolitenessInput = serde_json::from_str(r#"{"rps":1.0}"#).unwrap();
@@ -313,11 +303,10 @@ mod tests {
         assert!(explicit.emulation.is_none());
     }
 
-    /// `PolitenessInput` hand-mirrors `Politeness`, and a tunable carried by one and not the
-    /// other is one the API publishes in its schema and then throws away. Adding a field to
-    /// `Politeness` already fails to compile in the `From` impl; what this pins is the tempting
-    /// way to silence that — filling the new field with a constant instead of reading it off the
-    /// request. Every value below is therefore a non-default one.
+    /// `PolitenessInput` mirrors `Politeness` by hand, and a tunable carried by one and not the
+    /// other is one the API publishes and then throws away. A new `Politeness` field fails to
+    /// compile in the `From` impl; this catches the field filled with a constant instead of read
+    /// off the request, so every value below is non-default.
     #[test]
     fn every_stored_field_survives_the_request_shape() {
         let tuned = Politeness {

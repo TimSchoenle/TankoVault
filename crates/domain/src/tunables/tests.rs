@@ -61,12 +61,11 @@ fn every_tunable_is_described() {
     }
 }
 
-/// **The k-anonymity threshold is a floor, not a default.**
+/// The k-anonymity threshold is a floor, not a default.
 ///
-/// The bug this pins: publishing `min_support` as an ordinary knob with a range starting at
-/// one. Co-occurrence edges below the threshold describe identifiable individuals (§12.2),
-/// so the bound has to be part of the registry rather than a convention the console
-/// remembers.
+/// Co-occurrence edges below the threshold describe identifiable individuals (§12.2), so
+/// `min_support` cannot range down to one, and the bound is part of the registry, not a
+/// convention the console remembers.
 #[test]
 fn the_privacy_floor_is_the_bottom_of_its_range_and_survives_clamping() {
     let spec = Tunable::CooccurrenceMinSupport.spec();
@@ -135,9 +134,9 @@ fn model_shaped_values_declare_that_they_need_a_rebuild() {
 
 /// Every key names the surface it belongs to, and the two surfaces partition the registry.
 ///
-/// The namespace is not decoration: it is what tells an operator reading an audit record or a
-/// `tunable_overrides` row which page wrote it, and `is_matching` is what keeps the
-/// recommendation endpoints from serving — or accepting a write to — a merge policy knob.
+/// The namespace tells an operator reading an audit record or a `tunable_overrides` row which
+/// page wrote it, and `is_matching` keeps the recommendation endpoints from serving, or accepting
+/// a write to, a merge policy knob.
 #[test]
 fn every_key_is_namespaced_by_its_surface() {
     for &t in Tunable::all() {

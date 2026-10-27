@@ -1,15 +1,13 @@
-//! The recommender's tuning registry — every weight, base and threshold the shelf is built
-//! from, its compiled default and the range it may move inside
-//! (`docs/RECOMMENDATIONS.md` §8).
+//! The recommender's tuning registry: every weight, base and threshold the shelf is built from,
+//! with its compiled default and the range it may move inside (`docs/RECOMMENDATIONS.md` §8).
 //!
-//! A deliberate copy of [`crate::Feature`]: the database stores only deviations, so an empty
-//! override table is a fully working deployment. Two things differ, and both are in
-//! [`Tunable::spec`] — a tunable carries a numeric range rather than a boolean, and it carries
-//! [`Applies`], because a value baked into stored model data does not take effect on the next
-//! request however loudly the console says it was saved.
+//! Modelled on [`crate::Feature`]: the database stores only deviations, so an empty override
+//! table is a working deployment. Two things differ, both in [`Tunable::spec`]. A tunable carries
+//! a numeric range, not a boolean, and it carries [`Applies`], because a value baked into stored
+//! model data does not take effect on the next request, whatever the console says.
 //!
-//! The registry itself — the [`Tunable`] variants and [`Tunable::spec`] — stays in one file
-//! on purpose; see the `expect` on `spec` for why. `taxonomy` holds the classifying enums.
+//! The registry, the [`Tunable`] variants and [`Tunable::spec`], stays in one file; the `expect`
+//! on `spec` says why. `taxonomy` holds the classifying enums.
 
 mod taxonomy;
 
@@ -157,8 +155,8 @@ pub enum Tunable {
 /// The compiled facts about one tunable: what it is, what it ships as, and how far it may move.
 #[derive(Debug, Clone, Copy)]
 pub struct TunableSpec {
-    /// The persisted key. Stable forever — it is a database primary key and appears in audit
-    /// records.
+    /// The persisted key, which never changes: it is a database primary key and appears in
+    /// audit records.
     pub key: &'static str,
     /// Which console section lists it.
     pub group: TunableGroup,
@@ -181,8 +179,8 @@ pub struct TunableSpec {
 impl TunableSpec {
     /// The permitted range, inclusive at both ends.
     ///
-    /// Stored as two fields rather than a `RangeInclusive` because the registry is built in
-    /// `const fn`s and `RangeInclusive::new` is not `const`.
+    /// Two fields, not a `RangeInclusive`, because the registry is built in `const fn`s and
+    /// `RangeInclusive::new` is not `const`.
     #[must_use]
     pub const fn range(&self) -> RangeInclusive<f64> {
         self.min..=self.max
@@ -261,8 +259,8 @@ impl Tunable {
     /// guards that can hold a pair back after it clears the threshold.
     ///
     /// A slice of its own because this group is served by its own endpoint under its own
-    /// permission — an operator who may resolve duplicates is not thereby a recommender
-    /// tuner — and because the duplicate sweep resolves exactly these five against its
+    /// permission, since an operator who may resolve duplicates is not thereby a recommender
+    /// tuner, and because the duplicate sweep resolves exactly these five against its
     /// configuration.
     #[must_use]
     pub const fn matching() -> &'static [Self] {
@@ -275,7 +273,7 @@ impl Tunable {
         ]
     }
 
-    /// Whether this tunable belongs to the automatic-merge policy rather than the recommender.
+    /// Whether this tunable belongs to the automatic-merge policy, not the recommender.
     ///
     /// The recommendation endpoints filter on it, so a knob added to one surface cannot appear
     /// on the other by accident.
@@ -311,15 +309,13 @@ impl Tunable {
         self.spec().default
     }
 
-    /// Whether this tunable's lower bound is a privacy threshold rather than a taste decision.
+    /// Whether this tunable's lower bound is a privacy threshold, not a taste decision.
     ///
-    /// The one that is: `recsys.cooccurrence.min_support`. A pair of series may only be
-    /// published as "readers of X also read Y" once enough distinct readers stand behind it —
-    /// below that, the edge is a statement about identifiable individuals (§12.2). The bound is
-    /// therefore refused at the API *and* clamped by every reader, exactly as
-    /// [`crate::Feature::is_locked`] is: a stored row that should not exist is a different
-    /// failure from a request that should not succeed, and an admin panel that accepts `1` here
-    /// is a privacy bug with a user interface.
+    /// Only `recsys.cooccurrence.min_support` is. A pair of series may be published as "readers
+    /// of X also read Y" only once enough distinct readers stand behind it; below that, the edge
+    /// is a statement about identifiable individuals (§12.2). The bound is refused at the API and
+    /// clamped by every reader, as [`crate::Feature::is_locked`] is: a stored row that should not
+    /// exist is a different failure from a request that should not succeed.
     #[must_use]
     pub const fn has_privacy_floor(self) -> bool {
         matches!(self, Self::CooccurrenceMinSupport)
@@ -850,10 +846,8 @@ impl Tunable {
                 title: "Shelf size",
                 description: "Recommendations returned when the caller asks for no particular \
                               number, and the ceiling on what it may ask for.",
-                // A grid page, not a rail. This used to be twelve, sized for a shelf tucked
-                // under the home feed, then twenty-four; recommendations are now a screen of
-                // their own, and twenty-four covers is two rows on a wide display — a shelf that
-                // reads as having run out on the screen built to browse it.
+                // Sized for a grid page of its own, not a rail: fewer covers fill only a row or
+                // two on a wide display and read as having run out.
                 default: 60.0,
                 min: 1.0,
                 max: 120.0,
@@ -969,7 +963,7 @@ impl Tunable {
     /// A [`TunableKind::Toggle`]'s value as the switch it represents.
     ///
     /// The midpoint decides, so every stored number means something: a row hand-edited to `0.4`
-    /// reads as off rather than as an on-ness no switch can render. Calling this on a tunable
+    /// reads as off, not as an on-ness no switch can render. Calling this on a tunable
     /// that is not a toggle is a programming error and says so in debug.
     #[must_use]
     pub fn is_on(self, value: f64) -> bool {

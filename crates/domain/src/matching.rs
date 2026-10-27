@@ -27,8 +27,7 @@ pub struct Candidate {
     pub content_type: ContentType,
     /// Year the candidate is recorded under, `None` when it has none.
     pub release_year: Option<i32>,
-    /// Genre/tag names attached to this series. Empty when unavailable to the caller — the
-    /// tag-overlap bonus in `tankovault_matcher::score` simply never fires.
+    /// Genre and tag names attached to this series, empty when the caller has none.
     pub tags: Vec<String>,
     /// Author/artist credits attached to this series (same empty-means-no-signal contract).
     pub authors: Vec<String>,
@@ -51,16 +50,15 @@ pub struct Query {
 
 /// Which scoring rules fired for one query/candidate pair.
 ///
-/// A bare score cannot tell the merge queue *why* two titles matched, and the destructive
-/// automatic merge must not fire on a high fuzzy score alone — only on
-/// [`Self::is_primary_identity`] (the titles are the same string under a conservative rule) or
-/// [`Self::is_corroborated_alias`].
+/// A bare score cannot tell the merge queue why two titles matched, and the destructive automatic
+/// merge must not fire on a high fuzzy score alone. It needs [`Self::is_primary_identity`], the
+/// titles being one string under a conservative rule, or [`Self::is_corroborated_alias`].
 ///
-/// Author, year, medium and tags are recorded here and rendered, but they never move a score or
-/// a verdict: across providers they are wrong or inconsistent too often to decide anything.
+/// Author, year, medium and tags are recorded and rendered, but they never move a score or a
+/// verdict: across providers they are wrong or inconsistent too often to decide anything.
 ///
-/// A flat struct of `bool`s rather than a bitflag set: it is `Copy` and each field is named
-/// where it is read.
+/// A flat struct of `bool`s, not a bitflag set: it is `Copy` and each field is named where it is
+/// read.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 #[expect(
     clippy::struct_excessive_bools,
@@ -71,8 +69,8 @@ pub struct Query {
 pub struct MatchSignals {
     /// The two normalized titles are byte-identical.
     pub exact_title: bool,
-    /// The two normalized titles are identical once whitespace is removed — the "provider
-    /// dropped a space between two HTML elements" class (`Spy X Family` / `Spyxfamily`).
+    /// The two normalized titles are identical once whitespace is removed, as when a provider
+    /// drops a space between two HTML elements (`Spy X Family` and `Spyxfamily`).
     pub compact_identity: bool,
     /// The query matched one of the candidate's *alternative* titles exactly, or exactly
     /// modulo whitespace. Evidence, not identity: an alias alone never merges or attaches.
@@ -101,9 +99,9 @@ pub struct MatchSignals {
     pub author_conflict: bool,
     /// The two series share at least one genre/tag.
     pub tag_overlap: bool,
-    /// The titles carry **different numbers** — `Overlord` against `Overlord 2`, volume 3
-    /// against volume 4. Nothing else in the scorer distinguishes a sequel from its predecessor,
-    /// and the closer the rest of the title matches the more certain a merge would be wrong.
+    /// The titles carry different numbers: `Overlord` against `Overlord 2`, volume 3 against
+    /// volume 4. Nothing else in the scorer distinguishes a sequel from its predecessor, and the
+    /// closer the rest of the title matches, the more certainly a merge would be wrong.
     pub numeric_conflict: bool,
     /// The query matched another source's *listing* title exactly, or exactly modulo
     /// whitespace. A listing title is what a provider calls the work, so this is identity.
@@ -123,30 +121,30 @@ pub struct MatchSignals {
 }
 
 impl MatchSignals {
-    /// Whether a *primary* title — the canonical one, or a provider's listing title — is the
-    /// same string on both sides, not merely a high score.
+    /// Returns whether a primary title, the canonical one or a provider's listing title, is the
+    /// same string on both sides.
     ///
-    /// A fuzzy score can reach 0.95 on two genuinely different works with similar names; an
-    /// identity rule at the same score means the titles differ only in whitespace or punctuation.
-    /// An alternative title is deliberately not enough: aliases are scraped free text shared
-    /// across franchises and junk (`unknown`, `sao`), and alias-only merges pulled a dozen hub
-    /// series into absorbing 20–100 different works each.
+    /// A fuzzy score can reach 0.95 on two different works with similar names; an identity rule
+    /// at the same score means the titles differ only in whitespace or punctuation. An
+    /// alternative title is not enough: aliases are scraped free text, shared across franchises
+    /// and full of junk such as `unknown` and `sao`.
     #[must_use]
     pub const fn is_primary_identity(self) -> bool {
         self.exact_title || self.compact_identity || self.source_title_identity
     }
 
-    /// Whether an alternative-title hit is corroborated by a trusted signal that is not a title.
+    /// Returns whether an alternative-title hit is corroborated by a trusted signal that is not a
+    /// title.
     #[must_use]
     pub const fn is_corroborated_alias(self) -> bool {
         self.alias_identity && (self.external_id_agreement || self.live_timing_agreement)
     }
 
-    /// The stable slugs for the rules that fired, for the merge queue's `reason` column and the
-    /// operator console's badges.
+    /// Returns the stable slugs for the rules that fired, for the merge queue's `reason` column and
+    /// the operator console's badges.
     ///
-    /// Stable because they are persisted and rendered: a renamed slug silently blanks a badge
-    /// on every historical row. New slugs are appended, never inserted.
+    /// They are persisted and rendered, so a renamed slug silently blanks a badge on every
+    /// stored row. New slugs are appended, never inserted.
     #[must_use]
     pub fn labels(self) -> Vec<&'static str> {
         let mut out = Vec::new();
@@ -201,8 +199,8 @@ pub enum Decision {
     Attach(SeriesId),
     /// Ambiguous: create the series but flag a merge candidate for operator review.
     ///
-    /// Carries signals as well as score — a queue row with only a number cannot be triaged,
-    /// re-scored, or safely auto-resolved later.
+    /// Carries signals as well as the score: a queue row with only a number cannot be triaged,
+    /// re-scored or safely auto-resolved later.
     Ambiguous {
         /// The existing series the incoming source resembles.
         candidate: SeriesId,
@@ -232,7 +230,7 @@ pub enum MergeVerdict {
 }
 
 impl MergeVerdict {
-    /// The stable slug `merge_decisions.verdict` stores.
+    /// Returns the stable slug `merge_decisions.verdict` stores.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -245,17 +243,16 @@ impl MergeVerdict {
 
 /// The canonicalisation policy the ingest paths defer to.
 ///
-/// Both methods are **pure** — same query and candidates give the same answer, no I/O — so the
-/// repository can call [`Self::canonicalise`] once per entry inside a transaction it owns,
-/// without the policy needing a connection or the repository needing a scorer.
+/// Both methods are pure: the same query and candidates give the same answer, with no I/O. The
+/// repository can call [`Self::canonicalise`] once per entry inside a transaction it owns, without
+/// the policy needing a connection or the repository needing a scorer.
 pub trait Canonicaliser: Send + Sync {
-    /// How many trigram candidates the repository should fetch and hand over.
+    /// Returns how many trigram candidates the repository should fetch and hand over.
     ///
-    /// A policy knob rather than a persistence one: it decides how wide to look before
-    /// concluding "nothing matches". More costs a wider index scan and buys nothing once the
-    /// true match is in the set.
+    /// A policy knob: it decides how wide to look before concluding "nothing matches". More costs
+    /// a wider index scan and buys nothing once the true match is in the set.
     fn candidate_limit(&self) -> i64;
 
-    /// Decide what to do with `query`, given the candidates the repository found for it.
+    /// Decides what to do with `query`, given the candidates the repository found for it.
     fn canonicalise(&self, query: &Query, candidates: &[Candidate]) -> Decision;
 }

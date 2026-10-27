@@ -2,19 +2,15 @@
 //!
 //! Aggregator templates put a work's genre chips next to its status, its type, its credits and
 //! the labels of the summary block itself, and an adapter that scrapes the block scrapes all of
-//! it. What reaches the catalogue is a tag called `Updating`, one called `Status`, one called
-//! `Manga` — and, from the row directly below, an *author* called `Updating`. They are not
-//! merely useless: every one of them is a facet chip in Discover, a credit on a series page, a
-//! term in the recommender's vocabulary, and — because a term shared by half the catalogue looks
-//! like strong evidence to a similarity model — a feature that makes unrelated series look
-//! alike.
-//!
-//! This is the same class of defect migration 0025 repaired for `series_titles`, where the same
-//! labels had leaked in as alternative titles and blocked five thousand series onto one key.
+//! it. Unguarded, the catalogue gets a tag called `Updating`, one called `Status`, one called
+//! `Manga`, and from the row below, an author called `Updating`. Each becomes a facet chip in
+//! Discover, a credit on a series page and a term in the recommender's vocabulary. A term shared
+//! by half the catalogue also looks like strong evidence to a similarity model, so it makes
+//! unrelated series look alike.
 
 use std::collections::HashSet;
 
-/// Reduce a term to the key it is stored and compared under.
+/// Reduces a term to the key it is stored and compared under.
 ///
 /// Lowercase, alphanumerics kept, every other run collapsed to a single dash. Shared with the
 /// `tags.slug` writer on purpose: a blocklist that normalised differently from the column would
@@ -39,12 +35,12 @@ pub fn slugify(name: &str) -> String {
 ///
 /// Three kinds, and nothing else: a scrape template's own field labels (`status`, `genres`,
 /// `alternative`), placeholder values a site shows where it has no answer (`updating`,
-/// `unknown`, `n-a`), and medium words that describe the format rather than the work
-/// (`manga`, `webtoon`) — the same set [`crate::normalize_title`] already strips from titles.
+/// `unknown`, `n-a`), and medium words that describe the format, not the work (`manga`,
+/// `webtoon`), the same set [`crate::normalize_title`] strips from titles.
 ///
-/// Deliberately excludes anything arguable. Publication status (`completed`, `ongoing`) is a
-/// column, not a tag, but some catalogues do publish it as a browsable facet, so refusing it is
-/// an operator's decision rather than a default.
+/// Anything arguable is left out. Publication status (`completed`, `ongoing`) is a column, not a
+/// tag, but some catalogues publish it as a browsable facet, so refusing it is an operator's
+/// decision.
 pub const DEFAULT_BLOCKED_TERMS: &[&str] = &[
     // Placeholders.
     "updating",
@@ -98,24 +94,23 @@ pub const DEFAULT_BLOCKED_TERMS: &[&str] = &[
 
 /// Terms intake refuses, matched on their slug.
 ///
-/// Guards every shared vocabulary a scrape can intern — tags *and* author/artist credits —
+/// Guards every shared vocabulary a scrape can intern, tags and author and artist credits alike,
 /// because they come off the same template: a page that renders `Genres: Updating` renders
-/// `Author: Updating` too, and a guard only the tag writer consults leaves the credit as a
-/// first-class feature of the recommender.
+/// `Author: Updating` too.
 ///
-/// Empty is a legitimate state — an operator who configures an empty list has switched the guard
-/// off — so this deliberately has no non-empty invariant to enforce.
+/// Empty is a legitimate state: an operator who configures an empty list has switched the guard
+/// off.
 #[derive(Debug, Clone, Default)]
 pub struct TermBlocklist {
     slugs: HashSet<String>,
 }
 
 impl TermBlocklist {
-    /// Build a blocklist from raw operator-written terms.
+    /// Builds a blocklist from raw operator-written terms.
     ///
     /// Terms are slugified, so an operator may write `N/A`, `n/a` or `n-a` and mean the one
-    /// thing. A term that slugifies to nothing is dropped rather than stored as an empty key
-    /// that would match every unnameable tag.
+    /// thing. A term that slugifies to nothing is dropped, since an empty key would match every
+    /// unnameable tag.
     ///
     /// ```
     /// use tankovault_domain::TermBlocklist;
@@ -144,19 +139,19 @@ impl TermBlocklist {
         }
     }
 
-    /// The shipped defaults, for callers with no configuration to hand.
+    /// Returns the shipped defaults, for callers with no configuration to hand.
     #[must_use]
     pub fn defaults() -> Self {
         Self::new(DEFAULT_BLOCKED_TERMS)
     }
 
-    /// Whether `name` is refused.
+    /// Returns whether `name` is refused.
     #[must_use]
     pub fn blocks(&self, name: &str) -> bool {
         !self.slugs.is_empty() && self.slugs.contains(&slugify(name))
     }
 
-    /// Whether the guard is switched off.
+    /// Returns whether the guard is switched off.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.slugs.is_empty()
@@ -169,7 +164,7 @@ mod tests {
 
     /// Pins the shape of the key both this and the `tags.slug` writer produce. A drift here
     /// would leave the blocklist comparing against strings the catalogue never stores, which
-    /// fails open — junk tags keep arriving and nothing reports a fault.
+    /// fails open: junk tags keep arriving and nothing reports a fault.
     #[test]
     fn slugs_match_the_column_they_are_compared_against() {
         assert_eq!(slugify("Slice of Life"), "slice-of-life");
@@ -203,13 +198,10 @@ mod tests {
         }
     }
 
-    /// The defaults must refuse the same placeholders in the credit row as in the genre row.
+    /// The defaults refuse the same placeholders in the credit row as in the genre row.
     ///
-    /// The bug this pins: the guard was applied only where a tag is interned, so `Author:
-    /// Updating` — the row directly under `Genres: Updating` on the same template — became an
-    /// `authors` row, a credit on the series page, and an `author` feature. Author is the
-    /// recommender's *strongest* axis, so a placeholder shared by half the catalogue went
-    /// straight to the top of every reader's taste profile.
+    /// Author is the recommender's strongest axis, so an `Author: Updating` placeholder shared by
+    /// half the catalogue would go straight to the top of every reader's taste profile.
     #[test]
     fn the_defaults_refuse_a_placeholder_credit_but_not_a_real_creator() {
         let list = TermBlocklist::defaults();

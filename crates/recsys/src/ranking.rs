@@ -1,47 +1,41 @@
-//! Turning retrieved candidates into a shelf: blending the retrieval paths, then diversifying.
+//! Turns retrieved candidates into a shelf: the retrieval paths are blended, then diversified.
 
 use std::collections::HashMap;
 use tankovault_domain::Tunable;
 
 /// Which retrieval path produced a candidate.
 ///
-/// Kept per candidate rather than collapsed at retrieval time because the paths are scored on
-/// incomparable scales and each has to be normalised within itself before any of them are added
-/// together (see [`blend`]).
+/// Kept per candidate, because the paths score on incomparable scales and [`blend`] normalises
+/// each one within itself.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Path {
     /// Nearest neighbours of a series the reader already likes.
     Seed,
     /// Nearest neighbours of the reader's centre of gravity.
     Profile,
-    /// An exact match on a rare, high-precision feature — an author, or a long-tail tag.
+    /// An exact match on a rare, high-precision feature, such as an author or a long-tail tag.
     Exact,
-    /// The catalogue's popularity prior. Cold start and shelf backfill.
+    /// The catalogue's popularity prior, for cold start and shelf backfill.
     Prior,
 }
 
 /// How much each retrieval path carries in the blend, as an operator has it set.
 ///
-/// Threaded in rather than read from a global for the same reason [`crate::AffinityParams`] is:
-/// [`blend`] is a pure function and has to be testable at settings other than the live one.
-///
-/// [`Default`] reads the compiled defaults out of [`Tunable`], so the registry the console edits
-/// is the only copy of these numbers.
+/// [`Default`] reads the compiled defaults from [`Tunable`], the registry the console edits.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PathWeights {
-    /// `recsys.score.weight.knn` — neighbours of a series the reader already likes.
+    /// `recsys.score.weight.knn`: neighbours of a series the reader already likes.
     pub seed: f32,
-    /// `recsys.score.weight.profile` — neighbours of the reader's centre of gravity.
+    /// `recsys.score.weight.profile`: neighbours of the reader's centre of gravity.
     pub profile: f32,
-    /// `recsys.score.weight.prior` — the catalogue's popularity.
+    /// `recsys.score.weight.prior`: the catalogue's popularity.
     pub prior: f32,
     /// How far the exact-feature path sits above [`Self::seed`].
     ///
-    /// Ordering, not tuning, and therefore not in the registry: sharing an author is close to a
-    /// certain recommendation and it is precisely what the dense space cannot represent, so it
-    /// has to outrank a neighbour hit *whatever* the content weight is set to. Expressed as a
-    /// multiplier so that moving `weight.knn` moves both content paths together, which is what an
-    /// operator reaching for that knob means.
+    /// An ordering, not a tunable, so it is not in the registry. A shared author is close to a
+    /// certain recommendation and the dense space cannot represent it, so it outranks a
+    /// neighbour hit at any content weight. As a multiplier, moving `weight.knn` moves both
+    /// content paths together.
     pub exact_premium: f32,
 }
 
@@ -61,11 +55,11 @@ impl Default for PathWeights {
     }
 }
 
-/// The exact path's standing premium over the seed path; see [`PathWeights::exact_premium`].
+/// The exact path's premium over the seed path, as [`PathWeights::exact_premium`].
 pub const EXACT_PREMIUM: f32 = 1.10;
 
 impl PathWeights {
-    /// The weight this set assigns to `path`.
+    /// Returns the weight this set assigns to `path`.
     #[must_use]
     pub fn weight(&self, path: Path) -> f32 {
         match path {
@@ -104,18 +98,29 @@ pub struct Scored<Id> {
     pub path: Path,
 }
 
-/// Blend the retrieval paths into one ranking.
-///
-/// # Why rank-normalise instead of adding the raw scores
+/// Blends the retrieval paths into one ranking, best first.
 ///
 /// A cosine over an embedding, a cosine over sparse features, a count of shared authors and a
-/// popularity prior are four different scales. Added raw, whichever has the widest natural range
-/// wins every comparison, and the weights above become decorative. Normalising each path against
-/// *its own* best candidate makes the weights mean what they say.
+/// popularity prior are four scales. Added raw, the widest range would win every comparison, so
+/// each path's scores are divided by that path's best score before the weights apply.
 ///
-/// A candidate found by several paths keeps the sum of its normalised contributions, which is the
-/// point: agreement between an exact author match and the dense space is much stronger evidence
-/// than either alone.
+/// A candidate found by several paths sums its contributions, because agreement between paths is
+/// stronger evidence than either alone. Its explanation comes from its highest-weighted path, and
+/// ties in score break by id.
+///
+/// ```
+/// use tankovault_recsys::{Candidate, Path, PathWeights, blend};
+///
+/// // A prior scored in the hundreds does not bury a cosine in `[0, 1]`.
+/// let ranked = blend(
+///     &[
+///         Candidate { id: 1, path: Path::Seed, score: 0.9, because: None },
+///         Candidate { id: 2, path: Path::Prior, score: 900.0, because: None },
+///     ],
+///     &PathWeights::default(),
+/// );
+/// assert_eq!(ranked[0].id, 1);
+/// ```
 #[must_use]
 pub fn blend<Id: Copy + Eq + std::hash::Hash + Ord>(
     candidates: &[Candidate<Id>],
@@ -129,8 +134,8 @@ pub fn blend<Id: Copy + Eq + std::hash::Hash + Ord>(
 
     let mut totals: HashMap<Id, (f32, Option<Id>, Path)> = HashMap::new();
     for candidate in candidates {
-        // A path whose best score is zero or negative carries no ranking information; treating
-        // its ceiling as 1 avoids dividing by it and leaves every contribution at zero.
+        // A path whose best score is zero or negative carries no ranking information; a ceiling
+        // of 1 avoids dividing by it.
         let ceiling = best_of_path
             .get(&candidate.path)
             .copied()
@@ -142,8 +147,7 @@ pub fn blend<Id: Copy + Eq + std::hash::Hash + Ord>(
             .entry(candidate.id)
             .or_insert((0.0, candidate.because, candidate.path));
         entry.0 += contribution;
-        // The explanation comes from the strongest single path, not the last one seen — otherwise
-        // it depends on retrieval order, which is not a fact about the recommendation.
+        // The strongest path explains, so the explanation does not depend on retrieval order.
         if weights.weight(candidate.path) > weights.weight(entry.2) {
             entry.1 = candidate.because;
             entry.2 = candidate.path;
@@ -159,33 +163,31 @@ pub fn blend<Id: Copy + Eq + std::hash::Hash + Ord>(
             path,
         })
         .collect();
-    // Ties break by id so the shelf is stable between identical requests. A ranking that
-    // reshuffles on refresh reads as broken even when every pick is defensible.
+    // Ties break by id, so identical requests get the same shelf.
     scored.sort_by(|a, b| b.score.total_cmp(&a.score).then_with(|| a.id.cmp(&b.id)));
     scored
 }
 
-/// Re-rank for variety: maximal marginal relevance.
+/// Re-ranks for variety by maximal marginal relevance and returns at most `limit` picks.
 ///
-/// Twelve near-identical series is the failure mode a pure score ranking produces, and it reads
-/// as broken even when every individual pick is defensible — a reader who liked one dungeon
-/// manhwa does not want a shelf of nothing else.
+/// A pure score ranking yields a shelf of near-identical series. Each round picks the candidate
+/// maximising `lambda * score - (1 - lambda) * closest`, where `closest` is its greatest
+/// similarity to anything already picked. `lambda` is clamped to `0..=1`, and at 1 the result is
+/// the plain ranking.
 ///
-/// `similarity` is asked only about pairs that are actually considered, so the caller can compute
-/// it from whatever it has (here, the sparse vectors) without materialising a full matrix.
+/// `similarity` is asked only about pairs that are considered, so the caller computes it from
+/// what it has without materialising a matrix. It is called `picks × candidates` times.
 ///
-/// # Cost
+/// ```
+/// use tankovault_recsys::{Path, Scored, diversify};
 ///
-/// Each candidate carries a running maximum of its similarity to anything already picked, updated
-/// against the *one* newly picked item per round. That makes this `picks × candidates` calls to
-/// `similarity` — the textbook incremental form.
-///
-/// Recomputing the maximum from scratch each round instead, which reads more obviously correct, is
-/// `picks² × candidates`: at the shelf's real shape (~36 picks over ~2 000 candidates) that is 2.6
-/// million sparse-cosine evaluations on the request path against 72 thousand, and it is the
-/// difference between comfortably inside the latency budget and well outside it. The two are
-/// arithmetically identical — `max` is associative — and
-/// `the_running_maximum_agrees_with_recomputing_it` is what says so.
+/// let pick = |id, score| Scored { id, score, because: None, path: Path::Seed };
+/// // 1 and 2 are near-duplicates; 3 is distinct and slightly worse.
+/// let ranked = [pick(1, 1.0), pick(2, 0.99), pick(3, 0.9)];
+/// let similar = |a: u32, b: u32| if a + b == 3 { 1.0 } else { 0.0 };
+/// let ids: Vec<u32> = diversify(&ranked, 2, 0.7, similar).iter().map(|s| s.id).collect();
+/// assert_eq!(ids, [1, 3]);
+/// ```
 #[must_use]
 pub fn diversify<Id: Copy + Eq, F>(
     ranked: &[Scored<Id>],
@@ -197,23 +199,18 @@ where
     F: FnMut(Id, Id) -> f32,
 {
     let lambda = lambda.clamp(0.0, 1.0);
-    // Bounded by the input before it reaches an allocation. Nothing can be picked that was not
-    // passed in, so a caller's `limit` — which on the request path originates in a query
-    // parameter — can never size the result above the slice it selects from.
+    // On the request path `limit` comes from a query parameter; bounding it by the input keeps
+    // it from sizing anything.
     let limit = limit.min(ranked.len());
 
     let mut remaining: Vec<&Scored<Id>> = ranked.iter().collect();
-    // Parallel to `remaining`: each entry is that candidate's greatest similarity to anything
-    // already picked. Zero while nothing is picked, which is what makes the first round a pure
-    // relevance ranking. Sized from the input, not from `limit`.
+    // Parallel to `remaining`: each candidate's greatest similarity to anything picked. Zero
+    // while nothing is picked, so the first round is a pure relevance ranking. Recomputing it
+    // over every pick each round would cost `picks² × candidates` similarity calls.
     let mut closest: Vec<f32> = vec![0.0; remaining.len()];
 
-    // **No `with_capacity`, deliberately.** `limit` reaches here from a query parameter, and
-    // sizing an allocation from it is a shape static analysis flags — reasonably, since `.min()`
-    // is not something it can see through. The clamp above makes it safe, but the hint is not
-    // worth defending: this vector holds at most a shelf's worth of items, so the handful of
-    // reallocations it avoids are invisible beside the `picks x candidates` similarity work in
-    // the loop below. Do not add it back for tidiness.
+    // No `with_capacity`: static analysis flags an allocation sized from a query parameter and
+    // cannot see through the clamp above. The vector holds a shelf's worth of items.
     let mut picked: Vec<Scored<Id>> = Vec::new();
 
     while picked.len() < limit && !remaining.is_empty() {
@@ -238,18 +235,14 @@ where
     picked
 }
 
-/// Cap how many picks one seed may explain.
+/// Caps how many picks one seed may explain.
 ///
-/// A separate function rather than a [`cap_by`] call because the key is on the pick itself: a
-/// series' `because` is a property of *how it was retrieved*, not of the series, so no
-/// id-to-attribute lookup can recover it.
+/// Seeds are the top of the reader's affinity ordering, so the strongest seed's neighbourhood is
+/// also the highest-scoring band of candidates and would otherwise fill the shelf.
 ///
-/// Picks with no seed — the profile, exact-feature and prior paths — are uncapped. They carry no
-/// "because you read" line, so there is no repetition here for a reader to see.
-///
-/// The defect this closes: seeds are the top of the reader's affinity ordering, so the strongest
-/// one's nearest neighbourhood is also the highest-scoring band of candidates. Left alone it
-/// takes the shelf, and someone who has read seven hundred series is told about one of them.
+/// Picks with no seed, from the profile, exact-feature and prior paths, are uncapped, since they
+/// carry no "because you read" line. This is not a [`cap_by`] call because `because` describes
+/// how the pick was retrieved, which no lookup by id can recover.
 #[must_use]
 pub fn cap_by_seed<Id: Copy + Eq + std::hash::Hash>(
     ranked: Vec<Scored<Id>>,
@@ -271,11 +264,11 @@ pub fn cap_by_seed<Id: Copy + Eq + std::hash::Hash>(
     out
 }
 
-/// Cap how many picks may share one attribute.
+/// Caps how many picks may share one attribute.
 ///
-/// Applied after [`diversify`] rather than instead of it: MMR discourages similarity in general,
-/// while this forbids a specific kind of repetition outright. Three books by the same author is a
-/// bibliography, not a recommendation.
+/// Applied after [`diversify`], which discourages similarity in general, to forbid one kind of
+/// repetition outright, such as three books by one author. A pick whose `key_of` is `None` is
+/// uncapped.
 pub fn cap_by<Id: Copy, K: Eq + std::hash::Hash, F>(
     ranked: Vec<Scored<Id>>,
     max_per_key: usize,
@@ -313,11 +306,7 @@ mod tests {
         }
     }
 
-    /// **A path with a wide natural range must not swamp the others.**
-    ///
-    /// The bug this pins: added raw, a prior scored in the hundreds buries a cosine in `[0, 1]`,
-    /// and every weight in `Path::weight` becomes decorative while the shelf silently becomes a
-    /// popularity ranking.
+    /// A path with a wide natural range does not swamp the others.
     #[test]
     fn a_paths_scale_does_not_decide_the_ranking() {
         let ranked = blend(
@@ -333,7 +322,7 @@ mod tests {
         );
     }
 
-    /// Agreement between paths is stronger evidence than either alone.
+    /// A candidate found by several paths outranks one found by the best path alone.
     #[test]
     fn a_candidate_found_by_several_paths_outranks_one_found_by_the_best_alone() {
         let ranked = blend(
@@ -348,7 +337,7 @@ mod tests {
         assert_eq!(ranked[0].id, 2, "three agreeing paths must beat one");
     }
 
-    /// The explanation must come from the strongest path, not from retrieval order.
+    /// The explanation comes from the strongest path, not from retrieval order.
     #[test]
     fn the_explanation_comes_from_the_strongest_path() {
         let ranked = blend(
@@ -378,12 +367,7 @@ mod tests {
         assert_eq!(ranked[0].path, Path::Exact);
     }
 
-    /// **Turning a path's weight down has to demote what that path found.**
-    ///
-    /// The bug this pins is §8.4's: a weight published in the tuning console that reaches no
-    /// arithmetic. The blend rank-normalises each path against its own best candidate, so a
-    /// weight that were dropped on the floor would leave the ranking looking entirely sensible
-    /// while every knob on this page did nothing.
+    /// A path's weight decides which path wins, so the console's weights are not inert.
     #[test]
     fn a_paths_weight_decides_which_path_wins() {
         let candidates = [
@@ -408,8 +392,7 @@ mod tests {
         );
     }
 
-    /// The exact path outranks the seed path at every content weight, because sharing an author
-    /// is a fact the dense space cannot represent at all.
+    /// The exact path outranks the seed path at every content weight.
     #[test]
     fn the_exact_path_keeps_its_premium_over_the_seed_path() {
         for seed in [0.1_f32, 1.0, 9.9] {
@@ -424,7 +407,7 @@ mod tests {
         }
     }
 
-    /// Identical inputs must produce an identical shelf, every time.
+    /// Identical inputs produce an identical shelf.
     #[test]
     fn ties_break_deterministically() {
         let input = [
@@ -454,7 +437,7 @@ mod tests {
         assert_eq!(ranked[0].id, 2);
     }
 
-    /// MMR must actually give up some relevance for variety.
+    /// MMR gives up some relevance for variety.
     #[test]
     fn diversify_breaks_up_a_run_of_near_identical_picks() {
         // 1, 2, 3 are near-duplicates of each other; 4 is unrelated and slightly worse.
@@ -504,8 +487,7 @@ mod tests {
         );
     }
 
-    /// With lambda at 1 there is no diversity term, so MMR degenerates to the plain ranking —
-    /// which is what makes the knob honest at its extreme.
+    /// With lambda at 1 there is no diversity term, so MMR returns the plain ranking.
     #[test]
     fn lambda_one_is_pure_relevance() {
         let ranked = vec![
@@ -535,12 +517,8 @@ mod tests {
         );
     }
 
-    /// **The running maximum must equal recomputing it, and must not cost the same.**
-    ///
-    /// `diversify` keeps each candidate's greatest similarity to anything already picked and folds
-    /// only the newest pick into it. The obvious implementation recomputes that maximum over every
-    /// pick each round — arithmetically identical, and quadratically more expensive in the number
-    /// of picks. This pins both halves: the same shelf, from far fewer calls.
+    /// The running maximum selects the same shelf as recomputing it each round, from about
+    /// `picks × candidates` similarity calls.
     #[test]
     fn the_running_maximum_agrees_with_recomputing_it() {
         let ranked: Vec<Scored<u32>> = (0..40_u32)
@@ -560,8 +538,7 @@ mod tests {
             calls.set(calls.get() + 1);
             sim(a, b)
         };
-        // The shipped lambda, read out of the registry rather than a local constant: the two
-        // forms have to agree at the setting production actually runs.
+        // The shipped lambda, from the registry, so the two forms agree at the production setting.
         #[expect(
             clippy::cast_possible_truncation,
             reason = "the shipped lambda is a small ratio"
@@ -618,7 +595,7 @@ mod tests {
         assert!(diversify(&[], 5, 0.7, |_: u32, _: u32| 0.0).is_empty());
     }
 
-    /// Three books by the same author is a bibliography, not a recommendation.
+    /// `cap_by` limits how many picks share one attribute.
     #[test]
     fn cap_by_limits_repetition_of_one_attribute() {
         let ranked: Vec<Scored<u32>> = (1..=6)
@@ -639,10 +616,7 @@ mod tests {
         );
     }
 
-    /// The strongest seed's neighbourhood is also the highest-scoring band of candidates, so
-    /// without a cap it takes the shelf and every row reads "because you read" the same series —
-    /// however many hundred the reader has actually read. Seedless picks are uncapped: they
-    /// carry no such line.
+    /// One seed explains at most the cap, and seedless picks are uncapped.
     #[test]
     fn cap_by_seed_stops_one_anchor_taking_the_shelf() {
         let seeded = |id: u32, seed: Option<u32>| Scored {

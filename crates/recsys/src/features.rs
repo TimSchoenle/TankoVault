@@ -1,8 +1,8 @@
 //! What a series *is*, as a bag of weighted features.
 //!
-//! The vocabulary is the design's biggest quality lever, not the algorithm: a recommender whose
-//! only terms are "Action" and "Fantasy" cannot say anything specific, because each covers a
-//! large fraction of the catalogue. Every kind below exists to add an axis those two cannot.
+//! The vocabulary decides recommendation quality more than the algorithm does. Terms like
+//! "Action" and "Fantasy" each cover a large fraction of the catalogue, so every kind below adds
+//! an axis they cannot.
 
 use sha2::{Digest as _, Sha256};
 use std::fmt;
@@ -10,8 +10,8 @@ use tankovault_domain::{ContentType, SeriesStatus};
 
 /// The axis a feature lives on.
 ///
-/// Part of a feature's identity, not decoration: "Action" the tag and an author of the same name
-/// are different features, and a single string vocabulary would collide them.
+/// Part of a feature's identity: the tag "Action" and an author of the same name are different
+/// features.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum FeatureKind {
     /// A genre or theme slug from `series_tags`, carrying its own per-link weight.
@@ -26,17 +26,16 @@ pub enum FeatureKind {
     Status,
     /// The decade the series started in, as `1990s`. Absent for an unknown or out-of-range year.
     Decade,
-    /// A chapter-count bucket from [`length_bucket`]. Absent for a series with no chapters,
-    /// which is unscanned rather than short.
+    /// A chapter-count bucket from [`length_bucket`]. Absent for a series with no chapters:
+    /// that series is unscanned, not short.
     Length,
-    /// What the work was adapted from — `AniList`'s `source` (`original`, `light_novel`, …).
+    /// What the work was adapted from: `AniList`'s `source`, such as `original` or `light_novel`.
     Source,
 }
 
 impl FeatureKind {
-    /// The token stored in `rec_features.kind`. Mirrors the `rec_features_kind_check` constraint,
-    /// which a later migration widens rather than replaces — so the constraint is named here and
-    /// the migration number is not.
+    /// Returns the token stored in `rec_features.kind`, one of the values the
+    /// `rec_features_kind_check` constraint allows.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -51,30 +50,27 @@ impl FeatureKind {
         }
     }
 
-    /// Whether this kind may shape the dense embedding.
+    /// Returns whether this kind may shape the dense embedding.
     ///
-    /// Authors may not. With hundreds of thousands of distinct authors at a document frequency
-    /// of two or three, they would inflate the projection's input dimension by orders of
-    /// magnitude and then be annihilated anyway — a low-rank approximation cannot represent a
-    /// feature that appears three times. They are retrieved exactly instead, which is both
-    /// cheaper and strictly more faithful: sharing an author is close to a certain
-    /// recommendation, and no compression should be allowed to blur it.
+    /// Authors may not. Hundreds of thousands of authors at a document frequency of two or three
+    /// would inflate the projection's input dimension by orders of magnitude, and a low-rank
+    /// approximation cannot represent a feature that appears three times. Authors are retrieved
+    /// exactly instead, which is cheaper and keeps a shared author, close to a certain
+    /// recommendation, unblurred.
     #[must_use]
     pub const fn is_dense_eligible(self) -> bool {
         !matches!(self, Self::Author)
     }
 
-    /// The base term weight before idf.
+    /// Returns the base term weight before idf.
     ///
-    /// These are not tuned numbers and are not meant to look like any: they express an ordering
-    /// — a tag says more than a status, an author says most of all — and the idf multiplier does
-    /// the discriminating.
+    /// The values are an ordering, not tuned numbers: a tag says more than a status, and an author
+    /// says most. The idf multiplier does the discriminating.
     #[must_use]
     pub const fn base_weight(self) -> f32 {
         match self {
-            // A tag's strength is carried per link instead (`series_tags.weight`, `AniList`'s
-            // rank/100), and an author is always wholly present — the two reach 1.0 by different
-            // arguments, so they stay separate arms.
+            // A tag's strength is carried per link (`series_tags.weight`, `AniList`'s rank/100),
+            // and an author is always wholly present.
             Self::Tag | Self::Author => 1.0,
             Self::ContentType => 0.6,
             Self::Country | Self::Length | Self::Source => 0.4,
@@ -94,13 +90,13 @@ impl fmt::Display for FeatureKind {
 pub struct FeatureKey {
     /// The axis, which is what keeps the tag `action` and the author `action` apart.
     pub kind: FeatureKind,
-    /// The value on that axis, already normalised by whoever built the key: slugs and country
-    /// codes arrive lower-cased, and the vocabulary is compared byte for byte.
+    /// The value on that axis, normalised by whoever built the key. Slugs and country codes are
+    /// lower-case, and the vocabulary is compared byte for byte.
     pub value: String,
 }
 
 impl FeatureKey {
-    /// Pairs `kind` with `value` verbatim; normalisation is the caller's.
+    /// Pairs `kind` with `value` verbatim, without normalising it.
     #[must_use]
     pub fn new(kind: FeatureKind, value: impl Into<String>) -> Self {
         Self {
@@ -112,9 +108,7 @@ impl FeatureKey {
 
 /// Everything about a series that shapes its features.
 ///
-/// A plain struct rather than a database row so extraction can be tested — and property-tested —
-/// without a database, and so the same extraction serves the full build and a single-series
-/// repair without two code paths.
+/// The full build and a single-series repair both fill one, so extraction has one code path.
 #[derive(Debug, Clone, Default)]
 pub struct SeriesFacts {
     /// [`ContentType::Unknown`] emits no feature.
@@ -126,21 +120,28 @@ pub struct SeriesFacts {
     pub release_year: Option<i32>,
     /// Distinct whole chapters across every source. Feeds the length bucket only.
     pub chapter_count: i64,
-    /// `(slug, link weight)` — the link weight is `series_tags.weight`, `AniList`'s rank/100.
+    /// `(slug, link weight)`, where the link weight is `series_tags.weight`, `AniList`'s rank/100.
     pub tags: Vec<(String, f32)>,
     /// Author slugs. Every one carries the same weight, since a credit is not partial.
     pub authors: Vec<String>,
     /// Country of origin, lower-cased before it becomes a feature.
     pub country: Option<String>,
-    /// `AniList`'s `source`, lower-cased (`original`, `light_novel`, …).
+    /// `AniList`'s `source`, such as `original` or `light_novel`, lower-cased before use.
     pub source: Option<String>,
 }
 
-/// How long a series is, as a reader would describe it.
+/// Returns how long a series is, as a reader would describe it: `oneshot` below 10 chapters,
+/// then `short`, `medium` from 50, `long` from 200 and `epic` from 600.
 ///
-/// Bucketed rather than continuous because the preference is categorical: readers avoid
-/// thousand-chapter commitments or seek them out, and nobody distinguishes 340 chapters from
-/// 360. A raw count would also be a near-unique feature and therefore useless as a shared one.
+/// Readers avoid thousand-chapter commitments or seek them out, and nobody tells 340 chapters
+/// from 360. A raw count would be a near-unique feature, useless as a shared one.
+///
+/// ```
+/// use tankovault_recsys::length_bucket;
+///
+/// assert_eq!(length_bucket(9), "oneshot");
+/// assert_eq!(length_bucket(210), "long");
+/// ```
 #[must_use]
 pub fn length_bucket(chapters: i64) -> &'static str {
     match chapters {
@@ -152,11 +153,11 @@ pub fn length_bucket(chapters: i64) -> &'static str {
     }
 }
 
-/// The decade a series started in, or `None` when the year is unknown.
+/// Returns the decade a series started in, as `2010s`, or `None` for an unknown year or one
+/// outside 1900 to 2200.
 ///
-/// Unknown produces no feature at all rather than a `"unknown"` bucket: a shared *absence* of
-/// metadata is not evidence two series are alike, and with a large fraction of the catalogue
-/// unenriched that bucket would be the single most common feature in the vocabulary.
+/// An unknown year produces no feature. A shared absence of metadata is not evidence two series
+/// are alike, and an `unknown` bucket would be the most common feature in the vocabulary.
 #[must_use]
 pub fn decade_of(year: Option<i32>) -> Option<String> {
     let year = year?;
@@ -165,14 +166,13 @@ pub fn decade_of(year: Option<i32>) -> Option<String> {
         .then(|| format!("{}s", year - year.rem_euclid(10)))
 }
 
-/// Extract a series' weighted feature bag.
+/// Extracts a series' weighted feature bag.
 ///
-/// Weights here are *term* weights only; idf is applied later, by
-/// [`crate::weighting::apply_idf`], because it is a property of the catalogue rather than of the
-/// series and is not known until the whole vocabulary has been counted.
+/// The weights are term weights. [`crate::weighting::apply_idf`] applies idf later, once the
+/// whole vocabulary has been counted.
 ///
-/// Output is sorted and deduplicated by key, so two runs over the same facts produce
-/// byte-identical vectors and the digest is stable.
+/// The output is sorted and deduplicated by key, so the same facts always produce the same
+/// vector and the same [`digest`]. A duplicated key keeps its strongest weight.
 #[must_use]
 pub fn extract(facts: &SeriesFacts) -> Vec<(FeatureKey, f32)> {
     let mut out: Vec<(FeatureKey, f32)> =
@@ -182,8 +182,8 @@ pub fn extract(facts: &SeriesFacts) -> Vec<(FeatureKey, f32)> {
         if slug.is_empty() {
             continue;
         }
-        // Clamped, not trusted: the column has a CHECK, but this function is also fed by tests
-        // and by any future provider, and a negative weight would flip the feature's sign.
+        // Clamped: the column has a CHECK, but a negative weight from any other caller would flip
+        // the feature's sign.
         let weight = link_weight.clamp(0.0, 1.0) * FeatureKind::Tag.base_weight();
         if weight > 0.0 {
             out.push((FeatureKey::new(FeatureKind::Tag, slug.clone()), weight));
@@ -230,8 +230,8 @@ pub fn extract(facts: &SeriesFacts) -> Vec<(FeatureKey, f32)> {
             FeatureKind::Decade.base_weight(),
         ));
     }
-    // A series with no chapters is not "a oneshot"; it is unscanned. Emitting the bucket anyway
-    // would make every unscanned series resemble every other one.
+    // A series with no chapters is unscanned, not a oneshot. The bucket would make every
+    // unscanned series resemble every other one.
     if facts.chapter_count > 0 {
         out.push((
             FeatureKey::new(FeatureKind::Length, length_bucket(facts.chapter_count)),
@@ -240,8 +240,8 @@ pub fn extract(facts: &SeriesFacts) -> Vec<(FeatureKey, f32)> {
     }
 
     out.sort_by(|a, b| a.0.cmp(&b.0));
-    // Keep the strongest of a duplicated key. Providers do emit the same tag twice, and summing
-    // would let a duplicate outweigh a genuinely stronger single tag.
+    // Providers emit the same tag twice, and summing would let a duplicate outweigh a stronger
+    // single tag.
     out.dedup_by(|b, a| {
         if a.0 == b.0 {
             a.1 = a.1.max(b.1);
@@ -253,13 +253,12 @@ pub fn extract(facts: &SeriesFacts) -> Vec<(FeatureKey, f32)> {
     out
 }
 
-/// A stable hash of the extracted features, used to skip unchanged series on an incremental
-/// build.
+/// Returns a stable SHA-256 of the extracted features, so an incremental build skips unchanged
+/// series.
 ///
-/// Over the *extracted* bag rather than the raw facts: the enrichment sweep touches
-/// `series.updated_at` far more often than it changes anything a feature depends on, and hashing
-/// the output is what turns that into no work. Byte-order and separators are explicit so the
-/// digest cannot change under a formatting change.
+/// It hashes the extracted bag, not the raw facts, because the enrichment sweep touches
+/// `series.updated_at` far more often than it changes a feature. Weights are quantised to four
+/// decimal places first, so a change in the last bit of a float does not count.
 #[must_use]
 pub fn digest(features: &[(FeatureKey, f32)]) -> Vec<u8> {
     let mut hasher = Sha256::new();
@@ -268,10 +267,7 @@ pub fn digest(features: &[(FeatureKey, f32)]) -> Vec<u8> {
         hasher.update([0x1f]);
         hasher.update(key.value.as_bytes());
         hasher.update([0x1f]);
-        // Quantised before hashing: a float that differs only in its last bit is not a change
-        // worth re-embedding a series for, and `to_bits` would make it one. Saturating, because
-        // a weight outside `[0, 1]` cannot reach this function but a future caller's bug should
-        // produce a stable digest rather than an unspecified cast.
+        // Saturating, so a weight outside `[0, 1]` from a buggy caller still digests stably.
         #[expect(
             clippy::cast_possible_truncation,
             reason = "weights are clamped to [0,1] at extraction, so the product is within i32"
@@ -324,11 +320,7 @@ mod tests {
         );
     }
 
-    /// Unknown metadata must produce *no* feature, never an "unknown" one.
-    ///
-    /// The bug this pins: with a large fraction of the catalogue unenriched, an `unknown` bucket
-    /// becomes the most common feature in the vocabulary, and every unenriched series then
-    /// resembles every other unenriched series more than anything it is actually like.
+    /// Unknown metadata produces no feature, never an "unknown" one.
     #[test]
     fn absent_metadata_produces_no_feature_rather_than_an_unknown_one() {
         let bare = SeriesFacts {
@@ -343,7 +335,7 @@ mod tests {
         };
         assert_eq!(extract(&bare), Vec::<(FeatureKey, f32)>::new());
         assert_eq!(decade_of(None), None);
-        // Out of range is as unknown as absent: a year of 0 is a parse artefact, not a decade.
+        // A year of 0 is a parse artefact, so it is unknown too.
         assert_eq!(decade_of(Some(0)), None);
     }
 
@@ -368,11 +360,7 @@ mod tests {
         assert_eq!(length_bucket(10_000), "epic");
     }
 
-    /// A duplicated tag must not outweigh a stronger single one.
-    ///
-    /// Providers do emit the same tag twice. Summing the weights would make "Action, Action"
-    /// score above a genuinely stronger "Regression", which is the opposite of what the ranks
-    /// mean.
+    /// A duplicated tag keeps its strongest weight and is not summed.
     #[test]
     fn a_duplicated_feature_keeps_its_strongest_weight_and_is_not_summed() {
         let mut f = facts();
@@ -408,8 +396,7 @@ mod tests {
         assert_eq!(digest(&extract(&facts())), digest(&extract(&shuffled)));
     }
 
-    /// The digest must move when a feature does, or an incremental build never re-embeds
-    /// anything.
+    /// The digest moves when a feature or its weight does.
     #[test]
     fn the_digest_moves_when_a_feature_does() {
         let base = digest(&extract(&facts()));
@@ -422,7 +409,7 @@ mod tests {
         assert_ne!(base, digest(&extract(&reweighted)));
     }
 
-    /// Authors are excluded from the dense space on purpose (see [`FeatureKind::is_dense_eligible`]).
+    /// Only authors stay out of the dense space.
     #[test]
     fn only_authors_are_excluded_from_the_dense_space() {
         assert!(!FeatureKind::Author.is_dense_eligible());

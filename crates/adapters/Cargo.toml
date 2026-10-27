@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 rust-version.workspace = true
-description = "SourceAdapter trait and config-driven (Madara/generic) provider adapters."
+description = "The SourceAdapter trait and the config-driven provider adapters, Madara and generic."
 # Not published: this is a workspace-internal crate. Also what lets `cargo deny`
 # skip license-checking our own code.
 publish = false

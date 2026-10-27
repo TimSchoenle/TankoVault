@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 rust-version.workspace = true
-description = "ChallengeSolver trait, fast challenge detection, and TRAWL back-end."
+description = "The ChallengeSolver trait, fast challenge detection, and the TRAWL back-end."
 # Not published: this is a workspace-internal crate. Also what lets `cargo deny`
 # skip license-checking our own code.
 publish = false

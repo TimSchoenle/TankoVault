@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 rust-version.workspace = true
-description = "Abstract transactional email service (SMTP; OVH-hosted Exchange friendly)."
+description = "Transactional email behind one interface, sent over SMTP and compatible with OVH-hosted Exchange."
 # Not published: this is a workspace-internal crate. Also what lets `cargo deny`
 # skip license-checking our own code.
 publish = false

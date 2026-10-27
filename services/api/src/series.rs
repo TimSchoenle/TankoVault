@@ -1,5 +1,5 @@
 //! Public series browse/detail/chapters. Links are resolved to absolute URLs here via
-//! `domain::resolve_link`; the database stays relative (design §11).
+//! `domain::resolve_link`; the database stays relative (`docs/ARCHITECTURE.md` §11).
 
 use crate::content_gate::AdultVisibility;
 use crate::error::{ApiError, ApiResult};
@@ -519,7 +519,7 @@ pub async fn detail(
     }))
 }
 
-/// One provider's folded presence on a canonical series (design §10): several `series_sources`
+/// One provider's folded presence on a canonical series (`docs/ARCHITECTURE.md` §10): several `series_sources`
 /// rows collapsed into one reader-visible "completing" source. `link_id`/`link_source_path`
 /// identify the richest member — the DTO's representative id and outbound link.
 struct ProviderGroup {
@@ -529,7 +529,7 @@ struct ProviderGroup {
     member_ids: Vec<SeriesSourceId>,
 }
 
-/// Fold a series' source rows so each provider appears exactly once (design §10). First-seen
+/// Fold a series' source rows so each provider appears exactly once (`docs/ARCHITECTURE.md` §10). First-seen
 /// provider order is preserved (matching `list_sources_for_series`, which orders by id); the
 /// richest entry within a provider becomes the outbound link.
 fn group_sources_by_provider(sources: &[SeriesSource]) -> Vec<ProviderGroup> {

@@ -1,4 +1,4 @@
-//! Account & settings (`DESIGN_SPEC` §7.7) — a settings shell with a sub-nav and one panel per
+//! Account & settings (`docs/DESIGN_SYSTEM.md` §7.7) — a settings shell with a sub-nav and one panel per
 //! concern. Each panel owns its own data and lives in its own module.
 //!
 //! The open panel is a route segment, not a signal: `/account/security` is an address, so a

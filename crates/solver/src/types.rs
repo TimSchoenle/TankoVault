@@ -128,7 +128,7 @@ impl SolveError {
 /// (default), a headless-render back-end (the `render` service), or a custom solver.
 ///
 /// Keeping every back-end behind this one method is what makes the tier modular: the
-/// fetch pipeline, adapters, and workers never name a concrete solver (design §9 note).
+/// fetch pipeline, adapters, and workers never name a concrete solver (`docs/ARCHITECTURE.md` §9 note).
 #[async_trait]
 pub trait ChallengeSolver: Send + Sync {
     /// Solve the challenge for `req.url`, returning a reusable session.

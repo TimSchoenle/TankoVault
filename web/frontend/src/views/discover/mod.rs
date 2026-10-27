@@ -1,4 +1,4 @@
-//! Discover (`DESIGN_SPEC` §7.2): filter panel plus a results grid that pages on a scroll
+//! Discover (`docs/DESIGN_SYSTEM.md` §7.2): filter panel plus a results grid that pages on a scroll
 //! sentinel, filtered/sorted/paginated server-side via `GET /v1/series` (§9.1). The panel and chip
 //! bar live in [`filters`] and [`active`]; the URL contract lives in [`query`].
 //!

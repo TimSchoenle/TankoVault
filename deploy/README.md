@@ -1,6 +1,6 @@
 # Deployment
 
-Container build and local orchestration for TankoVault (design §19).
+Container build and local orchestration for TankoVault (`docs/ARCHITECTURE.md` §19).
 
 ## Layout
 - `docker/Dockerfile` — **every image, from one file**: a cargo-chef-cached multi-stage build
@@ -232,7 +232,7 @@ Running your own Postgres: add `pg_stat_statements,auto_explain` to `shared_prel
 
 ## Kubernetes
 
-**Not implemented.** Tracked as design §19.
+**Not implemented.** Tracked as `docs/ARCHITECTURE.md` §19.
 
 This section previously described a Helm chart at `deploy/helm/tankovault` — its values,
 HPAs, probe wiring and a linked `README.md` — none of which has ever existed: `deploy/helm/`

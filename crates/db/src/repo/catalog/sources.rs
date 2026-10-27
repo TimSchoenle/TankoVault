@@ -293,13 +293,13 @@ async fn discard_unsourced(conn: &mut sqlx::PgConnection, created: &[Uuid]) -> D
 ///
 /// Returns the number of sources newly registered. A chunk that fails is retried entry by entry
 /// so one bad entry costs only itself: losing one series must not lose the rest, and the
-/// enrichment task is enqueued regardless (design §12).
+/// enrichment task is enqueued regardless (`docs/ARCHITECTURE.md` §12).
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only — no other variant is reachable, and only from the **batch
 /// existence check**. Past that point registration failures are deliberately *not* errors: a
 /// failed chunk is retried entry by entry, and an entry that fails again is logged at `warn` and
-/// omitted from the count. That is the design §12 rule stated above — losing one series must not
+/// omitted from the count. That is the `docs/ARCHITECTURE.md` §12 rule stated above — losing one series must not
 /// lose the page — but it means the returned count is the only signal a caller has, so
 /// `Ok(0)` on a page of genuinely new entries is a failure report, not an empty page. An empty
 /// `entries` short-circuits to `Ok(0)` without touching the database.

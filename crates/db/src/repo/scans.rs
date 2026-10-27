@@ -465,7 +465,7 @@ pub async fn finish_run<'e, E: PgExecutor<'e>>(
 ///
 /// Answers `Some` only for the call that performed the transition, and `None` when the run was
 /// not yet complete or another actor got there first. That is what lets the progress aggregator
-/// emit exactly one terminal event per run rather than looping (design §8, §12).
+/// emit exactly one terminal event per run rather than looping (`docs/ARCHITECTURE.md` §8, §12).
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only — no other variant is reachable. `Ok(None)` carries four
@@ -567,7 +567,7 @@ impl From<TaskRow> for ScanTask {
 /// The `ON CONFLICT DO NOTHING` makes fan-out idempotent under at-least-once delivery: a
 /// redelivered `catalog_page` re-attempts the same child inserts and simply gets `None`
 /// back, so the caller skips the duplicate `add_total_tasks` + publish instead of
-/// re-enqueuing every series (design §12). Relies on the `scan_tasks_run_kind_target`
+/// re-enqueuing every series (`docs/ARCHITECTURE.md` §12). Relies on the `scan_tasks_run_kind_target`
 /// unique index.
 ///
 /// # Errors
@@ -905,7 +905,7 @@ pub struct FailedTaskView {
 }
 
 /// Recent failed tasks, narrowed by provider and time window — the operator's triage feed for
-/// stuck providers and broken selectors (design §17.2.7).
+/// stuck providers and broken selectors (`docs/ARCHITECTURE.md` §17.2.7).
 ///
 /// `include_cleared` reopens the failures an operator has acknowledged. They are excluded by
 /// default, which is the whole point of clearing; they are never deleted, so the window can

@@ -1,4 +1,4 @@
-//! Typed view of `providers.config` (JSONB) for the config-driven adapters (design §7).
+//! Typed view of `providers.config` (JSONB) for the config-driven adapters (`docs/ARCHITECTURE.md` §7).
 
 use crate::error::AdapterError;
 use serde::Deserialize;

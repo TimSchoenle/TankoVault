@@ -1,4 +1,4 @@
-//! `TankoVault` frontend — Dioxus + the Inkstone design system (design §17).
+//! `TankoVault` frontend — Dioxus + the Inkstone design system (`docs/ARCHITECTURE.md` §17).
 //!
 //! One component tree, two builds: a WASM SPA served by the API (`--features web`, the default)
 //! and a native desktop app in a wry webview (`--no-default-features --features desktop`).

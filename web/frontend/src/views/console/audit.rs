@@ -1,4 +1,4 @@
-//! The privileged-action audit trail (design §16): filtered, paged, newest first.
+//! The privileged-action audit trail (`docs/ARCHITECTURE.md` §16): filtered, paged, newest first.
 //!
 //! Every filter here is a server-side predicate. Filtering a page client-side would silently
 //! answer a different question than the one asked — the panel would say "no matches" when it

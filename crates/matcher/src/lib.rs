@@ -1,6 +1,6 @@
 //! # tankovault-matcher
 //!
-//! Series canonicalisation scoring (design §10, steps 3–4): pure and DB-free, this crate scores
+//! Series canonicalisation scoring (`docs/ARCHITECTURE.md` §10, steps 3–4): pure and DB-free, this crate scores
 //! [`Candidate`]s against a [`Query`] and returns a [`Decision`] via the [`Canonicaliser`] port
 //! defined in [`tankovault_domain::matching`], so `crates/db` can ask for a decision without
 //! linking a scorer (ARCH-16). [`adjudicate`] answers the separate question of merging two

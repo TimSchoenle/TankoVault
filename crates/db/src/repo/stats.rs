@@ -1,4 +1,4 @@
-//! The console header rollup and the per-provider crawl table (design §17.2.7).
+//! The console header rollup and the per-provider crawl table (`docs/ARCHITECTURE.md` §17.2.7).
 //!
 //! Read-only aggregates over the catalogue, scan and user tables. Chapter figures are sums over
 //! `chapter_rollup` (migration 0059), which triggers keep exact and

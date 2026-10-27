@@ -86,7 +86,7 @@ pub struct Resolution {
     pub created: bool,
 }
 
-/// Resolves which canonical series a scanned source belongs to (design §10).
+/// Resolves which canonical series a scanned source belongs to (`docs/ARCHITECTURE.md` §10).
 ///
 /// A trigram candidate lookup, then whatever the caller's [`Canonicaliser`] decides: attach to
 /// an existing series, create one and file a merge candidate against the near miss, or create

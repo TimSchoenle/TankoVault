@@ -1,4 +1,4 @@
-//! The audit trail for privileged and privacy-relevant actions (design §16).
+//! The audit trail for privileged and privacy-relevant actions (`docs/ARCHITECTURE.md` §16).
 //!
 //! Recording is best-effort and non-blocking: a write failure is logged but never fails
 //! the audited action, since refusing a privileged action over a logging outage would trade

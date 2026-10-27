@@ -561,7 +561,7 @@ pub struct FailedTaskView {
 }
 
 /// A pending merge candidate, enriched with everything the console needs to triage it without
-/// opening both series (design §11 `GET /v1/admin/merge-candidates`).
+/// opening both series (`docs/ARCHITECTURE.md` §11 `GET /v1/admin/merge-candidates`).
 ///
 /// The counts and `suggested_keep` are not decoration. Acting on a candidate means choosing
 /// which of the two rows survives, and the absorbed id *stops existing* — every bookmark,

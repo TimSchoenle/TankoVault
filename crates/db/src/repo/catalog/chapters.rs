@@ -284,7 +284,7 @@ pub async fn count_full_chapters_by_provider<'e, E: PgExecutor<'e>>(
         .collect())
 }
 
-/// Distinct whole chapters across a set of sources, counted once each (design §10).
+/// Distinct whole chapters across a set of sources, counted once each (`docs/ARCHITECTURE.md` §10).
 ///
 /// The union-aware counterpart to [`count_full_chapters`]: summing per-source counts would
 /// double every chapter two sources both carry. An empty slice yields `0`.

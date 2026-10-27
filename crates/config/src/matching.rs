@@ -3,7 +3,7 @@
 use serde::Deserialize;
 use tankovault_domain::matching::{Candidate, Canonicaliser, Decision, Query};
 
-/// The confidence policy for deciding "is this the same series?" (design §10).
+/// The confidence policy for deciding "is this the same series?" (`docs/ARCHITECTURE.md` §10).
 ///
 /// Ingest canonicalisation and external sync both decide through this one scorer via the
 /// [`Canonicaliser`] impl below, so `crates/db` names the port without depending on the scorer.

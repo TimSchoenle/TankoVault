@@ -25,7 +25,7 @@ use dioxus::prelude::*;
 use inkstone_ui::{button_class, Button, Pill, Size, Tone};
 use progenitor_client::ResponseValue;
 use std::fmt;
-/// Filter tabs (`DESIGN_SPEC` §7.5). Applied server-side: filtering the one loaded page is what
+/// Filter tabs (`docs/DESIGN_SYSTEM.md` §7.5). Applied server-side: filtering the one loaded page is what
 /// let "Unread" render empty while unread rows sat on page two.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) enum Tab {

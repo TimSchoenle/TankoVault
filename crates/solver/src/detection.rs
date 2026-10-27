@@ -1,4 +1,4 @@
-//! The fast, in-band challenge classifier (design §9).
+//! The fast, in-band challenge classifier (`docs/ARCHITECTURE.md` §9).
 //!
 //! Runs on **every** response. On a normal page the checks short-circuit after a couple
 //! of cheap comparisons (status not in the challenge set, no Cloudflare markers), so the

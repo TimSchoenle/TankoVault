@@ -82,7 +82,7 @@ pub struct AuditQuery {
 
 /// Get the audit log
 ///
-/// A filtered, paged window on the privileged-action trail (design §16), newest first.
+/// A filtered, paged window on the privileged-action trail (`docs/ARCHITECTURE.md` §16), newest first.
 ///
 /// Every filter is applied in SQL. The console cannot filter client-side here on purpose: it
 /// holds one page, and a filter over one page silently answers a different question than the

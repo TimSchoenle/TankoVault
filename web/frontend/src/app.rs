@@ -19,7 +19,7 @@ use crate::views::{
 };
 use dioxus::prelude::*;
 
-/// The type-safe route table (design §17.4). Every screen lives under the persistent [`Shell`]
+/// The type-safe route table (`docs/ARCHITECTURE.md` §17.4). Every screen lives under the persistent [`Shell`]
 /// layout (left rail + top command bar).
 #[derive(Routable, Clone, PartialEq)]
 #[rustfmt::skip]
@@ -284,7 +284,7 @@ fn AppRoot(children: Element) -> Element {
     rsx! { {children} }
 }
 
-/// Self-hosted font subsets (`DESIGN_SPEC` §3.3), wired through the Dioxus asset system so the
+/// Self-hosted font subsets (`docs/DESIGN_SYSTEM.md` §3.3), wired through the Dioxus asset system so the
 /// `.woff2` files are bundled and content-hashed in the release build.
 ///
 /// Emitted from Rust rather than `input.css`: manganis doesn't rewrite `url()` inside the

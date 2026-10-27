@@ -1,6 +1,6 @@
 //! # tankovault-solver
 //!
-//! The modular bot-management bypass tier (design §9): cheap challenge detection, the
+//! The modular bot-management bypass tier (`docs/ARCHITECTURE.md` §9): cheap challenge detection, the
 //! pluggable [`ChallengeSolver`] contract, and the default [`TrawlSolver`] back-end.
 //!
 //! Does not depend on `tankovault-fetch`; detection uses the minimal [`ResponseView`] trait

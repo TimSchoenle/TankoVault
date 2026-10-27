@@ -3,9 +3,9 @@
 How read progress is stored for whole chapters and part releases, and how it syncs with AniList
 under a per-user conflict policy.
 
-**Status:** implemented end-to-end (backend, API, and frontend UI). Supersedes `design.md` §6
+**Status:** implemented end-to-end (backend, API, and frontend UI). Supersedes `docs/ARCHITECTURE.md` §6
 (the `read_progress` / `sync_mappings` / `external_accounts` tables) and §15 (external sync
-service) for the areas covered here. Everything else in `design.md` stands.
+service) for the areas covered here. Everything else in `docs/ARCHITECTURE.md` stands.
 
 > **Implementation note.** Delivered in migration `0014_progress_sync_v2.sql` plus the
 > `tankovault-db` repo (`tracking.rs`, `sync.rs`), the `sync` service (three-way merge in
@@ -51,7 +51,7 @@ setting. This document redesigns both, as two related but independently shippabl
    eligible for push/pull to every linked external provider. There is no way to track a title
    locally without it ever touching AniList (or a future provider).
 4. **Conflict policy is a process-wide config value** (`sync.default_conflict_policy` env
-   var), not a persisted, per-user setting — despite `design.md` §15 stating it is
+   var), not a persisted, per-user setting — despite `docs/ARCHITECTURE.md` §15 stating it is
    "user-selectable." It cannot actually be changed by a user at runtime today.
 5. **"Automatic sync" is reactive-only.** `push_series` fires a best-effort local→remote push
    after a local write. Nothing ever pulls proactively, so a status/progress change made
@@ -94,7 +94,7 @@ setting. This document redesigns both, as two related but independently shippabl
   frontier's edit semantics explicit and symmetric; it deliberately does not add ledger-style
   per-chapter granularity, which would trade the simplicity of a scalar model for a feature
   nobody has asked for.
-- No change to *how* series/chapters are scanned or canonicalised (§7–§10 of `design.md`
+- No change to *how* series/chapters are scanned or canonicalised (§7–§10 of `docs/ARCHITECTURE.md`
   stand as-is).
 - No multi-device / offline conflict resolution *within* the local system itself — there is
   exactly one local source of truth per user; "conflict" in this doc always means
@@ -402,7 +402,7 @@ CREATE INDEX sync_history_user_idx ON sync_history (user_id, created_at DESC);
 ```
 
 (IDs use `gen_random_uuid()` as the column default per the project's existing deviation from
-the `design.md` UUIDv7-everywhere text — app code still generates and passes real v7 ids
+the `docs/ARCHITECTURE.md` UUIDv7-everywhere text — app code still generates and passes real v7 ids
 explicitly, so the default only fires for rows inserted outside it.)
 
 `sync_history` is expected to grow; it is a diagnostic/transparency log, not an audit-of-record
@@ -462,7 +462,7 @@ and the same `is_sync_excluded` check (§A.5):
 
 2. **Scheduled reconciliation** (new). A periodic loop, owned by the `sync` service (keeps
    sync concerns encapsulated where they already live), analogous in shape to
-   `control-plane`'s existing cron scheduler (`design.md` §12): every interval (operator
+   `control-plane`'s existing cron scheduler (`docs/ARCHITECTURE.md` §12): every interval (operator
    config, jittered per account to avoid a thundering herd against AniList's rate limits), for
    every `external_accounts` row with `auto_sync_enabled = true`:
    - fetch the remote list once (reusing the existing paced/retrying `fetch_list`),
@@ -475,7 +475,7 @@ and the same `is_sync_excluded` check (§A.5):
 
    If the `sync` service is scaled to multiple replicas, guard each account against a
    double-run with the same Redis leader-election / lock pattern already built for
-   `control-plane`'s singleton scheduler (`design.md` §12) — reuse, don't reinvent.
+   `control-plane`'s singleton scheduler (`docs/ARCHITECTURE.md` §12) — reuse, don't reinvent.
 
 ```text
                         auto_sync_enabled?  ──false──▶  no automatic sync at all

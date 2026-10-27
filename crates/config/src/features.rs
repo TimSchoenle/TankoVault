@@ -1,14 +1,15 @@
-//! Runtime feature-flag plumbing (not the flag values themselves).
+//! How a service refreshes its runtime feature flags.
 
 use serde::Deserialize;
 use terrace_config::schema::Describe;
 
-/// Runtime feature flags (`tankovault_domain::Feature`); only the *plumbing* — flag values
-/// are set at runtime from the control plane, not deployed here.
+/// How a service refreshes its runtime feature flags (`tankovault_domain::Feature`).
+///
+/// The flag values are set at runtime from the control plane, not in configuration.
 #[derive(Debug, Clone, Deserialize, Describe)]
 pub struct FeaturesConfig {
-    /// Seconds between refreshes of a service's cached flag snapshot — the propagation delay
-    /// to *other* replicas (the one that served the change applies it immediately).
+    /// Seconds between refreshes of a service's cached flag snapshot. It is how long a change
+    /// takes to reach the other replicas; the replica that served the change applies it at once.
     #[serde(default = "FeaturesConfig::default_refresh_secs")]
     pub refresh_secs: u64,
 }
@@ -18,7 +19,7 @@ impl FeaturesConfig {
         15
     }
 
-    /// The refresh interval, clamped to at least a second to avoid a busy-spin on `0`.
+    /// Returns the refresh interval, at least one second, so `0` cannot busy-spin.
     #[must_use]
     pub fn refresh_interval(&self) -> std::time::Duration {
         std::time::Duration::from_secs(self.refresh_secs.max(1))

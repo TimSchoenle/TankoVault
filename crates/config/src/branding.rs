@@ -1,16 +1,14 @@
 //! Product identity: the name, wordmark, copyright and links every rendered surface reads
 //! instead of a literal.
 //!
-//! One block, read by `api` (which serves it to the SPA at `GET /v1/branding` and stamps it into
-//! transactional email and the authenticator prompts), by `frontend` (which writes it into the
-//! served app shell) and by `worker` (the identifiable crawler user-agent). A fork rebrands by
-//! editing configuration; nothing here needs a rebuild.
+//! `api` serves the block to the SPA at `GET /v1/branding` and stamps it into transactional email
+//! and the authenticator prompts. `frontend` writes it into the served app shell, and `worker`
+//! builds the crawler user-agent from it. A fork rebrands through configuration, with no rebuild.
 //!
-//! What is deliberately **not** here: the operating-system identifiers the desktop build
-//! registers — the keyring service name, the Windows `AppUserModelID`, the autostart registry
-//! value. Those must agree with what the installer wrote at build time, and a value that changed
-//! under a running install would strand saved credentials and silence toasts rather than rebrand
-//! anything. They live beside the build in `web/frontend/src/platform/`.
+//! The operating-system identifiers the desktop build registers are not here: the keyring service
+//! name, the Windows `AppUserModelID` and the autostart registry value. They must match what the
+//! installer wrote, since a change under a running install strands saved credentials and silences
+//! toasts. They live in `web/frontend/src/platform/`.
 
 use serde::Deserialize;
 use terrace_config::schema::Describe;
@@ -29,16 +27,15 @@ const DEFAULT_WORDMARK_ACCENT: &str = "Vault";
 #[derive(Debug, Clone, Deserialize, Describe)]
 #[serde(default)]
 pub struct BrandingConfig {
-    /// The product name, in prose: email subjects and bodies, page titles, the authenticator
-    /// prompt, the desktop connect screen.
+    /// The product name as prose uses it: email subjects and bodies, page titles, the
+    /// authenticator prompt and the desktop connect screen.
     pub name: String,
-    /// The two-tone lockup drawn in the rail and the footer. See [`BrandingConfig::wordmark`]
-    /// for what an unset lockup resolves to.
+    /// The two-tone lockup drawn in the rail and the footer. Unset, it is the product name as one
+    /// word, or the shipped lockup under the shipped name.
     #[config(nested)]
     pub wordmark: WordmarkConfig,
-    /// One line under the wordmark. Unset keeps the shipped, *translated* tagline; setting it
-    /// replaces that with this string in every language, which is the right trade for an
-    /// operator whose product is not the one the catalogue describes.
+    /// One line under the wordmark. Unset keeps the shipped, translated tagline. Set, it replaces
+    /// the tagline with this string in every language.
     pub tagline: Option<String>,
     /// The notice in the footer's meta line.
     #[config(nested)]
@@ -46,7 +43,7 @@ pub struct BrandingConfig {
     /// How the deployment's own code is licensed, as shown in the footer.
     #[config(nested)]
     pub licence: LicenceConfig,
-    /// Where the project lives — the footer's source link and the desktop About tab.
+    /// Where the project lives, linked from the footer and the desktop About tab.
     pub project_url: String,
     /// Where a reader downloads the native client.
     pub releases_url: String,
@@ -71,8 +68,7 @@ pub struct WordmarkConfig {
 pub struct CopyrightConfig {
     /// Who holds it.
     pub holder: String,
-    /// The year, or a range (`2024–2026`). Unset resolves to the current year at request time,
-    /// so a deployment nobody has touched since December is not still claiming last year.
+    /// The year, or a range (`2024–2026`). Unset is the current year at request time.
     pub year: Option<String>,
     /// The whole notice, verbatim, when the `© {year} {holder}` shape does not fit. Wins over
     /// both fields above and over the catalogue's translation of the line.
@@ -85,18 +81,16 @@ pub struct CopyrightConfig {
 pub struct LicenceConfig {
     /// What the footer prints.
     pub name: String,
-    /// Where the label links, when the operator publishes the text somewhere. Unset renders the
-    /// label as plain text, which is what a self-hosted deployment with no public licence page
-    /// should show rather than a dead link.
+    /// Where the label links. Unset renders the label as plain text, for a deployment with no
+    /// public licence page.
     pub url: Option<String>,
 }
 
 impl BrandingConfig {
-    /// The wordmark to draw: `(lead, accent)`.
+    /// Returns the wordmark to draw as `(lead, accent)`.
     ///
-    /// An operator who set `name` and nothing else gets their own name as one word rather than
-    /// this project's lockup with their product's name in the email — the shipped two-tone
-    /// split is a property of the shipped name, not a template to pour any name into.
+    /// An explicit lead wins. Otherwise the shipped name keeps its two-tone lockup, and any
+    /// other name is drawn whole as one word.
     #[must_use]
     pub fn wordmark(&self) -> (String, Option<String>) {
         if let Some(lead) = trimmed(self.wordmark.lead.as_deref()) {
@@ -146,11 +140,10 @@ impl Default for LicenceConfig {
     }
 }
 
-/// `Some(trimmed)` for a value with content, `None` for absent or blank.
+/// Returns the trimmed value, or `None` for an absent or blank one.
 ///
-/// Blank is treated as unset throughout this block: an environment variable set to the empty
-/// string is how a deployment tool spells "I have nothing for this", and it must not print as an
-/// empty wordmark.
+/// Blank means unset throughout this block, because a deployment tool with nothing to supply
+/// sets the variable to the empty string.
 fn trimmed(value: Option<&str>) -> Option<String> {
     value
         .map(str::trim)
@@ -170,8 +163,8 @@ mod tests {
         );
     }
 
-    /// The lockup must never mix names: a rename with no explicit split draws the new name
-    /// whole, not the new name beside this project's accent half.
+    /// A rename with no explicit split draws the new name whole, never beside the shipped accent
+    /// half.
     #[test]
     fn a_renamed_product_draws_its_own_name_as_one_word() {
         let branding = BrandingConfig {

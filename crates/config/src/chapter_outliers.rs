@@ -9,14 +9,14 @@ use terrace_config::schema::Describe;
 ///
 /// Every knob is relative to the listing's own spacing, so one setting covers a 20-chapter
 /// series and a 4,000-chapter one. Raising [`Self::sparse_factor`] rejects less; lowering it
-/// starts taking renumbered arcs with the junk. See
-/// [`tankovault_domain::chapter_outliers`] for what each threshold measures.
+/// starts rejecting renumbered arcs too. [`tankovault_domain::chapter_outliers`] defines what
+/// each threshold measures.
 ///
 /// ```
 /// use tankovault_config::ChapterOutlierConfig;
 /// use tankovault_domain::chapter_outliers::implausible_indices;
 ///
-/// // A stray far above a contiguous run — the shape these sites actually publish.
+/// // A stray far above a contiguous run, as scraped listings publish it.
 /// let mut listing: Vec<f64> = (1..=40).map(f64::from).collect();
 /// listing.push(9000.0);
 ///
@@ -31,9 +31,8 @@ use terrace_config::schema::Describe;
 pub struct ChapterOutlierConfig {
     /// Whether a scan rejects anything at all.
     ///
-    /// An escape hatch for the case the rule is wrong about a provider and dropping the
-    /// chapters is worse than indexing the junk. Turning it off does not restore chapters
-    /// already skipped — the next scan re-ingests them, since ingest is idempotent.
+    /// Turn it off when the rule is wrong about a provider and dropping its chapters is worse
+    /// than indexing the junk. The next scan then ingests the chapters it skipped before.
     #[serde(default = "crate::default_true")]
     pub enabled: bool,
     /// Smallest listing worth judging.
@@ -94,23 +93,18 @@ impl Default for ChapterOutlierConfig {
 }
 
 impl ChapterOutlierConfig {
-    /// Check that every threshold is a number the rule can actually be evaluated against.
+    /// Checks that every threshold is a number the rule can be evaluated against.
     ///
-    /// TOML spells `nan` and `inf` as ordinary float literals, and a non-finite factor does not
-    /// make the rule stricter or looser — it makes every comparison in
-    /// [`tankovault_domain::chapter_outliers`] false, so the guard silently stops rejecting
-    /// anything while still reporting itself as enabled. A `max_rejected_fraction` above 1 is
-    /// the opposite failure: it lifts the ceiling that stops a misread listing being deleted
-    /// wholesale. Both are caught at boot, where the operator is still watching, rather than as
-    /// a shape in the catalogue three weeks later.
+    /// TOML accepts `nan` and `inf` as float literals, and a non-finite factor makes every
+    /// comparison in [`tankovault_domain::chapter_outliers`] false, so the guard would reject
+    /// nothing while reporting itself enabled. A `max_rejected_fraction` above 1 lifts the ceiling
+    /// that stops a misread listing being deleted whole.
     ///
     /// # Errors
-    /// [`ConfigError::Invalid`] naming the first key that is out of range.
+    /// [`ConfigError::Invalid`] naming the first key out of range: a factor that is not a finite
+    /// positive number, a fraction outside `0..=1`, or a `min_body` above `min_sample`.
     //
-    // The three factor bounds and the fraction ceiling below are also published by
-    // `#[config(range(...))]` on the fields, so a consumer of the contract sees the same
-    // interval this refuses outside of. The two must be changed together; the schema's job is
-    // to state the bound, and this one's is to be the thing that actually holds it.
+    // `#[config(range(...))]` on the fields publishes the same bounds; change the two together.
     pub fn validate(&self) -> Result<(), ConfigError> {
         for (key, value) in [
             ("min_gap", self.min_gap),
@@ -140,10 +134,9 @@ impl ChapterOutlierConfig {
         Ok(())
     }
 
-    /// The configured policy, as the scan engine applies it.
+    /// Returns the configured policy, as the scan engine applies it.
     ///
-    /// `enabled: false` is expressed as a policy that can never fire rather than as a branch at
-    /// the call site, so there is one code path through ingest whatever the configuration says.
+    /// `enabled: false` returns a policy that never fires, so ingest has one code path.
     #[must_use]
     pub fn policy(&self) -> OutlierPolicy {
         if !self.enabled {
@@ -186,8 +179,7 @@ mod tests {
         );
     }
 
-    /// The kill switch has to reach the decision, not just the struct. Wired wrong, an operator
-    /// who disabled the rule after a bad rejection would keep losing chapters silently.
+    /// Disabling the rule reaches the decision, so a disabled rule rejects nothing.
     #[test]
     fn disabling_it_rejects_nothing() {
         let off = ChapterOutlierConfig {
@@ -200,9 +192,8 @@ mod tests {
         );
     }
 
-    /// The bug: TOML accepts `nan` as a float literal, and every comparison against `NaN` is
-    /// false — so a mistyped `sparse_factor` left the guard reporting itself as enabled while
-    /// rejecting nothing at all. Caught at boot instead.
+    /// A non-finite or non-positive factor is refused at boot, because every comparison against
+    /// `NaN` is false and the guard would reject nothing.
     #[test]
     fn a_non_finite_threshold_is_refused() {
         assert!(ChapterOutlierConfig::default().validate().is_ok());
@@ -229,7 +220,7 @@ mod tests {
         }
     }
 
-    /// A configured threshold actually moves the outcome — the knobs are not decorative.
+    /// A configured threshold moves the outcome.
     #[test]
     fn raising_the_sparse_factor_keeps_the_stray() {
         let lenient = ChapterOutlierConfig {

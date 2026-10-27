@@ -9,10 +9,8 @@ use terrace_config::schema::Describe;
 /// Redis connection settings (cache, rate-limit counters, locks, solved sessions).
 #[derive(Debug, Clone, Deserialize, Describe)]
 pub struct RedisConfig {
-    /// e.g. `redis://redis:6379`.
-    ///
-    /// A [`SecretString`]: compose uses a credential-free URL, but `redis://:password@host`
-    /// is a supported form.
+    /// The connection URL, such as `redis://redis:6379` or `redis://:password@host`.
+    // A `SecretString` because the URL may carry a password.
     #[config(secret)]
     pub url: SecretString,
 }
@@ -20,7 +18,8 @@ pub struct RedisConfig {
 /// NATS `JetStream` connection settings.
 #[derive(Debug, Clone, Deserialize, Describe)]
 pub struct NatsConfig {
-    /// e.g. `nats://nats:4222`. [`SecretString`]: `nats://user:pass@host` is supported.
+    /// The connection URL, such as `nats://nats:4222` or `nats://user:pass@host`.
+    // A `SecretString` because the URL may carry a password.
     #[config(secret)]
     pub url: SecretString,
     /// Longest the events stream keeps an event no consumer has acked, in seconds.
@@ -34,16 +33,13 @@ impl NatsConfig {
         7 * 24 * 60 * 60
     }
 
-    /// [`Self::events_max_age_secs`] as a [`Duration`].
+    /// Returns [`Self::events_max_age_secs`] as a [`Duration`].
     #[must_use]
     pub fn events_max_age(&self) -> Duration {
         Duration::from_secs(self.events_max_age_secs)
     }
 
-    /// Refuse a zero `events_max_age_secs`.
-    ///
-    /// `JetStream` reads a zero `max_age` as "no limit", so zero would silently restore the
-    /// unbounded events stream this setting exists to prevent.
+    /// Refuses a zero `events_max_age_secs`, which `JetStream` reads as no limit.
     ///
     /// # Errors
     /// [`ConfigError::Invalid`] when `events_max_age_secs` is zero.
@@ -72,8 +68,7 @@ mod tests {
         }
     }
 
-    /// Zero is `JetStream`'s "unlimited", which is the unbounded events stream this bound was
-    /// added to stop.
+    /// Zero is refused, because `JetStream` reads it as unlimited.
     #[test]
     fn a_zero_events_max_age_is_refused() {
         assert!(config(0).validate().is_err());

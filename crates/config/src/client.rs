@@ -1,13 +1,12 @@
 //! What this deployment expects of the native client that connects to it.
 //!
-//! Read by `api`, which publishes it at `GET /v1/client` for the desktop updater. Two decisions
-//! live here that an installed client cannot make for itself: **which repository** its releases
-//! come from, and **which client versions this deployment supports** — so a reader is never
-//! moved onto a build their own server cannot talk to.
+//! `api` publishes it at `GET /v1/client` for the desktop updater. It answers two questions an
+//! installed client cannot answer for itself: which repository its releases come from, and which
+//! client versions this deployment supports, so a reader is never moved onto a build their server
+//! cannot talk to.
 //!
 //! Nothing here is a trust anchor. The client verifies every release against a signing key
-//! compiled into it, and a repository named by a server it is pointed at does not change that;
-//! see `web/frontend/src/update/discover.rs`.
+//! compiled into it, whatever repository a server names (`web/frontend/src/update/discover.rs`).
 
 use serde::Deserialize;
 use terrace_config::schema::Describe;
@@ -29,9 +28,8 @@ pub struct ClientConfig {
     pub release_repo: String,
     /// The oldest client version this deployment supports. Unset means no floor.
     pub min_version: Option<String>,
-    /// The newest client version this deployment supports. Unset resolves to the running
-    /// service's own version, which is the right answer for a deployment tracking releases:
-    /// client and server are cut from one repository at one version.
+    /// The newest client version this deployment supports. Unset means the running service's own
+    /// version, since client and server are released together at one version.
     pub max_version: Option<String>,
 }
 
@@ -46,21 +44,20 @@ impl Default for ClientConfig {
 }
 
 impl ClientConfig {
-    /// The repository to publish, or `None` when the operator named none.
+    /// Returns the repository to publish, or `None` when the operator named none.
     #[must_use]
     pub fn release_repo(&self) -> Option<&str> {
         let repo = self.release_repo.trim();
         (!repo.is_empty()).then_some(repo)
     }
 
-    /// Check every value before the deployment starts serving it.
+    /// Checks every value before the deployment starts serving it.
     ///
-    /// Loud at boot rather than silent on the wire: a client that cannot read the ceiling falls
-    /// back to having none, so a typo here would quietly restore the behaviour this section
-    /// exists to remove.
+    /// A client that cannot read a version bound ignores it, so a typo has to fail the boot.
     ///
     /// # Errors
-    /// A sentence naming the setting and what it holds.
+    /// A sentence naming the setting and what it holds, when the repository is not
+    /// `owner/name` or a version is not `major.minor.patch`.
     pub fn validate(&self) -> Result<(), String> {
         if let Some(repo) = self.release_repo()
             && !is_repo_path(repo)
@@ -85,13 +82,11 @@ impl ClientConfig {
     }
 }
 
-/// Whether `value` is a GitHub `owner/name` and nothing else.
+/// Returns whether `value` is a GitHub `owner/name` and nothing else.
 ///
-/// The client interpolates this into `https://api.github.com/repos/{repo}/releases`, so the
-/// character set is the security-relevant half: a value carrying `/`, `?`, `#` or `..` would
-/// address a different resource entirely. The client checks it again on arrival — a server is
-/// not trusted to have run this — and refusing it here is what stops an operator publishing a
-/// channel no client will accept.
+/// The client interpolates this into `https://api.github.com/repos/{repo}/releases`, so a value
+/// carrying `/`, `?`, `#` or `..` would address a different resource. The client checks it again
+/// on arrival; checking it here stops an operator publishing a channel no client accepts.
 fn is_repo_path(value: &str) -> bool {
     let mut parts = value.split('/');
     let (Some(owner), Some(name), None) = (parts.next(), parts.next(), parts.next()) else {
@@ -106,12 +101,10 @@ fn is_repo_path(value: &str) -> bool {
     })
 }
 
-/// Whether `value` is a `major.minor.patch` of digits.
+/// Returns whether `value` is a `major.minor.patch` of digits.
 ///
-/// Deliberately narrower than semver, and matching exactly what the client will accept: it
-/// takes plain released tags only, rejecting prerelease and build metadata, because
-/// `release-please` cuts nothing else and a hand-made tag is not something to push at every
-/// installed reader. A bound the client would discard is a bound that does not hold.
+/// This is what the client accepts: plain released tags, without prerelease or build metadata,
+/// because `release-please` cuts nothing else.
 fn is_plain_version(value: &str) -> bool {
     let mut parts = value.split('.');
     let (Some(major), Some(minor), Some(patch), None) =
@@ -145,8 +138,7 @@ mod tests {
         assert!(config.validate().is_ok());
     }
 
-    /// The repository is interpolated into a GitHub API path by the client, so anything that
-    /// could address a different resource has to fail the boot rather than reach the wire.
+    /// A repository that could address a different GitHub API resource fails the boot.
     #[test]
     fn a_repository_that_is_not_owner_slash_name_is_refused() {
         for repo in [
@@ -170,8 +162,8 @@ mod tests {
         assert!(is_repo_path("a-fork_1/tanko.vault"));
     }
 
-    /// A bound the client would discard is worse than no bound at all: it reads as a configured
-    /// ceiling and behaves as none.
+    /// A bound the client would discard fails the boot, since it would read as a ceiling and act
+    /// as none.
     #[test]
     fn a_version_bound_that_is_not_a_plain_release_is_refused() {
         for version in ["2.1", "v2.1.0", "2.1.0-rc.1", "2.1.0+build", "latest", ""] {

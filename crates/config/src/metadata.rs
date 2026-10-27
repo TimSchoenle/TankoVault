@@ -1,11 +1,10 @@
 //! The `metadata` section: who owns each field, and which scraped terms are not the thing they
 //! were scraped as.
 //!
-//! Four types over one key namespace, one per service that reads part of it. A configuration
-//! contract is a claim about what *one image* loads and a chart wires values from it, so a
-//! service that embeds more of this section than its binary consults publishes keys that decide
-//! nothing in its process. Every key below is declared exactly once and composed into the views
-//! that need it, so the three services cannot come to describe it three ways.
+//! The section has one view per service that reads part of it. A configuration contract is a
+//! claim about what one image loads, so a service embedding more of the section than its binary
+//! reads would publish keys that decide nothing in its process. Every key is declared once and
+//! composed into the views that need it.
 
 use serde::Deserialize;
 use tankovault_domain::{MetadataPriority, TermBlocklist};
@@ -14,9 +13,9 @@ use terrace_config::schema::Describe;
 /// The whole section, as the worker's ingest path reads it: it is the one binary that decides
 /// field ownership, refuses vocabulary and classifies what survives.
 ///
-/// External sync writes the same columns and so takes the same `priority` subtree and the same
-/// refusal list — restated in its own root beside its enrichment tunables rather than shared
-/// whole, because it classifies nothing: `is_adult` comes from `AniList`.
+/// External sync writes the same columns, so its root takes the same `priority` subtree and
+/// refusal list beside its enrichment tunables. It does not take this type whole, because it
+/// classifies nothing: `is_adult` comes from `AniList`.
 ///
 /// ```
 /// use tankovault_config::MetadataPriorityConfig;
@@ -29,11 +28,9 @@ use terrace_config::schema::Describe;
 #[derive(Debug, Clone, Default, Deserialize, Describe)]
 pub struct MetadataPriorityConfig {
     /// Per-field source authority order (default: `AniList` before the adapters).
-    // `nested`, which needs `Describe` on a `tankovault-domain` type. That crate also compiles
-    // for `wasm32`, so the derive is behind its `schema` feature and this dependency is what
-    // switches it on; the browser bundle reaches the same types through `crates/api-client` with
-    // the feature off and links no figment. The seven keys under here are one per metadata field,
-    // each a list of the two `MetadataSource` spellings.
+    // `nested` needs `Describe` on a `tankovault-domain` type. That crate also compiles for
+    // `wasm32`, so the derive is behind its `schema` feature, which this dependency switches on.
+    // The browser bundle reaches the same types through `crates/api-client` with the feature off.
     #[config(nested)]
     #[serde(default)]
     pub priority: MetadataPriority,
@@ -44,10 +41,9 @@ pub struct MetadataPriorityConfig {
 }
 
 impl MetadataPriorityConfig {
-    /// The tag guard this configuration resolves to.
+    /// Returns the tag guard this configuration resolves to, built on every call.
     ///
-    /// Built per call rather than cached: intake reads it once per scan, not per tag, and a
-    /// stored copy is one more thing a config reload has to remember to replace.
+    /// Intake reads it once per scan.
     #[must_use]
     pub fn term_blocklist(&self) -> TermBlocklist {
         self.tags.blocklist()
@@ -56,10 +52,9 @@ impl MetadataPriorityConfig {
 
 /// The section as a service that only *reads* metadata needs it: the adult classifier alone.
 ///
-/// The API is the whole audience. It writes no metadata, so `metadata.priority` decides nothing
-/// in its process; it consults the vocabulary guard only to learn which genres put a series
-/// behind the gate. Embedding [`MetadataPriorityConfig`] here — how it held the section before —
-/// had `api`'s contract claim its image reads seven keys the binary has never opened.
+/// The API is the only reader. It writes no metadata, so `metadata.priority` decides nothing in
+/// its process, and it reads the vocabulary guard only to learn which genres put a series behind
+/// the gate.
 #[derive(Debug, Clone, Default, Deserialize, Describe)]
 pub struct MetadataReadConfig {
     /// The adult classifier, shared with the worker so the genres the public tag facet withholds
@@ -71,23 +66,22 @@ pub struct MetadataReadConfig {
 
 /// The genre chips that classify a series as adult.
 ///
-/// Its own type because it is the half of `metadata.tags` the read side needs;
-/// [`TagIntakeConfig`] flattens it back in, so `metadata.tags.adult_tags` has one declaration
-/// and the API's contract and the worker's cannot describe it two ways.
+/// The half of `metadata.tags` the read side needs. [`TagIntakeConfig`] flattens it back in, so
+/// `metadata.tags.adult_tags` has one declaration.
 #[derive(Debug, Clone, Default, Deserialize, Describe)]
 pub struct AdultTagConfig {
     /// Additional genre chips that classify a series as adult, matched on their slug.
     ///
-    /// Additions only: unlike the refusal list in [`TermBlocklistConfig`] there is no switch
-    /// that drops the shipped terms. See [`tankovault_domain::AdultTagSet`] — an emptied classifier silently
-    /// stops classifying, where the two supported ways to make adult content visible (the
-    /// deployment flag and the per-reader opt-in) both leave a record of somebody deciding.
+    /// These add to the shipped terms in [`tankovault_domain::AdultTagSet`], and no switch drops
+    /// them. An emptied classifier would stop classifying silently, while the two supported ways
+    /// to show adult content, the deployment flag and the per-reader opt-in, both record a
+    /// decision.
     #[serde(default)]
     pub adult_tags: Vec<String>,
 }
 
 impl AdultTagConfig {
-    /// Resolve the adult classifier intake and the read side apply.
+    /// Resolves the adult classifier intake and the read side apply.
     #[must_use]
     pub fn adult_tags(&self) -> tankovault_domain::AdultTagSet {
         tankovault_domain::AdultTagSet::with_extra(self.adult_tags.iter())
@@ -96,18 +90,15 @@ impl AdultTagConfig {
 
 /// The vocabulary guard, as the services that *write* metadata apply it.
 ///
-/// Two lists rather than one overridable list, because the shipped defaults and an operator's
-/// additions answer different questions: the defaults are the terms *no* catalogue wants (a
-/// scrape template's own field labels), and the extra list is whatever the operator's own
-/// providers turn out to emit. Making one replace the other would mean an operator adding a
-/// single term silently loses the rest.
+/// The shipped defaults are the terms no catalogue wants, such as a scrape template's own field
+/// labels. The extra list is what the operator's providers emit. The extra list adds to the
+/// defaults, so an operator adding one term keeps the rest.
 #[derive(Debug, Clone, Deserialize, Describe)]
 pub struct TermBlocklistConfig {
     /// Whether the shipped [`tankovault_domain::DEFAULT_BLOCKED_TERMS`] apply.
     ///
-    /// An escape hatch for a deployment whose catalogue genuinely uses one of them as a genre.
-    /// Turning it off does not remove what is already stored — nothing in the normal path
-    /// retracts a tag or a credit — but stops it being refused from the next scan onwards.
+    /// Turn it off for a catalogue that uses one of them as a genre. Turning it off stops the
+    /// refusal from the next scan on and leaves stored tags and credits as they are.
     #[serde(default = "crate::default_true")]
     pub use_defaults: bool,
     /// Additional refused terms, matched on their slug: `N/A`, `n/a` and `n-a` are one entry.
@@ -125,7 +116,7 @@ impl Default for TermBlocklistConfig {
 }
 
 impl TermBlocklistConfig {
-    /// Resolve the two lists into the guard intake applies.
+    /// Resolves the two lists into the guard intake applies.
     #[must_use]
     pub fn blocklist(&self) -> TermBlocklist {
         let defaults = if self.use_defaults {
@@ -144,10 +135,9 @@ impl TermBlocklistConfig {
 
 /// The whole `metadata.tags` subtree, for the one service that applies all of it.
 ///
-/// The worker both refuses vocabulary at intake and classifies what survives, so it is the only
-/// binary that reads every key here. The halves are flattened rather than nested so the paths
-/// stay `metadata.tags.blocklist` and `metadata.tags.adult_tags` for every service, and each key
-/// keeps exactly one declaration.
+/// The worker refuses vocabulary at intake and classifies what survives, so it reads every key
+/// here. The halves are flattened, so the paths stay `metadata.tags.blocklist` and
+/// `metadata.tags.adult_tags` for every service.
 #[derive(Debug, Clone, Default, Deserialize, Describe)]
 pub struct TagIntakeConfig {
     /// What intake refuses.
@@ -161,13 +151,13 @@ pub struct TagIntakeConfig {
 }
 
 impl TagIntakeConfig {
-    /// Resolve the two lists into the guard intake applies.
+    /// Resolves the two lists into the guard intake applies.
     #[must_use]
     pub fn blocklist(&self) -> TermBlocklist {
         self.terms.blocklist()
     }
 
-    /// Resolve the adult classifier intake applies.
+    /// Resolves the adult classifier intake applies.
     #[must_use]
     pub fn adult_tags(&self) -> tankovault_domain::AdultTagSet {
         self.adult.adult_tags()
@@ -183,9 +173,8 @@ mod tests {
     use serde::Deserialize;
     use terrace_config::testing::Harness;
 
-    /// An operator's own terms must *add* to the shipped ones. The natural implementation —
-    /// treating the configured list as the whole blocklist — turns "also refuse `Bookmark`"
-    /// into "refuse only `Bookmark`", and the defaults stop applying with nothing said.
+    /// An operator's own terms add to the shipped ones. Treating the configured list as the whole
+    /// blocklist would turn "also refuse `Bookmark`" into "refuse only `Bookmark`".
     #[test]
     fn operator_terms_extend_the_defaults_rather_than_replacing_them() {
         let config = TermBlocklistConfig {
@@ -215,8 +204,7 @@ mod tests {
         assert!(off.blocklist().is_empty());
     }
 
-    /// The section is `#[serde(default)]` everywhere, so an absent `[metadata.tags]` must
-    /// still produce the guard — a deployment that never wrote the section is the common case.
+    /// An absent `[metadata.tags]`, the common case, still produces the guard.
     #[test]
     fn an_absent_section_still_guards() {
         assert!(
@@ -225,11 +213,12 @@ mod tests {
                 .blocks("Status")
         );
     }
-    /// The two halves of `metadata.tags` are `#[serde(flatten)]`, and a flattened field is
-    /// deserialised through serde's buffered content rather than straight off the figment value.
-    /// That is the one thing about this split that could break silently: the schema would still
-    /// publish `metadata.tags.blocklist`, the contract would still name it, and the worker would
-    /// boot with an empty guard because the value never reached the field.
+
+    /// Both flattened halves load from the environment.
+    ///
+    /// A flattened field deserialises through serde's buffered content. If that dropped a value,
+    /// the schema would still publish `metadata.tags.blocklist` and the worker would boot with an
+    /// empty guard.
     #[test]
     fn both_flattened_halves_load_from_the_environment() {
         #[derive(Debug, Deserialize)]
@@ -253,12 +242,9 @@ mod tests {
         });
     }
 
-    /// `metadata.tags.adult_tags` is declared once and read through three different section
-    /// types, because a service's configuration contract is a claim about what its image loads
-    /// and each service publishes only the keys it consults. The spelling has to survive that:
-    /// a rename that reached [`TagIntakeConfig`] but not [`AdultTagConfig`] would leave the
-    /// worker and the API classifying on two different keys, and the gate would open for
-    /// exactly the genres the reader's tag facet still hides.
+    /// The API and the worker read `metadata.tags.adult_tags` through different section types
+    /// and resolve the same key. Two keys would open the gate for the genres the reader's tag
+    /// facet still hides.
     #[test]
     fn the_reader_and_the_writer_resolve_the_same_adult_tag_key() {
         #[derive(Debug, Deserialize)]
@@ -286,8 +272,7 @@ mod tests {
         });
     }
 
-    /// A default [`AdultTagConfig`] still classifies: the shipped terms are the whole point, and
-    /// this side has no `use_defaults` switch to lose them through.
+    /// A default [`AdultTagConfig`] classifies with the shipped terms.
     #[test]
     fn an_absent_classifier_section_still_classifies() {
         assert!(AdultTagConfig::default().adult_tags().classifies("hentai"));

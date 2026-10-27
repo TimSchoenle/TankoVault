@@ -1,13 +1,13 @@
-//! The typed configuration surface: every block a service deserialises, plus the `TankoVault`
-//! dialect of the layered loader.
+//! Every configuration block a service deserialises, and the `TankoVault` dialect of the layered
+//! loader.
 //!
 //! The layering is [`terrace_config`]'s. Lowest precedence first: struct defaults, TOML at
 //! `$TANKOVAULT_CONFIG` (a file, or every `*.toml` in it when it names a directory),
 //! `TANKOVAULT_`-prefixed `__`-nested environment variables, `$TANKOVAULT_SECRETS_DIR`, and
 //! `TANKOVAULT_<KEY>_FILE` indirection. The last three are mutually exclusive per key: a key
-//! supplied by two of them is refused at boot rather than resolved by precedence, because a
-//! stale environment variable shadowing a rotated mounted secret keeps the service running on
-//! the old credential.
+//! supplied by two of them is refused at boot. Resolving it by precedence would let a stale
+//! environment variable shadow a rotated mounted secret and keep the service on the old
+//! credential.
 //!
 //! Call [`load`], or [`load_watched`] when the process should be able to pick the config up
 //! again after a mounted file changes.

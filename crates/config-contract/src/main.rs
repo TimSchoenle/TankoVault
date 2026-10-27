@@ -1,6 +1,6 @@
-//! `config-contract` — the configuration contract one service image publishes.
+//! Renders the configuration contract one service image publishes.
 //!
-//! Three renderings, and a container build consumes all three in one pass:
+//! A container build consumes three renderings in one pass:
 //!
 //! ```text
 //! config-contract --service api --format contract    > contract.json
@@ -8,44 +8,40 @@
 //! config-contract --service api --format dockerfile  # paste into deploy/docker/Dockerfile
 //! ```
 //!
-//! `contract` is the document copied into the image and attached to its digest; `labels` is the
-//! same three label values the image must carry, one `NAME=value` per line, which is what the
-//! build checks the *built image* against; `dockerfile` is that block, markers included, as the
-//! `LABEL` instruction the Dockerfile carries by hand. All three come from one run so the
-//! document and the labels cannot disagree.
+//! `contract` is the document copied into the image and attached to its digest. `labels` is the
+//! three label values the image must carry, one `NAME=value` per line, and the build checks the
+//! *built image* against it. `dockerfile` is the same block, markers included, as the `LABEL`
+//! instruction the Dockerfile carries by hand. All three come from one run, so the document and
+//! the labels cannot disagree.
 //!
 //! # What is left in this file
 //!
 //! The `--format` vocabulary, the argument syntax behind it, the dispatch across the nine
 //! renderings and the stamping of a build identity onto the contract are
-//! [`terrace_config::schema::cli::Cli`]. They were the same two hundred lines in every
-//! repository that had a generator, which is how three of them ended up disagreeing about how to
-//! cut a `LABEL` block back out of a Dockerfile.
+//! [`terrace_config::schema::cli::Cli`], shared by every repository that has a generator.
 //!
 //! What is this repository's own is the table of services below, the [`App`] identity built from
 //! a service name, and the [`External`] surface no derive can see.
 //!
 //! # One binary, one contract
 //!
-//! `--service` is not a convenience, and it is the one flag this generator adds to the ones
-//! `terrace-config` defines. A contract is a claim about what *one image's binary* loads, so each
-//! of the nine roots is described on its own: describing the union would have `api`'s document
-//! assert that its image reads `anilist.client_secret`, and a chart believing that is a chart
-//! being told to mount a secret nothing in that pod consumes.
+//! `--service` is the one flag this generator adds to the ones `terrace-config` defines. A
+//! contract is a claim about what *one image's binary* loads, so each of the nine roots is
+//! described on its own. Describing the union would have `api`'s document assert that its image
+//! reads `anilist.client_secret`, and a chart that believes it mounts a secret nothing in that pod
+//! consumes.
 //!
-//! It is also why the argument list is split here rather than handed to
-//! [`Request::parse`](terrace_config::schema::cli::Request::parse) whole: that parser refuses an
-//! argument it does not know, deliberately, and `--service` is one. What it does not recognise is
-//! removed and the remainder — every flag `terrace-config` owns — is parsed by the crate that
-//! owns it.
+//! [`Request::parse`](terrace_config::schema::cli::Request::parse) refuses an argument it does not
+//! know, and `--service` is one, so this file takes `--service` out and hands every remaining flag
+//! to that parser.
 //!
 //! # What this document does not carry
 //!
 //! **Compiled-in default values.** [`Schema::with_defaults_from`] reads them off a serialised
-//! value, which needs `Serialize` on every config struct in the workspace — including the ones
-//! holding a `SecretString`, which deliberately does not implement it. Every other column the
-//! derive can see is published, `required` included; what an operator gets when they omit a key
-//! stays in `docs/CONFIGURATION.md`.
+//! value, which needs `Serialize` on every config struct in the workspace. The ones holding a
+//! `SecretString` cannot have it, because `SecretString` does not implement it. Every other column
+//! the derive can see is published, `required` included. What an operator gets when they omit a
+//! key is in `docs/CONFIGURATION.md`.
 //!
 //! **The image's own `ENV` block.** `frontend` and `render` bake three configuration keys into
 //! their images (`TANKOVAULT_FRONTEND__STATIC_DIR`, `TANKOVAULT_RENDER__CHROME_PATH`,
@@ -65,20 +61,18 @@ use terrace_config::schema::{App, External, ExternalVar, Schema, Unknown};
 
 /// Every service that publishes an image, and how its binary's schema is built.
 ///
-/// Hand-written because which binaries become images is a deployment decision — the same one
-/// `SERVICE_BINS` and `[workspace.metadata.deploy.exclude]` encode. A missing entry cannot hide:
-/// the image build asks this tool for the service named by its `BIN` argument and fails on a
-/// name it does not know.
+/// Which binaries become images is a deployment decision, the same one `SERVICE_BINS` and
+/// `[workspace.metadata.deploy.exclude]` encode, so the table is written by hand. A missing entry
+/// fails the image build, which asks this tool for the service its `BIN` argument names.
 ///
-/// An entry names the config root the binary deserialises, described as its types state it, then
-/// optionally `=>` the service's own schema builder, for a binary whose runtime checks more than
-/// those types say and refines the schema to match.
+/// An entry names the config root the binary deserialises. An optional `=> builder` follows for a
+/// binary whose runtime checks more than its types say and refines the schema to match.
 macro_rules! services {
     ($($name:literal => $root:path $(=> $build:path)?),* $(,)?) => {
         /// The names `--service` accepts, in the order `--services` lists them.
         const SERVICES: &[&str] = &[$($name),*];
 
-        /// The schema of one service's root, or `None` for a name that is not a service.
+        /// Returns the schema of one service's root, or `None` for a name that is not a service.
         fn schema_for(service: &str) -> Option<Result<Schema, terrace_config::Error>> {
             match service {
                 $($name => Some(services!(@schema $root $(=> $build)?)),)*
@@ -115,17 +109,16 @@ fn main() -> ExitCode {
     }
 }
 
-/// The whole program: split off `--service`, parse the rest, render.
+/// Returns the whole program: split off `--service`, parse the rest, render.
 fn run() -> Result<String, String> {
     let (service, rest) = split_service(std::env::args().skip(1))?;
     let Some(service) = service else {
         return Ok(SERVICES.join("\n"));
     };
 
-    // Seeded with this repository's own default rather than `terrace-config`'s. `Request`
-    // defaults to `json`; every caller here — the container build, `xtask config-contract` and
-    // the `justfile` — is after the contract, and a bare `--service api` printed one before this
-    // file delegated its parsing. A `--format` in `rest` is parsed after this pair and wins.
+    // `Request` defaults to `json`, and every caller here wants the contract: the container
+    // build, `xtask config-contract` and the `justfile`. A `--format` in `rest` is parsed after
+    // this pair and wins.
     let request = Request::parse(
         ["--format".to_owned(), "contract".to_owned()]
             .into_iter()
@@ -133,9 +126,8 @@ fn run() -> Result<String, String> {
     )
     .map_err(|error| error.to_string())?;
 
-    // Spelled as a `terrace_config::Error` rather than as a bare string: every other failure this
-    // program reports comes back from that crate, and an unknown `--service` is the same class of
-    // fault as an unknown `--format`. One voice on stderr, and the same bytes as before.
+    // Every other failure this program reports is a `terrace_config::Error`, and an unknown
+    // `--service` is the same fault as an unknown `--format`, so it is reported the same way.
     let Some(schema) = schema_for(&service) else {
         return Err(format!(
             "error: {}",
@@ -154,11 +146,10 @@ fn run() -> Result<String, String> {
         .map_err(|error| format!("error: {error}"))
 }
 
-/// Take `--service` out of the argument list, and leave every flag `terrace-config` owns in it.
+/// Takes `--service` out of the argument list, and leave every flag `terrace-config` owns in it.
 ///
-/// `--services` clears the selection rather than setting one, so the two flags are one piece of
-/// state and the last one written wins — which is what a caller assembling a command line from a
-/// template gets right by accident.
+/// `--services` clears the selection, so the two flags are one piece of state and the last one
+/// on the line wins.
 fn split_service(
     mut args: impl Iterator<Item = String>,
 ) -> Result<(Option<String>, Vec<String>), String> {
@@ -181,29 +172,26 @@ fn split_service(
     Ok((service, rest))
 }
 
-/// The identity one service's image publishes.
+/// Returns the identity one service's image publishes.
 ///
-/// The version is spelled as the image tag spells it: release-please tags `vX.Y.Z` and
-/// `docker/metadata-action` applies that tag verbatim, while `CARGO_PKG_VERSION` alone yields the
-/// form without the `v`. The field exists to be compared against a tag. `--version` overrides it;
-/// `--revision` and `--created` are the other two things that legitimately differ between builds
-/// of one source tree, and all three are arguments rather than environment reads so that a
-/// documentation job and a container build produce the same bytes.
+/// The version is spelled as the image tag spells it, `vX.Y.Z`, because it is compared against
+/// that tag. `--version`, `--revision` and `--created` override the build-specific fields. They
+/// are arguments, not environment reads, so a documentation job and a container build produce
+/// the same bytes.
 fn app(service: &str) -> App {
     App::new(format!("tankovault-{service}"))
         .version(concat!("v", env!("CARGO_PKG_VERSION")))
         .source("https://github.com/TimSchoenle/TankoVault")
 }
 
-/// The environment these images read that the loader does not own.
+/// Returns the environment these images read that the loader does not own.
 ///
-/// One declaration for all nine, because it is true of all nine: they are the same static musl
-/// binary over the same `tankovault-service` runtime, and the one variable outside the
-/// `TANKOVAULT_` namespace any of them reads is `RUST_LOG`.
+/// One declaration covers all nine images. They run the same `tankovault-service` runtime, and
+/// the one variable outside the `TANKOVAULT_` namespace any of them reads is `RUST_LOG`.
 ///
-/// [`Unknown::Reject`] is the default and it is kept: a variable this image neither reads nor
-/// ignores is a rename nobody finished. What that costs is the two `ignore` patterns below —
-/// names a Kubernetes pod carries that no image asked for and no image owns.
+/// [`Unknown::Reject`] stays on, because a variable an image neither reads nor ignores is an
+/// unfinished rename. The two `ignore` patterns are names a Kubernetes pod carries that no image
+/// reads.
 fn external() -> External {
     External::new()
         .var(
@@ -211,7 +199,8 @@ fn external() -> External {
                 .owner("tracing")
                 .ty("String")
                 .docs(
-                    "Verbosity, as `tracing` directives — `info`, `tankovault_api=debug,info`. \
+                    "Verbosity, as `tracing` directives such as `info` or \
+                     `tankovault_api=debug,info`. \
                      Read by `EnvFilter::try_from_default_env`, which is consulted *before* \
                      `telemetry.log_filter` and wins over it when set.",
                 ),
@@ -223,8 +212,7 @@ fn external() -> External {
 
 /// The one line to print when an argument is refused.
 ///
-/// Names every flag, not only `--service`: the reader is looking at a build log, and being told
-/// about half a command line costs a second run to discover the other half.
+/// Names every flag, because the reader is looking at a build log.
 const USAGE: &str = "usage: config-contract --service <name> \
                      [--format json|markdown|markdown-loader|markdown-keys|toml|json-schema|\
                      contract|labels|dockerfile] [--only <key-prefix>] [--path <in-image-path>] \
@@ -249,8 +237,7 @@ mod tests {
             .unwrap_or_else(|error| panic!("{service} does not render {format}: {error}"))
     }
 
-    /// Every name this tool advertises has to describe, or the image build asks for a service
-    /// the list promised and gets a failure at `--format contract` instead.
+    /// Every name `--services` lists renders a contract, since the image build asks for each one.
     #[test]
     fn every_advertised_service_builds_a_contract() {
         for service in SERVICES {
@@ -261,15 +248,11 @@ mod tests {
         }
     }
 
-    /// The one invariant the whole scheme rests on: the label a consumer discovers the image by
-    /// and the namespace the document describes are the same string, because both come from one
-    /// run of one generator. A build that generated them separately could publish an image
-    /// labelled for one prefix carrying a contract for another, and the chart repo's refresh
-    /// refuses exactly that pair.
+    /// The label a consumer discovers the image by and the namespace the document describes are
+    /// the same string. The chart repository's refresh refuses an image whose two differ.
     ///
-    /// Asserted over the two *renderings* rather than over a `Contract` built here a second time:
-    /// a second construction path is the one thing that could make this test pass while the
-    /// documents the build publishes disagree.
+    /// Asserted over the two published renderings. A `Contract` built a second time here could
+    /// agree with itself while the published documents disagree.
     #[test]
     fn the_prefix_label_is_the_document_s_own_dialect() {
         for service in SERVICES {
@@ -290,9 +273,8 @@ mod tests {
         }
     }
 
-    /// `Unknown::Reject` means a variable that is neither a key nor declared here fails the
-    /// chart's gate. `RUST_LOG` is read by every one of these binaries and carries no prefix, so
-    /// leaving it out would fail a deployment that is doing nothing wrong.
+    /// Under `Unknown::Reject`, a variable that is neither a key nor declared fails the chart's
+    /// gate, and every binary reads the unprefixed `RUST_LOG`.
     #[test]
     fn rust_log_is_declared_rather_than_ignored() {
         let external = external();
@@ -303,9 +285,7 @@ mod tests {
         );
     }
 
-    /// `--service` is this repository's own flag and everything else belongs to `terrace-config`.
-    /// The split is what lets both be true; a `--format` that ended up in the wrong half would
-    /// render the default for every caller and nothing would say so.
+    /// A `--format` taken out with `--service` would silently render the default format.
     #[test]
     fn the_service_flag_is_the_only_one_taken_out_of_the_list() {
         let args = [
@@ -323,15 +303,12 @@ mod tests {
         assert_eq!(rest, ["--format", "labels", "--revision", "deadbeef"]);
     }
 
-    /// The `metadata` section, per service, because it is the one that broke the rule this
-    /// generator exists for. All three services that touch metadata embedded the *writers'*
-    /// section type, so `api`'s document asserted its image reads the seven `metadata.priority.*`
-    /// keys it has never consulted and `sync`'s claimed the adult classifier it takes from
-    /// `AniList` instead. The chart repo's binding gate reads these documents literally and
-    /// demanded a chart value for every one of them.
+    /// Each service's `metadata` keys are the ones its binary reads. The chart repository's
+    /// binding gate demands a chart value for every declared key, so an extra key here is a value
+    /// an operator must supply for nothing.
     ///
-    /// Written out per service rather than derived: the point is that the sets *differ*, and a
-    /// rule computed from the same types it is checking would go on passing when they merge back.
+    /// The sets are written out per service: an expectation derived from the same types would
+    /// keep passing if the sets merged.
     #[test]
     fn each_service_declares_only_the_metadata_keys_its_binary_reads() {
         const PRIORITY: [&str; 7] = [
@@ -406,8 +383,7 @@ mod tests {
         }
     }
 
-    /// `--services` and `--service` are one piece of state, and the contract that lists them is
-    /// what `xtask config-contract` walks before it asks for a single document.
+    /// A later `--services` clears an earlier `--service`.
     #[test]
     fn services_clears_the_selection() {
         let args = ["--service", "api", "--services"].map(str::to_owned);

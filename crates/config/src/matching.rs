@@ -1,13 +1,12 @@
-//! The confidence policy for deciding "is this the same series?".
+//! The confidence policy that decides whether two titles are the same series.
 
 use serde::Deserialize;
 use tankovault_domain::matching::{Candidate, Canonicaliser, Decision, Query};
 
-/// The confidence policy for deciding "is this the same series?" (`docs/ARCHITECTURE.md` §10).
+/// The confidence policy that decides whether two titles are the same series
+/// (`docs/ARCHITECTURE.md` §10).
 ///
-/// Ingest canonicalisation and external sync both decide through this one scorer via the
-/// [`Canonicaliser`] impl below, so `crates/db` names the port without depending on the scorer.
-/// Defaults are `tankovault_matcher::Thresholds::default()`: 0.85 to attach (an identical title
+/// Ingest and external sync both decide through the [`Canonicaliser`] impl. Defaults are `tankovault_matcher::Thresholds::default()`: 0.85 to attach (an identical title
 /// only), 0.6 to flag as a merge candidate.
 ///
 /// ```
@@ -23,7 +22,7 @@ use tankovault_domain::matching::{Candidate, Canonicaliser, Decision, Query};
 ///     tags: Vec::new(),
 ///     authors: Vec::new(),
 /// };
-/// // An unrelated title, so the score is just the trigram similarity — band edges exact.
+/// // An unrelated title scores its trigram similarity alone, so the band edges are exact.
 /// let titled = |title: &str, similarity| Candidate {
 ///     series_id: existing,
 ///     normalized_title: title.to_owned(),
@@ -65,10 +64,8 @@ use tankovault_domain::matching::{Candidate, Canonicaliser, Decision, Query};
 #[derive(Debug, Clone, Deserialize, terrace_config::schema::Describe)]
 #[expect(
     clippy::struct_excessive_bools,
-    reason = "each bool is one independently-settable configuration key, named in \
-              docs/CONFIGURATION.md and set by its own environment variable. The lint's \
-              suggested remedy — a state machine or two-variant enums — would stop an operator \
-              turning one guard off without restating the other three."
+    reason = "each bool is one configuration key with its own environment variable, so an \
+              operator turns one guard off without restating the other three"
 )]
 pub struct MatchingConfig {
     /// At or above this score, and only when the incoming title is the series' own title under
@@ -76,24 +73,23 @@ pub struct MatchingConfig {
     /// a remote entry on the score alone.
     #[serde(default = "default_threshold_high")]
     pub high: f32,
-    /// At or above this score, and not attached, create the series but flag the pair for
-    /// operator review.
+    /// At or above this score, a title that did not attach creates the series and flags the pair
+    /// for operator review.
     #[serde(default = "default_threshold_low")]
     pub low: f32,
-    /// At or above this score — **and** only when a primary identity rule fired — the
-    /// duplicate sweep merges two existing series without an operator. A separate knob from
-    /// [`Self::high`]: that files an incoming source, this deletes one that already exists.
-    /// See `tankovault_matcher::adjudicate` for the identity half of the bar.
+    /// At or above this score, and only when a primary identity rule fired, the duplicate sweep
+    /// merges two existing series without an operator. [`Self::high`] files an incoming source;
+    /// this deletes a series that already exists. `tankovault_matcher::adjudicate` defines the
+    /// identity rules.
     #[serde(default = "default_threshold_auto_merge")]
     pub auto_merge: f32,
-    /// How many trigram candidates to score per query title; more only costs a wider index scan.
+    /// How many trigram candidates to score per query title. A higher value widens the index scan.
     #[serde(default = "default_candidate_limit")]
     pub candidate_limit: i64,
 
     /// Titles carrying different numbers (`Overlord` against `Overlord 2`) are reported as
-    /// distinct works rather than queued. Switching this off makes a sequel merge-eligible on
-    /// title similarity alone, which is the single most expensive mistake this scorer can make —
-    /// there is no other rule that distinguishes a sequel from its predecessor.
+    /// distinct works. Switching this off makes a sequel merge-eligible on title similarity
+    /// alone, and no other rule tells a sequel from its predecessor.
     #[serde(default = "enabled")]
     pub block_auto_merge_on_numeric_conflict: bool,
     /// Both series name authors and share none: a remake, a spin-off, or an unrelated work with
@@ -101,8 +97,8 @@ pub struct MatchingConfig {
     /// because the signal cannot fire without credits on both sides.
     #[serde(default = "enabled")]
     pub block_auto_merge_on_author_conflict: bool,
-    /// Release years three or more years apart. Catches re-serialisations and remakes that share
-    /// an exact title. The year never moves a score, so this guard is the only way it can hold a
+    /// Release years three or more years apart, as with re-serialisations and remakes that share
+    /// an exact title. The year never moves a score, so this guard is the only way it holds a
     /// pair back.
     #[serde(default = "enabled")]
     pub block_auto_merge_on_year_conflict: bool,
@@ -112,8 +108,8 @@ pub struct MatchingConfig {
     pub block_auto_merge_on_type_conflict: bool,
 }
 
-/// Guards default on: a guard only ever moves a pair *towards* operator review, so the cost of
-/// a wrong one is a queue row and the cost of a missing one is a deleted series.
+/// Guards default on. A guard only moves a pair towards operator review, so a wrong one costs a
+/// queue row and a missing one costs a deleted series.
 const fn enabled() -> bool {
     true
 }
@@ -150,7 +146,7 @@ impl Default for MatchingConfig {
 }
 
 impl MatchingConfig {
-    /// The scorer's thresholds and guards, as one value.
+    /// Returns the scorer's thresholds and guards, as one value.
     #[must_use]
     pub const fn thresholds(&self) -> tankovault_matcher::Thresholds {
         tankovault_matcher::Thresholds {
@@ -169,8 +165,7 @@ impl MatchingConfig {
 
 /// The configured policy, as the persistence layer sees it.
 ///
-/// The only place the configured thresholds meet the scorer, letting `crates/db` ask for a
-/// decision without depending on `tankovault-matcher`.
+/// `crates/db` asks for a decision through this impl without depending on `tankovault-matcher`.
 impl Canonicaliser for MatchingConfig {
     fn candidate_limit(&self) -> i64 {
         self.candidate_limit
@@ -186,8 +181,7 @@ mod tests {
     use super::*;
     use tankovault_domain::{ContentType, SeriesId};
 
-    /// A candidate whose score *is* `similarity`: no other signal is present, so every
-    /// bonus/penalty in `score` is switched off and band boundaries are exact.
+    /// A candidate whose score is `similarity`, because no other signal is present.
     fn scoring(similarity: f32) -> Candidate {
         titled("berserk", similarity)
     }
@@ -217,9 +211,8 @@ mod tests {
         }
     }
 
-    /// Reached through the *configured* policy, not `matcher::decide` directly. If this ever
-    /// stopped returning `Ambiguous` for the middle band, ingest would silently split or merge
-    /// series with no merge-candidate row to notice it.
+    /// The configured policy reaches every outcome, `Ambiguous` included. Without it, ingest would
+    /// split or merge series with no merge-candidate row to show it.
     #[test]
     fn the_configured_policy_reaches_all_three_outcomes() {
         let cfg = MatchingConfig::default();
@@ -241,9 +234,8 @@ mod tests {
         assert_eq!(cfg.canonicalise(&q, &[]), Decision::Create);
     }
 
-    /// Both bands close at the bottom: an identity scoring exactly `high` attaches, `score ==
-    /// low` is ambiguous. An off-by-one here is invisible in integration tests and would
-    /// silently move series between auto-attach and operator review.
+    /// Both bands close at the bottom: an identity scoring exactly `high` attaches, and
+    /// `score == low` is ambiguous.
     #[test]
     fn the_bands_are_inclusive_at_their_lower_bound() {
         let cfg = MatchingConfig::default();
@@ -275,8 +267,7 @@ mod tests {
         );
     }
 
-    /// A configured threshold actually reaches the decision: canonicalisation once scored
-    /// against hardcoded defaults, so operator tuning changed nothing about what attached.
+    /// A configured threshold reaches the decision.
     #[test]
     fn tuning_the_thresholds_moves_the_bands() {
         let q = query();
@@ -310,7 +301,7 @@ mod tests {
         ));
     }
 
-    /// `candidate_limit` travels with the policy, not as a per-call-site argument.
+    /// `candidate_limit` comes from the policy.
     #[test]
     fn the_candidate_limit_comes_from_the_policy() {
         let cfg = MatchingConfig {

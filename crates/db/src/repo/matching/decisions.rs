@@ -1,5 +1,5 @@
-//! The merge decision journal: what the duplicate sweep decided about a pair, why, and — for the
-//! decisions that actually merged something — how to take it back.
+//! The merge decision journal: what the duplicate sweep decided about a pair, why, and, for a
+//! decision that merged something, how to take it back.
 
 use serde_json::Value as Json;
 use sqlx::PgExecutor;
@@ -21,7 +21,7 @@ pub struct NewMergeDecision<'a> {
     pub trigger: &'a str,
     /// The operator behind an `operator` trigger, `None` for a sweep.
     pub actor: Option<UserId>,
-    /// The pair in any order — [`record_merge_decisions`] puts it in canonical order itself.
+    /// The pair in any order; [`record_merge_decisions`] puts it in canonical order.
     pub pair: (SeriesId, SeriesId),
     /// Both canonical titles, in the same order as `pair`, so the row still reads
     /// after one of the two series stops existing.
@@ -52,25 +52,21 @@ pub struct NewMergeDecision<'a> {
     /// The thresholds and guards in force when the decision was taken.
     pub policy: &'a Json,
     /// The undo journal, for a decision that merged something. `None` means the decision
-    /// cannot be reverted — which is correct for every outcome but `merged`.
+    /// cannot be reverted, which is correct for every outcome but `merged`.
     pub undo: Option<&'a MergeUndo>,
 }
 
-/// Record a batch of decisions in one statement, returning their ids in the order given.
+/// Records a batch of decisions in one statement, returning their ids in the order given.
 ///
-/// # Why this is a batch and not a row at a time
-///
-/// A sweep journals one decision per pair it judges, and a run judges thousands. As one
-/// statement per decision the journal cost the sweep more round trips than the scoring it
-/// describes — and it is the part of the run nothing waits on, so paying latency for it row by
-/// row bought nothing. The payload travels as one `jsonb` document rather than twenty-one
-/// parallel arrays because four of the columns are themselves `jsonb` and two are `text[]`,
-/// which `UNNEST` cannot carry without a jagged-array workaround per column.
+/// A run judges thousands of pairs, and one statement per decision would cost more round trips
+/// than the scoring. The payload travels as one `jsonb` document, not twenty-one parallel arrays,
+/// because four columns are `jsonb` and two `text[]`, which `UNNEST` cannot carry without a
+/// jagged-array workaround.
 ///
 /// # Errors
-/// [`DbError::Conflict`] when a decision names one series twice, which the table's own check
-/// constraint would reject anyway — returned here so the caller gets a domain error rather than
-/// a driver one. [`DbError::Sqlx`] otherwise, including a failure to serialise an undo journal.
+/// [`DbError::Conflict`] when a decision names one series twice, which the table's check
+/// constraint would reject as a driver error. [`DbError::Sqlx`] otherwise, including a failure to
+/// serialise an undo journal.
 pub async fn record_merge_decisions<'e, E: PgExecutor<'e>>(
     exec: E,
     decisions: &[NewMergeDecision<'_>],
@@ -147,7 +143,7 @@ pub async fn pairs_already_deferred<'e, E: PgExecutor<'e>>(
         .collect())
 }
 
-/// Delete up to `batch` `deferred` journal rows older than `retention_days`, returning how many.
+/// Deletes up to `batch` `deferred` journal rows older than `retention_days`, returning how many.
 ///
 /// Only `deferred`: a deferral records that the run's merge ceiling was spent, which is worth
 /// nothing once the pair has been decided or re-deferred. Every other outcome is an undo journal
@@ -174,7 +170,7 @@ pub async fn purge_deferred_decisions<'e, E: PgExecutor<'e>>(
     Ok(done.rows_affected())
 }
 
-/// One decision as the row the batch insert reads back out of its `jsonb` payload.
+/// Returns one decision as the row the batch insert reads back out of its `jsonb` payload.
 fn decision_row(id: Uuid, decision: &NewMergeDecision<'_>) -> DbResult<Json> {
     let (a, b) = decision.pair;
     if a == b {
@@ -182,8 +178,8 @@ fn decision_row(id: Uuid, decision: &NewMergeDecision<'_>) -> DbResult<Json> {
             "cannot record a merge decision about one series".to_owned(),
         ));
     }
-    // Canonical order, and the titles travel with their ids rather than with their argument
-    // position — a swapped pair whose titles did not swap is a record that reads as nonsense.
+    // Canonical order, with the titles travelling with their ids, not their argument position,
+    // so a swapped pair keeps the right title on each side.
     let ((left, left_title), (right, right_title)) = if a < b {
         ((a, decision.titles.0), (b, decision.titles.1))
     } else {
@@ -223,9 +219,8 @@ fn decision_row(id: Uuid, decision: &NewMergeDecision<'_>) -> DbResult<Json> {
 
 /// One segment of an undo journal: a table the revert would write to, and how many rows.
 ///
-/// The key is the journal's own field name (`watchlist`, `moved_sources`, …) rather than a
-/// display string, because the console must not need a release to name a segment a later journal
-/// version adds.
+/// The key is the journal's own field name (`watchlist`, `moved_sources`, …), not a display
+/// string, so the console can name a segment a later journal version adds without a release.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct UndoSegment {
     /// The journal key, which is the table the rows belong to.
@@ -236,10 +231,9 @@ pub struct UndoSegment {
 
 /// One decision as the console renders it.
 ///
-/// The undo journal is deliberately absent: it is the largest column in the table by an order of
-/// magnitude (it carries every row of the absorbed series) and no list view needs it. `undo_rows`
-/// carries the one fact a list *does* need from it — how much a revert would put back — and
-/// `undo_breakdown` the itemisation an operator needs before deciding to spend it.
+/// The undo journal is absent: it carries every row of the absorbed series, the table's largest
+/// column by an order of magnitude, and no list view needs it. `undo_rows` says how much a revert
+/// would put back and `undo_breakdown` itemises it.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct MergeDecisionRow {
     /// The journal row, which is what a revert or a flag names.
@@ -323,7 +317,7 @@ pub struct MergeDecisionFilter {
     pub revertible_only: bool,
     /// Only decisions an operator has flagged wrong.
     pub flagged_only: bool,
-    /// Only decisions a guard held back — the near-misses.
+    /// Only decisions a guard held back: the near misses.
     pub blocked_only: bool,
     /// Only merges that have been undone.
     pub reverted_only: bool,
@@ -334,7 +328,7 @@ pub struct MergeDecisionFilter {
     pub search: Option<String>,
 }
 
-/// The two shapes a search term takes in the statement: an exact id, or an escaped `ILIKE`
+/// Returns the two shapes a search term takes in the statement: an exact id, or an escaped `ILIKE`
 /// pattern. At most one is set.
 fn search_terms(search: Option<&str>) -> (Option<Uuid>, Option<String>) {
     let Some(term) = search.map(str::trim).filter(|t| !t.is_empty()) else {
@@ -359,8 +353,8 @@ fn search_terms(search: Option<&str>) -> (Option<Uuid>, Option<String>) {
 
 /// One row of the projection above, before the domain newtypes are put back on.
 ///
-/// At module level rather than inside the query function because `query_as!` needs a named
-/// struct and the conversion back is long enough to be worth its own item.
+/// At module level, since `query_as!` needs a named struct and the conversion back is long
+/// enough to be its own item.
 struct Row {
     id: Uuid,
     decided_at: OffsetDateTime,
@@ -420,9 +414,9 @@ impl From<Row> for MergeDecisionRow {
             policy: r.policy,
             revertible: r.revertible,
             undo_rows: r.undo_rows,
-            // The aggregate is built by the statement above, so a shape it cannot parse is a
-            // bug in this file rather than bad data; an empty itemisation degrades to the
-            // total, which the row already carries.
+            // The statement above builds the aggregate, so a shape it cannot parse is a bug in
+            // this file, not bad data; an empty itemisation degrades to the total the row
+            // carries.
             undo_breakdown: serde_json::from_value(r.undo_breakdown).unwrap_or_default(),
             reverted_at: r.reverted_at,
             reverted_by: r.reverted_by,
@@ -434,10 +428,10 @@ impl From<Row> for MergeDecisionRow {
     }
 }
 
-/// A page of the journal, newest first.
+/// Returns a page of the journal, newest first.
 ///
 /// # Errors
-/// [`DbError::Sqlx`] only; no match is an empty `Vec`.
+/// [`DbError::Sqlx`] only.
 pub async fn list_merge_decisions<'e, E: PgExecutor<'e>>(
     exec: E,
     filter: &MergeDecisionFilter,
@@ -447,7 +441,8 @@ pub async fn list_merge_decisions<'e, E: PgExecutor<'e>>(
     select_merge_decisions(exec, filter, None, limit, offset).await
 }
 
-/// The one statement behind both reads, so the list row and the single row cannot drift apart.
+/// Returns the one statement behind both reads, so the list row and the single row cannot drift
+/// apart.
 ///
 /// `d.id` breaks `decided_at` ties: a sweep stamps its whole batch with one timestamp, and offset
 /// paging over a tied order repeats some rows and skips others.
@@ -459,16 +454,13 @@ async fn select_merge_decisions<'e, E: PgExecutor<'e>>(
     offset: i64,
 ) -> DbResult<Vec<MergeDecisionRow>> {
     let (search_id, search_like) = search_terms(filter.search.as_deref());
-    // `undo_rows` is counted in the database rather than by deserialising the journal: the point
-    // of leaving `undo` out of the projection is not to ship it to the caller at all.
+    // `undo_rows` is counted in the database, so `undo` never ships to the caller.
     //
-    // The segment sizes go through a `CASE` rather than a `WHERE jsonb_typeof(...) = 'array'`
-    // guard, and that is load-bearing: Postgres orders the clauses of one qual by cost, so a
-    // guard standing beside `jsonb_array_length(e.v) > 0` in the same `WHERE` was planned
-    // *behind* it and the statement died with `cannot get array length of a non-array` on the
-    // journal's first non-array field. Nothing can reorder around a `CASE`. Reading both
-    // aggregates out of one lateral also detoasts `undo` — by far the widest column in the
-    // table — once per row rather than once per subquery.
+    // The segment sizes go through a `CASE`, not a `WHERE jsonb_typeof(...) = 'array'` guard:
+    // Postgres orders the clauses of one qual by cost, so a guard beside
+    // `jsonb_array_length(e.v) > 0` can run after it and fail with `cannot get array length of
+    // a non-array`. Nothing reorders around a `CASE`. Both aggregates read one lateral, so the
+    // wide `undo` column is detoasted once per row.
     let rows = sqlx::query_as!(
         Row,
         "SELECT d.id, d.decided_at, d.sweep_id, d.trigger, d.actor_id AS actor, \
@@ -524,7 +516,7 @@ async fn select_merge_decisions<'e, E: PgExecutor<'e>>(
     Ok(rows.into_iter().map(MergeDecisionRow::from).collect())
 }
 
-/// One decision by id, in the same projection as [`list_merge_decisions`].
+/// Returns one decision by id, in the same projection as [`list_merge_decisions`].
 ///
 /// # Errors
 /// [`DbError::NotFound`] when no such decision exists; otherwise [`DbError::Sqlx`].
@@ -549,13 +541,15 @@ pub enum RevertReadiness {
     NothingToUndo,
 }
 
-/// The decisions among `ids` that exist, newest first, with whether each can be reverted.
+/// Returns the decisions among `ids` that exist, newest first, with whether each can be reverted.
 ///
 /// Newest first because a merge's survivor may have been absorbed by a later merge, and the
 /// later one has to be reverted before the earlier can be.
 ///
+/// Unknown ids are absent from the result.
+///
 /// # Errors
-/// [`DbError::Sqlx`] only; unknown ids are absent from the result.
+/// [`DbError::Sqlx`] only.
 pub async fn revert_order<'e, E: PgExecutor<'e>>(
     exec: E,
     ids: &[Uuid],
@@ -584,38 +578,29 @@ pub async fn revert_order<'e, E: PgExecutor<'e>>(
         .collect())
 }
 
-/// Undo the merge a decision performed, suppress the pair, and take back what made the two look
-/// like one.
+/// Undoes the merge a decision performed, suppresses the pair, and takes back what made the two
+/// look like one.
 ///
-/// # Why the revert is more than the inverse
+/// Reverting alone changes nothing about why the two were merged, so three things happen
+/// together:
 ///
-/// Reverting alone puts the two series back and changes nothing about why they were merged, so
-/// three things have to happen together or the operator's judgement does not survive the next
-/// hour:
-///
-/// 1. The inverse — [`revert_merge`](super::revert_merge)'s statements — moves back exactly what
-///    the merge moved.
-/// 2. [`suppress_pair`](super::suppress_pair) records the durable dismissal — the same one the
-///    console's "not a duplicate" button writes, and the one all three sweep shortlists exclude.
-///    Without it the titles still agree, the score is still above the threshold, and the very
-///    next sweep merges them again.
+/// 1. [`revert_merge`](super::revert_merge)'s statements move back exactly what the merge moved.
+/// 2. [`suppress_pair`](super::suppress_pair) records the durable dismissal that the console's
+///    "not a duplicate" button writes and every sweep shortlist excludes. Without it the next
+///    sweep merges the pair again.
 /// 3. The `disentangle` module takes the names the two rows share off the survivor and returns
-///    the sources those names attracted. Suppression only binds the *sweep*; the create-time
-///    attach path consults `series_titles` and nothing else, so a shared alias left in place has
-///    the next scan re-attaching what the operator just separated — and the sources already filed
-///    under it stay put, which is what makes a bare revert look like it did nothing at all.
+///    the sources those names attracted. Suppression binds only the sweep; the create-time
+///    attach path consults `series_titles` alone, so a shared alias left in place re-attaches
+///    what the operator separated.
 ///
-/// # One transaction
-///
-/// All four writes, the journal stamp included. The stamp used to follow a committed revert, so a
-/// failure between them left a restored catalogue with an unreverted decision row — and the retry
-/// then failed on the live absorbed id, with no way forward but SQL.
+/// All four writes, the journal stamp included, run in one transaction. A stamp written after
+/// a committed revert could fail and leave an unreverted decision row whose retry fails on the
+/// live absorbed id.
 ///
 /// # Errors
 /// [`DbError::NotFound`] when no such decision exists. [`DbError::Conflict`] when it carries no
-/// undo journal (it merged nothing), when it has already been reverted, when the absorbed id
-/// is live again, or when the survivor has since been merged away — see
-/// [`revert_merge`](super::revert_merge). Otherwise [`DbError::Sqlx`].
+/// undo journal, has been reverted, its absorbed id is live again, or its survivor has been
+/// merged away; see [`revert_merge`](super::revert_merge). Otherwise [`DbError::Sqlx`].
 pub async fn revert_merge_decision(
     pool: &sqlx::PgPool,
     id: Uuid,
@@ -677,12 +662,12 @@ pub async fn revert_merge_decision(
     Ok((undo, cleaned))
 }
 
-/// Mark a decision wrong, with the operator's reason, and suppress the pair.
+/// Marks a decision wrong, with the operator's reason, and suppresses the pair.
 ///
-/// Deliberately independent of the revert: a merge can be correct and still worth undoing as a
-/// precaution, and a merge can be wrong and not worth the disruption of undoing — an operator
-/// flagging it is tuning evidence either way. The suppression is unconditional, because a pair
-/// judged wrong must not be re-merged whether or not the previous merge was taken back.
+/// Independent of the revert: a correct merge can be worth undoing as a precaution and a wrong
+/// one not worth the disruption, and the flag is tuning evidence either way. The suppression is
+/// unconditional, because a pair judged wrong must not be re-merged whether or not the merge was
+/// taken back.
 ///
 /// Returns whether this call was the one that flagged it.
 ///

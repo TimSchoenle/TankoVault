@@ -20,12 +20,12 @@ pub enum QueueOutcome {
     Refreshed,
     /// A pair the *scorer* had closed as distinct is open again. The queue is one longer.
     Reopened,
-    /// Resolved by an operator, or already merged — left untouched. Also what the single-pair
-    /// [`record_merge_candidate`] reports when one of the two series no longer exists.
+    /// Resolved by an operator, or already merged, and left untouched. Also what the single-pair
+    /// [`record_merge_candidate`] reports when one of the two series is gone.
     Unchanged,
 }
 
-/// One pair to record — or refresh — in the review queue.
+/// One pair to record or refresh in the review queue.
 #[derive(Debug, Clone, Copy)]
 pub struct NewMergeCandidate<'a> {
     /// The pair in any order; [`record_merge_candidates`] stores it in canonical id order.
@@ -38,44 +38,27 @@ pub struct NewMergeCandidate<'a> {
     pub reason: &'a str,
 }
 
-/// Record — or refresh — a batch of operator-review merge candidates, returning what happened to
+/// Records or refreshes a batch of operator-review merge candidates, returning what happened to
 /// each in canonical pair order.
 ///
-/// # Idempotent, and durably dismissed
+/// The pair is stored in canonical id order and upserted against `merge_candidates_pair_key`, so
+/// one ambiguity seen twice is one row and an operator's dismissal is durable. Storage order is
+/// not merge direction: the survivor is the series carrying more of the work (see
+/// [`MergeCandidateView::suggested_keep`]).
 ///
-/// A bare `INSERT` would create two failure modes from the same missing constraint: the same
-/// ambiguity observed twice would insert two rows, with `(A,B)`/`(B,A)` counted as different
-/// pairs, and an operator's dismissal would not be durable — a later scan could re-insert a
-/// dismissed pair as a fresh open row.
+/// Only two states can be written over: an open row, and one the *scorer* closed as
+/// `distinct`, which [`record_distinct_pairs`](super::record_distinct_pairs) keeps so a pair
+/// judged apart before enrichment can come back. `dismissed` is a human's decision, and `merged`
+/// and `auto_merged` have happened, so those stay untouched.
 ///
-/// The pair is stored in canonical id order and upserted against `merge_candidates_pair_key`.
-/// Storage order is deliberately *not* merge direction: which series survives a merge is decided
-/// from which one carries more of the work (see [`MergeCandidateView::suggested_keep`]), not from
-/// which id sorts lower.
-///
-/// The update is guarded so that only two states can be written over: an open row, and one the
-/// *scorer* previously closed as `distinct`. Reopening the latter is the point of
-/// [`record_distinct_pairs`](super::record_distinct_pairs) keeping a row at all — a pair judged apart before enrichment gave
-/// both sides authors and synonyms has to be able to come back — while `dismissed`, `merged` and
-/// `auto_merged` stay untouchable, the first because a human decided it and the other two
-/// because the merge already happened.
-///
-/// # A pair whose series is gone is dropped, not an error
-///
-/// Both id columns are `REFERENCES series(id)`, so a pair naming a series that no longer exists
-/// is a foreign-key violation, and one violating row fails the whole statement — which is how a
-/// single absorbed series aborted an entire exhaustive sweep. The window cannot be closed in the
-/// caller: the sweep judges pairs against facts loaded up front and writes them in one statement
-/// at the end, while its own automatic merges and an operator's console merges delete series
-/// throughout. Such pairs are dropped and absent from the result — there is nothing to record
-/// about two series when one has ceased to exist, and the merge that removed it has already
-/// cascaded away every row naming it.
+/// A pair naming a deleted series is dropped from the result, not an error. Both id columns
+/// reference `series`, and one violating row would fail the whole statement, aborting a sweep
+/// that judged pairs against facts loaded up front while merges deleted series throughout.
 ///
 /// # Errors
-/// [`crate::DbError::Conflict`] when a pair names one series twice, which the table's own check
-/// constraint would reject anyway, or when two entries name the same canonical pair — one
-/// `ON CONFLICT DO UPDATE` statement cannot touch a row twice, and silently keeping the last
-/// would discard a verdict. Otherwise [`crate::DbError::Sqlx`].
+/// [`crate::DbError::Conflict`] when a pair names one series twice, or when two entries name
+/// the same canonical pair, which one `ON CONFLICT DO UPDATE` cannot touch twice. Otherwise
+/// [`crate::DbError::Sqlx`].
 pub async fn record_merge_candidates<'e, E: PgExecutor<'e>>(
     exec: E,
     candidates: &[NewMergeCandidate<'_>],
@@ -107,10 +90,10 @@ pub async fn record_merge_candidates<'e, E: PgExecutor<'e>>(
         }));
     }
 
-    // `prior` reads the pre-insert snapshot, so it reports the state the upsert is about to
-    // replace; a data-modifying CTE runs whether or not the outer query selects from it. `live`
-    // is the foreign-key guard — two primary-key lookups, so a pair either side of which has been
-    // merged away since it was judged leaves the batch instead of failing it.
+    // `prior` reads the pre-insert snapshot, so it reports the state the upsert replaces; a
+    // data-modifying CTE runs whether or not the outer query selects from it. `live` is the
+    // foreign-key guard: two primary-key lookups, so a pair with a side merged away since it was
+    // judged leaves the batch instead of failing it.
     let rows = sqlx::query!(
         "WITH input AS ( \
            SELECT d.id, LEAST(d.a, d.b) AS series_id, GREATEST(d.a, d.b) AS candidate_id, \
@@ -169,7 +152,7 @@ pub async fn record_merge_candidates<'e, E: PgExecutor<'e>>(
         .collect())
 }
 
-/// Record — or refresh — a single operator-review merge candidate for the pair `{a, b}`.
+/// Records or refreshes a single operator-review merge candidate for the pair `{a, b}`.
 ///
 /// The create-time ingest path resolves one series at a time, so it has exactly one pair to
 /// record; every other caller batches. See [`record_merge_candidates`] for the semantics.
@@ -206,11 +189,9 @@ pub async fn record_merge_candidate<'e, E: PgExecutor<'e>>(
 /// A pending merge candidate enriched with everything an operator needs to judge it without
 /// opening both series (`docs/ARCHITECTURE.md` §11 `GET /v1/admin/merge-candidates`).
 ///
-/// The counts are the reason this is not just two titles and a number. Deciding a merge means
-/// deciding which row *survives*, and the answer is whichever one carries more of the catalogue:
-/// merging the richer series into the emptier one is not wrong in the data it preserves — the
-/// merge unions everything either way — but it destroys the id that every existing bookmark,
-/// notification and external mapping already names.
+/// The counts decide which row *survives*: the one carrying more of the catalogue. The merge
+/// unions everything either way, but absorbing the richer series destroys the id its bookmarks,
+/// notifications and external mappings name.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct MergeCandidateView {
     /// The queue row, which is what a resolve call names.
@@ -239,9 +220,8 @@ pub struct MergeCandidateView {
     /// The sentence the console shows, `None` for a row from before it was stored.
     pub reason: Option<String>,
     /// Which of the two the console should offer to keep: the series with more sources, then
-    /// more chapters, then the older id. Advisory — `POST /v1/admin/series/merge` takes an
-    /// explicit direction — but it is the answer an operator would reach anyway, computed once
-    /// here instead of eyeballed 2 600 times.
+    /// more chapters, then the older id. Advisory, since `POST /v1/admin/series/merge` takes an
+    /// explicit direction.
     pub suggested_keep: SeriesId,
     /// When the pair first entered the queue.
     #[serde(with = "time::serde::rfc3339")]
@@ -251,17 +231,15 @@ pub struct MergeCandidateView {
     pub updated_at: time::OffsetDateTime,
 }
 
-/// List the open (unresolved) merge candidates, **highest confidence first**.
+/// Lists the open (unresolved) merge candidates, **highest confidence first**.
 ///
-/// The ordering is the point: `created_at DESC` would put whatever the last scan happened to
-/// observe at the top and bury certain duplicates in a queue of thousands of rows. `min_score`
-/// narrows it further, so an operator can work the queue in confidence bands rather than as one
-/// undifferentiated list.
+/// `created_at DESC` would bury certain duplicates under whatever the last scan observed.
+/// `min_score` narrows further, so an operator can work the queue in confidence bands. Both
+/// series are inner-joined, so a candidate naming a deleted series is absent; see
+/// [`merge_series`](super::merge_series).
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An empty queue is an empty
-/// `Vec`. Note that both series are inner-joined, so a candidate naming a deleted series
-/// disappears from this list without being resolved — see the note on [`merge_series`](super::merge_series).
+/// [`crate::DbError::Sqlx`] only.
 pub async fn list_open_merge_candidates<'e, E: PgExecutor<'e>>(
     exec: E,
     limit: i64,
@@ -311,9 +289,8 @@ pub async fn list_open_merge_candidates<'e, E: PgExecutor<'e>>(
         .map(|r| {
             let series_id = SeriesId::from_uuid(r.series_id);
             let candidate_id = SeriesId::from_uuid(r.candidate_id);
-            // More sources, then more chapters, then the lower id — the last only so the answer
-            // is deterministic for two identically-sized series rather than an artefact of row
-            // order.
+            // More sources, then more chapters, then the lower id, so two identically sized
+            // series get a deterministic answer.
             let keep_series = (
                 r.series_sources,
                 r.series_chapters,
@@ -344,19 +321,15 @@ pub async fn list_open_merge_candidates<'e, E: PgExecutor<'e>>(
         .collect())
 }
 
-/// Dismiss a merge candidate (operator judged the two works distinct) without merging.
+/// Dismisses a merge candidate the operator judged distinct, without merging.
 ///
-/// The dismissal is now **durable**: the row is kept, resolved and marked `dismissed`, and
-/// [`record_merge_candidate`] will not reopen it. That is what the `outcome` column is for —
-/// `resolved` alone could not distinguish "an operator said these are different works", which
-/// must suppress the pair forever, from "these were merged", which needs no suppression because
-/// one of the two series no longer exists.
+/// The dismissal is **durable**: the row is kept, resolved and marked `dismissed`, and
+/// [`record_merge_candidate`] will not reopen it. The `outcome` column tells that apart from a
+/// merge, which needs no suppression since one series is gone. An unknown id and a resolved one
+/// both return `false`, so a double-click reports no failure.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An unknown id and an
-/// already-resolved one are both `Ok(false)`, not [`crate::DbError::NotFound`]: the
-/// `NOT resolved` predicate makes dismissal idempotent, so a double-click cannot report a
-/// failure for work that was already done.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn dismiss_merge_candidate<'e, E: PgExecutor<'e>>(
     exec: E,
     id: Uuid,
@@ -375,16 +348,14 @@ pub async fn dismiss_merge_candidate<'e, E: PgExecutor<'e>>(
     Ok(result.rows_affected() > 0)
 }
 
-/// Suppress a pair permanently without an existing queue row.
+/// Suppresses a pair permanently without an existing queue row.
 ///
-/// The bulk-dismiss path needs this: an operator clearing a confidence band is saying "none of
-/// these are duplicates", and the pairs must stay suppressed against the standing duplicate
-/// sweep, which does not consult the queue for pairs it has never seen.
+/// For bulk dismissal: an operator clearing a confidence band says none of these are
+/// duplicates, and the standing sweep does not consult the queue for pairs it has never seen.
 ///
-/// A pair one of whose series no longer exists suppresses nothing, because there is nothing left
-/// to suppress: the sweep shortlists existing series only, so the pair cannot recur. Flagging an
-/// unreverted merge is the path that asks for it — the absorbed series is gone by definition — and
-/// without the guard that operator action failed on the foreign key instead.
+/// A pair with a deleted series suppresses nothing, since the sweep shortlists existing series
+/// only. Flagging an unreverted merge asks for exactly that, and the guard keeps it from failing
+/// on the foreign key.
 ///
 /// # Errors
 /// [`crate::DbError::Conflict`] when `a == b`; otherwise [`crate::DbError::Sqlx`].

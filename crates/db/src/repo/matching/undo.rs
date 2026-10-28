@@ -1,16 +1,12 @@
 //! The undo journal a merge writes, and the transaction that spends it.
 //!
-//! A merge is the one automatic action in the system that *destroys* a row, and until this module
-//! existed it was also the one action with no way back: `merge_series` unioned the absorbed
-//! series' children onto the survivor and deleted it, and nothing anywhere recorded what the
-//! absorbed series had been.
+//! A merge is the one automatic action that *destroys* a row: `merge_series` unions the absorbed
+//! series' children onto the survivor and deletes it. The journal records what the absorbed
+//! series was.
 //!
-//! # Why a journal rather than a soft delete
-//!
-//! Marking the absorbed series deleted instead of deleting it would leave every read model in the
-//! system responsible for filtering it out, which is a correctness obligation on code that has no
-//! reason to know merges exist. The journal keeps the absorbed row's *values* without keeping the
-//! row, so nothing downstream changes.
+//! A soft delete would make every read model responsible for filtering out absorbed rows, an
+//! obligation on code with no reason to know merges exist. The journal keeps the row's *values*
+//! without keeping the row, so nothing downstream changes.
 //!
 //! # What "exact" means here
 //!
@@ -18,18 +14,18 @@
 //!
 //! - **Rows re-pointed** (`series_sources`, `sync_history`, …): their primary keys, so the
 //!   inverse re-points exactly those and nothing that has arrived since.
-//! - **Rows created on the survivor** (`series_titles`, `series_tags`, … — every union insert
+//! - **Rows created on the survivor** (`series_titles`, `series_tags`, …, every union insert
 //!   whose conflict action is `DO NOTHING`): captured from the insert's own `RETURNING`, which
-//!   yields *only* the rows that were actually created. Deleting a union insert's whole key set
-//!   would take rows the survivor already had.
+//!   yields only the rows created. Deleting a union insert's whole key set would take rows the
+//!   survivor already had.
 //! - **Rows overwritten on the survivor** (`read_progress`, `series_sync_overrides`,
-//!   `recommendation_feedback` — the three whose conflict action is `DO UPDATE`): the survivor's
-//!   own values *before* the merge, because `RETURNING` cannot report what a row used to hold.
-//!   Their inverse deletes the survivor's rows at the absorbed side's keys and re-inserts these,
-//!   which restores an overwritten row and removes a created one in the same statement pair.
+//!   `recommendation_feedback`, the three whose conflict action is `DO UPDATE`): the survivor's
+//!   values *before* the merge, which `RETURNING` cannot report. Their inverse deletes the
+//!   survivor's rows at the absorbed side's keys and re-inserts these, restoring an overwritten
+//!   row and removing a created one in one statement pair.
 //!
-//! What is *not* restored is stated in [`revert_merge`]: the recommender's derived tables, which
-//! are recomputed rather than journalled.
+//! [`revert_merge`] states what is *not* restored: the recommender's derived tables, which are
+//! recomputed.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
@@ -39,22 +35,21 @@ use uuid::Uuid;
 
 use crate::error::DbResult;
 
-/// The journal format. Bumped when a field's meaning changes, so a stored journal written by an
-/// older build is refused rather than half-applied — a partial revert is worse than none.
+/// The journal format. Bumped when a field's meaning changes, so a journal written by an older
+/// build is refused, not half-applied: a partial revert is worse than none.
 pub const UNDO_VERSION: u16 = 1;
 
 /// Everything needed to put the catalogue back exactly as it was before one merge.
 ///
-/// Serialised into `merge_decisions.undo`. Every payload is a JSON array of whole rows as
-/// `to_jsonb` produced them, restored through `jsonb_populate_recordset`, so adding a column to
-/// one of these tables does not silently drop it from a restore — the two round-trip through the
-/// composite type rather than a hand-written column list. `series` is the one exception and is
-/// listed column by column, because it carries a generated column that cannot be inserted into;
+/// Serialised into `merge_decisions.undo`. Every payload is a JSON array of whole rows from
+/// `to_jsonb`, restored through `jsonb_populate_recordset`, so a column added to one of these
+/// tables round-trips through the composite type without a hand-written list. `series` is listed
+/// column by column, because its generated column cannot be inserted into;
 /// `crates/db/tests/repo_matching.rs` pins that list against the live table.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MergeUndo {
-    /// Journal format. A restore refuses a version it does not know rather than
-    /// populating the composite types from a different shape.
+    /// Journal format. A restore refuses a version it does not know, so it never populates the
+    /// composite types from a different shape.
     pub version: u16,
     /// The series that absorbed the other.
     pub survivor_id: Uuid,
@@ -117,8 +112,8 @@ pub struct MergeUndo {
     pub moved_conflicts: Vec<Uuid>,
     /// Sync decisions re-pointed, by primary key.
     pub moved_decisions: Vec<Uuid>,
-    /// `sync_remote_entries` and `sync_match_blocks` are keyed by a composite rather than a
-    /// surrogate id, so these travel as whole rows and their inverse matches on the key columns.
+    /// `sync_remote_entries` and `sync_match_blocks` are keyed by a composite, not a surrogate
+    /// id, so these travel as whole rows and their inverse matches on the key columns.
     /// The `sync_remote_entries` rows as they stood, whole.
     pub moved_remote_entries: Json,
     /// The `sync_match_blocks` rows as they stood, whole.
@@ -131,8 +126,8 @@ pub struct MergeUndo {
 }
 
 impl MergeUndo {
-    /// A journal with the identifiers set and every payload empty, which the merge fills in as it
-    /// goes. `Default` is deliberately not derived: a journal without its two ids is not a
+    /// Returns a journal with the identifiers set and every payload empty, which the merge fills in
+    /// as it goes. `Default` is deliberately not derived: a journal without its two ids is not a
     /// meaningful value.
     pub(super) fn new(survivor_id: Uuid, absorbed_id: Uuid) -> Self {
         let empty = || Json::Array(Vec::new());
@@ -191,11 +186,11 @@ impl MergeUndo {
     }
 }
 
-/// Read everything about the absorbed series that the merge is about to destroy, plus the
-/// survivor rows it is about to overwrite.
+/// Reads everything about the absorbed series that the merge is about to destroy, plus the survivor
+/// rows it is about to overwrite.
 ///
-/// Runs inside the merge's own transaction and before any of its writes, so what it captures is
-/// the pre-merge state by construction rather than by timing.
+/// Runs inside the merge's transaction before any of its writes, so it captures the pre-merge
+/// state by construction.
 pub(super) async fn capture(
     tx: &mut Transaction<'_, Postgres>,
     undo: &mut MergeUndo,
@@ -203,8 +198,8 @@ pub(super) async fn capture(
     let keep = undo.survivor_id;
     let drop = undo.absorbed_id;
 
-    // One round trip for the absorbed side. `to_jsonb` of the whole row rather than a column
-    // list, so a column added to any of these tables travels without this function changing.
+    // One round trip for the absorbed side. `to_jsonb` of the whole row, so a column added to any
+    // of these tables travels without this function changing.
     let absorbed = sqlx::query!(
         "SELECT \
            (SELECT to_jsonb(s) FROM series s WHERE s.id = $1) AS series, \
@@ -263,32 +258,22 @@ pub(super) async fn capture(
     Ok(())
 }
 
-/// Undo one merge, restoring the absorbed series under its original id.
+/// Undoes one merge, restoring the absorbed series under its original id.
 ///
-/// # Ordering
+/// The `series` row goes back first, since every other statement has a foreign key to it, and
+/// the forwarding row in `series_merges` goes last: until the series is whole, a reader that
+/// resolved the absorbed id is still sent to the survivor.
 ///
-/// The `series` row goes back first because every other statement here has a foreign key to it,
-/// and the forwarding row in `series_merges` goes last: while it exists, a reader that resolved
-/// the absorbed id is still being sent to the survivor, which is the correct answer right up to
-/// the moment the series is whole again.
-///
-/// # What is not restored
-///
-/// The recommender's derived tables — `series_features`, `series_embedding`, `series_prior`,
-/// `series_cooccurrence`, `user_series_affinity` — cascaded away with the absorbed series and are
-/// not journalled. They are *derived* from the watchlist and read progress this function does
-/// restore, so re-deriving them is both cheaper than journalling them and the only way to be sure
-/// they agree with the restored truth. Both series are queued for repair and every affected taste
-/// profile is marked stale, exactly as the merge itself did.
+/// The recommender's derived tables (`series_features`, `series_embedding`, `series_prior`,
+/// `series_cooccurrence`, `user_series_affinity`) cascaded away with the absorbed series and are
+/// not journalled. They derive from the watchlist and progress this restores, so re-deriving
+/// them is cheaper and guaranteed to agree. Both series are queued for repair and every affected
+/// taste profile is marked stale, as the merge did.
 ///
 /// # Errors
-///
-/// [`crate::DbError::Conflict`] when the journal was written by a different [`UNDO_VERSION`],
-/// when the absorbed id has been taken by a live series since the merge (which means something
-/// other than this revert has already put it back), or when the survivor has since been merged
-/// into another series, whose merge has to be reverted first. Otherwise [`crate::DbError::Sqlx`] from any
-/// statement, which rolls the whole revert back: a half-restored series is worse than a merged
-/// one, because nothing downstream is prepared for it.
+/// [`crate::DbError::Conflict`] when the journal has a different [`UNDO_VERSION`], the absorbed
+/// id is live again, or the survivor has been merged into another series whose merge must be
+/// reverted first. Otherwise [`crate::DbError::Sqlx`], rolling the whole revert back.
 pub async fn revert_merge(pool: &sqlx::PgPool, undo: &MergeUndo) -> DbResult<()> {
     let mut tx = pool.begin().await?;
     revert_merge_in(&mut tx, undo).await?;
@@ -298,10 +283,9 @@ pub async fn revert_merge(pool: &sqlx::PgPool, undo: &MergeUndo) -> DbResult<()>
 
 /// [`revert_merge`], inside a transaction the caller owns.
 ///
-/// The operator-facing revert has more to do than the inverse — it suppresses the pair and
-/// disentangles the survivor — and all of it has to land or none of it. Splitting the commit out
-/// is what lets those share one transaction; the pool-taking form above is the whole operation
-/// for a caller that only wants the inverse.
+/// The operator-facing revert also suppresses the pair and disentangles the survivor, and all of
+/// it must land together, so the commit is the caller's. The pool-taking form above is the whole
+/// operation for a caller that wants only the inverse.
 ///
 /// # Errors
 /// As [`revert_merge`].
@@ -379,7 +363,7 @@ async fn restore_absorbed_series(
 ) -> DbResult<()> {
     // The absorbed series itself. Named column by column because `search_vec` is generated and
     // cannot be inserted into; `jsonb_populate_record` still supplies the values, so the types
-    // round-trip through the composite type rather than through a hand-written cast.
+    // round-trip through the composite type.
     sqlx::query!(
         "INSERT INTO series (id, canonical_title, normalized_title, description, cover_url, \
                              content_type, status, release_year, created_at, updated_at, \
@@ -670,8 +654,8 @@ async fn reopen_candidates(tx: &mut Transaction<'_, Postgres>, undo: &MergeUndo)
 async fn remove_forwarding(tx: &mut Transaction<'_, Postgres>, undo: &MergeUndo) -> DbResult<()> {
     let keep = undo.survivor_id;
     let drop = undo.absorbed_id;
-    // Undo the path compression, then remove the forwarding address itself — in that order, so
-    // there is no instant in which an alias points at a series that no longer forwards.
+    // Undo the path compression, then remove the forwarding address, in that order, so no alias
+    // ever points at a series that does not forward.
     sqlx::query!(
         "UPDATE series_merges SET survivor_id = $1 WHERE merged_id = ANY($2)",
         drop,

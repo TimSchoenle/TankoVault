@@ -23,21 +23,14 @@ pub struct KeyRebuildReport {
     pub sources_updated: i64,
 }
 
-/// Re-derive every stored normalized key through `normalizer`, which is
+/// Re-derives every stored normalized key through `normalizer`, which is
 /// [`tankovault_domain::normalize_title`].
 ///
-/// # Why this exists as an operator action
-///
-/// `normalized_title` is a *persisted* key: it is written once, at series creation, and every
-/// later match is against the stored value. So a change to the normalization rules — like
-/// making an apostrophe join a word instead of splitting one — leaves the whole catalogue on
-/// keys derived by the previous rules, and the improvement only reaches rows that happen to be
-/// re-scanned. `0023_merge_queue.up.sql` bootstraps the rebuild in SQL, but the SQL there is a
-/// twin of the Rust function rather than the function itself; this is the authoritative pass,
-/// and it is safe to run repeatedly because it only writes rows whose key actually changed.
-///
-/// Chunked by id so a 26k-row catalogue does not hold one transaction open across the whole
-/// rebuild.
+/// `normalized_title` is written once, at series creation, and every later match reads the
+/// stored value, so a change to the normalization rules reaches only rescanned rows until this
+/// runs. `0023_merge_queue.up.sql` bootstraps the rebuild with a SQL twin of the function; this
+/// is the authoritative pass, safe to repeat because it writes only rows whose key changed.
+/// Chunked by id, so no transaction spans the whole catalogue.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -79,8 +72,8 @@ pub async fn rebuild_normalized_keys(
     }
 
     // Alternative titles are keyed by `(series_id, normalized)`, so a rewritten key can collide
-    // with a row the same series already holds. That is not an error — the two titles now *are*
-    // the same key — so the colliding row is dropped rather than the update failing.
+    // with a row the same series holds. The two titles are then the same key, so the colliding
+    // row is dropped instead of failing the update.
     let mut cursor = (Uuid::nil(), String::new());
     loop {
         let rows = sqlx::query!(
@@ -132,8 +125,8 @@ pub async fn rebuild_normalized_keys(
     Ok(report)
 }
 
-/// The listing-key pass of [`rebuild_normalized_keys`]. Also the backfill for sources registered
-/// before the column existed, which is why a missing key counts as a changed one.
+/// Runs the listing-key pass of [`rebuild_normalized_keys`], which also backfills a source with
+/// no key, so a missing key counts as a changed one.
 async fn rebuild_listing_keys(
     pool: &sqlx::PgPool,
     normalizer: fn(&str) -> String,

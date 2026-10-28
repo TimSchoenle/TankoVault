@@ -6,19 +6,20 @@ use sqlx::{FromRow, PgExecutor};
 use tankovault_domain::{ContentType, SeriesId, matching::Candidate};
 use uuid::Uuid;
 
-/// Find existing series whose canonical or alternative normalized titles are
-/// trigram-similar to `normalized`, ordered by best similarity.
+/// Finds existing series whose canonical or alternative normalized titles are trigram-similar to
+/// `normalized`, ordered by best similarity.
 ///
-/// An *alternative* title held by more than `MAX_KEY_FANOUT` series is not searched: a name
-/// that many distinct works answer to identifies none of them, and shortlisting on one is what
-/// let a single row accumulate 281 unrelated sources. Canonical titles are not capped — a series
-/// keeps its own name however many others share it.
+/// An *alternative* title held by more than `MAX_KEY_FANOUT` series is not searched: a name that
+/// many works answer to identifies none of them, and shortlisting on one lets a single row
+/// absorb unrelated sources. Canonical titles are not capped, since a series keeps its own name
+/// however many others share it.
+///
+/// An empty result means no candidate cleared the threshold, which the canonicaliser reads as a
+/// new series, so a caller must not fold an error into it or a failed lookup creates a
+/// duplicate.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. "No candidate cleared the
-/// trigram threshold" is an empty `Vec`, which the canonicaliser reads as "this is a new
-/// series", so a caller must not fold an `Err` into the same path: a failed lookup that looks
-/// like no match creates a duplicate series instead of attaching a source.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn find_candidates<'e, E: PgExecutor<'e>>(
     exec: E,
     normalized: &str,
@@ -38,40 +39,29 @@ pub async fn find_candidates<'e, E: PgExecutor<'e>>(
     }
     let rows = sqlx::query_as!(
         Row,
-        // The two trigram predicates are a UNION of index-driven scans, never `a % $1 OR EXISTS
-        // (… % $1)`: an `EXISTS` under `OR` cannot be pulled up into a semi-join, so the planner
-        // falls back to a sequential scan of `series` and evaluates `similarity` per row — 54k
-        // rows and ~450 ms measured, plus enough estimated cost to trigger 260 ms of pointless
-        // JIT. The `LIMIT` is likewise applied *before* the array aggregates so those run for the
-        // returned rows only, not for every row that cleared the threshold.
+        // The trigram predicates are a UNION of index-driven scans, never `a % $1 OR EXISTS
+        // (… % $1)`: an `EXISTS` under `OR` cannot become a semi-join, so the planner would scan
+        // all of `series` and evaluate `similarity` per row. The `LIMIT` applies before the array
+        // aggregates, so those run for the returned rows only.
         //
-        // Each branch carries its own `similarity`, and `max(…) GROUP BY id` is what combines
-        // them. The obvious spelling — `GREATEST(similarity(s.normalized_title, $1), (SELECT
-        // MAX(similarity(st.normalized, $1)) …))` over the matched ids — runs a correlated scan
-        // of `series_titles` for **every** id the GIN indexes returned, before the `LIMIT`
-        // discards all but `$2` of them; on a broad title that is thousands of scans to keep ten
-        // rows, and it was 1.9–3.5 s in the slow-statement log.
+        // Each branch carries its own `similarity`, combined by `max(…) GROUP BY id`. A
+        // `GREATEST(…, (SELECT MAX(similarity(…)) …))` over the matched ids would run a
+        // correlated scan of `series_titles` for every id the GIN indexes returned, before the
+        // `LIMIT` discards all but `$2` of them.
         //
-        // The scores are identical, not merely close, and the reason is worth keeping: `a % b`
-        // *is* `similarity(a,b) >= threshold`. A title omitted here is one that failed `%`, so it
-        // scored below the threshold — and the row only reached the union at all through a title
-        // that scored at or above it, so it can never have been the `GREATEST`. `UNION ALL`,
-        // because the `GROUP BY` already collapses the duplicates a `UNION` would have sorted for.
+        // The scores equal the `GREATEST` form exactly: `a % b` *is* `similarity(a,b) >=
+        // threshold`, so a title omitted here scored below a title that brought the row into
+        // the union. `UNION ALL`, because the `GROUP BY` already collapses duplicates.
         //
-        // The alias branch drops keys held by more than `MAX_KEY_FANOUT` series: a name that
-        // many distinct works answer to identifies none of them, and shortlisting on one is how a
-        // single row grew to 281 unrelated sources. The window runs over the rows the GIN index
-        // already returned, so it costs a partition of that set and no extra scan — and for the
-        // case that matters, an exact hit on the junk key, every holder of the key is in it, so
-        // the count is the true fan-out rather than a sample of it.
+        // The alias branch drops keys held by more than `MAX_KEY_FANOUT` series. The window
+        // runs over the rows the GIN index returned, so it costs no extra scan, and on an exact
+        // hit on a junk key every holder is in that set, so the count is the true fan-out.
         //
         // The third branch is another source's listing title, by compact-key equality: what a
-        // mirror lists a work under is what its siblings list it under, whatever AniList has
-        // since renamed the series to. Capped like the alias branch, but on distinct *series*
-        // (several sources of one series share their listing title), hence the `GROUP BY`
-        // before the window. Its similarity is 1: the keys are equal, which the scorer reads as
-        // a full textual agreement anyway, and a lower trigram number could let the `LIMIT`
-        // drop the one candidate the title identifies.
+        // mirror lists a work under is what its siblings list it under, whatever AniList renamed
+        // the series to. It is capped on distinct *series*, hence the `GROUP BY` before the
+        // window. Its similarity is 1, since the keys are equal and a lower number could let the
+        // `LIMIT` drop the one candidate the title identifies.
         "WITH matched AS ( \
            SELECT s.id, similarity(s.normalized_title, $1) AS sim \
              FROM series s WHERE s.normalized_title % $1 \
@@ -132,26 +122,20 @@ pub async fn find_candidates<'e, E: PgExecutor<'e>>(
         .collect())
 }
 
-/// As [`find_candidates`], but for several query titles in **one** round trip: returns each
-/// title paired with its own top-`limit` candidates.
+/// Returns each of several query titles with its own top-`limit` candidates, as
+/// [`find_candidates`] does for one, in **one** round trip.
 ///
-/// # Why this exists
+/// An external-sync entry carries a family of titles (romaji, english, native and every
+/// synonym), and attaches when any of them matches; one title at a time would cost 3 to 8
+/// trigram scans per remote entry. The lateral join applies `LIMIT` per title, so a title with
+/// many weak candidates cannot crowd out another's strong one, and the scores equal the
+/// per-title path.
 ///
-/// External-sync entries carry a whole family of titles (romaji, english, native, plus every
-/// synonym), and the engine has to score each of them to attach an entry when *any* title
-/// matches. Doing that one title at a time meant K sequential trigram scans per remote entry —
-/// 3–8 for a typical `AniList` row, so 1 500–4 000 scans for a 500-entry library (PERF-13).
-///
-/// The lateral join is load-bearing: `LIMIT` has to apply *per title*, exactly as K separate
-/// queries did, so a title with many weak candidates cannot crowd out another title's strong
-/// one. Similarity is still computed against the same expression, so scores are identical to
-/// the per-title path.
+/// An empty `normalized` returns empty with no round trip. The caution on [`find_candidates`]
+/// about reading an error as no match applies here too.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable, and the caution on
-/// [`find_candidates`] about treating `Err` as "no match" applies here too. An empty
-/// `normalized` returns `Ok(empty)` with no round trip, and a title with no candidates is
-/// **absent** from the result rather than present with an empty bucket.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn find_candidates_multi<'e, E: PgExecutor<'e>>(
     exec: E,
     normalized: &[String],
@@ -175,10 +159,9 @@ pub async fn find_candidates_multi<'e, E: PgExecutor<'e>>(
     }
     let rows = sqlx::query_as!(
         Row,
-        // Same UNION-of-index-scans shape as `find_candidates`, scored the same way and for the
-        // same reasons; see the comment there. Here it is per lateral iteration, so the
-        // sequential scan it replaces was paid once per query title — and so was the correlated
-        // `MAX(similarity(…))` the `max(…) GROUP BY` now replaces.
+        // The UNION-of-index-scans shape of `find_candidates`, scored the same way; see the
+        // comment there. Here it runs once per lateral iteration, so each query title avoids
+        // its own sequential scan.
         "SELECT q.norm AS \"query_title!\", c.id, c.normalized_title, \
                 c.content_type AS \"content_type: ContentType\", c.release_year, \
                 c.sim AS \"sim!\", c.alt_titles AS \"alt_titles!\", \
@@ -230,8 +213,8 @@ pub async fn find_candidates_multi<'e, E: PgExecutor<'e>>(
     .fetch_all(exec)
     .await?;
 
-    // Preserve the caller's title order, and keep a bucket for every requested title so a title
-    // with no candidates is still reported (as an empty list) rather than silently dropped.
+    // Keep the caller's title order and a bucket for every requested title, so a title with no
+    // candidates is reported as an empty list.
     let mut buckets: Vec<(String, Vec<Candidate>)> =
         normalized.iter().map(|t| (t.clone(), Vec::new())).collect();
     for row in rows {

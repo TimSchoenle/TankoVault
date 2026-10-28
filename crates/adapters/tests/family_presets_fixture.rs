@@ -3,8 +3,9 @@
 //!
 //! Every fixture is markup trimmed from a live response (solver-fetched where the origin is
 //! behind bot management), and every assertion runs the *shipped* preset config through
-//! `build_adapter`. A site that changes its layout therefore fails a test here instead of
-//! quietly writing wrong rows into `series`/`chapters`.
+//! `build_adapter`. A preset change that breaks the captured markup therefore fails a test here
+//! instead of quietly writing wrong rows into `series`/`chapters`. A live layout change shows up
+//! only once its fixture is refreshed.
 
 use async_trait::async_trait;
 use std::sync::Arc;

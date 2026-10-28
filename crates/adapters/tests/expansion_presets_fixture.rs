@@ -1,8 +1,9 @@
 //! Tests the presets for the selector-only and aggregator sources against fixtures.
 //!
 //! Every fixture is markup trimmed from a live response and every assertion runs the **shipped**
-//! preset through `build_adapter`, so a layout change fails a test here instead of quietly
-//! writing wrong rows into `series`/`chapters`.
+//! preset through `build_adapter`, so a preset change that breaks the captured markup fails a
+//! test here instead of quietly writing wrong rows into `series`/`chapters`. A live layout change
+//! shows up only once its fixture is refreshed.
 //!
 //! What is pinned is deliberately narrow: the selector on each site that a plausible-looking
 //! alternative gets *silently* wrong. Nothing here re-tests the family defaults (those have

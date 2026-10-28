@@ -37,8 +37,8 @@ const DRAIN_TIMEOUT: Duration = Duration::from_secs(20);
 ///    breadcrumb trail, and optionally one transaction per matched route.
 /// 4. Metrics, including time spent waiting on the rate limiter.
 /// 5. Security headers and CORS, applied to every response, including the 429 and 408.
-/// 6. Rate limit, after the cheap layers and before real work.
-/// 7. Principal, above the limiter, which reads what it inserts.
+/// 6. Principal, above the limiter, which reads what it inserts.
+/// 7. Rate limit, after the cheap layers and before real work.
 /// 8. Internal auth (internal tier only), after headers and before the timeout and body budget.
 /// 9. Timeout, body limit and compression: the per-request work bounds.
 pub struct HttpStack {

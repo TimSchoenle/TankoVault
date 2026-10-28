@@ -76,9 +76,9 @@ impl Caller {
 
     /// Returns the stand-in used under [`IdentityMode::Off`], where nobody is identified.
     ///
-    /// Deliberately a name no peer entry can hold
-    /// ([`ResolvedPeer`](tankovault_config::ResolvedPeer) names are trimmed and non-empty), so an
-    /// audit record can never confuse a real caller with an unauthenticated one.
+    /// The angle brackets keep it unlike any name an operator would choose, but nothing reserves
+    /// it: [`ResolvedPeer`](tankovault_config::ResolvedPeer) names are only trimmed and non-empty,
+    /// so a peer configured as `<unidentified>` reads the same in an audit record.
     #[must_use]
     pub fn anonymous() -> Self {
         Self(Arc::from("<unidentified>"))

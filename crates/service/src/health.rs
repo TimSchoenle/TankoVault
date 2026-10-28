@@ -17,7 +17,11 @@ pub trait HealthCheck: Send + Sync + 'static {
     /// Stable identifier reported in the probe body (`postgres`, `nats`, ...).
     fn name(&self) -> &'static str;
 
-    /// Probes the dependency; `Err` carries a short operator-facing reason.
+    /// Probes the dependency.
+    ///
+    /// # Errors
+    /// `Err` with a short operator-facing reason when the dependency fails; `Ok(())` when it
+    /// answers.
     async fn check(&self) -> Result<(), String>;
 }
 

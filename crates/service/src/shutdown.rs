@@ -54,6 +54,9 @@ async fn wait_for_signal() -> &'static str {
 /// Shared shape for every background loop, so none re-implements the select-on-cancel
 /// dance. The first tick fires after `interval` elapses, not at start-up, so a rolling
 /// restart does not stampede every replica's sweep at once.
+///
+/// # Panics
+/// If `interval` is zero, which [`tokio::time::interval`] refuses.
 pub async fn every<F, Fut>(
     interval: std::time::Duration,
     shutdown: CancellationToken,

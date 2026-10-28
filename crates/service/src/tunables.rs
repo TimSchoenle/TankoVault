@@ -185,8 +185,9 @@ impl TunableSet {
         tunable.spec().clamp(raw)
     }
 
-    /// Returns the stored override for `tunable`, clamped, or `None` while it sits at its
-    /// compiled default.
+    /// Returns the stored override for `tunable`, clamped, or `None` when none is stored.
+    ///
+    /// An override equal to the compiled default is still `Some`.
     ///
     /// The distinction only matters to a caller that has a baseline of its own; everything else
     /// wants [`Self::get`], which resolves the same value without the caller thinking about it.

@@ -152,8 +152,9 @@ impl ReloadingTls {
     /// Reads the three files and builds the initial configuration.
     ///
     /// # Errors
-    /// Returns [`TlsError`] if any file is unreadable, contains nothing usable, or does not
-    /// produce a valid client-verifying server configuration.
+    /// [`TlsError::Read`] if a file cannot be read or parsed, [`TlsError::Empty`] if the
+    /// certificate or CA file holds nothing usable, and [`TlsError::Config`] if rustls refuses the
+    /// combination. `Ok` holds the built configuration.
     pub fn load(paths: &ResolvedTls) -> Result<Self, TlsError> {
         let config = build(paths)?;
         Ok(Self {

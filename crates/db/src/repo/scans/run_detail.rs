@@ -24,9 +24,8 @@ pub struct TaskBreakdown {
     pub worker_id: Option<String>,
     /// Why it failed, `None` unless it did.
     pub error: Option<String>,
-    /// The stage the task is in, or — for a settled task — the one it ended in. A failure's stage
-    /// is the single most useful field here: it says whether the provider stopped answering or
-    /// our own ingest rejected the page.
+    /// The stage the task is in, or the one a settled task ended in. A failure's stage says
+    /// whether the provider stopped answering or our own ingest rejected the page.
     pub stage: Option<String>,
     /// When it entered that stage.
     pub stage_at: Option<OffsetDateTime>,
@@ -36,15 +35,15 @@ pub struct TaskBreakdown {
     pub stage_total: Option<i32>,
     /// What the stage is working against: a series path, a catalogue page.
     pub stage_detail: Option<String>,
-    /// When the task was planned, `None` for rows written before the column existed.
+    /// When the task was planned, `None` when the row does not record it.
     pub created_at: Option<OffsetDateTime>,
     /// When a worker last took it, `None` while queued.
     pub claimed_at: Option<OffsetDateTime>,
     /// When it settled, `None` while it has not.
     pub finished_at: Option<OffsetDateTime>,
-    /// Milliseconds between creation and claim — time nobody was working on it.
+    /// Milliseconds between creation and claim, the time nobody was working on it.
     pub wait_ms: Option<i32>,
-    /// Milliseconds between claim and settle — time someone was.
+    /// Milliseconds between claim and settle, the time someone was.
     pub duration_ms: Option<i32>,
     /// The [`tankovault_domain::StageTimings`] blob, as stored.
     pub telemetry: Option<Json>,
@@ -64,7 +63,7 @@ pub enum TaskSort {
 }
 
 impl TaskSort {
-    /// The token the statement's `ORDER BY` compares against.
+    /// Returns the token the statement's `ORDER BY` compares against.
     #[must_use]
     pub const fn token(self) -> &'static str {
         match self {
@@ -74,10 +73,10 @@ impl TaskSort {
     }
 }
 
-/// One run's tasks, ordered so the ones that explain its duration come first.
+/// Returns one run's tasks, ordered so the ones that explain its duration come first.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; a run with no tasks yet is an empty `Vec`.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn run_tasks<'e, E: PgExecutor<'e>>(
     exec: E,
     run_id: ScanRunId,
@@ -111,11 +110,11 @@ pub async fn run_tasks<'e, E: PgExecutor<'e>>(
 /// One run's time, summed across every task that recorded a breakdown.
 #[derive(Debug, Clone, Default)]
 pub struct RunTelemetry {
-    /// Settled tasks carrying a breakdown. Everything below is a sum over exactly these, so a run
-    /// scanned before this instrumentation existed reports zero rather than a wrong total.
+    /// Settled tasks carrying a breakdown. Everything below sums over exactly these, so a run
+    /// whose tasks recorded none reports zero, not a wrong total.
     pub tasks_measured: i64,
-    /// Summed execution time. Exceeds the run's wall clock whenever tasks ran concurrently, which
-    /// is the point — it is work performed, not time elapsed.
+    /// Summed execution time: work performed, not time elapsed, so it exceeds the run's wall
+    /// clock whenever tasks ran concurrently.
     pub busy_ms: i64,
     /// Summed queue wait: time tasks spent created but unclaimed.
     pub wait_ms: i64,
@@ -145,15 +144,14 @@ pub struct StageTotal {
     pub tasks: i64,
 }
 
-/// The run's rollup and its per-stage split, as two statements.
+/// Returns the run's rollup and its per-stage split, as two statements.
 ///
-/// Split rather than combined because the second one unnests a `jsonb` object per task: keeping
-/// it separate leaves the rollup — the part the drawer shows first — a plain aggregate.
+/// Split because the second unnests a `jsonb` object per task, which leaves the rollup the
+/// drawer shows first a plain aggregate. A run whose tasks recorded nothing is a zeroed
+/// [`RunTelemetry`] and an empty stage list, which the drawer renders.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only. A run whose tasks recorded nothing is a zeroed
-/// [`RunTelemetry`] and an empty stage list, never [`crate::DbError::NotFound`]: an old run is a
-/// legitimate answer, and the drawer must render it rather than 404.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn run_telemetry<'e, E: PgExecutor<'e> + Copy>(
     exec: E,
     run_id: ScanRunId,

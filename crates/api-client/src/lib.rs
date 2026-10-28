@@ -6040,7 +6040,7 @@ pub mod types {
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"auto_merged\": {"]
-    #[doc = "      \"description\": \"Pairs merged without asking, because a structural identity rule fired and the score\\ncleared the automatic-merge threshold.\","]
+    #[doc = "      \"description\": \"Pairs merged without asking, because adjudication returned `Auto`. A corroborated alias\\ncounts here below the automatic-merge threshold too.\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
@@ -6095,7 +6095,7 @@ pub mod types {
     #[doc = r" </details>"]
     #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, PartialEq)]
     pub struct MergeSweepView {
-        #[doc = "Pairs merged without asking, because a structural identity rule fired and the score\ncleared the automatic-merge threshold."]
+        #[doc = "Pairs merged without asking, because adjudication returned `Auto`. A corroborated alias\ncounts here below the automatic-merge threshold too."]
         pub auto_merged: i64,
         #[doc = "Pairs an auto-merge guard held back: identical titles, a score above the automatic\nthreshold, and a signal saying the two are different works anyway. Read these first:\neach is either a duplicate the guard is costing you or a wrong merge it prevented."]
         pub blocked: i64,

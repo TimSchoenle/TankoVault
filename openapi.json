@@ -2863,7 +2863,7 @@
         "description": "What one duplicate-reconciliation sweep did.\n\nReturned by `POST /v1/admin/merge-candidates/sweep` and logged by the scheduled sweep, so an\noperator can see the effect of a threshold change on a single run before leaving it to the\nschedule.",
         "properties": {
           "auto_merged": {
-            "description": "Pairs merged without asking, because a structural identity rule fired and the score\ncleared the automatic-merge threshold.",
+            "description": "Pairs merged without asking, because adjudication returned `Auto`. A corroborated alias\ncounts here below the automatic-merge threshold too.",
             "format": "int64",
             "type": "integer"
           },

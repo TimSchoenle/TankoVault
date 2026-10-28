@@ -74,7 +74,7 @@ pub enum Permission {
     ///
     /// Not implied by `merge.write`, which also removes series: a merge folds one row into
     /// another and keeps every reader's progress, while this discards both. It is the only
-    /// capability that can empty the deployment.
+    /// grantable capability that can empty the deployment.
     #[serde(rename = "catalogue.delete")]
     CatalogueDelete,
 
@@ -218,8 +218,7 @@ impl Permission {
             .collect()
     }
 
-    /// Returns whether exercising this capability changes durable state, or reaches into another
-    /// person's account.
+    /// Returns whether exercising this capability changes durable state, or is `privacy.export`.
     ///
     /// Consulted by the API's authorization funnel, which demands a fresh second-factor
     /// presentation, a step-up, before any mutating capability is exercised. Reading the console

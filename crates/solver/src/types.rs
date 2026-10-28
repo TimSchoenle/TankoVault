@@ -130,6 +130,12 @@ impl SolveError {
 #[async_trait]
 pub trait ChallengeSolver: Send + Sync {
     /// Solves the challenge for `req.url`, returning a reusable session.
+    ///
+    /// # Errors
+    /// [`SolveError::Transport`] or [`SolveError::Timeout`] if the back-end cannot be reached in
+    /// time, [`SolveError::Unavailable`] if it cannot serve solves now, [`SolveError::Unsolved`]
+    /// if the challenge held, and [`SolveError::Malformed`] for an unreadable answer. `Ok` holds
+    /// the session, and the rendered page when the back-end returns one.
     async fn solve(&self, req: SolveRequest) -> Result<SolveOutcome, SolveError>;
 
     /// Returns a short identifier for the back-end, shown in the console.

@@ -1,8 +1,9 @@
 //! Provides a deterministic in-process solver.
 //!
 //! It is the fixture for the test that the fetch pipeline is solver-agnostic, and a safe default
-//! when no real solver is configured: it returns an empty session, so callers degrade instead
-//! of failing.
+//! when no real solver is configured. It returns an empty session, so a challenged fetch is
+//! retried once without one and fails with `FetchError::Challenge` if still challenged; it never
+//! bypasses a challenge.
 
 use crate::types::{ChallengeSolver, SolveError, SolveOutcome, SolveRequest};
 use async_trait::async_trait;

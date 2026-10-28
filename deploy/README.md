@@ -241,14 +241,17 @@ signed manifest-list digest and opens a pull request against that repository
 templates and tests live and are gated there.
 
 What the chart builds on, from this repository: every service exposes `/health` (liveness) and
-`/ready` (readiness with per-dependency detail) on its main port and a Prometheus scrape on an
-isolated `9090`. Under `mtls`, the services whose main port requires a client certificate
-(`control-plane`, `worker`, `sync`, `render` and `challenge-solver`) answer probes on
-`TANKOVAULT_INTERNAL__TLS__PROBE_LISTEN` (default `0.0.0.0:9091`) instead, because a kubelet
-probe cannot present one; `api`, `notifier` and `frontend` keep their probes on the main port. Schema migration is a discrete one-shot step instead of something a
-service does at startup, and the control-plane scheduler elects a leader through Redis. A
-`Deployment` with `replicas > 1` is safe only with `TANKOVAULT_REDIS__URL` set: without Redis,
-every replica is its own sole leader and runs the scheduler sweeps.
+`/ready` (readiness, with per-dependency detail where the service has dependencies to report) on
+its main port and a Prometheus scrape on an isolated `9090`. Under `mtls`, the services whose
+main port requires a client certificate (`control-plane`, `worker`, `sync`, `render` and
+`challenge-solver`) answer probes on `TANKOVAULT_INTERNAL__TLS__PROBE_LISTEN` (default
+`0.0.0.0:9091`) instead, because a kubelet probe cannot present one; `api`, `notifier` and
+`frontend` keep their probes on the main port. Schema migration is a discrete one-shot step
+instead of something a service does at startup. The control-plane scheduler elects a leader
+through Redis, so a control-plane `Deployment` with `replicas > 1` needs `TANKOVAULT_REDIS__URL`:
+without it, every replica is its own sole leader and runs the scheduler sweeps. Redis makes the
+leader unique, not available: a leader that loses Redis stands down, and no replica runs the
+sweeps until one reacquires the lock through Redis.
 
 ### Installing into a cluster
 

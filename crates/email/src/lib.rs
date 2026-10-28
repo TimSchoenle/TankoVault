@@ -328,9 +328,9 @@ impl EmailService for NoopMailer {
 
 /// Builds the [`EmailService`] that `cfg` calls for.
 ///
-/// Returns an [`SmtpMailer`] when a relay and a `From` address are configured. Anything else,
-/// a misconfigured relay included, yields a [`NoopMailer`] and a warning: an unsendable email
-/// must not stop the service booting.
+/// Returns an [`SmtpMailer`] when a relay and a `From` address are configured. An unconfigured
+/// relay yields a [`NoopMailer`] logged at info, and a configured relay that fails to build
+/// yields one logged as a warning: an unsendable email must not stop the service booting.
 #[must_use]
 pub fn build(cfg: &EmailConfig) -> Arc<dyn EmailService> {
     if !cfg.is_enabled() {

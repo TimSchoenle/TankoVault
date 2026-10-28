@@ -15,7 +15,7 @@ use async_trait::async_trait;
 use governor::{DefaultDirectRateLimiter, Quota, RateLimiter};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tankovault_domain::{MIN_RPS, Pacer};
+use tankovault_domain::{MAX_RPS, MIN_RPS, Pacer};
 use tokio::sync::Semaphore;
 
 /// The statuses that mean the configured budget is above what the provider will serve.
@@ -36,6 +36,16 @@ pub struct RateLimitedFetcher<F> {
     throttle: Arc<Pacer>,
 }
 
+/// The interval between requests at `rps`, after clamping it to `[MIN_RPS, MAX_RPS]`.
+fn period_for(rps: f64) -> Duration {
+    // The ceiling keeps the period above zero, which `Quota::with_period` refuses.
+    #[expect(
+        clippy::manual_clamp,
+        reason = "`f64::clamp` returns a NaN input unchanged; `f64::max` floors it to MIN_RPS"
+    )]
+    Duration::from_secs_f64(1.0 / rps.max(MIN_RPS).min(MAX_RPS))
+}
+
 impl<F> RateLimitedFetcher<F> {
     /// Builds a limiter allowing `rps` requests per second, at most `concurrency` in flight and
     /// a `crawl_delay_ms` floor between requests, adapting to `throttle` on push-back.
@@ -43,10 +53,10 @@ impl<F> RateLimitedFetcher<F> {
     /// Inputs are expected pre-clamped by [`tankovault_domain::Politeness::clamped`].
     ///
     /// # Panics
-    /// If `rps` is infinite, or so large that its period rounds to zero, which
-    /// [`tankovault_domain::Politeness::clamped`] rules out. `0.0`, a negative and `NaN` are
-    /// floored below on purpose: they would otherwise **panic** in `Duration::from_secs_f64`, and a
-    /// guard one crate away is too far from it.
+    /// Never, for any `f64`, including `0.0`, a negative, `NaN` and infinity. `period_for`
+    /// repeats the clamp in [`tankovault_domain::Politeness::clamped`] on purpose: out of range
+    /// here is a **panic** in `Duration::from_secs_f64` or the zero-period `expect`, not a
+    /// wrong crawl rate, and a guard one crate away is too far from it.
     #[must_use]
     pub fn new(
         inner: F,
@@ -55,9 +65,7 @@ impl<F> RateLimitedFetcher<F> {
         crawl_delay_ms: u64,
         throttle: ThrottlePolicy,
     ) -> Self {
-        // `f64::max` returns the non-`NaN` operand, so this floors a `NaN` too.
-        let period = Duration::from_secs_f64(1.0 / rps.max(MIN_RPS));
-        let quota = Quota::with_period(period).expect("rps > 0 yields a positive period");
+        let quota = Quota::with_period(period_for(rps)).expect("rps > 0 yields a positive period");
         Self {
             inner,
             limiter: Arc::new(RateLimiter::direct(quota)),
@@ -161,5 +169,37 @@ mod tests {
         assert!(THROTTLE_STATUSES.contains(&503));
         assert!(!THROTTLE_STATUSES.contains(&403));
         assert!(!THROTTLE_STATUSES.contains(&500));
+    }
+
+    /// An infinite rate panicked: `1.0 / inf` is a zero period, which `Quota::with_period`
+    /// refuses, and the `expect` on it fired while the doc promised no `f64` could panic.
+    #[test]
+    fn no_rate_panics_the_constructor() {
+        for rps in [
+            0.0,
+            -1.0,
+            f64::NAN,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::MAX,
+            1e300,
+        ] {
+            let _ = RateLimitedFetcher::new((), rps, 1, 0, ThrottlePolicy::default());
+        }
+    }
+
+    /// The constructor's clamp has to reach the limiter, not only keep it from panicking: an
+    /// unclamped or unwired period would crawl at the wrong rate with nothing failing.
+    #[test]
+    fn the_limiter_period_is_the_clamped_rate() {
+        let floor = Duration::from_secs_f64(1.0 / MIN_RPS);
+        let ceiling = Duration::from_secs_f64(1.0 / MAX_RPS);
+        for rps in [0.0, -1.0, f64::NAN, f64::NEG_INFINITY] {
+            assert_eq!(period_for(rps), floor, "rps {rps} must floor to MIN_RPS");
+        }
+        for rps in [f64::INFINITY, f64::MAX, 1e300] {
+            assert_eq!(period_for(rps), ceiling, "rps {rps} must cap at MAX_RPS");
+        }
+        assert_eq!(period_for(4.0), Duration::from_millis(250));
     }
 }

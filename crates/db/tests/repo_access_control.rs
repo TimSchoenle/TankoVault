@@ -603,3 +603,93 @@ async fn the_admin_directory_search_is_case_insensitive_on_both_columns() {
     let all = found("").await;
     assert_eq!(all.total, 2);
 }
+
+/// Two permission submits for one user commit one submitted set, never the union of both.
+///
+/// The bug: `replace` locked only the user's existing grant rows. For a user with no grants
+/// there was nothing to lock, so a second submit read the same empty set, inserted its own
+/// permissions without a key conflict, and both transactions committed their union.
+#[tokio::test]
+async fn concurrent_permission_submits_for_a_user_with_no_grants_do_not_merge() {
+    let db = TestDb::spawn().await;
+    let granter = db
+        .seed_user(
+            "granter",
+            &[Permission::UsersPermissions],
+            AccountStatus::Active,
+        )
+        .await;
+    let target = db.seed_user("target", &[], AccountStatus::Active).await;
+
+    // An earlier submit, mid-transaction: it holds the user row and has written its grant.
+    let mut first = db.pool.begin().await.expect("begin the first submit");
+    let first_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *first)
+        .await
+        .expect("read the first submit's backend");
+    sqlx::query("SELECT 1 FROM users WHERE id = $1 FOR NO KEY UPDATE")
+        .bind(target.as_uuid())
+        .execute(&mut *first)
+        .await
+        .expect("lock the user row");
+    sqlx::query("INSERT INTO user_permissions (user_id, permission) VALUES ($1, 'scans.read')")
+        .bind(target.as_uuid())
+        .execute(&mut *first)
+        .await
+        .expect("write the first submit's grant");
+
+    let pool = db.pool.clone();
+    let (second_pid_tx, second_pid_rx) = tokio::sync::oneshot::channel();
+    let second = tokio::spawn(async move {
+        let desired: PermissionSet = [Permission::MergeRead].into_iter().collect();
+        let mut conn = pool.acquire().await.expect("acquire");
+        let second_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+            .fetch_one(&mut *conn)
+            .await
+            .expect("read the second submit's backend");
+        second_pid_tx
+            .send(second_pid)
+            .expect("report the second submit's backend");
+        permissions::replace(&mut conn, target, &desired, granter).await
+    });
+
+    // Waits until the second submit is blocked on the first one's lock. A fixed sleep can let the
+    // first commit before the second reaches the lock, and the test would pass without it.
+    let second_pid = second_pid_rx
+        .await
+        .expect("receive the second submit's backend");
+    let mut blocked = false;
+    for _ in 0..200 {
+        blocked = sqlx::query_scalar::<_, bool>("SELECT $2 = ANY(pg_blocking_pids($1))")
+            .bind(second_pid)
+            .bind(first_pid)
+            .fetch_one(&db.pool)
+            .await
+            .expect("poll the lock wait");
+        if blocked {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
+    assert!(
+        blocked,
+        "the second submit must wait on the first submit's lock"
+    );
+    first.commit().await.expect("commit the first submit");
+    second
+        .await
+        .expect("join the second submit")
+        .expect("replace grants");
+
+    let held: Vec<String> = permissions::list_for_user(&db.pool, target)
+        .await
+        .expect("list grants")
+        .into_iter()
+        .map(|g| g.permission)
+        .collect();
+    assert_eq!(
+        held,
+        vec!["merge.read".to_owned()],
+        "the later submit must replace the earlier one, not merge with it"
+    );
+}

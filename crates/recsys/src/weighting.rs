@@ -1,14 +1,20 @@
 //! Turning term weights into discriminating ones, and the vectors into comparable ones.
 
-/// Inverse document frequency for a feature seen in `doc_count` of `total_docs` series.
+/// Returns the inverse document frequency of a feature seen in `doc_count` of `total_docs` series.
 ///
-/// The smoothed form (`ln(N / (1 + df)) + 1`), so a feature on *every* series still contributes
-/// a little rather than exactly nothing — the unsmoothed `ln(N/df)` is zero there, which silently
-/// deletes the feature from the vector and makes an all-common-features series a zero vector
-/// with no cosine at all.
+/// The smoothed form, `ln(N / (1 + df)) + 1`, keeps a feature on every series above zero. The
+/// unsmoothed `ln(N/df)` is zero there, which would give a series of only common features a zero
+/// vector. An empty catalogue weights every feature `1.0`.
 ///
-/// Clamped at zero because `df > N` is possible for a moment during an incremental build, when
-/// the counts and the vectors are from different generations.
+/// Clamped at zero, because `df > N` is possible during an incremental build, when the counts and
+/// the vectors are from different generations.
+///
+/// ```
+/// use tankovault_recsys::idf;
+///
+/// assert!(idf(2, 1_000) > idf(300, 1_000));
+/// assert!(idf(1_000, 1_000) > 0.0);
+/// ```
 #[must_use]
 pub fn idf(doc_count: i64, total_docs: i64) -> f32 {
     if total_docs <= 0 {
@@ -27,14 +33,17 @@ pub fn idf(doc_count: i64, total_docs: i64) -> f32 {
     value.max(0.0)
 }
 
-/// Scale each weight by its feature's idf and L2-normalise the result in place.
+/// Scales each weight by its feature's idf and L2-normalises the result in place.
 ///
-/// Normalisation is what makes cosine a comparison of *shape* rather than of size: without it a
-/// series with forty tags outscores one with eight purely by mass, which ranks the
-/// best-documented series first regardless of what the reader likes.
+/// Normalised, cosine compares shape and not size: without it a series with forty tags would
+/// outscore one with eight by mass alone.
 ///
-/// A vector that is entirely zero after weighting is left as-is rather than being divided by
-/// zero; callers treat an all-zero vector as "not recommendable" (see the `min_features` gate).
+/// `weights` and `idfs` must be the same length; in release builds a mismatch leaves the
+/// unmatched weights unscaled. A vector that is all zero after weighting stays zero. Callers
+/// treat it as not recommendable, which is the `min_features` gate.
+///
+/// # Panics
+/// In debug builds, when `weights` and `idfs` differ in length.
 pub fn apply_idf(weights: &mut [f32], idfs: &[f32]) {
     debug_assert_eq!(weights.len(), idfs.len());
     for (weight, idf) in weights.iter_mut().zip(idfs) {
@@ -43,7 +52,7 @@ pub fn apply_idf(weights: &mut [f32], idfs: &[f32]) {
     normalise(weights);
 }
 
-/// Scale a vector to unit length. A zero vector is left alone.
+/// Scales a vector to unit length. A zero vector is left alone.
 pub fn normalise(values: &mut [f32]) {
     let norm = values.iter().map(|v| v * v).sum::<f32>().sqrt();
     if norm > f32::EPSILON {
@@ -57,11 +66,8 @@ pub fn normalise(values: &mut [f32]) {
 mod tests {
     use super::*;
 
-    /// A feature on every series must not vanish.
-    ///
-    /// The bug this pins: the unsmoothed `ln(N/df)` is exactly zero at `df == N`, which deletes
-    /// the feature from every vector. A series described *only* by universal features then has a
-    /// zero vector, no cosine against anything, and disappears from the catalogue silently.
+    /// A feature on every series keeps a positive weight, so a series described only by universal
+    /// features still has a cosine against others.
     #[test]
     fn a_universal_feature_still_contributes_something() {
         assert!(idf(1000, 1000) > 0.0);
@@ -96,7 +102,7 @@ mod tests {
         assert!((v.iter().map(|x| x * x).sum::<f32>() - 1.0).abs() < 1e-6);
     }
 
-    /// A zero vector must survive normalisation unchanged rather than becoming NaN.
+    /// A zero vector stays zero under normalisation and never becomes NaN.
     #[test]
     fn a_zero_vector_is_left_alone() {
         let mut v = [0.0_f32, 0.0, 0.0];
@@ -104,7 +110,7 @@ mod tests {
         assert!(v.iter().all(|x| x.is_finite() && x.abs() < f32::EPSILON));
     }
 
-    /// Normalisation is what stops a well-documented series from outranking a well-matched one.
+    /// After normalising, a well-documented series does not outscore a well-matched one.
     #[test]
     fn a_longer_vector_does_not_outscore_a_shorter_one_after_normalising() {
         let mut many = vec![1.0_f32; 40];

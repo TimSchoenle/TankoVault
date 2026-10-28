@@ -1,5 +1,5 @@
-//! Scoring and adjudication tests. The suite shares its `cand`/`query` fixtures across
-//! modules, so it stays one file rather than being split alongside the code it covers.
+//! Scoring and adjudication tests. The suite shares its `cand` and `query` fixtures across
+//! modules, so it is one file, not one per module.
 
 use super::*;
 use crate::similarity::{
@@ -59,11 +59,10 @@ fn weak_match_creates_new_series() {
     assert_eq!(decide(&q, &[c], Thresholds::default()), Decision::Create);
 }
 
-/// A disagreeing medium is recorded, and costs nothing.
+/// A disagreeing medium is recorded and costs nothing.
 ///
-/// It used to cost 0.15. Providers guess the medium from the site they scraped (manga against
-/// manhwa against webtoon for one work), so production switched the type guard off, and a
-/// penalty that cannot be trusted as a guard cannot be trusted as a weight either.
+/// Providers guess the medium from the site they scraped (manga, manhwa or webtoon for one
+/// work), so it cannot be trusted as a weight.
 #[test]
 fn content_type_disagreement_is_recorded_not_scored() {
     let q = query("title", ContentType::Manga, None);
@@ -73,15 +72,11 @@ fn content_type_disagreement_is_recorded_not_scored() {
     assert!((score(&q, &same) - score(&q, &diff)).abs() < 1e-6);
 }
 
-/// **A shared author does not lift an ambiguous match.**
+/// A shared author does not lift an ambiguous match.
 ///
-/// This pinned the opposite until the matching overhaul. The `shared_author` bonus (+0.10),
-/// with the medium and year bonuses, is what lifted a discounted alternative-title hit (0.80)
-/// back over the attach and merge thresholds. Production credits are wrong or spelled
-/// inconsistently across providers most of the time, and the route it opened is the one the
-/// evidence condemns: 12,356 automatic alias merges fired a metadata guard that had been switched
-/// off for noise, and a dozen hub series absorbed 20–100 different works each
-/// (`docs/MATCHING_OVERHAUL.md` §2). The signal is still recorded and rendered.
+/// Credits are wrong or spelled inconsistently across providers, and a credit bonus would lift a
+/// discounted alias hit (0.80) back over the attach and merge thresholds. The signal is still
+/// recorded and rendered.
 #[test]
 fn a_shared_author_does_not_lift_an_ambiguous_match() {
     let mut q = query("solo max leveler", ContentType::Unknown, None);
@@ -104,21 +99,20 @@ fn token_set_ratio_is_order_insensitive() {
     assert_eq!(token_set_ratio("solo leveling", "solo leveling"), 1.0);
     assert_eq!(token_set_ratio("solo leveling", "leveling solo"), 1.0);
     assert_eq!(token_set_ratio("", "solo"), 0.0);
-    // 3 shared of 4 total.
     assert_eq!(
         token_set_ratio("beginning after the end", "the beginning after end"),
         1.0
     );
+    // 3 shared of 4 total.
     let r = token_set_ratio("the beginning after the end", "beginning after end");
     assert!((r - 0.75).abs() < 1e-6, "got {r}");
 }
 
-/// A perfect token-set overlap lifts a weak trigram score to the top of the band — and with no
-/// identity rule behind it, that is a question for the sweep rather than an attach.
+/// A perfect token-set overlap lifts a weak trigram score to the top of the band, and with no
+/// identity rule behind it the pair goes to the sweep, not to an attach.
 ///
-/// It used to attach. The fuzzy route is what attached `Onikakushi-hen` to `Onisarashi-hen` and
-/// `A Year of Marvels: October` to `November`: a high similarity says the titles look alike, not
-/// that they name the same work.
+/// A high similarity says the titles look alike, not that they name the same work:
+/// `Onikakushi-hen` and `Onisarashi-hen`, or `A Year of Marvels: October` and `November`.
 #[test]
 fn token_set_ratio_lifts_reordered_titles_into_review() {
     let q = query("another world reincarnation", ContentType::Unknown, None);
@@ -138,8 +132,8 @@ fn token_set_ratio_lifts_reordered_titles_into_review() {
 
 /// An identical candidate wins over a reordered one at the same clamped score.
 ///
-/// Both reach 1.0, and ranked on score alone the tie went to whichever came last — the reordered
-/// one, which cannot attach — so a source with an exact match in hand was queued instead.
+/// Both reach 1.0. Ranked on score alone, the reordered one could win the tie, and since it
+/// cannot attach, a source with an exact match in hand would be queued.
 #[test]
 fn an_identical_candidate_outranks_a_fuzzy_one_at_the_same_score() {
     let q = query("another world reincarnation", ContentType::Unknown, None);
@@ -197,11 +191,11 @@ fn subtitled_edition_gets_a_small_containment_nudge() {
 
 /// Two titles that differ only in where the spaces fall are the same title.
 ///
-/// The whole class comes from provider HTML: a missing space between two inline elements
-/// produces `Spyxfamily` for `Spy X Family`, `Wantsto Be Free` for `Wants to Be Free`,
-/// `Hanakimi` for `Hana Kimi`. Trigram similarity scores those pairs 0.37–0.58 and the
-/// token-set ratio scores most of them **zero**, so before the compact comparison existed
-/// they did not even reach the review queue: 59 such pairs sat unqueued in a 26k catalogue.
+/// Provider HTML produces the whole class: a missing space between two inline elements turns
+/// `Spy X Family` into `Spyxfamily`, `Wants to Be Free` into `Wantsto Be Free` and `Hana Kimi`
+/// into `Hanakimi`. Trigram similarity scores those pairs 0.37 to 0.58 and the token-set ratio
+/// scores most of them zero, so without the compact comparison they would not reach the review
+/// queue.
 #[test]
 fn a_missing_space_is_not_a_different_title() {
     for (a, b) in [
@@ -231,12 +225,10 @@ fn a_missing_space_is_not_a_different_title() {
     }
 }
 
-/// The reported failure, end to end: an apostrophe spelled three ways is one series.
+/// An apostrophe spelled three ways is one series, end to end.
 ///
-/// `Sorry but I’m not Yuri` and `Sorry But Im Not Yuri` were two rows in the catalogue with
-/// a queued merge candidate at 0.80 that no operator had actioned. The normalization fix
-/// makes the two keys identical; this test is here so a future change to either layer has to
-/// keep them that way.
+/// `Sorry but I’m not Yuri` and `Sorry But Im Not Yuri` normalise to one key, so a change to
+/// either the normalisation or the scorer has to keep them together.
 #[test]
 fn the_same_title_with_and_without_an_apostrophe_attaches() {
     use tankovault_domain::normalize_title;
@@ -260,17 +252,14 @@ fn the_same_title_with_and_without_an_apostrophe_attaches() {
     );
 }
 
-/// A candidate found through one of its *alternative* titles is scored against that title —
-/// but on its own that is evidence, not identity, so it lands in the review band.
+/// A candidate found through one of its alternative titles is scored against that title, and
+/// on its own that hit is evidence, not identity, so it lands in the review band.
 ///
-/// Both halves are bugs that happened. The trigram lookup already searches `series_titles`, so
-/// a series listed under its romaji name on one provider and its english name on another is
-/// retrieved — and was then re-scored against the canonical title only, which is a name the
-/// query does not go by, leaving the two split. Fixing that by treating an exact alias hit as
-/// full identity produced the opposite failure: aliases are scraped free text, an attach files
-/// the attaching source's aliases under the series it joined, and the widening net put 309
-/// sources for unrelated works onto one live row. The candidate below has a deliberately
-/// unrelated canonical title so nothing but the alias rule can produce the outcome.
+/// Scoring only the canonical title would leave a series listed under its romaji name on one
+/// provider and its english name on another split. Treating an exact alias hit as identity fails
+/// the other way: aliases are scraped free text, and an attach files the source's aliases under
+/// the series it joined, so one junk alias widens the net with every attach. The candidate's
+/// canonical title is unrelated, so only the alias rule can produce the outcome.
 #[test]
 fn an_uncorroborated_hit_on_an_alternative_title_is_held_for_review() {
     let q = query("na honjaman level up", ContentType::Unknown, None);
@@ -294,14 +283,11 @@ fn an_uncorroborated_hit_on_an_alternative_title_is_held_for_review() {
     ));
 }
 
-/// **An alias hit that agrees on the medium is still held for review.**
+/// An alias hit that agrees on the medium is still held for review.
 ///
-/// This pinned the opposite until the matching overhaul: one agreeing medium, year or credit
-/// lifted an alias hit back to an automatic attach. Those fields are unreliable across
-/// providers, and the alias-plus-metadata route is the one production condemns — 12,356 alias
-/// merges where a disabled metadata guard fired, and hub series that absorbed 20–100 different
-/// works through junk and franchise aliases (`docs/MATCHING_OVERHAUL.md` §2). The cross-provider
-/// romaji/english case is queued and settled by the sweep, which can corroborate it.
+/// Medium, year and credits are unreliable across providers, so none of them may lift an alias
+/// hit to an automatic attach. The cross-provider romaji and english case is queued and settled
+/// by the sweep, which can corroborate it.
 #[test]
 fn an_alias_hit_that_agrees_on_the_medium_is_still_held_for_review() {
     let mut q = query("na honjaman level up", ContentType::Manhwa, Some(2018));
@@ -320,10 +306,9 @@ fn an_alias_hit_that_agrees_on_the_medium_is_still_held_for_review() {
 
 /// A sequel is not its predecessor, however similar the titles are.
 ///
-/// This is the safety half of every other rule in this file. Making the matcher more
-/// aggressive makes `Overlord` and `Overlord 2` score *higher*, not lower — the compact
-/// comparison puts them one character apart — so without a veto the same change that fixes
-/// the apostrophe class silently merges every numbered sequel into its first volume.
+/// This is the safety half of every other rule in this file. A more aggressive matcher scores
+/// `Overlord` and `Overlord 2` higher, since the compact comparison puts them one character
+/// apart, so without a veto every numbered sequel would merge into its first volume.
 #[test]
 fn differing_numbers_veto_a_match() {
     for (a, b) in [
@@ -352,8 +337,8 @@ fn differing_numbers_veto_a_match() {
 /// The veto reads numbers off the compact key, so spacing around a number is not a conflict.
 ///
 /// `10nen Bun No Kotaeawase` and `10 Nenbun No Kotae Awase` are the same work with the
-/// digits attached to different words. Tokenising for numbers instead would have seen one
-/// title with no number at all and vetoed the pair.
+/// digits attached to different words. A per-token reading would see one title with no number
+/// at all and veto the pair.
 #[test]
 fn spacing_around_a_number_is_not_a_numeric_conflict() {
     let q = query("10nen bun no kotaeawase", ContentType::Unknown, None);
@@ -365,8 +350,8 @@ fn spacing_around_a_number_is_not_a_numeric_conflict() {
 
 /// A standalone roman numeral or spelled ordinal is a number; `x`, `v` and `i` are not.
 ///
-/// `Overlord` absorbed `Overlord II` in production: neither title carries a digit, so the two
-/// signatures agreed and nothing distinguished the sequel.
+/// Neither `Overlord` nor `Overlord II` carries a digit, so without numerals their signatures
+/// would agree.
 #[test]
 fn roman_numerals_and_ordinals_are_numbers() {
     assert_eq!(numeric_signature("overlord ii"), vec![2]);
@@ -385,12 +370,10 @@ fn roman_numerals_and_ordinals_are_numbers() {
     assert_eq!(decide(&q, &[c], Thresholds::default()), Decision::Create);
 }
 
-/// **A sequel's alias on a series does not wave the next sequel through.**
+/// A sequel's alias on a series does not wave the next sequel through.
 ///
-/// The numeric check used to pass when *any* title of the candidate carried the query's
-/// numbers. Once `douluo dalu 4 zhongji douluo` landed on `Douluo Dalu 5` as an alias, Douluo
-/// Dalu 4 attached to and merged into 5. A conflict with the canonical title is a conflict
-/// whatever an alias says.
+/// With `douluo dalu 4 zhongji douluo` as an alias of `Douluo Dalu 5`, Douluo Dalu 4 still
+/// conflicts with the canonical title, and that conflict stands whatever an alias says.
 #[test]
 fn an_alias_with_matching_numbers_does_not_excuse_the_canonical_title() {
     let q = query(
@@ -427,8 +410,8 @@ fn the_numeric_signature_ignores_leading_zeros() {
     assert_eq!(numeric_signature("pure1mm"), vec![1]);
     assert_eq!(numeric_signature("no digits here"), Vec::<u64>::new());
     assert_eq!(numeric_signature("a1b22c333"), vec![1, 22, 333]);
-    // A digit run long enough to overflow saturates rather than panicking under the
-    // release profile's overflow checks (SEC-11).
+    // A digit run long enough to overflow saturates instead of panicking under the release
+    // profile's overflow checks.
     assert_eq!(numeric_signature(&"9".repeat(40)), vec![u64::MAX]);
 }
 
@@ -436,10 +419,10 @@ fn the_numeric_signature_ignores_leading_zeros() {
 
 /// The edit comparison is confined to titles long enough for it to mean something.
 ///
-/// One character out of seven is 0.857 — above the attach threshold — which is why
-/// `berserk` must not be compared this way to `berserl`. The same one-character difference
-/// over twenty is 0.95, and two distinct works whose names differ by one character in
-/// twenty essentially do not occur while providers producing exactly that do.
+/// One character in seven is 0.857, above the attach threshold, so `berserk` must not be
+/// compared this way with `berserl`. The same difference in twenty is 0.95, and two distinct
+/// works whose names differ by one character in twenty are rare, while providers producing
+/// exactly that are routine.
 #[test]
 fn the_edit_comparison_ignores_short_titles() {
     // Seven characters: below MIN_EDIT_LEN, so no edit ratio at all.
@@ -476,13 +459,13 @@ fn edit_distance_counts_characters_not_bytes() {
 
 // --- the merge verdict -------------------------------------------------------------------
 
-/// An automatic, destructive merge needs a primary identity *and* a score, or a corroborated
-/// alias — never a score alone, and never an alias alone.
+/// An automatic, destructive merge needs a primary identity and a score, or a corroborated
+/// alias. A score alone or an alias alone never merges.
 ///
-/// The distinction is the entire safety argument for automating the merge queue. A fuzzy
-/// score can reach the automatic threshold on two different works with similar names, and
-/// those are exactly the pairs an operator must see; a primary identity means the two titles
-/// are the same string under a rule that was written to be conservative.
+/// This is the safety argument for automating the merge queue. A fuzzy score can reach the
+/// automatic threshold on two different works with similar names, and an operator must see
+/// those pairs; a primary identity means the two titles are the same string under a
+/// conservative rule.
 #[test]
 fn an_automatic_merge_requires_a_primary_identity_or_a_corroborated_alias() {
     let t = Thresholds::default();
@@ -516,12 +499,12 @@ fn an_automatic_merge_requires_a_primary_identity_or_a_corroborated_alias() {
     assert_eq!(verdict(0.8, by_timing), MergeVerdict::Auto);
     // An identity but not confident enough is still review, not merge.
     assert_eq!(verdict(0.9, identical), MergeVerdict::Review);
-    // Below the review floor, nothing is recorded at all — corroborated or not.
+    // Below the review floor the pair is distinct, corroborated or not.
     assert_eq!(verdict(0.4, identical), MergeVerdict::Distinct);
     assert_eq!(verdict(0.4, by_timing), MergeVerdict::Distinct);
 
     // Each answer names itself, so a queue row can be triaged without re-deriving the reason
-    // from a score and a bag of signal names.
+    // from a score and a list of signal names.
     let reason = |score, signals| adjudicate(Assessment { score, signals }, t).reason;
     assert_eq!(
         reason(1.0, identical),
@@ -570,12 +553,11 @@ fn trusted_conflicts_hold_a_merge_for_review() {
     }
 }
 
-/// Each guard holds an otherwise-automatic merge for review, names itself, and is switchable
-/// without changing the score or the signal that fired.
+/// Each guard holds an otherwise automatic merge for review, names itself, and can be switched
+/// off without changing the score or the signal that fired.
 ///
-/// The guards exist because a score is one number and cannot express "these titles agree and
-/// the works do not". Every case below scores at the ceiling with a structural identity — the
-/// full automatic bar — and is still not merged.
+/// Every case below scores at the ceiling with a structural identity, the full automatic bar,
+/// and is still not merged.
 #[test]
 fn each_guard_holds_an_automatic_merge_for_review() {
     let structural = MatchSignals {
@@ -641,11 +623,10 @@ fn each_guard_holds_an_automatic_merge_for_review() {
     }
 }
 
-/// A numeric conflict is reported as distinct rather than queued.
+/// A numeric conflict is reported distinct, not queued.
 ///
-/// Queueing it would ask an operator to re-establish the one fact the scorer is already
-/// certain about, and a review queue that fills with sequel pairs is a review queue nobody
-/// reads.
+/// Queueing it asks an operator to re-establish the one fact the scorer is certain of, and a
+/// review queue full of sequel pairs is one nobody reads.
 #[test]
 fn a_numeric_conflict_is_never_queued() {
     let t = Thresholds::default();
@@ -666,7 +647,7 @@ fn a_numeric_conflict_is_never_queued() {
 }
 
 /// The signal labels are persisted in `merge_candidates.reason` and rendered as console
-/// badges, so they are part of the contract rather than debug output. New ones are appended.
+/// badges, so they are part of the contract, not debug output. New ones are appended.
 #[test]
 fn signal_labels_are_stable_and_ordered() {
     let signals = MatchSignals {
@@ -769,13 +750,11 @@ fn primary_identity_excludes_an_alias_and_corroboration_needs_a_trusted_signal()
     );
 }
 
-// --- the individual scoring terms (TESTING F-10, mutation testing) ---------------------
+// --- the individual scoring terms -------------------------------------------------------
 //
-// Everything above asserts on an *ordering* — this candidate outscores that one — or on a
-// band. `cargo mutants` showed that to be too weak to hold the scorer in place: 22 mutants
-// of `score` and its helpers survived the whole suite. The tests below pin the terms
-// themselves, which is the only assertion a weight change cannot slip past — including the
-// zero weight the metadata terms now carry.
+// The tests above assert on an ordering or a band, which leaves the weights free to move. The
+// tests below pin each term's exact delta, including the zero weight of the metadata terms,
+// so a weight change cannot pass unnoticed.
 //
 // Two titles that share no token, so the base score is the raw trigram similarity and
 // every bonus below is visible as an exact delta from it.
@@ -791,8 +770,8 @@ fn unrelated_pair(ct: ContentType, year: Option<i32>) -> (Query, Candidate) {
 /// moves the score.
 ///
 /// `Unknown` means "not recorded", not "a type that differs from yours": an adapter that does
-/// not publish a type would otherwise show a conflict against every candidate — and the type
-/// guard, when an operator switches it on, would hold every one of them.
+/// not publish a type would otherwise conflict with every candidate, and the type guard, once
+/// switched on, would hold every one of them.
 #[test]
 fn content_type_is_recorded_only_when_both_sides_know_theirs() {
     let (q, c) = unrelated_pair(ContentType::Manga, None);
@@ -839,16 +818,15 @@ fn release_year_proximity_is_a_band_of_signals() {
     assert!(!signals.year_agreement && !signals.year_conflict);
 }
 
-/// The containment nudge fires in **either** direction and is a bonus, not a penalty.
+/// The containment nudge fires in either direction and is a bonus, not a penalty.
 ///
-/// Which side carries the fuller title is an accident of which site was scraped, so
-/// requiring the query to be the subset (the `&&` mutant) would silently halve the cases
-/// this helps. Deliberately smaller than the exact-match bonus so genuine sequels — whose
-/// titles *are* subsets of each other — do not get over-attached.
+/// Which side carries the fuller title depends on which site was scraped, so requiring the
+/// query to be the subset would halve the cases this helps. The nudge is smaller than the
+/// identity bonus because a sequel's title often contains its predecessor's.
 #[test]
 fn the_containment_nudge_is_symmetric_and_positive() {
     // "alpha beta" ⊂ "alpha beta gamma": two shared tokens of three, so the base score is
-    // the token-set ratio rather than the weaker trigram similarity.
+    // the token-set ratio, which beats the trigram similarity.
     let expected = 2.0 / 3.0 + 0.05;
     let forward = score(
         &query("alpha beta", ContentType::Unknown, None),
@@ -884,11 +862,10 @@ fn tag_overlap_is_recorded_not_scored() {
     }
 }
 
-/// "No tags on one side" is not "no overlap", and the difference is why this returns
-/// `Option`: a candidate nobody has tagged must not be scored as one whose tags disagree.
+/// "No tags on one side" is not "no overlap", which is why this returns `Option`: a candidate
+/// nobody has tagged must not score as one whose tags disagree.
 ///
-/// Unobservable through [`score`] — both answers add nothing — so it is asserted here, on
-/// the contract the doc comment states.
+/// [`score`] adds nothing either way, so the contract is asserted here directly.
 #[test]
 fn missing_tag_data_is_none_not_zero_overlap() {
     let some = ["Action".to_owned()];
@@ -914,10 +891,9 @@ fn one_shared_word_is_not_containment() {
 
 /// Two titles with no words left after normalisation are not a perfect match.
 ///
-/// They score `0.0`, and the reason the arm producing it cannot be deleted is arithmetic:
-/// an empty union makes the Jaccard `0 / 0`, and a `NaN` propagates through every later
-/// term in [`score`] and then compares `false` against *both* thresholds — a candidate
-/// that is neither attached, nor flagged, nor rejected.
+/// They score `0.0`. An empty union makes the Jaccard `0 / 0`, and the `NaN` would pass
+/// through every later term in [`score`] and compare false against both thresholds, leaving a
+/// candidate neither attached, flagged nor rejected.
 #[test]
 fn two_untitled_series_are_not_a_perfect_match() {
     assert_eq!(token_set_ratio("   ", "  "), 0.0);
@@ -948,11 +924,10 @@ fn side<'a>(title: &'a str, alts: &'a [String]) -> PairSide<'a> {
     }
 }
 
-/// **Two arcs of one work are two works.**
+/// Two arcs of one work are two works.
 ///
-/// `Higurashi no Naku Koro ni Onikakushi-hen` and `…Onisarashi-hen` were merged through their
-/// shared english title, and the fuzzy route attached one arc's listing to the other at ingest:
-/// the titles differ in two letters out of forty.
+/// `Higurashi no Naku Koro ni Onikakushi-hen` and `…Onisarashi-hen` share an english title and
+/// differ in two letters out of forty.
 #[test]
 fn different_arcs_are_distinct() {
     let shared = vec!["higurashi when they cry".to_owned()];
@@ -983,8 +958,8 @@ fn different_arcs_are_distinct() {
     ));
 }
 
-/// **`Railgun S` is not `Railgun T`.** A single trailing letter names a season; the two were
-/// merged through the shared english title `A Certain Scientific Railgun`.
+/// `Railgun S` is not `Railgun T`: a single trailing letter names a season, even when both share
+/// the english title `A Certain Scientific Railgun`.
 #[test]
 fn a_trailing_season_letter_is_an_edition() {
     let shared = vec!["a certain scientific railgun".to_owned()];
@@ -998,8 +973,7 @@ fn a_trailing_season_letter_is_an_edition() {
     assert_eq!(verdict.reason, "edition_conflict");
 }
 
-/// **`Tokyo Ghoul:re` is not `Tokyo Ghoul`.** It carried the franchise name as an alias and was
-/// absorbed through it.
+/// `Tokyo Ghoul:re` is not `Tokyo Ghoul`, even when it carries the franchise name as an alias.
 #[test]
 fn a_sequel_suffix_is_an_edition() {
     let franchise = vec!["tokyo ghoul".to_owned()];
@@ -1013,9 +987,8 @@ fn a_sequel_suffix_is_an_edition() {
     assert_eq!(verdict.verdict, MergeVerdict::Distinct);
 }
 
-/// **A junk alias is not an identity.** `unknown` alone merged 11 series into 9 survivors:
-/// placeholder text scraped from an empty metadata cell, shared by every series a provider had
-/// no alternative title for.
+/// A junk alias is not an identity. `unknown` is placeholder text scraped from an empty metadata
+/// cell, shared by every series a provider had no alternative title for.
 #[test]
 fn a_junk_alias_is_not_an_identity() {
     let junk = vec!["unknown".to_owned()];
@@ -1035,9 +1008,9 @@ fn a_junk_alias_is_not_an_identity() {
     assert!(!assess(&q, &c).signals.alias_identity);
 }
 
-/// **A franchise name is not an identity.** Two different Sword Art Online series were merged
-/// through the alias `sao`; `Fairy Tail` absorbed `Fairy Tail: 100 Years Quest` through the
-/// alias `fairy tail` on the sequel. A short alias that another title contains is containment.
+/// A franchise name is not an identity. The alias `sao` names several Sword Art Online series,
+/// and `fairy tail` on `Fairy Tail: 100 Years Quest` names its predecessor too. A short alias
+/// that another title contains is containment.
 #[test]
 fn a_franchise_alias_is_containment_not_identity() {
     let sao = vec!["sao".to_owned()];
@@ -1106,12 +1079,11 @@ fn a_long_alias_inside_a_subtitled_title_is_still_an_alias_hit() {
 
 // --- listing titles, external ids, live timing ------------------------------------------
 
-/// **A listing title is identity.**
+/// A listing title is identity.
 ///
-/// A mirror listing could only reach a series `AniList` had renamed through an alias, which is
-/// discounted below the attach threshold, so registration created a new series that the sweep
-/// then merged: one key, `legend of star general`, drove 37 such merges in production
-/// (`docs/MATCHING_OVERHAUL.md` §2, WP3). Matching the sibling source's listing title attaches it.
+/// A mirror listing of a series `AniList` has renamed reaches it only through an alias, which is
+/// discounted below the attach threshold. Matching the sibling source's listing title attaches
+/// it instead of creating a duplicate for the sweep to merge.
 #[test]
 fn a_sibling_sources_listing_title_attaches() {
     let q = query("legend of star general", ContentType::Unknown, None);
@@ -1178,9 +1150,6 @@ fn a_listing_title_against_a_canonical_title_merges_in_the_sweep() {
 
 /// An `AniList` id on both sides corroborates an alias when it agrees and holds a title match for
 /// review when it does not.
-///
-/// 1,828 sourced production merges joined two different `AniList` ids, 1,296 of them through an
-/// alias (`docs/MATCHING_OVERHAUL.md` §2).
 #[test]
 fn anilist_ids_corroborate_or_veto() {
     let alts = vec!["na honjaman level up".to_owned()];

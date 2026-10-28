@@ -28,12 +28,12 @@ pub enum TunableGroup {
     /// Shelf size, cache lifetime and how fast explicit feedback decays.
     Serving,
     /// The automatic-merge policy the duplicate sweep applies. Served by its own endpoint and
-    /// rendered beside the review queue rather than on the recommendation page.
+    /// rendered beside the review queue, not on the recommendation page.
     Matching,
 }
 
 impl TunableGroup {
-    /// The token this group serializes to, which is also its section key in the console.
+    /// Returns the token this group serializes to, which is also its section key in the console.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -81,7 +81,7 @@ pub enum TunableKind {
 }
 
 impl TunableKind {
-    /// The token this kind serializes to.
+    /// Returns the token this kind serializes to.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -103,10 +103,9 @@ impl fmt::Display for TunableKind {
 
 /// When a change to a tunable actually reaches a reader.
 ///
-/// The console shows this on every row, because it is the most likely way this surface fails a
-/// user: someone raises a value baked into stored model data, sees no change, raises it again,
-/// and concludes the page is broken — when the truth is that the old value is what is
-/// physically stored.
+/// The console shows this on every row. Without it, someone raises a value baked into stored
+/// model data, sees no change, raises it again and concludes the page is broken, when the old
+/// value is what is stored.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, ToSchema,
 )]
@@ -116,7 +115,7 @@ pub enum Applies {
     Immediately,
     /// The next incremental build.
     NextBuild,
-    /// The next full rebuild — the stored model was computed under the old value.
+    /// The next full rebuild, since the stored model was computed under the old value.
     NextFullBuild,
     /// The next duplicate sweep. Nothing already merged is revisited, and nothing already in
     /// the review queue changes until the sweep re-scores it.
@@ -124,7 +123,7 @@ pub enum Applies {
 }
 
 impl Applies {
-    /// The token this serializes to, which the console renders next to the value.
+    /// Returns the token this serializes to, which the console renders next to the value.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {

@@ -5,8 +5,8 @@ use terrace_config::schema::Describe;
 
 /// Prometheus metrics facility.
 ///
-/// A real off switch, not a filter: [`Self::enabled`] gates installing the recorder itself,
-/// so `metrics::counter!` calls compile to a no-op rather than merely being filtered.
+/// [`Self::enabled`] decides whether the recorder is installed at all; without it every
+/// `metrics::counter!` call does nothing.
 #[derive(Debug, Clone, Deserialize, Describe)]
 pub struct MetricsConfig {
     /// Install the Prometheus recorder and serve the scrape endpoint. When `false` the
@@ -16,12 +16,12 @@ pub struct MetricsConfig {
     /// Path the scrape endpoint is mounted at.
     #[serde(default = "MetricsConfig::default_route")]
     pub route: String,
-    /// Address the scrape endpoint binds to on its **own** listener (default `0.0.0.0:9090`),
-    /// isolated from the service's public port. `None` merges it onto the primary port.
+    /// Address the scrape endpoint binds on its **own** listener, apart from the service's
+    /// public port (default `0.0.0.0:9090`). `null` serves it on the primary port.
     #[serde(default = "MetricsConfig::default_listen")]
     pub listen: Option<String>,
-    /// Also record per-request HTTP metrics. Separate from [`Self::enabled`]: the request
-    /// histogram is the expensive, high-cardinality part.
+    /// Also record per-request HTTP metrics. The request histogram is the expensive,
+    /// high-cardinality part, so it has its own switch.
     #[serde(default = "crate::default_true")]
     pub http_requests: bool,
 }
@@ -31,8 +31,6 @@ impl MetricsConfig {
         "/metrics".to_owned()
     }
 
-    // Must return `Option<String>` to match the field's serde-default signature; unwrapping
-    // as clippy suggests would break that.
     #[expect(
         clippy::unnecessary_wraps,
         reason = "must match the Option<String> field it defaults"

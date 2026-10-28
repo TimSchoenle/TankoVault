@@ -1,12 +1,12 @@
 //! # tankovault-contracts
 //!
 //! The wire contract shared between services: task dispatch messages, progress and domain
-//! events, subject/stream/consumer naming, and the HTTP response bodies one service publishes
-//! on another's behalf — or on its own.
+//! events, subject, stream and consumer names, and the HTTP response bodies the services
+//! publish.
 //!
-//! [`admin`], [`me`] and [`catalogue`] hold the HTTP view types `services/api` returns, kept out
-//! of `tankovault-db` so a repository row's `ToSchema` can't become the public schema by
-//! accident (see the test below).
+//! [`admin`], [`me`] and [`catalogue`] hold the HTTP view types `services/api` returns. They
+//! live here, outside `tankovault-db`, so a repository row cannot become the public schema by
+//! accident.
 
 pub mod admin;
 pub mod catalogue;
@@ -33,24 +33,16 @@ pub use subjects::{
 
 #[cfg(test)]
 mod tests {
-    /// The persistence crate must not depend on `utoipa`.
+    /// The persistence crate does not depend on `utoipa`.
     ///
-    /// This is the guard for the bug this crate's `admin`/`me`/`catalogue` modules exist to
-    /// fix: `tankovault-db` derived `ToSchema` on 23 repository row structs and 11 handlers
-    /// returned those rows verbatim, so renaming a column in a `SELECT` silently rewrote the
-    /// public HTTP schema and the generated client with no compile error anywhere. Deleting
-    /// the dependency is what makes that impossible to write again — re-adding it here is the
-    /// only way back, so this is where the check belongs.
+    /// A row struct that derives `ToSchema` and is returned verbatim lets a renamed `SELECT`
+    /// column rewrite the public HTTP schema and the generated client with no compile error.
+    /// Without the dependency that derive cannot be written. This is a test, not a CI step, so
+    /// it runs on every `cargo test --workspace`.
     ///
-    /// A test rather than a CI step so it runs on every `cargo test --workspace`, including
-    /// locally, and so its reasoning travels with the code it protects.
-    ///
-    /// The check is on `tankovault-db`'s **direct** dependencies (`--depth 1`), not the whole
-    /// tree. The audit proposed `cargo tree -p tankovault-db | grep utoipa`, which cannot
-    /// work: `tankovault-domain` depends on `utoipa` legitimately — its entities and enums
-    /// *are* shared domain vocabulary that the wire schema names — and `tankovault-db`
-    /// depends on `tankovault-domain`. Only a direct edge from the persistence crate can
-    /// reintroduce a `ToSchema` derive on a row struct, and only that is checked here.
+    /// Only direct dependencies are checked. `tankovault-domain` depends on `utoipa`
+    /// legitimately, since the wire schema names its entities and enums, and `tankovault-db`
+    /// depends on it; only a direct edge can put a `ToSchema` derive on a row struct.
     #[test]
     fn db_crate_does_not_depend_on_utoipa() {
         let output = std::process::Command::new(env!("CARGO"))

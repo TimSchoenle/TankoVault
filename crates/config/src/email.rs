@@ -4,7 +4,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use terrace_config::schema::Describe;
 
-/// Transport security for an SMTP relay, chosen explicitly rather than inferred from the port.
+/// Transport security for an SMTP relay, set explicitly and never inferred from the port.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Describe)]
 #[serde(rename_all = "lowercase")]
 pub enum EmailSecurity {
@@ -12,37 +12,37 @@ pub enum EmailSecurity {
     Tls,
     /// Plain connection upgraded via `STARTTLS` (typically port 587).
     ///
-    /// The default: broadly compatible, and OVH's documented Exchange endpoint.
+    /// The default, and what OVH documents for its Exchange endpoint.
     #[default]
     StartTls,
-    /// No transport security (plaintext; only for a trusted local relay / tests).
+    /// No transport security. Only for a trusted local relay or tests.
     None,
 }
 
-/// Outgoing-email settings for transactional messages (welcome, password reset).
+/// Outgoing-email settings for transactional messages such as the welcome and password-reset
+/// mail.
 ///
-/// Either a single [`Self::url`] (lettre relay URL, takes precedence when set) or the explicit
-/// host/port/credentials/security fields. Enabled only when a relay and [`Self::from`] are
-/// both present; otherwise falls back to a no-op mailer.
+/// The relay is either [`Self::url`], which wins when set, or the explicit host, port,
+/// credential and security fields. Mail is sent only when a relay and [`Self::from`] are both
+/// present; otherwise the mailer discards every message.
 #[derive(Debug, Clone, Default, Deserialize, Describe)]
 pub struct EmailConfig {
-    /// Full lettre relay URL; takes precedence over the explicit fields below when set.
-    ///
-    /// [`SecretString`]: the documented form embeds the mailbox password, unlike the
-    /// neighbouring host/port fields.
+    /// Full lettre relay URL. When set, it wins over the explicit fields below.
+    // A `SecretString` because the documented form embeds the mailbox password.
     #[config(secret)]
     #[serde(default)]
     pub url: Option<SecretString>,
     /// SMTP host (OVH Exchange: `pro3.mail.ovh.net` for STARTTLS or `ssl0.ovh.net` for TLS).
     #[serde(default)]
     pub host: Option<String>,
-    /// SMTP port. Defaults per [`Self::security`] when omitted (465 / 587 / 25).
+    /// SMTP port. Unset, it follows [`Self::security`]: 465 for `tls`, 587 for `starttls`, 25
+    /// for `none`.
     #[serde(default)]
     pub port: Option<u16>,
-    /// Login username (for OVH Exchange this is the full mailbox address).
+    /// Login username. For OVH Exchange it is the full mailbox address.
     #[serde(default)]
     pub username: Option<String>,
-    /// Login password / app password.
+    /// Login password or app password.
     #[config(secret)]
     #[serde(default)]
     pub password: Option<SecretString>,
@@ -50,21 +50,21 @@ pub struct EmailConfig {
     #[config(values)]
     #[serde(default)]
     pub security: EmailSecurity,
-    /// Default `From` mailbox, e.g. `TankoVault <no-reply@example.com>`. Required to send.
+    /// Default `From` mailbox, such as `TankoVault <no-reply@example.com>`. Required to send.
     #[serde(default)]
     pub from: Option<String>,
     /// SMTP envelope sender (`MAIL FROM`), which can differ from the visible [`Self::from`]
     /// header.
     ///
-    /// Providers enforcing "send as" checks (notably OVH Exchange) reject a mismatched
-    /// envelope sender; unset defaults to [`Self::username`] to satisfy that.
+    /// Providers enforcing "send as" checks, such as OVH Exchange, reject a mismatched envelope
+    /// sender, so unset means [`Self::username`].
     #[serde(default)]
     pub envelope_from: Option<String>,
-    /// Public base URL of the web app, used to build absolute links inside emails
-    /// (e.g. the password-reset link). No trailing slash.
+    /// Public base URL of the web app, for absolute links in email such as the password-reset
+    /// link. No trailing slash.
     #[serde(default = "EmailConfig::default_base_url")]
     pub base_url: String,
-    /// Per-message send timeout, seconds.
+    /// Per-message send timeout, in seconds.
     #[serde(default = "EmailConfig::default_timeout_secs")]
     pub timeout_secs: u64,
 }
@@ -78,7 +78,7 @@ impl EmailConfig {
         15
     }
 
-    /// The effective port, applying the security-specific default when none is configured.
+    /// Returns the configured port, or the default for [`Self::security`].
     #[must_use]
     pub fn effective_port(&self) -> u16 {
         self.port.unwrap_or(match self.security {
@@ -88,8 +88,9 @@ impl EmailConfig {
         })
     }
 
-    /// The effective envelope sender: explicit override, else the authenticated username, else
-    /// `None` (the mailer then uses the `From:` header).
+    /// Returns the envelope sender: the explicit override, else the login username.
+    ///
+    /// `None` makes the mailer use the `From:` header.
     #[must_use]
     pub fn effective_envelope_from(&self) -> Option<&str> {
         self.envelope_from
@@ -98,7 +99,7 @@ impl EmailConfig {
             .or_else(|| self.username.as_deref().filter(|s| !s.is_empty()))
     }
 
-    /// Whether enough is configured to actually send mail (a relay plus a `From` address).
+    /// Returns whether a relay and a `From` address are both configured.
     #[must_use]
     pub fn is_enabled(&self) -> bool {
         let has_relay = self

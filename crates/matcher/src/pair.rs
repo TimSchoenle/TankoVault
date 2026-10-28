@@ -54,7 +54,7 @@ pub struct PairReading {
     pub query_is_left: bool,
 }
 
-/// Read the pair with [`read_pair`] and adjudicate the winning reading.
+/// Reads the pair with [`read_pair`] and adjudicates the winning reading.
 #[must_use]
 pub fn adjudicate_pair(
     left: PairSide<'_>,
@@ -67,60 +67,29 @@ pub fn adjudicate_pair(
     (reading, verdict)
 }
 
-/// Score the pair every way round and keep the best reading, explained.
+/// Scores the pair every way round and returns the best reading, explained.
 ///
-/// # Why both directions, and every alias
+/// Every title of each side is scored as the query against the other side. `Query` carries no
+/// alternative titles, so one direction alone misses a duplicate whose shared name sits on the
+/// query side, and canonical titles alone never compare two aliases, which is one of the
+/// collisions `find_duplicate_pairs` reports.
 ///
-/// `Query` carries no alternative titles, so `assess(left, right)` sees only the right side's
-/// synonyms. Correct for a scan — the incoming source genuinely has one title — but here both
-/// sides have synonym lists, and scoring one direction only misses the duplicate whose shared
-/// name sits on the *query* side. Two rounds of canonical-as-query cover canonical-against-
-/// canonical and canonical-against-alias but never compare two aliases, which is the third of
-/// `find_duplicate_pairs`' three collisions: 438 such pairs sat permanently in the review queue
-/// because no structural signal could fire for them.
-///
-/// # Why so little is built inside the loop
-///
-/// A pair with `k` aliases a side is `2(k+1)` readings, and the only thing that varies between
-/// readings of one direction is the query's title. [`assess`] itself allocates nothing, but a
-/// [`Candidate`] and a [`Query`] built per reading clone both sides' alias, tag and author lists
-/// each time — which made the search allocate in proportion to the square of a pair's synonyms
-/// for values it then threw away. Both are built once per direction.
-///
-/// # Why the winner is re-scored
-///
-/// The search runs on [`assess`], and only the winner is re-run through [`explain`] to itemise
-/// it. Explaining every reading would allocate a term list per alias per direction for a number
-/// the sweep discards.
-///
-/// # Why an identity reading outranks a higher-scoring fuzzy one
-///
-/// `trigram` is the *pair's* similarity, and `pair_similarities` takes it over each side's
-/// alternative titles as well as the two canonical ones — so a pair whose synonym identifies it
-/// hands every reading a number the canonical titles did not earn. `assess` bases a reading on
-/// `max(trigram, textual)`, which lifts the canonical reading to the clamp ceiling with no
-/// identity signal behind it, where it ties with the alias reading that *does* carry one. Ranked
-/// on score alone, the tie went to whichever came first — the canonical one — and the pair was
-/// filed as `no_structural_identity` at 100%, with no badge saying which title the number came
-/// from. So readings rank by the strength of their claim, then by score: a primary identity, a
-/// corroborated alias, an alias on its own, nothing. The class is read *after* the pair rules
-/// below, so a query-side synonym hit ranks as the alias hit it is.
-///
-/// # The rules only a pair can apply
-///
-/// `assess` sees one query title and the candidate's titles. Here both sides have a canonical
-/// title of their own, so a reading also has to agree with the *query side's* canonical title:
-/// its numbers and edition markers, and its franchise name. Douluo Dalu 4 merged into 5 because
-/// the reading compared the alias `douluo dalu 4 zhongji douluo` with itself and never looked at
-/// `Douluo Dalu 5`.
+/// Readings rank by the strength of their claim, then by score: a primary identity, a
+/// corroborated alias, an alias on its own, nothing. `trigram` is the pair's similarity over
+/// both sides' alternative titles too, so it can lift a canonical reading with no identity to
+/// the clamp ceiling, where it ties the alias reading that carries one. Every reading carries the
+/// canonical titles' number and edition conflicts, and an alias hit must also agree with the
+/// query side's canonical title. With the numeric-conflict guard enabled (the default), a shared
+/// alias such as `douluo dalu 4 zhongji douluo` therefore cannot join `douluo dalu 4` to `douluo
+/// dalu 5`; an edition conflict is refused unconditionally.
 ///
 /// # Panics
 ///
 /// Never: every pair has at least its two canonical readings.
 #[must_use]
 pub fn read_pair(left: PairSide<'_>, right: PairSide<'_>, trigram: f32) -> PairReading {
-    // the reading's class and score, whether the query side was the left series, the winning
-    // title, which of the query side's titles it is
+    // The winner so far: its class and score, whether its query side is the left series, its
+    // title, and which of the query side's titles that is.
     let mut best: Option<((u8, f32), bool, &str, Origin)> = None;
 
     for query_is_left in [true, false] {
@@ -129,12 +98,13 @@ pub fn read_pair(left: PairSide<'_>, right: PairSide<'_>, trigram: f32) -> PairR
         } else {
             (right, left)
         };
+        // Only the query's title varies between readings of one direction, so both are built
+        // once. Building them per reading would clone both sides' lists for every alias.
         let candidate = candidate_of(candidate_side, trigram);
         let mut query = query_of(query_side, String::new());
 
-        // The canonical title goes first and ties are kept (the comparison is strict), so a pair
-        // that both a canonical title and an alias explain *in the same class* is reported with
-        // the canonical reading's signals.
+        // The canonical title goes first and the comparison is strict, so a pair that a
+        // canonical title and an alias explain in the same class keeps the canonical reading.
         let titles = std::iter::once((query_side.normalized_title, Origin::Canonical))
             .chain(
                 query_side
@@ -159,6 +129,7 @@ pub fn read_pair(left: PairSide<'_>, right: PairSide<'_>, trigram: f32) -> PairR
                 title,
                 origin,
             );
+            // Ranked after the pair rules, so a query-side synonym hit ranks as an alias hit.
             let rank = (class(signals), assessment.score);
             if best.is_none_or(|(best_rank, ..)| rank > best_rank) {
                 best = Some((rank, query_is_left, title, origin));
@@ -173,6 +144,8 @@ pub fn read_pair(left: PairSide<'_>, right: PairSide<'_>, trigram: f32) -> PairR
     } else {
         (right, left)
     };
+    // Only the winner is itemised: explaining every reading would allocate a term list per
+    // alias per direction for numbers the sweep discards.
     let query = query_of(query_side, title.to_owned());
     let candidate = candidate_of(candidate_side, trigram);
     let mut explained = explain(&query, &candidate);
@@ -184,8 +157,8 @@ pub fn read_pair(left: PairSide<'_>, right: PairSide<'_>, trigram: f32) -> PairR
             query_side.normalized_title, candidate_side.normalized_title
         )
     };
-    // Zero-delta terms: the pair rules veto rather than score, and the terms must still sum to
-    // the score.
+    // Zero-delta terms: the pair rules veto without scoring, and the terms must still sum to the
+    // score.
     if signals.numeric_conflict && !scored.numeric_conflict {
         explained.terms.push(ScoreTerm {
             rule: "numeric_conflict",
@@ -229,26 +202,29 @@ pub fn read_pair(left: PairSide<'_>, right: PairSide<'_>, trigram: f32) -> PairR
     }
 }
 
-/// A median live-chapter gap at or under this many hours reads as one work. Production pairs that
-/// are one work showed a median of 4.2 h.
+/// A median live-chapter gap at or under this many hours reads as one work.
+///
+/// Pairs known to be one work have a median gap of about 4 hours, so the bound leaves a wide
+/// margin.
 pub const LIVE_AGREEMENT_HOURS: f64 = 72.0;
 
 /// A median live-chapter gap over this many hours (two weeks) reads as two works.
 pub const LIVE_CONFLICT_HOURS: f64 = 24.0 * 14.0;
 
-/// Whether a judged pair is worth the live-timing query: an alias hit, or a pair going to review.
+/// Returns whether a judged pair is worth the live-timing query: an alias hit, or a pair going to
+/// review.
 ///
-/// Timing is the expensive part of judging a pair and only changes these verdicts: it is what
-/// corroborates an alias, and what an operator would want to see before merging a review pair.
+/// Timing is the expensive part of judging a pair and only changes these verdicts. It
+/// corroborates an alias, and an operator wants it before merging a review pair.
 #[must_use]
 pub fn wants_live_timing(reading: &PairReading, verdict: &Adjudication) -> bool {
     reading.assessment.signals.alias_identity || verdict.verdict == MergeVerdict::Review
 }
 
-/// Fold the pair's live chapter timing into a reading.
+/// Folds the pair's live chapter timing into a reading.
 ///
-/// A gap of at most [`LIVE_AGREEMENT_HOURS`] is `live_timing_agreement`, over
-/// [`LIVE_CONFLICT_HOURS`] `live_timing_conflict`, anything between or no timing at all is
+/// A gap of at most [`LIVE_AGREEMENT_HOURS`] is `live_timing_agreement`, and one over
+/// [`LIVE_CONFLICT_HOURS`] is `live_timing_conflict`. A gap between the two, or no timing, is
 /// neither. Absence says nothing: most works are finished, and back catalogues are bulk-imported.
 pub fn apply_live_timing(reading: &mut PairReading, timing: LiveTiming) {
     let Some(gap) = timing.median_gap_hours else {
@@ -319,17 +295,17 @@ enum Origin {
     Alias,
 }
 
-/// Apply the rules that need both sides' facts to one reading's signals.
+/// Applies the rules that need both sides' facts to one reading's signals.
 ///
-/// An identity hit through one of the *query* side's other titles is relabelled:
-/// `exact_title` and `compact_identity` assert that the two **canonical** titles are the same
-/// string, which is what the console renders as a badge, what the auto-merge journal records as
-/// its justification for deleting a row, and what [`adjudicate`] merges on. Through a source's
-/// listing title it is `source_title_identity`, still primary; through a synonym it is an alias
-/// hit, held to the alias rules.
+/// An identity hit through one of the query side's other titles is relabelled. `exact_title`
+/// and `compact_identity` assert that the two canonical titles are the same string: the console
+/// renders that as a badge, the auto-merge journal records it as the reason a row was deleted,
+/// and [`adjudicate`] merges on it. Through a source's listing title the hit is
+/// `source_title_identity`, still primary; through a synonym it is an alias hit, held to the
+/// alias rules.
 ///
-/// Both sides' `AniList` ids are compared here rather than in `assess`, because only a pair has an
-/// id on both sides: an incoming scan has none.
+/// The `AniList` ids are compared here, not in `assess`, because only a pair has an id on both
+/// sides.
 fn pair_rules(
     mut signals: MatchSignals,
     query_side: PairSide<'_>,

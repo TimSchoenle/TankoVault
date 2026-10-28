@@ -1,26 +1,20 @@
 //! Algebraic properties of the canonicalisation scorer.
 //!
-//! `score`/`decide` are the whole of series canonicalisation: their output decides whether a
-//! newly-crawled source is attached to an existing series, queued for human review, or forked
-//! into a new canonical work. A wrong answer is not a visible error — it is a duplicated or
-//! wrongly-merged series that nobody notices for months.
+//! `score` and `decide` decide whether a newly crawled source attaches to an existing series,
+//! is queued for review, or becomes a new work. A wrong answer is not a visible error: it is a
+//! duplicated or wrongly merged series that nobody notices for months.
 //!
-//! The in-module tests pin a handful of hand-picked scenarios. These pin the *algebra*: the
-//! bounds, symmetry and monotonicity that every one of those scenarios silently assumes and
-//! that a future tweak to a bonus weight could break without failing a single example test.
+//! The in-module tests pin hand-picked scenarios. These pin the algebra those scenarios assume:
+//! the bounds, symmetry and monotonicity that a change to one weight could break without failing
+//! any example.
 //!
-//! # A note on the release-year range
-//!
-//! The generated years below are deliberately bounded rather than `any::<i32>()`, so that the
-//! properties are asserted over years a provider could plausibly print. The extremes are not
-//! skipped, though — they used to *panic* (`(a - b).abs()` overflowing `i32`) and are now
-//! pinned by name in
+//! The generated release years are bounded to years a provider could plausibly print. The
+//! extremes of `i32` are pinned by name in
 //! [`score_survives_the_extremes_of_the_release_year_range`].
 
-// Symmetry and reflexivity are claims of *bit-exact* equality — `token_set_ratio(a, b)` and
-// `token_set_ratio(b, a)` compute the same expression over the same set sizes, so an epsilon
-// here would weaken the property into something that no longer catches an argument-order bug.
-// The same allowance is already made by the in-module tests for the same reason.
+// Symmetry and reflexivity are claims of bit-exact equality. `token_set_ratio(a, b)` and
+// `token_set_ratio(b, a)` compute the same expression over the same set sizes, and an epsilon
+// would weaken the property into one that misses an argument-order bug.
 #![expect(
     clippy::float_cmp,
     reason = "the properties under test are exact ones - symmetry and reflexivity of the \
@@ -36,14 +30,14 @@ use tankovault_matcher::{
 };
 
 /// Titles as the normalizer produces them: lowercase alphanumeric words, single-spaced.
-/// Generating raw `".*"` would mostly produce strings that `normalize_title` could never
-/// emit, which tests the wrong function.
+/// Raw `".*"` would mostly produce strings `normalize_title` never emits, which tests the wrong
+/// function.
 fn normalized_title() -> impl Strategy<Value = String> {
     prop::collection::vec("[a-z0-9]{1,8}", 0..5).prop_map(|words| words.join(" "))
 }
 
 /// Years wide enough to include anything a provider could plausibly print, and narrow enough
-/// that `(a - b)` cannot overflow `i32`. See the module note.
+/// that `(a - b)` cannot overflow `i32`.
 fn safe_year() -> impl Strategy<Value = Option<i32>> {
     prop::option::of(-100_000i32..=100_000i32)
 }
@@ -71,13 +65,13 @@ prop_compose! {
 prop_compose! {
     /// `similarity` is deliberately allowed outside `[0, 1]`: it arrives from the database's
     /// trigram operator and nothing validates its range at this boundary, so the scorer has to
-    /// stay bounded even if it ever does.
+    /// stay bounded whatever it receives.
     fn any_candidate()(
         normalized_title in normalized_title(),
         similarity in -2.0f32..2.0f32,
         // A candidate carries every name its series answers to, and the scorer consults all of
-        // them. Generated rather than left empty so the properties below cover the alias path
-        // as well as the canonical one.
+        // them. Generating them makes the properties below cover the alias path as well as the
+        // canonical one.
         alt_normalized_titles in prop::collection::vec(normalized_title(), 0..3),
         content_type in content_type(),
         release_year in safe_year(),
@@ -100,9 +94,8 @@ prop_compose! {
 
 proptest! {
     /// Symmetry. `token_set_ratio` is a set-overlap measure, so swapping the arguments cannot
-    /// change it — and the caller relies on that, because `score` passes query-then-candidate
-    /// while the merge-candidate review path reads the pair the other way round. Pinned today
-    /// by two literal pairs only.
+    /// change it. `score` relies on that: it passes query then candidate, while the duplicate
+    /// sweep reads the pair both ways round.
     #[test]
     fn token_set_ratio_is_symmetric(a in normalized_title(), b in normalized_title()) {
         prop_assert_eq!(
@@ -111,10 +104,9 @@ proptest! {
         );
     }
 
-    /// The ratio is a probability-shaped number. A value outside `[0, 1]` — or a `NaN` from an
-    /// empty-set division — would propagate straight into `score` and past the decision
-    /// thresholds, where `NaN >= high` is `false` and every match would silently become
-    /// `Create`.
+    /// The ratio stays in `[0, 1]`. A value outside it, or a `NaN` from an empty-set division,
+    /// would pass straight through `score` to the decision thresholds, where `NaN >= high` is
+    /// `false` and every match silently becomes `Create`.
     #[test]
     fn token_set_ratio_is_bounded_and_never_nan(a in ".*", b in ".*") {
         let r = tankovault_matcher::token_set_ratio(&a, &b);
@@ -130,8 +122,8 @@ proptest! {
     }
 
     /// `score` is clamped to `[0, 1]` and never `NaN`, whatever the bonuses sum to. The
-    /// thresholds in `decide` are plain `>=` comparisons, so a `NaN` here does not error — it
-    /// silently reclassifies every candidate as "create a new series".
+    /// thresholds in `decide` are plain `>=` comparisons, so a `NaN` would not error; it would
+    /// reclassify every candidate as "create a new series".
     #[test]
     fn score_is_bounded_and_never_nan(q in any_query(), c in any_candidate()) {
         let s = score(&q, &c);
@@ -139,9 +131,9 @@ proptest! {
         prop_assert!((0.0..=1.0).contains(&s), "score {s} out of range");
     }
 
-    /// Monotonic in the trigram similarity: a candidate the database considers *more* similar
-    /// can never score lower, all else being equal. Without this the ranked suggestion list an
-    /// operator reads could invert.
+    /// Monotonic in the trigram similarity: a candidate the database considers more similar
+    /// never scores lower, all else being equal, so the ranked suggestion list an operator reads
+    /// cannot invert.
     #[test]
     fn score_is_monotonic_in_similarity(
         q in any_query(),
@@ -161,8 +153,8 @@ proptest! {
     }
 
     /// An exactly-equal normalized title can never score below any other title, all else
-    /// being equal. This is the property the whole `normalized_title` column exists to serve:
-    /// if it did not hold, two sources with byte-identical keys could rank below a near-miss.
+    /// being equal. The `normalized_title` column exists for this property: without it, two
+    /// sources with byte-identical keys could rank below a near-miss.
     #[test]
     fn an_exactly_equal_title_never_loses_to_a_different_one(
         q in any_query(),
@@ -181,11 +173,11 @@ proptest! {
     /// `decide` and `best_assessment` must agree about which band the best candidate is in,
     /// and `best_match` must report the same score as `best_assessment`.
     ///
-    /// Three functions now walk the same scored list. This pins them to one another: the
-    /// decision must be exactly the band the best reading falls in — attach only on a primary
-    /// identity with no veto — *and* the numeric veto must hold in `decide` independently of the
-    /// penalty `assess` already applied, which is sized to drop a realistic sequel pair out of
-    /// the attach band and is not the same claim as it always doing so.
+    /// Three functions walk the same scored list, and this pins them to one another. The
+    /// decision must be exactly the band the best reading falls in, attaching only on a primary
+    /// identity with no veto. The numeric veto must also hold in `decide` on its own, because the
+    /// penalty in `assess` is sized to drop a sequel pair out of the attach band, not guaranteed
+    /// to.
     #[test]
     fn decide_agrees_with_the_best_assessment(
         q in any_query(),
@@ -225,8 +217,8 @@ proptest! {
     }
 
     /// Nothing but a primary identity attaches: not a fuzzy score however high, and not an
-    /// alternative title on its own. The fuzzy route attached `Onikakushi-hen` to
-    /// `Onisarashi-hen`; the alias route built the hub series of `docs/MATCHING_OVERHAUL.md` §2.
+    /// alternative title on its own. A fuzzy score cannot tell `Onikakushi-hen` from
+    /// `Onisarashi-hen`, and an alias alone lets one junk title gather unrelated works.
     #[test]
     fn nothing_but_a_primary_identity_attaches(
         q in any_query(),
@@ -239,8 +231,7 @@ proptest! {
     }
 
     /// Medium, year, tags and credits never move a score: they are recorded and rendered, and
-    /// wrong or inconsistent across providers too often to weigh. They were what lifted an
-    /// alias hit over the merge threshold in 12,356 suspicious production merges.
+    /// disagree across providers too often to weigh.
     #[test]
     fn metadata_never_moves_the_score(q in any_query(), c in any_candidate()) {
         let mut bare_q = q.clone();
@@ -257,7 +248,7 @@ proptest! {
     }
 
     /// An edition marker on one side only never yields an automatic merge, however identical the
-    /// rest of the two series is — the same aliases, the same metadata. A side story, a coloured
+    /// rest of the two series is, down to the aliases and metadata. A side story, a coloured
     /// edition and a second arc each resemble the original more closely the better the matcher
     /// works.
     #[test]
@@ -300,10 +291,9 @@ proptest! {
 
     /// Titles carrying different numbers are never attached, whatever else agrees.
     ///
-    /// The scoring penalty and the guard in `decide` are two separate mechanisms for one rule,
-    /// and this is the rule rather than either mechanism: a sequel resembles its predecessor
-    /// *more* the better the matcher works, so this is the property that has to survive every
-    /// future improvement to the scorer.
+    /// The scoring penalty and the guard in `decide` are two mechanisms for one rule, and this
+    /// pins the rule itself. A sequel resembles its predecessor more closely the better the
+    /// matcher works, so this property has to survive every improvement to the scorer.
     #[test]
     fn a_numeric_conflict_is_never_attached(
         q in any_query(),
@@ -316,26 +306,11 @@ proptest! {
     }
 }
 
-/// **Regression: the release-year proximity bonus used to panic at the extremes.**
+/// The year comparison survives the extremes of `i32`.
 ///
-/// `score` computed `(a - b).abs()` on two `i32` release years, which overflows. With
-/// `overflow-checks = true` in `[profile.release]` (added by the SEC-11 fix) that panicked in
-/// release builds as well as debug:
-///
-/// ```text
-/// panicked at crates\matcher\src\lib.rs:92:15: attempt to subtract with overflow
-/// ```
-///
-/// It was reachable by any caller holding `sync.admin.read`:
-/// `GET /v1/admin/sync/suggest?title=x&start_year=-2147483648` binds `SuggestQuery.start_year`
-/// (`services\api\src\admin\sync.rs`) — an unvalidated `i32` straight off the query string —
-/// into `matcher::Query.release_year`, and every candidate with a positive `release_year` then
-/// overflowed the subtraction. `CatchPanicLayer` contained it, so the symptom was a `500`
-/// rather than a crash, but the endpoint was unusable.
-///
-/// Fixed by `a.saturating_sub(b).saturating_abs()`. Do **not** replace this with a bounded-year
-/// case: the whole point is the pair that overflows, and [`safe_year`] deliberately cannot
-/// generate it.
+/// `GET /v1/admin/sync/suggest` passes an unvalidated `start_year` into `Query.release_year`,
+/// and release builds keep overflow checks, so a plain `(a - b).abs()` panics on this pair.
+/// [`safe_year`] cannot generate it, which is why it is pinned by name.
 #[test]
 fn score_survives_the_extremes_of_the_release_year_range() {
     let query = Query {

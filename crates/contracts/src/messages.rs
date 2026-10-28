@@ -24,8 +24,8 @@ pub enum TaskKind {
 }
 
 impl TaskKind {
-    /// Stable lowercase name, matching the `scan_tasks.kind` column and used as a metric
-    /// label — so a rename here is a schema and a dashboard change, not just a rename.
+    /// Returns the stable lowercase name, which is the `scan_tasks.kind` value and a metric
+    /// label. Renaming one is a schema and dashboard change.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -35,7 +35,7 @@ impl TaskKind {
         }
     }
 
-    /// The kind a `scan_tasks.kind` value names, or `None` if it names none of them.
+    /// Returns the kind a `scan_tasks.kind` value names, or `None` if it names none of them.
     ///
     /// The inverse of [`as_str`](Self::as_str), for the one direction the column has to be read
     /// back in: rebuilding a task's message from its row.
@@ -93,8 +93,8 @@ pub struct ProgressEvent {
     pub at: OffsetDateTime,
 }
 
-/// Emitted when a worker upserts a genuinely new chapter. Consumed by the notifier
-/// (fan-out to watchers) and available to the sync service.
+/// Emitted when a worker upserts a chapter it had not seen. The notifier fans it out to
+/// watchers, and the sync service may consume it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChapterDiscovered {
     /// The canonical series the chapter belongs to.
@@ -109,21 +109,21 @@ pub struct ChapterDiscovered {
     pub chapter_number: f64,
     /// Title as the provider gives it, `None` when it publishes only a number.
     pub chapter_title: Option<String>,
-    /// RELATIVE path — resolve against the provider `base_url` at read time.
+    /// A path relative to the provider's `base_url`, resolved at read time.
     pub chapter_path: String,
     /// When the provider says it went up, `None` when it publishes no date.
     #[serde(default, with = "time::serde::rfc3339::option")]
     pub published_at: Option<OffsetDateTime>,
     /// What the provider said this chapter costs, as the ingest stored it.
     ///
-    /// Carried on the event rather than looked up by the consumer: the notifier decides whether
-    /// to announce, and a paywalled chapter announced to a reader who has not paid sends them to
-    /// a page that answers with a paywall. Defaulted, so a message published by an older worker
-    /// still deserializes — as `free`, which is what every message before this field meant.
+    /// Carried on the event so the notifier can decide whether to announce without a lookup: a
+    /// paywalled chapter announced to a reader who has not paid sends them to a paywall. It
+    /// defaults to `free`, so a message from a worker that predates the field still
+    /// deserializes with the meaning it had.
     #[serde(default)]
     pub access: ChapterAccess,
     /// When the provider said the paywall lifts, where it stated one. Always `None` on a free
-    /// chapter, and `None` on a locked one means no date was announced — never "already open".
+    /// chapter. `None` on a locked one means no date was announced, never "already open".
     #[serde(default, with = "time::serde::rfc3339::option")]
     pub unlocks_at: Option<OffsetDateTime>,
     /// When the ingest wrote the row, which is what makes the chapter new.
@@ -140,21 +140,22 @@ pub struct ChapterDiscovered {
 pub struct UserNotification {
     /// Recipient; also determines the [`crate::subjects::user_notify_subject`] routing.
     pub user_id: UserId,
-    /// The persisted `notifications.id` this push mirrors (lets the client dedup/mark-read).
+    /// The persisted `notifications.id` this push mirrors. The client deduplicates and marks
+    /// read by it.
     pub notification_id: Uuid,
-    /// Notification kind, e.g. `new_chapter` (mirrors `notifications.kind`).
+    /// The `notifications.kind`, such as `new_chapter`.
     pub kind: String,
-    /// Opaque per-kind payload (mirrors `notifications.payload`).
+    /// The opaque per-kind `notifications.payload`.
     pub payload: serde_json::Value,
     /// When the persisted row was written.
     #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,
-    /// The recipient's unread count *including* this notification, so the client can set its
-    /// badge directly without a round-trip to `/v1/me/notifications`.
+    /// The recipient's unread count including this notification, so the client can set its
+    /// badge without a round trip to `/v1/me/notifications`.
     pub unread_count: i64,
 }
 
-/// Emitted when a provider changes health state (drives console tiles + alerts).
+/// Emitted when a provider changes health state. Console tiles and alerts follow it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderStateChanged {
     /// The provider whose health moved.
@@ -178,9 +179,9 @@ mod tests {
 
     /// Every kind's column token must read back as the same kind.
     ///
-    /// The pair is what lets a task be rebuilt from its row after its message was lost. A kind
-    /// missing from `from_token` is not a compile error — it is a task the reconciler quietly
-    /// refuses to republish, so its run never finishes.
+    /// The pair lets a task be rebuilt from its row after its message was lost. A kind missing
+    /// from `from_token` is not a compile error but a task the reconciler refuses to republish,
+    /// so its run never finishes.
     #[test]
     fn every_task_kind_round_trips_through_its_column_token() {
         for kind in [

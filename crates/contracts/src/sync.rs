@@ -1,8 +1,8 @@
 //! The HTTP wire contract for the external-sync surface.
 //!
 //! Response bodies `services/sync` produces on `/v1/sync/*` and `services/api` re-publishes
-//! verbatim under `/v1/me/sync/*`. Shared here so both services' `#[utoipa::path]` annotations
-//! reference the same types instead of the frontend hand-mirroring structs that drift.
+//! verbatim under `/v1/me/sync/*`. Both services' `#[utoipa::path]` annotations name these types,
+//! so the frontend's generated client cannot drift from either.
 
 use serde::{Deserialize, Serialize};
 use tankovault_domain::Feature;
@@ -10,15 +10,13 @@ use utoipa::ToSchema;
 
 /// Whether a user has linked a provider and, when linked, who they are connected as.
 ///
-/// Always `200`: an unlinked account reads `{ "linked": false }` rather than 404ing, so the
-/// UI can render "not connected" without treating it as an error.
+/// Always `200`: an unlinked account reads `{ "linked": false }`, so the UI renders "not
+/// connected" without treating it as an error.
 ///
-/// Published as `SyncAccountStatus` rather than under its Rust name: `tankovault_domain`
-/// has an `AccountStatus` too (whether a *user account* is active or suspended), and two
-/// unrelated types sharing one `OpenAPI` component name means the last one registered silently
-/// replaces the other — which is exactly what happened when the domain enum was introduced.
-/// The qualifier is on this one because it is the more specific of the two: an
-/// external-tracker link status, not an account's own state.
+/// Published as `SyncAccountStatus` because `tankovault_domain` has an `AccountStatus` too,
+/// for whether a user account is active or suspended. Two types sharing one `OpenAPI`
+/// component name means the last one registered silently replaces the other. The qualifier
+/// goes on this one as the more specific of the two.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
 #[schema(as = SyncAccountStatus)]
 pub struct AccountStatus {
@@ -32,43 +30,33 @@ pub struct AccountStatus {
     pub last_synced_at: Option<String>,
 }
 
-/// How to settle a local/remote disagreement when a series exists on both sides
+/// How to settle a local and remote disagreement when a series exists on both sides
 /// (design v2 §B.3).
 ///
-/// # Why this is here rather than in `services/sync`
-///
-/// It was a `pub(crate)` enum in the sync service and a **bare string** on the wire, which put
-/// the vocabulary in three places that nothing connected: the service's enum, a prose list in
-/// this file's doc comment, and a closed enumeration the frontend maintained by hand
-/// (FRONTEND F10). A policy added to the service would have compiled everywhere and then
-/// silently failed to appear in the picker; a token misspelled in the frontend would have been
-/// rejected by the service at the far end of a round trip, if at all. Declaring it once here —
-/// where `utoipa` publishes it, `progenitor` generates it and the frontend consumes the
-/// generated form — makes the compiler the connection in both directions.
-///
-/// The JSON representation is unchanged: `snake_case`, the same four tokens the wire always
-/// carried. What changed is that the *schema* now says so, so an unknown token is a `422` at
-/// the edge instead of a value that reaches the merge and is quietly read as `newest_wins`.
+/// Declared once here, where `utoipa` publishes it and `progenitor` generates the frontend's
+/// copy, so a policy added to the service appears in the picker and a misspelled token fails to
+/// compile. The schema names the four `snake_case` tokens, so an unknown token is a `422` at
+/// the edge, not a value read as `newest_wins` in the merge.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ConflictPolicy {
-    /// Local progress/status is authoritative.
+    /// Local progress and status are authoritative.
     LocalWins,
     /// The remote (`AniList`) value is authoritative.
     RemoteWins,
     /// Whichever side was updated most recently wins.
     #[default]
     NewestWins,
-    /// Genuine conflicts are queued for the user to resolve rather than auto-picked.
+    /// Conflicts are queued for the user to resolve.
     AskMe,
 }
 
 impl ConflictPolicy {
-    /// Every policy, in the order a picker should offer them.
+    /// Every policy, in the order a picker offers them.
     ///
-    /// Hand-listed because Rust cannot enumerate an enum's variants without a derive macro.
-    /// [`ConflictPolicy::as_str`]'s exhaustive `match` forces a new variant to be added here to
-    /// compile, and `every_policy_is_listed_once_and_round_trips` catches one missing from it.
+    /// Listed by hand, since Rust cannot enumerate an enum's variants without a derive macro.
+    /// Nothing checks that every variant is here: one left out is missing from the picker and
+    /// refused by `from_str`.
     pub const ALL: [Self; 4] = [
         Self::LocalWins,
         Self::RemoteWins,
@@ -76,7 +64,15 @@ impl ConflictPolicy {
         Self::AskMe,
     ];
 
-    /// The wire and persistence token, identical to the `serde` representation.
+    /// Returns the wire and persistence token, identical to the `serde` representation.
+    ///
+    /// ```
+    /// use tankovault_contracts::sync::ConflictPolicy;
+    ///
+    /// assert_eq!(ConflictPolicy::AskMe.as_str(), "ask_me");
+    /// assert_eq!("ask_me".parse(), Ok(ConflictPolicy::AskMe));
+    /// assert!("ask-me".parse::<ConflictPolicy>().is_err());
+    /// ```
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -96,8 +92,8 @@ impl std::fmt::Display for ConflictPolicy {
 
 /// A policy token that names nothing.
 ///
-/// Carries the offending token: the value comes from a database column or a request body, so
-/// the operator reading the log needs to know *which* string was rejected.
+/// Carries the offending token: the value comes from a database column or a request body, and
+/// the operator reading the log needs to know which string was rejected.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnknownConflictPolicy(pub String);
 
@@ -121,10 +117,10 @@ impl std::error::Error for UnknownConflictPolicy {}
 impl std::str::FromStr for ConflictPolicy {
     type Err = UnknownConflictPolicy;
 
-    /// Derived from [`ConflictPolicy::ALL`] and [`ConflictPolicy::as_str`] rather than written
-    /// as a second `match`, so parsing is the exact inverse of rendering by construction — a
-    /// hand-written `match` with a `_ => NewestWins` fallback previously let a typo silently
-    /// become a policy change instead of an error.
+    /// Parses a token as [`ConflictPolicy::as_str`] renders it, and refuses any other.
+    ///
+    /// Searching [`ConflictPolicy::ALL`] makes parsing the exact inverse of rendering, with no
+    /// fallback arm that could turn a typo into a policy change.
     fn from_str(token: &str) -> Result<Self, Self::Err> {
         Self::ALL
             .into_iter()
@@ -165,11 +161,9 @@ pub struct AuthorizeUrl {
 
 /// One pending conflict awaiting the user's decision (design v2 §B.6 `GET /v1/me/sync/conflicts`).
 ///
-/// Produced by `services/sync` from a repository row and re-published verbatim by
-/// `services/api`. It lives here rather than on the row struct for the reason given in
-/// [`crate::admin`]: a `SELECT` column rename must not be able to rewrite the public API
-/// without a compile error. The published component name is pinned to `ConflictRow` — the
-/// move is an internal layering fix and must not rename anything on the wire.
+/// `services/sync` builds it from a repository row and `services/api` re-publishes it verbatim.
+/// It is a type of its own for the reason given in [`crate::admin`], and keeps the published
+/// component name `ConflictRow`.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[schema(as = ConflictRow)]
 pub struct ConflictView {
@@ -219,12 +213,11 @@ pub struct HistoryView {
 
 /// Acknowledgement for a sync route that answers `204 No Content`.
 ///
-/// `services/sync` returns a bare `204` for linking an account and for patching settings;
-/// `services/api` republishes those as `200 {"ok": true}` because its `Upstream::decode`
-/// synthesises this body for an empty upstream response. That synthesis is the contract, not
-/// an accident: naming it here means a change to either side breaks a type rather than
-/// silently altering what the SPA receives. `ok` is always `true` — a failure is a status
-/// code, never a `false` here.
+/// `services/sync` returns a bare `204` for linking an account and for patching settings.
+/// `services/api` republishes those as `200 {"ok": true}`, because its `Upstream::decode`
+/// synthesises this body for an empty upstream response. Naming the body here makes that
+/// synthesis part of the contract, so a change on either side breaks a type before it reaches
+/// the SPA.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema)]
 #[schema(as = SyncAck)]
 pub struct Ack {
@@ -238,7 +231,7 @@ impl Default for Ack {
     }
 }
 
-/// Whether unlinking an account or clearing a mapping actually removed anything.
+/// Whether unlinking an account or clearing a mapping removed anything.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema)]
 #[schema(as = SyncRemoved)]
 pub struct Removed {
@@ -262,7 +255,7 @@ pub struct Flagged {
     pub flagged: bool,
 }
 
-/// Outcome of a pull (provider → local).
+/// The outcome of a pull from the provider into the local library.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, ToSchema)]
 #[schema(as = SyncPullReport)]
 pub struct PullReport {
@@ -276,7 +269,7 @@ pub struct PullReport {
     pub unmatched: usize,
 }
 
-/// Outcome of a push (local → provider).
+/// The outcome of a push from the local library to the provider.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, ToSchema)]
 #[schema(as = SyncPushReport)]
 pub struct PushReport {
@@ -288,7 +281,7 @@ pub struct PushReport {
     pub unmapped: usize,
 }
 
-/// Outcome of a tokenless metadata-enrichment sweep.
+/// The outcome of a tokenless metadata-enrichment sweep.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, ToSchema)]
 #[schema(as = SyncEnrichReport)]
 pub struct EnrichReport {
@@ -314,10 +307,8 @@ pub struct ProviderPushOutcome {
 
 /// Which side a revert put back.
 ///
-/// An enum rather than the `&'static str` the sync service used, for the reason spelled out on
-/// [`ConflictPolicy`]: a bare string on the wire is a vocabulary nothing connects, and this one
-/// crosses two services and the console. It also cannot stay a `&'static str` here —
-/// `services/api` has to *deserialize* it, and a borrowed field cannot outlive the response body.
+/// An enum for the reason given on [`ConflictPolicy`]: the vocabulary crosses two services and
+/// the console, and only a published type keeps the three in step.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 #[schema(as = SyncRestoredSide)]
@@ -330,7 +321,7 @@ pub enum RestoredSide {
     WatchlistEntry,
     /// A remote entry was written back at the provider.
     RemoteEntry,
-    /// A series↔remote-media match was undone.
+    /// A match between a series and a remote media record was undone.
     Match,
 }
 
@@ -348,16 +339,15 @@ pub struct RevertReport {
     pub blocked_match: bool,
 }
 
-/// The feature flag gating each route of the external-sync surface, keyed on the path **suffix**
-/// beneath the surface's mount point.
+/// Returns the feature flag gating each route of the external-sync surface, keyed on the path
+/// suffix beneath the surface's mount point.
 ///
-/// `services/api` (`/v1/me/sync`) and `services/sync` (`/v1/sync`) both serve this surface;
-/// declaring the mapping once, suffix-keyed, means adding a route gates it at both hops or
-/// neither, instead of the two tiers' tables drifting apart (ARCH-18). A tier that does not
-/// serve a suffix still gates it, so nothing depends on which routes a given tier mounts.
+/// `services/api` (`/v1/me/sync`) and `services/sync` (`/v1/sync`) both serve this surface. One
+/// suffix-keyed mapping gates a new route at both hops or at neither. A tier that does not serve
+/// a suffix still gates it, so nothing depends on which routes a tier mounts.
 ///
-/// `""` is the whole-surface rule; `RouteFeatures` resolves longest-prefix-first, so specific
-/// suffixes win over it regardless of order here.
+/// `""` is the whole-surface rule. `RouteFeatures` resolves the longest prefix first, so a
+/// specific suffix wins over it whatever the order here.
 #[must_use]
 pub const fn sync_route_features() -> &'static [(&'static str, Feature)] {
     &[
@@ -372,10 +362,9 @@ pub const fn sync_route_features() -> &'static [(&'static str, Feature)] {
 mod tests {
     use super::{ConflictPolicy, UnknownConflictPolicy};
 
-    /// `ALL` is the only hand-maintained part of the vocabulary, so this is what stops it
-    /// drifting from the `match` in `as_str`: every entry must be distinct, and every entry
-    /// must survive `as_str` → `from_str`. A variant added to `as_str` but forgotten here
-    /// leaves the picker short; one added here but not to `as_str` cannot compile.
+    /// `ALL` is the only hand-maintained part of the vocabulary, so this keeps its entries in step
+    /// with the `match` in `as_str`: every entry is distinct, and every entry survives `as_str`
+    /// then `from_str`.
     #[test]
     fn every_policy_is_listed_once_and_round_trips() {
         for policy in ConflictPolicy::ALL {
@@ -392,10 +381,8 @@ mod tests {
         }
     }
 
-    /// The regression this type exists for. The sync service used to parse with a
-    /// `_ => NewestWins` arm and the frontend with a `_ => NewestWins` arm of its own, so a
-    /// misspelled policy was not an error anywhere — it silently became "newest wins", which
-    /// is the one policy that can overwrite a user's local progress without asking.
+    /// A misspelled policy is an error. Read as a default, it would become "newest wins", the
+    /// one policy that can overwrite a user's local progress without asking.
     #[test]
     fn an_unknown_token_is_an_error_rather_than_a_default() {
         let err = "newest-wins".parse::<ConflictPolicy>().unwrap_err();
@@ -421,16 +408,17 @@ mod tests {
         }
     }
 
-    /// The default is load-bearing: an account with no persisted policy and a service with no
-    /// configured seed both land here, and `AskMe` would queue every disagreement while
-    /// `LocalWins`/`RemoteWins` would silently pick a side.
+    /// An account with no persisted policy and a service with no configured seed both land on
+    /// the default. `AskMe` would queue every disagreement, and `LocalWins` or `RemoteWins`
+    /// would silently pick a side.
     #[test]
     fn the_default_is_newest_wins() {
         assert_eq!(ConflictPolicy::default(), ConflictPolicy::NewestWins);
     }
 }
 
-/// Start a re-verification of every stored `AniList` mapping (internal, `api` → `sync`).
+/// Starts a re-verification of every stored `AniList` mapping. Internal, sent by `api` to
+/// `sync`.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct MappingReverifyRequest {
     /// Report the failing mappings without removing them.
@@ -439,7 +427,7 @@ pub struct MappingReverifyRequest {
     pub actor: Option<tankovault_domain::UserId>,
 }
 
-/// Whether a re-verification was started (internal, `sync` → `api`).
+/// Whether a re-verification was started. Internal, sent by `sync` to `api`.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct MappingReverifyStarted {
     /// `false` when another run holds the claim.

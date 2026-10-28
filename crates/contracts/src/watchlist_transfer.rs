@@ -6,8 +6,8 @@
 //! Every document carries `format` and `version`. Each version's shape is frozen once released:
 //! a change to what an entry holds is a new `vN` module converting into `PortableEntry`, and
 //! [`parse_document`] keeps accepting every older version by upgrading it. A document newer than
-//! [`CURRENT_VERSION`] is refused by name rather than half-read, since a field this server does
-//! not know about may be the one that made the entry mean something different.
+//! [`CURRENT_VERSION`] is refused by name, not half-read, since a field this server does not know
+//! may be the one that changes what the entry means.
 
 use serde::{Deserialize, Serialize};
 use tankovault_domain::WatchStatus;
@@ -190,7 +190,7 @@ impl From<PortableEntry> for v1::Entry {
     }
 }
 
-/// Build the current version's document from `entries`.
+/// Builds the current version's document from `entries`.
 #[must_use]
 pub fn export_document(exported_at: OffsetDateTime, entries: Vec<PortableEntry>) -> v1::Document {
     v1::Document {
@@ -262,13 +262,16 @@ struct Envelope {
     version: Option<u64>,
 }
 
-/// Parse any supported version of a watchlist backup and validate every entry.
+/// Parses any supported version of a watchlist backup and validates every entry.
 ///
-/// Reads the bytes twice — once for the envelope, once as the declared version — rather than
-/// through a `serde_json::Value`, so an import never holds an untyped tree of the whole document.
+/// The bytes are read twice, once for the envelope and once as the declared version, so an
+/// import never holds an untyped `serde_json::Value` tree of the whole document.
 ///
 /// # Errors
-/// [`DocumentError`], naming the first problem found.
+/// [`DocumentError::Malformed`] for bytes that are not the declared shape,
+/// [`DocumentError::NotAWatchlist`] for a missing `format` or `version`,
+/// [`DocumentError::UnsupportedVersion`], [`DocumentError::TooManyEntries`] past
+/// [`MAX_ENTRIES`], or [`DocumentError::InvalidEntry`] for the first entry that fails validation.
 pub fn parse_document(bytes: &[u8]) -> Result<ParsedDocument, DocumentError> {
     let malformed = |e: serde_json::Error| DocumentError::Malformed(e.to_string());
     let envelope: Envelope = serde_json::from_slice(bytes).map_err(malformed)?;
@@ -312,7 +315,7 @@ pub enum ImportMode {
     Merge,
     /// Add what is missing; the backup's entry and progress replace an existing one.
     Overwrite,
-    /// As `overwrite`, and remove every entry — and every pending entry — the backup lacks.
+    /// As `overwrite`, and remove every entry and pending entry the backup lacks.
     Replace,
 }
 

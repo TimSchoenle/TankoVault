@@ -25,20 +25,20 @@ const NOISE_WORDS: &[&str] = &[
     "scanlation",
 ];
 
-/// Produce the normalized matching key for a title.
+/// Produces the normalized matching key for a title.
 ///
 /// The result is lowercase ASCII-ish, punctuation-free, noise-word-free, and
 /// single-spaced.
 ///
-/// A title with no content left after folding yields an empty key, and callers match on that
-/// rather than assuming non-empty input gives a non-empty key. "No content left" is wider than
-/// it looks: [`char::is_alphanumeric`] is true for combining marks and for the modifier letters
-/// used as apostrophes, all of which are elided here, so a title of nothing but those is empty
-/// too. `crates/domain/tests/prop_normalize.rs` pins the exact set.
+/// A title with no content left after folding yields an empty key, and callers check for it
+/// instead of assuming non-empty input gives a non-empty key. "No content left" is wider than it
+/// looks: [`char::is_alphanumeric`] is true for combining marks and for the modifier letters used
+/// as apostrophes, all of which are elided, so a title of nothing but those is empty too.
+/// `crates/domain/tests/prop_normalize.rs` pins the exact set.
 ///
-/// This key decides whether two providers' listings are the same work, so the examples below
-/// are the contract rather than illustration: every one of them is a pair a real catalogue
-/// produces, and each would be two separate series if the rule it shows were dropped.
+/// This key decides whether two providers' listings are the same work, so the examples below are
+/// the contract: each is a pair a real catalogue produces, and each would be two series without
+/// the rule it shows.
 ///
 /// ```
 /// use tankovault_domain::normalize_title;
@@ -47,13 +47,13 @@ const NOISE_WORDS: &[&str] = &[
 /// assert_eq!(normalize_title("Solo Leveling"), "solo leveling");
 /// assert_eq!(normalize_title("Re:Zero  -  Starting Life"), "re zero starting life");
 ///
-/// // Apostrophes are elided, not separated — in every spelling a provider uses. This is the
-/// // rule that makes a possessive or a contraction match the same title typed without one.
+/// // Apostrophes are elided, not separated, in every spelling a provider uses, so a
+/// // possessive or a contraction matches the same title typed without one.
 /// assert_eq!(normalize_title("Sorry but I’m not Yuri"), "sorry but im not yuri");
 /// assert_eq!(normalize_title("Sorry But Im Not Yuri"),  "sorry but im not yuri");
 /// assert_eq!(normalize_title("The Witch's Tears"), normalize_title("The Witchs Tears"));
 ///
-/// // Latin diacritics fold, so an accented release matches its ASCII listing — whether the
+/// // Latin diacritics fold, so an accented release matches its ASCII listing, whether the
 /// // accent is a precomposed character or a base letter plus a combining mark.
 /// assert_eq!(normalize_title("Ōoku"), "ooku");
 /// assert_eq!(normalize_title("Be\u{0301}rserk"), "berserk");
@@ -69,19 +69,19 @@ const NOISE_WORDS: &[&str] = &[
 /// assert_eq!(normalize_title("Solo Leveling Manhwa"), "solo leveling");
 /// assert_eq!(normalize_title("Berserk (Official Scan)"), "berserk");
 ///
-/// // …but a title made *entirely* of noise words keeps them, because the alternative is an
-/// // empty key, and every empty key collides with every other one.
+/// // A title made entirely of noise words keeps them, since an empty key would collide with
+/// // every other empty key.
 /// assert_eq!(normalize_title("Manga"), "manga");
 ///
-/// // Input with nothing left after folding yields an empty key — whitespace, but also a title
-/// // made only of characters that are elided rather than kept.
+/// // Input with nothing left after folding yields an empty key: whitespace, and a title made
+/// // only of elided characters.
 /// assert_eq!(normalize_title("   "), "");
 /// assert_eq!(normalize_title("\u{0363}"), "");
 /// ```
 #[must_use]
 pub fn normalize_title(title: &str) -> String {
-    // Lowercasing can expand a character (`İ` → `i` + U+0307), so fold each resulting char
-    // in the same pass rather than lowercasing and folding separately.
+    // Lowercasing can expand a character (`İ` becomes `i` plus U+0307), so each resulting char
+    // is folded in the same pass.
     let mut folded = String::with_capacity(title.len());
     for c in title.chars().flat_map(char::to_lowercase) {
         fold_into(widen(c), &mut folded);
@@ -101,12 +101,12 @@ pub fn normalize_title(title: &str) -> String {
     tokens.join(" ")
 }
 
-/// The whitespace-insensitive form of an already-[`normalize_title`]d key.
+/// Returns the whitespace-insensitive form of an already-[`normalize_title`]d key.
 ///
 /// A missing space between two inline elements is the most common way one provider's listing
-/// differs from another's for the *same* work (`Spy X Family` vs `Spyxfamily`) — invisible to
-/// trigram and token-set matching alike. Deliberately derived from the normalized key, not the
-/// raw title, so it inherits case/diacritic folding and adds exactly one rule of its own.
+/// differs from another's for the same work (`Spy X Family` and `Spyxfamily`), and trigram and
+/// token-set matching both miss it. Derived from the normalized key, not the raw title, so it
+/// inherits case and diacritic folding and adds one rule of its own.
 ///
 /// ```
 /// use tankovault_domain::{compact_key, normalize_title};
@@ -151,7 +151,8 @@ const PLACEHOLDER_ALIASES: &[&str] = &[
     "chinese",
 ];
 
-/// Whether an already-[`normalize_title`]d alternative title is placeholder text, not a title.
+/// Returns whether an already-[`normalize_title`]d alternative title is placeholder text, not a
+/// title.
 ///
 /// Empty, or one of the scraped placeholders and template words that joined unrelated series in
 /// production. Such a title is never stored.
@@ -177,12 +178,12 @@ const MIN_ALIAS_CHARS: usize = 8;
 const MIN_SINGLE_WORD_ALIAS_CHARS: usize = 10;
 
 /// Shortest compact key an alias in a non-Latin script may have. A CJK or Hangul character
-/// carries a syllable or a morpheme rather than a letter, so the Latin floors would refuse most
-/// native titles (`進撃の巨人` is five characters).
+/// carries a syllable or a morpheme, not a letter, so the Latin floors would refuse most native
+/// titles (`進撃の巨人` is five characters).
 const MIN_NON_LATIN_ALIAS_CHARS: usize = 3;
 
-/// Whether an already-[`normalize_title`]d alternative title is specific enough to identify a
-/// work.
+/// Returns whether an already-[`normalize_title`]d alternative title is specific enough to identify
+/// a work.
 ///
 /// An alias that fails this never counts as an identity match. Production merged unrelated series
 /// through `unknown` (11 merges into 9 survivors), `status`, `sao` and `x`, and every merge copied
@@ -215,8 +216,8 @@ pub fn alias_is_distinctive(normalized: &str) -> bool {
     chars >= MIN_ALIAS_CHARS && !(single_word && chars < MIN_SINGLE_WORD_ALIAS_CHARS)
 }
 
-/// Map a full-width or ideographic character onto its ASCII equivalent, leaving everything
-/// else alone.
+/// Maps a full-width or ideographic character onto its ASCII equivalent, leaving everything else
+/// alone.
 ///
 /// Runs *before* [`fold_into`] so full-width apostrophes and ampersands hit the same rules as
 /// their ASCII forms, instead of needing a duplicate arm each.
@@ -230,7 +231,7 @@ fn widen(c: char) -> char {
     }
 }
 
-/// Fold one lowercased character into the key being built.
+/// Folds one lowercased character into the key being built.
 ///
 /// Three outcomes, and which one a character gets is the whole of the normalization policy:
 /// elided (contributes nothing and does **not** break the word), expanded to one or more ASCII
@@ -244,8 +245,8 @@ fn widen(c: char) -> char {
 )]
 fn fold_into(c: char, out: &mut String) {
     match c {
-        // Every apostrophe spelling a provider emits — straight, curly, modifier-letter,
-        // backtick, acute-as-apostrophe, prime — elided so a possessive or contraction
+        // Every apostrophe spelling a provider emits (straight, curly, modifier letter,
+        // backtick, acute as apostrophe, prime) is elided, so a possessive or contraction
         // matches the same title spelled without one.
         '\'' | '\u{2018}' | '\u{2019}' | '\u{02BC}' | '\u{02B9}' | '`' | '\u{00B4}'
         | '\u{2032}' => {}
@@ -337,22 +338,21 @@ mod tests {
         assert_eq!(normalize_title("   "), "");
     }
 
-    /// A title of nothing but elided characters is empty *on purpose*. `char::is_alphanumeric`
-    /// is true for combining marks, so a property test read this as a bug; the fix was the
-    /// property, not the folding. Keeping such a character would index a key made of a bare
+    /// A title of nothing but elided characters is empty, even though `char::is_alphanumeric`
+    /// is true for combining marks. Keeping such a character would index a key made of a bare
     /// combining mark, and no provider lists a title that is only marks.
     #[test]
     fn a_title_of_only_elided_characters_normalizes_to_an_empty_key() {
         assert_eq!(normalize_title("\u{0363}"), "");
         assert_eq!(normalize_title("\u{02BC}"), "");
-        // The same characters attached to a letter still fold into it rather than vanishing.
+        // The same characters attached to a letter fold into it instead of vanishing.
         assert_eq!(normalize_title("a\u{0363}"), "a");
         assert_eq!(normalize_title("i\u{02BC}m"), "im");
     }
 
-    /// An apostrophe joins a word; it does not split one — treating it as a separator put
+    /// An apostrophe joins a word and does not split one. As a separator it would leave
     /// `Sorry but I'm not Yuri` and `Sorry But Im Not Yuri` in the review band instead of
-    /// matching them as the same series.
+    /// matching them as one series.
     #[test]
     fn apostrophes_join_a_word_rather_than_splitting_it() {
         let expected = "sorry but im not yuri";
@@ -373,8 +373,8 @@ mod tests {
         );
     }
 
-    /// Combining marks fold into the letter they sit on — treating them as separators split
-    /// `İstanbul` (which lowercases to `i` + U+0307) into two tokens.
+    /// Combining marks fold into the letter they sit on. As separators they would split
+    /// `İstanbul`, which lowercases to `i` plus U+0307, into two tokens.
     #[test]
     fn combining_marks_are_elided_not_separated() {
         assert_eq!(normalize_title("\u{0130}stanbul"), "istanbul");
@@ -385,8 +385,8 @@ mod tests {
         );
     }
 
-    /// Full-width forms are the same characters as their ASCII twins — before folding, `ＳＰＹ`
-    /// and `SPY` normalized to different keys and never matched.
+    /// Full-width forms are the same characters as their ASCII twins, so `ＳＰＹ` and `SPY`
+    /// share a key.
     #[test]
     fn full_width_forms_fold_to_ascii() {
         assert_eq!(normalize_title("ＳＰＹ×ＦＡＭＩＬＹ"), "spy family");
@@ -403,8 +403,8 @@ mod tests {
         assert_eq!(normalize_title("Tom&Jerry"), "tom and jerry");
     }
 
-    /// Multi-letter folds keep both letters — folding `ß` to a single `s` would put `Straße`
-    /// and `Strasse` on different keys.
+    /// Multi-letter folds keep both letters: folding `ß` to a single `s` would put `Straße` and
+    /// `Strasse` on different keys.
     #[test]
     fn multi_letter_folds_expand_rather_than_truncate() {
         assert_eq!(normalize_title("Straße"), "strasse");
@@ -414,7 +414,7 @@ mod tests {
     }
 
     /// CJK and Hangul survive normalization, because the catch-all arm keeps every
-    /// alphanumeric character rather than only ASCII ones.
+    /// alphanumeric character, not only ASCII ones.
     #[test]
     fn cjk_titles_survive() {
         assert_eq!(normalize_title("ワンピース"), "ワンピース");
@@ -432,7 +432,7 @@ mod tests {
             compact_key(&normalize_title("Wants to Be Free")),
             compact_key(&normalize_title("Wantsto Be Free"))
         );
-        // It inherits every other rule rather than restating any of them.
+        // It inherits every other rule without restating any of them.
         assert_eq!(
             compact_key(&normalize_title("It's Love")),
             compact_key(&normalize_title("Its Love"))

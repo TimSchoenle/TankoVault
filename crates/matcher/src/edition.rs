@@ -5,8 +5,8 @@ use std::collections::BTreeSet;
 
 /// Token sequences as `normalize_title` produces them, each with the marker it reads as.
 ///
-/// Every entry is a production pair the fuzzy or alias route merged. A spelling variant maps to
-/// the same marker so that `4-koma` and `yonkoma` agree.
+/// Each entry marks a different book that title similarity alone would merge with the unmarked
+/// one. Spelling variants map to one marker, so `4-koma` and `yonkoma` agree.
 const EDITION_MARKERS: &[(&[&str], &str)] = &[
     // A side story set in the same world: same characters, different book.
     (&["gaiden"], "gaiden"),
@@ -51,7 +51,7 @@ enum Marker<'a> {
     Letter(&'a str),
 }
 
-/// The markers `normalized` carries.
+/// Returns the markers `normalized` carries.
 fn markers(normalized: &str) -> BTreeSet<Marker<'_>> {
     let tokens: Vec<&str> = normalized.split_whitespace().collect();
     let mut out = BTreeSet::new();
@@ -77,7 +77,7 @@ fn markers(normalized: &str) -> BTreeSet<Marker<'_>> {
     out
 }
 
-/// Whether one title carries an edition or arc marker the other does not.
+/// Returns whether one title carries an edition or arc marker the other does not.
 pub(crate) fn editions_conflict(a: &str, b: &str) -> bool {
     markers(a) != markers(b)
 }

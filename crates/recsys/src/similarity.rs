@@ -1,17 +1,25 @@
 //! Exact scoring over the sparse vectors, and the explanation that comes with it.
 //!
-//! The dense index says *that* two series are close; only these functions can say *why*. Keeping
-//! the sparse vectors is what lets the reader be told something true even though retrieval is
-//! approximate.
+//! The dense index says that two series are close; these functions say why. Retrieval is
+//! approximate, and the sparse vectors keep the explanation exact.
 
-/// Cosine similarity of two sparse vectors, both sorted ascending by feature id.
+/// Returns the cosine similarity of two L2-normalised sparse vectors, both strictly ascending by
+/// feature id.
 ///
-/// A merge, not a hash join: the vectors are ~20 entries each and already ordered by
-/// construction, so this is two cursors and no allocation.
+/// The result is the dot product, which equals the cosine for normalised input; unnormalised
+/// input returns the plain dot product. It walks both vectors once and allocates nothing. A
+/// repeated or out-of-order id gives a wrong sum in release builds.
 ///
-/// Assumes both inputs are L2-normalised (they are, as stored), so the dot product *is* the
-/// cosine. Passing unnormalised vectors yields a dot product, silently — which is why the one
-/// place that could is a debug assertion.
+/// # Panics
+/// In debug builds, when either vector is not strictly ascending by id.
+///
+/// ```
+/// use tankovault_recsys::cosine;
+///
+/// let a = [(1, 0.6), (2, 0.8)];
+/// assert!((cosine(&a, &a) - 1.0).abs() < 1e-6);
+/// assert!((cosine(&a, &[(2, 1.0)]) - 0.8).abs() < 1e-6);
+/// ```
 #[must_use]
 pub fn cosine(a: &[(i32, f32)], b: &[(i32, f32)]) -> f32 {
     debug_assert!(
@@ -38,13 +46,33 @@ pub fn cosine(a: &[(i32, f32)], b: &[(i32, f32)]) -> f32 {
     sum
 }
 
-/// The features two series share, strongest contribution first.
+/// Returns up to `limit` feature ids two series share, strongest contribution first.
 ///
-/// "Contribution" is the product of the two weights — the term's actual share of the cosine —
-/// not either weight alone. A feature that is prominent on one side and incidental on the other
-/// explains far less than the number on the prominent side suggests.
+/// Both vectors must be strictly ascending by feature id, as for [`cosine`]; out of order, a
+/// shared feature can be missed. A feature's contribution is the product of its two weights,
+/// which is its share of the cosine. Ties are ordered by id.
+///
+/// # Panics
+/// In debug builds, when either vector is not strictly ascending by id.
+///
+/// ```
+/// use tankovault_recsys::shared_features;
+///
+/// // Feature 1 is prominent on one side only, so feature 2 explains more.
+/// let a = [(1, 0.9), (2, 0.5)];
+/// let b = [(1, 0.05), (2, 0.5)];
+/// assert_eq!(shared_features(&a, &b, 5), [2, 1]);
+/// ```
 #[must_use]
 pub fn shared_features(a: &[(i32, f32)], b: &[(i32, f32)], limit: usize) -> Vec<i32> {
+    debug_assert!(
+        a.windows(2).all(|w| w[0].0 < w[1].0),
+        "left vector must be sorted"
+    );
+    debug_assert!(
+        b.windows(2).all(|w| w[0].0 < w[1].0),
+        "right vector must be sorted"
+    );
     let (mut i, mut j) = (0, 0);
     let mut shared: Vec<(i32, f32)> = Vec::new();
     while i < a.len() && j < b.len() {
@@ -58,9 +86,7 @@ pub fn shared_features(a: &[(i32, f32)], b: &[(i32, f32)], limit: usize) -> Vec<
             }
         }
     }
-    // Descending by contribution, then by id so the output is deterministic when two features
-    // contribute identically — an explanation that reorders between identical requests reads as
-    // a bug to anyone watching.
+    // Ties break by id, so identical requests explain in the same order.
     shared.sort_by(|x, y| y.1.total_cmp(&x.1).then_with(|| x.0.cmp(&y.0)));
     shared.truncate(limit);
     shared.into_iter().map(|(id, _)| id).collect()
@@ -78,8 +104,7 @@ mod tests {
 
     #[test]
     fn disjoint_vectors_score_zero() {
-        // Exactly zero, not approximately: no term is ever added, so this is the identity of the
-        // accumulator rather than the result of any arithmetic.
+        // Exactly zero: no term is added, so the accumulator keeps its initial value.
         for (a, b) in [
             (&[(1, 1.0_f32)][..], &[(2, 1.0_f32)][..]),
             (&[][..], &[(2, 1.0)][..]),
@@ -98,8 +123,7 @@ mod tests {
         assert!((score - 0.8).abs() < 1e-6);
     }
 
-    /// The merge must not depend on which vector is longer, or scoring becomes asymmetric and a
-    /// pair's similarity changes with the order it is asked about.
+    /// A pair scores the same in either order, whichever vector is longer.
     #[test]
     fn cosine_is_symmetric_regardless_of_length() {
         let a = [(1, 0.5), (3, 0.5), (7, 0.7)];

@@ -23,25 +23,23 @@ pub enum Feature {
     /// The "you might like" recommendations on the home dashboard.
     #[serde(rename = "catalogue.recommendations")]
     CatalogueRecommendations,
-    /// Whether adult-classified series may be shown to *anyone* on this deployment.
+    /// Whether adult-classified series may be shown to anyone on this deployment.
     ///
     /// The deployment-wide half of the adult gate; the per-reader opt-in is the other half, and
-    /// both must be on. Off does not merely hide the preference — it closes the gate for every
-    /// reader regardless of what they already opted into, which is what makes it usable as a
-    /// kill switch on an instance whose audience turns out not to be what the operator assumed.
+    /// both must be on. Off closes the gate for every reader, whatever they opted into, so it
+    /// works as a kill switch on an instance whose audience is not what the operator assumed.
     #[serde(rename = "catalogue.adult_content")]
     CatalogueAdultContent,
 
     /// Whether an account is required to reach the application at all.
     ///
-    /// Ships **off**, so a fresh deployment is public. On, it is the whole-product gate: every
-    /// page and every route outside the sign-in surface refuses a caller with no account, and
-    /// the web app sends a signed-out visitor to the sign-in screen instead of the catalogue.
+    /// Ships off, so a fresh deployment is public. On, it gates the whole product: every page and
+    /// route outside the sign-in surface refuses a caller with no account, and the web app sends a
+    /// signed-out visitor to the sign-in screen instead of the catalogue.
     ///
-    /// Unlike every other flag here, this one is enforced by *requiring* something rather than
-    /// by withdrawing a route, so a refusal is `401`, not the usual `404`. What stays reachable
-    /// while it is on — sign-in, registration, password reset, email confirmation and the legal
-    /// documents — is the surface a visitor needs in order to *get* an account; see
+    /// Unlike the other flags, this one requires something instead of withdrawing a route, so a
+    /// refusal is `401`, not `404`. Sign-in, registration, password reset, email confirmation and
+    /// the legal documents stay reachable, since a visitor needs them to get an account; see
     /// `services/api`'s `account_gate`.
     #[serde(rename = "accounts.required")]
     AccountsRequired,
@@ -69,19 +67,17 @@ pub enum Feature {
     /// Two-factor authentication: enrolling an authenticator app or a hardware security key,
     /// and the step-up prompt that guards sensitive actions.
     ///
-    /// Off hides the whole surface and refuses enrolment, but does **not** disarm the factors
-    /// already enrolled — a sign-in still asks for the second leg, and a step-up is still
-    /// required. Disarming them would turn a flag flip into a silent downgrade of every
-    /// protected account, which is the one thing a feature switch must never do; an operator
-    /// who genuinely needs that removes the enrolments.
+    /// Off hides the whole surface and refuses enrolment, but does not disarm the factors already
+    /// enrolled: a sign-in still asks for the second leg, and a step-up is still required.
+    /// Disarming them would make a flag flip a silent downgrade of every protected account; an
+    /// operator who needs that removes the enrolments.
     #[serde(rename = "accounts.mfa")]
     AccountsMfa,
     /// Require every account to hold a second factor, not just privileged ones.
     ///
-    /// Ships **off**. Privileged accounts are required to enrol regardless of this flag —
-    /// that requirement is in the authorization path, not here. This extends it to ordinary
-    /// readers, and turning it on means every account without a factor is confined to the
-    /// enrolment surface until it has one.
+    /// Ships off. Privileged accounts must enrol regardless of this flag, a requirement the
+    /// authorization path enforces. This extends it to ordinary readers: on, every account
+    /// without a factor is confined to the enrolment surface until it has one.
     #[serde(rename = "accounts.mfa_required")]
     AccountsMfaRequired,
 
@@ -196,7 +192,7 @@ pub enum Feature {
 }
 
 impl Feature {
-    /// Every feature, in the order the control plane lists them.
+    /// Returns every feature, in the order the control plane lists them.
     #[must_use]
     pub const fn all() -> &'static [Self] {
         &[
@@ -248,8 +244,8 @@ impl Feature {
         ]
     }
 
-    /// The persisted key. Stable forever — it is a database primary key and appears in audit
-    /// records.
+    /// Returns the persisted key, which never changes: it is a database primary key and appears
+    /// in audit records.
     #[must_use]
     pub const fn key(self) -> &'static str {
         match self {
@@ -301,7 +297,7 @@ impl Feature {
         }
     }
 
-    /// Whether the feature ships on.
+    /// Returns whether the feature ships on.
     ///
     /// Everything defaults to on: the flag system exists so an operator can *narrow* a
     /// working deployment, not so that a fresh install arrives inert. Three exceptions. Two
@@ -324,26 +320,25 @@ impl Feature {
                 // deployments and a catastrophic *first* impression for all of them: a fresh
                 // install would lock its own installer out of everything but enrolment.
                 | Self::AccountsMfaRequired
-                // Ships off for the same class of reason: on, the deployment is private, and a
-                // fresh install would answer its first visitor — the installer, before they have
-                // registered — with a sign-in wall over an empty user table. Whether an instance
-                // is public is the operator's decision to make, not a default to inherit.
+                // Ships off for a similar reason: on, a fresh install would answer its first
+                // visitor, the installer who has not registered yet, with a sign-in wall over an
+                // empty user table. Whether an instance is public is the operator's decision.
                 | Self::AccountsRequired
         )
     }
 
-    /// Whether this feature may never be switched off.
+    /// Returns whether this feature may never be switched off.
     ///
     /// Both are recovery paths: disabling the flag surface removes the only way to switch
     /// anything back on, and disabling user administration removes the only way to grant
-    /// access to it. Either would brick the deployment, recoverable only via a direct
-    /// database edit, so the registry refuses rather than trusting a confirmation dialog.
+    /// access to it. Either would brick the deployment until a direct database edit, so the
+    /// registry refuses instead of trusting a confirmation dialog.
     #[must_use]
     pub const fn is_locked(self) -> bool {
         matches!(self, Self::AdminFeatureFlags | Self::AdminUsers)
     }
 
-    /// The control plane's grouping heading.
+    /// Returns the control plane's grouping heading.
     #[must_use]
     pub const fn group(self) -> FeatureGroup {
         match self {
@@ -447,9 +442,9 @@ impl Feature {
         }
     }
 
-    /// What switching this off actually does, in the operator's terms. Written to be read in
-    /// the control plane immediately before someone flips a production switch, so it names
-    /// the consequence rather than restating the title.
+    /// Returns what switching this off does, in the operator's terms. It is read in the control
+    /// plane just before someone flips a production switch, so it names the consequence instead
+    /// of restating the title.
     #[must_use]
     #[expect(
         clippy::too_many_lines,
@@ -652,7 +647,7 @@ pub enum FeatureGroup {
 }
 
 impl FeatureGroup {
-    /// The token this group serializes to, which is also its section key in the console.
+    /// Returns the token this group serializes to, which is also its section key in the console.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {

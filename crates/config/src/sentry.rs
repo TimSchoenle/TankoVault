@@ -6,8 +6,7 @@ use terrace_config::schema::Describe;
 
 /// How much of the `tracing` stream one Sentry sink takes.
 ///
-/// Ordered by severity, so a threshold names the *least* severe record it accepts:
-/// `warn` means `error` and `warn`.
+/// A threshold names the least severe record it accepts, so `warn` takes `error` and `warn`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Describe)]
 #[serde(rename_all = "lowercase")]
 pub enum SentryLevel {
@@ -28,11 +27,9 @@ pub enum SentryLevel {
 
 /// Sentry error reporting and performance tracing.
 ///
-/// Off by default and off in every published compose default: a DSN is an egress destination
-/// for whatever a log line happens to carry, so turning it on is an operator's decision made
-/// once per deployment. When [`Self::enabled`] is set the service refuses to boot without a
-/// usable [`Self::dsn`] rather than starting with a reporter that reports nothing — the same
-/// rule that removed `telemetry.otlp_endpoint`.
+/// Off by default, and in every published compose file, because a DSN is an egress destination
+/// for whatever a log line carries. When [`Self::enabled`] is set, the service refuses to boot
+/// without a usable [`Self::dsn`].
 #[derive(Debug, Clone, Deserialize, Describe)]
 #[expect(
     clippy::struct_excessive_bools,
@@ -45,9 +42,9 @@ pub struct SentryConfig {
     pub enabled: bool,
     /// Ingest URL, `https://<key>@<host>/<project>`.
     ///
-    /// A [`SecretString`]: the embedded key is a bearer credential for the project's ingest
-    /// endpoint, and this struct is nested in a `TelemetryConfig` that is logged with `?`.
-    /// Absent while [`Self::enabled`] is set is a boot failure, not a silent no-op.
+    /// Required while [`Self::enabled`] is set.
+    // A `SecretString` because the embedded key is a bearer credential for the project's ingest
+    // endpoint, and `TelemetryConfig` is logged with `?`.
     #[config(secret)]
     #[serde(default)]
     pub dsn: Option<SecretString>,
@@ -55,27 +52,25 @@ pub struct SentryConfig {
     /// `TANKOVAULT_PROFILE=production` and `development` otherwise.
     #[serde(default)]
     pub environment: Option<String>,
-    /// Release tag on every event; defaults to the workspace version the binary was built
-    /// from, which is what makes a regression attributable to a deploy.
+    /// Release tag on every event. Unset, it is the workspace version the binary was built
+    /// from, which ties an issue to a deploy.
     #[serde(default)]
     pub release: Option<String>,
-    /// Host tag on every event. Left unset, Sentry reports none: the hostname of a replica is
-    /// infrastructure detail that [`Self::send_default_pii`] would otherwise gate.
+    /// Host tag on every event. Unset, Sentry reports none.
     #[serde(default)]
     pub server_name: Option<String>,
-    /// Fraction of captured events actually sent, `0.0`-`1.0`. A blunt volume cap — it drops
-    /// whole issues, not repetitions of one — so leave it at `1.0` unless quota forces it.
+    /// Fraction of captured events sent, `0.0`-`1.0`, decided at random per event. A lower rate
+    /// undercounts every issue and can miss a rare one entirely, so leave it at `1.0` unless
+    /// quota forces it lower.
     #[config(range(min = 0.0, max = 1.0))]
     #[serde(default = "SentryConfig::default_sample_rate")]
     pub sample_rate: f32,
     /// Fraction of traces this service **starts** that are recorded, `0.0`-`1.0`.
     ///
-    /// `0.0` (the default) means it starts none of its own. It does **not** mean this service
-    /// is absent from a trace: a request or a broker message arriving with a trace already
-    /// sampled is continued regardless, which is what keeps one reader action readable across
-    /// the whole tier rather than ending at the first service configured differently. Set it
-    /// uniformly anyway — `0.05`-`0.2` is an ordinary production figure — since the service
-    /// that *starts* a trace is the one whose rate decides whether it exists at all.
+    /// `0.0`, the default, starts none. The service still continues a trace that arrives already
+    /// sampled on a request or a broker message. Set the same rate on every service, since the
+    /// service that starts a trace decides whether it exists; `0.05`-`0.2` is an ordinary
+    /// production figure.
     #[config(range(min = 0.0, max = 1.0))]
     #[serde(default)]
     pub traces_sample_rate: f32,
@@ -83,7 +78,7 @@ pub struct SentryConfig {
     #[config(values)]
     #[serde(default)]
     pub capture_level: SentryLevel,
-    /// Least severe `tracing` level kept as a **breadcrumb** — the trail attached to the next
+    /// Least severe `tracing` level kept as a **breadcrumb**, the trail attached to the next
     /// issue. Records at or above [`Self::capture_level`] become issues instead.
     #[config(values)]
     #[serde(default = "SentryConfig::default_breadcrumb_level")]
@@ -97,30 +92,26 @@ pub struct SentryConfig {
     /// Send personally identifying data with every event: the client IP, the full request
     /// header set (`Authorization` and `Cookie` included) and the resolved user.
     ///
-    /// **Off, and worth leaving off.** A reader's IP address and session cookie are exactly
-    /// what a crash report does not need in order to be actionable, and Sentry is a third
-    /// party for the purposes of the data policy this deployment publishes. On, it also
-    /// widens what the HTTP middleware records, because `sentry-tower` reads this same flag
-    /// to decide whether to redact sensitive headers.
+    /// **Off, and worth leaving off.** A crash report does not need a reader's IP address or
+    /// session cookie, and Sentry is a third party under the deployment's data policy. On, it
+    /// also stops `sentry-tower` redacting sensitive headers in the HTTP middleware.
     #[serde(default)]
     pub send_default_pii: bool,
-    /// Record request spans through the shared HTTP stack: one Sentry transaction per
-    /// request, named by the *matched route* rather than the URI, so an id in the path does
-    /// not become its own transaction name.
+    /// Record one Sentry transaction per request through the shared HTTP stack, named by the
+    /// matched route, so an id in the path does not become a transaction name.
     ///
-    /// Whether a started transaction is *kept* is [`Self::traces_sample_rate`]'s decision.
-    /// This is the switch for a service that should stay out of traces entirely.
+    /// [`Self::traces_sample_rate`] decides whether a transaction is kept. Off, the HTTP layer
+    /// starts no transactions; a broker delivery still starts one through the `tracing` layer.
     #[serde(default = "crate::default_true")]
     pub http_transactions: bool,
-    /// Copy `tracing` span fields onto the Sentry span as attributes. Off: span fields in
-    /// this workspace routinely carry ids and user-supplied titles, and a transaction is
-    /// stored under a longer retention than a log line.
+    /// Copy `tracing` span fields onto the Sentry span as attributes. Off by default, because span
+    /// fields carry ids and user-supplied titles and a transaction is kept longer than a log line.
     #[serde(default)]
     pub span_attributes: bool,
     /// How long process exit waits for queued events to drain.
     #[serde(default = "SentryConfig::default_shutdown_timeout_secs")]
     pub shutdown_timeout_secs: u64,
-    /// Print the SDK's own diagnostics to stderr. For proving a DSN works, not for running.
+    /// Print the SDK's own diagnostics to stderr, to prove a DSN works.
     #[serde(default)]
     pub debug: bool,
 }
@@ -179,10 +170,7 @@ mod tests {
         Harness::over(crate::terrace())
     }
 
-    /// A deployment that says nothing about Sentry gets no client and no egress. The whole
-    /// block is `#[serde(default)]` twice over — once on `telemetry.sentry`, once per key — so
-    /// a missing section must still materialise, rather than failing the boot of every service
-    /// that has not been told about this feature.
+    /// A deployment that says nothing about Sentry boots with no client and no egress.
     #[test]
     fn an_unmentioned_section_is_off() {
         harness().run(|jail| {
@@ -199,9 +187,8 @@ mod tests {
         });
     }
 
-    /// The keys are two levels deep, which is one level deeper than every other block: the
-    /// loader has to reach `TANKOVAULT_TELEMETRY__SENTRY__*`, and a DSN mounted as a file has
-    /// to outrank the environment the same way a database URL does.
+    /// The loader reaches the two-level `TANKOVAULT_TELEMETRY__SENTRY__*` keys, and a DSN mounted
+    /// as a file is read like any other secret.
     #[test]
     fn the_nested_keys_resolve_through_the_dialect() {
         harness().run(|jail| {

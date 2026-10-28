@@ -10,32 +10,30 @@ use crate::ConfigError;
 
 /// How a callee establishes *which* service is calling it.
 ///
-/// The mode changes only that one question. Everything downstream — which caller may reach
-/// which route, what a refusal looks like, what gets audited — is identical in all three, so a
-/// deployment cannot be authorised differently by virtue of how it proves identity.
+/// The mode answers only that question. Which caller may reach which route, what a refusal looks
+/// like and what gets audited are the same in all three modes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Describe)]
 #[serde(rename_all = "snake_case")]
 pub enum IdentityMode {
     /// No identity at all: every caller is anonymous and every route is open.
     ///
-    /// Local development and tests only, and only when named explicitly; refused under
+    /// For local development and tests, when named explicitly. Refused under
     /// `TANKOVAULT_PROFILE=production`.
     Off,
-    /// A per-caller bearer token. The portable mode — compose, bare metal, anything without a
+    /// A per-caller bearer token, for compose, bare metal or anything else without a
     /// certificate authority.
     ///
-    /// The default: a deployment that forgot to choose must not end up with an open internal
-    /// tier, which is what defaulting to [`Self::Off`] did outside the production profile.
+    /// The default, so a deployment that never chose a mode does not get an open internal tier.
     #[default]
     Token,
-    /// A verified client certificate; the caller is its SAN. Certificates come from files, so
-    /// this works anywhere they can be written — cert-manager and trust-manager mount them in
-    /// Kubernetes, `openssl` or `step-ca` produce them elsewhere.
+    /// A verified client certificate, whose SAN is the caller. Certificates come from files:
+    /// cert-manager and trust-manager mount them in Kubernetes, and `openssl` or `step-ca` produce
+    /// them elsewhere.
     Mtls,
 }
 
 impl IdentityMode {
-    /// The spelling an operator writes.
+    /// Returns the spelling an operator writes.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -55,7 +53,7 @@ impl std::fmt::Display for IdentityMode {
 /// Who *this* service is when it calls another. Absent on a service that calls nobody.
 #[derive(Debug, Clone, Default, Deserialize, Describe)]
 pub struct CallerConfig {
-    /// The name peers know this service by; must match the key they list it under.
+    /// The name peers know this service by, matching the key they list it under.
     #[serde(default)]
     pub name: Option<String>,
     /// Presented to peers under `identity = "token"`. Ignored under `mtls`, where the client
@@ -66,10 +64,9 @@ pub struct CallerConfig {
 }
 
 /// One service permitted to call this one. Absent on a service nobody calls.
-// `deny_unknown_fields` closes the peer, not the map around it: the caller *names* stay the
-// operator's, and only these two keys carry a credential. An undeclared key here is a
-// credential written under a name nothing reads, which under `token` or `mtls` is an
-// authorisation this deployment believes it configured and does not have.
+// `deny_unknown_fields` closes the peer, not the map around it: the caller names stay the
+// operator's. An undeclared key here is a credential under a name nothing reads, which is an
+// authorisation the deployment believes it has and does not.
 #[derive(Debug, Clone, Default, Deserialize, Describe)]
 #[serde(deny_unknown_fields)]
 pub struct PeerConfig {
@@ -78,13 +75,13 @@ pub struct PeerConfig {
     #[serde(default)]
     pub token: Option<SecretString>,
     /// The client-certificate subject alternative name this peer presents under
-    /// `identity = "mtls"`, e.g. `api.tankovault.svc`.
+    /// `identity = "mtls"`, such as `api.tankovault.svc`.
     #[serde(default)]
     pub san: Option<String>,
 }
 
-/// Where the mTLS material lives. Paths, not contents: whatever writes them — cert-manager, a
-/// mounted Secret, a hand-rolled CA — is outside this process's concern.
+/// Paths to the mTLS material. Whatever writes the files, such as cert-manager, a mounted Secret
+/// or a hand-rolled CA, is outside this process.
 #[derive(Debug, Clone, Deserialize, Describe)]
 pub struct InternalTlsConfig {
     /// PEM certificate chain this service serves and presents.
@@ -99,17 +96,14 @@ pub struct InternalTlsConfig {
     /// Address the credential-free `/health` and `/ready` probes bind to, in **plaintext**, on
     /// their own listener (default `0.0.0.0:9091`). Read under `mtls` only.
     ///
-    /// An orchestrator probe presents no client certificate, so on the mTLS port its plain
-    /// `GET` is answered with a TLS alert rather than a response and the replica is restarted
-    /// as unhealthy. `null` drops the listener, which is right only where whatever does the
-    /// probing *can* present a certificate.
+    /// An orchestrator probe presents no client certificate, so on the mTLS port its plain `GET`
+    /// gets a TLS alert and the replica is restarted as unhealthy. Set it to `null`, which drops
+    /// the listener, only where the prober can present a certificate.
     #[serde(default = "InternalTlsConfig::default_probe_listen")]
     pub probe_listen: Option<String>,
 }
 
 impl InternalTlsConfig {
-    // Must return `Option<String>` to match the field's serde-default signature; unwrapping
-    // as clippy suggests would break that.
     #[expect(
         clippy::unnecessary_wraps,
         reason = "must match the Option<String> field it defaults"
@@ -119,9 +113,9 @@ impl InternalTlsConfig {
     }
 }
 
-// Hand-written rather than derived so both ways this struct is produced agree: serde applies
-// the field default when `internal.tls` is present, `Default` when the whole table is absent,
-// and a derived `Default` would quietly mean "no probe listener".
+// Hand-written so both ways this struct is produced agree: serde applies the field default when
+// `internal.tls` is present and `Default` when the table is absent. A derived `Default` would
+// mean no probe listener.
 impl Default for InternalTlsConfig {
     fn default() -> Self {
         Self {
@@ -137,10 +131,10 @@ impl Default for InternalTlsConfig {
 ///
 /// Privileged internal routes (sync state, scan triggers, arbitrary-URL fetch) are reachable by
 /// service name from anywhere on the network, so every call carries a per-caller credential and
-/// every callee decides, per route, which callers it accepts. See [`InternalAuthConfig::resolve`].
+/// every callee decides, per route, which callers it accepts ([`InternalAuthConfig::resolve`]).
 #[derive(Debug, Clone, Default, Deserialize, Describe)]
 pub struct InternalAuthConfig {
-    /// How callers are identified. See [`IdentityMode`].
+    /// How callers are identified.
     #[config(values)]
     #[serde(default)]
     pub identity: IdentityMode,
@@ -156,15 +150,14 @@ pub struct InternalAuthConfig {
     #[config(nested)]
     #[serde(default)]
     pub tls: InternalTlsConfig,
-    /// The retired tier-wide shared secret. Present only so a deployment that still sets it is
-    /// told what to do instead; see [`InternalAuthConfig::resolve`].
+    /// Refused at boot. [`InternalAuthConfig::resolve`] names the per-caller keys that replace it.
     #[config(secret)]
     #[serde(default)]
     pub token: Option<SecretString>,
 }
 
-/// The shortest token accepted. 32 bytes of hex is the documented recipe; anything
-/// materially shorter is guessable at internal-network request rates.
+/// The shortest token accepted, in characters. The documented recipe, `openssl rand -hex 32`,
+/// produces 64; a much shorter token is guessable at internal-network request rates.
 pub const MIN_INTERNAL_TOKEN_LEN: usize = 32;
 
 /// This service's own identity when calling a peer.
@@ -205,18 +198,17 @@ pub struct ResolvedInternalAuth {
     pub mode: IdentityMode,
     /// This service's outbound identity, absent for a service that calls no peer.
     pub caller: Option<ResolvedCaller>,
-    /// Who may call this service. Empty accepts nobody, which is the correct posture for a
-    /// service exposing no internal route.
+    /// Who may call this service. Empty accepts nobody, as for a service with no internal route.
     pub peers: Vec<ResolvedPeer>,
     /// The certificate material, present under `mtls` and only there.
     pub tls: Option<ResolvedTls>,
-    /// Plaintext address for the health probes, set under `mtls` only — every other mode
-    /// already answers them on the main listener.
+    /// Plaintext address for the health probes, set under `mtls` only. Every other mode answers
+    /// them on the main listener.
     pub probe_listen: Option<String>,
 }
 
 impl ResolvedInternalAuth {
-    /// The peer configuration for `name`, if it is permitted to call this service.
+    /// Returns the peer configuration for `name`, if it is permitted to call this service.
     #[must_use]
     pub fn peer(&self, name: &str) -> Option<&ResolvedPeer> {
         self.peers.iter().find(|p| p.name == name)
@@ -224,11 +216,10 @@ impl ResolvedInternalAuth {
 }
 
 impl InternalAuthConfig {
-    /// Validate into the material the active mode actually needs.
+    /// Validates the configuration into the material the active mode needs.
     ///
-    /// Each mode is checked for its *own* requirements rather than a union of all three, so a
-    /// half-migrated deployment — mTLS paths set but peers still carrying tokens, say — fails at
-    /// boot naming the missing key instead of running with an identity nobody verified.
+    /// Each mode is checked for its own requirements, so a half-migrated deployment, such as one
+    /// with mTLS paths set and peers still carrying tokens, fails at boot naming the missing key.
     ///
     /// # Errors
     /// [`ConfigError::Invalid`] when the retired `internal.token` is still set, when the mode is
@@ -258,9 +249,8 @@ impl InternalAuthConfig {
         let caller = self.resolve_caller()?;
         let peers = self.resolve_peers()?;
         let tls = self.resolve_tls()?;
-        // Tied to the mode, not merely to the key being set: outside `mtls` the probes are
-        // already reachable on the main listener, and a second copy of them would be a
-        // surface nobody asked for.
+        // Tied to the mode, not to the key: outside `mtls` the probes answer on the main
+        // listener.
         let probe_listen = tls
             .is_some()
             .then(|| self.tls.probe_listen.clone())
@@ -275,7 +265,7 @@ impl InternalAuthConfig {
         })
     }
 
-    /// This service's outbound identity, or `None` when it calls nobody.
+    /// Returns this service's outbound identity, or `None` when it calls nobody.
     fn resolve_caller(&self) -> Result<Option<ResolvedCaller>, ConfigError> {
         let name = self
             .caller
@@ -286,9 +276,8 @@ impl InternalAuthConfig {
         let token = self.caller.token.as_ref();
 
         match (self.identity, name, token) {
-            // Two ways to have no outbound identity, and neither is an error: `off` has none by
-            // definition, and a service that calls nobody (control-plane, sync, the two solver
-            // hosts) configures none.
+            // `off` has no outbound identity, and a service that calls nobody (control-plane,
+            // sync, the two solver hosts) configures none.
             (IdentityMode::Off, _, _) | (_, None, None) => Ok(None),
             (_, None, Some(_)) => Err(ConfigError::Invalid(
                 "internal.caller.token is set but internal.caller.name is not; a peer matches an \
@@ -314,7 +303,7 @@ impl InternalAuthConfig {
         }
     }
 
-    /// The callers this service accepts, in a stable order.
+    /// Returns the callers this service accepts, in a stable order.
     fn resolve_peers(&self) -> Result<Vec<ResolvedPeer>, ConfigError> {
         if self.identity == IdentityMode::Off {
             return Ok(Vec::new());
@@ -368,7 +357,7 @@ impl InternalAuthConfig {
         Ok(peers)
     }
 
-    /// Certificate paths, required together under `mtls` and ignored otherwise.
+    /// Returns the certificate paths, required together under `mtls` and ignored otherwise.
     fn resolve_tls(&self) -> Result<Option<ResolvedTls>, ConfigError> {
         if self.identity != IdentityMode::Mtls {
             return Ok(None);
@@ -397,10 +386,9 @@ impl InternalAuthConfig {
     }
 }
 
-/// Trim, reject empty, and enforce the length floor, naming `key` in the error.
+/// Returns the trimmed token, refusing an empty or short one with an error that names `key`.
 ///
-/// The *length* of a secret is not itself secret — it is what the operator must change — so it
-/// stays in the message. The value never does.
+/// The error states the token's length, which the operator must change, and never its value.
 fn check_token(token: &SecretString, key: &str) -> Result<SecretString, ConfigError> {
     let trimmed = token.expose_secret().trim();
     if trimmed.is_empty() {
@@ -433,15 +421,10 @@ mod tests {
 
     /// A peer entry is closed, and the map of caller names around it is not.
     ///
-    /// The bug: `TANKOVAULT_INTERNAL__PEERS__API__TOKNE` was accepted and dropped, leaving the
-    /// peer with no token. Under `identity=token` that is caught by [`InternalAuthConfig::
-    /// resolve`] — but as "api has no token", about a key the operator can see they set, which
-    /// sends them looking at the value rather than at its spelling. Refusing at the
-    /// deserialiser names the misspelling itself.
+    /// A misspelt key such as `TANKOVAULT_INTERNAL__PEERS__API__TOKNE` is refused by name. Caught
+    /// later, it would read as "api has no token" about a key the operator can see they set.
     ///
-    /// The second half is the other direction and matters as much: closing the entry must not
-    /// close the map, or a deployment naming a caller this build does not ship would stop
-    /// booting.
+    /// A caller name this build does not ship still boots.
     #[test]
     fn an_undeclared_key_inside_a_peer_is_refused_and_an_unknown_caller_name_is_not() {
         #[derive(Debug, serde::Deserialize)]
@@ -473,9 +456,8 @@ mod tests {
         });
     }
 
-    /// The retired key must not be silently ignored. A deployment that upgrades while still
-    /// setting `internal.token` would otherwise boot with `identity=off` — every privileged
-    /// route open — while its config still looks like it is authenticating callers.
+    /// `internal.token` is refused with directions to the per-caller keys, so a config that sets
+    /// it cannot look as if it authenticates callers.
     #[test]
     fn the_retired_shared_token_is_refused_rather_than_ignored() {
         let cfg = InternalAuthConfig {
@@ -498,8 +480,7 @@ mod tests {
         assert!(cfg.resolve(true).is_err());
     }
 
-    /// The default was `off`, so any deployment that forgot `TANKOVAULT_PROFILE=production`
-    /// served every internal route to anything that could open a socket.
+    /// An unconfigured service identifies callers by token and admits none, in every profile.
     #[test]
     fn an_unconfigured_service_identifies_callers_and_admits_none() {
         let resolved = InternalAuthConfig::default()
@@ -513,9 +494,8 @@ mod tests {
         assert!(InternalAuthConfig::default().resolve(true).is_ok());
     }
 
-    /// Each mode needs its own material. Carrying a token into `mtls` (or a SAN into `token`)
-    /// is a half-finished migration, and booting on it would authorise nobody while looking
-    /// configured.
+    /// Each mode needs its own material. A token under `mtls`, or a SAN under `token`, would
+    /// authorise nobody while looking configured.
     #[test]
     fn a_peer_must_carry_the_credential_its_mode_verifies() {
         let token_peer = PeerConfig {
@@ -570,8 +550,8 @@ mod tests {
         assert!(msg.contains("32"), "{msg}");
     }
 
-    /// A caller with a credential but no name can never be authorised: peers match an inbound
-    /// token to a name, so this is a misconfiguration that would fail only at request time.
+    /// A caller with a credential and no name is refused at boot, since peers match an inbound
+    /// token to a name.
     #[test]
     fn a_credential_without_a_name_is_refused() {
         let cfg = InternalAuthConfig {
@@ -585,8 +565,7 @@ mod tests {
         assert!(cfg.resolve(false).is_err());
     }
 
-    /// `off` short-circuits every other requirement, so tests and local runs need no material
-    /// at all — but it must also not half-resolve one.
+    /// `off` needs no material and resolves none, even when some is configured.
     #[test]
     fn off_resolves_to_no_material() {
         let resolved = InternalAuthConfig {
@@ -607,9 +586,8 @@ mod tests {
 
     /// The probes get a plaintext listener of their own under `mtls`, and under nothing else.
     ///
-    /// A kubelet probe presents no client certificate, so on the mTLS listener its plain `GET
-    /// /health` is answered with a TLS alert — `malformed HTTP response "\x15\x03\x03…"` — and
-    /// every replica of every internal service was killed by its own startup probe.
+    /// A kubelet probe presents no client certificate, so on the mTLS listener its plain
+    /// `GET /health` gets a TLS alert and the replica fails its startup probe.
     #[test]
     fn mtls_resolves_a_plaintext_probe_address_and_no_other_mode_does() {
         let mtls = InternalAuthConfig {
@@ -625,8 +603,7 @@ mod tests {
         let resolved = mtls.resolve(false).expect("all three paths are set");
         assert_eq!(resolved.probe_listen.as_deref(), Some("0.0.0.0:9091"));
 
-        // The same certificate material under `token` resolves no probe listener: those probes
-        // are answered on the main port, and a second copy would be surface nobody asked for.
+        // Under `token` the probes answer on the main port, so no probe listener resolves.
         let token = InternalAuthConfig {
             identity: IdentityMode::Token,
             ..mtls.clone()

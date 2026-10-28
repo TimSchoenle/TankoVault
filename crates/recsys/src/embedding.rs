@@ -3,33 +3,30 @@
 //!
 //! # Why a Gram matrix and not a randomized SVD
 //!
-//! The textbook randomized SVD forms an `n x k` sketch of the data — a million rows by 128
-//! columns, half a gigabyte, all resident before the first singular vector exists. Every other
-//! stage of this builder is streaming, and that one allocation would set the floor for the whole
-//! job.
+//! A randomized SVD forms an `n x k` sketch of the data: a million rows by 128 columns, half a
+//! gigabyte, resident before the first singular vector exists. Every other stage of the builder
+//! streams, and that allocation would set the memory floor for the whole job.
 //!
-//! Accumulating `C = AᵀA` instead moves the cost to the *feature* side: `d x d`, where `d` is the
-//! projection's input dimension (~2 000), so a few tens of megabytes regardless of catalogue
-//! size. `C`'s top eigenvectors are exactly the right singular vectors of `A`, so the resulting
-//! basis is the same one, and both passes over the catalogue stream a batch at a time.
+//! Accumulating `C = AᵀA` puts the cost on the feature side: `d x d`, where `d` is the
+//! projection's input dimension (about 2,000), so a few tens of megabytes at any catalogue size.
+//! `C`'s top eigenvectors are the right singular vectors of `A`, so the basis is the same, and
+//! both passes over the catalogue stream a batch at a time.
 //!
-//! The trade is numerical: squaring the matrix squares its condition number, so `C` resolves
-//! small singular values less precisely than an SVD of `A` would. That is irrelevant here —
-//! the output is a *ranking* over fp16 vectors, and the components that suffer are the ones the
-//! truncation discards anyway.
+//! Squaring the matrix squares its condition number, so `C` resolves small singular values less
+//! precisely than an SVD of `A`. The output is a ranking over fp16 vectors, and the components
+//! that lose precision are the ones the truncation discards.
 //!
 //! # Why subspace iteration and not a full eigendecomposition
 //!
-//! Only the top `k` of `d` eigenvectors are wanted, `k` is an order of magnitude below `d`, and a
-//! full symmetric decomposition is `O(d³)` with a dependency to match. Orthogonal iteration is
+//! Only the top `k` of `d` eigenvectors are needed, with `k` an order of magnitude below `d`. A
+//! full symmetric decomposition is `O(d³)` and needs a dependency. Orthogonal iteration is
 //! `O(d²k)` per pass, converges geometrically in the eigenvalue gap, and is fifty lines.
 
-/// `SplitMix64`, inline, rather than a dependency on `rand`.
+/// Advances a `SplitMix64` generator and returns its next value.
 ///
-/// The starting matrix only has to be arbitrary and *reproducible*: the same catalogue must
-/// produce the same basis, or two builds embed into different spaces and their vectors stop
-/// being comparable. `rand` makes no stability guarantee across versions for its generators, so
-/// a dependency bump could silently invalidate every stored embedding. Nine lines removes that.
+/// The starting matrix has to be reproducible: the same catalogue must produce the same basis,
+/// or two builds embed into different spaces. `rand` does not promise its generators stay stable
+/// across versions, so a dependency bump could invalidate every stored embedding.
 fn splitmix64(state: &mut u64) -> u64 {
     *state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
     let mut z = *state;
@@ -38,7 +35,7 @@ fn splitmix64(state: &mut u64) -> u64 {
     z ^ (z >> 31)
 }
 
-/// A uniform `f64` in `[-1, 1)` from the generator above.
+/// Returns a uniform `f64` in `[-1, 1)` from the generator above.
 fn signed_unit(state: &mut u64) -> f64 {
     #[expect(
         clippy::cast_precision_loss,
@@ -50,22 +47,21 @@ fn signed_unit(state: &mut u64) -> f64 {
 
 /// Accumulates `C = AᵀA` one sparse row at a time.
 ///
-/// Rows are the series' dense-eligible features (authors excluded — see
-/// [`crate::FeatureKind::is_dense_eligible`]), already idf-weighted and normalised, indexed by
-/// `rec_features.dense_index`.
+/// A row is one series' dense-eligible features ([`crate::FeatureKind::is_dense_eligible`]),
+/// idf-weighted and normalised, indexed by `rec_features.dense_index`.
 pub struct GramAccumulator {
     dim: usize,
-    /// Row-major `dim x dim`, `f64` because this sums a million outer products and `f32` loses
-    /// the tail of that sum to rounding.
+    /// Row-major `dim x dim`. `f64`, because the sum runs over a million outer products and `f32`
+    /// would lose its tail to rounding.
     cells: Vec<f64>,
     rows: u64,
 }
 
 impl GramAccumulator {
-    /// An empty accumulator over a `dim`-wide input space.
+    /// Returns an empty accumulator over a `dim`-wide input space.
     ///
-    /// Allocates `dim * dim` `f64` immediately, which is the one structure in the build that
-    /// scales with the vocabulary rather than with the catalogue.
+    /// Allocates `dim * dim` `f64` at once, the one structure in the build that grows with the
+    /// vocabulary instead of the catalogue.
     #[must_use]
     pub fn new(dim: usize) -> Self {
         Self {
@@ -75,21 +71,22 @@ impl GramAccumulator {
         }
     }
 
-    /// The input space's width, as passed to [`Self::new`].
+    /// Returns the input space's width, as passed to [`Self::new`].
     #[must_use]
     pub const fn dim(&self) -> usize {
         self.dim
     }
 
-    /// Rows pushed so far, including rows every entry of which fell outside `dim`.
+    /// Returns the rows pushed so far, including rows whose every entry fell outside `dim`.
     #[must_use]
     pub const fn rows(&self) -> u64 {
         self.rows
     }
 
-    /// Add one row's outer product. Entries whose index is outside the projection's input
-    /// dimension are skipped, which is how features past the vocabulary cap stay out of the
-    /// dense space while still scoring and explaining.
+    /// Adds one row's outer product, skipping entries whose index is at or past `dim`.
+    ///
+    /// Skipping is how features past the vocabulary cap stay out of the dense space while they
+    /// still score and explain.
     pub fn push(&mut self, row: &[(usize, f32)]) {
         self.rows += 1;
         for &(i, wi) in row {
@@ -105,7 +102,7 @@ impl GramAccumulator {
         }
     }
 
-    /// Multiply `C` by a `dim x k` column-major matrix.
+    /// Writes `C` times the `dim x k` column-major matrix `v` into `out`.
     fn multiply(&self, v: &[f64], k: usize, out: &mut [f64]) {
         out.fill(0.0);
         for i in 0..self.dim {
@@ -121,12 +118,14 @@ impl GramAccumulator {
         }
     }
 
-    /// The top-`k` eigenvectors of `C`, as a projection basis.
+    /// Returns an orthonormal approximation of the top-`k` eigenvectors of `C`, as a projection
+    /// basis.
     ///
-    /// `iterations` is the orthogonal-iteration count; convergence is geometric in the ratio
-    /// between consecutive eigenvalues, and the default is chosen to be comfortably past the
-    /// point where the *ranking* the basis produces stops moving — which is a much weaker
-    /// requirement than converging the vectors themselves.
+    /// `k` is clamped to `1..=dim`, or to `1` when `dim` is `0`, which yields one empty column
+    /// that projects every vector to `[0.0]`. `iterations` is the orthogonal-iteration count
+    /// ([`crate::BASIS_ITERATIONS`]): the approximation converges as it grows, and at `0` the
+    /// basis is the orthonormalised random start. `seed` makes the starting matrix, and so the
+    /// basis, reproducible.
     #[must_use]
     pub fn basis(&self, k: usize, iterations: usize, seed: u64) -> Basis {
         let k = k.min(self.dim).max(1);
@@ -155,41 +154,61 @@ impl GramAccumulator {
     }
 }
 
-/// Modified Gram-Schmidt over a `dim x k` column-major matrix.
+/// Orthonormalises a `dim x k` column-major matrix in place by modified Gram-Schmidt.
 ///
-/// *Modified*, not classical: classical Gram-Schmidt loses orthogonality catastrophically once
-/// the columns are nearly dependent, which is exactly what happens as iteration converges — the
-/// later columns collapse onto the leading eigenvector and the basis silently becomes rank-1.
+/// Classical Gram-Schmidt loses orthogonality once the columns are nearly dependent, which is
+/// what happens as iteration converges: the later columns collapse onto the leading eigenvector
+/// and the basis becomes rank-1.
 fn orthonormalise(matrix: &mut [f64], dim: usize, k: usize) {
     for column in 0..k {
-        for previous in 0..column {
-            let mut dot = 0.0;
-            for row in 0..dim {
-                dot += matrix[previous * dim + row] * matrix[column * dim + row];
-            }
-            for row in 0..dim {
-                matrix[column * dim + row] -= dot * matrix[previous * dim + row];
+        if orthogonalise(matrix, dim, column) {
+            continue;
+        }
+        // A collapsed column has no direction left; zeros would leave every embedding with a dead
+        // component. The replacement axis must itself be orthogonal to the columns before it, or
+        // the basis loses rank: take the one with the largest residual, which is at least
+        // `1 / sqrt(dim)` because `column < k <= dim`.
+        let mut best = (0, f64::NEG_INFINITY);
+        for axis in 0..dim {
+            let residual = 1.0
+                - (0..column)
+                    .map(|previous| matrix[previous * dim + axis].powi(2))
+                    .sum::<f64>();
+            if residual > best.1 {
+                best = (axis, residual);
             }
         }
-        let mut norm = 0.0;
         for row in 0..dim {
-            norm += matrix[column * dim + row] * matrix[column * dim + row];
+            matrix[column * dim + row] = f64::from(u8::from(row == best.0));
         }
-        let norm = norm.sqrt();
-        if norm > 1e-12 {
-            for row in 0..dim {
-                matrix[column * dim + row] /= norm;
-            }
-        } else {
-            // A column that collapsed carries no direction left. Replacing it with a unit axis
-            // keeps the basis full-rank and orthogonal; leaving zeros would produce embeddings
-            // with a permanently dead component and an ANN index that ranks on fewer dimensions
-            // than it reports.
-            for row in 0..dim {
-                matrix[column * dim + row] = f64::from(u8::from(row == column % dim));
-            }
+        orthogonalise(matrix, dim, column);
+    }
+}
+
+/// Removes the earlier columns' components from `column` and normalises it, returning `false`
+/// (and leaving it unnormalised) when nothing of it is left.
+fn orthogonalise(matrix: &mut [f64], dim: usize, column: usize) -> bool {
+    for previous in 0..column {
+        let mut dot = 0.0;
+        for row in 0..dim {
+            dot += matrix[previous * dim + row] * matrix[column * dim + row];
+        }
+        for row in 0..dim {
+            matrix[column * dim + row] -= dot * matrix[previous * dim + row];
         }
     }
+    let mut norm = 0.0;
+    for row in 0..dim {
+        norm += matrix[column * dim + row] * matrix[column * dim + row];
+    }
+    let norm = norm.sqrt();
+    if norm <= 1e-12 {
+        return false;
+    }
+    for row in 0..dim {
+        matrix[column * dim + row] /= norm;
+    }
+    true
 }
 
 /// A fixed projection from the sparse feature space into `k` dimensions.
@@ -202,41 +221,37 @@ pub struct Basis {
 }
 
 impl Basis {
-    /// The input space this basis projects from.
+    /// Returns the input space this basis projects from.
     #[must_use]
     pub const fn dim(&self) -> usize {
         self.dim
     }
 
-    /// Directions solved for, and so the length of a projected vector. At most the requested
-    /// `k`, and lower when the vocabulary could not supply that many orthonormal directions.
+    /// Returns the number of directions, which is the length of a projected vector.
     #[must_use]
     pub const fn width(&self) -> usize {
         self.k
     }
 
-    /// Reconstruct a basis from stored coefficients, for a build that resumes or an incremental
-    /// pass that must project into the *same* space an earlier full build defined.
+    /// Rebuilds a basis from stored coefficients, so a resumed build or an incremental pass
+    /// projects into the space an earlier full build defined.
     ///
-    /// # Errors
-    /// Returns `None` when `columns` is not exactly `dim * k` long — a basis of the wrong shape
-    /// would silently produce embeddings that are not comparable with the stored ones.
+    /// Returns `None` when `columns` is not exactly `dim * k` long.
     #[must_use]
     pub fn from_columns(dim: usize, k: usize, columns: Vec<f32>) -> Option<Self> {
         (columns.len() == dim * k).then_some(Self { dim, k, columns })
     }
 
-    /// The columns as stored, column-major and `dim * k` long. The form
-    /// [`Self::from_columns`] takes back.
+    /// Returns the columns, column-major and `dim * k` long, as [`Self::from_columns`] takes them.
     #[must_use]
     pub fn as_columns(&self) -> &[f32] {
         &self.columns
     }
 
-    /// Project one sparse row, and normalise the result.
+    /// Projects one sparse row and returns it at unit length, or zero for an empty row.
     ///
-    /// Normalised because the index is searched with cosine distance: unit vectors make the
-    /// distance a pure angle, which is what the ranking means.
+    /// The index is searched by cosine distance, and unit vectors make that distance a pure angle.
+    /// Entries at or past `dim` are skipped.
     #[must_use]
     pub fn project(&self, row: &[(usize, f32)]) -> Vec<f32> {
         let mut out = vec![0.0_f32; self.k];
@@ -261,12 +276,7 @@ mod tests {
         a.iter().zip(b).map(|(x, y)| x * y).sum()
     }
 
-    /// The basis must be orthonormal, or the projection is not a projection.
-    ///
-    /// The bug this guards: with classical Gram-Schmidt, converging columns collapse onto the
-    /// leading eigenvector and the "128-dimensional" space silently becomes one-dimensional —
-    /// every series then embeds to nearly the same point and the ANN index returns arbitrary
-    /// neighbours while looking perfectly healthy.
+    /// The basis columns are orthonormal, so the space does not collapse to one dimension.
     #[test]
     fn the_basis_columns_are_orthonormal() {
         let mut gram = GramAccumulator::new(12);
@@ -294,7 +304,27 @@ mod tests {
         }
     }
 
-    /// The whole point: series sharing features must land closer than series sharing none.
+    /// A collapsed column's replacement axis must be orthogonal to the columns before it.
+    ///
+    /// The bug: with one feature ever seen, every column collapses onto that feature's axis, and
+    /// the fallback picked axis `column % dim`, which for column 1 of a 2-wide basis is the
+    /// same axis column 0 already holds. The basis came back with two parallel columns.
+    #[test]
+    fn a_collapsed_column_is_replaced_by_an_orthogonal_axis() {
+        let mut gram = GramAccumulator::new(2);
+        gram.push(&[(1, 1.0)]);
+        let basis = gram.basis(2, 1, 42);
+        let columns = basis.as_columns();
+        let (first, second) = columns.split_at(2);
+        assert!((cosine(first, first) - 1.0).abs() < 1e-3, "{columns:?}");
+        assert!((cosine(second, second) - 1.0).abs() < 1e-3, "{columns:?}");
+        assert!(
+            cosine(first, second).abs() < 1e-3,
+            "parallel columns: {columns:?}"
+        );
+    }
+
+    /// Series sharing features land closer than series sharing none.
     #[test]
     fn co_occurring_features_project_close_together() {
         let mut gram = GramAccumulator::new(8);
@@ -317,8 +347,8 @@ mod tests {
         );
     }
 
-    /// Generalisation is what the SVD buys over a random projection: two series sharing *no*
-    /// feature must still land close when their features co-occur elsewhere in the catalogue.
+    /// Two series sharing no feature still land close when their features co-occur elsewhere in
+    /// the catalogue, which a random projection would not give.
     #[test]
     fn features_that_co_occur_elsewhere_pull_disjoint_series_together() {
         let mut gram = GramAccumulator::new(8);
@@ -350,8 +380,7 @@ mod tests {
         assert!((v.iter().map(|x| x * x).sum::<f32>() - 1.0).abs() < 1e-4);
     }
 
-    /// An empty row cannot be normalised; it must stay zero rather than becoming NaN, because a
-    /// NaN vector poisons every distance the index computes against it.
+    /// An empty row projects to zero, never NaN, which would poison every distance against it.
     #[test]
     fn an_empty_row_projects_to_zero_not_nan() {
         let mut gram = GramAccumulator::new(4);
@@ -361,8 +390,7 @@ mod tests {
         assert!(v.iter().all(|x| x.is_finite() && *x == 0.0));
     }
 
-    /// Indices past the projection's input dimension are ignored, not panicked on: that is how
-    /// features beyond the vocabulary cap keep scoring without shaping the embedding.
+    /// Indices past the input dimension are skipped without a panic.
     #[test]
     fn indices_outside_the_input_dimension_are_skipped() {
         let mut gram = GramAccumulator::new(4);
@@ -373,8 +401,7 @@ mod tests {
         assert!(v.iter().all(|x| x.is_finite()));
     }
 
-    /// A basis must round-trip through storage, or an incremental build projects into a
-    /// different space than the full build did and the two sets of embeddings are incomparable.
+    /// A basis round-trips through its stored coefficients, and a wrongly shaped one is refused.
     #[test]
     fn a_basis_round_trips_through_its_coefficients() {
         let mut gram = GramAccumulator::new(6);

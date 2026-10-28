@@ -1,12 +1,11 @@
 //! The stage vocabulary a scan task reports as it runs, and the timing breakdown it leaves
 //! behind.
 //!
-//! `scan_tasks.state` only ever says *queued / claimed / done*. That is enough to count a run
-//! and nothing like enough to explain one: a task that has been claimed for twenty minutes and a
-//! task that is wedged look identical through it. A stage names which of the half-dozen things a
-//! task does it is doing **right now**, and [`StageTimings`] says where the wall clock went once
-//! it is over — which is the difference between "this run is slow" and "this run spent 94% of
-//! its time waiting on the provider's crawl budget".
+//! `scan_tasks.state` says only queued, claimed or done. That counts a run but cannot explain
+//! one: a task claimed for twenty minutes and a wedged task look identical through it. A stage
+//! names which of a task's half-dozen steps it is in now, and [`StageTimings`] says where the
+//! wall clock went once it is over. Together they tell "this run is slow" from "this run spent
+//! 94% of its time waiting on the provider's crawl budget".
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -20,9 +19,9 @@ pub struct ParseStageError(pub String);
 
 /// What a scan task is doing right now.
 ///
-/// Stored as `text`, not a Postgres enum, on purpose: a stage is a *diagnostic* label, and adding
-/// one must not need a migration and a lock on `scan_tasks`. The cost of that choice is that an
-/// unknown token can reach a reader, which [`ScanStage::from_str`] surfaces rather than hides.
+/// Stored as `text`, not a Postgres enum: a stage is a diagnostic label, and adding one must not
+/// need a migration and a lock on `scan_tasks`. In exchange an unknown token can reach a reader,
+/// and [`ScanStage::from_str`] surfaces it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ScanStage {
@@ -47,7 +46,7 @@ pub enum ScanStage {
 }
 
 impl ScanStage {
-    /// The token this stage is stored and published as.
+    /// Returns the token this stage is stored and published as.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -63,7 +62,7 @@ impl ScanStage {
         }
     }
 
-    /// Every stage, in the order a task would pass through them.
+    /// Returns every stage, in the order a task would pass through them.
     #[must_use]
     pub const fn all() -> &'static [Self] {
         &[
@@ -79,7 +78,7 @@ impl ScanStage {
         ]
     }
 
-    /// Whether this stage's wall clock is dominated by the provider rather than by us.
+    /// Returns whether this stage's wall clock is spent on the provider's side.
     ///
     /// Drives how the console explains a slow run: time in a network stage is the provider's
     /// crawl budget being spent, which is working as intended; the same wall clock in
@@ -113,12 +112,12 @@ impl FromStr for ScanStage {
 /// Where one task's wall clock went, in milliseconds per stage, plus what the fetch stack spent
 /// it on.
 ///
-/// Written once when the task settles rather than accumulated in the database, so instrumenting a
-/// task costs one extra column on one existing UPDATE.
+/// Written once when the task settles, so instrumenting a task costs one extra column on one
+/// existing UPDATE.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct StageTimings {
     /// Milliseconds per stage, keyed by [`ScanStage::as_str`]. Stages the task never entered are
-    /// absent rather than zero — "did not happen" and "was instant" are different answers.
+    /// absent, not zero: "did not happen" and "was instant" are different answers.
     #[serde(default)]
     pub stages: std::collections::BTreeMap<String, i64>,
     /// HTTP requests the task issued, across every stage.
@@ -127,11 +126,11 @@ pub struct StageTimings {
     /// Milliseconds spent inside a request, from the moment the pacer released it.
     #[serde(default)]
     pub fetch_ms: i64,
-    /// Milliseconds spent *waiting for permission to send* — the concurrency gate, the token
-    /// rate, the crawl delay and any adaptive 429 penalty.
+    /// Milliseconds spent waiting for permission to send: the concurrency gate, the token rate,
+    /// the crawl delay and any adaptive 429 penalty.
     ///
-    /// The single most valuable figure here. A task at 95% pace-wait is not slow, it is polite,
-    /// and the fix is the provider's crawl budget rather than anything in the code.
+    /// A task at 95% pace-wait is not slow but polite, and the remedy is the provider's crawl
+    /// budget, not the code.
     #[serde(default)]
     pub pace_wait_ms: i64,
     /// Milliseconds spent in the challenge solver.
@@ -147,12 +146,12 @@ pub struct StageTimings {
 }
 
 impl StageTimings {
-    /// Add `millis` to `stage`'s running total.
+    /// Adds `millis` to `stage`'s running total.
     pub fn add_stage(&mut self, stage: ScanStage, millis: i64) {
         *self.stages.entry(stage.as_str().to_owned()).or_insert(0) += millis;
     }
 
-    /// The stage that consumed the most wall clock, with its milliseconds.
+    /// Returns the stage that consumed the most wall clock, with its milliseconds.
     #[must_use]
     pub fn dominant_stage(&self) -> Option<(&str, i64)> {
         self.stages

@@ -1,22 +1,16 @@
 //! The chapter number's storage form: a fixed-width integer scaled by [`MILLI_SCALE`], and the
 //! range it has to be inside to be storable at all.
 //!
-//! Distinct from [`crate::chapter_outliers`], which judges a number *implausible* by comparing it
-//! against the rest of its listing. This is the harder, dumber question that has to be answered
-//! first: can the column hold it?
+//! Distinct from [`crate::chapter_outliers`], which judges a number implausible against the rest
+//! of its listing. This answers the blunter question that comes first: can the column hold it?
 //!
-//! # Why an integer and not `numeric`
+//! # Why an integer
 //!
-//! `chapters.number` was `numeric(10,4)` until migration 0055. The type was not the problem; the
-//! problem was that **`floor(number)` is not derivable from an index on `number`**, and the unread
-//! predicate every reading surface runs is expressed in terms of `floor`. Migration 0026 built a
-//! second index on `(series_source_id, (floor(number)))` to make it reachable and documents what
-//! it cost when it was not — 2.9 s on the Home stats query — and 0047 widened that index again.
-//!
-//! Scaled to an integer, `floor(number) > w` is `number_milli >= (w + 1) * 10000`: a plain range
-//! on the second key column of the `(series_source_id, number_milli)` index. The `floor` index has
-//! nothing left to do, and with it three more indexes collapse into one. See
-//! `docs/CHAPTER_STORAGE.md`.
+//! The unread predicate every reading surface runs is expressed in terms of `floor(number)`, and
+//! `floor` of a `numeric` column cannot be read off an index on that column. Scaled to an
+//! integer, `floor(number) > w` is `number_milli >= (w + 1) * 10000`: a plain range on the second
+//! key column of the `(series_source_id, number_milli)` index, with no expression index beside
+//! it. See `docs/CHAPTER_STORAGE.md`.
 
 /// Fixed-point scale: a chapter number is stored as `round(number * 10_000)`.
 ///
@@ -28,25 +22,24 @@ pub const MILLI_SCALE: f64 = 10_000.0;
 ///
 /// Set by the storage type, not by editorial judgement: `MAX_CHAPTER_NUMBER * MILLI_SCALE` must
 /// fit in the `int` column, so anything above `i32::MAX / 10_000` ≈ 214 748 is unrepresentable.
-/// Rounded down to a legible number, it leaves roughly fifty times the length of the longest
-/// series anyone has published — `Martial Peak` runs to about 3 900.
+/// Rounded down to a legible number, it leaves about fifty times the length of the longest
+/// published series: `Martial Peak` runs to about 3 900.
 ///
-/// A value past it is not "a big chapter number", it is a statement Postgres refuses, and that
-/// error aborts the transaction it is in. For ingest that is the whole per-source transaction: one
-/// `chapter-20250817` slug that the outlier guard did not have the sample size to reject takes
-/// every other chapter of that source down with it, on every rescan, permanently.
+/// A value past it is a statement Postgres refuses, and that error aborts the transaction it is
+/// in. For ingest that is the whole per-source transaction: one `chapter-20250817` slug the
+/// outlier guard lacked the sample size to reject would take every other chapter of that source
+/// down with it on every rescan.
 ///
-/// It is a **representability** bound and nothing more. Plenty of junk sits below it — a
-/// `chapter-180302` date slug is 180 302 and perfectly storable — and catching that is
-/// [`crate::chapter_outliers`]'s job, judged against the listing's own rhythm. Do not read this
-/// constant as a plausibility check.
+/// It is a representability bound and nothing more. Plenty of junk sits below it, such as the
+/// `chapter-180302` date slug at 180 302, and catching that is [`crate::chapter_outliers`]'s job,
+/// judged against the listing's own rhythm.
 pub const MAX_CHAPTER_NUMBER: f64 = 200_000.0;
 
-/// Whether `number` can be stored in a chapter-number column.
+/// Returns whether `number` can be stored in a chapter-number column.
 ///
-/// Negative numbers are refused rather than clamped: there is no reading order in which a
-/// chapter is before the beginning, so a negative is a parse that went wrong, not a chapter.
-/// Zero is allowed — prologues and chapter 0 are real releases.
+/// Negative numbers are refused, not clamped: no reading order puts a chapter before the
+/// beginning, so a negative is a parse that went wrong. Zero is allowed, since prologues and
+/// chapter 0 are real releases.
 ///
 /// `NaN` and the infinities are refused here as well as by the parsers, because this is the
 /// predicate the writers are allowed to rely on.
@@ -55,12 +48,20 @@ pub fn is_storable(number: f64) -> bool {
     number.is_finite() && (0.0..=MAX_CHAPTER_NUMBER).contains(&number)
 }
 
-/// The stored form of `number`, or `None` when it is not [`is_storable`].
+/// Returns the stored form of `number`, or `None` when it is not [`is_storable`].
 ///
-/// Rounds to the nearest representable value rather than truncating. The rounding is not a
-/// tolerance to be relied on: two listing entries whose numbers differ only past the fourth
-/// decimal collapse to the same row, which is exactly what the old `numeric(10,4)` cast did and
-/// what `upsert_chapters`' `DISTINCT ON` is written to survive.
+/// Rounds to the nearest representable value. The rounding is not a tolerance to rely on: two
+/// listing entries whose numbers differ only past the fourth decimal collapse to one row, which
+/// `upsert_chapters`' `DISTINCT ON` is written to survive.
+///
+/// ```
+/// use tankovault_domain::chapter_number::{from_milli, to_milli};
+///
+/// assert_eq!(to_milli(12.5), Some(125_000));
+/// assert_eq!(from_milli(125_000), 12.5);
+/// assert_eq!(to_milli(-1.0), None);
+/// assert_eq!(to_milli(f64::NAN), None);
+/// ```
 #[must_use]
 pub fn to_milli(number: f64) -> Option<i32> {
     if !is_storable(number) {
@@ -74,17 +75,17 @@ pub fn to_milli(number: f64) -> Option<i32> {
     Some((number * MILLI_SCALE).round() as i32)
 }
 
-/// The chapter number a stored value represents.
+/// Returns the chapter number a stored value represents.
 #[must_use]
 pub fn from_milli(milli: i32) -> f64 {
     f64::from(milli) / MILLI_SCALE
 }
 
-/// The whole chapter a stored value belongs to — `floor(number)`, in the stored domain.
+/// Returns the whole chapter a stored value belongs to: `floor(number)`, in the stored domain.
 ///
-/// Integer division, which is only equal to `floor` because the column is constrained
-/// non-negative (`chapters_number_milli_range`). The SQL side spells this `number_milli / 10000`
-/// for the same reason.
+/// Integer division equals `floor` only because the column is constrained non-negative
+/// (`chapters_number_milli_range`). The SQL side spells this `number_milli / 10000` for the same
+/// reason.
 #[must_use]
 pub const fn whole_of_milli(milli: i32) -> i32 {
     milli / MILLI_SCALE_INT
@@ -96,11 +97,10 @@ pub const fn whole_of_milli(milli: i32) -> i32 {
 /// `the_two_scales_are_one_number` pins them together.
 pub const MILLI_SCALE_INT: i32 = 10_000;
 
-/// A whole-chapter index as `i64`, clamped into the storable range.
+/// Returns a whole-chapter index as `i64`, clamped into the storable range.
 ///
-/// Clamping rather than erroring because the callers are query *bounds*: a nonsensical input
-/// should return no rows, not fail the request. `NaN` clamps to zero, which is the empty-range
-/// end of the scale.
+/// The callers are query bounds, so a nonsensical input returns no rows instead of failing the
+/// request. `NaN` clamps to zero, the empty-range end of the scale.
 fn clamp_whole(value: f64) -> i64 {
     #[expect(
         clippy::cast_possible_truncation,
@@ -122,7 +122,7 @@ pub fn whole_floor(number: f64) -> i64 {
     clamp_whole(number.floor())
 }
 
-/// The stored value a whole chapter begins at.
+/// Returns the stored value a whole chapter begins at.
 ///
 /// `i64` on purpose, and every SQL comparison against it is a `bigint` for the same reason:
 /// `(200_000 + 1) * 10_000` is larger than `i32::MAX`, so the one-past-the-end bound the unread
@@ -132,7 +132,7 @@ pub const fn milli_of_whole(whole: i64) -> i64 {
     whole * MILLI_SCALE_INT as i64
 }
 
-/// The smallest stored value that is not below `number`.
+/// Returns the smallest stored value that is not below `number`.
 ///
 /// `number_milli < milli_ceil(n)` is exactly `chapter < n`, for an `n` that is representable at
 /// scale 4 and for one that is not.
@@ -192,24 +192,24 @@ mod tests {
         assert!(milli < i32::MAX);
     }
 
-    /// Why the unread predicate's lower bound is computed as `bigint` in SQL and `i64` here.
+    /// The unread predicate's lower bound stays representable for any stored progress.
     ///
-    /// Not because an in-range chapter needs it — `(200_000 + 1) * 10_000` fits `i32` with room
-    /// to spare. Because the bound is derived from `read_progress.last_read_whole_number`, which
-    /// is still `numeric(10,4)` and was never range-checked before this ceiling existed. A row
-    /// holding a date-shaped value from that era produces a bound two orders of magnitude past
-    /// `i32::MAX`, and an overflow there is an error on a read path, not a wrong answer.
+    /// An in-range chapter fits `i32`: `(200_000 + 1) * 10_000` has room to spare. The bound is
+    /// derived from `read_progress.last_read_whole_number`, a `numeric(10,4)` column with no range
+    /// check, so a date-shaped value there gives a bound two orders of magnitude past `i32::MAX`.
+    /// The bound is therefore `bigint` in SQL and `i64` here, since an overflow on a read path is
+    /// an error, not a wrong answer.
     #[test]
     fn a_legacy_progress_value_forces_the_bound_into_bigint() {
         assert!(
             milli_of_whole(whole_ceil(MAX_CHAPTER_NUMBER) + 1) < i64::from(i32::MAX),
             "an in-range bound fits i32; bigint is not for this case"
         );
-        // What a `read_progress` row written before the ceiling can still hold.
+        // A date-shaped value the unchecked `read_progress` column can hold.
         let legacy = milli_of_whole(20_250_817 + 1);
         assert!(legacy > i64::from(i32::MAX));
-        // `whole_ceil`/`whole_floor` clamp, so a bound *derived through them* stays representable
-        // even for that row — which is what keeps the query an error-free empty result.
+        // `whole_ceil` and `whole_floor` clamp, so a bound derived through them stays
+        // representable even for that row, and the query returns an empty result.
         assert!(milli_of_whole(whole_floor(20_250_817.0) + 1) < i64::from(i32::MAX));
     }
 

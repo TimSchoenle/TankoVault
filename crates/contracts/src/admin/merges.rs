@@ -10,11 +10,10 @@ use uuid::Uuid;
 /// A pending merge candidate, enriched with everything the console needs to triage it without
 /// opening both series (`docs/ARCHITECTURE.md` §11 `GET /v1/admin/merge-candidates`).
 ///
-/// The counts and `suggested_keep` are not decoration. Acting on a candidate means choosing
-/// which of the two rows survives, and the absorbed id *stops existing* — every bookmark,
-/// notification and external tracker mapping naming it breaks. The right answer is whichever
-/// series carries more of the catalogue, which is a comparison the server can make once instead
-/// of an operator eyeballing it per row.
+/// Acting on a candidate means choosing which row survives, and the absorbed id stops existing:
+/// every bookmark, notification and tracker mapping naming it breaks. The counts and
+/// `suggested_keep` let the server pick the series carrying more of the catalogue once, instead
+/// of an operator comparing them per row.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct MergeCandidateView {
     /// The queue row, which is what a resolve call names.
@@ -37,11 +36,11 @@ pub struct MergeCandidateView {
     pub candidate_chapters: i64,
     /// Similarity in `[0,1]` after every scoring term.
     pub score: f32,
-    /// Stable slugs for the scoring rules that fired — `exact_title`, `compact_identity`,
-    /// `alias_identity`, `near_identical`, `shared_author`, and so on. Rendered as badges; the
-    /// set is `tankovault_domain::matching::MatchSignals::labels`.
+    /// Stable slugs for the scoring rules that fired, such as `exact_title`, `compact_identity`
+    /// and `alias_identity`. Rendered as badges; the set is
+    /// `tankovault_domain::matching::MatchSignals::labels`.
     pub signals: Vec<String>,
-    /// The rule that put the pair here, `null` for a row from before the journal existed.
+    /// The rule that put the pair here, `null` for a row the journal does not cover.
     pub reason: Option<String>,
     /// Which side the console should offer to keep. Advisory: the merge endpoint takes an
     /// explicit direction.
@@ -58,15 +57,14 @@ pub struct MergeCandidateView {
 
 /// Whether an exhaustive duplicate sweep was started.
 ///
-/// Returned by `POST /v1/admin/merge-candidates/sweep-all`. The run is detached, so this answers
-/// only whether one *started*: it draws rounds until every shortlist has been walked out, which
-/// is far longer than a request may be held open for. What the run goes on to do — rounds,
-/// counters and how it ended — is on `GET /v1/admin/merge-candidates/sweep-all`.
+/// Returned by `POST /v1/admin/merge-candidates/sweep-all`. The run is detached, so this says
+/// only whether one started: it draws rounds until every shortlist is walked out, far longer
+/// than a request may be held open. Its rounds, counters and outcome are on
+/// `GET /v1/admin/merge-candidates/sweep-all`.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, ToSchema)]
 pub struct MergeFullSweepView {
-    /// `false` when a live run already held the claim. The correct response is to watch that
-    /// run, not to retry: it is doing this one's work, and starting a second would spend the
-    /// automatic-merge ceiling twice over.
+    /// `false` when a live run already held the claim. Watch that run instead of retrying: it
+    /// is doing this one's work, and a second would spend the automatic-merge ceiling twice.
     pub started: bool,
 }
 
@@ -80,17 +78,16 @@ pub struct MergeSweepView {
     /// Pairs re-scored. The shortlist is produced by blocking on the whitespace-insensitive
     /// title key, so this is far smaller than the number of series.
     pub pairs_examined: i64,
-    /// Pairs merged without asking, because a structural identity rule fired *and* the score
-    /// cleared the automatic-merge threshold.
+    /// Pairs merged without asking, because adjudication returned `Auto`. A corroborated alias
+    /// counts here below the automatic-merge threshold too.
     pub auto_merged: i64,
     /// Pairs the sweep put in the review queue that had never been there.
     ///
-    /// Counted apart from `requeued` because only these lengthen the queue: the sweep re-scores
-    /// rows that are already open on every run, and folding those into one "queued" number
-    /// reports a queue growing by hundreds when it grew by tens. Net change in queue length is
-    /// `queued + reopened - withdrawn`.
+    /// Counted apart from `requeued` because only these lengthen the queue: every run re-scores
+    /// the rows already open, and one combined count would report a queue growing by hundreds
+    /// when it grew by tens. The net change in queue length is `queued + reopened - withdrawn`.
     pub queued: i64,
-    /// Rows already open that this sweep re-scored in place. The queue is no longer for these.
+    /// Rows already open that this sweep re-scored in place. They do not lengthen the queue.
     pub requeued: i64,
     /// Pairs the scorer had closed as distinct that enrichment has brought back into review.
     pub reopened: i64,
@@ -103,54 +100,50 @@ pub struct MergeSweepView {
     /// means the next sweep has more to do, not that anything failed.
     pub deferred: i64,
     /// Pairs an auto-merge guard held back: identical titles, a score above the automatic
-    /// threshold, and a signal saying the two are different works anyway. These are the near
-    /// misses, and they are the rows to read first — each is either a duplicate the guard is
-    /// costing you or a merge the guard just prevented.
+    /// threshold, and a signal saying the two are different works anyway. Read these first:
+    /// each is either a duplicate the guard is costing you or a wrong merge it prevented.
     pub blocked: i64,
     /// Pairs skipped because a merge earlier in this same run absorbed one of their two series.
     ///
-    /// Their facts were loaded before that merge and are now stale, so re-judging them here would
-    /// score the survivor as it was rather than as it is. A three-way duplicate therefore takes
-    /// more than one pass; non-zero means another pass has something to do, and the scheduler
-    /// runs one rather than leaving the chain until the next tick.
+    /// Their facts were loaded before that merge, so re-judging them would score the survivor as
+    /// it was. A three-way duplicate therefore takes more than one pass. Non-zero means another
+    /// pass has work, and the scheduler runs it without waiting for the next tick.
     pub chains_deferred: i64,
 }
 
 /// One knob of the automatic-merge policy, as the console shows it.
 ///
-/// Assembled by the control plane rather than by the API, because the effective value is the
-/// stored override *layered over this deployment's configured* `matching` block — and the
-/// control plane is the service that holds both. An API that resolved it against the compiled
-/// registry instead would report a default the sweep does not use.
+/// The control plane assembles it, because the effective value is the stored override layered
+/// over this deployment's configured `matching` block, and only the control plane holds both.
+/// Resolved against the compiled registry, it would report a default the sweep does not use.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[schema(as = MergePolicyKnob)]
 pub struct MergePolicyView {
-    /// The persisted key, e.g. `matching.auto_merge`.
+    /// The persisted key, such as `matching.auto_merge`.
     pub key: String,
     /// Section-local label.
     pub title: String,
     /// What the value does, written to be read immediately before someone changes production.
     pub description: String,
-    // Tokens rather than the domain enums: utoipa publishes a `///` as the public description,
-    // and a rustdoc link to a crate the client cannot see is noise in a generated client.
-    /// `ratio` for the threshold, `toggle` for a guard — what the console renders, a field or a
+    // Tokens, not the domain enums: utoipa publishes a `///` as the public description, and a
+    // rustdoc link to a crate the client cannot see is noise in a generated client.
+    /// `ratio` for the threshold, rendered as a field, or `toggle` for a guard, rendered as a
     /// switch.
     pub kind: String,
     /// When a change reaches the sweep. Every knob here is `next_sweep`.
     pub applies: String,
     /// The effective value, already clamped: exactly what the next sweep will apply.
     pub value: f64,
-    /// What this deployment falls back to when no override is stored — its configured
-    /// `matching` value, which is the compiled default unless the deployment set it. This is
-    /// what resetting the knob returns it to, so it is not the same number as the compiled
-    /// default and must not be shown as one.
+    /// What this deployment falls back to when no override is stored: its configured `matching`
+    /// value, which is the compiled default only when the deployment left it unset. Resetting
+    /// the knob returns it to this value, so never show it as the compiled default.
     pub default_value: f64,
     /// Inclusive bounds. Enforced by the control plane, not only by the UI.
     pub min: f64,
     /// Inclusive upper bound.
     pub max: f64,
-    /// Whether an operator has explicitly decided this one, as opposed to it following the
-    /// deployment's configuration.
+    /// Whether an operator set this knob explicitly. `false` means it follows the deployment's
+    /// configuration.
     pub overridden: bool,
     /// Why it was last changed, if the operator said.
     pub note: Option<String>,
@@ -162,32 +155,32 @@ pub struct MergePolicyView {
 
 /// What a normalized-key rebuild changed.
 ///
-/// `normalized_title` is a persisted matching key, so a change to the normalization rules only
-/// reaches rows that happen to be re-scanned until this runs.
+/// `normalized_title` is a persisted matching key, so until this runs, a change to the
+/// normalization rules reaches only rows that are re-scanned.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, ToSchema)]
 pub struct KeyRebuildView {
     /// Canonical titles read.
     pub series_scanned: i64,
-    /// Of those, whose key the corrected rules changed.
+    /// Of those, the ones whose key the current rules changed.
     pub series_updated: i64,
     /// Alternative titles read.
     pub titles_scanned: i64,
-    /// Of those, whose key the corrected rules changed.
+    /// Of those, the ones whose key the current rules changed.
     pub titles_updated: i64,
-    /// Alternative titles dropped because the corrected rules collapsed them onto a key the
-    /// same series already held.
+    /// Alternative titles dropped because the current rules collapsed them onto a key the same
+    /// series already held.
     pub titles_deduplicated: i64,
     /// Source listing titles read.
     pub sources_scanned: i64,
-    /// Of those, whose listing key was missing or changed.
+    /// Of those, the ones whose listing key was missing or changed.
     pub sources_updated: i64,
 }
 
 /// One segment of a merge's undo journal.
 ///
-/// `kind` is the journal's own field name rather than a display string: a later journal version
-/// can add a segment without the console needing a release to render it, and the wording lives
-/// on the reading side where the reader's language is known.
+/// `kind` is the journal's own field name, not a display string. A later journal version can add
+/// a segment without a console release, and the wording lives on the reading side, where the
+/// reader's language is known.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[schema(as = UndoSegment)]
 pub struct UndoSegmentView {
@@ -199,9 +192,9 @@ pub struct UndoSegmentView {
 
 /// One row of the automatic-merge decision journal.
 ///
-/// The journal answers the question a score cannot: *why*. `terms` itemises how the number was
+/// The journal answers the question a score cannot: why. `terms` itemises how the number was
 /// reached, `reason` names the rule that turned it into a verdict, `blocked_by` names the guards
-/// that overrode it, and `evidence` carries both sides' facts and which title actually matched.
+/// that overrode it, and `evidence` carries both sides' facts and which titles matched.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[schema(as = MergeDecision)]
 pub struct MergeDecisionView {
@@ -232,7 +225,7 @@ pub struct MergeDecisionView {
     /// Guards that fired. Non-empty on a `review` row means the pair cleared the score and
     /// identity bar and was held back anyway.
     pub blocked_by: Vec<String>,
-    /// What was actually done, which is not always the verdict: `merged`, `queued`, `requeued`,
+    /// What was done, which is not always the verdict: `merged`, `queued`, `requeued`,
     /// `reopened`, `withdrawn`, `distinct`, `deferred`.
     pub outcome: String,
     /// The series that survived, `null` for anything but a merge.
@@ -245,7 +238,7 @@ pub struct MergeDecisionView {
     pub base_score: f32,
     /// Stable slugs for the scoring rules that fired.
     pub signals: Vec<String>,
-    /// `[{rule, delta, detail}]` — every term the scorer applied, in order.
+    /// Every term the scorer applied, in order, as `[{rule, delta, detail}]`.
     pub terms: Json,
     /// Both sides' facts, which titles matched, and how the survivor was chosen.
     pub evidence: Json,
@@ -277,10 +270,10 @@ pub struct MergeDecisionView {
 
 /// What undoing an automatic merge put back, and what it took off the survivor.
 ///
-/// The last three counts are not part of the merge's inverse. A revert is an operator saying the
-/// two rows are different works, and it acts on that: the names both rows answered to come off
-/// the survivor, and the sources those names attracted go back with their chapters. Reported
-/// because it happens without review — the survivor loses rows nobody listed first.
+/// The last three counts are not part of the merge's inverse. A revert says the two rows are
+/// different works and acts on it: the names both rows answered to come off the survivor, and
+/// the sources those names attracted go back with their chapters. They are reported because
+/// this happens without review, so the survivor loses rows nobody listed first.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[schema(as = MergeReverted)]
 pub struct MergeRevertedView {
@@ -295,11 +288,11 @@ pub struct MergeRevertedView {
     /// Always true: a revert also suppresses the pair, or the next sweep would merge it again.
     pub pair_suppressed: bool,
     /// Alternative titles removed from the survivor because the restored series answers to them
-    /// too. Left in place, these have the next scan re-attaching what the revert just separated:
-    /// suppression binds the duplicate sweep, not the create-time attach path.
+    /// too. Left in place, they would let the next scan re-attach what the revert separated,
+    /// since suppression binds the duplicate sweep, not the create-time attach path.
     pub titles_removed: i64,
     /// Sources moved off the survivor and back onto the restored series, because their provider
-    /// title *is* one of those shared names.
+    /// title is one of those shared names.
     pub sources_returned: i64,
     /// Chapters that travelled with those sources. Chapters hang off sources, so this is what an
     /// operator sees change on the survivor's page.

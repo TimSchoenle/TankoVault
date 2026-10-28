@@ -6,17 +6,17 @@ use terrace_config::schema::Describe;
 /// Append-only audit trail for privileged and privacy-relevant actions (`docs/ARCHITECTURE.md` §16).
 #[derive(Debug, Clone, Deserialize, Describe)]
 pub struct AuditConfig {
-    /// Write audit records; `false` installs a no-op sink instead of branching at call sites.
+    /// Write audit records. `false` installs a sink that discards them.
     #[serde(default = "crate::default_true")]
     pub enabled: bool,
-    /// Record the client IP. Off by default: an IP is personal data under GDPR Art. 4(1).
+    /// Record the client IP. Off by default, since an IP is personal data under GDPR Art. 4(1).
     #[serde(default)]
     pub record_ip: bool,
     /// Record the client `User-Agent` alongside each event.
     #[serde(default)]
     pub record_user_agent: bool,
-    /// Days to retain audit records before the sweep deletes them. `0` disables the sweep
-    /// (rarely right under GDPR Art. 5(1)(e), storage limitation).
+    /// Days to retain audit records before the sweep deletes them. `0` disables the sweep, which
+    /// GDPR Art. 5(1)(e), storage limitation, rarely allows.
     #[serde(default = "AuditConfig::default_retention_days")]
     pub retention_days: u32,
     /// Hours between retention sweeps. Ignored when [`Self::retention_days`] is `0`.
@@ -32,7 +32,7 @@ impl AuditConfig {
         24
     }
 
-    /// Whether the background retention sweep should run.
+    /// Returns whether the background retention sweep should run.
     #[must_use]
     pub fn retention_enabled(&self) -> bool {
         self.enabled && self.retention_days > 0

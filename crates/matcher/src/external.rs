@@ -5,12 +5,20 @@ use tankovault_domain::{ContentType, SeriesId, normalize_title};
 
 use crate::assess::assess;
 
-/// Whether any of `remote_titles` is a primary identity for the local series: equal to its
+/// Returns whether any of `remote_titles` is a primary identity for the local series: equal to its
 /// normalized canonical title or one of its sources' listing titles, exactly or compacted.
 ///
 /// A provider's title search returns its best-ranked record, not a matching one, so its answer
 /// is a claim to check before metadata or a mapping is written from it. Alternative titles do
 /// not count: a synonym shared across a franchise is exactly how a search lands on a sibling.
+///
+/// ```
+/// use tankovault_matcher::titles_identify;
+///
+/// let listings = ["na honjaman level up".to_owned()];
+/// assert!(titles_identify("solo leveling", &listings, &["Na Honjaman Level Up".to_owned()]));
+/// assert!(!titles_identify("solo leveling", &listings, &["Solo Leveling: Ragnarok".to_owned()]));
+/// ```
 #[must_use]
 pub fn titles_identify(
     normalized_title: &str,
@@ -74,8 +82,8 @@ mod tests {
         ));
     }
 
-    /// A title search for one work returned a different one ranked first; enriching from it
-    /// overwrote the series' cover, description and status with the other work's.
+    /// A provider's top-ranked record for a similar title is a different work; enriching from
+    /// it would overwrite the series' cover, description and status.
     #[test]
     fn a_merely_similar_record_does_not_identify() {
         assert!(!titles_identify(

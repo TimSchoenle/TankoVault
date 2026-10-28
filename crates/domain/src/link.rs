@@ -25,7 +25,7 @@ pub enum ResolveError {
     },
 }
 
-/// Resolve a stored relative `path` against a provider `base_url` into an absolute URL.
+/// Resolves a stored relative `path` against a provider `base_url` into an absolute URL.
 ///
 /// Guarantees:
 /// - Trailing slash on the base and leading slash on the path are normalized so no
@@ -50,8 +50,8 @@ pub fn resolve_link(base_url: &str, path: &str) -> Result<String, ResolveError> 
         return Err(ResolveError::UnsupportedScheme(base.scheme().to_owned()));
     }
 
-    // Preserve any base subpath by concatenating rather than using `Url::join`
-    // (which would discard the base path for a root-anchored relative path).
+    // Concatenated, not `Url::join`, which discards the base path for a root-anchored relative
+    // path.
     let trimmed_base = base_url.trim_end_matches('/');
     let normalized_path = if path.starts_with('/') {
         std::borrow::Cow::Borrowed(path)
@@ -67,7 +67,7 @@ pub fn resolve_link(base_url: &str, path: &str) -> Result<String, ResolveError> 
     Ok(resolved.to_string())
 }
 
-/// The prefix a chapter path is stored relative to, for a source at `source_path`.
+/// Returns the prefix a chapter path is stored relative to, for a source at `source_path`.
 ///
 /// Always ends in `/`, which is what makes the stored form unambiguous: a compressed suffix can
 /// never begin with `/`, and an uncompressed path always does (every writer goes through
@@ -76,25 +76,36 @@ fn source_prefix(source_path: &str) -> String {
     format!("{}/", source_path.trim_end_matches('/'))
 }
 
-/// Compress a chapter path for storage under a source at `source_path`.
+/// Compresses a chapter path for storage under a source at `source_path`.
 ///
 /// `chapters.path` is the largest variable field in the largest table in the deployment, and for
-/// most providers it is the series path with a few characters appended —
-/// `/manga/<slug>/chapter-1050/` under `/manga/<slug>`. The prefix is already stored, once per
-/// source, in a table every chapter query already joins, so storing it again on every chapter row
-/// is pure duplication. Measured: mean path length 42.4 → 11.7 characters.
+/// most providers it is the series path with a few characters appended:
+/// `/manga/<slug>/chapter-1050/` under `/manga/<slug>`. The prefix is stored once per source, in
+/// a table every chapter query joins, so repeating it on every chapter row is duplication. The
+/// mean stored path shrinks from 42.4 to 11.7 characters.
 ///
-/// **Not every provider nests this way.** `MangaDex`'s series path is `/title/{uuid}` and its
-/// chapter path is `/chapter/{uuid}` — no shared prefix at all. Those are stored whole, and the
-/// leading slash is what says so. [`expand_chapter_path`] is the inverse; the SQL spelling of it
-/// is the `chapter_url_path` function in migration 0055, which must stay in step with this.
+/// Not every provider nests this way. `MangaDex`'s series path is `/title/{uuid}` and its chapter
+/// path is `/chapter/{uuid}`, with no shared prefix. Those are stored whole, and the leading slash
+/// says so. [`expand_chapter_path`] is the inverse; its SQL spelling is the `chapter_url_path`
+/// function in migration 0055, which must stay in step with this.
+///
+/// ```
+/// use tankovault_domain::{compress_chapter_path, expand_chapter_path};
+///
+/// let stored = compress_chapter_path("/manga/solo", "/manga/solo/chapter-3/");
+/// assert_eq!(stored, "chapter-3/");
+/// assert_eq!(expand_chapter_path("/manga/solo", &stored), "/manga/solo/chapter-3/");
+///
+/// // No shared prefix: stored whole, and the leading slash says so.
+/// assert_eq!(compress_chapter_path("/title/abc", "/chapter/def"), "/chapter/def");
+/// ```
 #[must_use]
 pub fn compress_chapter_path(source_path: &str, path: &str) -> String {
     path.strip_prefix(&source_prefix(source_path))
         .map_or_else(|| path.to_owned(), ToOwned::to_owned)
 }
 
-/// Expand a stored chapter path back to the site-relative path [`resolve_link`] expects.
+/// Expands a stored chapter path back to the site-relative path [`resolve_link`] expects.
 ///
 /// The inverse of [`compress_chapter_path`]. A value beginning with `/` was stored whole.
 #[must_use]
@@ -144,7 +155,7 @@ mod tests {
 
     #[test]
     fn domain_migration_reresolves_every_link() {
-        // The same stored path resolves correctly after a base_url change — no rewrite.
+        // The same stored path resolves correctly after a base_url change, with no rewrite.
         let path = "/manga/solo-leveling/chapter-1/";
         let old = resolve_link("https://old-domain.test", path).unwrap();
         let new = resolve_link("https://new-domain.test", path).unwrap();
@@ -184,7 +195,7 @@ mod tests {
             compress_chapter_path("/manga/solo-leveling", "/manga/solo-leveling/chapter-1050/"),
             "chapter-1050/"
         );
-        // A trailing slash on the source path must not change the answer — adapters emit both.
+        // A trailing slash on the source path must not change the answer: adapters emit both.
         assert_eq!(
             compress_chapter_path(
                 "/manga/solo-leveling/",
@@ -205,8 +216,8 @@ mod tests {
     }
 
     /// A near-miss must not be compressed: `/manga/solo-leveling-2/` is not under
-    /// `/manga/solo-leveling/`, and stripping on the bare prefix rather than the slash-terminated
-    /// one would silently rewrite one series' chapters as another's.
+    /// `/manga/solo-leveling/`, and stripping the bare prefix instead of the slash-terminated one
+    /// would silently rewrite one series' chapters as another's.
     #[test]
     fn a_sibling_slug_is_not_treated_as_nested() {
         assert_eq!(

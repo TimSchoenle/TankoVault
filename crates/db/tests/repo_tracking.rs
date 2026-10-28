@@ -1032,6 +1032,49 @@ async fn un_reading_a_part_below_the_frontier_retreats_both_frontiers() {
     assert_eq!(frontiers(&db, user, series).await, (4.0, None));
 }
 
+/// Un-reading a whole chapter the reader has not reached never moves progress forward.
+///
+/// The bug: the whole-chapter branch set the whole frontier to the chapter before `number`
+/// unconditionally, so at chapter 1 un-reading chapter 3 *advanced* progress to 2, and a part
+/// frontier ahead of the whole one was dropped even when it sat below the chapter.
+#[tokio::test]
+async fn un_reading_a_whole_chapter_ahead_of_the_frontier_never_advances_it() {
+    let db = TestDb::spawn().await;
+    let user = seed::user(&db, "reader").create().await;
+    let provider = seed::provider(&db, "alpha").create().await;
+    let series = a_series(&db, provider, "Berserk", CHAPTERS).await;
+
+    progress_set(&db.pool, user, series, 1.0)
+        .await
+        .expect("set progress");
+    progress_mark_unread(&db.pool, user, series, 3.0)
+        .await
+        .expect("mark unread");
+    assert_eq!(
+        frontiers(&db, user, series).await,
+        (1.0, None),
+        "chapter 3 was already unread, so nothing moves"
+    );
+
+    // Reading part 3.5 catches the whole frontier up to 2, the chapter before it.
+    progress_mark_read(&db.pool, user, series, 3.5)
+        .await
+        .expect("mark part read");
+    assert_eq!(frontiers(&db, user, series).await, (2.0, Some(3.5)));
+
+    // A chapter past the part frontier: both frontiers stay.
+    progress_mark_unread(&db.pool, user, series, 6.0)
+        .await
+        .expect("mark unread");
+    assert_eq!(frontiers(&db, user, series).await, (2.0, Some(3.5)));
+
+    // The chapter the part frontier sits in: only the part frontier retreats.
+    progress_mark_unread(&db.pool, user, series, 3.0)
+        .await
+        .expect("mark unread");
+    assert_eq!(frontiers(&db, user, series).await, (2.0, None));
+}
+
 /// **Un-reading the part frontier itself falls back to the next part still ahead of the whole
 /// frontier, not to nothing.**
 ///

@@ -256,8 +256,15 @@ pub async fn progress_mark_unread(
     let mut part = cur.last_read_part_number;
 
     if is_whole(number) {
-        whole = prev_whole_below(pool, series_id, number).await?;
-        part = None;
+        if number <= whole {
+            whole = prev_whole_below(pool, series_id, number).await?;
+            part = None;
+        } else if part.is_some_and(|p| p >= number) {
+            // Ahead of the whole frontier only the part frontier can cover the chapter, so only
+            // it retreats. Moving the whole frontier to the chapter before `number` here would
+            // mark chapters read that the reader never opened.
+            part = prev_part_below(pool, series_id, number, whole).await?;
+        }
     } else if number.floor() <= whole {
         // A part of an already-read whole chapter (`152.5` while the frontier is at `152`).
         // Un-reading it necessarily un-reads the chapter that contains it, so the whole

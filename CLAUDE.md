@@ -12,7 +12,7 @@ in CI's order. It is **not** what you run by default. One pass rebuilds the work
 and the six `web/frontend` gates (both its feature sets); that is minutes per iteration, and
 spending it after every edit buys nothing CI will not report anyway.
 
-Default while working: the whole obligation:
+By default while working, this is the whole obligation:
 
 ```bash
 cargo check -p <the crate you touched>
@@ -26,7 +26,7 @@ gates, or the `web/frontend` gates on your own initiative. Run them when, and on
 - you are chasing a failure those gates already reported, in which case run *that* gate, scoped
   as narrowly as it will go (`cargo test -p <crate> <test_name>`), not the suite around it.
 
-"It compiles" is not done: but it is as far as *you* take it unless told otherwise. What the
+"It compiles" is not done, but it is as far as *you* take it unless told otherwise. What the
 remaining gates cost is the user's call to spend, not yours.
 
 Regeneration is the exception and stays mandatory, because the artefacts are committed and
@@ -34,7 +34,7 @@ hand-editing them is banned (rule 6): OpenAPI surface changed → `cargo run -p 
 a `query!`/`query_as!` changed → `cargo run -p xtask -- sqlx-prepare` against a migrated
 database; config surface changed → update `docs/CONFIGURATION.md` (`cargo run -p xtask --
 config-docs` prints the current surface) **and** run `just regenerate`, which rewrites the nine
-documents every image publishes and the Dockerfile's `dev.terrace.config.*` regions:
+documents every image publishes and the Dockerfile's `dev.terrace.config.*` regions;
 `cargo run -p xtask -- config-contract` is the gate that checks both and does not write; either
 `Cargo.lock` moved → `cargo run -p xtask -- notices`, which requires `cargo-about` to be
 installed. The gates check these, they do not fix them.
@@ -98,7 +98,7 @@ cargo test -p tankovault-db -p tankovault-api -p tankovault-sync --features inte
    is the only connector. It also builds **two ways**: `web` (the wasm SPA, the default) and
    `desktop` (a wry webview, shipped as installers). They are mutually exclusive, everything
    platform-specific is behind `src/platform/`, and a check of one proves nothing about the
-   other: so `cargo check` there is twice:
+   other, so `cargo check` there is twice:
    `cargo check` and `cargo check --no-default-features --features desktop`.
 8. **A fix that could silently come back gets a test whose doc comment says what the bug was.**
 9. **Every secret value is a `secrecy` type: never a `String`, `&str` or `Vec<u8>`.**

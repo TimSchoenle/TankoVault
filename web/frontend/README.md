@@ -169,7 +169,7 @@ Rules the catalogues have to keep, all three enforced by `cargo test`:
 - **`en.json` is the source of truth**, and every other locale defines *exactly* the same
   keys. `i18nrs` falls back to an arbitrary catalogue for a missing key (it takes the first
   `HashMap` entry, whose order is undefined), so a key missing from one locale renders
-  unpredictably: including as the literal `Key '…' not found`.
+  unpredictably, including as the literal `Key '…' not found`.
 - **Never split a sentence around markup.** Interpolate the whole thing
   (`"{total} series · page {page} of {pages}"`); span-wrapped fragments fix the word order to
   English and leave a translator with unorderable scraps.

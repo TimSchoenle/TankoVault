@@ -118,12 +118,14 @@ impl GramAccumulator {
         }
     }
 
-    /// Returns the top-`k` eigenvectors of `C`, as a projection basis.
+    /// Returns an orthonormal approximation of the top-`k` eigenvectors of `C`, as a projection
+    /// basis.
     ///
     /// `k` is clamped to `1..=dim`, or to `1` when `dim` is `0`, which yields one empty column
     /// that projects every vector to `[0.0]`. `iterations` is the orthogonal-iteration count
-    /// ([`crate::BASIS_ITERATIONS`]), and `seed` makes the starting matrix, and so the basis,
-    /// reproducible.
+    /// ([`crate::BASIS_ITERATIONS`]): the approximation converges as it grows, and at `0` the
+    /// basis is the orthonormalised random start. `seed` makes the starting matrix, and so the
+    /// basis, reproducible.
     #[must_use]
     pub fn basis(&self, k: usize, iterations: usize, seed: u64) -> Basis {
         let k = k.min(self.dim).max(1);

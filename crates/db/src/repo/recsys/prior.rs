@@ -50,12 +50,11 @@ pub struct PriorInputs {
     pub external_score: Option<f32>,
     /// Upstream's own popularity figure, `None` when no upstream has one.
     pub external_popularity: Option<i32>,
-    /// Tags and authors only — **not** every feature.
+    /// Tags and authors only, **not** every feature.
     ///
-    /// Status, decade and length are derived from columns every series has, so counting them
-    /// would let a completely unenriched series clear a "has enough metadata" gate on the
-    /// strength of facts that describe nothing. Only a tag or an author distinguishes one series
-    /// from another.
+    /// Status, decade and length come from columns every series has, so counting them would let
+    /// an unenriched series clear the "enough metadata" gate. Only a tag or an author tells one
+    /// series from another.
     pub descriptive_features: i64,
     /// Whether the adult gate is closed on this series.
     ///
@@ -69,16 +68,14 @@ pub struct PriorInputs {
     pub has_active_source: bool,
 }
 
-/// One page of series ids, for a caller that will then ask for something about them.
+/// Returns one page of series ids, for a caller that will then ask for something about them.
 ///
-/// Deliberately separate from [`prior_inputs_for`]. Paging *and* aggregating in one statement
-/// puts three correlated aggregates on every row the planner thinks it might scan, and since a
-/// generic plan cannot see the `LIMIT`, it costs them against the whole catalogue —
-/// `repo_query_plans` measured 1.8x the ceiling. Splitting gives the planner a bounded id set to
-/// aggregate over, which is what it actually gets at run time.
+/// Separate from [`prior_inputs_for`]: paging and aggregating in one statement puts three
+/// correlated aggregates on every row a generic plan might scan, costed against the whole
+/// catalogue. Split, the planner aggregates over a bounded id set. An exhausted walk is empty.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; an exhausted walk is an empty `Vec`.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn page_series_ids<'e, E: PgExecutor<'e>>(
     exec: E,
     after: Option<SeriesId>,
@@ -94,10 +91,12 @@ pub async fn page_series_ids<'e, E: PgExecutor<'e>>(
     Ok(rows.into_iter().map(SeriesId::from_uuid).collect())
 }
 
-/// The prior inputs for a bounded set of series.
+/// Returns the prior inputs for a bounded set of series.
+///
+/// An id with no live series is simply absent from the result.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; an id with no live series is simply absent from the result.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn prior_inputs_for<'e, E: PgExecutor<'e>>(
     exec: E,
     series_ids: &[SeriesId],
@@ -156,7 +155,7 @@ pub async fn prior_inputs_for<'e, E: PgExecutor<'e>>(
         .collect())
 }
 
-/// Store one batch of computed priors.
+/// Stores one batch of computed priors.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -194,12 +193,11 @@ pub async fn write_priors<'e, E: PgExecutor<'e>>(
     Ok(affected)
 }
 
-/// The most broadly appealing recommendable series — cold start, and shelf backfill.
+/// Returns the most broadly appealing recommendable series, for cold start and shelf backfill.
 ///
-/// `include_adult` is the caller's resolved answer for this reader. It exists because this path
-/// serves two callers with different context: the shelf, which knows exactly who is asking, and
-/// the public similarity fallback, which may not. Passing `false` is always safe; passing it
-/// where the reader *has* opted in makes their shelf quietly narrow as the other paths run dry.
+/// `include_adult` is the caller's resolved answer for this reader: the shelf knows who is
+/// asking, and the public similarity fallback may not. `false` is always safe, but for a reader
+/// who opted in it narrows the shelf as the other paths run dry.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -222,16 +220,14 @@ pub async fn top_by_prior<'e, E: PgExecutor<'e>>(
     Ok(rows.into_iter().map(SeriesId::from_uuid).collect())
 }
 
-/// Summary rows for a named set of series, in the order the caller asked for them.
+/// Returns summary rows for a named set of series, in the order the caller asked for them.
 ///
-/// Retrieval hands back ids in *relevance* order, and a `= ANY` returns them in whatever order
-/// the heap does. Re-sorting here rather than at the call site keeps the ranking the retrieval
-/// produced from being silently replaced by physical row order — which looks like a working
-/// endpoint returning slightly wrong answers.
+/// Retrieval hands back ids in *relevance* order, and `= ANY` returns them in heap order, so the
+/// re-sort here keeps the ranking from silently becoming physical row order. An id with no live
+/// series is absent, so ids from a stale model are safe.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; an id with no live series is absent from the result rather
-/// than an error, which is what makes this safe to call with ids from a stale model.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn summaries_in_order<'e, E: PgExecutor<'e>>(
     exec: E,
     order: &[SeriesId],

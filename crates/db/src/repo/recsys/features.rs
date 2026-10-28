@@ -14,26 +14,21 @@ pub struct SeriesFactsRow {
     pub facts: SeriesFacts,
 }
 
-/// A page of series to extract features from, in `id` order.
+/// Returns a page of series to extract features from, in `id` order.
 ///
-/// Keyset, not `OFFSET`: the builder walks the whole catalogue and an offset walk re-reads
-/// everything it has already passed. `after` is exclusive; pass `None` to start.
+/// Keyset, not `OFFSET`, since an offset walk re-reads everything it has passed. `after` is
+/// exclusive; pass `None` to start. `country` is `None`: `countryOfOrigin` is fetched from
+/// `AniList` but not persisted on `series`, though the extractor supports the axis.
 ///
-/// `country` is left `None` — `countryOfOrigin` is fetched from `AniList` but not yet persisted
-/// on `series`. The extractor already supports the axis, so filling it later is a column and a
-/// line here, not a model change.
+/// The cursor is a **sentinel, not a nullable parameter**. `WHERE $1::uuid IS NULL OR s.id > $1`
+/// cannot use the primary key, since the plan must serve both branches, so it scans the table
+/// before the `LIMIT`. Starting from the nil UUID makes the predicate `s.id > $1`, an index range
+/// scan; no real id collides with it, since every series id is a `UUIDv7`.
 ///
-///
-/// The cursor is a **sentinel, not a nullable parameter**. ``WHERE $1::uuid IS NULL OR s.id > $1``
-/// reads naturally and cannot use the primary key: the planner has to keep a plan valid for both
-/// branches, so it scans the whole table and applies the `LIMIT` afterwards — which
-/// `repo_query_plans` measured at 1.8x the cost ceiling. Starting from the nil UUID makes the
-/// predicate unconditionally `s.id > $1`, an index range scan. No real id can collide with it:
-/// every series id is a `UUIDv7` and carries a timestamp.
+/// An exhausted walk is empty, the caller's termination signal.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; an exhausted walk is an empty `Vec`, which is the caller's
-/// termination signal and must not be conflated with a failure.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn list_series_facts<'e, E: PgExecutor<'e>>(
     exec: E,
     after: Option<SeriesId>,
@@ -130,11 +125,10 @@ pub struct InternedFeature {
     pub id: i32,
 }
 
-/// Intern a batch of feature keys, returning every one with its id.
+/// Interns a batch of feature keys, returning every one with its id.
 ///
-/// `DO UPDATE`, not `DO NOTHING`: a conflicting row must still come back through `RETURNING`, and
-/// `DO NOTHING` suppresses it. The update is a no-op write of the value onto itself — the
-/// standard upsert-and-return shape, and the reason it is spelled so oddly.
+/// `DO UPDATE`, not `DO NOTHING`, so a conflicting row still comes back through `RETURNING`.
+/// The update writes the value onto itself, the standard upsert-and-return shape.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -168,8 +162,8 @@ pub async fn intern_features<'e, E: PgExecutor<'e>>(
         .collect())
 }
 
-/// The SQL token back to its kind. Unknown tokens are dropped rather than defaulted: a kind this
-/// build does not know is a row from a newer schema, and guessing would file it on the wrong axis.
+/// Maps the SQL token back to its kind. An unknown token is dropped, not defaulted: it is a row
+/// from a newer schema, and guessing would file it on the wrong axis.
 fn parse_kind(token: &str) -> Option<FeatureKind> {
     Some(match token {
         "tag" => FeatureKind::Tag,
@@ -184,9 +178,9 @@ fn parse_kind(token: &str) -> Option<FeatureKind> {
     })
 }
 
-/// Store one batch of extracted vectors.
+/// Stores one batch of extracted vectors.
 ///
-/// `feature_ids` must be ascending — every reader merges two vectors on that assumption, and an
+/// `feature_ids` must be ascending: every reader merges two vectors on that assumption, and an
 /// unsorted vector silently scores near zero against everything.
 ///
 /// # Errors
@@ -201,8 +195,7 @@ pub async fn write_series_features<'e, E: PgExecutor<'e>>(
 ) -> DbResult<u64> {
     let ids: Vec<Uuid> = series_ids.iter().copied().map(SeriesId::as_uuid).collect();
     // `unnest` cannot spread a two-dimensional array into rows, so the per-series arrays travel
-    // as JSON and are cast back on arrival. The alternative — a statement per series — is a
-    // round trip per row over a million rows.
+    // as JSON and are cast back; a statement per series would be a million round trips.
     let features_json = serde_json::to_value(feature_ids).unwrap_or_default();
     let weights_json = serde_json::to_value(weights).unwrap_or_default();
 
@@ -256,7 +249,7 @@ pub async fn count_feature_documents<'e, E: PgExecutor<'e>>(exec: E) -> DbResult
         .collect())
 }
 
-/// How many series have a feature vector at all — the `N` in idf.
+/// Returns how many series have a feature vector, the `N` in idf.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -267,7 +260,7 @@ pub async fn total_feature_documents<'e, E: PgExecutor<'e>>(exec: E) -> DbResult
     Ok(total)
 }
 
-/// Write the vocabulary statistics computed from [`count_feature_documents`].
+/// Writes the vocabulary statistics computed from [`count_feature_documents`].
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -291,26 +284,22 @@ pub async fn set_feature_stats<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// Assign the projection's input positions to the most frequent dense-eligible features.
+/// Assigns the projection's input positions to the most frequent dense-eligible features.
 ///
-/// Clears every existing index first, so the assignment is a function of the current catalogue
-/// rather than an accumulation of past ones. Authors are excluded here rather than in the
-/// caller because the exclusion is a property of the model, not of any one build.
+/// Clears every existing index first, so the assignment is a function of the current catalogue.
+/// Authors are excluded here, since the exclusion is a property of the model, not of a build.
 ///
-/// The `dense_index` a feature holds is what pins the basis' column order, so this must run
-/// before the projection is solved and must not run between solving it and applying it.
+/// A feature's `dense_index` pins the basis' column order, so this runs before the projection
+/// is solved and never between solving and applying it.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; rolls back on first failure, so the column is never left
-/// half-cleared.
+/// [`crate::DbError::Sqlx`], rolling back so the column is never left half-cleared.
 pub async fn set_dense_indices(conn: &mut sqlx::PgConnection, cap: i64) -> DbResult<i64> {
     let mut tx = conn.begin().await?;
 
-    // Two statements, not one statement with a clearing CTE beside the assigning one. Sibling
-    // sub-statements of a single statement share one snapshot, so the clear would be invisible to
-    // the assignment: a position moving from one feature to another collides with its previous
-    // holder and `rec_features_dense_idx` rejects the write. The index is partial, so it cannot be
-    // a deferrable constraint either — emptying the column first is what makes the write legal.
+    // Two statements, not a clearing CTE beside the assignment: sibling sub-statements share one
+    // snapshot, so a position moving between features would collide with its previous holder in
+    // `rec_features_dense_idx`. The index is partial, so it cannot be deferrable either.
     sqlx::query!("UPDATE rec_features SET dense_index = NULL WHERE dense_index IS NOT NULL")
         .execute(&mut *tx)
         .await?;
@@ -337,7 +326,7 @@ pub async fn set_dense_indices(conn: &mut sqlx::PgConnection, cap: i64) -> DbRes
     Ok(assigned)
 }
 
-/// The dense vocabulary: every feature with an input position, and its idf.
+/// Returns the dense vocabulary: every feature with an input position, and its idf.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -361,7 +350,7 @@ pub async fn dense_vocabulary<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Vec<(i
         .collect())
 }
 
-/// One page of stored sparse vectors, in `series_id` order.
+/// Returns one page of stored sparse vectors, in `series_id` order.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -414,14 +403,17 @@ pub struct FeatureRow {
     pub idf: f32,
 }
 
-/// The idf-weighted, normalised vectors for a handful of series, plus the features they name.
+/// Returns the idf-weighted, normalised vectors for a handful of series, plus the features they
+/// name.
 ///
 /// This is the join the module header describes: `series_features` stores term weights, and the
 /// request path needs the weighted vector. Bounded by the caller's id list, so it stays two
 /// index lookups regardless of catalogue size.
 ///
+/// An id with no vector is simply absent from the result.
+///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; an id with no vector is simply absent from the result.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn weighted_vectors<'e, E: PgExecutor<'e> + Copy>(
     exec: E,
     series_ids: &[SeriesId],
@@ -496,16 +488,14 @@ pub struct ExactMatch {
     pub shared: i64,
 }
 
-/// Series carrying any of a set of features, most overlap first.
+/// Returns the series carrying any of a set of features, most overlap first.
 ///
-/// **This is the path that recovers what the dense projection destroys.** Authors are excluded
-/// from the embedding entirely — a rank-128 approximation cannot represent a feature with a
-/// document frequency of three — so the single most reliable signal in the catalogue, "same
-/// author", is invisible to the ANN index. Here it is exact.
+/// **This recovers what the dense projection loses.** Authors are excluded from the embedding,
+/// since a rank-128 approximation cannot represent a feature with a document frequency of three,
+/// so "same author", the most reliable signal, is invisible to the ANN index. Here it is exact.
 ///
-/// Callers must pass *rare* features only. The array-overlap operator is index-backed
-/// (`series_features_gin`), but a feature carried by a third of the catalogue matches a third of
-/// the catalogue, and no index makes that cheap.
+/// Pass *rare* features only. The overlap operator is index-backed (`series_features_gin`), but a
+/// feature carried by a third of the catalogue matches a third of it.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -546,7 +536,7 @@ pub async fn exact_feature_matches<'e, E: PgExecutor<'e>>(
         .collect())
 }
 
-/// The rarest features in a vector, by idf, for the exact retrieval path.
+/// Returns the rarest features in a vector, by idf, for the exact retrieval path.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -568,7 +558,7 @@ pub async fn rarest_features<'e, E: PgExecutor<'e>>(
     Ok(rows)
 }
 
-/// Name a set of features, for a surface that shows them to a reader.
+/// Names a set of features, for a surface that shows them to a reader.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.

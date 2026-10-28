@@ -2306,7 +2306,7 @@
         "env": "TANKOVAULT_MATCHING__AUTO_MERGE",
         "env_file": "TANKOVAULT_MATCHING__AUTO_MERGE_FILE",
         "secrets_file": "matching__auto_merge",
-        "docs": "At or above this score, and only when a primary identity rule fired, the duplicate sweep\nmerges two existing series without an operator. A corroborated alias merges from\n[`Self::low`] up whatever this is set to, because its corroboration, not its score, is the\nevidence. [`Self::high`] files an incoming source; this deletes a series that already\nexists. `tankovault_matcher::adjudicate` defines the identity rules.",
+        "docs": "At or above this score, and only when a primary identity rule fired, the duplicate sweep\nmay merge two existing series without an operator. A corroborated alias is eligible from\n[`Self::low`] up, whatever this is set to, because its corroboration, not its score, is the\nevidence. Either way a veto or an enabled merge guard still holds the pair for review.\n[`Self::high`] files an incoming source; this deletes a series that already exists.\n`tankovault_matcher::adjudicate` defines the identity rules, vetoes and guards.",
         "ty": "f32",
         "values": [],
         "constraint": {
@@ -2582,7 +2582,7 @@
         "additionalProperties": false,
         "properties": {
           "auto_merge": {
-            "description": "At or above this score, and only when a primary identity rule fired, the duplicate sweep\nmerges two existing series without an operator. A corroborated alias merges from\n[`Self::low`] up whatever this is set to, because its corroboration, not its score, is the\nevidence. [`Self::high`] files an incoming source; this deletes a series that already\nexists. `tankovault_matcher::adjudicate` defines the identity rules.",
+            "description": "At or above this score, and only when a primary identity rule fired, the duplicate sweep\nmay merge two existing series without an operator. A corroborated alias is eligible from\n[`Self::low`] up, whatever this is set to, because its corroboration, not its score, is the\nevidence. Either way a veto or an enabled merge guard still holds the pair for review.\n[`Self::high`] files an incoming source; this deletes a series that already exists.\n`tankovault_matcher::adjudicate` defines the identity rules, vetoes and guards.",
             "type": "number"
           },
           "block_auto_merge_on_author_conflict": {

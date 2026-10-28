@@ -249,9 +249,12 @@ main port requires a client certificate (`control-plane`, `worker`, `sync`, `ren
 `frontend` keep their probes on the main port. Schema migration is a discrete one-shot step
 instead of something a service does at startup. The control-plane scheduler elects a leader
 through Redis, so a control-plane `Deployment` with `replicas > 1` needs `TANKOVAULT_REDIS__URL`:
-without it, every replica is its own sole leader and runs the scheduler sweeps. Redis makes the
-leader unique, not available: a leader that loses Redis stands down, and no replica runs the
-sweeps until one reacquires the lock through Redis.
+without it, every replica is its own sole leader and runs the scheduler sweeps. The same happens
+when the URL is set but Redis is unreachable at startup: the replica logs `redis connect failed;
+scheduler runs unguarded` and does not retry until a restart or configuration reload, so Redis
+must be up before control-plane starts.
+Redis makes the leader unique, not available: a leader that loses Redis later stands down, and
+no replica runs the sweeps until one reacquires the lock through Redis.
 
 ### Installing into a cluster
 

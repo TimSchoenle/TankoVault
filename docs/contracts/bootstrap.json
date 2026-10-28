@@ -129,7 +129,7 @@
         "env": "TANKOVAULT_AUTH__PASSWORD_PEPPER",
         "env_file": "TANKOVAULT_AUTH__PASSWORD_PEPPER_FILE",
         "secrets_file": "auth__password_pepper",
-        "docs": "Server-side password pepper: mixed into every argon2id hash so a leak alone can't be\nbrute-forced offline. Empty (default) is un-peppered, for compatibility with old\nhashes; once configured it must stay stable or passwords stop verifying.",
+        "docs": "Server-side password pepper: mixed into every argon2id hash so a leak alone can't be\nbrute-forced offline. Empty (default) is un-peppered and offers no such protection;\nonce configured it must stay stable or passwords stop verifying.",
         "ty": "SecretString",
         "values": [],
         "constraint": {
@@ -226,7 +226,7 @@
         "additionalProperties": false,
         "properties": {
           "password_pepper": {
-            "description": "Server-side password pepper: mixed into every argon2id hash so a leak alone can't be\nbrute-forced offline. Empty (default) is un-peppered, for compatibility with old\nhashes; once configured it must stay stable or passwords stop verifying.",
+            "description": "Server-side password pepper: mixed into every argon2id hash so a leak alone can't be\nbrute-forced offline. Empty (default) is un-peppered and offers no such protection;\nonce configured it must stay stable or passwords stop verifying.",
             "type": "string",
             "writeOnly": true
           }

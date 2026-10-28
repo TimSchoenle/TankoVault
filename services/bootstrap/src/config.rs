@@ -37,8 +37,8 @@ pub struct Config {
 #[derive(Debug, Default, Deserialize, Describe)]
 pub struct AuthConfig {
     /// Server-side password pepper: mixed into every argon2id hash so a leak alone can't be
-    /// brute-forced offline. Empty (default) is un-peppered, for compatibility with old
-    /// hashes; once configured it must stay stable or passwords stop verifying.
+    /// brute-forced offline. Empty (default) is un-peppered and offers no such protection;
+    /// once configured it must stay stable or passwords stop verifying.
     //
     // Word for word the API's, and a `//` rather than a `///` on purpose: this is the same value
     // — the seed writes a hash the API then verifies, and a deployment that gave the two

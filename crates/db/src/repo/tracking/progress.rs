@@ -178,17 +178,17 @@ pub async fn progress_state<'e, E: PgExecutor<'e>>(
 /// half is "the part cannot corrupt whole-chapter progress"; the second half is what keeps the
 /// frontier self-consistent, and it is what external sync sees (§B.5 pushes the whole frontier).
 ///
-/// Marking a whole chapter at or below the whole frontier, or a part of one, leaves both frontiers
-/// unchanged. A part the part frontier already covers can still pull the whole frontier up: at
-/// whole `1` and part `4.75` with chapter `3` in the catalogue, marking `4.5` moves it to `3`.
+/// Marking a whole chapter at or below the whole frontier, or a part of a chapter at or below it,
+/// leaves both frontiers unchanged. A part only the part frontier covers can still pull the whole
+/// frontier up: at whole `1` and part `4.75` with chapter `3` in the catalogue, marking `4.5`
+/// moves it to `3`.
+///
 /// Every call rewrites the row and its `updated_at`, which [`progress_state`] reads for
-/// `NewestWins`. The read and the
-/// write are two statements without a transaction: two concurrent marks can interleave, and the
-/// loser's advance is lost unreported.
+/// `NewestWins`. The read and the write are two statements without a transaction: two concurrent
+/// marks can interleave, and the loser's advance is lost unreported.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; marking a chapter already covered is `Ok(())` with the
-/// frontiers unchanged.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn progress_mark_read(
     pool: &sqlx::PgPool,
     user_id: UserId,

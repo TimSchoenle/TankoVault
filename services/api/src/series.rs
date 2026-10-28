@@ -206,9 +206,10 @@ impl SeriesSummary {
     /// touch only those.
     ///
     /// # Errors
-    /// Returns the error of any of the three reads (chapter stats, tags, adult classification).
-    /// None is defaulted away: a card silently claiming zero chapters is worse than the page
-    /// failing and being retried.
+    /// Returns the error of any of the three reads (chapter stats, tags, adult classification): a
+    /// failed read fails the page rather than rendering cards that claim zero chapters. A series
+    /// the reads return no rows for gets zero chapters, no tags and no adult gate, which is what
+    /// it has.
     async fn page(
         state: &AppState,
         items: Vec<tankovault_db::repo::catalog::SeriesListItem>,

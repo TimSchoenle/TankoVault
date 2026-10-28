@@ -30,7 +30,8 @@ impl Ctx {
     /// Returns [`AdapterError::Resolve`] if the path cannot be resolved, [`AdapterError::Fetch`]
     /// if the fetch stack fails, and for a non-success status [`AdapterError::Challenged`],
     /// [`AdapterError::Throttled`], [`AdapterError::Unserved`] or [`AdapterError::Http`], as
-    /// [`AdapterError::from_response`] classifies the body. The first three are retryable.
+    /// [`AdapterError::from_response`] classifies the body. [`AdapterError::is_transient`] holds
+    /// for `Challenged`, `Throttled` and an `Http` 429 or 5xx, never for `Unserved`.
     pub async fn fetch(&self, relative_path: &str) -> Result<FetchResponse, AdapterError> {
         self.fetch_with(relative_path, &[]).await
     }

@@ -74,7 +74,7 @@ fn long_components(source: &str, threshold: usize) -> Vec<LongComponent> {
     let mut found = Vec::new();
     let mut index = 0;
     while index < lines.len() {
-        if lines[index].trim() != "#[component]" {
+        if !is_component_attribute(lines[index].trim()) {
             index += 1;
             continue;
         }
@@ -100,6 +100,21 @@ fn long_components(source: &str, threshold: usize) -> Vec<LongComponent> {
         index = end + 1;
     }
     found
+}
+
+/// Whether `line` is Dioxus's component attribute, bare, path-qualified or with arguments.
+fn is_component_attribute(line: &str) -> bool {
+    let Some(inner) = line
+        .strip_prefix("#[")
+        .and_then(|rest| rest.strip_suffix(']'))
+    else {
+        return false;
+    };
+    let path = inner.split_once('(').map_or(inner, |(path, _)| path).trim();
+    matches!(
+        path,
+        "component" | "dioxus::component" | "dioxus::prelude::component"
+    )
 }
 
 /// Counts the lines of a function body that hold code, the way clippy's `too_many_lines` does.
@@ -196,6 +211,28 @@ mod tests {
                 lines: 11,
             }]
         );
+    }
+
+    /// Only a bare `#[component]` was matched, so `#[component(no_case_check)]` or a
+    /// path-qualified attribute let an over-threshold component past the rule.
+    #[test]
+    fn every_form_of_the_component_attribute_is_measured() {
+        for attribute in [
+            "#[component(no_case_check)]",
+            "#[dioxus::component]",
+            "#[dioxus::prelude::component(no_case_check)]",
+        ] {
+            let source = component("Long", 11).replacen("#[component]", attribute, 1);
+            assert_eq!(long_components(&source, 10).len(), 1, "{attribute}");
+        }
+        for attribute in [
+            "#[component_helper]",
+            "#[derive(Props)]",
+            "#[not::component]",
+        ] {
+            let source = component("Long", 11).replacen("#[component]", attribute, 1);
+            assert_eq!(long_components(&source, 10), vec![], "{attribute}");
+        }
     }
 
     /// Clippy counts body lines only, so a component exactly at the threshold passes.

@@ -731,7 +731,7 @@
         "env": "TANKOVAULT_AUTH__JWT_SECRET",
         "env_file": "TANKOVAULT_AUTH__JWT_SECRET_FILE",
         "secrets_file": "auth__jwt_secret",
-        "docs": "HS256 signing key for access tokens; wrapped in `SecretString` so a `tracing::debug!(?cfg)`\non this Debug-deriving, nested struct can't publish the key that authenticates every session.",
+        "docs": "HS256 signing key for access tokens; wrapped in `SecretString` so a `tracing::debug!(?cfg)`\non this Debug-deriving, nested struct can't publish the key that authenticates every\nsession.",
         "ty": "SecretString",
         "values": [],
         "constraint": {
@@ -754,7 +754,7 @@
         "env": "TANKOVAULT_AUTH__PASSWORD_PEPPER",
         "env_file": "TANKOVAULT_AUTH__PASSWORD_PEPPER_FILE",
         "secrets_file": "auth__password_pepper",
-        "docs": "Server-side password pepper: mixed into every argon2id hash so a leak alone can't be\nbrute-forced offline. Empty (default) is un-peppered, for compatibility with old\nhashes; once configured it must stay stable or passwords stop verifying.",
+        "docs": "Server-side password pepper: mixed into every argon2id hash so a leak alone can't be\nbrute-forced offline. Empty (default) is un-peppered and offers no such protection;\nonce configured it must stay stable or passwords stop verifying.",
         "ty": "SecretString",
         "values": [],
         "constraint": {
@@ -831,7 +831,7 @@
         "env": "TANKOVAULT_AUTH__COOKIE_SECURE",
         "env_file": "TANKOVAULT_AUTH__COOKIE_SECURE_FILE",
         "secrets_file": "auth__cookie_secure",
-        "docs": "Mark the refresh cookie `Secure`.\n\nDefaults to true — a `bool`'s implicit default is `false`, which would silently send a\n30-day refresh credential over plain HTTP.\n\nAlso selects the cookie's name/path (`__Host-` vs unprefixed), since a `__Host-`\ncookie without `Secure` is refused by the browser. Flipping this forces one re-login.",
+        "docs": "Marks the refresh cookie `Secure`.\n\nDefaults to true: a `bool`'s implicit default is `false`, which would silently send a\n30-day refresh credential over plain HTTP.\n\nAlso selects the cookie's name/path (`__Host-` vs unprefixed), since a `__Host-`\ncookie without `Secure` is refused by the browser. Flipping this forces one re-login.",
         "ty": "bool",
         "values": [],
         "constraint": {
@@ -858,7 +858,7 @@
         "env": "TANKOVAULT_AUTH__WEBAUTHN_ORIGIN",
         "env_file": "TANKOVAULT_AUTH__WEBAUTHN_ORIGIN_FILE",
         "secrets_file": "auth__webauthn_origin",
-        "docs": "Public origin of the web app, for passkeys — `https://tanko.example.com`.\n\nCannot be inferred from a request: `Host` is attacker-controlled, and trusting it\nwould let anyone mint credentials under a domain of their choosing. Unset falls back\nto [`tankovault_config::EmailConfig::base_url`] and disables only passkeys.",
+        "docs": "Public origin of the web app, for passkeys, such as `https://tanko.example.com`.\n\nCannot be inferred from a request: `Host` is attacker-controlled, and trusting it\nwould let anyone mint credentials under a domain of their choosing. Unset falls back\nto [`tankovault_config::EmailConfig::base_url`] and disables only passkeys.",
         "ty": "String",
         "values": [],
         "constraint": {
@@ -927,7 +927,7 @@
         "env": "TANKOVAULT_AUTH__MFA_ENCRYPTION_KEY",
         "env_file": "TANKOVAULT_AUTH__MFA_ENCRYPTION_KEY_FILE",
         "secrets_file": "auth__mfa_encryption_key",
-        "docs": "Base64 (standard alphabet) 32-byte key that seals TOTP secrets at rest.\n\nDeliberately *not* derived from [`Self::jwt_secret`]: rotating the signing key is a\nroutine operation, and deriving from it would silently invalidate every enrolled\nauthenticator app — the same class of failure as rotating `password_pepper` and\nstranding the seeded admin. Unset disables TOTP enrolment only; security keys and\nrecovery codes are unaffected, since neither stores a symmetric secret.",
+        "docs": "Base64 (standard alphabet) 32-byte key that seals TOTP secrets at rest.\n\nDeliberately *not* derived from [`Self::jwt_secret`]: rotating the signing key is a\nroutine operation, and deriving from it would silently invalidate every enrolled\nauthenticator app, the same class of failure as rotating `password_pepper` and\nstranding the seeded admin. Unset disables TOTP enrolment only; security keys and\nrecovery codes are unaffected, since neither stores a symmetric secret.",
         "ty": "SecretString",
         "values": [],
         "constraint": {
@@ -950,7 +950,7 @@
         "env": "TANKOVAULT_AUTH__TOTP_ISSUER",
         "env_file": "TANKOVAULT_AUTH__TOTP_ISSUER_FILE",
         "secrets_file": "auth__totp_issuer",
-        "docs": "The issuer name an authenticator app files the entry under. Defaults to\n[`Self::webauthn_rp_name`], then to the product name — one label for both prompts.",
+        "docs": "The issuer name an authenticator app files the entry under. Defaults to\n[`Self::webauthn_rp_name`], then to the product name: one label for both prompts.",
         "ty": "String",
         "values": [],
         "constraint": {
@@ -1027,7 +1027,7 @@
         "env": "TANKOVAULT_AUTH__MFA_CHALLENGE_TTL_MINUTES",
         "env_file": "TANKOVAULT_AUTH__MFA_CHALLENGE_TTL_MINUTES_FILE",
         "secrets_file": "auth__mfa_challenge_ttl_minutes",
-        "docs": "How long a half-finished sign-in — password accepted, second factor still owed — may\nsit before the user has to start again.",
+        "docs": "How long a half-finished sign-in (password accepted, second factor still owed) may\nsit before the user has to start again.",
         "ty": "i64",
         "values": [],
         "constraint": {
@@ -3015,25 +3015,25 @@
             "type": "integer"
           },
           "cookie_secure": {
-            "description": "Mark the refresh cookie `Secure`.\n\nDefaults to true — a `bool`'s implicit default is `false`, which would silently send a\n30-day refresh credential over plain HTTP.\n\nAlso selects the cookie's name/path (`__Host-` vs unprefixed), since a `__Host-`\ncookie without `Secure` is refused by the browser. Flipping this forces one re-login.",
+            "description": "Marks the refresh cookie `Secure`.\n\nDefaults to true: a `bool`'s implicit default is `false`, which would silently send a\n30-day refresh credential over plain HTTP.\n\nAlso selects the cookie's name/path (`__Host-` vs unprefixed), since a `__Host-`\ncookie without `Secure` is refused by the browser. Flipping this forces one re-login.",
             "type": "boolean"
           },
           "jwt_secret": {
-            "description": "HS256 signing key for access tokens; wrapped in `SecretString` so a `tracing::debug!(?cfg)`\non this Debug-deriving, nested struct can't publish the key that authenticates every session.",
+            "description": "HS256 signing key for access tokens; wrapped in `SecretString` so a `tracing::debug!(?cfg)`\non this Debug-deriving, nested struct can't publish the key that authenticates every\nsession.",
             "type": "string",
             "writeOnly": true
           },
           "mfa_challenge_ttl_minutes": {
-            "description": "How long a half-finished sign-in — password accepted, second factor still owed — may\nsit before the user has to start again.",
+            "description": "How long a half-finished sign-in (password accepted, second factor still owed) may\nsit before the user has to start again.",
             "type": "integer"
           },
           "mfa_encryption_key": {
-            "description": "Base64 (standard alphabet) 32-byte key that seals TOTP secrets at rest.\n\nDeliberately *not* derived from [`Self::jwt_secret`]: rotating the signing key is a\nroutine operation, and deriving from it would silently invalidate every enrolled\nauthenticator app — the same class of failure as rotating `password_pepper` and\nstranding the seeded admin. Unset disables TOTP enrolment only; security keys and\nrecovery codes are unaffected, since neither stores a symmetric secret.",
+            "description": "Base64 (standard alphabet) 32-byte key that seals TOTP secrets at rest.\n\nDeliberately *not* derived from [`Self::jwt_secret`]: rotating the signing key is a\nroutine operation, and deriving from it would silently invalidate every enrolled\nauthenticator app, the same class of failure as rotating `password_pepper` and\nstranding the seeded admin. Unset disables TOTP enrolment only; security keys and\nrecovery codes are unaffected, since neither stores a symmetric secret.",
             "type": "string",
             "writeOnly": true
           },
           "password_pepper": {
-            "description": "Server-side password pepper: mixed into every argon2id hash so a leak alone can't be\nbrute-forced offline. Empty (default) is un-peppered, for compatibility with old\nhashes; once configured it must stay stable or passwords stop verifying.",
+            "description": "Server-side password pepper: mixed into every argon2id hash so a leak alone can't be\nbrute-forced offline. Empty (default) is un-peppered and offers no such protection;\nonce configured it must stay stable or passwords stop verifying.",
             "type": "string",
             "writeOnly": true
           },
@@ -3050,11 +3050,11 @@
             "type": "integer"
           },
           "totp_issuer": {
-            "description": "The issuer name an authenticator app files the entry under. Defaults to\n[`Self::webauthn_rp_name`], then to the product name — one label for both prompts.",
+            "description": "The issuer name an authenticator app files the entry under. Defaults to\n[`Self::webauthn_rp_name`], then to the product name: one label for both prompts.",
             "type": "string"
           },
           "webauthn_origin": {
-            "description": "Public origin of the web app, for passkeys — `https://tanko.example.com`.\n\nCannot be inferred from a request: `Host` is attacker-controlled, and trusting it\nwould let anyone mint credentials under a domain of their choosing. Unset falls back\nto [`tankovault_config::EmailConfig::base_url`] and disables only passkeys.",
+            "description": "Public origin of the web app, for passkeys, such as `https://tanko.example.com`.\n\nCannot be inferred from a request: `Host` is attacker-controlled, and trusting it\nwould let anyone mint credentials under a domain of their choosing. Unset falls back\nto [`tankovault_config::EmailConfig::base_url`] and disables only passkeys.",
             "type": "string"
           },
           "webauthn_rp_id": {

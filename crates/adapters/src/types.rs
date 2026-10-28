@@ -23,11 +23,14 @@ pub struct Ctx {
 }
 
 impl Ctx {
-    /// Fetches a page identified by a **relative** path, returning the response (with its
-    /// final URL, used to relativise links found on the page).
+    /// Fetches a page by a path relative to [`Self::base_url`] or by an absolute `http(s)` URL,
+    /// returning the response (with its final URL, used to relativise links found on the page).
     ///
     /// # Errors
-    /// Returns [`AdapterError`] on a resolve or transport failure, or a non-success status.
+    /// Returns [`AdapterError::Resolve`] if the path cannot be resolved, [`AdapterError::Fetch`]
+    /// if the fetch stack fails, and for a non-success status [`AdapterError::Challenged`],
+    /// [`AdapterError::Throttled`], [`AdapterError::Unserved`] or [`AdapterError::Http`], as
+    /// [`AdapterError::from_response`] classifies the body. The first three are retryable.
     pub async fn fetch(&self, relative_path: &str) -> Result<FetchResponse, AdapterError> {
         self.fetch_with(relative_path, &[]).await
     }
@@ -36,7 +39,7 @@ impl Ctx {
     /// content-negotiate or gate on them.
     ///
     /// # Errors
-    /// Returns [`AdapterError`] on a resolve or transport failure, or a non-success status.
+    /// Returns the same variants as [`fetch`](Self::fetch).
     pub async fn fetch_with(
         &self,
         relative_path: &str,
@@ -183,15 +186,28 @@ impl ChapterAccess {
 #[async_trait]
 pub trait SourceAdapter: Send + Sync {
     /// Enumerates the provider catalogue one page at a time (full scan).
+    ///
+    /// # Errors
+    /// Returns what [`Ctx::fetch`] returns, or [`AdapterError::Missing`],
+    /// [`AdapterError::Parse`] or [`AdapterError::Selector`] for a page the adapter cannot read.
     async fn list_catalog(&self, ctx: &Ctx, page: u32) -> Result<CatalogPage, AdapterError>;
 
     /// Returns the provider's "latest updates" feed (fast scan).
+    ///
+    /// # Errors
+    /// Returns the same variants as [`list_catalog`](Self::list_catalog).
     async fn list_latest(&self, ctx: &Ctx) -> Result<Vec<LatestUpdate>, AdapterError>;
 
     /// Returns full metadata for one series, given its **relative** path.
+    ///
+    /// # Errors
+    /// Returns the same variants as [`list_catalog`](Self::list_catalog).
     async fn fetch_series(&self, ctx: &Ctx, path: &str) -> Result<SeriesMeta, AdapterError>;
 
     /// Returns the chapter list (numbers and relative links) for one series.
+    ///
+    /// # Errors
+    /// Returns the same variants as [`list_catalog`](Self::list_catalog).
     async fn fetch_chapters(&self, ctx: &Ctx, path: &str)
     -> Result<Vec<ChapterMeta>, AdapterError>;
 }

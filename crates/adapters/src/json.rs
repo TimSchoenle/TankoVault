@@ -20,8 +20,9 @@ const MAX_CANDIDATES: usize = 8;
 /// `what` names the endpoint in error messages (e.g. `"kunmanga chapters API"`).
 ///
 /// # Errors
-/// Returns [`AdapterError::Challenged`] if the body is a bot-management interstitial, or
-/// [`AdapterError::Parse`], carrying the response envelope, if no candidate deserialized.
+/// Returns [`AdapterError::Challenged`] if the body is a bot-management interstitial,
+/// [`AdapterError::Throttled`] if it is a rate-limit page, and otherwise [`AdapterError::Parse`],
+/// carrying the response envelope, if no candidate deserialized.
 pub(crate) fn parse_json_body<T: DeserializeOwned>(
     what: &str,
     resp: &FetchResponse,

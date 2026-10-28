@@ -36,7 +36,9 @@ pub struct BuiltinPreset {
     pub base_url: &'static str,
     /// Which adapter drives the site.
     pub adapter: AdapterKind,
-    /// `providers.config` overrides, merged onto the adapter defaults (ignored for `Custom`).
+    /// `providers.config` overrides, merged onto the family defaults. A `Custom` adapter on a
+    /// family (`kunmanga`, `mgread`) merges them the same way, HeanCMS and Iken take them whole
+    /// and require `api`, and the remaining custom adapters ignore them.
     pub config: Value,
     /// Seed crawl budget. Operators may tune it downward in the console at any time; the
     /// hard ceilings in [`tankovault_domain::Politeness`] bound it upward regardless.

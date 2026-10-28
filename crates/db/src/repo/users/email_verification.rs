@@ -8,12 +8,13 @@ use tankovault_domain::{AccountStatus, User, UserId};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-/// Look up a user by email together with whether their address is already confirmed, for the
+/// Looks up a user by email together with whether their address is already confirmed, for the
 /// resend-confirmation flow.
 ///
+/// An unregistered address is `None`, which avoids leaking account existence.
+///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only. An unregistered address is `Ok(None)`, not
-/// [`crate::DbError::NotFound`] — avoids leaking account existence.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn find_by_email_with_verification<'e, E: PgExecutor<'e>>(
     exec: E,
     email: &str,
@@ -65,9 +66,11 @@ pub struct EmailVerificationRecord {
 
 /// Persist a freshly issued email-verification token as its SHA-256 hash.
 ///
+/// A duplicate `token_hash` is a generator fault (500), not a client-triggerable
+/// [`crate::DbError::Conflict`] (409).
+///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only. A duplicate `token_hash` is a generator fault (500), not a
-/// client-triggerable [`crate::DbError::Conflict`] (409).
+/// [`crate::DbError::Sqlx`] only.
 pub async fn insert_email_verification<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -87,10 +90,12 @@ pub async fn insert_email_verification<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// Find an email-verification token by its hash, regardless of expiry/use.
+/// Finds an email-verification token by its hash, regardless of expiry/use.
+///
+/// Expiry and use are record fields for the caller to check.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only. An unknown token is `Ok(None)`; expiry/use are record fields.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn find_email_verification<'e, E: PgExecutor<'e>>(
     exec: E,
     token_hash: &str,
@@ -120,8 +125,10 @@ pub async fn find_email_verification<'e, E: PgExecutor<'e>>(
 
 /// Atomically mark a verification token consumed (single-use). `0` rows means already used.
 ///
+/// `0` means another request won the race.
+///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only. Losing the race is `Ok(0)`, not an error.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn consume_email_verification<'e, E: PgExecutor<'e>>(exec: E, id: Uuid) -> DbResult<u64> {
     let result = sqlx::query!(
         "UPDATE email_verification_tokens SET used_at = now() WHERE id = $1 AND used_at IS NULL",
@@ -132,11 +139,11 @@ pub async fn consume_email_verification<'e, E: PgExecutor<'e>>(exec: E, id: Uuid
     Ok(result.rows_affected())
 }
 
-/// Mark a user's email address confirmed. Idempotent: re-confirming leaves the original
-/// timestamp untouched so the "verified since" instant stays stable.
+/// Marks a user's email address confirmed. Idempotent: re-confirming leaves the original timestamp
+/// untouched so the "verified since" instant stays stable.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only. An unknown `user_id` updates nothing and is still `Ok(())`.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn mark_email_verified<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResult<()> {
     sqlx::query!(
         "UPDATE users SET email_verified_at = COALESCE(email_verified_at, now()) WHERE id = $1",
@@ -147,11 +154,12 @@ pub async fn mark_email_verified<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId
     Ok(())
 }
 
-/// Whether a user's email address has been confirmed — the one-column read for sign-in paths
-/// (e.g. passkeys) that already know who is signing in and skip the typed-identifier lookups.
+/// Returns whether a user's email address has been confirmed, the one-column read for sign-in
+/// paths, such as passkeys, that already know who is signing in. An unknown `user_id` is
+/// `false`, the safe default for a gate.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only. An unknown `user_id` is `Ok(false)` (safe default for a gate).
+/// [`crate::DbError::Sqlx`] only.
 pub async fn is_email_verified<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResult<bool> {
     let verified = sqlx::query_scalar!(
         "SELECT (email_verified_at IS NOT NULL) AS \"verified!\" FROM users WHERE id = $1",

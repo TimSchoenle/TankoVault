@@ -28,7 +28,7 @@ pub enum CredentialPurpose {
 }
 
 impl CredentialPurpose {
-    /// The persisted string. Stable — it is a `CHECK` constraint's vocabulary.
+    /// Returns the persisted string, stable because it is a `CHECK` constraint's vocabulary.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -86,10 +86,10 @@ impl From<Row> for CredentialRecord {
     }
 }
 
-/// Every credential of one purpose registered to a user, newest first.
+/// Returns every credential of one purpose registered to a user, newest first.
 ///
 /// # Errors
-/// [`DbError::Sqlx`] only. None registered is an empty `Vec`, not [`DbError::NotFound`].
+/// [`DbError::Sqlx`] only.
 pub async fn list_for_user<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -108,7 +108,7 @@ pub async fn list_for_user<'e, E: PgExecutor<'e>>(
     Ok(rows.into_iter().map(Into::into).collect())
 }
 
-/// Whether a user holds at least one security key.
+/// Returns whether a user holds at least one security key.
 ///
 /// Half of "does this account have a second factor"; the other half is a confirmed TOTP row
 /// (`crate::repo::users::mfa::is_enrolled` answers the whole question).
@@ -128,7 +128,7 @@ pub async fn has_security_key<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -
     Ok(row.present)
 }
 
-/// Every credential id already registered to a user, **across both purposes**, fed to a
+/// Returns every credential id already registered to a user, **across both purposes**, fed to a
 /// registration ceremony as its exclude list.
 ///
 /// Deliberately unscoped, unlike every other read here. The exclude list exists to stop one
@@ -137,7 +137,7 @@ pub async fn has_security_key<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -
 /// second factor, or a single touch clears both legs.
 ///
 /// # Errors
-/// [`DbError::Sqlx`] only. None registered is `Ok(vec![])`.
+/// [`DbError::Sqlx`] only.
 pub async fn credential_ids_for_user<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -151,15 +151,15 @@ pub async fn credential_ids_for_user<'e, E: PgExecutor<'e>>(
     Ok(rows.into_iter().map(|r| r.credential_id).collect())
 }
 
-/// One credential by the id the authenticator presented, of the expected purpose.
+/// Returns one credential by the id the authenticator presented, of the expected purpose.
 ///
-/// Not scoped to a user — a discoverable assertion resolves from the credential; the caller
-/// must check the returned `user_id` against the authenticator's user handle. It *is* scoped to
-/// a purpose, and that is load-bearing: without it a security key would resolve a passkey
-/// sign-in and become a first factor on its own.
+/// Not scoped to a user, since a discoverable assertion resolves from the credential; the caller
+/// checks the returned `user_id` against the authenticator's user handle. It *is* scoped to a
+/// purpose: otherwise a security key would resolve a passkey sign-in and become a first factor
+/// on its own. An unknown id, or one of the other purpose, is `None`.
 ///
 /// # Errors
-/// [`DbError::Sqlx`] only. An unknown id, or one of the other purpose, is `Ok(None)`.
+/// [`DbError::Sqlx`] only.
 pub async fn find_by_credential_id<'e, E: PgExecutor<'e>>(
     exec: E,
     credential_id: &[u8],
@@ -177,12 +177,14 @@ pub async fn find_by_credential_id<'e, E: PgExecutor<'e>>(
     Ok(row.map(Into::into))
 }
 
-/// Register a verified credential against a user.
+/// Registers a verified credential against a user.
+///
+/// The credential id is unique across accounts and purposes, so an attacker cannot claim an
+/// observed credential id and one authenticator cannot serve as both factors.
 ///
 /// # Errors
-/// [`DbError::Conflict`] if this credential id is already registered to any account, for either
-/// purpose — the uniqueness is global so an attacker cannot claim an observed credential id, and
-/// so one authenticator cannot serve as both factors. [`DbError::Sqlx`] otherwise.
+/// [`DbError::Conflict`] if the credential id is already registered, [`DbError::Sqlx`]
+/// otherwise.
 pub async fn insert<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -216,14 +218,15 @@ pub async fn insert<'e, E: PgExecutor<'e>>(
     Ok(row.into())
 }
 
-/// Record a successful assertion: stamp `last_used_at` and store the credential
+/// Records a successful assertion: stamps `last_used_at` and stores the credential
 /// `update_credential` handed back, wholesale.
 ///
-/// Not scoped by purpose — the credential id is globally unique, so it identifies exactly one
-/// row of exactly one purpose, and the caller has already resolved that row to get here.
+/// Not scoped by purpose: the credential id is globally unique, so it identifies one row of one
+/// purpose, which the caller has already resolved. A deleted credential writes nothing, since
+/// the assertion already succeeded.
 ///
 /// # Errors
-/// [`DbError::Sqlx`] only. A deleted credential id is `Ok(())` — the assertion already succeeded.
+/// [`DbError::Sqlx`] only.
 pub async fn record_use<'e, E: PgExecutor<'e>>(
     exec: E,
     credential_id: &[u8],
@@ -240,12 +243,11 @@ pub async fn record_use<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// Rename one of the caller's own credentials. Returns rows changed (0 if the id was not theirs,
-/// or not of this purpose).
+/// Renames one of the caller's own credentials, returning rows changed. A foreign id, or one of
+/// another purpose, changes `0`, which prevents probing other users' key ids.
 ///
 /// # Errors
-/// [`DbError::Sqlx`] only. A foreign id is `Ok(0)`, not [`DbError::NotFound`] — prevents
-/// probing other users' key ids.
+/// [`DbError::Sqlx`] only.
 pub async fn rename<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -266,13 +268,13 @@ pub async fn rename<'e, E: PgExecutor<'e>>(
     Ok(result.rows_affected())
 }
 
-/// Delete one of the caller's own credentials. Returns rows removed.
+/// Deletes one of the caller's own credentials. Returns rows removed.
 ///
 /// Scoped by purpose so the account page's two lists cannot reach into each other: "revoke this
 /// passkey" must not be able to remove the security key that gates passkey enrolment.
 ///
 /// # Errors
-/// [`DbError::Sqlx`] only. See [`rename`] for why a foreign id is `Ok(0)`.
+/// [`DbError::Sqlx`] only.
 pub async fn delete<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -295,8 +297,8 @@ pub async fn delete<'e, E: PgExecutor<'e>>(
 // Ceremonies
 // ---------------------------------------------------------------------------
 
-/// Which leg of the protocol a stored ceremony belongs to — kept apart so a challenge minted
-/// for one purpose cannot complete another.
+/// Which leg of the protocol a stored ceremony belongs to, kept apart so a challenge minted for
+/// one purpose cannot complete another.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CeremonyKind {
     /// Registering a new passkey against a known account.
@@ -310,7 +312,7 @@ pub enum CeremonyKind {
 }
 
 impl CeremonyKind {
-    /// The persisted string. Stable — it is a `CHECK` constraint's vocabulary.
+    /// Returns the persisted string, stable because it is a `CHECK` constraint's vocabulary.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -340,10 +342,12 @@ pub struct Ceremony {
     pub state: serde_json::Value,
 }
 
-/// Store an in-flight ceremony under a caller-chosen id, to expire at `expires_at`.
+/// Stores an in-flight ceremony under a caller-chosen id, to expire at `expires_at`.
+///
+/// A primary-key collision on the random id is a 500.
 ///
 /// # Errors
-/// [`DbError::Sqlx`] only. A primary-key collision on the random id is a 500.
+/// [`DbError::Sqlx`] only.
 pub async fn insert_ceremony<'e, E: PgExecutor<'e>>(
     exec: E,
     id: Uuid,
@@ -366,12 +370,14 @@ pub async fn insert_ceremony<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// Consume a ceremony: fetch and delete it in one `DELETE ... RETURNING` statement, so a
+/// Consumes a ceremony, fetching and deleting it in one `DELETE ... RETURNING` statement, so a
 /// challenge can never survive its use and be replayed.
 ///
+/// Unknown, consumed, expired and wrong-`kind` all collapse to `None`, since telling them apart
+/// would let a client probe ceremony ids.
+///
 /// # Errors
-/// [`DbError::Sqlx`] only. Unknown, consumed, expired or wrong-`kind` all collapse to `Ok(None)`
-/// — telling them apart would let a client probe ceremony ids.
+/// [`DbError::Sqlx`] only.
 pub async fn take_ceremony<'e, E: PgExecutor<'e>>(
     exec: E,
     id: Uuid,
@@ -398,11 +404,11 @@ pub async fn take_ceremony<'e, E: PgExecutor<'e>>(
     }))
 }
 
-/// Delete every ceremony whose deadline has passed (abandoned-ceremony sweep), returning the
-/// count removed. Reclaims space only; [`take_ceremony`] already filters on expiry.
+/// Deletes every ceremony whose deadline has passed (abandoned-ceremony sweep), returning the count
+/// removed. Reclaims space only; [`take_ceremony`] already filters on expiry.
 ///
 /// # Errors
-/// [`DbError::Sqlx`] only. Nothing to delete is `Ok(0)`.
+/// [`DbError::Sqlx`] only.
 pub async fn prune_expired_ceremonies<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<u64> {
     let result = sqlx::query!("DELETE FROM webauthn_ceremonies WHERE expires_at <= now()")
         .execute(exec)
@@ -418,12 +424,10 @@ mod tests {
     /// migration set.
     ///
     /// Bug this pins: renaming a `CeremonyKind` string without updating the CHECK makes every
-    /// `INSERT` fail and every `take_ceremony` silently read as "expired" — a sign-in that
-    /// stops working with no error naming the cause. `CredentialPurpose` was added to the same
-    /// test because it has the identical failure mode, and a worse one: a purpose string the
-    /// CHECK rejects makes registration fail, while a purpose string that *reads* differently
-    /// from what was written makes every scoped read return nothing, which the account page
-    /// renders as "you have no passkeys".
+    /// `INSERT` fail and every `take_ceremony` silently read as "expired", a sign-in that stops
+    /// working with no error naming the cause. `CredentialPurpose` shares the failure mode and
+    /// adds a worse one: a purpose string that *reads* differently from what was written makes
+    /// every scoped read return nothing, which the account page renders as "no passkeys".
     #[test]
     fn the_persisted_vocabulary_matches_the_check_constraints() {
         const PASSKEYS: &str = include_str!("../../../../../migrations/0022_passkeys.up.sql");

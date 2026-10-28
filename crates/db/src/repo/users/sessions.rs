@@ -12,7 +12,7 @@ use uuid::Uuid;
 #[derive(Debug, Clone)]
 pub struct SessionInfo {
     /// The live refresh token's row id. It changes on every rotation, so it names the current
-    /// token rather than the session.
+    /// token, not the session.
     pub id: Uuid,
     /// The rotation family, which is what a user means by "this session" and what revoking one
     /// ends.
@@ -24,10 +24,10 @@ pub struct SessionInfo {
     pub expires_at: OffsetDateTime,
 }
 
-/// List a user's active sessions (live refresh tokens), newest first.
+/// Lists a user's active sessions (live refresh tokens), newest first.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only. No live session is an empty `Vec`, not [`crate::DbError::NotFound`].
+/// [`crate::DbError::Sqlx`] only.
 pub async fn list_sessions<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -59,12 +59,11 @@ pub async fn list_sessions<'e, E: PgExecutor<'e>>(
         .collect())
 }
 
-/// Revoke one of the user's own sessions (its whole rotation family). Returns tokens revoked
-/// (0 if the session id was not the caller's).
+/// Revokes one of the user's own sessions (its whole rotation family), returning the tokens
+/// revoked. A foreign `session_id` revokes `0`, which prevents probing other users' session ids.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only. A foreign `session_id` is `Ok(0)`, not [`crate::DbError::NotFound`]
-/// — prevents probing other users' session ids.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn revoke_session<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -83,11 +82,11 @@ pub async fn revoke_session<'e, E: PgExecutor<'e>>(
     Ok(result.rows_affected())
 }
 
-/// Revoke every live session for a user, returning tokens invalidated. Distinct from
+/// Revokes every live session for a user, returning tokens invalidated. Distinct from
 /// [`revoke_all_for_user`] only in that it reports the count, for an operator-forced sign-out.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only. Nothing live is `Ok(0)`.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn revoke_all_sessions<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResult<u64> {
     let result = sqlx::query!(
         "UPDATE refresh_tokens SET revoked_at = now() \
@@ -99,12 +98,11 @@ pub async fn revoke_all_sessions<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId
     Ok(result.rows_affected())
 }
 
-/// Revoke every live refresh token for a user — used after a password reset so a stolen
-/// session doesn't survive the changed credential.
+/// Revokes every live refresh token for a user, after a password reset, so a stolen session does
+/// not survive the changed credential. Callers must propagate the error.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only. Callers must propagate: swallowing it leaves a stolen
-/// session alive.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn revoke_all_for_user<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResult<()> {
     sqlx::query!(
         "UPDATE refresh_tokens SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL",

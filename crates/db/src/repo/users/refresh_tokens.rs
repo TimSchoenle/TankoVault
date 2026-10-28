@@ -1,5 +1,5 @@
-//! Rotating refresh tokens (hash only) and the reuse-detection primitives over them. Lookups
-//! deliberately do not filter revoked/expired rows — that judgement is the caller's.
+//! Rotating refresh tokens (hash only) and the reuse-detection primitives over them. Lookups do
+//! not filter revoked or expired rows; that judgement is the caller's.
 
 use crate::error::DbResult;
 use sqlx::{FromRow, PgExecutor};
@@ -23,9 +23,11 @@ pub struct RefreshRecord {
 
 /// Persist a freshly issued refresh token (as its SHA-256 hash).
 ///
+/// A duplicate `token_hash` is a generator fault (500), not a client-triggerable
+/// [`crate::DbError::Conflict`] (409).
+///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only. A duplicate `token_hash` is a generator fault (500), not a
-/// client-triggerable [`crate::DbError::Conflict`] (409).
+/// [`crate::DbError::Sqlx`] only.
 pub async fn insert_refresh<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -47,11 +49,10 @@ pub async fn insert_refresh<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// Find a refresh token by its hash (regardless of revocation, for reuse detection).
+/// Finds a refresh token by its hash, regardless of revocation, for reuse detection.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only. Unknown, revoked and expired all return the same `Ok`/`None`
-/// shape — filtering is the caller's job.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn find_refresh<'e, E: PgExecutor<'e>>(
     exec: E,
     token_hash: &str,
@@ -81,14 +82,14 @@ pub async fn find_refresh<'e, E: PgExecutor<'e>>(
     }))
 }
 
-/// Revoke a single token by id (normal rotation); `true` when this call revoked it.
+/// Revokes a single token by id (normal rotation); `true` when this call revoked it.
 ///
 /// A compare-and-swap: of two concurrent calls for one token exactly one sees `true`, because
 /// the second blocks on the row lock and then finds `revoked_at` already set. Run inside the
 /// transaction that inserts the successor, so the loser sees that successor once it unblocks.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only. Unknown/already-revoked is `Ok(false)`.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn revoke_token<'e, E: PgExecutor<'e>>(exec: E, id: Uuid) -> DbResult<bool> {
     let done = sqlx::query!(
         "UPDATE refresh_tokens SET revoked_at = now() WHERE id = $1 AND revoked_at IS NULL",
@@ -99,15 +100,15 @@ pub async fn revoke_token<'e, E: PgExecutor<'e>>(exec: E, id: Uuid) -> DbResult<
     Ok(done.rows_affected() == 1)
 }
 
-/// Revoke an entire token family (reuse detected → invalidate the lineage), returning how many
-/// tokens were still standing.
+/// Revokes an entire token family when reuse is detected, returning how many tokens were still
+/// standing.
 ///
 /// The count is the liveness test for the rotation grace path: taken by the same statement that
 /// collapses the family, two racing retries cannot both see a live lineage and both reissue.
+/// Callers must propagate the error, or a compromised lineage stays usable.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only. Callers must propagate — swallowing it leaves a compromised
-/// lineage usable.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn revoke_family<'e, E: PgExecutor<'e>>(exec: E, family_id: Uuid) -> DbResult<u64> {
     let done = sqlx::query!(
         "UPDATE refresh_tokens SET revoked_at = now() WHERE family_id = $1 AND revoked_at IS NULL",

@@ -1,12 +1,12 @@
 //! Binds a Rust string as Postgres `citext` instead of `text`, for comparisons against the
 //! citext `email`/`username` columns.
 
-/// A `&str` bound as Postgres `citext` rather than `text`.
+/// A `&str` bound as Postgres `citext`, not `text`.
 ///
 /// `citext` has an implicit cast to `text` but only an assignment cast back, so a bare `&str`
-/// (bound as `text`) widens the column to `text` and compares case-sensitively — silently, in
-/// contradiction of the schema. Without this wrapper, `Alice@x.com` and `alice@x.com` stop
-/// matching on lookup even though the unique index treats them as one address.
+/// (bound as `text`) silently widens the column to `text` and compares case-sensitively. Without
+/// this wrapper, `Alice@x.com` and `alice@x.com` stop matching on lookup even though the unique
+/// index treats them as one address.
 ///
 /// Only comparisons need this; an `INSERT` stores through the assignment cast regardless.
 #[derive(Debug, Clone, Copy)]

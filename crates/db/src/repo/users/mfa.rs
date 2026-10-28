@@ -1,5 +1,5 @@
 //! Second-factor state: TOTP enrolment, recovery codes, and the two short-lived grants the
-//! flows issue — a pending sign-in and a step-up elevation.
+//! flows issue, a pending sign-in and a step-up elevation.
 //!
 //! Security keys live in [`super::webauthn`], because they are `WebAuthn` credentials sharing a
 //! table with passkeys. [`is_enrolled`] is the one place that answers "does this account have a
@@ -21,7 +21,7 @@ use uuid::Uuid;
 /// A TOTP enrolment as the verifier needs it.
 #[derive(Debug, Clone)]
 pub struct TotpEnrolment {
-    /// Sealed secret — `nonce || ciphertext-with-tag`, opened by the caller's `Sealer`.
+    /// Sealed secret, `nonce || ciphertext-with-tag`, opened by the caller's `Sealer`.
     pub secret: Vec<u8>,
     /// `None` while the user has been shown the secret but has not yet proved they stored it.
     pub confirmed_at: Option<OffsetDateTime>,
@@ -29,10 +29,10 @@ pub struct TotpEnrolment {
     pub last_step: Option<i64>,
 }
 
-/// Read the caller's TOTP enrolment, confirmed or not.
+/// Reads the caller's TOTP enrolment, confirmed or not.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only. No enrolment is `Ok(None)`.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn get_totp<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -47,13 +47,12 @@ pub async fn get_totp<'e, E: PgExecutor<'e>>(
     Ok(row)
 }
 
-/// Begin (or restart) enrolment: store a freshly sealed secret, unconfirmed.
+/// Begins or restarts enrolment, storing a freshly sealed secret, unconfirmed.
 ///
-/// Overwrites any *existing* row, which is what restarting enrolment means — the user asked for
-/// a new QR code because the old secret never reached their phone. The upsert is guarded so it
-/// cannot silently replace a **confirmed** enrolment: swapping a working second factor for one
-/// the caller has not yet proved possession of is how a session-stealing attacker would lock the
-/// owner out. Returns `false` when the guard refused.
+/// Overwrites an *existing* unconfirmed row, which is what restarting means: the old secret never
+/// reached the user's phone. The guard refuses to replace a **confirmed** enrolment, since
+/// swapping a working second factor for one not yet proved is how a session-stealing attacker
+/// would lock the owner out. Returns `false` when the guard refused.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -78,7 +77,7 @@ pub async fn begin_totp_enrolment<'e, E: PgExecutor<'e>>(
     Ok(result.rows_affected() > 0)
 }
 
-/// Confirm an enrolment, stamping the step the proving code was accepted at.
+/// Confirms an enrolment, stamping the step the proving code was accepted at.
 ///
 /// Guarded on `confirmed_at IS NULL` so a replayed confirmation cannot reset `last_step` and
 /// re-open the replay window on an already-live enrolment. Returns rows changed.
@@ -101,12 +100,10 @@ pub async fn confirm_totp<'e, E: PgExecutor<'e>>(
     Ok(result.rows_affected())
 }
 
-/// Advance the replay floor after a successful verification.
+/// Advances the replay floor after a successful verification.
 ///
 /// `last_step < $2` is the whole guard: two requests carrying the same code can race here, and
-/// without it the later one would happily write a step it already lost the race for. With it,
-/// exactly one advances and the other's own verification has already been checked against the
-/// value it read. Returns rows changed — `0` means another request got there first.
+/// exactly one advances. Returns rows changed; `0` means another request got there first.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -126,10 +123,10 @@ pub async fn advance_totp_step<'e, E: PgExecutor<'e>>(
     Ok(result.rows_affected())
 }
 
-/// Remove the caller's TOTP enrolment. Returns rows removed.
+/// Removes the caller's TOTP enrolment. Returns rows removed.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only. No enrolment is `Ok(0)`.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn delete_totp<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResult<u64> {
     let result = sqlx::query!(
         "DELETE FROM user_totp WHERE user_id = $1",
@@ -140,7 +137,7 @@ pub async fn delete_totp<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbR
     Ok(result.rows_affected())
 }
 
-/// Whether this account holds any usable second factor.
+/// Returns whether this account holds any usable second factor.
 ///
 /// The single definition of "enrolled", used by the passkey gate and by the privileged-account
 /// requirement. A *confirmed* TOTP row or at least one security key; an unconfirmed TOTP row is
@@ -165,14 +162,14 @@ pub async fn is_enrolled<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbR
 // Recovery codes
 // ---------------------------------------------------------------------------
 
-/// Replace the caller's recovery-code set with `hashes`, returning how many were stored.
+/// Replaces the caller's recovery-code set with `hashes`, returning how many were stored.
 ///
 /// Replace, never append: a set is issued and displayed as a set, and appending would leave the
-/// user holding two printouts with no way to tell which codes are still live.
+/// user with two printouts and no way to tell which codes are live. A partial set is never
+/// stored, or a user would find "wrong" codes in a lockout.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only. Rolls back on first failure, so a partial set is never stored
-/// — a user shown ten codes of which six were saved would find four "wrong" ones in a lockout.
+/// [`crate::DbError::Sqlx`], rolling back the whole set.
 pub async fn replace_recovery_codes(
     conn: &mut sqlx::PgConnection,
     user_id: UserId,
@@ -201,14 +198,14 @@ pub async fn replace_recovery_codes(
     Ok(result.rows_affected())
 }
 
-/// Consume one unused recovery code, if `code_hash` matches one of this user's.
+/// Consumes one unused recovery code, if `code_hash` matches one of this user's.
 ///
 /// A single `UPDATE … RETURNING` guarded on `used_at IS NULL`, so two requests presenting the
 /// same code cannot both succeed: the row-level lock serialises them and the loser's guard no
 /// longer holds. Returns `true` when a code was consumed.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only. A wrong or already-used code is `Ok(false)`.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn consume_recovery_code<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -258,7 +255,7 @@ pub struct PendingChallenge {
     pub attempts: i32,
 }
 
-/// Open a pending sign-in for `user_id`, storing only the handle's digest.
+/// Opens a pending sign-in for `user_id`, storing only the handle's digest.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -280,15 +277,14 @@ pub async fn insert_challenge<'e, E: PgExecutor<'e>>(
     Ok(id)
 }
 
-/// Resolve a live pending sign-in from its handle's digest, **charging an attempt**.
+/// Resolves a live pending sign-in from its handle's digest, **charging an attempt**.
 ///
-/// The increment is part of the read, not a separate call, and that is the point: a caller who
-/// resolves a challenge and then abandons the request — because the code was wrong, because the
-/// connection dropped, because they are scripting it — has still spent a guess. A separate
-/// "count this failure" call is one an error path can skip, and the six-digit code it protects
-/// only holds up if every guess is counted.
+/// The increment is part of the read: a caller who resolves a challenge and abandons the
+/// request, for a wrong code, a dropped connection or a script, has still spent a guess. A
+/// separate "count this failure" call is one an error path can skip, and a six-digit code holds
+/// up only if every guess is counted.
 ///
-/// Expired or unknown is `Ok(None)`.
+/// Expired or unknown is `None`.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -318,7 +314,7 @@ pub async fn charge_challenge_attempt<'e, E: PgExecutor<'e>>(
     }))
 }
 
-/// Delete a pending sign-in — on success, or once its attempts are spent.
+/// Deletes a pending sign-in, on success or once its attempts are spent.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -329,7 +325,7 @@ pub async fn delete_challenge<'e, E: PgExecutor<'e>>(exec: E, id: Uuid) -> DbRes
     Ok(result.rows_affected())
 }
 
-/// Delete every pending sign-in whose deadline has passed, returning the count removed.
+/// Deletes every pending sign-in whose deadline has passed, returning the count removed.
 ///
 /// Reclaims space only; [`charge_challenge_attempt`] already filters on expiry.
 ///
@@ -355,12 +351,12 @@ pub enum StepUpMethod {
     SecurityKey,
     /// One of the single-use codes issued at enrolment.
     RecoveryCode,
-    /// The fallback for an account with no factor enrolled at all — refused once one exists.
+    /// The fallback for an account with no factor enrolled, refused once one exists.
     Password,
 }
 
 impl StepUpMethod {
-    /// The persisted string. Stable — it is a `CHECK` constraint's vocabulary.
+    /// Returns the persisted string, stable because it is a `CHECK` constraint's vocabulary.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -381,7 +377,7 @@ impl StepUpMethod {
     ];
 }
 
-/// Record a step-up elevation, storing only the token's digest.
+/// Records a step-up elevation, storing only the token's digest.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -405,22 +401,21 @@ pub async fn insert_step_up<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// Resolve a live step-up grant belonging to `user_id`, sliding its window forward.
+/// Resolves a live step-up grant belonging to `user_id`, sliding its window forward.
 ///
-/// Scoped to the user in the statement, not checked afterwards: a grant is bound to the account
-/// that earned it, and a token presented alongside a *different* account's access token must
-/// find nothing rather than find a row someone then forgets to compare.
+/// Scoped to the user in the statement, not checked afterwards: a token presented alongside a
+/// *different* account's access token must find nothing, not a row someone forgets to compare.
 ///
-/// Two deadlines, and both are load-bearing. `idle_until` is where a *used* grant's expiry moves
-/// to, so an operator working through a console panel is asked once rather than every few
-/// minutes; `alive_since` is the floor on `created_at`, which no amount of use can push, so the
-/// sliding window cannot turn one confirmation this morning into a standing elevation this
-/// evening. A grant past the floor is refused here whatever its `expires_at` says — the write is
-/// an optimisation, the `WHERE` is the rule.
+/// Two deadlines. `idle_until` is where a *used* grant's expiry moves, so an operator working
+/// through a console panel is asked once, not every few minutes. `alive_since` is the floor on
+/// `created_at`, which no use can push, so the sliding window cannot turn one morning
+/// confirmation into a standing elevation. The `WHERE` refuses a grant past the floor whatever
+/// its `expires_at` says.
+///
+/// Unknown, expired, revoked or past its absolute lifetime is `None`.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only. Unknown, expired, revoked or past its absolute lifetime is
-/// `Ok(None)`.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn renew_step_up<'e, E: PgExecutor<'e>>(
     exec: E,
     user_id: UserId,
@@ -450,8 +445,8 @@ pub async fn renew_step_up<'e, E: PgExecutor<'e>>(
         "security_key" => Some(StepUpMethod::SecurityKey),
         "recovery_code" => Some(StepUpMethod::RecoveryCode),
         "password" => Some(StepUpMethod::Password),
-        // Unreachable behind the CHECK constraint; fail closed rather than panic on a value a
-        // future migration widened the vocabulary with.
+        // Unreachable behind the CHECK constraint; fails closed instead of panicking on a value a
+        // future migration adds to the vocabulary.
         other => {
             tracing::warn!(method = %other, "ignoring step-up grant with an unknown method");
             None
@@ -459,13 +454,13 @@ pub async fn renew_step_up<'e, E: PgExecutor<'e>>(
     }))
 }
 
-/// Revoke every live step-up grant this user holds, returning the count.
+/// Revokes every live step-up grant this user holds, returning the count.
 ///
 /// Called on password change, on sign-out, and whenever a factor is removed: an elevation
 /// outliving the credential that earned it is an elevation the account's owner cannot end.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only. Nothing live is `Ok(0)`.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn revoke_step_ups<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) -> DbResult<u64> {
     let result = sqlx::query!(
         "UPDATE step_up_grants SET revoked_at = now() \
@@ -477,7 +472,7 @@ pub async fn revoke_step_ups<'e, E: PgExecutor<'e>>(exec: E, user_id: UserId) ->
     Ok(result.rows_affected())
 }
 
-/// Delete every step-up grant past its deadline, returning the count removed.
+/// Deletes every step-up grant past its deadline, returning the count removed.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -493,8 +488,8 @@ mod tests {
     use super::StepUpMethod;
 
     /// Bug this pins: a method string the `CHECK` constraint does not know makes every step-up
-    /// `INSERT` fail — so every sensitive action refuses, with the error surfacing as a 500 from
-    /// the *elevation* endpoint rather than anything naming the vocabulary.
+    /// `INSERT` fail, so every sensitive action refuses, surfacing as a 500 from the *elevation*
+    /// endpoint with nothing naming the vocabulary.
     #[test]
     fn the_persisted_methods_match_the_check_constraint() {
         const MIGRATION: &str =

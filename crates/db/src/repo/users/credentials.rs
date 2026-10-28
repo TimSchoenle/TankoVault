@@ -41,9 +41,9 @@ pub struct Credentials {
     pub email_verified: bool,
 }
 
-/// Create a user. `password_hash` is a pre-computed argon2id PHC string.
+/// Creates a user. `password_hash` is a pre-computed argon2id PHC string.
 ///
-/// Created with no permissions — a registration endpoint must not be able to mint privilege.
+/// Created with no permissions, so a registration endpoint cannot mint privilege.
 /// Grants are added afterwards via [`crate::repo::permissions::replace`].
 ///
 /// # Errors
@@ -78,15 +78,17 @@ pub async fn create<'e, E: PgExecutor<'e>>(
     Ok(row.into())
 }
 
-/// Look up credentials by email or username (login accepts either).
+/// Looks up credentials by email or username (login accepts either).
 ///
 /// Routed to one column by whether `login` contains `@`, not matched with `OR`: a username
 /// containing `@` could otherwise collide with a different account's email address. Both
 /// branches bind through [`CiText`] since both columns are `citext`.
 ///
+/// An unknown login is `None`, and callers must not distinguish "unknown account" from "wrong
+/// password".
+///
 /// # Errors
-/// [`DbError::Sqlx`] only. An unknown login is `Ok(None)`, not [`DbError::NotFound`] — callers
-/// must not distinguish "unknown account" from "wrong password".
+/// [`DbError::Sqlx`] only.
 pub async fn find_credentials<'e, E: PgExecutor<'e>>(
     exec: E,
     login: &str,
@@ -136,10 +138,10 @@ pub async fn find_credentials<'e, E: PgExecutor<'e>>(
     }))
 }
 
-/// Fetch a user by id.
+/// Fetches a user by id.
 ///
 /// # Errors
-/// [`DbError::NotFound`] — a 404 — when no such user exists; otherwise [`DbError::Sqlx`].
+/// [`DbError::NotFound`] for an unknown id, [`DbError::Sqlx`] otherwise.
 pub async fn get<'e, E: PgExecutor<'e>>(exec: E, id: UserId) -> DbResult<User> {
     let row = sqlx::query_as!(
         UserRow,
@@ -152,14 +154,13 @@ pub async fn get<'e, E: PgExecutor<'e>>(exec: E, id: UserId) -> DbResult<User> {
     Ok(row.ok_or(DbError::NotFound)?.into())
 }
 
-/// Record a successful sign-in.
+/// Records a successful sign-in.
 ///
-/// Separate from the credential lookup so a failed attempt cannot advance the timestamp.
+/// Separate from the credential lookup so a failed attempt cannot advance the timestamp. A
+/// failure must not fail the sign-in that already succeeded, so callers log it.
 ///
 /// # Errors
-/// [`DbError::Sqlx`] only — no other variant is reachable. An `id` matching no row updates
-/// nothing and still returns `Ok(())`; a failure here must not fail the sign-in that already
-/// succeeded, so callers log rather than propagate.
+/// [`DbError::Sqlx`] only.
 pub async fn touch_last_login<'e, E: PgExecutor<'e>>(exec: E, id: UserId) -> DbResult<()> {
     sqlx::query!(
         "UPDATE users SET last_login_at = now() WHERE id = $1",
@@ -178,10 +179,12 @@ pub struct AccountState {
     pub status: AccountStatus,
 }
 
-/// Read just the authorization-relevant account state.
+/// Reads just the authorization-relevant account state.
+///
+/// Callers must treat `None`, a deleted account, as deny.
 ///
 /// # Errors
-/// [`DbError::Sqlx`] only. A deleted account is `Ok(None)`, which callers must treat as deny.
+/// [`DbError::Sqlx`] only.
 pub async fn account_state<'e, E: PgExecutor<'e>>(
     exec: E,
     id: UserId,

@@ -2,6 +2,7 @@
 
 use super::PUBLISH_WORKFLOW;
 use crate::repo_lint::Finding;
+use crate::repo_lint::text::is_comment;
 use std::path::{Path, PathBuf};
 
 /// **The Sentry release name is one decision written in two files, and a disagreement is silent
@@ -49,7 +50,7 @@ pub(in crate::repo_lint) fn sentry_release_name_agrees(
     };
 
     let expected = format!("{prefix}{VERSION_EXPRESSION}");
-    if workflow.contains(&expected) {
+    if names_release(&workflow, &expected) {
         return Ok(Vec::new());
     }
     Ok(vec![Finding {
@@ -61,6 +62,13 @@ pub(in crate::repo_lint) fn sentry_release_name_agrees(
              `{prefix}<version>`, and a release object under any other name collects none of them"
         ),
     }])
+}
+
+/// Returns whether a non-comment line of `workflow` names the release `expected`.
+fn names_release(workflow: &str, expected: &str) -> bool {
+    workflow
+        .lines()
+        .any(|line| !is_comment(line) && line.contains(expected))
 }
 
 /// The literal prefix of a `format!("…{}", env!("CARGO_PKG_VERSION"))` — `tankovault@` from
@@ -119,5 +127,18 @@ mod tests {
         // Neither is a call whose literal carries no trailing placeholder.
         let inlined = r#"let release = format!("tankovault@{version}", );"#;
         assert_eq!(release_name_prefix(inlined), None);
+    }
+
+    /// A comment quoting the release name satisfied the rule, so a workflow that only mentioned
+    /// the name while creating the release under another one passed.
+    #[test]
+    fn only_a_non_comment_line_names_the_release() {
+        let expected = "tankovault@${{ needs.release-please.outputs.version }}";
+        let commented = "      # sentry-cli releases new tankovault@${{ needs.release-please.outputs.version }}\n\
+                         \x20     run: sentry-cli releases new other@1.0.0\n";
+        assert!(!names_release(commented, expected));
+
+        let live = "      run: sentry-cli releases new tankovault@${{ needs.release-please.outputs.version }}\n";
+        assert!(names_release(live, expected));
     }
 }

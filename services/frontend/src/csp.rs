@@ -92,10 +92,9 @@ pub(super) fn header_value(policy: &Policy) -> HeaderValue {
     )]
     let csp_shell::Headers {
         content_security_policy,
-        // The obligation this field carries — a per-response nonce served from cache is pinned
-        // across every reader, which is `'unsafe-inline'` with extra steps — is discharged
-        // unconditionally by the `Cache-Control: no-cache` layer in [`build_router`], which the
-        // shell needs anyway because it names the hashed bundle.
+        // A nonce served from a stored copy is pinned across every reader. `FixedResponse::shell`
+        // meets this with `no-store` and no validator; `no-cache` is not enough, because a `304`
+        // pairs one response's nonce with another's body (`a_nonced_shell_is_served_uncacheable`).
         cache_control: _,
         // Cloudflare reads the nonce out of the response header, so nothing is stamped into the
         // shell and this service never needs the value itself.

@@ -19,7 +19,7 @@ every request. The production slow log showed them at 1.3–30 s. Local measurem
 | | warm | cold |
 |---|---|---|
 | `me_stats` + `continue_reading` + `summary`, today | 33 + 34 + 39 ms | 593 + 786 + 508 ms |
-| every stored value below, recomputed for all 859 rows | 165 ms (est. cost 39 k, no JIT) |: |
+| every stored value below, recomputed for all 859 rows | 165 ms (est. cost 39 k, no JIT) | not measured |
 | the same figures read back from a stored row per series | **0.29 ms** | an index range read |
 
 The work does not disappear. It moves from *every read* to *every change*, and changes are

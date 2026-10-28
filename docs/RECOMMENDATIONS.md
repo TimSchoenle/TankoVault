@@ -205,7 +205,7 @@ one explicit signal available and is folded in at §4.3.
 | Feature extraction, weighting, similarity, top-K join, ranking, MMR | **new `crates/recsys`** | Pure functions over plain data. No `sqlx`, no `axum`. Proptest-able and benchable in isolation; the top-K join is the one piece that needs a criterion bench, and it cannot have one if it is welded to a repository. |
 | Reads and writes for every table in §5 | `crates/db/src/repo/recsys/{items,users,build}.rs` | Matches the existing `repo/` module split. |
 | The builder, and its scheduling | `services/control-plane` (`src/recsys.rs`, behind a `[lib]` target so it is testable) | Already leader-elected, and already home to the one other standing catalogue-wide job. |
-| Serving | `services/api/src/me/recommendations.rs`, `services/api/src/series.rs` |: |
+| Serving | `services/api/src/me/recommendations.rs`, `services/api/src/series.rs` | none |
 | DTOs | `crates/contracts/src/me.rs`, `catalogue.rs` | Mandatory: repository row structs must not carry `ToSchema` (see that module's header). |
 
 ### 3.2 Why the builder is in the control plane
@@ -712,7 +712,8 @@ the population grows. Same shrinkage principle as `confidence(support)` in §7.2
 All four weights are tunables (§8), so the shape is an operator's decision, not a constant.
 
 `recommendable = false` for: no active `series_sources`, zero chapters, fewer than
-`build.min_features` features, `is_adult` (gated separately at read time, see §7.4). A series
+`build.min_features` features. Adult content is not on this list: it is gated at read time only
+(§7.4, §12.3). A series
 nothing links to and nothing describes cannot be recommended usefully and should not consume a
 neighbour slot.
 
@@ -1378,7 +1379,7 @@ On a small deployment, "readers of X also read Y" is a statement about *identifi
 three users, a co-occurrence edge is a disclosure of one person's watchlist to another.
 
 Mitigation: a pair needs **≥ 5 distinct contributing users** before it is written to
-`series_cooccurrence` at all (not merely down-weighted: not written). Below that, the pair does
+`series_cooccurrence` at all (not merely down-weighted, but not written). Below that, the pair does
 not exist and the system falls back to content similarity. The threshold is configurable upward,
 never downward; put the reason in the config doc comment, because the next person to see it will
 read it as a tuning knob.
@@ -1482,7 +1483,7 @@ is a different feature, and it is now one query away, not one architecture away.
 **Text embeddings of descriptions.** Descriptions are provider-scraped, inconsistently present,
 frequently machine-translated, and often marketing copy. An embedding of that is an embedding of
 noise, and it would be the most expensive part of the pipeline. If descriptions are used at all,
-use them as extra sparse features (rare noun phrases): not as a dense space.
+use them as extra sparse features (rare noun phrases), not as a dense space.
 
 **Matrix factorisation / implicit ALS.** Correct and standard *given interaction density*.
 A self-hosted tracker with a few hundred users has a matrix that is ~99.99% empty, where MF
@@ -1528,8 +1529,8 @@ snapshot in `crates/service`, the admin endpoints, and the console entity (§10)
 noise. The compiled defaults are the ones this document argues for, and they should have to work
 first.
 
-**Phase 3 (collaboration and feedback.** Stage D with database-side aggregation, retrieval R3
-with shrinkage and the support threshold, `recommendation_feedback` (and its merge fold) §9.4),
+**Phase 3: collaboration and feedback.** Stage D with database-side aggregation, retrieval R3
+with shrinkage and the support threshold, `recommendation_feedback` and its merge fold (§9.4),
 `GET /v1/me/taste`, the "next in the series" rail (needs AniList relations).
 
 **Phase 4: only if measured.** Impression logging and a learned ranker; free-text / mood search
@@ -1556,7 +1557,7 @@ Each has a default that works, so none of these blocks a start.
    because *something else* changed.
 4. **`series_merges` scope.** It is proposed as a product-wide alias table (§9.2), which means a
    `301` on `GET /v1/series/{merged_id}` and a change to how the catalogue answers for ids it no
-   longer holds. If you would rather keep it private to the recommender, it works unchanged: but
+   longer holds. If you would rather keep it private to the recommender, it works unchanged, but
    the redirect is worth more than the recommender is, and the table already exists either way.
 5. **Explain panel scope.** Default: the operator's own account and arbitrary series (§10.4).
    Cross-user inspection is more useful for support and is an operator-facing window onto

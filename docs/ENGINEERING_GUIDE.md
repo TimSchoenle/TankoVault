@@ -243,8 +243,8 @@ one. **[E]** CI's `secrets` job runs gitleaks over the history.
 
 ### 2.3 SSRF
 
-**[E/R] Anything that fetches a URL someone else chose calls `tankovault_domain::ssrf::validate_str`**:
-or `validate_and_resolve` when the value is being persisted, or `validate_unpinned` when a
+**[E/R] Anything that fetches a URL someone else chose calls one of the validators in `tankovault_domain::ssrf`**:
+`validate_str`, `validate_and_resolve` when the value is being persisted, or `validate_unpinned` when a
 client that resolves on its own (Chromium, TRAWL) will fetch it. Do not re-derive the range table.
 Enforced by review and by the tests in `crates/domain`; the *call* cannot be enforced
 mechanically, which is why the policy lives in exactly one place and is easy to find.
@@ -364,7 +364,7 @@ so a skip cannot outlive the duplicate it records; and `crates/api-client/tests/
 ### 3.5 Error handling
 
 **[R]** `anyhow` in binaries and xtask, typed errors in libraries. One RFC 9457 problem shape on
-the wire. A miss is `Ok(None)`, not an error, unless the caller genuinely cannot proceed: and
+the wire. A miss is `Ok(None)`, not an error, unless the caller genuinely cannot proceed, and
 whichever you choose, the `# Errors` section says so.
 
 ### 3.6 Tests carry the story
@@ -431,7 +431,7 @@ fix the app, you are fixing the wrong thing.
 (`web/frontend/clippy.toml`). All browser access goes through `web/frontend/src/platform/`.
 
 Why it is a ban and not a preference: `dioxus-web` implements `Document::eval` as
-`Function::new_with_args`, and its `wasm-bindgen` import is **not** marked `catch`: so under the
+`Function::new_with_args`, and its `wasm-bindgen` import is **not** marked `catch`, so under the
 served CSP the thrown error does not come back to Rust, it aborts the WASM instance. The app read
 its appearance preferences on boot, so the first eval killed it: a white page and
 `RuntimeError: unreachable executed`, with nothing in the server logs and every CI gate green.
@@ -530,7 +530,7 @@ silent no-ops and the session ends with the process, which is the correct fallba
 
 **[R] Credential-store calls run on their own OS thread (`platform::credentials`).** The Secret
 Service backend is `zbus::blocking`, which under the `tokio` feature `notify-rust` turns on is
-`Runtime::block_on`: and that panics when called from inside a runtime, which under
+`Runtime::block_on`, and that panics when called from inside a runtime, which under
 `panic = "abort"` takes the process with it. The writes happen on `reqwest`'s response path,
 which *is* a runtime worker. The same thread also serialises writes against deletes, so a
 sign-out cannot be overtaken by a queued write.
@@ -591,7 +591,7 @@ Everything that can fail, what owns it, and how to run it.
 | licences, advisories, duplicate-version budget, banned crates | `deny.toml` | `cargo deny check` |
 | secrets in history | gitleaks | CI `secrets` job |
 | coverage floor | `xtask coverage-ratchet` | CI `coverage` job |
-| MSRV (`rust-version`, follows the pinned toolchain) | CI `msrv` job |: |
+| MSRV (`rust-version`, follows the pinned toolchain) | CI `msrv` job | CI only |
 | every published endpoint is classified by an access-control matrix | `me_access_matrix.rs`, `admin_access_matrix.rs` | `cargo test -p tankovault-api --features integration` (Docker) |
 | every SQL copy of the unread predicate agrees with `ReadProgress::covers` | `repo_tracking.rs` differential | `cargo test -p tankovault-db --features integration` (Docker) |
 | every cached query plans within the cost ceiling | `repo_query_plans.rs` | `cargo test -p tankovault-db --features integration` (Docker) |

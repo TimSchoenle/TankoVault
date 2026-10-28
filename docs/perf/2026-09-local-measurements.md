@@ -75,7 +75,7 @@ Fired together, as the ~14-minute refresh does.
    them. Not reproduced locally.
 2. **`stats::system_overview` and `stats::provider_stats` are never warm.** Their warm runs still
    read 17 516 and 32 176 blocks: they aggregate all of `chapters` (554 MB) through 256 MB of
-   `shared_buffers`, so every execution goes back to the page cache: which, inside a 1 GB
+   `shared_buffers`, so every execution goes back to the page cache, which, inside a 1 GB
    cgroup, competes with Postgres's own memory. The overview's estimate (185 113) is past
    `jit_above_cost`; with production's `jit=off` that costs nothing today, but the cost is the
    whole-table count, which grows with the data (pattern 4 confirmed).

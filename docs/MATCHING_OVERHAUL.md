@@ -57,7 +57,7 @@ Total estimate: **2.5–3.5 engineer-weeks**, sliced into the PRs in [§6](#6-se
 
 | Finding | Number | Implication |
 |---|---|---|
-| Series / sources | 76k / 236k |: |
+| Series / sources | 76k / 236k | none |
 | Series with no source (orphans) | 23,500; 22,696 have a sourced twin with the same normalized title | Leftovers of a fixed bug (`f686b3b`, 2026-09-30); cleanup only (WP6) |
 | Orphans inside AniList-id clusters of >16 series | 22,967 of 24,661 clustered | The clusters are copies of one title, kept apart by `MAX_KEY_FANOUT` |
 | Automatic merges total | 480,209 (10 reverted, 0 flagged) | No operator labels exist |
@@ -467,7 +467,7 @@ hubs no longer hold other works.
 | 6 | WP4 AniList | 2 | 2–3 days |
 | 7 | WP5 live timing | 2 | 3–4 days |
 | 8 | WP8a chained-revert fix + 8b batch endpoint | none | 2–3 days |
-|: | WP8c undo campaign (operational, not code) | 2, 5, 8 deployed | 2–3 days |
+| n/a | WP8c undo campaign (operational, not code) | 2, 5, 8 deployed | 2–3 days |
 | 9 | WP3c mirror groups | only if A11 says so | 2–3 days |
 
 PRs 3, 4 and 8 are independent of the matcher work and can go in parallel.

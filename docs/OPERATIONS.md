@@ -189,7 +189,7 @@ stops:
 | `control-plane` sweep | **NATS header** | `worker` | `scan_task` |
 | `worker` progress event | **NATS header** | `control-plane` | `bus_delivery` |
 | `worker` chapter event | **NATS header** | `notifier` | `bus_delivery` |
-| `notifier` live push | **NATS header** | `api` SSE relay |: |
+| `notifier` live push | **NATS header** | `api` SSE relay | none |
 | `worker` solve | HTTP header | `challenge-solver`, `render` | request |
 
 Two mechanisms, one header name. Over HTTP it is
@@ -227,7 +227,7 @@ regression across nine of them.
 Whether an issue arrives with **functions and line numbers or with bare addresses** is decided by
 the release pipeline, not by anything here. Published images are stripped, so the SDK sends the
 build-id of each loaded module and Sentry resolves the frames against debug files the `symbols`
-job uploaded for that build: including a source bundle, so the frame opens on the actual line.
+job uploaded for that build, including a source bundle, so the frame opens on the actual line.
 This happens only for images built by `release-please.yaml`, and only for an organisation that has
 opted in with the `SENTRY_ORG` / `SENTRY_PROJECT` repository variables; a locally built image or a
 private fork that has not will report addresses. [`RELEASING.md`](./RELEASING.md#sentry-debug-information-and-the-release-object)
@@ -379,7 +379,7 @@ exist.
 
 ### The super user
 
-One account holds `system.superuser`, a grant that answers **every** permission check:
+One account holds `system.superuser`, a grant that answers **every** permission check,
 including checks for capabilities added by a later release, which the enumerated grants of a
 fully-privileged administrator would not cover until someone re-granted them.
 
@@ -522,7 +522,7 @@ to the sign-in screen instead of showing a page of failed panels.
 What stays open is the surface a visitor needs in order to *get* an account: everything under
 `/v1/auth` (sign-in, registration, password reset, email confirmation, both legs of a passkey or
 second-factor sign-in) and `/v1/legal` (registering is the act of accepting the Terms). Nothing
-else: including the public catalogue and `/v1/me/capabilities`. The refusals are counted by
+else is open, including the public catalogue and `/v1/me/capabilities`. The refusals are counted by
 `http_account_required_total`, which stays at zero on a public deployment.
 
 Turning it on does not create accounts. Pair it with `accounts.registration` **off** for a

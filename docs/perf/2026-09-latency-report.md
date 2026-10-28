@@ -114,7 +114,7 @@ The proposal's two-phase feed rewrite turned out not to be exact and was not bui
 | `providers::list_public` | index `series_sources (provider_id, series_id)`, migration 0057 | 37.1 ms / 343 ms | 6.2 ms / 14 ms | Bitmap Heap Scan → Index Only, 0 heap fetches |
 | `scans::provider_scan_health` | two grouped passes instead of a lateral per provider (identical rows and order) | 70 ms / 423 ms (174 ms JIT with `jit=on`) | 35 ms / 54 ms (no JIT) | 1 530 000 → 17 800 |
 | `matching::list_merge_decisions`, flagged only | admin pool plans with actual parameters (`force_custom_plan`) | 48.4 ms / 506 ms | 0.03 ms / 0.08 ms |: (generic → custom) |
-| `matching::list_merge_decisions`, one series | same | 50.3 ms warm | 0.66 ms warm |: |
+| `matching::list_merge_decisions`, one series | same | 50.3 ms warm | 0.66 ms warm | not measured |
 | `scans::scan_summary` | rewrite tried and **rejected** | 32 ms unfiltered, 0.07 ms per provider | 16 ms unfiltered, but 123 ms per provider | 17 600 → 5 970 / 1 135 → 1 354 600 |
 
 Custom plans apply to every console statement, so the other `$n IS NULL OR …` filters benefit

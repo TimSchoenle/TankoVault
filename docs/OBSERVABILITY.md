@@ -54,9 +54,9 @@ mental model from `CATALOGUE` when they disagree.
 |---|---|---|
 | `http_requests_total` | counter | `method`, `route`, `status` |
 | `http_request_duration_seconds` | histogram | `method`, `route` |
-| `http_requests_in_flight` | gauge |: |
+| `http_requests_in_flight` | gauge | none |
 | `tankovault_build_info` | gauge | `service`, `version` |
-| `service_ready` | gauge |: |
+| `service_ready` | gauge | none |
 | `service_dependency_up` | gauge | `dependency` |
 
 `tankovault_build_info` is the one metric that names its emitter. Everything else stays
@@ -93,7 +93,7 @@ to interpret.
 | Metric | Type | Labels |
 |---|---|---|
 | `db_pool_connections` | gauge | `state` (`in_use`/`idle`) |
-| `db_pool_max_connections` | gauge |: |
+| `db_pool_max_connections` | gauge | none |
 
 Sampled every 10s, not recorded per checkout. `in_use / db_pool_max_connections` is pool
 saturation, and it climbs long before `/ready` fails, which is what made pool exhaustion a
@@ -301,7 +301,7 @@ Eight per-service jobs on `<service>:9090`, and Prometheus itself. Two deliberat
 
 - **`worker` is discovered by DNS, everything else is a static target.** A static target that stops
   answering keeps its series and reports `up == 0`, which is alertable; a DNS-discovered target
-  disappears, and an alert on an absent series never fires. So static is the better default: but
+  disappears, and an alert on an absent series never fires. So static is the better default, but
   `worker` runs `replicas: 2` behind one compose DNS name, and a static `worker:9090` would resolve
   to a different replica on different scrapes, interleaving two processes' counters into one
   `instance` series. Every replica switch would look like a counter reset and `rate()` would

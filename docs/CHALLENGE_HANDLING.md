@@ -13,7 +13,7 @@ that could silently return gets a test whose doc comment says what the bug was.
 
 | # | Workstream | State | Blocking? |
 |---|---|---|---|
-| W1 | Detection: the JS Detections beacon is not an interstitial | **landed on this branch** |: |
+| W1 | Detection: the JS Detections beacon is not an interstitial | **landed on this branch** | none |
 | W2 | Session lifecycle: cache after validation, evict on failure | open | no |
 | W3 | Observability: make a dark provider visible | open | no |
 | W4 | Cookie scoping: a clearance cookie must not leave its host | open | wire change |
@@ -328,7 +328,7 @@ So a replayed session sends a **Firefox user-agent over a Chrome ClientHello, wi
 client hints that Firefox does not implement and never sends**. This is not a version to tune
 closer; it is the wrong browser, contradicted on three axes at once, and it is the default state of
 every Cloudflare-gated provider in the deployment. If any of these sessions have ever been accepted
-on replay, that is the surprise: not the reverse.
+on replay, that is the surprise, not the reverse.
 
 Nothing in the workspace could have reported it: the image digest and the profile constant are in
 different files, in different languages, with no gate relating them.

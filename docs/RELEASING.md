@@ -266,7 +266,7 @@ comparison the client makes, in the same order.
 `xtask release-plan` decides, and it is unit-tested, not written as shell in the workflow.
 
 Each image is diffed from *the tag it is currently published at*, resolved by asking Docker Hub
-which release tags exist for that repository: not from the previous release. A `manifest` leg
+which release tags exist for that repository, not from the previous release. A `manifest` leg
 that failed at v1.0.1 is therefore picked up at v1.0.2 instead of being skipped for good.
 
 A changed path reaches an image if:
@@ -509,7 +509,7 @@ line is GPL-3.0.
 | `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` | `release` environment secret | `plan` (reading the published tag set), image publish |
 | `MINISIGN_SECRET_KEY`, `MINISIGN_PASSWORD` | `release` environment secret | `desktop-release` (signing the desktop manifest) |
 | `SENTRY_AUTH_TOKEN` | `release` environment secret | `symbols`, `sentry-release` |
-| `SENTRY_ORG`, `SENTRY_PROJECT` | repository **variable** | `symbols`, `sentry-release`: and the switch that decides whether they run at all |
+| `SENTRY_ORG`, `SENTRY_PROJECT` | repository **variable** | `symbols`, `sentry-release`, and the switch that decides whether they run at all |
 | `SENTRY_URL` | repository **variable**, optional | self-hosted Sentry; defaults to `https://sentry.io/` |
 
 The Sentry pair are **repository variables and not environment ones**, and that is not a
@@ -557,7 +557,7 @@ JSON cannot carry a comment, and this is where the reasoning lives.
 
 release-please's `rust` strategy rewrites `[package] version` in the root manifest **and every
 workspace member**. TankoVault's root is a *virtual* manifest with no `[package]` section, and
-all 26 members inherit `version.workspace = true` from `[workspace.package]`: which the Rust
+all 26 members inherit `version.workspace = true` from `[workspace.package]`, which the Rust
 updater does not touch. Using `rust` would therefore rewrite 26 members'
 `version.workspace = true` into literal version strings while leaving the real source of truth
 at `0.1.0`.

@@ -5,7 +5,7 @@ roughly halves it so a running scan stops evicting the Postgres working set.
 
 `chapters` is the largest table in the deployment; `deploy/docker-compose.yml` records that it
 "passed 1.2 GB" while sizing Postgres, against a container capped at 1 GB with 256 MB of
-`shared_buffers`. Size here is not a disk-cost question (disk is cheap) it is a *cache
+`shared_buffers`. Size here is not a disk-cost question (disk is cheap); it is a *cache
 residency* question. The comment beside the Postgres tuning in that file already names the
 symptom: "a running scan's chapter inserts evict the working set continuously", and the dashboard
 and trigram statements went from 40–140 ms warm to 1.0–3.3 s cold because of it.
@@ -104,12 +104,12 @@ Two things this changes that a reader has to know about:
 `series_sources.content_hash` is computed on every scan (`content_hash` in
 [`services/worker/src/engine/mod.rs`](../services/worker/src/engine/mod.rs)) and written by
 `update_source_scan`. `source_content_hash` in
-[`crates/db/src/repo/catalog/sources.rs`](../crates/db/src/repo/catalog/sources.rs) reads it back:
+[`crates/db/src/repo/catalog/sources.rs`](../crates/db/src/repo/catalog/sources.rs) reads it back,
 and **has no callers**. `scan_series` calls `ingest_series` unconditionally.
 
 An earlier draft of this document proposed comparing the hash and skipping the whole ingest
 transaction for a converged source. **That was wrong, and it is not implemented.** The hash covers
-`meta.title`, `meta.description` and each chapter's `(number, path)`: and nothing else. It does
+`meta.title`, `meta.description` and each chapter's `(number, path)`, and nothing else. It does
 not cover `access` or `unlocks_at`, so a chapter whose paywall had lifted would stop being
 un-locked; nor tags, authors, cover, status, content type or release year, all of which
 `ingest_series` writes. Gating ingest on it would silently stop propagating exactly the change
@@ -236,7 +236,7 @@ Two things this forced that were not obvious up front:
 - **`floor(…)` before any `::bigint` cast.** `numeric::bigint` *rounds*, so a
   `last_read_whole_number` of `5.5` would have become 6 and hidden chapter 6 as already read.
 - **The plan-audit rule had to be fixed, not budgeted.** `repo_query_plans` flagged eight healthy
-  queries at once, because it detected trigram-similarity-as-filter by text-matching `" % "`: and
+  queries at once, because it detected trigram-similarity-as-filter by text-matching `" % "`, and
   Postgres spells integer modulo the same way. The part-release test `number_milli % 10000 <> 0`
   is not a trigram match. The rule now reads the right operand to tell them apart, pinned by
   `the_similarity_rule_tells_the_operator_from_integer_modulo`.
@@ -304,11 +304,11 @@ re-upsert destroys the physical/temporal correlation BRIN depends on.
 
 | Stage | Change | Bytes/row | Running total |
 |---|---|---:|---:|
-|: | Baseline | | 398.2 |
+| 0 | Baseline | | 398.2 |
 | 1 | Guard the upsert (no schema change) | 0 | 398.2 |
 | 4 | One covering unique index replaces four | −122.0 | 276.2 |
 | 3 | `id` removed from the heap | −14.9 | 261.3 |
-|: | Column reorder for alignment | −4.2 | 257.1 |
+| n/a | Column reorder for alignment | −4.2 | 257.1 |
 | 5 | Path relative to source path | −32.9 | 224.2 |
 | 6 | Global `discovered_at` index dropped | −22.5 | **201.7** |
 

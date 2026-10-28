@@ -574,8 +574,8 @@ Plan:
 3. Each `series` task upserts idempotently → emits `chapter.discovered` for genuinely new chapters,
    consumed by the notifier.
 4. Each task reports its **stage** (`scan_tasks.stage`) as it runs and records where its wall clock
-   went (`scan_tasks.telemetry`) when it settles, so a run that is slow can say why: see §"Why a
-   scan is slow" in `docs/OBSERVABILITY.md`.
+   went (`scan_tasks.telemetry`) when it settles, so a slow run can say why; see the "Why a scan is slow" section of
+   `docs/OBSERVABILITY.md`.
 
 ### Change detection & politeness
 - `content_hash` on `series_sources` lets the worker skip an unchanged series without writing.
@@ -890,7 +890,7 @@ with reuse-detection: a reused (already-rotated) refresh token revokes the whole
 audited `token_reuse_detected` event.
 
 **AuthZ: per-capability, resolved per request.** The earlier ordered role tier
-(`user < operator < admin`) has been **removed**. Authorization is now a set of fine-grained,
+(`user < operator < admin`) has been **removed**. Authorisation is now a set of fine-grained,
 **non-implying** capabilities (`tankovault_domain::Permission`, e.g. `providers.delete`,
 `users.permissions`, `audit.read`): holding one capability never implies another, so a grant cannot
 silently widen. Each privileged handler asks for the exact capability it exercises
@@ -1016,7 +1016,7 @@ responsive masonry of 2:3 cards.
    - **Providers**: table with `base_url` inline-editable (the **domain-migration** action: a single
      field, with a confirm dialog explaining every link will re-resolve).
    - **Adapter editor**: JSON/selector editor for `providers.config` with a **"Test adapter"** button
-     that dry-runs against the live site or a saved fixture and shows the parsed sample side-by-side:
+     that dry-runs against the live site or a saved fixture and shows the parsed sample side-by-side,
      so operators can fix selectors without a deploy.
    - **Merge queue**: the canonicalisation review list with side-by-side compare and merge/split.
 
@@ -1068,7 +1068,7 @@ responsive masonry of 2:3 cards.
   base (multi-stage build; `cargo chef` for cached dependency layers). The `render` tier is the
   exception (Debian and Chromium). The frontend builds to static WASM+assets served by a CDN or the API.
 - **Kubernetes**: deployed through the Helm chart in `TimSchoenle/helm-charts`
-  (`charts/tankovault`). Every release proposes the chart bump that pins each published service to
+  (`charts/tankovault`). Every release that publishes an image proposes the chart bump that pins each published service to
   its signed manifest-list digest (`helm-release`, see `docs/RELEASING.md`); the chart's values,
   templates and tests are gated in that repository. What it builds on from here:
    - `control-plane` scheduler under leader election, through Redis, so `replicas > 1` is safe.

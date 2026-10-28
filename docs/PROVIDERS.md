@@ -415,7 +415,7 @@ Two things had to be true for the crawler to be pinned to IPv4, and both are fix
 
 The diagnostic that generalises: when a provider fails on every route including `/`, **probe the
 same URL over each address family before concluding anything about the route.** A `curl -4` and a
-`curl -6` a second apart is the whole test, and it separates a dead origin from an unreachable one:
+`curl -6` a second apart is the whole test, and it separates a dead origin from an unreachable one,
 which is how `sirenscans` was retired with confidence while its four siblings were kept.
 
 ## A listing row is not always a series
@@ -547,7 +547,7 @@ available as a link into the `manga-release` archive.
 The home page renders no `div.page-item-detail`. Inheriting the Madara `latest` defaults
 therefore selected nothing, `list_latest` returned an empty feed, and **every fast scan
 silently did no work**: an empty feed is a valid answer, so nothing failed and nothing was
-logged. Full scans still ran, so the symptom was new chapters arriving late, not not
+logged. Full scans still ran, so the symptom was new chapters arriving late instead of not
 at all, which is why it survived until an adapter dry run showed `"latest": {"items": []}`.
 
 The site's updates are the home page's "Manga Updates!" slider, and the preset selects it:
@@ -598,7 +598,7 @@ already read, which is why it is the fallback and not the rule.
 Two things about the config are worth knowing before editing it:
 
 - **`catalog.next` is `link[rel=next]`,** not the visible paginator. The theme renders a "Next
-  page" control on the last listing as well, and the page after the last answers `404`: so the
+  page" control on the last listing as well, and the page after the last answers `404`, so the
   yielded-items fallback would end every full scan on an error instead of on a signal.
 - **`series.tags` is anchored on the genre archive** (`a[href*="/genre/"]`). The last pill in
   `#genre-tags` is the theme's estimated reading time (`4h 52m to finish`), an `href="#"` button

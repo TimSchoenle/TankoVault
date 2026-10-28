@@ -10,8 +10,9 @@
 //!
 //! A class string compiles and renders whether or not the stylesheet defines its modifier: a
 //! misspelt or missing `danger` rule draws the destructive button exactly like the neutral one
-//! beside it. [`Tone`] and [`Size`] can only name classes the stylesheet defines, so that failure
-//! mode is impossible, not documented.
+//! beside it. The built-in [`Tone`] and [`Size`] variants are tested against the stylesheet, so
+//! for them that failure mode is impossible, not documented. `Custom` tokens name a rule in the
+//! host's stylesheet, which this crate cannot check.
 
 mod button;
 mod feedback;

@@ -1067,8 +1067,8 @@ responsive masonry of 2:3 cards.
 - Each service is a small (`scratch`) container: a musl binary and its loader on an empty
   base (multi-stage build; `cargo chef` for cached dependency layers). The `render` tier is the
   exception (Debian and Chromium). The frontend builds to static WASM+assets served by a CDN or the API.
-- **Kubernetes**: deployed through the Helm chart in `TimSchoenle/helm-charts`
-  (`charts/tankovault`). Every release that publishes an image proposes the chart bump that pins each published service to
+- **Kubernetes**: the Helm chart in `TimSchoenle/helm-charts` (`charts/tankovault`); this
+  repository deploys nothing. Every release that publishes an image proposes the chart bump that pins each published service to
   its signed manifest-list digest (`helm-release`, see `docs/RELEASING.md`); the chart's values,
   templates and tests are gated in that repository. What it builds on from here:
    - `control-plane` scheduler under leader election, through Redis, so `replicas > 1` is safe.

@@ -660,7 +660,8 @@ mode** (`scan.tasks.<slug>.<mode>`). Workers bind one durable consumer per subje
 *lane*, `tankovault-workers-<mode>-<slug>`) and pick between lanes on two rules:
 
 1. **Fast scans before full scans.** Every fast lane is offered a turn before any full lane
-   is looked at.
+   is looked at, except that after eight consecutive fast tasks the full tier is offered first
+   once, so a busy fast tier cannot starve full scans.
 2. **Round-robin between providers**, within a mode, taking a single task from a lane before
    moving to the next.
 
@@ -711,8 +712,8 @@ stays until it has drained them. An idle lane costs one round trip per poll cycl
 automatic:
 
 - The legacy `tankovault-workers` wildcard consumer is deleted. A work-queue stream refuses
-  two consumers whose filters overlap, and `scan.tasks.*` overlaps every lane, so the lanes
-  cannot be created beside it. No work is lost: work-queue retention drops a message when it
+  two consumers whose filters overlap, and `scan.tasks.*` overlaps the untiered subject every full-scan
+  lane binds, so those lanes cannot be created beside it. No work is lost: work-queue retention drops a message when it
   is *acked*, not when a consumer is deleted.
 - The tasks stream's subject binding widens from `scan.tasks.*` to `scan.tasks.>`, so the
   two-token tiered subjects are captured. This uses `create_or_update_stream`:
@@ -745,9 +746,10 @@ to see.
 **The reconciler repairs this automatically**, on the scheduler leader, every
 `scheduler.reconcile_interval_secs` (default 300; `0` disables). One pass does three things:
 
-1. For each provider lane with open tasks, it asks the broker how many messages that lane's
-   consumer actually holds (pending and claimed-and-unacked) and republishes the difference,
-   oldest first. Republishing a task whose message did still exist is harmless: the second
+1. For each provider lane with open tasks older than five minutes, it asks the broker how many
+   messages that lane's consumer actually holds (pending and claimed-and-unacked) and
+   republishes the difference, oldest first and at most 500 per lane per pass; a larger deficit
+   is worked off over the following passes. Republishing a task whose message did still exist is harmless: the second
    delivery finds the task claimed or settled and is declined without touching the run counters.
 2. It finalises runs whose tasks have all settled but whose terminal progress event was lost,
    and emits that event so the console and the aggregator see the same ending.

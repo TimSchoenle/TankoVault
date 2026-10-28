@@ -21,8 +21,8 @@ pub struct ScanSummary {
     pub runs_running: i64,
     /// Of those, settled with at least one task done.
     pub runs_completed: i64,
-    /// Of those, settled with every task failed, which is what marks a run failed rather
-    /// than completed.
+    /// Of those, settled with every task failed, which is what marks a run failed,
+    /// not completed.
     pub runs_failed: i64,
     /// Of those, stopped by an operator.
     pub runs_cancelled: i64,

@@ -247,8 +247,8 @@ impl Fixture {
 
     /// Re-scrape the fixture's series from the local adapter, carrying `tags`.
     ///
-    /// Same provider and source path, so this converges on the same canonical series rather
-    /// than creating a second one.
+    /// Same provider and source path, so this converges on the same canonical series
+    /// instead of creating a second one.
     async fn rescrape_with_tags(&self, tags: Vec<String>) {
         ingest_series(
             &self.db.pool,

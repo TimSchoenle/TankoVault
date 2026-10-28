@@ -153,8 +153,8 @@ pub async fn start_build<'e, E: PgExecutor<'e>>(
 /// Records progress within a running build.
 ///
 /// `stage_total` is what `series_built` is counting towards; pass `0` from a stage whose size is
-/// not known without doing the work twice. The console shows a bare count in that case rather
-/// than a bar it would have to invent a denominator for.
+/// not known without doing the work twice. The console shows a bare count in that case,
+/// not a bar it would have to invent a denominator for.
 ///
 /// Fenced by `claim_id`: a build whose lease expired while it was still running would otherwise
 /// keep writing its own progress over the run that replaced it, and the console would show two

@@ -180,8 +180,8 @@ pub(crate) fn judge(measured: f64, floor: f64) -> Verdict {
 }
 
 impl Verdict {
-    /// What to print. Written for the person reading a red CI log, so it says what to do rather
-    /// than only what happened.
+    /// What to print. Written for the person reading a red CI log, so it says what to do,
+    /// not only what happened.
     #[must_use]
     pub(crate) fn message(&self, suite: Suite) -> String {
         let label = suite.label();

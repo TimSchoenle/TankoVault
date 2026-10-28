@@ -1,6 +1,6 @@
-//! An abstract transactional-email service for user-facing flows. Every back-end sits behind
-//! the [`EmailService`] trait — [`SmtpMailer`] for a real relay, [`NoopMailer`] (used
-//! automatically when unconfigured) — so callers never depend on `lettre` directly.
+//! Owns transactional email for user-facing flows. Every back-end sits behind [`EmailService`]:
+//! [`SmtpMailer`] for a real relay, [`NoopMailer`] when email is unconfigured. Callers never
+//! depend on `lettre` directly.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -34,18 +34,18 @@ pub enum EmailError {
 /// A single outbound email, already resolved to display-ready fields.
 #[derive(Debug, Clone)]
 pub struct EmailMessage {
-    /// One or more recipient addresses (RFC 5322, e.g. `Reader <r@example.com>`).
+    /// One or more RFC 5322 recipient addresses, such as `Reader <r@example.com>`.
     pub to: Vec<String>,
-    /// Subject line.
+    /// The subject line.
     pub subject: String,
-    /// Plain-text body (always sent; the fallback part when [`Self::html`] is set).
+    /// The plain-text body, always sent, and the fallback part when [`Self::html`] is set.
     pub text: String,
-    /// Optional HTML body; when present the message is sent as `multipart/alternative`.
+    /// The optional HTML body. When present, the message is sent as `multipart/alternative`.
     pub html: Option<String>,
 }
 
 impl EmailMessage {
-    /// A plain-text message to a single recipient.
+    /// Builds a plain-text message to a single recipient.
     #[must_use]
     pub fn text(
         to: impl Into<String>,
@@ -60,11 +60,11 @@ impl EmailMessage {
         }
     }
 
-    /// Attach an HTML alternative body (a plain-text part is still required and sent).
+    /// Attaches an HTML alternative body; the plain-text part is still sent.
     ///
-    /// "Alternative", not "instead of". The message goes out as `multipart/alternative` with
-    /// both parts, because a text-only client — and every spam filter — reads the plain part,
-    /// and a password-reset mail that arrives blank is a support ticket.
+    /// The message goes out as `multipart/alternative` with both parts, because text-only
+    /// clients and spam filters read the plain part, and a password-reset mail that arrives
+    /// blank is a support ticket.
     ///
     /// ```
     /// use tankovault_email::EmailMessage;
@@ -76,14 +76,12 @@ impl EmailMessage {
     /// )
     /// .with_html("<p>Open <a href=\"https://tankovault.test/reset?token=…\">this link</a>.</p>");
     ///
-    /// // The plain part survives attaching the HTML one. Overwriting it here is the mistake
-    /// // this contract exists to prevent, and it would look correct in every HTML client.
+    /// // The plain part survives attaching the HTML one.
     /// assert!(msg.text.starts_with("Open https://"));
     /// assert!(msg.html.is_some());
     /// assert_eq!(msg.to, vec!["Reader <reader@example.com>".to_owned()]);
     ///
-    /// // Interpolated values must be escaped by the caller before they arrive here — a raw
-    /// // `format!` doesn't; `crates/email`'s own template helpers do.
+    /// // The HTML is sent as given: the caller escapes interpolated values.
     /// let unescaped = EmailMessage::text("a@b.test", "s", "t").with_html("<p>Hi <b>bold</b></p>");
     /// assert_eq!(unescaped.html.as_deref(), Some("<p>Hi <b>bold</b></p>"));
     /// ```
@@ -94,43 +92,44 @@ impl EmailMessage {
     }
 }
 
-/// A pluggable email delivery back-end. Implementations are cheap to clone/share and are
-/// invoked once per outbound message.
+/// Delivers email, once per outbound message; implementations are cheap to share.
 #[async_trait]
 pub trait EmailService: Send + Sync {
-    /// Whether this back-end actually delivers mail. `false` for the [`NoopMailer`], which
-    /// lets callers decide whether a feature that depends on email is available.
+    /// Returns whether this back-end delivers mail; `false` for [`NoopMailer`].
+    ///
+    /// Callers use it to decide whether a feature that depends on email is available.
     fn is_enabled(&self) -> bool;
 
-    /// Deliver `message`.
+    /// Delivers `message`.
     ///
     /// # Errors
-    /// Returns [`EmailError`] when an address fails to parse, the message cannot be
-    /// assembled, or the relay rejects/refuses the send.
+    /// [`EmailError::Address`] if an address fails to parse, [`EmailError::Build`] if the message
+    /// cannot be assembled, [`EmailError::Transport`] if the relay rejects or refuses the send.
     async fn send(&self, message: EmailMessage) -> Result<(), EmailError>;
 }
 
-/// An SMTP-backed mailer, built from [`EmailConfig`] or a raw relay URL.
+/// Sends mail through an SMTP relay, built from [`EmailConfig`] or a raw relay URL.
 ///
-/// Reused for every send, and a connection is opened per message rather than pooled by a
-/// background task, matching the rest of the stack's runtime-independent construction.
+/// One instance serves every send. It opens a connection per message and runs no background
+/// pooling task, so constructing it needs no runtime.
 pub struct SmtpMailer {
     transport: AsyncSmtpTransport<Tokio1Executor>,
     from: Mailbox,
-    /// SMTP envelope sender (`MAIL FROM` / reverse-path) — the identity the relay authorises
-    /// the send against, deliberately decoupled from the `From:` header: providers like
-    /// OVH-hosted Exchange reject a `MAIL FROM` that differs from the authenticated mailbox
-    /// (`550 5.7.60`), so it defaults to the login while `From:` may show a different address.
+    /// The SMTP envelope sender (`MAIL FROM`), which the relay authorises the send against.
+    ///
+    /// It is separate from the `From:` header on purpose. Relays such as OVH-hosted Exchange
+    /// reject a `MAIL FROM` that differs from the authenticated mailbox (`550 5.7.60`), so it
+    /// defaults to the login while `From:` may show another address.
     envelope_from: Address,
 }
 
 impl SmtpMailer {
-    /// Build from [`EmailConfig`], preferring an explicit `url` and otherwise assembling
-    /// the relay from the host/port/credentials/security fields.
+    /// Builds a mailer from [`EmailConfig`], preferring `url` over the host, port, credential
+    /// and security fields.
     ///
     /// # Errors
-    /// Returns [`EmailError::Config`] when no relay is configured or the relay cannot be
-    /// built, and [`EmailError::Address`] when `from` is missing or unparseable.
+    /// [`EmailError::Config`] when no relay is configured or the relay cannot be built,
+    /// [`EmailError::Address`] when `from` is missing or unparseable.
     pub fn from_config(cfg: &EmailConfig) -> Result<Self, EmailError> {
         let from_raw = cfg
             .from
@@ -148,8 +147,8 @@ impl SmtpMailer {
             .map(ExposeSecret::expose_secret)
             .filter(|u| !u.is_empty())
         {
-            // The relay URL embeds the mailbox password — one of exactly two `expose_secret`
-            // calls in this crate, both immediately adjacent to the lettre builder that needs it.
+            // The relay URL embeds the mailbox password. Both `expose_secret` calls in this
+            // crate sit next to the lettre builder that needs the value.
             AsyncSmtpTransport::<Tokio1Executor>::from_url(url)
                 .map_err(|e| EmailError::Config(e.to_string()))?
                 .timeout(timeout)
@@ -194,8 +193,8 @@ impl SmtpMailer {
         })
     }
 
-    /// Resolve the SMTP envelope sender address: parse the configured override/login when
-    /// present, otherwise reuse the `From:` header's address.
+    /// Resolves the envelope sender: the configured override or login, else the `From:`
+    /// address.
     fn resolve_envelope_from(
         configured: Option<&str>,
         from: &Mailbox,
@@ -209,11 +208,11 @@ impl SmtpMailer {
         }
     }
 
-    /// Build from a raw lettre relay URL plus a `From` mailbox.
+    /// Builds a mailer from a lettre relay URL and a `From` mailbox.
     ///
     /// # Errors
-    /// Returns [`EmailError::Config`] when the URL cannot be parsed and
-    /// [`EmailError::Address`] when `from` is unparseable.
+    /// [`EmailError::Config`] when the URL cannot be parsed, [`EmailError::Address`] when `from` is
+    /// unparseable.
     pub fn from_url(url: &str, from: &str) -> Result<Self, EmailError> {
         let from: Mailbox = from
             .parse()
@@ -229,8 +228,7 @@ impl SmtpMailer {
         })
     }
 
-    /// Assemble the SMTP envelope (`MAIL FROM` + `RCPT TO`) for `message`, using
-    /// [`Self::envelope_from`] as the reverse-path so "send as"-enforcing relays accept it.
+    /// Builds the SMTP envelope for `message`, with [`Self::envelope_from`] as `MAIL FROM`.
     fn build_envelope(&self, message: &EmailMessage) -> Result<Envelope, EmailError> {
         let mut recipients = Vec::with_capacity(message.to.len());
         for raw in &message.to {
@@ -243,7 +241,7 @@ impl SmtpMailer {
             .map_err(|e| EmailError::Address(e.to_string()))
     }
 
-    /// Assemble the RFC 5322 message for `message`.
+    /// Builds the RFC 5322 message for `message`.
     fn build_message(&self, message: &EmailMessage) -> Result<Message, EmailError> {
         if message.to.is_empty() {
             return Err(EmailError::Address("no recipients".to_owned()));
@@ -291,8 +289,7 @@ impl EmailService for SmtpMailer {
     async fn send(&self, message: EmailMessage) -> Result<(), EmailError> {
         let msg = self.build_message(&message)?;
         let envelope = self.build_envelope(&message)?;
-        // Explicit envelope: MAIL FROM is `envelope_from`, not the `From:` header, matching
-        // what "send as"-enforcing relays like OVH Exchange authorise against.
+        // An explicit envelope, so `MAIL FROM` is `envelope_from` and not the `From:` header.
         let resp = self
             .transport
             .send_raw(&envelope, &msg.formatted())
@@ -308,8 +305,9 @@ impl EmailService for SmtpMailer {
     }
 }
 
-/// A mailer that delivers nothing: logs what it would have sent and returns success. Selected
-/// automatically when email is unconfigured (development, CI, self-hosting without SMTP).
+/// Delivers nothing: logs what it would have sent and returns success.
+///
+/// [`build`] selects it when email is unconfigured or misconfigured.
 pub struct NoopMailer;
 
 #[async_trait]
@@ -328,11 +326,11 @@ impl EmailService for NoopMailer {
     }
 }
 
-/// Build the [`EmailService`] `cfg` calls for.
+/// Builds the [`EmailService`] that `cfg` calls for.
 ///
-/// A live [`SmtpMailer`] when a relay and a `From` address are configured. Anything else,
-/// a misconfigured relay included, yields a [`NoopMailer`] and a warning: an unsendable
-/// registration email must not stop the service booting.
+/// Returns an [`SmtpMailer`] when a relay and a `From` address are configured. Anything else,
+/// a misconfigured relay included, yields a [`NoopMailer`] and a warning: an unsendable email
+/// must not stop the service booting.
 #[must_use]
 pub fn build(cfg: &EmailConfig) -> Arc<dyn EmailService> {
     if !cfg.is_enabled() {
@@ -426,7 +424,6 @@ mod tests {
 
     #[test]
     fn envelope_sender_defaults_to_login_not_from_header() {
-        // OVH Exchange requires MAIL FROM to match the authenticated login, not the From header.
         let cfg = EmailConfig {
             host: Some("ssl0.ovh.net".to_owned()),
             security: EmailSecurity::None,
@@ -468,7 +465,6 @@ mod tests {
 
     #[test]
     fn envelope_falls_back_to_from_header_without_login() {
-        // No login/override configured: envelope sender falls back to the From header.
         let mailer = SmtpMailer::from_url("smtp://localhost:2525", "TankoVault <a@example.com>")
             .expect("valid config");
         let envelope = mailer

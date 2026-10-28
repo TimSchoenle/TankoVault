@@ -75,7 +75,7 @@ done < "$expected_labels"
 
 # The embedded copy, read at the path the image's own label names, not at a path this
 # script assumes: a build that moved the file and updated the label is correct, and one that moved
-# it without updating the label has already failed above.
+# it without updating the label fails here, when the copy below probes the old path.
 path="$(jq -r --arg n 'dev.terrace.config.contract.path' '.[$n] // ""' "$labels_json")"
 if [ -n "$path" ]; then
   probe="verify-config-contract-$$"

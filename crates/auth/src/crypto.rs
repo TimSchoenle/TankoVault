@@ -1,6 +1,8 @@
-//! Authenticated symmetric encryption (AES-256-GCM) for secrets at rest (`docs/ARCHITECTURE.md` §16): OAuth
-//! tokens are sealed before they touch the database, so a database compromise alone cannot
-//! disclose them. Named `Sealer`, not `SecretBox`, to avoid confusion with [`secrecy::SecretBox`].
+//! Owns AES-256-GCM sealing for secrets at rest (`docs/ARCHITECTURE.md` §16).
+//!
+//! OAuth tokens are sealed before they reach the database, so a database compromise alone does
+//! not disclose them. The type is `Sealer`, not `SecretBox`, to avoid confusion with
+//! [`secrecy::SecretBox`].
 
 use aes_gcm::aead::{Aead, KeyInit, Nonce};
 use aes_gcm::{Aes256Gcm, Key};
@@ -10,24 +12,26 @@ use secrecy::{ExposeSecret as _, SecretSlice, SecretString};
 
 use crate::AuthError;
 
-/// AES-GCM standard nonce length (96 bits).
+/// The AES-GCM nonce length: 96 bits.
 const NONCE_LEN: usize = 12;
-/// AES-256 key length.
+/// The AES-256 key length.
 const KEY_LEN: usize = 32;
 
-/// An AES-256-GCM sealing box over a single data-encryption key.
+/// Seals and opens values with AES-256-GCM under one data-encryption key.
 ///
-/// Cheap to clone (the underlying key schedule is shared), so a single instance can be
-/// held in service state and used across requests.
+/// Cheap to clone, because the key schedule is shared, so one instance lives in service state
+/// and serves every request.
 #[derive(Clone)]
 pub struct Sealer {
     cipher: Aes256Gcm,
 }
 
 impl Sealer {
-    /// Build from a raw 32-byte key. Prefer [`from_key_bytes`](Self::from_key_bytes) or
-    /// [`from_base64_key`](Self::from_base64_key), which zeroize the key; this entry point
-    /// stays for tests and fixed-size KMS callers.
+    /// Builds a sealer from a raw 32-byte key.
+    ///
+    /// Prefer [`from_key_bytes`](Self::from_key_bytes) or
+    /// [`from_base64_key`](Self::from_base64_key), which zeroize the key; this one serves tests
+    /// and fixed-size KMS callers.
     #[must_use]
     pub fn new(key: &[u8; KEY_LEN]) -> Self {
         let key = Key::<Aes256Gcm>::from(*key);
@@ -36,7 +40,7 @@ impl Sealer {
         }
     }
 
-    /// Build from key material of unchecked length, as delivered by a secret store.
+    /// Builds a sealer from key material of unchecked length, as a secret store delivers it.
     ///
     /// # Errors
     /// [`AuthError::InvalidKey`] if the material is not exactly 32 bytes.
@@ -48,14 +52,14 @@ impl Sealer {
         Ok(Self::new(key))
     }
 
-    /// Build from a base64 (standard alphabet) encoded 32-byte key.
+    /// Builds a sealer from a 32-byte key in standard base64.
     ///
-    /// Decodes into a [`SecretSlice`], not a bare `Vec<u8>`, so the intermediate copy is
-    /// wiped rather than left in a freed allocation.
+    /// It decodes into a [`SecretSlice`], so the intermediate copy is wiped instead of left in a
+    /// freed allocation.
     ///
     /// # Errors
-    /// [`AuthError::InvalidKey`] if the value is not valid base64 or does not decode to
-    /// exactly 32 bytes.
+    /// [`AuthError::InvalidKey`] if the value is not valid base64 or does not decode to exactly 32
+    /// bytes.
     pub fn from_base64_key(encoded: &SecretString) -> Result<Self, AuthError> {
         let decoded: SecretSlice<u8> = base64::engine::general_purpose::STANDARD
             .decode(encoded.expose_secret().trim())
@@ -64,15 +68,16 @@ impl Sealer {
         Self::from_key_bytes(&decoded)
     }
 
-    /// Seal `plaintext`, returning `nonce (12 bytes) || ciphertext-with-tag` — self-describing,
-    /// so [`open`](Self::open) needs only the key. Not wrapped: this is ciphertext, headed for
-    /// a database column and logged only as a length.
+    /// Seals `plaintext`, returning the 12-byte nonce followed by the ciphertext and tag.
+    ///
+    /// The output is self-describing, so [`open`](Self::open) needs only the key. It is not
+    /// wrapped: it is ciphertext, headed for a database column.
     ///
     /// # Errors
-    /// [`AuthError::Crypto`] if the AEAD provider fails (e.g. allocation).
+    /// [`AuthError::Crypto`] if the AEAD provider fails, for example on allocation.
     pub fn seal(&self, plaintext: &[u8]) -> Result<Vec<u8>, AuthError> {
-        // Drawn whole from the CSPRNG, never a zeroed buffer filled in place: a nonce repeated
-        // under one GCM key discloses the key stream and forges tags.
+        // Drawn whole from the CSPRNG: a nonce repeated under one GCM key discloses the key
+        // stream and lets an attacker forge tags.
         let nonce_bytes: [u8; NONCE_LEN] = rand::rng().random();
         let nonce = Nonce::<Aes256Gcm>::from(nonce_bytes);
         let ciphertext = self
@@ -85,8 +90,7 @@ impl Sealer {
         Ok(out)
     }
 
-    /// Seal the UTF-8 bytes of a secret string — the convenience most callers want, since
-    /// what gets sealed here is an OAuth token.
+    /// Seals the UTF-8 bytes of a secret string, such as an OAuth token.
     ///
     /// # Errors
     /// [`AuthError::Crypto`] if the AEAD provider fails.
@@ -94,13 +98,14 @@ impl Sealer {
         self.seal(plaintext.expose_secret().as_bytes())
     }
 
-    /// Open a value produced by [`seal`](Self::seal). Returns a [`SecretSlice`], not a
-    /// `Vec<u8>` — worth encrypting means worth not leaving unwrapped. Callers that need
-    /// text want [`open_string`](Self::open_string).
+    /// Opens a value produced by [`seal`](Self::seal).
+    ///
+    /// The plaintext is returned as a [`SecretSlice`]; for text, use
+    /// [`open_string`](Self::open_string).
     ///
     /// # Errors
-    /// [`AuthError::Crypto`] if the input is shorter than the nonce or authentication
-    /// fails (wrong key, tampering, or truncation).
+    /// [`AuthError::Crypto`] if the input is shorter than the nonce or authentication fails (wrong
+    /// key, tampering or truncation).
     pub fn open(&self, sealed: &[u8]) -> Result<SecretSlice<u8>, AuthError> {
         if sealed.len() < NONCE_LEN {
             return Err(AuthError::Crypto);
@@ -113,11 +118,13 @@ impl Sealer {
             .map_err(|_| AuthError::Crypto)
     }
 
-    /// Open a value produced by [`seal_string`](Self::seal_string) and decode it as UTF-8.
+    /// Opens a value produced by [`seal_string`](Self::seal_string) and decodes it as UTF-8.
+    ///
+    /// Invalid UTF-8 is reported as [`AuthError::Crypto`] too, so an error cannot describe a
+    /// secret's byte shape.
     ///
     /// # Errors
-    /// [`AuthError::Crypto`] if authentication fails **or** the plaintext isn't valid UTF-8 —
-    /// one variant, so an error message can't describe a secret's byte shape.
+    /// [`AuthError::Crypto`].
     pub fn open_string(&self, sealed: &[u8]) -> Result<SecretString, AuthError> {
         let opened = self.open(sealed)?;
         let text = core::str::from_utf8(opened.expose_secret()).map_err(|_| AuthError::Crypto)?;
@@ -127,8 +134,8 @@ impl Sealer {
 
 impl std::fmt::Debug for Sealer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // Hand-written, not delegated to `secrecy`: this holds a key *schedule*, not key
-        // bytes, so there's no `SecretBox` to redact instead.
+        // Hand-written: this holds a key schedule, not key bytes, so there is no `SecretBox`
+        // to delegate the redaction to.
         f.write_str("Sealer(<redacted>)")
     }
 }
@@ -218,8 +225,8 @@ mod tests {
         );
     }
 
-    /// `open_string` folds invalid UTF-8 into [`AuthError::Crypto`] rather than a distinct
-    /// variant, so an error can't describe a decrypted secret's byte shape.
+    /// `open_string` reports invalid UTF-8 as [`AuthError::Crypto`], so an error cannot
+    /// describe a decrypted secret's byte shape.
     #[test]
     fn non_utf8_plaintext_is_a_crypto_error_not_a_decoding_one() {
         let s = sealer();
@@ -227,7 +234,7 @@ mod tests {
         assert!(matches!(s.open_string(&sealed), Err(AuthError::Crypto)));
     }
 
-    /// The whole point of the type is that a `tracing::debug!(?state)` cannot print the key.
+    /// A `tracing::debug!(?state)` cannot print the key.
     #[test]
     fn debug_is_redacted() {
         assert_eq!(format!("{:?}", sealer()), "Sealer(<redacted>)");

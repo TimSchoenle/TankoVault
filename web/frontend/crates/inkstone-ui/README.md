@@ -119,7 +119,7 @@ difference between a variant that works and one that silently renders as the bas
 behind any of them: five buttons, one of them a queue drain, rendering as ordinary neutral
 controls. The built-in `Tone`s and `Size`s resolve to a closed set, and
 `tone::tests::every_variant_has_a_rule` reads `styles/inkstone.css` to prove each one is
-defined, including that no tone collapses onto the bare base class without a stated reason,
+defined, including the rule that no tone collapses onto the bare base class without a stated reason,
 which is how `Positive` and `Caution` buttons were briefly indistinguishable from neutral ones.
 
 **Controls are controlled.** Every input takes its value and returns edits; none holds state.

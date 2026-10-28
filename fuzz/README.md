@@ -65,8 +65,8 @@ cargo +nightly fuzz run adapters_html_parsers \
   fuzz/corpus/adapters_html_parsers fuzz/seeds/adapters_html_parsers \
   -- -max_total_time=60 -timeout=2 -rss_limit_mb=512 -dict=fuzz/dictionaries/html.dict
 
-# 2. The JSON-in-markup recovery path. `-timeout` is the oracle, not a convenience: a quadratic
-#    body parses correctly and takes ~30 s doing it, which no assertion can express.
+# 2. The JSON-in-markup recovery path. `-timeout` is the oracle, not a convenience: quadratic
+#    parsing can take ~30 s on a valid body, which no assertion can express.
 cargo +nightly fuzz run adapters_json_body \
   fuzz/corpus/adapters_json_body fuzz/seeds/adapters_json_body \
   -- -max_total_time=60 -timeout=2 -rss_limit_mb=512 -dict=fuzz/dictionaries/json.dict

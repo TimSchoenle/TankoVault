@@ -22,8 +22,8 @@ Four differences are not incidental and are documented where they live:
 - **The refresh cookie is kept in the OS credential store, not in a file.** A native `reqwest`
   has no cookie jar unless asked for one, and one that lives only in memory ends the session
   every time the app closes. `src/api/session_store.rs` mirrors the cookie into the Windows
-  Credential Manager or the freedesktop Secret Service instead: encrypted at rest and scoped to
-  the reader's login, which is what the browser gives the web build for free and a file in the
+  Credential Manager or the freedesktop Secret Service instead. That store is encrypted at rest and
+  scoped to the reader's login, which is what the browser gives the web build for free and a file in the
   config directory would not give at all. Where no credential store is available the calls are
   silent no-ops and the old close-signs-you-out behaviour returns.
 - **Passkeys go through Windows Hello on Windows, and are unavailable elsewhere.** The

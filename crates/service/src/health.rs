@@ -1,4 +1,4 @@
-//! Liveness and readiness probes.
+//! Owns the liveness and readiness probes.
 //!
 //! `/health` checks nothing external, so a failing dependency cannot trigger a restart
 //! loop; `/ready` checks every dependency and removes the replica from the load balancer
@@ -17,7 +17,7 @@ pub trait HealthCheck: Send + Sync + 'static {
     /// Stable identifier reported in the probe body (`postgres`, `nats`, ...).
     fn name(&self) -> &'static str;
 
-    /// Probe the dependency. `Err` carries a short operator-facing reason.
+    /// Probes the dependency; `Err` carries a short operator-facing reason.
     async fn check(&self) -> Result<(), String>;
 }
 
@@ -54,7 +54,7 @@ pub struct HealthReport {
 }
 
 impl HealthReport {
-    /// Whether the replica should receive traffic.
+    /// Returns whether the replica should receive traffic.
     #[must_use]
     pub fn is_ready(&self) -> bool {
         self.status == HealthStatus::Up
@@ -68,16 +68,16 @@ pub struct Health {
 }
 
 impl Health {
-    /// Start registering dependencies.
+    /// Starts registering dependencies.
     #[must_use]
     pub fn builder() -> HealthBuilder {
         HealthBuilder::default()
     }
 
-    /// Probe every dependency concurrently and aggregate the results.
+    /// Probes every dependency concurrently and aggregates the results.
     ///
-    /// Checks run in parallel and each is bounded by `CHECK_TIMEOUT`, so total probe latency
-    /// is that timeout rather than its sum over dependencies.
+    /// Each check is bounded by `CHECK_TIMEOUT`, so total probe latency is that timeout, not its
+    /// sum over dependencies.
     ///
     /// Also publishes the readiness gauges, so a probe is the only thing that has to run for
     /// per-dependency health to be a metric.
@@ -119,14 +119,14 @@ pub struct HealthBuilder {
 }
 
 impl HealthBuilder {
-    /// Register a dependency implementing [`HealthCheck`].
+    /// Registers a dependency implementing [`HealthCheck`].
     #[must_use]
     pub fn check(mut self, check: impl HealthCheck) -> Self {
         self.checks.push(Arc::new(check));
         self
     }
 
-    /// Register a dependency from a closure, for one-off probes that do not warrant a
+    /// Registers a dependency from a closure, for one-off probes that do not warrant a
     /// named type (a NATS ping, an upstream `HEAD` request).
     #[must_use]
     pub fn check_fn<F, Fut>(self, name: &'static str, probe: F) -> Self
@@ -137,7 +137,7 @@ impl HealthBuilder {
         self.check(FnCheck { name, probe })
     }
 
-    /// Finish registration.
+    /// Finishes registration.
     #[must_use]
     pub fn build(self) -> Health {
         Health {
@@ -167,8 +167,10 @@ where
     }
 }
 
-/// Readiness check for the Postgres pool. Runs `SELECT 1` rather than inspecting pool
-/// counters: an idle pool reports healthy even when the server behind it is gone.
+/// Readiness check for the Postgres pool.
+///
+/// Runs `SELECT 1` instead of inspecting pool counters: an idle pool reports healthy even when
+/// the server behind it is gone.
 #[cfg(feature = "db")]
 pub struct PostgresCheck {
     pool: tankovault_db::PgPool,
@@ -176,7 +178,7 @@ pub struct PostgresCheck {
 
 #[cfg(feature = "db")]
 impl PostgresCheck {
-    /// Probe `pool` on every readiness request.
+    /// Creates a check that probes `pool` on every readiness request.
     #[must_use]
     pub fn new(pool: tankovault_db::PgPool) -> Self {
         Self { pool }

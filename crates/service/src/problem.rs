@@ -1,7 +1,7 @@
-//! One RFC 9457 `application/problem+json` error shape for every service.
+//! Owns the one RFC 9457 `application/problem+json` error shape for every service.
 //!
 //! Each service keeps its own `thiserror` enum; the wire shape is shared via [`IntoProblem`].
-//! [`Problem::kind`] is a fixed, machine-readable discriminator — only it and `status` are a
+//! [`Problem::kind`] is a fixed, machine-readable discriminator. Only it and `status` are a
 //! stable contract; `detail` is for humans and may be reworded.
 
 use axum::Json;
@@ -39,12 +39,12 @@ pub struct Problem {
     /// Stable machine-readable discriminator, e.g. `"not_found"`. Becomes `title` and the
     /// fragment of `type`.
     pub kind: &'static str,
-    /// Human-readable sentence. Never include internal detail here — see [`Problem::internal`].
+    /// Human-readable sentence. Never include internal detail here; see [`Problem::internal`].
     pub detail: String,
 }
 
 impl Problem {
-    /// A problem with an explicit status, kind and detail.
+    /// Creates a problem with an explicit status, kind and detail.
     #[must_use]
     pub fn new(status: StatusCode, kind: &'static str, detail: impl Into<String>) -> Self {
         Self {
@@ -54,8 +54,10 @@ impl Problem {
         }
     }
 
-    /// A `500` that says nothing. Internal failures must not put their `Display` on the
-    /// wire: it routinely carries connection strings, SQL and file paths.
+    /// Creates a `500` that says nothing.
+    ///
+    /// Internal failures must not put their `Display` on the wire: it routinely carries
+    /// connection strings, SQL and file paths.
     #[must_use]
     pub fn internal() -> Self {
         Self::new(
@@ -65,7 +67,7 @@ impl Problem {
         )
     }
 
-    /// A `502` for a dependency that failed.
+    /// Creates a `502` for a dependency that failed.
     #[must_use]
     pub fn bad_gateway() -> Self {
         Self::new(
@@ -97,11 +99,11 @@ impl IntoResponse for Problem {
 
 /// A service error that knows its place in the HTTP contract.
 ///
-/// Implement on the service's own `thiserror` enum rather than `IntoResponse` directly: adding
+/// Implement on the service's own `thiserror` enum instead of `IntoResponse` directly: adding
 /// a variant without deciding its status becomes a compile error, while the wire encoding
 /// stays in one place.
 pub trait IntoProblem {
-    /// The status, kind and human-readable detail this failure presents as.
+    /// Returns the status, kind and human-readable detail this failure presents as.
     fn into_problem(self) -> Problem;
 }
 
@@ -136,8 +138,8 @@ mod tests {
         )
     }
 
-    /// The four members RFC 9457 defines, plus the media type. A client branching on `title` or
-    /// `status` is within contract, so this is what must not drift.
+    /// The body carries the four members RFC 9457 defines, plus the media type. A client branching
+    /// on `title` or `status` is within contract, so this is what must not drift.
     #[tokio::test]
     async fn the_wire_shape_is_rfc_9457() {
         let (status, content_type, json) = body_of(Problem::new(
@@ -155,8 +157,10 @@ mod tests {
         assert_eq!(json["detail"], "no such series");
     }
 
-    /// `Json` sets `application/json`, so the override has to be applied *after* it. Getting the
-    /// order wrong is invisible in the body and only shows up in the header.
+    /// The `application/problem+json` content type wins over the one `Json` sets.
+    ///
+    /// The override has to be applied after `Json`; getting the order wrong is invisible in the
+    /// body and only shows up in the header.
     #[tokio::test]
     async fn the_json_content_type_does_not_win() {
         let (_, content_type, _) = body_of(Problem::internal()).await;

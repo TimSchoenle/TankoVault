@@ -1,6 +1,4 @@
-//! # tankovault-service
-//!
-//! The production runtime every `TankoVault` service shares: process bootstrap, graceful
+//! Owns the production runtime every `TankoVault` service shares: process bootstrap, graceful
 //! shutdown, health probes, the HTTP middleware stack, rate limiting, the audit trail, and
 //! metrics. Each of auditing, metrics and rate limiting is switchable from configuration as
 //! a wiring decision, not a call-site branch.
@@ -81,16 +79,20 @@ pub use flags::PostgresFlagSource;
 #[cfg(feature = "db")]
 pub use tunables::PostgresTunableSource;
 
-/// Failures that prevent a service from starting. Every variant is fatal by construction;
-/// runtime failures of *optional* dependencies degrade elsewhere rather than abort here.
+/// Failures that prevent a service from starting.
+///
+/// Every variant is fatal by construction; runtime failures of optional dependencies degrade
+/// elsewhere instead of aborting here.
 #[derive(Debug, thiserror::Error)]
 pub enum ServiceError {
     /// The global `tracing` subscriber could not be installed (usually: called twice).
     #[error("failed to install tracing subscriber: {0}")]
     Tracing(String),
-    /// `telemetry.sentry` is switched on but unusable — no DSN, an unparseable one, or a
-    /// sample rate outside `0.0..=1.0`. Fatal rather than degraded: the alternative is a
-    /// deployment that believes it is reporting errors and is not.
+    /// `telemetry.sentry` is switched on but unusable: no DSN, an unparseable one, or a sample
+    /// rate outside `0.0..=1.0`.
+    ///
+    /// Fatal, not degraded: the alternative is a deployment that believes it is reporting errors
+    /// and is not.
     #[error("invalid Sentry configuration: {0}")]
     Sentry(String),
     /// The process-wide metrics recorder could not be installed.

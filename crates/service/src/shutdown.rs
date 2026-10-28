@@ -1,14 +1,14 @@
-//! Cooperative shutdown.
+//! Owns cooperative shutdown.
 //!
 //! A single [`CancellationToken`] fans one OS signal out to the HTTP server and to every
 //! spawned loop (schedulers, consumers, sweeps), letting each finish its current unit of work.
 
 use tokio_util::sync::CancellationToken;
 
-/// Install the OS-signal listener and return the token it cancels.
+/// Installs the OS-signal listener and returns the token it cancels.
 ///
 /// Listens for `SIGINT` everywhere and `SIGTERM` on Unix. A second signal reaches the
-/// default handler and terminates the process immediately — the escape hatch for a hung
+/// default handler and terminates the process immediately, the escape hatch for a hung
 /// drain. Clone the returned token freely.
 #[must_use]
 pub fn install_shutdown() -> CancellationToken {
@@ -22,7 +22,7 @@ pub fn install_shutdown() -> CancellationToken {
     token
 }
 
-/// Resolve on the first termination signal, naming which one arrived.
+/// Resolves on the first termination signal, naming which one arrived.
 async fn wait_for_signal() -> &'static str {
     #[cfg(unix)]
     {
@@ -49,7 +49,7 @@ async fn wait_for_signal() -> &'static str {
     }
 }
 
-/// Run `task` on `interval`, stopping promptly when `shutdown` is cancelled.
+/// Runs `task` on `interval`, stopping promptly when `shutdown` is cancelled.
 ///
 /// Shared shape for every background loop, so none re-implements the select-on-cancel
 /// dance. The first tick fires after `interval` elapses, not at start-up, so a rolling
@@ -104,7 +104,7 @@ mod tests {
 
         // The first tick is consumed at start-up, so nothing has run yet. With paused
         // time, `sleep` auto-advances once every task is idle, which also gives the
-        // spawned loop a chance to be polled — `advance` alone does not.
+        // spawned loop a chance to be polled; `advance` alone does not.
         tokio::time::sleep(Duration::from_secs(5)).await;
         assert_eq!(runs.load(Ordering::Relaxed), 0);
 

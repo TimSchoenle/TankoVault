@@ -1,7 +1,7 @@
-//! Process-local rate-limit counters, backed by `governor`.
+//! Owns the process-local rate-limit counters, backed by `governor`.
 //!
 //! Correct for a single replica and for tests. With `N` replicas behind a load balancer
-//! the effective limit is `N` times the configured one — acceptable for the reference
+//! the effective limit is `N` times the configured one: acceptable for the reference
 //! single-node deployment, and the reason [`super::redis::RedisStore`] exists.
 
 use super::{RateLimitDecision, RateLimitStore, RouteClass};
@@ -18,7 +18,7 @@ use tankovault_config::{RateLimitConfig, RateLimitPolicy};
 ///
 /// The keyed store allocates one entry per distinct client key and never reclaims them on
 /// its own, so a long-lived process would grow without bound. Sweeping on a request counter
-/// rather than a timer is self-tuning: a busy edge sweeps often, an idle one holds a
+/// instead of a timer is self-tuning: a busy edge sweeps often, an idle one holds a
 /// handful of stale keys.
 const SWEEP_EVERY_N_CHECKS: u32 = 10_000;
 
@@ -38,7 +38,7 @@ pub struct MemoryStore<C: Clock = DefaultClock> {
 }
 
 impl MemoryStore {
-    /// Build a limiter per class from `cfg`, against the real monotonic clock.
+    /// Builds a limiter per class from `cfg`, against the real monotonic clock.
     #[must_use]
     pub fn new(cfg: &RateLimitConfig) -> Self {
         Self::with_clock(cfg, DefaultClock::default())
@@ -46,7 +46,7 @@ impl MemoryStore {
 }
 
 impl<C: Clock + Clone> MemoryStore<C> {
-    /// As [`MemoryStore::new`], against a caller-supplied clock.
+    /// Builds a limiter per class from `cfg`, against a caller-supplied clock.
     fn with_clock(cfg: &RateLimitConfig, clock: C) -> Self {
         let limiters = RouteClass::ALL.map(|class| build_limiter(class.policy(cfg), clock.clone()));
         let limits = RouteClass::ALL.map(|class| class.policy(cfg).capacity());
@@ -60,7 +60,7 @@ impl<C: Clock + Clone> MemoryStore<C> {
 }
 
 impl<C: Clock> MemoryStore<C> {
-    /// Drop keys whose buckets have fully refilled, every [`SWEEP_EVERY_N_CHECKS`] checks.
+    /// Drops keys whose buckets have fully refilled, every [`SWEEP_EVERY_N_CHECKS`] checks.
     fn maybe_sweep(&self) {
         let count = self.checks_since_sweep.fetch_add(1, Ordering::Relaxed);
         if count < SWEEP_EVERY_N_CHECKS {
@@ -72,22 +72,25 @@ impl<C: Clock> MemoryStore<C> {
         }
     }
 
-    /// How many client keys each class is currently holding state for. Test-only: the
-    /// sweep's effect is otherwise invisible from the outside.
+    /// Returns how many client keys the store holds state for, summed across classes.
+    ///
+    /// Test-only: the sweep's effect is otherwise invisible from the outside.
     #[cfg(test)]
     fn tracked_keys(&self) -> usize {
         self.limiters.iter().map(RateLimiter::len).sum()
     }
 }
 
-/// A `governor` quota from a policy. Both fields are clamped to at least 1: a zero-rate
-/// limiter would reject every request forever, never what a misconfigured number should mean.
+/// Builds a `governor` limiter from a policy.
+///
+/// Both fields are clamped to at least 1: a zero-rate limiter would reject every request forever,
+/// never what a misconfigured number should mean.
 fn build_limiter<C: Clock>(policy: RateLimitPolicy, clock: C) -> KeyedLimiter<C> {
     let per_minute = NonZeroU32::new(policy.per_minute.max(1)).expect("clamped to >= 1");
     let capacity = NonZeroU32::new(policy.capacity().max(1)).expect("clamped to >= 1");
     let quota = Quota::per_minute(per_minute).allow_burst(capacity);
     // `RateLimiter`'s default middleware parameter is `NoOpMiddleware<QuantaInstant>`, which is
-    // only inhabitable for the default clock — hence the explicit `NoOpMiddleware<C::Instant>`
+    // only inhabitable for the default clock, hence the explicit `NoOpMiddleware<C::Instant>`
     // before swapping in the one that reports remaining capacity.
     let limiter: RateLimiter<
         String,
@@ -208,9 +211,10 @@ mod tests {
         );
     }
 
-    /// A spent bucket refills at the configured rate. Every test above proves the limiter
-    /// says *no*; none proved it says yes again — a limiter that denies forever after the
-    /// first burst would pass all of them, locking a client out until process restart.
+    /// A spent bucket refills at the configured rate.
+    ///
+    /// The other tests prove the limiter says no; a limiter that denies forever after the first
+    /// burst would pass all of them, locking a client out until process restart.
     #[tokio::test]
     async fn a_spent_bucket_refills_at_the_configured_rate() {
         let clock = FakeRelativeClock::default();
@@ -239,8 +243,10 @@ mod tests {
         );
     }
 
-    /// The sweep reclaims keys whose buckets have fully refilled — the memory bound. A store
-    /// that never swept answers every request identically to one that does, and just grows.
+    /// The sweep reclaims keys whose buckets have fully refilled, which is the memory bound.
+    ///
+    /// A store that never swept answers every request identically to one that does, and just
+    /// grows.
     #[tokio::test]
     async fn the_sweep_reclaims_keys_whose_buckets_have_refilled() {
         let clock = FakeRelativeClock::default();
@@ -290,8 +296,7 @@ mod tests {
 
     #[test]
     fn capacity_is_the_burst_depth_independent_of_the_refill_rate() {
-        // Regression: capacity once clamped the burst *up* to `per_minute`, silently
-        // ignoring the burst setting.
+        // The bug: capacity clamped the burst up to `per_minute`, ignoring the burst setting.
         assert_eq!(RateLimitPolicy::new(300, 60).capacity(), 60);
         assert_eq!(RateLimitPolicy::new(60, 90).capacity(), 90);
         assert_eq!(

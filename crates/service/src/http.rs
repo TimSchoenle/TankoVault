@@ -1,4 +1,4 @@
-//! The shared HTTP middleware stack, ops probes, and server loop.
+//! Owns the shared HTTP middleware stack, ops probes, and server loop.
 
 use crate::health::Health;
 use crate::metrics::MetricsRegistry;
@@ -25,22 +25,22 @@ use tracing::{Level, Span};
 /// Header carrying the per-request correlation id.
 const REQUEST_ID: HeaderName = HeaderName::from_static("x-request-id");
 
-/// How long in-flight requests get to finish after the shutdown signal before exit anyway.
+/// How long in-flight requests may finish after the shutdown signal before the process exits.
 const DRAIN_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// Assembles the middleware every HTTP service shares.
 ///
 /// Order is fixed and is a security property. Outermost first:
-/// 1. Request id — so every log line, including a rejection, carries one.
+/// 1. Request id, so every log line, including a rejection, carries one.
 /// 2. Tracing.
-/// 3. Sentry (when configured) — a hub per request, so concurrent requests cannot share a
+/// 3. Sentry (when configured): a hub per request, so concurrent requests cannot share a
 ///    breadcrumb trail, and optionally one transaction per matched route.
-/// 4. Metrics — includes time spent waiting on the rate limiter.
-/// 5. Security headers / CORS — applied to every response, including the 429 and 408.
-/// 6. Rate limit — after the cheap layers, before real work.
-/// 7. Principal — above the limiter, which reads what it inserts.
-/// 8. Internal auth (internal tier only) — after headers, before timeout/body budget.
-/// 9. Timeout, body limit, compression — the per-request work bounds.
+/// 4. Metrics, including time spent waiting on the rate limiter.
+/// 5. Security headers and CORS, applied to every response, including the 429 and 408.
+/// 6. Rate limit, after the cheap layers and before real work.
+/// 7. Principal, above the limiter, which reads what it inserts.
+/// 8. Internal auth (internal tier only), after headers and before the timeout and body budget.
+/// 9. Timeout, body limit and compression: the per-request work bounds.
 pub struct HttpStack {
     security: SecurityConfig,
     metrics: MetricsRegistry,
@@ -53,13 +53,13 @@ pub struct HttpStack {
 /// request.
 ///
 /// Supplied by the service, which knows how tokens are signed; this crate does not. The
-/// returned identity must be verified — the limiter trusts it, so an unverified resolver
+/// returned identity must be verified: the limiter trusts it, so an unverified resolver
 /// would let a caller choose their own rate-limit bucket.
 pub type PrincipalResolver =
     std::sync::Arc<dyn Fn(&axum::http::HeaderMap) -> Option<String> + Send + Sync>;
 
 impl HttpStack {
-    /// Build the stack described by `security`, recording into `metrics`.
+    /// Builds the stack described by `security`, recording into `metrics`.
     #[must_use]
     pub fn new(security: &SecurityConfig, metrics: MetricsRegistry) -> Self {
         Self {
@@ -71,7 +71,7 @@ impl HttpStack {
         }
     }
 
-    /// Mount inbound rate limiting. Pass `None` (or skip this call) to leave the layer out
+    /// Mounts inbound rate limiting. Pass `None` (or skip this call) to leave the layer out
     /// entirely, which is what `rate_limit.enabled = false` produces.
     #[must_use]
     pub fn with_rate_limit(mut self, limiter: Option<RateLimiter>) -> Self {
@@ -79,7 +79,7 @@ impl HttpStack {
         self
     }
 
-    /// Identify the caller for per-account rate limiting.
+    /// Identifies the caller for per-account rate limiting.
     ///
     /// Without this, every caller is bucketed by IP, which an attacker with many addresses
     /// evades. Must verify identity: the limiter trusts whatever it reads. Mounted outside
@@ -90,7 +90,7 @@ impl HttpStack {
         self
     }
 
-    /// Identify and authorise the caller of every routed request.
+    /// Identifies and authorises the caller of every routed request.
     ///
     /// For internal-tier services only. Health/readiness stay reachable regardless:
     /// [`ops_router`] is merged outside [`Self::apply`], so a probe never needs a credential.
@@ -100,7 +100,7 @@ impl HttpStack {
         self
     }
 
-    /// Wrap `router` in the assembled stack.
+    /// Wraps `router` in the assembled stack.
     pub fn apply(self, router: Router) -> Router {
         let Self {
             security,
@@ -111,7 +111,7 @@ impl HttpStack {
         } = self;
 
         // `option_layer` turns each optional concern into a no-op `Identity` when absent,
-        // so a disabled feature costs nothing per request rather than being a branch.
+        // so a disabled feature costs nothing per request instead of being a branch.
         let rate_limit = limiter.map(|limiter| {
             axum::middleware::from_fn_with_state(limiter, crate::ratelimit::enforce)
         });
@@ -124,7 +124,7 @@ impl HttpStack {
             .map(|auth| axum::middleware::from_fn_with_state(auth, crate::internal_auth::identify));
         let principal_layer = principal
             .map(|resolve| axum::middleware::from_fn_with_state(resolve, identify_principal));
-        // Read off the process-global client rather than carried on the stack, because that is
+        // Read off the process-global client, not carried on the stack, because that is
         // what it describes: `sentry::init` binds one client per process. `None` whenever
         // `telemetry.sentry.enabled` is off.
         let (sentry_hub, sentry_http) = match crate::sentry::http_layers() {
@@ -141,7 +141,7 @@ impl HttpStack {
         // that only `Router::layer` normalises back to. Last layer listed is outermost.
         router
             // Innermost: turns a handler panic into a 500 for that request instead of
-            // taking down the replica (previously the release profile used `panic = "abort"`).
+            // taking down the replica.
             .layer(tower_http::catch_panic::CatchPanicLayer::new())
             .layer(CompressionLayer::new())
             .layer(DefaultBodyLimit::max(security.max_body_bytes))
@@ -167,14 +167,14 @@ impl HttpStack {
     }
 }
 
-/// The severity a failed response is logged at.
+/// Returns the severity a failed response is logged at.
 ///
 /// `ERROR` is what [`crate::sentry`] turns into a Sentry issue, so only a status meaning *this*
-/// process faulted earns it. `502`, `503` and `504` are declared answers about a dependency —
-/// the challenge solver's "cannot serve right now", a handler whose upstream is down — and the
-/// code that chose them has already logged the cause at the level it meant. `DefaultOnFailure`
-/// logged all of them at `ERROR`, which filed one issue per occurrence, every one carrying the
-/// same `tower_http` frame and naming no route.
+/// process faulted earns it. `502`, `503` and `504` are declared answers about a dependency (the
+/// challenge solver's "cannot serve right now", a handler whose upstream is down), and the code
+/// that chose them has already logged the cause at the level it meant. `DefaultOnFailure` logs
+/// all of them at `ERROR`, which files one issue per occurrence, every one carrying the same
+/// `tower_http` frame and naming no route.
 fn failure_level(class: &ServerErrorsFailureClass) -> Level {
     match class {
         ServerErrorsFailureClass::StatusCode(status)
@@ -204,8 +204,10 @@ fn on_response_failure(class: ServerErrorsFailureClass, latency: Duration, span:
     }
 }
 
-/// A CORS layer restricted to the configured origins, replacing `CorsLayer::permissive()`
-/// (which reflected any origin, exposing authenticated user data to any site).
+/// Builds a CORS layer restricted to the configured origins.
+///
+/// Never `CorsLayer::permissive()`, which reflects any origin and so exposes authenticated user
+/// data to any site.
 ///
 /// An origin that fails to parse is dropped with a warning, not left to widen the policy.
 fn build_cors(security: &SecurityConfig) -> CorsLayer {
@@ -256,11 +258,11 @@ fn build_cors(security: &SecurityConfig) -> CorsLayer {
     }
 }
 
-/// Insert [`crate::ratelimit::Principal`] when the caller can be identified.
+/// Inserts [`crate::ratelimit::Principal`] when the caller can be identified.
 ///
 /// Deliberately does **not** reject an unidentified caller: authentication is the handler's
 /// business, and a route that is legitimately anonymous (sign-in, registration) still has to
-/// reach its handler — bucketed by IP, which is what the limiter falls back to.
+/// reach its handler, bucketed by IP, which is what the limiter falls back to.
 async fn identify_principal(
     State(resolve): State<PrincipalResolver>,
     mut req: axum::extract::Request,
@@ -272,9 +274,9 @@ async fn identify_principal(
     next.run(req).await
 }
 
-/// Attach the baseline hardening headers to every response.
+/// Attaches the baseline hardening headers to every response.
 ///
-/// Set with `insert` rather than `append` so a handler cannot end up emitting two
+/// Set with `insert`, not `append`, so a handler cannot end up emitting two
 /// conflicting values for the same header.
 async fn apply_security_headers(
     State(security): State<SecurityConfig>,
@@ -318,11 +320,11 @@ async fn apply_security_headers(
     response
 }
 
-/// `/health` and `/ready`, and deliberately nothing else.
+/// Returns a router serving `/health` and `/ready`, and deliberately nothing else.
 ///
 /// The credential-free surface: it is what an orchestrator probes, so it is also the whole of
 /// what [`serve_internal`] publishes in plaintext beside an mTLS listener. Keeping the scrape
-/// out of it is the point — a deployment that merged the scrape onto its mutually-authenticated
+/// out of it is the point: a deployment that merged the scrape onto its mutually-authenticated
 /// port did so to keep it there.
 pub fn probe_router(health: Health) -> Router {
     Router::new()
@@ -331,8 +333,8 @@ pub fn probe_router(health: Health) -> Router {
         .with_state(health)
 }
 
-/// The undocumented operational endpoints: [`probe_router`] plus — unless it has been isolated
-/// to its own port — the metrics scrape.
+/// Returns the undocumented operational endpoints: [`probe_router`] plus the metrics scrape,
+/// unless the scrape has been isolated to its own port.
 ///
 /// Excluded from the `OpenAPI` document and mounted outside the middleware stack, so a
 /// rate limit or a body cap can never make a replica look unhealthy.
@@ -349,8 +351,8 @@ pub fn ops_router(health: Health, metrics: MetricsRegistry) -> Router {
     probes.merge(metrics_router(metrics))
 }
 
-/// A standalone router serving only the Prometheus scrape, for the isolated metrics port —
-/// no request middleware, no health probes.
+/// Returns a standalone router serving only the Prometheus scrape, for the isolated metrics
+/// port: no request middleware, no health probes.
 pub fn metrics_router(metrics: MetricsRegistry) -> Router {
     let scrape_route = metrics.route().to_owned();
     Router::new()
@@ -358,8 +360,10 @@ pub fn metrics_router(metrics: MetricsRegistry) -> Router {
         .with_state(metrics)
 }
 
-/// Spawn a dedicated server for the metrics scrape when isolated to its own port via
-/// [`MetricsRegistry::listen`]. A no-op otherwise, so services can call it unconditionally.
+/// Spawns a dedicated server for the metrics scrape when it is isolated to its own port via
+/// [`MetricsRegistry::listen`].
+///
+/// A no-op otherwise, so services can call it unconditionally.
 pub fn spawn_metrics_server(metrics: MetricsRegistry, shutdown: CancellationToken) {
     if !metrics.is_enabled() {
         return;
@@ -377,12 +381,12 @@ pub fn spawn_metrics_server(metrics: MetricsRegistry, shutdown: CancellationToke
     });
 }
 
-/// Liveness: the process is up. Never consults a dependency (see [`crate::health`]).
+/// Answers liveness: the process is up. Never consults a dependency (see [`crate::health`]).
 async fn liveness() -> impl IntoResponse {
     (StatusCode::OK, "ok")
 }
 
-/// Readiness: `200` when every dependency answered, `503` with a per-dependency body
+/// Answers readiness: `200` when every dependency answered, `503` with a per-dependency body
 /// otherwise.
 async fn readiness(State(health): State<Health>) -> Response {
     let report = health.report().await;
@@ -394,10 +398,10 @@ async fn readiness(State(health): State<Health>) -> Response {
     (status, axum::Json(report)).into_response()
 }
 
-/// Prometheus exposition, or `404` when metrics are switched off.
+/// Serves the Prometheus exposition, or `404` when metrics are switched off.
 ///
-/// `404` rather than an empty body so a misconfigured scrape target is an obvious failure
-/// in Prometheus rather than a silently flat graph.
+/// `404`, not an empty body, so a misconfigured scrape target is an obvious failure in
+/// Prometheus instead of a silently flat graph.
 async fn scrape(State(metrics): State<MetricsRegistry>) -> Response {
     match metrics.render() {
         Some(body) => (
@@ -413,7 +417,7 @@ async fn scrape(State(metrics): State<MetricsRegistry>) -> Response {
     }
 }
 
-/// Bind `addr` and serve `app` until `shutdown` is cancelled.
+/// Binds `addr` and serves `app` until `shutdown` is cancelled.
 ///
 /// Uses `ConnectInfo<SocketAddr>` so the rate limiter can see the peer address, and
 /// `with_graceful_shutdown` so in-flight requests finish instead of being severed
@@ -432,7 +436,7 @@ pub async fn serve(
     serve_on(listener, app, shutdown).await
 }
 
-/// [`serve`] on an already-bound listener, so a caller that needs the resolved port can bind
+/// Runs [`serve`] on an already-bound listener, so a caller that needs the resolved port can bind
 /// first and still hand the socket over.
 async fn serve_on(
     listener: TcpListener,
@@ -456,10 +460,10 @@ async fn serve_on(
     Ok(())
 }
 
-/// Bind `addr` and serve `probes` — `/health` and `/ready`, nothing else — in plaintext,
+/// Binds `addr` and serves `probes` (`/health` and `/ready`, nothing else) in plaintext,
 /// returning the bound address once the listener is up.
 ///
-/// Binds before spawning so a port that is taken fails the boot that asked for it, rather than
+/// Binds before spawning so a port that is taken fails the boot that asked for it instead of
 /// leaving a service that looks healthy and answers no probe.
 ///
 /// # Errors
@@ -482,15 +486,15 @@ async fn serve_probes(
     Ok(bound)
 }
 
-/// Bind `addr` and serve `app` over mutually-authenticated TLS until `shutdown` is cancelled.
+/// Binds `addr` and serves `app` over mutually-authenticated TLS until `shutdown` is cancelled.
 ///
 /// The counterpart of [`serve`] for `internal.identity = "mtls"`. Two things differ, and both
 /// are consequences of the connection now carrying an identity:
 ///
-/// * the connect info is [`crate::tls::InternalPeer`] rather than a bare `SocketAddr`, and a
-///   layer projects it back into the `ConnectInfo<SocketAddr>` the rate limiter reads plus the
-///   [`crate::tls::PeerSans`] `internal_auth` reads. Doing the projection here rather than in
-///   the limiter keeps every other caller of [`serve`] unchanged;
+/// * the connect info is [`crate::tls::InternalPeer`], not a bare `SocketAddr`, and a layer
+///   projects it back into the `ConnectInfo<SocketAddr>` the rate limiter reads plus the
+///   [`crate::tls::PeerSans`] `internal_auth` reads. Doing the projection here, not in the
+///   limiter, keeps every other caller of [`serve`] unchanged;
 /// * a background task polls the certificate files, so rotation does not need a restart.
 ///
 /// # Errors
@@ -526,7 +530,7 @@ pub async fn serve_tls(
     Ok(())
 }
 
-/// Serve `app` on `addr`, over mutual TLS when the configuration asks for it.
+/// Serves `app` on `addr`, over mutual TLS when the configuration asks for it.
 ///
 /// The one call site a service needs: which of [`serve`] and [`serve_tls`] applies follows from
 /// `internal.identity`, so no service decides it independently and none can end up serving
@@ -535,18 +539,18 @@ pub async fn serve_tls(
 /// `probes` is [`probe_router`], and exists because mutual TLS breaks the one guarantee
 /// `ops_router` is merged outside [`HttpStack::apply`] to provide. An orchestrator presents no
 /// client certificate, so on the mTLS listener its plain `GET /health` is answered with a TLS
-/// alert rather than a response, and the replica is restarted while perfectly healthy. Under
+/// alert instead of a response, and the replica is restarted while perfectly healthy. Under
 /// `mtls` the probes therefore also get a listener of their own at `internal.tls.probe_listen`,
-/// in plaintext, carrying `probes` and nothing else — the same credential-free surface every
+/// in plaintext, carrying `probes` and nothing else: the same credential-free surface every
 /// other identity mode publishes on its main port. The app routes stay behind both the
 /// certificate and `internal_auth`, and so does the metrics scrape when a deployment has merged
 /// it onto this port. Under `token` and `off` the probes are already reachable inside `app` and
 /// this argument goes unused.
 ///
 /// # Errors
-/// As [`serve`] and [`serve_tls`], plus [`ServiceError::Tls`] if the certificate material named
-/// by `internal.tls` cannot be loaded, and [`ServiceError::Server`] if the probe address is
-/// already taken.
+/// Returns the errors of [`serve`] and [`serve_tls`], plus [`ServiceError::Tls`] if the certificate
+/// material named by `internal.tls` cannot be loaded, and [`ServiceError::Server`] if the probe
+/// address is already taken.
 pub async fn serve_internal(
     addr: &str,
     app: Router,
@@ -569,11 +573,11 @@ pub async fn serve_internal(
     serve_tls(addr, app, tls, shutdown).await
 }
 
-/// Split [`crate::tls::InternalPeer`] into the two extensions the rest of the stack expects.
+/// Splits [`crate::tls::InternalPeer`] into the two extensions the rest of the stack expects.
 ///
 /// The peer address and the verified names arrive together because they come from one
-/// connection, but they are read by unrelated layers — the rate limiter wants an address and
-/// knows nothing about TLS, `internal_auth` wants the names and knows nothing about sockets.
+/// connection, but they are read by unrelated layers: the rate limiter wants an address and
+/// knows nothing about TLS; `internal_auth` wants the names and knows nothing about sockets.
 async fn project_peer_identity(
     mut req: axum::extract::Request,
     next: axum::middleware::Next,
@@ -595,11 +599,12 @@ mod tests {
     use super::*;
     use tankovault_config::CorsConfig;
 
-    /// `DefaultOnFailure` logs every 5xx at `ERROR` and the Sentry layer captures every
-    /// `ERROR` as an issue, so a `503` a service returns on purpose — the challenge solver
-    /// answering "unavailable" once per blocked fetch — filed an unbounded stream of issues
-    /// that all shared the one `tower_http` stack trace and named no route. Only a status
-    /// meaning this process faulted may reach `ERROR`.
+    /// Only a status meaning this process faulted may reach `ERROR`.
+    ///
+    /// The bug: `DefaultOnFailure` logs every 5xx at `ERROR` and the Sentry layer captures every
+    /// `ERROR` as an issue, so a `503` a service returns on purpose (the challenge solver
+    /// answering "unavailable" once per blocked fetch) filed an unbounded stream of issues that
+    /// all shared the one `tower_http` stack trace and named no route.
     #[test]
     fn only_a_500_is_reported_at_error() {
         let level = |status| failure_level(&ServerErrorsFailureClass::StatusCode(status));
@@ -681,7 +686,7 @@ mod tests {
     use axum::http::Request;
     use tower::ServiceExt as _;
 
-    /// Distinguishes "handler reached" from "route absent" — both surface as `404` here,
+    /// Distinguishes "handler reached" from "route absent": both surface as `404` here,
     /// but only the former returns this body.
     async fn body_string(response: Response) -> String {
         let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
@@ -715,7 +720,7 @@ mod tests {
         let metrics = MetricsRegistry::disabled_with_listen("/metrics", Some("0.0.0.0:9090"));
         let router = ops_router(Health::default(), metrics);
 
-        // The scrape route is absent here — it lives on the dedicated listener instead — so
+        // The scrape route is absent here (it lives on the dedicated listener instead), so
         // the path is unrouted and the handler is never reached.
         let response = router
             .oneshot(get("/metrics"))
@@ -741,8 +746,8 @@ mod tests {
     ///
     /// It is what [`serve_internal`] publishes in plaintext beside an mTLS listener, and a
     /// deployment that sets `metrics.listen = null` has merged the scrape onto that listener
-    /// on purpose — under `mtls`, to keep it behind a client certificate. Serving
-    /// `ops_router` there instead would have undone that silently.
+    /// on purpose, under `mtls` to keep it behind a client certificate. Serving `ops_router`
+    /// there instead would undo that silently.
     #[tokio::test]
     async fn the_probe_router_carries_no_scrape() {
         let router = probe_router(Health::default());
@@ -755,14 +760,14 @@ mod tests {
         assert_ne!(body_string(response).await, "metrics are disabled");
     }
 
-    /// A plain `GET /health` — the only kind an orchestrator sends — is answered on the probe
+    /// A plain `GET /health`, the only kind an orchestrator sends, is answered on the probe
     /// listener.
     ///
     /// The mTLS listener cannot answer it: with no client certificate the connection never
     /// gets past the handshake, and what comes back is a TLS alert record, which the kubelet
     /// reports as `malformed HTTP response "\x15\x03\x03\x00\x02\x02"` before restarting the
-    /// replica. Every service on `internal.identity = "mtls"` failed its startup probe that
-    /// way, so the probes need a listener that speaks what the probe speaks.
+    /// replica. The bug: every service on `internal.identity = "mtls"` failed its startup probe
+    /// that way, so the probes need a listener that speaks what the probe speaks.
     #[tokio::test]
     async fn probes_answer_plain_http_on_their_own_listener() {
         use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};

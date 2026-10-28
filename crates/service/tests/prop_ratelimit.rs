@@ -1,8 +1,8 @@
-//! Properties of [`RouteClassifier`], the map from a matched route pattern to its rate-limit
+//! Checks properties of [`RouteClassifier`], the map from a matched route pattern to its rate-limit
 //! budget.
 //!
 //! These assert that the *rule set* determines the classification, not the order rules were
-//! declared in — the in-module tests only check one hand-built pair.
+//! declared in; the in-module tests only check one hand-built pair.
 
 use axum::http::Method;
 use proptest::prelude::*;
@@ -45,7 +45,7 @@ fn rule_set() -> impl Strategy<Value = BTreeMap<String, Kind>> {
     )
 }
 
-/// Build a classifier by declaring `rules` in the given order.
+/// Builds a classifier by declaring `rules` in the given order.
 fn build(rules: &[(String, Kind)]) -> RouteClassifier {
     rules
         .iter()
@@ -68,7 +68,7 @@ fn method() -> impl Strategy<Value = Method> {
     ])
 }
 
-/// Route *patterns*, which is what the classifier sees — never a concrete path, because
+/// Generates route *patterns*, which is what the classifier sees, never a concrete path, because
 /// matching on `MatchedPath` is what stops a classification being dodged by varying an id.
 fn route_pattern() -> impl Strategy<Value = String> {
     prop_oneof![
@@ -96,8 +96,8 @@ fn route_pattern() -> impl Strategy<Value = String> {
 }
 
 proptest! {
-    /// The rule *set* decides the class; the order the rules were declared in does not —
-    /// otherwise moving one line while tidying `main` would silently re-bucket a route.
+    /// The rule *set* decides the class; the order the rules were declared in does not.
+    /// Otherwise moving one line while tidying `main` would silently re-bucket a route.
     #[test]
     fn the_rule_set_decides_the_class_not_the_order_it_was_declared_in(
         rules in rule_set(),
@@ -142,8 +142,8 @@ proptest! {
 
     /// A `writes_only` rule is invisible to a safe method.
     ///
-    /// Asserted as an equivalence against the same rule set with those rules removed, rather
-    /// than by checking one path: `expensive_write` exists so a console `GET` that the UI polls
+    /// Asserted as an equivalence against the same rule set with those rules removed, not by
+    /// checking one path: `expensive_write` exists so a console `GET` that the UI polls
     /// is not charged the tight budget its sibling `POST` is (they share one route pattern), and
     /// the way that breaks is a safe request falling into `Expensive` *through* a writes-only
     /// rule instead of past it to a broader one.
@@ -170,7 +170,7 @@ proptest! {
 
     /// An empty classifier puts everything on the shared global budget, and that is the only
     /// thing an unmatched path can fall back to. Stated because the fallback is a `map_or`
-    /// default rather than a rule, so it is the one branch no rule set can exercise.
+    /// default, not a rule, so it is the one branch no rule set can exercise.
     #[test]
     fn an_unclassified_route_falls_back_to_the_global_budget(
         method in method(),

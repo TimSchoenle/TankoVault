@@ -1,11 +1,10 @@
-//! Mutually-authenticated TLS for the internal tier.
+//! Owns mutually-authenticated TLS for the internal tier.
 //!
-//! Three files are all this module knows about — a certificate, its key, and a bundle of
-//! authorities — and it knows nothing about where they come from. Under Kubernetes
-//! cert-manager writes the first two
-//! into a Secret and trust-manager writes the third into a `ConfigMap`, both mounted as volumes;
-//! elsewhere `openssl` or `step-ca` produce the same three files. Keeping the orchestrator out
-//! of the code is what lets `identity = "mtls"` work outside Kubernetes at all.
+//! Three files are all this module knows about (a certificate, its key, and a bundle of
+//! authorities), and it knows nothing about where they come from. Under Kubernetes cert-manager
+//! writes the first two into a Secret and trust-manager writes the third into a `ConfigMap`, both
+//! mounted as volumes; elsewhere `openssl` or `step-ca` produce the same three files. Keeping the
+//! orchestrator out of the code is what lets `identity = "mtls"` work outside Kubernetes at all.
 //!
 //! Client authentication is **required**, not optional: a connection that presents no
 //! certificate is refused during the handshake, so an unverified request never reaches
@@ -36,8 +35,8 @@ use tankovault_config::ResolvedTls;
 ///
 /// cert-manager renews at roughly two thirds of a certificate's lifetime and the kubelet
 /// refreshes a mounted Secret within about a minute, so for the 90-day certificates this is
-/// sized for, polling is many orders of magnitude faster than it needs to be. Polling rather
-/// than watching deliberately: a `notify` watcher is one more dependency and one more failure
+/// sized for, polling is many orders of magnitude faster than it needs to be. Polling, not
+/// watching, is deliberate: a `notify` watcher is one more dependency and one more failure
 /// mode (silently dead watches on some filesystems) for a deadline measured in weeks.
 const RELOAD_POLL: Duration = Duration::from_secs(30);
 
@@ -57,15 +56,16 @@ pub enum TlsError {
     /// One of the three files could not be opened or read.
     #[error("reading {path}: {source}")]
     Read {
-        /// The path as configured, so the message names the mount rather than the role.
+        /// The path as configured, so the message names the mount, not the role.
         path: String,
         /// The `open` or `read` that failed. `NotFound` is the common one: a mount that is not
         /// there yet.
         #[source]
         source: io::Error,
     },
-    /// The file was read and parsed, and held none of what it is there to hold. A volume
-    /// mounted before its writer has populated it looks exactly like this.
+    /// The file was read and parsed, and held none of what it is there to hold.
+    ///
+    /// A volume mounted before its writer has populated it looks exactly like this.
     #[error("{path} contains no {want}")]
     Empty {
         /// The path as configured.
@@ -97,7 +97,7 @@ pub enum TlsError {
 pub struct PeerSans(pub Arc<[String]>);
 
 impl PeerSans {
-    /// Whether `candidate` is one of the names this peer proved.
+    /// Returns whether `candidate` is one of the names this peer proved.
     #[must_use]
     pub fn contains(&self, candidate: &str) -> bool {
         self.0.iter().any(|s| s == candidate)
@@ -149,11 +149,11 @@ fn mtime(path: &Path) -> Option<SystemTime> {
 }
 
 impl ReloadingTls {
-    /// Read the three files and build the initial configuration.
+    /// Reads the three files and builds the initial configuration.
     ///
     /// # Errors
-    /// [`TlsError`] if any file is unreadable, contains nothing usable, or does not produce a
-    /// valid client-verifying server configuration.
+    /// Returns [`TlsError`] if any file is unreadable, contains nothing usable, or does not
+    /// produce a valid client-verifying server configuration.
     pub fn load(paths: &ResolvedTls) -> Result<Self, TlsError> {
         let config = build(paths)?;
         Ok(Self {
@@ -163,13 +163,13 @@ impl ReloadingTls {
         })
     }
 
-    /// The configuration in force right now.
+    /// Returns the configuration in force right now.
     #[must_use]
     pub fn current(&self) -> Arc<ServerConfig> {
         self.current.load_full()
     }
 
-    /// Rebuild if any input changed; keep the running configuration if the rebuild fails.
+    /// Rebuilds if any input changed, keeping the running configuration if the rebuild fails.
     ///
     /// A failed reload must never take the listener down: a half-written Secret is a transient
     /// state during rotation, and the certificate already in memory stays valid until its own
@@ -200,7 +200,7 @@ impl ReloadingTls {
         }
     }
 
-    /// Poll for rotation until `shutdown` is cancelled.
+    /// Polls for rotation until `shutdown` is cancelled.
     pub async fn watch(self: Arc<Self>, shutdown: CancellationToken) {
         let mut ticker = tokio::time::interval(RELOAD_POLL);
         ticker.tick().await;
@@ -220,11 +220,11 @@ impl ReloadingTls {
     }
 }
 
-/// Read the three files and assemble a client-verifying server configuration.
+/// Reads the three files and assembles a client-verifying server configuration.
 fn build(paths: &ResolvedTls) -> Result<Arc<ServerConfig>, TlsError> {
     // Before the first rustls call in the function, not left to the caller: every `main`
     // installs the provider too, but this is the one rustls object the workspace builds itself,
-    // and reaching `ServerConfig::builder()` without one is a panic rather than an error.
+    // and reaching `ServerConfig::builder()` without one is a panic, not an error.
     crate::crypto::install_default_provider();
 
     let certs: Vec<CertificateDer<'static>> = CertificateDer::pem_file_iter(&paths.cert)
@@ -284,7 +284,7 @@ fn build(paths: &ResolvedTls) -> Result<Arc<ServerConfig>, TlsError> {
 
 /// The PEM bytes an outbound client needs to authenticate itself and verify its peer.
 ///
-/// Raw bytes rather than a built client: the two HTTP stacks in this workspace take them
+/// Raw bytes, not a built client: the two HTTP stacks in this workspace take them
 /// differently (`reqwest::Identity::from_pem` wants the chain and key concatenated, `wreq`'s
 /// `Identity::from_pkcs8_pem` wants them separate), and neither belongs as a dependency of this
 /// crate. Reading the files once, here, is what keeps the *paths* in one place.
@@ -312,11 +312,11 @@ impl std::fmt::Debug for ClientMaterial {
     }
 }
 
-/// Read the three files an outbound mTLS client needs.
+/// Reads the three files an outbound mTLS client needs.
 ///
 /// # Errors
-/// [`TlsError::Read`] naming whichever path could not be read, or [`TlsError::Key`] when the key
-/// is in no format this stack can normalise to PKCS#8.
+/// Returns [`TlsError::Read`] naming whichever path could not be read, or [`TlsError::Key`] when
+/// the key is in no format this stack can normalise to PKCS#8.
 pub fn client_material(paths: &ResolvedTls) -> Result<ClientMaterial, TlsError> {
     let read = |path: &Path| {
         std::fs::read(path).map_err(|source| TlsError::Read {
@@ -339,24 +339,25 @@ const RSA_ENCRYPTION: pkcs8::ObjectIdentifier =
 const ID_EC_PUBLIC_KEY: pkcs8::ObjectIdentifier =
     pkcs8::ObjectIdentifier::new_unwrap("1.2.840.10045.2.1");
 
-/// Re-encode a PEM private key as PKCS#8, whatever encoding the operator mounted.
+/// Re-encodes a PEM private key as PKCS#8, whatever encoding the operator mounted.
 ///
 /// The three TLS stacks that consume this one file disagree about what a private key may look
 /// like. rustls (the internal listener) and reqwest (the api tier) accept PKCS#8, PKCS#1 and
 /// SEC1; `wreq::tls::trust::Identity::from_pkcs8_pem`, which the worker's solver hop in
 /// `tankovault-fetch` runs on, tests the *first bytes* against the `PRIVATE KEY` banner PKCS#8
-/// carries and refuses everything else. cert-manager's default `privateKey.encoding` is PKCS#1, as is
-/// `openssl genrsa`, and `openssl ecparam -genkey` writes SEC1 — so a mount that satisfied the
-/// documented contract and every other consumer took the worker down at boot with `expected
-/// PKCS#8 PEM`. Normalising once, where the file is read, is what keeps the stacks agreeing.
+/// carries and refuses everything else. cert-manager's default `privateKey.encoding` is PKCS#1,
+/// as is `openssl genrsa`, and `openssl ecparam -genkey` writes SEC1, so a mount that satisfies
+/// the documented contract and every other consumer would take the worker down at boot with
+/// `expected PKCS#8 PEM`. Normalising once, where the file is read, keeps the stacks agreeing.
 ///
 /// Re-encoding an already-PKCS#8 key is deliberate, not a wasted round trip: it also strips a
 /// leading `Bag Attributes` preamble or comment, which some tooling emits and which defeats the
 /// same prefix test.
 ///
 /// # Errors
-/// [`TlsError::Key`] if `pem` holds no private key, or an elliptic-curve key that names no curve
-/// (RFC 5480 forbids the implicit and explicit forms, and there is nothing to wrap it with).
+/// Returns [`TlsError::Key`] if `pem` holds no private key, or an elliptic-curve key that names
+/// no curve (RFC 5480 forbids the implicit and explicit forms, so there is nothing to wrap it
+/// with).
 fn pkcs8_pem(pem: &[u8], path: &Path) -> Result<Vec<u8>, TlsError> {
     fn encode(info: &pkcs8::PrivateKeyInfoRef<'_>) -> Result<Zeroizing<String>, String> {
         let doc = pkcs8::SecretDocument::try_from(info).map_err(|e| e.to_string())?;
@@ -431,7 +432,7 @@ fn pkcs8_pem(pem: &[u8], path: &Path) -> Result<Vec<u8>, TlsError> {
         })
 }
 
-/// Every DNS subject alternative name in `cert`.
+/// Returns every DNS subject alternative name in `cert`.
 fn dns_sans(cert: &CertificateDer<'_>) -> Vec<String> {
     use x509_parser::extensions::GeneralName;
     let Ok((_, parsed)) = x509_parser::parse_x509_certificate(cert) else {
@@ -460,10 +461,10 @@ pub struct TlsListener {
 }
 
 impl TlsListener {
-    /// Bind `addr` and start accepting and handshaking in the background.
+    /// Binds `addr` and starts accepting and handshaking in the background.
     ///
     /// # Errors
-    /// Propagates the bind failure.
+    /// Returns the bind failure.
     pub async fn bind(addr: &str, tls: Arc<ReloadingTls>) -> io::Result<Self> {
         let listener = TcpListener::bind(addr).await?;
         let local = listener.local_addr()?;
@@ -529,7 +530,7 @@ impl axum::extract::connect_info::Connected<axum::serve::IncomingStream<'_, TlsL
         let addr = *stream.remote_addr();
         // `peer_certificates` is populated only after a successful handshake, and the verifier
         // requires one, so an empty list here means the connection was not mutually
-        // authenticated — which `internal_auth` then refuses.
+        // authenticated, which `internal_auth` then refuses.
         let sans = stream
             .io()
             .get_ref()
@@ -550,6 +551,9 @@ impl axum::extract::connect_info::Connected<axum::serve::IncomingStream<'_, TlsL
 mod tests {
     use super::*;
 
+    /// A certificate carries several names and the useful one is rarely first. Matching only
+    /// `[0]` would make `internal.peers.<name>.san` depend on the order cert-manager happened
+    /// to emit, which is not something an operator can see from the manifest they wrote.
     #[test]
     fn peer_sans_matches_any_name_the_certificate_proved() {
         let sans = PeerSans(
@@ -566,9 +570,7 @@ mod tests {
         assert!(!sans.contains("api.tankovault.svc.cluster.local"));
     }
 
-    /// A certificate carries several names and the useful one is rarely first. Matching only
-    /// `[0]` would make `internal.peers.<name>.san` depend on the order cert-manager happened
-    /// to emit, which is not something an operator can see from the manifest they wrote.
+    /// A certificate with no parseable extensions yields no names instead of panicking.
     #[test]
     fn an_empty_or_unparsable_certificate_yields_no_names_rather_than_panicking() {
         assert_eq!(
@@ -581,7 +583,7 @@ mod tests {
         );
     }
 
-    /// Missing files must surface as a named error rather than a panic: this runs at boot, and
+    /// Missing files must surface as a named error, not a panic: this runs at boot, and
     /// the operator needs to know *which* of the three paths is wrong.
     #[test]
     fn a_missing_file_names_itself() {
@@ -594,7 +596,7 @@ mod tests {
         assert!(err.to_string().contains("tls.crt"), "{err}");
     }
 
-    /// `prime256v1`, RFC 5480 §2.1.1.1.1 — the curve of the generated key below.
+    /// `prime256v1`, RFC 5480 §2.1.1.1.1: the curve of the generated key below.
     const PRIME256V1: pkcs8::ObjectIdentifier =
         pkcs8::ObjectIdentifier::new_unwrap("1.2.840.10045.3.1.7");
 
@@ -608,20 +610,22 @@ mod tests {
         pkcs8_pem(key, Path::new("/tls/tls.key")).expect("the key normalises")
     }
 
-    /// The opening banner `wreq` tests for, assembled from the label rather than written out: a
+    /// Returns the opening banner `wreq` tests for, assembled from the label, not written out: a
     /// PEM private-key header spelled in full anywhere in the tree is what the secret scan is
     /// looking for, and it cannot tell this one from a leaked key.
     fn banner() -> Vec<u8> {
         format!("-----BEGIN {}-----", pkcs8::PrivateKeyInfoRef::PEM_LABEL).into_bytes()
     }
 
-    /// A SEC1 elliptic-curve key — what `openssl ecparam -genkey` and cert-manager's default
-    /// `privateKey.encoding` write — used to take the worker down at boot: the solver client
-    /// runs on `wreq`, whose `Identity::from_pkcs8_pem` tests the first bytes of the key against
-    /// the PKCS#8 banner and panicked the process with `expected PKCS#8 PEM`, while rustls and
+    /// A SEC1 elliptic-curve key is rewrapped into the PKCS#8 it came from.
+    ///
+    /// The bug: a SEC1 key, what `openssl ecparam -genkey` and cert-manager's default
+    /// `privateKey.encoding` write, took the worker down at boot. The solver client runs on
+    /// `wreq`, whose `Identity::from_pkcs8_pem` tests the first bytes of the key against the
+    /// PKCS#8 banner and panicked the process with `expected PKCS#8 PEM`, while rustls and
     /// reqwest had already accepted the very same mount.
     ///
-    /// The fixture is a real generated key rather than a committed one, and the assertion is
+    /// The fixture is a real generated key, not a committed one, and the assertion is
     /// byte equality against the PKCS#8 that produced it: an independent implementation decides
     /// what the rewrap should have emitted, down to the algorithm identifier and the stripped
     /// parameters. The result is then loaded through rustls, so it is a key that signs and not
@@ -662,7 +666,7 @@ mod tests {
     }
 
     /// The RSA half of the same bug: `openssl genrsa` writes PKCS#1, and so does cert-manager
-    /// for an RSA certificate. The key bytes are opaque to the rewrap — the algorithm identifier
+    /// for an RSA certificate. The key bytes are opaque to the rewrap; the algorithm identifier
     /// is the whole of what it decides, and naming the wrong one produces a key no peer can use.
     #[test]
     fn a_pkcs1_rsa_key_is_rewrapped_under_the_rsa_encryption_algorithm_identifier() {
@@ -686,8 +690,8 @@ mod tests {
     }
 
     /// A key that is already PKCS#8 still goes through the rewrap, because the prefix test is on
-    /// the *first bytes* of the file: a `Bag Attributes` preamble or a leading comment — both of
-    /// which some tooling emits and every PEM parser skips — fails it just as a PKCS#1 key does.
+    /// the *first bytes* of the file: a `Bag Attributes` preamble or a leading comment (both of
+    /// which some tooling emits and every PEM parser skips) fails it just as a PKCS#1 key does.
     #[test]
     fn an_already_pkcs8_key_loses_a_preamble_that_would_defeat_the_prefix_test() {
         let inner = pkcs8::PrivateKeyInfoRef {

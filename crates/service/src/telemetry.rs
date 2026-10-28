@@ -1,8 +1,7 @@
-//! Structured logging installation, and the Sentry client that shares its record stream.
+//! Owns structured logging installation and the Sentry client that shares its record stream.
 //!
-//! Metrics live in [`crate::metrics`]; the two were previously initialised by one
-//! `observability::init` call, which meant a service could not have logs without also
-//! taking a metrics recorder. Splitting them is what makes metrics genuinely togglable.
+//! Metrics live in [`crate::metrics`] and are installed separately, so a service can have logs
+//! without a metrics recorder.
 
 use crate::ServiceError;
 use tankovault_config::TelemetryConfig;
@@ -12,7 +11,7 @@ use tracing_subscriber::util::SubscriberInitExt;
 
 /// Keeps the Sentry client alive, and flushes what it has queued on drop.
 ///
-/// Returned by [`init_tracing`] rather than stashed in a static because a static is never
+/// Returned by [`init_tracing`] instead of being stashed in a static because a static is never
 /// dropped: the flush that gets the last events of a shutting-down replica out of the process
 /// happens here, bounded by `telemetry.sentry.shutdown_timeout_secs`. Bind it (`let _telemetry
 /// = …`) for the lifetime of `main`; `let _ = …` drops it immediately and closes the client
@@ -28,12 +27,12 @@ impl std::fmt::Debug for TelemetryGuard {
     }
 }
 
-/// Install the global `tracing` subscriber, and the Sentry client when one is configured.
+/// Installs the global `tracing` subscriber, and the Sentry client when one is configured.
 ///
 /// Emits JSON logs when [`TelemetryConfig::json_logs`] is set (production), otherwise
 /// human-readable logs (development). The filter comes from
 /// [`TelemetryConfig::log_filter`], overridable at runtime via `RUST_LOG`, and it governs the
-/// Sentry layer too — a record the filter drops is not reported.
+/// Sentry layer too: a record the filter drops is not reported.
 ///
 /// # Errors
 /// Returns [`ServiceError::Tracing`] if a subscriber is already set, or

@@ -1,9 +1,9 @@
-//! The one way a service builds its Redis client.
+//! Owns the one way a service builds its Redis client.
 //!
-//! fred's defaults are no reconnect policy and no command timeout. Together they meant a Redis
-//! restart left every client disconnected for the life of the process — shared rate limiting
-//! silently fell open, stream tickets failed, and control-plane leadership was never held again
-//! — while a Redis that stopped answering without closing the socket hung each caller forever.
+//! fred defaults to no reconnect policy and no command timeout. With those, a Redis restart
+//! leaves every client disconnected for the life of the process (shared rate limiting silently
+//! fails open, stream tickets fail, control-plane leadership is never held again), and a Redis
+//! that stops answering without closing the socket hangs each caller forever.
 
 use std::time::Duration;
 
@@ -15,11 +15,11 @@ pub const COMMAND_TIMEOUT: Duration = Duration::from_millis(250);
 /// Ceiling on opening a connection, at boot and on every reconnect.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Build (not connect) a client that reconnects for ever with capped exponential backoff and
-/// bounds every command.
+/// Builds, without connecting, a client that reconnects forever with capped exponential backoff
+/// and bounds every command.
 ///
 /// # Errors
-/// Whatever fred reports for an unusable configuration.
+/// Returns fred's error for an unusable configuration.
 pub fn client(config: Config) -> Result<Client, fred::error::Error> {
     let mut builder = Builder::from_config(config);
     builder

@@ -2,7 +2,7 @@
 #
 # FORMAT: oasdiff lowercases each change's single-line rendering (`oasdiff breaking -f singleline`)
 # and ignores it if any line here appears in it as a substring. So a line must be the *lowercased*
-# message with the leading `error at <spec path>, ` stripped — the path differs between a local run
+# message with the leading `error at <spec path>, ` stripped: the path differs between a local run
 # and CI, and including it would silently stop the entry matching. Comment lines never match
 # anything, which is why they are safe here.
 #
@@ -10,45 +10,45 @@
 # version skew window always exists and a breaking change ships silently as a runtime
 # deserialisation failure in the browser. An entry is therefore a claim that the *only* consumer of
 # that operation is `web/frontend`, and that it was updated in the same commit. Anything a caller
-# outside this repository could hit does not belong here — it gets a new endpoint and a deprecation
+# outside this repository could hit does not belong here: it gets a new endpoint and a deprecation
 # instead, the way `/v1/admin/scans/stream` did.
 #
 # Keep each entry pinned to the exact operation and the exact from/to shape, so this file cannot
 # quietly absolve a *different* break on the same endpoint later.
 
 # The audit trail and the scan history were fixed-size unfiltered feeds that fall off the end
-# under load. Paging them needs a total, a pager cannot say
-# "1-40 of N" without one, and a total cannot ride alongside a bare array — so both responses
-# became `{ items, total }`. Consumed only by the operator console.
+# under load. Paging them needs a total, a pager cannot say "1-40 of N" without one, and a total
+# cannot ride alongside a bare array, so both responses became `{ items, total }`. Consumed only
+# by the operator console.
 in api get /v1/admin/audit the response's body `type` changed from `array<object>` to `object` for status `200`
 in api get /v1/admin/scans the response's body `type` changed from `array<object>` to `object` for status `200`
 
-# The rebuild endpoint used to await the whole build inside the request handler, which meant the
-# control plane's 30 s request timeout decided how long a build was allowed to take: it dropped the
-# handler future mid-run, the claim was never released, and every later build declined to start.
-# The build now runs detached, so the response can only report whether one was *started* — these
-# three counts are not knowable when it answers, and are read from
-# `GET /v1/admin/recommendations/health` instead. Consumed only by the operator console, which
-# already ignores this response body and polls that endpoint.
+# The rebuild endpoint awaited the whole build inside the request handler, so the control plane's
+# 30 s request timeout decided how long a build was allowed to take: it dropped the handler future
+# mid-run, the claim was never released, and every later build declined to start. The build runs
+# detached, so the response can only report whether one was *started*: these three counts are not
+# knowable when it answers, and are read from `GET /v1/admin/recommendations/health` instead.
+# Consumed only by the operator console, which ignores this response body and polls that
+# endpoint.
 in api post /v1/admin/recommendations/rebuild removed the required property `series_built` from the response with the `200` status
 in api post /v1/admin/recommendations/rebuild removed the required property `vocabulary` from the response with the `200` status
 in api post /v1/admin/recommendations/rebuild removed the required property `dense_dims` from the response with the `200` status
 
-# The notification preferences were an unvalidated free-form document — and nothing on the server
-# ever read it, so the three toggles the account panel wrote had no effect on delivery at all. They
-# are a typed, versioned contract now, which is what makes a saved preference one the notifier
-# honours. Every field defaults, so the widest previously-valid body an old bundle could send —
-# `{}` — is still accepted and still means "the product defaults"; what this break rejects is a
-# body that was never a preference document, such as a bare string or array. Consumed only by
+# The notification preferences were an unvalidated free-form document, and nothing on the server
+# read it, so the three toggles the account panel wrote had no effect on delivery at all. They are
+# a typed, versioned contract, which is what makes a saved preference one the notifier honours.
+# Every field defaults, so the widest previously-valid body an old bundle could send (`{}`) is
+# still accepted and still means "the product defaults"; what this break rejects is a body that
+# was never a preference document, such as a bare string or array. Consumed only by
 # `web/frontend`, updated in the same commit.
 in api put /v1/me/notification-prefs the request's body `type` changed from `any` to `object`
 
-# Two-factor authentication. `POST /v1/auth/login` used to answer with a session unconditionally;
-# it now answers `{ status, session?, mfa? }`, because an account holding a second factor must come
-# away from the password leg with *no* session at all — a token issued beside the challenge would
-# leave the password a complete credential for anyone who skipped the prompt. `TokenResponse`
-# itself is untouched, so `/v1/auth/refresh` and `/v1/auth/register` keep the shape they had, and
-# the three properties below moved into `session` rather than disappearing. Consumed only by
+# Two-factor authentication. `POST /v1/auth/login` answered with a session unconditionally; it
+# answers `{ status, session?, mfa? }`, because an account holding a second factor must come away
+# from the password leg with *no* session at all: a token issued beside the challenge would leave
+# the password a complete credential for anyone who skipped the prompt. `TokenResponse` itself is
+# untouched, so `/v1/auth/refresh` and `/v1/auth/register` keep their shape, and the three
+# properties below moved into `session` instead of disappearing. Consumed only by
 # `web/frontend`, updated in the same commit.
 in api post /v1/auth/login removed the required property `access_token` from the response with the `200` status
 in api post /v1/auth/login removed the required property `token_type` from the response with the `200` status
@@ -65,9 +65,9 @@ in api post /v1/admin/providers removed the enum value `manga_themesia` of the r
 
 # The catalogue purge deleted inside the request and was called in a loop; one batch on a large
 # catalogue outlasted the 30 s request timeout, rolled back, and the purge could never finish. It
-# now runs detached, so the start response can only say whether a run started — the progress
-# these four properties carried is on `GET /v1/admin/catalogue/purge`. Consumed only by the
-# operator console, updated in the same commit.
+# runs detached, so the start response can only say whether a run started; the progress these
+# four properties carried is on `GET /v1/admin/catalogue/purge`. Consumed only by the operator
+# console, updated in the same commit.
 in api post /v1/admin/catalogue/purge removed the required property `done` from the response with the `200` status
 in api post /v1/admin/catalogue/purge removed the required property `remaining` from the response with the `200` status
 in api post /v1/admin/catalogue/purge removed the required property `removed` from the response with the `200` status

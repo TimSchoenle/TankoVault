@@ -5,7 +5,7 @@ name: CI
 #
 # Path filters scope *when* a gate runs, never whether it runs. Four rules keep that honest:
 #   1. This file is an input to every filter, so editing it re-runs everything.
-#   2. The weekly `schedule` run ignores the filters — `cargo-audit` and `cargo-deny`'s advisory
+#   2. The weekly `schedule` run ignores the filters: `cargo-audit` and `cargo-deny`'s advisory
 #      check need it, because a new advisory lands against code that did not change.
 #   3. Filters name directories, never `**/*.rs`: `web/frontend` is a separate workspace the host
 #      jobs do not build, and a glob would silently couple the two.
@@ -13,7 +13,7 @@ name: CI
 #      jobs were skipped, so branch protection needs one entry that cannot silently stop existing.
 #
 # The toolchain and MSRV are read from `rust-toolchain.toml` and `Cargo.toml` by the `changes`
-# job and never repeated inline; seven inline copies drifted from the manifest once already.
+# job and never repeated inline, so no copy can drift from the manifest.
 
 on:
   push:
@@ -43,27 +43,27 @@ env:
 
   # **A constant, and it has to stay one.** buildx propagates `SOURCE_DATE_EPOCH` from its own
   # environment into the solve as `build-arg:SOURCE_DATE_EPOCH`, so its value is part of every
-  # BuildKit cache key in this repository — there is no channel that reaches the exporter without
-  # also reaching the build. Two attempts to make it the commit timestamp have now failed for the
-  # same reason: the value then differs between the run that *writes* a cache tag and the run that
-  # *reads* it, and every `cache-from` in both workflows is a total miss. Declared at workflow
-  # level rather than per step so a new `docker/build-push-action` cannot silently opt out;
-  # `xtask repo-lint` holds this file and release-please.yaml to the same value.
+  # BuildKit cache key in this repository; there is no channel that reaches the exporter without
+  # also reaching the build. Making it the commit timestamp would make the value differ between
+  # the run that *writes* a cache tag and the run that *reads* it, and every `cache-from` in both
+  # workflows would be a total miss. Declared at workflow level, not per step, so a new
+  # `docker/build-push-action` cannot silently opt out; `xtask repo-lint` holds this file and
+  # release-please.yaml to the same value.
   #
   # Zero is the documented "no meaningful build time" value, and it is what makes rebuilding a tag
-  # byte-identical *across* commits rather than only within one. The cost is that the image config
+  # byte-identical *across* commits, not only within one. The cost is that the image config
   # records `created: 1970-01-01`; nothing reads it, and the tag is what identifies a release.
   SOURCE_DATE_EPOCH: "0"
   # Resolve sqlx's query macros from the committed `.sqlx/` cache instead of a live database; the
   # `sqlx` job below is what verifies that cache against the real schema.
   SQLX_OFFLINE: "true"
 
-  # Tool versions pinned in `run:` blocks rather than a manifest. The `renovate:` comments are the
-  # only thing that makes them visible to Renovate — without one, a pin is never updated.
+  # Tool versions pinned in `run:` blocks, not a manifest. The `renovate:` comments are the only
+  # thing that makes them visible to Renovate: without one, a pin is never updated.
   #
   # Fetch this one from the GitHub release, which is the source this pin tracks. The
-  # `storage.googleapis.com/container-structure-test` mirror the install steps used to read stopped
-  # being published after v1.16.0, so every version Renovate can propose 404s there.
+  # `storage.googleapis.com/container-structure-test` mirror is not published past v1.16.0, so
+  # every version Renovate can propose 404s there.
   # renovate: datasource=github-releases depName=GoogleContainerTools/container-structure-test
   CONTAINER_STRUCTURE_TEST_VERSION: 1.22.1
   # Must match the `sqlx` in `Cargo.lock`: a CLI from a different minor writes a query cache the
@@ -136,7 +136,7 @@ jobs:
             echo 'images=["api","bootstrap","worker","control-plane","notifier","sync","challenge-solver","render"]' >> "$GITHUB_OUTPUT"
           fi
 
-      # The only place that reads these manifests. It fails loudly rather than defaulting: a silent
+      # The only place that reads these manifests. It fails loudly instead of defaulting: a silent
       # fallback would install "whatever stable is today".
       - name: resolve the toolchain and the MSRV from their manifests
         id: versions
@@ -167,39 +167,36 @@ jobs:
           set -euo pipefail
           echo "ref=ghcr.io/${GITHUB_REPOSITORY,,}/buildcache" >> "$GITHUB_OUTPUT"
 
-      # Which cache tag `docker-deps` may export to, or empty for "export nothing" — in which case
+      # Which cache tag `docker-deps` may export to, or empty for "export nothing", in which case
       # `docker-deps` does not run at all. Read that job's comment for why a pull request must not
       # write any tag on the `buildcache` package.
       #
       # **Only `main` exports, and only to `backend-deps-<arch>`.** A GHCR package grants write to
       # a repository's workflows, not to a ref or a tag, so a token with `packages: write` can
-      # rewrite every tag on it — including `release-deps-<arch>`, which `release-please.yaml`
-      # builds signed images from. A pull request's `docker-deps` holds that token while BuildKit
-      # compiles the branch's dependency graph, and Renovate opens the branches that bump it, so a
-      # pull request may hold no `packages: write` here at all. That retired the two pull-request
-      # exports this step used to choose: `pr-<number>-deps-<arch>` (a pull request's own image
-      # legs) and `release-pr-deps-<arch>` (the release PR's compile, which the release warm-up
-      # used to import).
+      # rewrite every tag on it, including `release-deps-<arch>`, which `release-please.yaml`
+      # builds signed images from. A pull request's `docker-deps` would hold that token while
+      # BuildKit compiles the branch's dependency graph, and Renovate opens the branches that bump
+      # it, so a pull request may hold no `packages: write` here at all, and has no export of its
+      # own.
       #
       # `refs/heads/main` is tested, not only the event: `workflow_dispatch` runs on any branch, and
-      # the old `else backend-deps` exported a dispatched branch's unreviewed layers into the tag
+      # exporting on any dispatch would put a dispatched branch's unreviewed layers into the tag
       # every pull request builds on.
       #
       # What it costs is pull-request wall clock. With no export of its own, a pull request that
       # touches the Dockerfile or the dependency graph misses `backend-deps-<arch>` and each of
-      # `docker`, `docker-frontend` and `docker-arm64` compiles the `builder` chain itself (one
-      # measured run: api 38m, render 40m, frontend 40m, in parallel). A pull request that leaves
-      # both alone is a hit on `main`'s export, as before. And the release warm-up no longer reads
-      # the release PR's compile, so a release recompiles the workspace crates once per
-      # architecture in `release-deps`.
+      # `docker`, `docker-frontend` and `docker-arm64` compiles the `builder` chain itself, in
+      # parallel, for about forty minutes each. A pull request that leaves both alone is a hit on
+      # `main`'s export. The release warm-up does not read a pull request's compile, so a release
+      # recompiles the workspace crates once per architecture in `release-deps`.
       #
-      # This step also decides the architecture set. arm64 is native-only — no QEMU, since
-      # BoringSSL under emulation costs upwards of an hour an image — so warming it is a second
+      # This step also decides the architecture set. arm64 is native-only (no QEMU, since
+      # BoringSSL under emulation costs upwards of an hour an image), so warming it is a second
       # full compile of the workspace: 30 minutes beside the amd64 leg, on a runner nothing else
       # in the graph waits for. Pull requests do not pay it. What that gives up is narrower than
       # the warning on `docker-arm64`, which is about arm64 breaking at a *tag*: `main` still
       # builds both architectures, and no tag is cut from a commit `main` has not built, so a bad
-      # arm64 merge surfaces minutes after the merge rather than at release. A pull request stops
+      # arm64 merge surfaces minutes after the merge, not at release. A pull request stops
       # catching it before the merge.
       - name: decide the deps cache scope and architecture set
         id: depsscope
@@ -333,37 +330,37 @@ jobs:
           toolchain: ${{ needs.changes.outputs.toolchain }}
           components: rustfmt, clippy
       # Saver for the `lint` group. `rust-cache` keys on `github.job` unless told otherwise, so
-      # every job here used to keep a private copy of one identical dependency graph: eleven
-      # caches of the same ~600 crates, none of which fit alongside the others. Jobs are grouped
-      # by the artefact cargo actually fingerprints instead — this group is metadata-only
+      # without groups every job here keeps a private copy of one identical dependency graph:
+      # a dozen caches of the same ~600 crates, none of which fit alongside the others. Jobs are
+      # grouped by the artefact cargo fingerprints instead: this group is metadata-only
       # (`clippy`/`check`, `RUSTFLAGS=-D warnings`), `test` is codegen, and `features`, `msrv`,
       # `coverage` and the frontend workspace each fingerprint differently enough to need their
       # own. Sharing is only ever worth a cache where the members compile the same graph: the
-      # grouping below is what the measured job times supported, not what the shapes suggested.
+      # grouping below is what the measured job times support, not what the shapes suggest.
       #
       # Exactly one job per group writes. With several savers behind one key the content is
-      # whichever leg finished first — a check-only leg winning the race leaves the group's cache
-      # without the artefacts its other members came for. The rest carry `save-if: false`, which
-      # still restores.
+      # whichever leg finished first, and a check-only leg winning the race leaves the group's
+      # cache without the artefacts its other members came for. The rest carry `save-if: false`,
+      # which still restores.
       #
       # **A group is named for the job that saves it**, never for its shape. A `shared-key` becomes
       # the key segment `rust-cache` otherwise fills from `github.job`, so naming a group after its
-      # saver means the key is the one that job already wrote — the existing cache is inherited
-      # rather than orphaned. Naming this group `check` and the one below `build` cost 2.5 GB of
-      # current, already-populated cache that nothing could reach again until `main` rebuilt it.
+      # saver means the key is the one that job already wrote and the existing cache is inherited,
+      # not orphaned. Any other name strands gigabytes of populated cache that nothing can reach
+      # until `main` rebuilds it.
       #
       # `cache-on-failure` because a job that compiled the whole graph and then failed a lint has
-      # produced exactly the artefacts the next run wants; throwing them away made a red `main`
-      # cost every later run a cold build.
+      # produced exactly the artefacts the next run wants; throwing them away would make a red
+      # `main` cost every later run a cold build.
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: lint
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-on-failure: true
 
-      # `wreq` compiles BoringSSL from C/C++ source. Eight jobs here need the same three packages
-      # and each used to carry its own `apt-get` line; the action owns the retry and the timeout
-      # that none of the copies had — see it for the 20-minute stall that bought them.
+      # `wreq` compiles BoringSSL from C/C++ source. Eight jobs here need the same three packages,
+      # and the action owns the one install with the retry and the timeout that bound a stalled
+      # apt mirror.
       - name: BoringSSL build dependencies
         uses: $/.github/actions/boringssl-deps
 
@@ -375,7 +372,7 @@ jobs:
         if: needs.changes.outputs.rust == 'true'
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
-      # The invariants no compiler sees — a CSP and the HTML it governs, a secret published in the
+      # The invariants no compiler sees: a CSP and the HTML it governs, a secret published in the
       # compose file and the code that refuses it. Unconditional, unlike clippy: it reads HTML,
       # YAML and compose files, so the Rust filter would skip it on the diffs it exists to catch.
       - name: repository invariants
@@ -403,7 +400,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16 # zizmor: ignore[superfluous-actions,stale-action-refs]
         with:
           toolchain: ${{ needs.changes.outputs.toolchain }}
-      # Saver for the `test` group — the widest codegen build in the workflow, so what it stores
+      # Saver for the `test` group, the widest codegen build in the workflow, so what it stores
       # covers `integration` and `mutants` too. See `lint` for why the groups exist.
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
@@ -423,13 +420,13 @@ jobs:
 
       # And this resolves the *links*: `cargo test --doc` never looks at a `[`Foo`]`, so a broken
       # intra-doc link renders as literal bracket text and nothing notices. `crates/api-client` is
-      # exempt by construction — it declares its own `[lints]` table and inherits nothing.
+      # exempt by construction: it declares its own `[lints]` table and inherits nothing.
       #
-      # `RUSTDOCFLAGS` is what makes the run a gate rather than a report. The rustdoc lints in
+      # `RUSTDOCFLAGS` is what makes the run a gate, not a report. The rustdoc lints in
       # `[workspace.lints.rustdoc]` only fire under `rustdoc`, never under `cargo check`, so this
-      # step is the only place they are seen at all — and a warning nobody fails on is a warning
-      # that accumulates. Set on the step rather than the job so it cannot reach `cargo test`,
-      # where it would rebuild the whole dependency graph under different flags.
+      # step is the only place they are seen at all, and a warning nobody fails on is a warning
+      # that accumulates. Set on the step, not the job, so it cannot reach `cargo test`, where it
+      # would rebuild the whole dependency graph under different flags.
       - name: rustdoc (intra-doc links)
         env:
           RUSTDOCFLAGS: '-D warnings'
@@ -440,24 +437,24 @@ jobs:
       - name: OpenAPI artifacts are up to date
         run: cargo run -p xtask -- openapi --check
 
-      # The nine documents each published image carries, plus the `LABEL` regions the Dockerfile
-      # writes by hand. This is the *source* half — the built-image half lives in the `docker`
-      # jobs, and only that one is evidence — but it is the half that names a renamed key in the
+      # The nine documents each published image carries, and the `LABEL` regions the Dockerfile
+      # writes by hand. This is the *source* half (the built-image half lives in the `docker`
+      # jobs, and only that one is evidence), but it is the half that names a renamed key in the
       # pull request that renamed it, one step before a build is spent finding out.
       # `auto-fix.yaml` regenerates the documents and commits them back; the `LABEL` regions it
-      # reports rather than rewrites.
+      # reports, not rewrites.
       #
-      # No `--check` any more, because there is no other mode: `just regenerate` is the writer.
-      # Two commands rather than one flag is what stops the gate from carrying its own copy of
-      # the rendering it is judging.
+      # No `--check`, because there is no other mode: `just regenerate` is the writer. Two
+      # commands instead of one flag is what stops the gate from carrying its own copy of the
+      # rendering it is judging.
       - name: the published configuration contracts are up to date
         run: cargo run -p xtask -- config-contract
-      # `docs/CONFIGURATION.md` is gated too, but by `xtask::config_docs` under `cargo test` above —
+      # `docs/CONFIGURATION.md` is gated too, but by `xtask::config_docs` under `cargo test` above:
       # it is prose, so there is nothing to regenerate. `xtask -- config-docs` prints the surface.
 
   # Every other job compiles the one feature set the services happen to select, so a
-  # `#[cfg(feature = ...)]` that stops compiling with a feature off — or a crate that only builds
-  # because a sibling unified a feature onto it — would be caught nowhere.
+  # `#[cfg(feature = ...)]` that stops compiling with a feature off, or a crate that only builds
+  # because a sibling unified a feature onto it, would be caught nowhere.
   #
   # No Windows or macOS leg, deliberately: every artifact is a musl binary in a `scratch` or Debian
   # image, and the Windows hazards this project actually hits are tooling ones no CI leg detects.
@@ -483,10 +480,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, 2026-07-16 # zizmor: ignore[superfluous-actions,stale-action-refs]
         with:
           toolchain: ${{ needs.changes.outputs.toolchain }}
-      # Its own group, measured rather than assumed: `--all-features` resolves a wider dependency
-      # graph than any other job compiles, so sharing `lint` left this one rebuilding the
-      # difference and it went from 1m13s to 3m27s — the slowest of the seven and the run's new
-      # critical path. Consolidation is worth a cache only where the members' graphs match.
+      # Its own group, measured, not assumed: `--all-features` resolves a wider dependency graph
+      # than any other job compiles, so sharing `lint` would leave this one rebuilding the
+      # difference, at roughly three times its own-cache time and on the run's critical path.
+      # Consolidation is worth a cache only where the members' graphs match.
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: features
@@ -534,7 +531,7 @@ jobs:
         # `pgvector/pgvector`, not stock `postgres`: this job re-derives the cache by applying
         # every migration, and `0027_recsys_signals` runs `CREATE EXTENSION vector`. Stock
         # Postgres cannot, so the job fails at schema setup having verified nothing. Same image
-        # as `deploy/docker-compose.yml` and the integration harness — `xtask repo-lint` holds all
+        # as `deploy/docker-compose.yml` and the integration harness; `xtask repo-lint` holds all
         # three to each other.
         image: pgvector/pgvector:pg18@sha256:691673308c99d2161ba298736f3147f1f22d79de2fb7ec93ae9b4afcab870b62
         env:
@@ -567,7 +564,7 @@ jobs:
         with:
           toolchain: ${{ needs.changes.outputs.toolchain }}
       # `SQLX_OFFLINE=false` re-derives the workspace crates against the live database, but that is
-      # a workspace-crate fingerprint and `rust-cache` discards those anyway — the dependency
+      # a workspace-crate fingerprint and `rust-cache` discards those anyway: the dependency
       # graph this restores is the same one `check` stores.
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
@@ -595,8 +592,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     needs: [changes, lint, test]
-    # `!cancelled() && !failure()` rather than the default: it still refuses to run when `lint`
-    # or `test` failed, but does not inherit their *skip*. Written this way everywhere a job has
+    # `!cancelled() && !failure()`, not the default: it still refuses to run when `lint` or
+    # `test` failed, but does not inherit their *skip*. Written this way everywhere a job has
     # more than one `needs`.
     if: ${{ !cancelled() && !failure() && needs.changes.outputs.rust == 'true' }}
     permissions:
@@ -631,7 +628,7 @@ jobs:
   # `openapi --check` only proves the artifacts match the code: removing an endpoint or making an
   # optional field required passes it cleanly once regenerated. The SPA ships as its own image, so
   # a skew window always exists and a breaking change lands as a deserialization failure in
-  # somebody's browser. Pull requests only — a push to `main` has no base spec to compare against.
+  # somebody's browser. Pull requests only: a push to `main` has no base spec to compare against.
   openapi-breaking:
     name: openapi breaking changes
     runs-on: ubuntu-latest
@@ -680,15 +677,15 @@ jobs:
           fail-on: ERR
           # Deliberate breaks, each with its reason. A *relative* path for the same reason as
           # `base` above: this is a Docker container action, and a host path does not survive
-          # the boundary. The file explains what may go in it — the short version is that an
+          # the boundary. The file explains what may go in it; the short version is that an
           # entry claims `web/frontend` is the only consumer of that operation.
           err-ignore: .github/oasdiff-ignore.txt
 
   # `web/frontend` is outside the host workspace, so no job above touches it. Its tests and its
   # own `clippy::pedantic` set run here or nowhere.
   #
-  # It builds two ways from one source tree — `web` (the wasm32 SPA, the default) and `desktop`
-  # (a wry webview, shipped as installers by `release-please.yaml`) — and both are gated here.
+  # It builds two ways from one source tree, `web` (the wasm32 SPA, the default) and `desktop`
+  # (a wry webview, shipped as installers by `release-please.yaml`), and both are gated here.
   # Without the desktop legs, a `#[cfg(feature = "web")]` that stops compiling on the other side
   # is first noticed by a release, which is the worst place to find it.
   frontend:
@@ -729,8 +726,7 @@ jobs:
       # workspace; without it, `inkstone-ui` is never tested, linted or documented.
       #
       # The `lint` job's `cargo fmt --all --check` runs in the host workspace, which this crate is
-      # not a member of — so without this line nothing formats it, and three files had already
-      # drifted by the time anyone looked.
+      # not a member of, so without this line nothing formats it.
       - name: rustfmt
         working-directory: web/frontend
         run: cargo fmt --all --check
@@ -893,7 +889,7 @@ jobs:
   # A ratchet, not a target: a percentage target invites tests written to move a number, while a
   # floor answers "did this change make it worse". The floor is `.github/coverage-floor.txt`, which
   # is in the `rust` filter so editing it re-runs the measurement it describes. No
-  # `continue-on-error` — a gate that cannot fail is a knob nobody should believe in. The
+  # `continue-on-error`: a gate that cannot fail is a knob nobody should believe in. The
   # measurement excludes `--features integration`, matching every other fast job, which is why
   # `coverage-integration` below exists and carries a separate floor.
   coverage:
@@ -945,11 +941,11 @@ jobs:
           cargo llvm-cov report --json --summary-only --output-path target/llvm-cov/coverage.json
           cargo llvm-cov report --codecov --output-path target/llvm-cov/codecov.json
 
-      # Tee'd into the run summary so the "consider raising it" suggestion lands on the run page
-      # rather than only in a log nobody opens when the job is green — the floor file's own
-      # maintenance rule depends on somebody reading that line. `pipefail` is load-bearing: the
-      # default shell is `bash -e`, where `tee` supplies the pipeline's exit status and a
-      # regressed ratchet would report success.
+      # Tee'd into the run summary so the "consider raising it" suggestion lands on the run page,
+      # not only in a log nobody opens when the job is green; the floor file's own maintenance
+      # rule depends on somebody reading that line. `pipefail` is load-bearing: the default
+      # shell is `bash -e`, where `tee` supplies the pipeline's exit status and a regressed
+      # ratchet would report success.
       - name: compare against the committed floor
         run: |
           set -euo pipefail
@@ -980,15 +976,15 @@ jobs:
           fail_ci_if_error: true
 
   # The other half of the ratchet. `coverage` above builds without `--features integration`, so
-  # the 118 `crates/db`, 86 `services/api` and 55 `services/sync` tests never run there and code
-  # only they reach is not counted as covered by anything — a regression in it moves no number in
+  # the `crates/db`, `services/api` and `services/sync` integration suites never run there and code
+  # only they reach is not counted as covered by anything: a regression in it moves no number in
   # CI at all. This job measures the same workspace with those suites on, against its own floor in
   # `.github/coverage-floor-integration.txt`. Two files, never one: the values cover different
   # test sets, so either substituted for the other is a gate that can never pass or never fail.
   #
   # Gated on `full` like `mutants`, and for its reason: Docker, the migrations and an instrumented
   # build of the whole workspace is not a per-pull-request budget. Unlike `mutants` it is **not**
-  # `continue-on-error` — the outcome is a comparison against a committed number, not a function of
+  # `continue-on-error`: the outcome is a comparison against a committed number, not a function of
   # how long the run got. The floor ships as the `unset` sentinel, so the first run reports what it
   # measured and passes; committing that value is what arms the gate.
   coverage-integration:
@@ -1045,7 +1041,7 @@ jobs:
             --output-path target/llvm-cov/coverage-integration.json
           cargo llvm-cov report --codecov --output-path target/llvm-cov/codecov-integration.json
 
-      # Reports on the summary either way — while the floor is `unset` that report *is* the
+      # Reports on the summary either way; while the floor is `unset` that report *is* the
       # deliverable, since it carries the number to commit. See the `coverage` job for why
       # `pipefail` is not optional here.
       - name: compare against the committed integration floor
@@ -1080,11 +1076,11 @@ jobs:
   # What coverage cannot answer: a line executing is not a line anything asserted on. `cargo
   # mutants` rewrites one function body at a time and re-runs the tests; a surviving mutant is a
   # behaviour change nothing checked. Scoped to the four pure decision cores by
-  # `.cargo/mutants.toml` — the rest of the workspace is I/O-shaped, where mutants mostly time out.
+  # `.cargo/mutants.toml`; the rest of the workspace is I/O-shaped, where mutants mostly time out.
   #
   # Advisory and scheduled-only: an outcome that depends on how long the run got should not block a
   # merge, and a survivor is triage work done on a report you go and read. Force one with
-  # `workflow_dispatch` + `full`.
+  # `workflow_dispatch` and `full`.
   mutants:
     name: mutation testing (advisory)
     runs-on: ubuntu-latest
@@ -1140,7 +1136,7 @@ jobs:
     timeout-minutes: 15
     needs: [changes]
     # `rust` covers `deny.toml` and both lockfiles. The advisory half is time-dependent, which is
-    # what the weekly `schedule` run is for — `rust` is `true` there by construction.
+    # what the weekly `schedule` run is for; `rust` is `true` there by construction.
     if: needs.changes.outputs.rust == 'true'
     permissions:
       contents: read # to check out the code
@@ -1166,10 +1162,10 @@ jobs:
           command-arguments: -D unnecessary-skip
 
   # `cargo-deny` above decides which licences may enter the graph. This decides whether their
-  # terms actually ship: `THIRD-PARTY-NOTICES` is committed, copied into every image beside
-  # `/LICENSE`, and served to readers at `/third-party-notices` — so a lockfile change that adds
-  # a crate and leaves the document behind publishes a binary distribution whose notices are
-  # incomplete, and nothing else would say so.
+  # terms ship: `THIRD-PARTY-NOTICES` is committed, copied into every image beside `/LICENSE`, and
+  # served to readers at `/third-party-notices`, so a lockfile change that adds a crate and leaves
+  # the document behind publishes a binary distribution whose notices are incomplete, and nothing
+  # else would say so.
   #
   # Not part of `xtask ci`: that gate is deliberately cargo-and-rustfmt-only, and folding this in
   # would make `cargo-about` a prerequisite for every developer running it.
@@ -1207,7 +1203,7 @@ jobs:
         with:
           tool: cargo-about
 
-      # Generation runs `--frozen`, which is what makes the artefact reproducible — but offline
+      # Generation runs `--frozen`, which is what makes the artefact reproducible, but offline
       # means the licence *files* have to already be on disk, and they live in the extracted
       # crate sources. `cargo fetch` unpacks them; without this the run would harvest nothing and
       # report drift that does not exist. Both graphs, because `web/frontend` is its own
@@ -1215,11 +1211,11 @@ jobs:
       #
       # **Every target the `about.toml` files name, explicitly.** `cargo fetch` resolves for the
       # *host* unless told otherwise, so a Linux runner never unpacks a Windows-only crate and
-      # cargo-about silently omits it — while a developer regenerating on Windows omits the
-      # Linux-only ones instead. The two then overwrite each other for ever, each "fixing" drift
-      # the other introduced, and the committed document is incomplete on both. It only became
-      # visible when `web/frontend` grew target-specific dependencies (`rfd` pulls `ashpd` on
-      # Linux; the passkey backend is Windows-only); before that its graph was wasm alone.
+      # cargo-about silently omits it, while a developer regenerating on Windows omits the
+      # Linux-only ones instead. The two would then overwrite each other for ever, each "fixing"
+      # drift the other introduced, and the committed document would be incomplete on both.
+      # `web/frontend` has target-specific dependencies (`rfd` pulls `ashpd` on Linux; the
+      # passkey backend is Windows-only).
       - name: fetch every dependency graph, for every target the notices cover
         run: |
           cargo fetch --locked
@@ -1293,22 +1289,21 @@ jobs:
       # the lockfile does not satisfy the manifests.
       #
       # Deliberately no `--offline`: resolving metadata reads each dependency's manifest from the
-      # extracted `.crate`, and this job has no cache step, so `--offline` failed on the first
-      # crates.io dependency rather than on any real drift — a gate that fails whatever the
+      # extracted `.crate`, and this job has no cache step, so `--offline` would fail on the first
+      # crates.io dependency instead of on any real drift: a gate that fails whatever the
       # lockfile says.
       - name: Cargo.lock satisfies every manifest
         run: cargo metadata --locked --format-version 1 > /dev/null
 
-      # Same guarantee for `web/frontend`, which has its own lockfile no job above covers — and is
+      # Same guarantee for `web/frontend`, which has its own lockfile no job above covers, and is
       # why this job also answers to the `frontend` filter.
       - name: web/frontend Cargo.lock satisfies its manifest
         working-directory: web/frontend
         run: cargo metadata --locked --format-version 1 > /dev/null
 
-  # The Prometheus rules, dashboards and their promtool tests were here until 2026-08-03. They now
-  # live in `TimSchoenle/helm-charts` (`charts/tankovault`), which is what actually deploys them,
-  # and are gated by that repository's own chart tests. What survives is the check that the
-  # deployable compose file still parses — that file did not move.
+  # The Prometheus rules, dashboards and their promtool tests live in `TimSchoenle/helm-charts`
+  # (`charts/tankovault`), which is what deploys them, and are gated by that repository's own
+  # chart tests. This job checks that the deployable compose file still parses.
   compose:
     name: compose file is valid
     runs-on: ubuntu-latest
@@ -1332,7 +1327,7 @@ jobs:
       #
       # One entry per `${VAR:?…}` in the compose file, and the list is exhaustive on purpose:
       # `config` stops at the *first* unset required variable, so a missing entry here fails this
-      # job with a message about a secret rather than about the file it exists to check.
+      # job with a message about a secret, not about the file it exists to check.
       # To check: `grep -oE '\$\{[A-Z_]+:\?' deploy/docker-compose.yml`.
       - name: compose file parses
         env:
@@ -1349,9 +1344,8 @@ jobs:
   # everywhere else.
   #
   # Without it, editing `README.md` directly would appear to work right up until the next pull
-  # request silently reverted it — and the numbers the document quotes would be back to being
-  # maintained by hand, which is how the tech-stack line came to advertise a Postgres and a Redis
-  # major behind the ones the compose file has been running for months.
+  # request silently reverted it, and the numbers the document quotes, such as the Postgres and
+  # Redis majors, would be back to being maintained by hand and drift from the compose file.
   #
   # `check: true` writes nothing and reports the first differing line, so the log says whether it
   # is a real change or a stray newline.
@@ -1374,8 +1368,8 @@ jobs:
         with:
           persist-credentials: false
 
-      # Invoked through `bash` rather than executed: this repository is authored on Windows,
-      # where git does not record the executable bit.
+      # Invoked through `bash`, not executed: this repository is authored on Windows, where git
+      # does not record the executable bit.
       - name: collect the stack facts
         id: stack
         run: |
@@ -1402,48 +1396,46 @@ jobs:
   # of an image build; everything above them is a `COPY` onto `scratch`.
   #
   # Built once per architecture under its own cache scope, which every consumer imports read-only.
-  # Run inside the image matrix instead, every leg cooked the identical graph and all of them
-  # exported into the same unscoped GHA cache concurrently — the writes raced, and the matrix kept
-  # missing a cache it had just populated. `builder` takes no `ARG BIN`, so every leg's key for it
-  # is identical and each leg is a cache hit plus a `COPY`. `cacheonly` because only the layers are
+  # Run inside the image matrix instead, every leg would cook the identical graph and all of them
+  # would export into the same cache concurrently: the writes race, and the matrix keeps missing a
+  # cache it has just populated. `builder` takes no `ARG BIN`, so every leg's key for it is
+  # identical and each leg is a cache hit and a `COPY`. `cacheonly` because only the layers are
   # wanted.
   #
   # The tag is **arch-qualified** because a BuildKit cache is not portable across architectures:
   # the `chef` base resolves to a different digest per platform, so every key downstream of it
-  # differs and an amd64 export is a guaranteed miss on an arm64 build. While the tag was
-  # unqualified, `release-please.yaml` — which then imported it — built nine arm64 images that
-  # silently got nothing and cooked ~600 crates each.
+  # differs and an amd64 export is a guaranteed miss on an arm64 build. An unqualified tag would
+  # leave every arm64 image silently getting nothing and cooking ~600 crates each.
   #
-  # `platforms` is stated rather than left to default to the host, here and at every consumer, so
-  # the key a warm-up writes and the key a consumer looks up are visibly the same thing.
+  # `platforms` is stated, not left to default to the host, here and at every consumer, so the
+  # key a warm-up writes and the key a consumer looks up are visibly the same thing.
   #
   # **`type=registry`, not `type=gha`.** These exports are the largest thing this repository
-  # caches — `mode=max` on both architectures held ~9.5 GB of a 10 GB Actions budget — and the
-  # budget is per repository and LRU, so they were evicting the Rust caches every other job here
-  # depends on and then being evicted in turn. GHCR is unmetered for public packages, is not
+  # caches (`mode=max` on both architectures nearly fills a 10 GB Actions budget), and that
+  # budget is per repository and LRU, so they would evict the Rust caches every other job here
+  # depends on and then be evicted in turn. GHCR is unmetered for public packages, is not
   # LRU-evicted, and one tag is readable from pull requests and from `main` without the ref
   # scoping the Actions cache imposes. (`release-please.yaml` reads none of this file's tags;
-  # its own `release-deps` job says why.) `image-manifest` and
-  # `oci-mediatypes` are both required: GHCR rejects the cache manifest BuildKit writes without
-  # them.
+  # its own `release-deps` job says why.) `image-manifest` and `oci-mediatypes` are both
+  # required: GHCR rejects the cache manifest BuildKit writes without them.
   #
-  # **Runs, and exports, only off `main`** — `changes` sets `deps_scope` on a push, schedule or
+  # **Runs, and exports, only off `main`.** `changes` sets `deps_scope` on a push, schedule or
   # dispatch whose ref is `refs/heads/main` and nowhere else, and this job is skipped when it is
   # empty. A registry tag has no ref scoping to protect it, and a GHCR package has no per-tag
   # permission either: the `packages: write` this job needs to export is write to every tag on
   # `buildcache`, `release-deps-<arch>` included, while BuildKit runs the branch's build scripts.
   # So no pull request runs this job, and none holds `packages: write` anywhere in this file.
-  # Pull requests still *import* `backend-deps-<arch>` in their image legs with `packages: read`
-  # — including forks, whose read-only token still pulls a public package, and whose miss is a
-  # slow build rather than a failure since BuildKit treats an unreadable `cache-from` as a
-  # warning. The `changes` step that sets the scope says what that costs a pull request.
+  # Pull requests still *import* `backend-deps-<arch>` in their image legs with `packages: read`,
+  # including forks, whose read-only token still pulls a public package, and whose miss is a
+  # slow build, not a failure, since BuildKit treats an unreadable `cache-from` as a warning.
+  # The `changes` step that sets the scope says what that costs a pull request.
   #
   # Deliberately **not** `needs: lint`. A warm-up is not a gate: nothing it produces reaches a
   # registry, and `docker`, `docker-arm64` and `docker-frontend` all still wait on `lint`. Gating
-  # the warm-up too only severed the cache lineage — `main` went red on a three-file `cargo fmt`
-  # diff, this job was skipped on every push after it, and `backend-deps-<arch>` was never written
-  # at all, so the next release warm-up cooked ~600 crates cold. One wasted deps build on a red
-  # `main` is cheaper than a cold cache that compounds across every later run.
+  # the warm-up too would sever the cache lineage: a red `main` would skip this job on every push
+  # after it, `backend-deps-<arch>` would never be written, and the next release warm-up would
+  # cook ~600 crates cold. One wasted deps build on a red `main` is cheaper than a cold cache that
+  # compounds across every later run.
   docker-deps:
     name: docker build (deps, ${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
@@ -1479,15 +1471,13 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       # `SOURCE_DATE_EPOCH` arrives from this file's workflow-level `env:` and is part of the key
-      # this step writes — which is precisely why it is a constant there. This build exports no
+      # this step writes, which is precisely why it is a constant there. This build exports no
       # image, so the value clamps nothing here; it is set anyway so the tag stays readable by the
       # publishing legs in release-please.yaml, which do export one.
       # `build-cache`, so one export carries the musl chain *and* the wasm one under one tag. That
-      # is what keeps every consumer on a single lineage — see the stage's comment in
-      # `deploy/docker/Dockerfile` for the 43 minutes the second lineage cost `docker-frontend`
-      # on every run. `builder` and `wasm-builder` share no edge, so this stays one solve's worth
-      # of wall clock rather than two, and it replaces the `docker-wasm-deps` job that used to run
-      # beside it.
+      # is what keeps every consumer on a single lineage; see the stage's comment in
+      # `deploy/docker/Dockerfile` for what a second lineage costs `docker-frontend`. `builder`
+      # and `wasm-builder` share no edge, so this stays one solve's worth of wall clock, not two.
       - name: cook both dependency graphs and compile every binary
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -1558,22 +1548,22 @@ jobs:
           # Loaded into the local daemon so container-structure-test can inspect it by tag.
           load: true
           tags: tankovault-${{ matrix.bin }}:ci
-          # No attestation/provenance layer. Nothing here is published — the image is built to be
+          # No attestation/provenance layer. Nothing here is published: the image is built to be
           # structure-tested and thrown away. It still inherits the workflow-level
           # `SOURCE_DATE_EPOCH`, because that value is part of the key it looks up.
           provenance: false
-          # Import only — this job deliberately writes no cache. The tag below is published by
+          # Import only: this job deliberately writes no cache. The tag below is published by
           # `docker-deps` in this same run at this same commit, which is what makes `COPY . .`
           # inside `builder` a hit; this leg's remaining work is one `COPY` onto `scratch`.
           #
           # Do not add `cache-to`: `mode=max` re-exports imported layers too, so each leg would
           # upload its own copy of the multi-gigabyte `cook` layer. On the Actions cache that
-          # evicted `backend-deps` itself; on GHCR it instead makes every later import pull a
-          # duplicate chain, which is a slower gate for no benefit either way.
+          # evicts `backend-deps` itself; on GHCR it makes every later import pull a duplicate
+          # chain, which is a slower gate for no benefit either way.
           # One tag: the one `docker-deps` exported in this run off `main`, or `main`'s last
           # `backend-deps` on a pull request, where `docker-deps` does not run. Importing two
-          # lineages at once made BuildKit resolve one and drop the other (47 minutes in run 3645
-          # against 1 on `main`), so a second `cache-from` line here is not a free fallback.
+          # lineages at once makes BuildKit resolve one and drop the other, at tens of minutes
+          # against one, so a second `cache-from` line here is not a free fallback.
           cache-from: type=registry,ref=${{ needs.changes.outputs.buildcache }}:${{ needs.changes.outputs.deps_scope || 'backend-deps' }}-amd64
 
       # The generated documents, on the host: `--target contract` is a `scratch` stage holding
@@ -1590,8 +1580,8 @@ jobs:
           provenance: false
           cache-from: type=registry,ref=${{ needs.changes.outputs.buildcache }}:${{ needs.changes.outputs.deps_scope || 'backend-deps' }}-amd64
 
-      # The checkpoint the labels exist for. See the script for why it reads the image rather than
-      # the Dockerfile, and why the embedded document is compared as well.
+      # The checkpoint the labels exist for. See the script for why it reads the image, not the
+      # Dockerfile, and why the embedded document is compared as well.
       - name: the image publishes the contract it was built to publish
         env:
           BIN: ${{ matrix.bin }}
@@ -1633,23 +1623,20 @@ jobs:
   # Cross-architecture build. Native, not QEMU: `wreq` compiles BoringSSL from C/C++/assembly and
   # an emulated build costs upwards of an hour.
   #
-  # This ran behind an `ENABLE_ARM64_CI` repository variable until releases began publishing, on
-  # the grounds that `ubuntu-24.04-arm` runners bill on private repositories. It is unconditional
-  # now because every release publishes `linux/arm64` for all nine images: with it off, a release
-  # was the first time that path ran. That is how five hard-coded `ld-musl-x86_64.so.1` paths
-  # survived unnoticed — the loader is `ld-musl-aarch64.so.1` on arm64, so every runtime stage
-  # would have failed at `COPY`. The libraries now stage into `/sysroot*` trees from `uname -m`,
-  # and the structure tests carry the same split. Do not put the gate back without also accepting
-  # that a tag is where arm64 breakage would surface.
+  # Unconditional, because every release publishes `linux/arm64` for all nine images: behind a
+  # switch, a release would be the first time that path runs, and an architecture-specific path
+  # (the loader is `ld-musl-aarch64.so.1` on arm64, not `ld-musl-x86_64.so.1`) would fail every
+  # runtime stage at `COPY`. The libraries stage into `/sysroot*` trees from `uname -m`, and the
+  # structure tests carry the same split. Do not gate this without also accepting that a tag is
+  # where arm64 breakage would surface.
   #
   # Scoped to the two images whose content differs by architecture: a `scratch` service and the
   # Debian-based `render` tier.
   #
-  # These legs used to cook their own dependency graph into a per-image scope
-  # (`arm64-api`, `arm64-render`), which held two full duplicates of one arm64 `builder` chain in a
-  # 10 GB LRU budget and was readable by nothing else — least of all the release, which builds
-  # nine arm64 images. They now import the shared `backend-deps-arm64` and write nothing, exactly
-  # as the amd64 `docker` legs treat `backend-deps-amd64`.
+  # These legs import the shared `backend-deps-arm64` and write nothing, exactly as the amd64
+  # `docker` legs treat `backend-deps-amd64`. A per-image scope would hold full duplicates of one
+  # arm64 `builder` chain and be readable by nothing else, least of all the release, which builds
+  # nine arm64 images.
   docker-arm64:
     name: docker build (arm64, ${{ matrix.bin }})
     runs-on: ubuntu-26.04-arm
@@ -1657,8 +1644,8 @@ jobs:
     needs: [changes, lint, docker-deps]
     # `arm64` is false on pull requests, where `docker-deps` builds no arm64 leg and there is no
     # `backend-deps-arm64` at this commit for these legs to import. Without the second test they
-    # would not skip — they would cook their own arm64 dependency graph, which is the 30 minutes
-    # dropping the warm-up was meant to save.
+    # would not skip; they would cook their own arm64 dependency graph, the 30 minutes the
+    # pull-request architecture set exists to save.
     if: ${{ !cancelled() && !failure() && needs.changes.outputs.docker == 'true' && needs.changes.outputs.arm64 == 'true' }}
     permissions:
       contents: read # to check out the build context
@@ -1717,8 +1704,8 @@ jobs:
           provenance: false
           cache-from: type=registry,ref=${{ needs.changes.outputs.buildcache }}:${{ needs.changes.outputs.deps_scope || 'backend-deps' }}-arm64
 
-      # The checkpoint the labels exist for. See the script for why it reads the image rather than
-      # the Dockerfile, and why the embedded document is compared as well.
+      # The checkpoint the labels exist for. See the script for why it reads the image, not the
+      # Dockerfile, and why the embedded document is compared as well.
       - name: the image publishes the contract it was built to publish
         env:
           BIN: ${{ matrix.bin }}
@@ -1760,8 +1747,8 @@ jobs:
     # 90, matching `docker-deps`, because this leg still has the workflow's longest cold path: it
     # assembles both compile chains, so with nothing to import it builds `builder` *and*
     # `wasm-builder`. That happens whenever the Dockerfile itself changes, since a pull request
-    # exports no cache and `main`'s tag is then keyed on the old file — this job timed out at
-    # exactly 45m00s on the change that fixed the toolchain mismatch, having built correctly.
+    # exports no cache and `main`'s tag is then keyed on the old file; 45 minutes is not enough
+    # for a correct build on that path.
     timeout-minutes: 90
     needs: [changes, lint, docker-deps]
     if: ${{ !cancelled() && !failure() && needs.changes.outputs.docker == 'true' }}
@@ -1825,8 +1812,8 @@ jobs:
           provenance: false
           cache-from: type=registry,ref=${{ needs.changes.outputs.buildcache }}:${{ needs.changes.outputs.deps_scope || 'backend-deps' }}-amd64
 
-      # The checkpoint the labels exist for. See the script for why it reads the image rather than
-      # the Dockerfile, and why the embedded document is compared as well.
+      # The checkpoint the labels exist for. See the script for why it reads the image, not the
+      # Dockerfile, and why the embedded document is compared as well.
       - name: the image publishes the contract it was built to publish
         run: |
           bash .github/scripts/verify-config-contract.sh \
@@ -1853,7 +1840,7 @@ jobs:
             --config deploy/docker/cst/frontend.yaml \
             --config deploy/docker/cst/loader-amd64.yaml
 
-  # The one required status check — point branch protection here and nowhere else. Naming the
+  # The one required status check; point branch protection here and nowhere else. Naming the
   # individual jobs does not survive path filtering: GitHub treats a check that never reports as
   # pending forever, so every skipped job would block its own pull request.
   #

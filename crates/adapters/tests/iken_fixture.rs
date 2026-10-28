@@ -1,8 +1,8 @@
-//! Fixture tests for the Iken platform adapter, against the *shipped* preset config.
+//! Tests the Iken platform adapter against fixtures, against the *shipped* preset config.
 //!
 //! Every fixture is a live response trimmed to the fields the adapter reads. The platform
 //! publishes its paywall as data (`isLocked`/`unlockAt`), so the early-access assertions here
-//! pin an exact contract rather than an inferred one.
+//! pin an exact contract, not an inferred one.
 
 use async_trait::async_trait;
 use std::sync::Arc;
@@ -80,7 +80,7 @@ async fn the_catalogue_pages_on_the_platforms_own_total() {
         first.items.iter().map(|i| &i.path).collect::<Vec<_>>()
     );
 
-    // Page 18 of 40 covers 720 > 687, so the walk stops there rather than on a short page.
+    // Page 18 of 40 covers 720 > 687, so the walk stops there, not on a short page.
     let past_end = adapter.list_catalog(&ctx, 18).await.expect("page parses");
     assert!(!past_end.has_next);
 }
@@ -115,7 +115,7 @@ async fn series_metadata_comes_from_the_detail_endpoint() {
         .await
         .expect("series parses");
 
-    // Stored exactly as typed, newlines included — and the title becomes the matching key, so
+    // Stored exactly as typed, newlines included, and the title becomes the matching key, so
     // an untidied one keys differently from the same title read anywhere else.
     assert_eq!(meta.title, "Why I Quit Being the Demon King");
     assert_eq!(meta.status, SeriesStatus::Ongoing);
@@ -133,7 +133,7 @@ async fn series_metadata_comes_from_the_detail_endpoint() {
 }
 
 /// The chapter endpoint is keyed by the numeric series id, which appears only in the detail
-/// document — so the adapter has to fetch that first. Keying it by the slug returns nothing,
+/// document, so the adapter has to fetch that first. Keying it by the slug returns nothing,
 /// and every series would ingest zero chapters without anything failing.
 #[tokio::test]
 async fn chapters_carry_the_paywall_the_platform_publishes() {

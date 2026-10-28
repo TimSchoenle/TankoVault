@@ -1,4 +1,4 @@
-//! Fixture tests for the `mgread` adapter, against the *shipped* preset config.
+//! Tests the `mgread` adapter against fixtures, against the *shipped* preset config.
 //!
 //! Every fixture is a live response trimmed to what the adapter reads. The site's chapter list
 //! is the interesting part: the page carries only its newest 24 rows, so the assertions below
@@ -64,7 +64,7 @@ impl Fetcher for SiteFetcher {
     }
 }
 
-/// Build the live adapter for the shipped preset, paired with a fixture-serving context.
+/// Builds the live adapter for the shipped preset, paired with a fixture-serving context.
 fn preset_adapter(fetcher: Arc<SiteFetcher>) -> (Box<dyn SourceAdapter>, Ctx) {
     let preset = builtin_presets()
         .into_iter()
@@ -99,8 +99,8 @@ async fn the_catalogue_reads_cards_and_chains_on_the_head_link() {
 }
 
 /// The theme's visible paginator renders a "Next page" control on the last listing too, and the
-/// page after it answers 404 — so a walk that waited for an empty page would end on an error
-/// rather than a signal. `link[rel=next]` is absent here, which is what stops it.
+/// page after it answers 404, so a walk that waited for an empty page would end on an error
+/// instead of a signal. `link[rel=next]` is absent here, which is what stops it.
 #[tokio::test]
 async fn the_last_catalogue_page_ends_the_walk_while_still_yielding_items() {
     let (adapter, ctx) = preset_adapter(Arc::new(SiteFetcher {
@@ -139,7 +139,7 @@ async fn the_feed_reads_the_newest_chapter_off_each_card() {
 }
 
 /// The reading-time pill (`1h 12m to finish`) sits in `#genre-tags` wearing the genres' classes
-/// and would otherwise be interned as a tag — one distinct facet per duration, and a feature the
+/// and would otherwise be interned as a tag: one distinct facet per duration, and a feature the
 /// recommender would learn from.
 #[tokio::test]
 async fn series_metadata_takes_the_genres_and_not_the_reading_time_pill() {
@@ -171,9 +171,11 @@ async fn series_metadata_takes_the_genres_and_not_the_reading_time_pill() {
     assert!(meta.description.is_some());
 }
 
-/// Bug guard for the failure this adapter exists to prevent: the series page server-renders only
-/// its newest 24 chapter rows, so reading chapters from markup truncates a long series to its
-/// most recent page — no error, just a chapter count that looks plausible and is wrong.
+/// Chapters come from the endpoint and follow its page count.
+///
+/// The failure this adapter exists to prevent: the series page server-renders only its newest 24
+/// chapter rows, so reading chapters from markup truncates a long series to its most recent page,
+/// with no error, just a chapter count that looks plausible and is wrong.
 #[tokio::test]
 async fn chapters_come_from_the_endpoint_and_follow_its_page_count() {
     let fetcher = Arc::new(SiteFetcher {
@@ -238,7 +240,7 @@ async fn a_chapter_date_carries_the_sites_own_offset() {
 }
 
 /// A deployment with the `WordPress` core routes locked down still has to work: the series page
-/// states both facts too, and the adapter falls back to it rather than losing the provider. The
+/// states both facts too, and the adapter falls back to it instead of losing the provider. The
 /// offset then comes from a chapter row's own RFC 3339 timestamp.
 #[tokio::test]
 async fn an_unavailable_posts_route_falls_back_to_the_series_page() {

@@ -1,13 +1,15 @@
-//! Presets on the Iken platform.
+//! Owns the presets on the Iken platform.
 
 use serde_json::json;
 use tankovault_domain::{AdapterKind, Politeness};
 
 use super::BuiltinPreset;
 
-/// An Iken-hosted site. The API host is `api.` prefixed onto the reader host on every one of
-/// them, but it is stated rather than derived: the adapter must not have to guess where a
-/// deployment put its API, and the config is the one place a move is fixable without a release.
+/// Returns the preset for an Iken-hosted site.
+///
+/// The API host is `api.` prefixed onto the reader host on every one of them, but it is stated, not
+/// derived: the adapter must not have to guess where a deployment put its API, and the config is
+/// the one place a move is fixable without a release.
 fn iken(slug: &'static str, name: &'static str, base_url: &'static str) -> BuiltinPreset {
     BuiltinPreset {
         slug,
@@ -19,10 +21,11 @@ fn iken(slug: &'static str, name: &'static str, base_url: &'static str) -> Built
     }
 }
 
-/// The Iken platform: one hosted back end behind several scanlator sites, each serving its JSON
-/// from a sibling host the preset names. `base_url` stays the reader host so stored paths remain
-/// openable. Not a `family`, because a family merges *selectors* onto defaults and there is no
-/// markup here to select.
+/// Returns the Iken platform presets: one hosted back end behind several scanlator sites, each
+/// serving its JSON from a sibling host the preset names.
+///
+/// `base_url` stays the reader host so stored paths remain openable. Not a `family`, because a
+/// family merges *selectors* onto defaults and there is no markup here to select.
 pub(super) fn iken_platform() -> Vec<BuiltinPreset> {
     vec![
         iken("vortexscans", "Vortex Scans", "https://vortexscans.org"),

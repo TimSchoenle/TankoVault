@@ -1,11 +1,11 @@
-//! Live provider probe: runs a preset against the real site through the production fetch stack
+//! Runs the live provider probe: a preset against the real site through the production fetch stack
 //! and prints what a fast scan and a bounded slice of a full scan would actually ingest.
 //!
-//! An example rather than a test because it needs the public internet and a running TRAWL
+//! An example, not a test, because it needs the public internet and a running TRAWL
 //! container (`TANKOVAULT_PROBE_SOLVER`, default `http://127.0.0.1:8191`). It is the tool that
 //! derives and verifies every selector in [`presets`](tankovault_adapters::presets): a preset
 //! whose fast scan reads an empty feed, or whose catalogue walk never terminates, fails here
-//! rather than in production, where an empty parse is a valid answer nothing alerts on.
+//! instead of in production, where an empty parse is a valid answer nothing alerts on.
 //!
 //! ```text
 //! cargo run -p tankovault-adapters --example probe -- <slug> [--page N] [--series N]
@@ -48,15 +48,17 @@ struct Args {
     page: u32,
     /// How many catalogue items to fetch series metadata and chapters for.
     series: usize,
-    /// Print every chapter rather than the first and last few.
+    /// Print every chapter, not the first and last few.
     all_chapters: bool,
     /// Walk the catalogue for this many consecutive pages instead of sampling one.
     walk: Option<u32>,
     /// Fetch this relative path and print the body instead of probing (selector recon).
     dump: Option<String>,
-    /// Report this one series instead of sampling the catalogue. A selector that fires on a
-    /// minority of rows — a paywall badge above all — is unreachable from a sample: the
-    /// catalogue's first entries are whatever the site sorts first, not the ones carrying it.
+    /// Report this one series instead of sampling the catalogue.
+    ///
+    /// A selector that fires on a minority of rows (a paywall badge above all) is unreachable from
+    /// a sample: the catalogue's first entries are whatever the site sorts first, not the ones
+    /// carrying it.
     series_path: Option<String>,
 }
 
@@ -123,7 +125,7 @@ fn parse_kind(name: &str) -> Result<AdapterKind, Failure> {
     }
 }
 
-/// The shipped preset for `slug`, as a probe target.
+/// Returns the shipped preset for `slug`, as a probe target.
 fn shipped(slug: &str) -> Result<Target, Failure> {
     let preset = builtin_presets()
         .into_iter()
@@ -138,7 +140,7 @@ fn shipped(slug: &str) -> Result<Target, Failure> {
     })
 }
 
-/// The provider's real fetch stack, at the preset's own crawl budget.
+/// Builds the provider's real fetch stack, at the preset's own crawl budget.
 fn context(target: &Target) -> Result<Ctx, Failure> {
     let endpoint = std::env::var("TANKOVAULT_PROBE_SOLVER")
         .unwrap_or_else(|_| "http://127.0.0.1:8191".to_owned());
@@ -193,7 +195,7 @@ async fn run(args: Args) -> Result<(), Failure> {
     Ok(())
 }
 
-/// Probe the latest-updates feed; returns the first item's path.
+/// Probes the latest-updates feed and returns the first item's path.
 async fn fast_scan(adapter: &dyn SourceAdapter, ctx: &Ctx) -> Option<String> {
     println!("\n-- fast scan (list_latest)");
     match adapter.list_latest(ctx).await {
@@ -216,7 +218,7 @@ async fn fast_scan(adapter: &dyn SourceAdapter, ctx: &Ctx) -> Option<String> {
     }
 }
 
-/// Probe one catalogue page and the first `series` entries on it.
+/// Probes one catalogue page and the first `series` entries on it.
 async fn full_scan(adapter: &dyn SourceAdapter, ctx: &Ctx, page: u32, series: usize) {
     println!("\n-- full scan (list_catalog page {page})");
     let catalogue = match adapter.list_catalog(ctx, page).await {
@@ -248,8 +250,8 @@ async fn full_scan(adapter: &dyn SourceAdapter, ctx: &Ctx, page: u32, series: us
 /// re-serving an earlier page, which is the shape of a server-clamped paginator.
 const DEEP_PAGE: u32 = 9_999;
 
-/// Walk the catalogue the way a full scan does — consecutive pages until the adapter says there
-/// is no next one — then probe a page far past the end.
+/// Walks the catalogue the way a full scan does (consecutive pages until the adapter says there
+/// is no next one), then probes a page far past the end.
 ///
 /// This is the check a single-page sample cannot make. Two failure modes are only visible
 /// across pages, and neither reports an error: a paginator clamped server-side re-serves the
@@ -340,7 +342,7 @@ async fn catalogue_walk(adapter: &dyn SourceAdapter, ctx: &Ctx, limit: u32) {
     }
 }
 
-/// Fetch and print one series' metadata and chapter list.
+/// Fetches and prints one series' metadata and chapter list.
 async fn series_report(adapter: &dyn SourceAdapter, ctx: &Ctx, path: &str, all: bool) {
     println!("   path      {path}");
     match adapter.fetch_series(ctx, path).await {

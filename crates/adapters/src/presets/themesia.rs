@@ -1,23 +1,23 @@
-//! Presets on the `MangaThemesia` `WordPress` theme.
+//! Owns the presets on the `MangaThemesia` `WordPress` theme.
 
 use serde_json::{Value, json};
 use tankovault_domain::Politeness;
 
 use super::{BuiltinPreset, THEMESIA, plain};
 
-/// Providers on the `MangaThemesia` theme.
+/// Returns the providers on the `MangaThemesia` theme.
 pub(super) fn mangathemesia_family() -> Vec<BuiltinPreset> {
     vec![
-        // The 2026-08 expansion: the ex-Asura scanlator sites, all on the theme itself. Three
+        // The ex-Asura scanlator sites, all on the theme itself. Three
         // things vary across them and nothing else does: a `catalog`/`latest` pair where the
         // install renamed the theme's listing directory (`themesia_in`), the series template's
         // info block (`infotable_series`), and the coin plugin's lock selector where the site
         // sells early access (`coin_gated_chapters`). They are independent, so a site carrying
-        // two of them says so at the call site rather than in a helper named after the pair.
+        // two of them says so at the call site, not in a helper named after the pair.
         // This one and `kingofshojo` below serve the same catalogue from two domains. Both are
         // kept, for the reason the Manganato clones are: each has its own rate limit, health
         // state and reader-facing links, and the matcher collapses the duplicated series into
-        // one entry with two sources — which is exactly what a second mirror is worth.
+        // one entry with two sources, which is exactly what a second mirror is worth.
         plain(
             "arenascans",
             "Arena Scans",
@@ -62,19 +62,18 @@ pub(super) fn mangathemesia_family() -> Vec<BuiltinPreset> {
             "comics",
         ),
         themesia_in("razure", "Razure", "https://razure.org", "series"),
-        // `readcomiconline.xyz` was probed and rejected. It parses — 766 chapter rows on a
-        // long-running title — but two things make it worse than no source. Its feed ignores
-        // `?order=update` and returns a slice of the alphabetical listing, so a fast scan reads
-        // thirty arbitrary stubs and ingests nothing; and its one-shots are labelled `<Title>
-        // #Full`, so `parse_chapter_number`'s bare-number fallback stores `.357!` as chapter
-        // 357. A live fast scan confirmed it: 30 series seen, zero chapters.
-        // The 2026-08-26 expansion.
+        // `readcomiconline.xyz` is deliberately absent. It parses, but two things make it worse
+        // than no source. Its feed ignores `?order=update` and returns a slice of the
+        // alphabetical listing, so a fast scan reads thirty arbitrary stubs and ingests nothing;
+        // and its one-shots are labelled `<Title> #Full`, so `parse_chapter_number`'s
+        // bare-number fallback stores `.357!` as chapter 357.
+        //
         // Runs the coin plugin, and deliberately carries **no** `locked` selector: this install
         // renders a paid row as a modal trigger whose anchor has no `href` at all, so the row has
-        // no chapter URL and is dropped before access is ever read — the shape `violetscans` and
-        // `thunderscans` already have. A `span.text-gold` rule here could never fire, and a rule
+        // no chapter URL and is dropped before access is ever read, the shape `violetscans` and
+        // `thunderscans` have. A `span.text-gold` rule here could never fire, and a rule
         // that cannot fire reads as a live one. `tests/expansion_presets_fixture.rs` pins the
-        // reason, so a future install that *does* link its paid rows fails a test rather than
+        // reason, so a future install that *does* link its paid rows fails a test instead of
         // silently ingesting them as free.
         themesia(
             "athreascans",
@@ -96,7 +95,7 @@ pub(super) fn mangathemesia_family() -> Vec<BuiltinPreset> {
             // This install's paginator is clamped server-side: `/manga/page/3/`, `?page=3` and
             // `?page=9999` all return the byte-identical page-1 document, 40 cards, and the
             // theme still renders a next control. Without `pages: 1` the yielded-items fallback
-            // never goes false and the walk re-ingests page 1 until the planner's cap — 20 000
+            // never goes false and the walk re-ingests page 1 until the planner's cap: 20 000
             // requests for 40 series, with every one of them "succeeding".
             json!({ "catalog": { "pages": 1 } }),
         ),
@@ -115,12 +114,12 @@ pub(super) fn mangathemesia_family() -> Vec<BuiltinPreset> {
     ]
 }
 
-/// The `catalog`/`latest`/`series` fragment for the two installs that replaced the theme's
+/// Returns the `catalog`/`latest`/`series` fragment for the two installs that replaced the theme's
 /// `div.bsx` grid with a `manga-card-v` one and renamed the archive to `/series/`.
 ///
 /// The chapter list is deliberately *not* overridden: both still render the theme's own
 /// `li[data-num]` rows with `span.chapternum`/`span.chapterdate`, which is what makes them worth
-/// a config row rather than an adapter.
+/// a config row, not an adapter.
 fn card_v_listing() -> Value {
     json!({
         "catalog": {
@@ -139,13 +138,12 @@ fn card_v_listing() -> Value {
     })
 }
 
-/// `card_v_listing`, the `series` heading `evascans` renames, and its paywall marker.
+/// Returns `card_v_listing`, the `series` heading `evascans` renames, and its paywall marker.
 ///
-/// The coin plugin here is a *different skin* from the one `rokaricomics` runs:
-/// it renders a price-and-padlock block rather than the `span.text-gold` those installs use, so
-/// [`coin_gated_chapters`] would never fire. Found by sampling twenty series — thirteen carried
-/// locked rows and the site's first page carried none, which is why a single-series probe missed
-/// it and every paid chapter had been ingesting as free.
+/// The coin plugin here is a *different skin* from the one `rokaricomics` runs: it renders a
+/// price-and-padlock block instead of the `span.text-gold` those installs use, so
+/// [`coin_gated_chapters`] would never fire. Locked rows are absent from the site's first page,
+/// so a single-series probe does not show them.
 ///
 /// No `unlock`: the badge states a coin price and never a date, so a locked row keeps an unknown
 /// unlock time and stays locked. Same policy as the rest of the family.
@@ -156,14 +154,14 @@ fn card_v_series() -> Value {
     cfg
 }
 
-/// `madarascans.org`: the `card_v_listing` shell, its own heading, and — the reason it is spelled
-/// out rather than folded into a helper — a chapter list that is neither the theme's nor another
-/// install's.
+/// Returns the preset for `madarascans.org`: the `card_v_listing` shell, its own heading, and a
+/// chapter list that is neither the theme's nor another install's, which is why it is spelled out
+/// instead of folded into a helper.
 ///
 /// Rows are keyed by a `data-ch` attribute with the link one level in, and a paid row is marked
 /// by a lock glyph inside the number cell. That glyph is rendered on locked rows only, which is
 /// what `chapters.locked` requires: a selector matching a container that is always present would
-/// mark the whole catalogue early-access. No `unlock`, because the row states no date — so a
+/// mark the whole catalogue early-access. No `unlock`, because the row states no date, so a
 /// locked chapter stays locked until a scan sees the glyph gone.
 fn madarascans() -> BuiltinPreset {
     let mut config = card_v_listing();
@@ -182,8 +180,10 @@ fn madarascans() -> BuiltinPreset {
     )
 }
 
-/// A `MangaThemesia` preset carrying `config` verbatim, for a site whose deviations do not fit
-/// one named helper. The fragments below are the deviations, and they compose because each owns
+/// Returns a `MangaThemesia` preset carrying `config` verbatim, for a site whose deviations do
+/// not fit one named helper.
+///
+/// The fragments below are the deviations, and they compose because each owns
 /// a different top-level section.
 fn themesia(
     slug: &'static str,
@@ -201,12 +201,13 @@ fn themesia(
     }
 }
 
-/// The `chapters` fragment for an install running the coin plugin that sells early access.
+/// Returns the `chapters` fragment for an install running the coin plugin that sells early
+/// access.
 ///
-/// The plugin adds one `span.text-gold` — a coin glyph and the price — to a paid row and leaves
-/// the rest of the row alone, so the theme defaults still read it and that badge is the only
-/// thing separating a paid chapter from a free one. Without the selector every paid chapter
-/// ingested as free, and readers were sent to a paywall as the next unread page.
+/// The plugin adds one `span.text-gold` (a coin glyph and the price) to a paid row and leaves the
+/// rest of the row alone, so the theme defaults still read it and that badge is the only thing
+/// separating a paid chapter from a free one. Without the selector every paid chapter ingests as
+/// free, and readers are sent to a paywall as the next unread page.
 ///
 /// No `unlock` selector, because the badge states a price and never a date: a locked row keeps
 /// an unknown unlock time and stays locked until a scan sees the badge gone. Same policy as
@@ -214,13 +215,15 @@ fn themesia(
 ///
 /// Not every install of the plugin has this shape. `violetscans` and `thunderscans` render a
 /// paid row as a modal trigger with no `href` at all, so the row has no chapter URL to store
-/// and is dropped before access is ever read — a different bug that this selector cannot fix.
+/// and is dropped before access is ever read, a different bug that this selector cannot fix.
 fn coin_gated_chapters() -> Value {
     json!({ "locked": "span.text-gold" })
 }
 
-/// A `MangaThemesia` install that renamed the theme's listing directory. That one rename moves
-/// both the catalogue and the feed, since the feed is the same listing re-sorted.
+/// Returns the preset for a `MangaThemesia` install that renamed the theme's listing directory.
+///
+/// That one rename moves both the catalogue and the feed, since the feed is the same listing
+/// re-sorted.
 fn themesia_in(
     slug: &'static str,
     name: &'static str,
@@ -240,21 +243,21 @@ fn themesia_in(
     }
 }
 
-/// The `series` fragment for an install whose template renders the info block as a two-column
-/// `table.infotable` and the genres as `div.seriestugenre`, in place of the theme's
+/// Returns the `series` fragment for an install whose template renders the info block as a
+/// two-column `table.infotable` and the genres as `div.seriestugenre`, in place of the theme's
 /// `div.imptdt` rows and `span.mgen` list.
 ///
 /// Four of the family's presets ship it and the rest ship the stock block, so it is a `series`
-/// override rather than a family: catalogue, feed, title, cover, description and chapter list
-/// are the theme's own markup either way. On the stock defaults these installs parsed a title, a
-/// cover and a description and nothing else — no status, no genres, no credits, and no error,
+/// override, not a family: catalogue, feed, title, cover, description and chapter list are the
+/// theme's own markup either way. On the stock defaults these installs parse a title, a cover
+/// and a description and nothing else (no status, no genres, no credits, and no error),
 /// because a selector that matches nothing is how the theme's optional rows are meant to read.
 ///
 /// The table also carries a `Type` row (Manga/Manhwa/Manhua) that stays unread:
 /// `GenericConfigAdapter` publishes `ContentType::Unknown` unconditionally and there is no
 /// config field to point at it.
 fn infotable_series() -> Value {
-    /// One labelled row of `table.infotable`, matched by the label cell's text.
+    /// Returns one labelled row of `table.infotable`, matched by the label cell's text.
     fn row(label: &str) -> Value {
         json!({
             "row": "table.infotable tr",
@@ -263,7 +266,7 @@ fn infotable_series() -> Value {
             // `div.imptdt` selector, finds nothing, and the row never matches.
             //
             // Null is also the shape that works here. A `label` selector is compared for
-            // equality, and these installs disagree on the wording — `Alternative` on one,
+            // equality, and these installs disagree on the wording: `Alternative` on one,
             // `Alternative Names` on the others. With no `label` the row's own text is matched
             // as a prefix, which covers both spellings.
             "label": null,
@@ -280,13 +283,13 @@ fn infotable_series() -> Value {
         "status": row("Status"),
         "alt": row("Alternative"),
         // Only some of these installs fill an `Author` row; the rest publish credits nowhere,
-        // and the row is absent rather than empty. What they all publish is `Posted By` — the
+        // and the row is absent, not empty. What they all publish is `Posted By`: the
         // WordPress account that uploaded the post, never the creator. Matching it would write
         // a site handle into `series` credits, where the recommender treats a name shared by
         // hundreds of unrelated series as a strong signal.
         "author": row("Author"),
         // Cleared, not repointed. The defaults name `div.imptdt` positions that do not exist
-        // here, and the only date rows this table has — `Posted On`, `Updated On` — are
+        // here, and the only date rows this table has (`Posted On`, `Updated On`) are
         // WordPress post timestamps, not the year of first publication.
         "artist": null,
         "release": null

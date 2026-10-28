@@ -1,15 +1,16 @@
-//! General-purpose readers with layouts of their own, all on the bulk crawl budget.
+//! Owns the presets for general-purpose readers with layouts of their own, all on the bulk
+//! crawl budget.
 
 use serde_json::json;
 
 use super::{BuiltinPreset, GENERIC, bulk_budget};
 
-/// The 2026-08-26 expansion's selector-only rows: general-purpose readers, each with a layout of
-/// its own and none of them on a theme this repository already parses.
+/// Returns the selector-only rows for general-purpose readers, each with a layout of its own and
+/// none of them on a theme this repository already parses.
 ///
-/// They are grouped because they share a property the scanlator sites do not — catalogues in the
-/// tens of thousands of series — and so they all take [`bulk_budget`]. Everything else about them
-/// is per-site, which is why each is spelled out rather than folded into a family.
+/// They are grouped because they share a property the scanlator sites do not (catalogues in the
+/// tens of thousands of series), so they all take [`bulk_budget`]. Everything else about them is
+/// per-site, which is why each is spelled out instead of folded into a family.
 pub(super) fn aggregators() -> Vec<BuiltinPreset> {
     vec![
         // Two domains of one application, selector for selector. Kept as two rows for the reason
@@ -29,7 +30,7 @@ pub(super) fn aggregators() -> Vec<BuiltinPreset> {
     ]
 }
 
-/// `fanfox.net` and `mangahere.cc`: the same application on two domains.
+/// Returns the preset for `fanfox.net` or `mangahere.cc`: the same application on two domains.
 fn fmreader(slug: &'static str, name: &'static str, base_url: &'static str) -> BuiltinPreset {
     BuiltinPreset {
         slug,
@@ -104,14 +105,14 @@ fn kaliscan() -> BuiltinPreset {
             },
             "chapters": {
                 // The id, not the visible "LATEST CHAPTERS" strip above it, which is a preview
-                // of the newest few and would have truncated every series to three rows.
+                // of the newest few and would truncate every series to three rows.
                 "container": "#chapter-list li",
                 "link": "a",
                 "number_from": "text",
                 // The row nests its update time inside the anchor, so the anchor's own text
-                // reads `Chapter 17 days ago` for chapter 1 and the number parses as 17. This
-                // scrambled 99% of the numbers on the first ingest — plausible values, wrong
-                // reading order, and nothing failed. Read the label element instead.
+                // reads `Chapter 17 days ago` for chapter 1 and the number parses as 17:
+                // plausible values, wrong reading order, and nothing fails. Read the label
+                // element instead.
                 "number": "strong.chapter-title",
                 "date": "time.chapter-update"
             }
@@ -234,7 +235,7 @@ fn mangatown() -> BuiltinPreset {
                 "container": "ul.chapter_list li",
                 "link": "a",
                 // Rows read "<Series Title> 526" with no chapter marker at all, so the number
-                // comes from `parse_chapter_number`'s bare-number fallback — the *first* digit
+                // comes from `parse_chapter_number`'s bare-number fallback: the *first* digit
                 // run in the label. That is wrong whenever the series title carries digits of
                 // its own, and one title here does: "The Dark Magician Transmigrates After
                 // 66666 Years" stores 66666 for every chapter. No selector fixes it, because
@@ -242,7 +243,7 @@ fn mangatown() -> BuiltinPreset {
                 // between them; `chapters.number` needs an element and there is none.
                 //
                 // Kept at one known-bad series in ~3 500 chapters, and the implausible-number
-                // guard bounds the damage rather than removing it. If that ratio moves, this
+                // guard bounds the damage without removing it. If that ratio moves, this
                 // site needs an adapter that reads the number from the chapter path.
                 "number_from": "text",
                 "date": "span.time"
@@ -252,8 +253,10 @@ fn mangatown() -> BuiltinPreset {
     }
 }
 
-/// `manhuaplus.org` — an unrelated site to the shipped `manhuaplus` (`manhuaplus.com`), sharing
-/// only a name. Distinct slug, distinct row, and the console shows both domains.
+/// Returns the preset for `manhuaplus.org`, a site unrelated to the shipped `manhuaplus`
+/// (`manhuaplus.com`) that shares only a name.
+///
+/// Distinct slug, distinct row, and the console shows both domains.
 fn manhuaplus_mirror() -> BuiltinPreset {
     BuiltinPreset {
         slug: "manhuaplusorg",
@@ -264,14 +267,14 @@ fn manhuaplus_mirror() -> BuiltinPreset {
             "catalog": {
                 // `/manga-list` is a static legacy page that ignores `?page=` entirely and
                 // re-serves the same twenty cards forever; this is the site's own pager route,
-                // and it uses a different card than `/home` does. The sort is pinned rather
-                // than left to a server default so consecutive pages stay consistent.
+                // and it uses a different card than `/home` does. The sort is pinned instead
+                // of left to a server default so consecutive pages stay consistent.
                 "path": "/all-manga/{page}/?sort=last_update&status=0",
                 "item": "div.b-img.i-mage",
                 "link": "a.block.pt-140p",
                 "title": "a.block.pt-140p@title",
                 // The pager marks the current page `span.pagecurrent` and every link
-                // `span.displaypageNum` — backward links included, so a bare class test never
+                // `span.displaypageNum`, backward links included, so a bare class test never
                 // goes false. The adjacent sibling does: on the last page `span.pagecurrent`
                 // is the pager's final child. Walks all 28 pages and enumerates 659 series,
                 // which is exactly what `manga_sitemap.xml` lists.
@@ -313,14 +316,14 @@ fn mgeko() -> BuiltinPreset {
                 // `results` is this listing's page parameter, oddly named but 1-based.
                 "path": "/jumbo/manga/?results={page}&filter=All",
                 // Scoped to the grid: the page also renders a 24-card `ul.swiper-wrapper`
-                // carousel of `li.novel-item`, so the unscoped selector mixed a rotating
-                // promo strip into the catalogue and made consecutive pages overlap.
+                // carousel of `li.novel-item`, so an unscoped selector mixes a rotating
+                // promo strip into the catalogue and makes consecutive pages overlap.
                 "item": "ul.novel-list.grid > li.novel-item",
                 "link": "a.list-body",
                 "title": "a.list-body@title",
                 // Past the last page the server clamps to page 5 and keeps serving it, so the
                 // yielded-items fallback never terminates. The next chevron survives there but
-                // degrades to `href="javascript:void(0)"` — testing the attribute, not the
+                // degrades to `href="javascript:void(0)"`; testing the attribute, not the
                 // class, is what makes it disappear.
                 "next": "div.mg-pagination-table + a.mg-pagination-chev[href*=\"results=\"]"
             },
@@ -385,7 +388,7 @@ fn readcomicsonline() -> BuiltinPreset {
                 "container": "section div.divide-y a",
                 "link": "self",
                 // Rows read "<Series Title (2026-)>#205"; `#` is a chapter marker, so the number
-                // after it is what parses — not the year in the title.
+                // after it is what parses, not the year in the title.
                 "number_from": "text"
             }
         }),
@@ -402,7 +405,7 @@ fn reimanga() -> BuiltinPreset {
         config: json!({
             "catalog": {
                 "path": "/advanced-search?page={page}",
-                // The card *is* the anchor on this template, so `self` — a nested link selector
+                // The card *is* the anchor on this template, so `self`: a nested link selector
                 // finds nothing and the listing parses to zero items.
                 "item": "a.group",
                 "link": "self",
@@ -425,13 +428,13 @@ fn reimanga() -> BuiltinPreset {
                 "status": "span.inline-flex.font-medium"
             },
             "chapters": {
-                // Keyed on the row id prefix rather than a utility class: this template's
+                // Keyed on the row id prefix, not a utility class: this template's
                 // classes are Tailwind, and the id is the only stable thing on the row.
                 "container": "a[id^='chapter-']",
                 "link": "self",
                 "number_from": "text",
                 // Rendered as a coarse relative label ("7mo ago") that `parse_date_label` does
-                // not recognise, so dates come back absent rather than wrong. Kept pointed at
+                // not recognise, so dates come back absent, not wrong. Kept pointed at
                 // the element so a switch to an absolute date starts working on its own.
                 "date": "span.text-gray-500"
             }
@@ -473,7 +476,7 @@ fn saymanhwa() -> BuiltinPreset {
             "chapters": {
                 // The card class, not `a[href*="/chapter-"]`: the series page also renders
                 // "first chapter" and "latest chapter" action buttons pointing at real chapter
-                // URLs, and the href test swept those in as two extra rows per series.
+                // URLs, and the href test sweeps those in as two extra rows per series.
                 "container": "a.series-chapter-card",
                 "link": "self",
                 "number_from": "text"

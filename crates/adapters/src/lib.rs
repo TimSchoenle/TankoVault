@@ -1,5 +1,5 @@
-//! Provider adapter framework: [`SourceAdapter`] is the trait every provider implements, and
-//! [`GenericConfigAdapter`] drives config-driven providers from `providers.config` selectors.
+//! Owns the provider adapter framework: [`SourceAdapter`] is the trait every provider implements,
+//! and [`GenericConfigAdapter`] drives config-driven providers from `providers.config` selectors.
 
 mod astro;
 mod config;
@@ -51,17 +51,17 @@ pub use webtoons::WebtoonsAdapter;
 /// Seams for the out-of-workspace fuzz crate, which can only reach `pub` items.
 ///
 /// `json::parse_json_body` stays `pub(crate)` and is re-exported here `#[doc(hidden)]` instead,
-/// so its candidate scan (a past quadratic-DoS site) stays fuzzable without becoming public API.
+/// so its candidate scan, a quadratic-DoS risk, stays fuzzable without becoming public API.
 #[doc(hidden)]
 pub mod __fuzz {
     use crate::error::AdapterError;
     use tankovault_fetch::FetchResponse;
 
-    /// `crate::json::parse_json_body` monomorphised at `T = serde_json::Value`: the oracle is
+    /// Runs `crate::json::parse_json_body` monomorphised at `T = serde_json::Value`: the oracle is
     /// the candidate scan's time/memory, not the parse result.
     ///
     /// # Errors
-    /// Whatever `parse_json_body` returns.
+    /// Returns whatever error `parse_json_body` returns.
     pub fn parse_json_body_value(
         what: &str,
         resp: &FetchResponse,

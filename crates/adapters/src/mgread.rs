@@ -1,9 +1,9 @@
-//! Custom adapter for `mgread.io` — the Init Manga `WordPress` theme.
+//! Owns the custom adapter for `mgread.io`, on the Init Manga `WordPress` theme.
 //!
 //! Catalogue, latest feed and series metadata are ordinary markup and are delegated to
 //! [`GenericConfigAdapter`]. Chapters are not: the series page server-renders only the newest
 //! **24** rows and the rest arrive from a REST endpoint keyed by the numeric post id, so a
-//! selector-only adapter truncates every long series to its most recent page — silently, with a
+//! selector-only adapter truncates every long series to its most recent page, silently, with a
 //! chapter count that looks plausible and is wrong.
 
 use crate::config::AdapterConfig;
@@ -20,13 +20,16 @@ use serde_json::{Value, json};
 use time::format_description::well_known::Rfc3339;
 use time::{OffsetDateTime, PrimitiveDateTime, UtcOffset};
 
-/// Chapters requested per API page. `per_page` is capped server-side at this value — asking for
-/// more returns 50 and a `total_pages` computed for 50, so overshooting reads as a shorter
-/// series rather than failing.
+/// Chapters requested per API page.
+///
+/// `per_page` is capped server-side at this value: asking for more returns 50 and a
+/// `total_pages` computed for 50, so overshooting reads as a shorter series instead of failing.
 const CHAPTERS_PER_PAGE: u32 = 50;
 
 /// Hard safety cap on API pages walked per series, in case `total_pages` ever stops shrinking
-/// the walk. At [`CHAPTERS_PER_PAGE`] this is 10 000 chapters, well past the longest series the
+/// the walk.
+///
+/// At [`CHAPTERS_PER_PAGE`] this is 10 000 chapters, well past the longest series the
 /// site carries.
 const MAX_CHAPTER_PAGES: u32 = 200;
 
@@ -37,13 +40,16 @@ const CHAPTERS_API: &str = "/wp-json/initmanga/v1/chapters";
 /// [`MgreadAdapter::series_key`].
 const POSTS_API: &str = "/wp-json/wp/v2/manga";
 
-/// Everything [`ApiPost`] needs. Asked for explicitly because the unfiltered record embeds the
-/// whole rendered series page, which is the cost this route exists to avoid.
+/// Everything [`ApiPost`] needs.
+///
+/// Asked for explicitly because the unfiltered record embeds the whole rendered series page, which
+/// is the cost this route exists to avoid.
 const POST_FIELDS: &str = "id,date,date_gmt";
 
-/// Fallback selector for that id, on the series page. The theme puts it on the title element and
-/// nowhere else that is unambiguous — the page carries `data-id` on the follow button and on
-/// every chapter row too.
+/// Fallback selector for that id, on the series page.
+///
+/// The theme puts it on the title element and nowhere else that is unambiguous: the page carries
+/// `data-id` on the follow button and on every chapter row too.
 const MANGA_ID: &str = "h1#manga-title@data-id";
 
 /// Fallback selector for the site's UTC offset: a chapter row's own timestamp is the only place
@@ -53,14 +59,16 @@ const ROW_TIMESTAMP: &str = "div.chapter-item time@datetime";
 /// The one `lock_type` the endpoint uses for a chapter anybody can read.
 const UNLOCKED: &str = "none";
 
-/// The site's own XHR headers. The endpoint is a REST route on the same host as the pages, so
-/// a request shaped like a document fetch is the odd one out.
+/// The site's own XHR headers.
+///
+/// The endpoint is a REST route on the same host as the pages, so a request shaped like a document
+/// fetch is the odd one out.
 const API_HEADERS: [(&str, &str); 2] = [
     ("Accept", "application/json, text/plain, */*"),
     ("X-Requested-With", "XMLHttpRequest"),
 ];
 
-/// Selectors for `mgread.io`, merged under the provider's own `config` overrides.
+/// Returns the selectors for `mgread.io`, merged under the provider's own `config` overrides.
 #[must_use]
 pub fn mgread_default_config() -> Value {
     json!({
@@ -94,10 +102,10 @@ pub fn mgread_default_config() -> Value {
             // feature in the recommender, one per distinct duration.
             "tags": "div#genre-tags a[href*=\"/genre/\"]",
             "status": "span#manga-status",
-            // A labelled row rather than the `span` alone, for the splitting that brings: this
+            // A labelled row, not the `span` alone, for the splitting that brings: this
             // cell lists every alternative title in one text node, `;`-separated on most series
             // and `/`-separated on the rest. `split_titles` splits the first and leaves the
-            // second whole — the conservative half of that is deliberate, since a title cut at
+            // second whole; the conservative half of that is deliberate, since a title cut at
             // the wrong separator becomes a matching key that pulls unrelated series together.
             "alt": {
                 "row": "div.manga-info-details",
@@ -106,7 +114,7 @@ pub fn mgread_default_config() -> Value {
             }
         },
         // Present so the config parses, and it is what the site would be read from if the
-        // endpoint below ever disappears — but it sees only the newest 24 rows, so
+        // endpoint below ever disappears, but it sees only the newest 24 rows, so
         // `MgreadAdapter` overrides `fetch_chapters` and never uses it.
         "chapters": {
             "container": "div.chapter-list div.chapter-item",
@@ -122,7 +130,7 @@ struct ApiChapter {
     slug: String,
     /// The theme's own parse of the chapter label; `null` on a row it could not read.
     number: Option<f64>,
-    /// Empty on every row in the live catalogue — the theme titles a chapter by its number.
+    /// Empty on every row in the live catalogue: the theme titles a chapter by its number.
     title: Option<String>,
     /// `YYYY-MM-DD HH:MM:SS` in the site's local time, with no offset of its own.
     created_at: Option<String>,
@@ -141,11 +149,11 @@ struct ApiPost {
 }
 
 impl ApiPost {
-    /// The site's UTC offset, as the gap between this post's two timestamps.
+    /// Returns the site's UTC offset, as the gap between this post's two timestamps.
     ///
     /// `WordPress` computes `date_gmt` when the post is saved, so this is the offset in effect
-    /// then — which is exactly the one the chapter rows of the same series were stored under.
-    /// An unreadable or implausible pair reads as UTC rather than shifting dates by a guess.
+    /// then, which is exactly the one the chapter rows of the same series were stored under.
+    /// An unreadable or implausible pair reads as UTC instead of shifting dates by a guess.
     fn offset(&self) -> UtcOffset {
         let format =
             time::macros::format_description!("[year]-[month]-[day]T[hour]:[minute]:[second]");
@@ -167,8 +175,10 @@ impl ApiPost {
 #[derive(Debug, Deserialize)]
 struct ChaptersPage {
     items: Vec<ApiChapter>,
-    /// Total pages at the requested `per_page`. Absent would leave the walk with only an empty
-    /// page to stop on, which is why it is treated as "this was the last one".
+    /// Total pages at the requested `per_page`.
+    ///
+    /// Absent would leave the walk with only an empty page to stop on, which is why it is treated
+    /// as "this was the last one".
     total_pages: Option<u32>,
 }
 
@@ -178,7 +188,7 @@ pub struct MgreadAdapter {
 }
 
 impl MgreadAdapter {
-    /// Build from an effective (defaults + provider overrides) config.
+    /// Builds from an effective (defaults plus provider overrides) config.
     #[must_use]
     pub fn new(config: AdapterConfig) -> Self {
         Self {
@@ -186,16 +196,16 @@ impl MgreadAdapter {
         }
     }
 
-    /// The chapter endpoint's key and the site's UTC offset, for the series at `path`.
+    /// Returns the chapter endpoint's key and the site's UTC offset, for the series at `path`.
     ///
     /// Read from the `WordPress` core REST route, which answers both in about a hundred bytes:
     /// the post `id`, and a `date`/`date_gmt` pair whose difference *is* the offset. The series
-    /// page states both too, but it is 130 KB — fetching it once per series here, on top of the
+    /// page states both too, but it is 130 KB; fetching it once per series here, on top of the
     /// copy `fetch_series` has just read, would double the cost of a full scan of ~6 400 series
     /// for two facts that fit on a line.
     ///
     /// Falls back to the page when the route answers with anything else: WP core routes are
-    /// commonly locked down, and this provider is worth keeping on a slower path rather than
+    /// commonly locked down, and this provider is worth keeping on a slower path instead of
     /// losing to a security plugin. A failure that is really the site refusing us resurfaces on
     /// the page fetch, reported properly.
     async fn series_key(ctx: &Ctx, path: &str) -> Result<(String, UtcOffset), AdapterError> {
@@ -239,7 +249,7 @@ impl MgreadAdapter {
         .await
     }
 
-    /// Resolve one `created_at` against the site's offset.
+    /// Resolves one `created_at` against the site's offset.
     ///
     /// `WordPress` stores and the chapter endpoint serves *site-local* time with no offset on it.
     /// Applying the site's own offset is what keeps releases where the site puts them: reading
@@ -253,7 +263,7 @@ impl MgreadAdapter {
             .map(|naive| naive.assume_offset(offset))
     }
 
-    /// Fetch one page of the chapter endpoint.
+    /// Fetches one page of the chapter endpoint.
     async fn chapters_page(
         ctx: &Ctx,
         manga_id: &str,
@@ -265,7 +275,8 @@ impl MgreadAdapter {
         parse_json_body("mgread chapters API", &resp)
     }
 
-    /// The number a `chapter-46-1` slug spells: the theme writes a decimal point as a hyphen.
+    /// Returns the number a `chapter-46-1` slug spells: the theme writes a decimal point as a
+    /// hyphen.
     ///
     /// Only slugs on that shape are read. A named one (`prologue`, `extra-2`) has no number to
     /// recover, and anything that finds one in it is inventing an ordering.
@@ -274,7 +285,7 @@ impl MgreadAdapter {
             .and_then(|tail| parse_number(&tail.replace('-', ".")))
     }
 
-    /// Turn one API row into a chapter under `series_path`.
+    /// Turns one API row into a chapter under `series_path`.
     fn chapter(raw: ApiChapter, series_path: &str, offset: UtcOffset) -> Option<ChapterMeta> {
         // The endpoint's own parse is authoritative; the slug is the fallback for a row it left
         // null.
@@ -417,9 +428,11 @@ mod tests {
         );
     }
 
-    /// Bug guard: the endpoint serves `WordPress`'s stored *site-local* time with no offset on it,
-    /// while the rows on the page it came from carry `+07:00`. Read as UTC, every release on
-    /// this site lands seven hours late — enough to move a chapter into the following day in the
+    /// A `created_at` resolves against the offset the page reported.
+    ///
+    /// The bug: the endpoint serves `WordPress`'s stored *site-local* time with no offset on it,
+    /// while the rows on the page it came from carry `+07:00`. Read as UTC, every release on this
+    /// site lands seven hours late, enough to move a chapter into the following day in the
     /// release feed.
     #[test]
     fn a_created_at_resolves_against_the_offset_the_page_reported() {

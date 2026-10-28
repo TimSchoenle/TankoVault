@@ -1,7 +1,8 @@
-//! `MangaDex`, driven by its documented public API (<https://api.mangadex.org/docs/>).
+//! Owns the `MangaDex` adapter, driven by its documented public API
+//! (<https://api.mangadex.org/docs/>).
 //!
 //! The only source here with a first-party API and a published rate policy, and the only one
-//! whose records carry AniList/MAL ids — `attributes.links` feeds the enrichment matcher
+//! whose records carry AniList/MAL ids: `attributes.links` feeds the enrichment matcher
 //! directly instead of it having to re-derive a match from titles.
 //!
 //! Two hosts are in play: the provider's `base_url` is the **reader** site, so stored paths
@@ -28,19 +29,23 @@ const API: &str = "https://api.mangadex.org";
 /// Where cover files are served from; the API returns only the file name.
 const COVERS: &str = "https://uploads.mangadex.org/covers";
 
-/// Rows per catalogue page. The API's own maximum for `/manga` is 100.
+/// Rows per catalogue page, the API's own maximum for `/manga`.
 const CATALOG_LIMIT: u32 = 100;
 
-/// Rows per chapter-feed page. The API's own maximum for a feed is 500.
+/// Rows per chapter-feed page, the API's own maximum for a feed.
 const FEED_LIMIT: u32 = 500;
 
 /// Upper bound on chapter-feed pages for one series, so a feed that never reports its end
-/// cannot spin. 500 × 40 = 20 000 chapters, far past the longest series on the site.
+/// cannot spin.
+///
+/// 500 × 40 = 20 000 chapters, far past the longest series on the site.
 const MAX_FEED_PAGES: u32 = 40;
 
-/// Content ratings requested. `pornographic` is deliberately absent: this workspace has an
-/// adult gate, but it gates what a *reader* may see, and there is no reason to ingest a tier
-/// no configuration can currently surface.
+/// Content ratings requested.
+///
+/// `pornographic` is deliberately absent: this workspace has an adult gate, but it gates what a
+/// *reader* may see, and there is no reason to ingest a tier no configuration can currently
+/// surface.
 const RATINGS: &str = "&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica";
 
 /// A collection response: `data` plus the paging totals.
@@ -130,9 +135,9 @@ struct ChapterAttrs {
     publish_at: Option<String>,
 }
 
-/// Read the English value from a localised map, else any value, else `None`.
+/// Reads the English value from a localised map, else any value, else `None`.
 ///
-/// `en` is preferred rather than required: a series with no English entry still has a title,
+/// `en` is preferred, not required: a series with no English entry still has a title,
 /// and storing nothing would drop it from the catalogue entirely.
 fn localised(map: &Localised) -> Option<String> {
     map.get("en")
@@ -141,7 +146,7 @@ fn localised(map: &Localised) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
-/// Map `MangaDex`'s `originalLanguage` to this workspace's medium classification.
+/// Maps `MangaDex`'s `originalLanguage` to this workspace's medium classification.
 fn content_type_of(language: Option<&str>) -> ContentType {
     match language {
         Some("ja") => ContentType::Manga,
@@ -155,6 +160,8 @@ fn content_type_of(language: Option<&str>) -> ContentType {
 pub struct MangaDexAdapter;
 
 impl MangaDexAdapter {
+    /// Creates the adapter.
+    ///
     /// Stateless: the provider's base URL and the fetch stack arrive per call in [`Ctx`], so
     /// one instance serves every provider configured against this adapter.
     #[must_use]
@@ -162,7 +169,7 @@ impl MangaDexAdapter {
         Self
     }
 
-    /// The series UUID out of a stored `/title/{uuid}` path.
+    /// Returns the series UUID out of a stored `/title/{uuid}` path.
     fn id_of(series_path: &str) -> &str {
         series_path
             .trim_end_matches('/')
@@ -202,7 +209,7 @@ impl SourceAdapter for MangaDexAdapter {
             .collect();
 
         // The API reports the collection total, so the end of the walk is its own answer
-        // rather than a "this page had rows" guess.
+        // instead of a "this page had rows" guess.
         Ok(CatalogPage {
             items,
             has_next: offset.saturating_add(CATALOG_LIMIT) < page_data.total,
@@ -219,7 +226,7 @@ impl SourceAdapter for MangaDexAdapter {
 
         // The feed is per *chapter*; the series it belongs to is a relationship. Several
         // chapters of one series collapse onto the same path, which the caller re-ingests by
-        // path, so duplicates cost a repeated no-op rather than a wrong row.
+        // path, so duplicates cost a repeated no-op, not a wrong row.
         Ok(feed
             .data
             .iter()
@@ -353,9 +360,8 @@ impl SourceAdapter for MangaDexAdapter {
             }
         }
 
-        // A cap that stops a walk early has to say so. Silently returning a short list is the
-        // failure mode this whole audit exists to remove: nothing errors, the chapter count
-        // simply becomes wrong and stays wrong.
+        // A cap that stops a walk early has to say so. Silently returning a short list means
+        // nothing errors and the chapter count simply becomes wrong and stays wrong.
         if !exhausted {
             tracing::warn!(
                 provider = %ctx.provider_slug,
@@ -384,7 +390,7 @@ mod tests {
     }
 
     /// A localised map without an `en` entry still has a title, and dropping it would drop the
-    /// series from the catalogue rather than merely from one field.
+    /// series from the catalogue, not merely from one field.
     #[test]
     fn a_localised_map_falls_back_off_english() {
         let mut map = BTreeMap::new();

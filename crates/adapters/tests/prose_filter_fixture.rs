@@ -1,7 +1,7 @@
-//! Fixture tests for the prose guard every adapter is wrapped in.
+//! Tests the prose guard every adapter is wrapped in against fixtures.
 //!
 //! The markup is trimmed from `en-thunderscans.com`, which sells seven text novels from the
-//! `/comics/` catalogue that carries its comics and marks the medium in the listed title alone —
+//! `/comics/` catalogue that carries its comics and marks the medium in the listed title alone;
 //! its `span.type` badge is commented out of the template. Both assertions run the **shipped**
 //! preset through `build_adapter`, because the guard lives at that seam and a test that built
 //! the adapter directly would not exercise it.
@@ -30,7 +30,7 @@ impl Fetcher for OneBody {
     }
 }
 
-/// The shipped `thunderscans` preset, paired with a context serving `body`.
+/// Returns the shipped `thunderscans` preset, paired with a context serving `body`.
 fn thunderscans(body: &'static str) -> (Box<dyn SourceAdapter>, Ctx) {
     let preset = builtin_presets()
         .into_iter()
@@ -46,9 +46,11 @@ fn thunderscans(body: &'static str) -> (Box<dyn SourceAdapter>, Ctx) {
     (adapter, ctx)
 }
 
-/// Regression: the novels were registered as ordinary series, so a reader following one reached
-/// a page of prose and every scan tracked chapters that have nothing to read. The fixture also
-/// carries *The Novel's Extra (Remake)* — a comic whose title a substring test would drop.
+/// A catalogue row the site marks as a novel is not a series.
+///
+/// The bug: the novels were registered as ordinary series, so a reader following one reached a
+/// page of prose and every scan tracked chapters that have nothing to read. The fixture also
+/// carries *The Novel's Extra (Remake)*, a comic whose title a substring test would drop.
 #[tokio::test]
 async fn a_catalogue_row_the_site_marks_as_a_novel_is_not_a_series() {
     let (adapter, ctx) = thunderscans(CATALOG);
@@ -76,7 +78,7 @@ async fn a_catalogue_row_the_site_marks_as_a_novel_is_not_a_series() {
 
 /// The invariant that makes the guard safe to apply everywhere: it filters what the inner
 /// adapter yielded, never what the inner adapter concluded. This install's paginator is
-/// commented out of the markup, so `has_next` falls back to "the page yielded items" — and a
+/// commented out of the markup, so `has_next` falls back to "the page yielded items", and a
 /// guard that emptied the page first would end the walk with the rest of the catalogue unseen.
 #[tokio::test]
 async fn a_page_of_nothing_but_novels_does_not_end_the_catalogue_walk() {

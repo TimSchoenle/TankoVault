@@ -1,5 +1,7 @@
-//! The config-driven adapter. A Madara-like site is a one-row insert (its selectors in
-//! `providers.config`); a custom site is a small struct implementing [`SourceAdapter`].
+//! Owns the config-driven adapter.
+//!
+//! A Madara-like site is a one-row insert (its selectors in `providers.config`); a custom site is
+//! a small struct implementing [`SourceAdapter`].
 
 use crate::config::{AdapterConfig, ChaptersCfg, TextSource};
 use crate::error::AdapterError;
@@ -27,13 +29,13 @@ pub struct GenericConfigAdapter {
 const SITEMAP_MODE: &str = "sitemap";
 
 impl GenericConfigAdapter {
-    /// Build from a parsed config.
+    /// Builds from a parsed config.
     #[must_use]
     pub fn new(config: AdapterConfig) -> Self {
         Self { config }
     }
 
-    /// One sitemap shard as a catalogue page.
+    /// Reads one sitemap shard as a catalogue page.
     ///
     /// A shard carries URLs and nothing else, so each entry gets a provisional title derived
     /// from its slug. That is not a placeholder that has to be corrected later for matching to
@@ -47,7 +49,7 @@ impl GenericConfigAdapter {
     ) -> Result<CatalogPage, AdapterError> {
         let resp = match ctx.fetch(path).await {
             Ok(resp) => resp,
-            // Shard `n+1` not existing is how a sitemap says "that was the last one" — the
+            // Shard `n+1` not existing is how a sitemap says "that was the last one": the
             // index is not fetched in this mode, so there is nothing else that could. Reported
             // as an error it ends the walk *and* marks the run degraded, which is a scan
             // failure logged for every provider on this mode, every time, for working normally.
@@ -82,10 +84,10 @@ impl GenericConfigAdapter {
     }
 }
 
-/// `<loc>` values in a sitemap document.
+/// Returns the `<loc>` values in a sitemap document.
 ///
 /// A solver-rendered fetch returns the browser's XML *viewer* page, which embeds the document
-/// twice — an entity-escaped pretty-print plus a hidden verbatim copy. Scanning for the literal
+/// twice: an entity-escaped pretty-print plus a hidden verbatim copy. Scanning for the literal
 /// tag picks up the verbatim copy in that case and the document itself in the plain case; the
 /// caller dedupes, so the two views collapse to one list.
 fn sitemap_locs(body: &str) -> Vec<String> {
@@ -105,7 +107,7 @@ fn sitemap_locs(body: &str) -> Vec<String> {
     out
 }
 
-/// A readable provisional title from a URL slug (`/manga/2/one-piece` → `One Piece`).
+/// Returns a readable provisional title from a URL slug (`/manga/2/one-piece` → `One Piece`).
 fn slug_title(path: &str) -> String {
     let slug = path
         .trim_end_matches('/')
@@ -125,12 +127,12 @@ fn slug_title(path: &str) -> String {
         .join(" ")
 }
 
-/// Expand a catalogue path template for `page`.
+/// Expands a catalogue path template for `page`.
 ///
 /// `{page}` is the 1-based page number. `{offset}` is the row index that page starts at, for
-/// sites that paginate by offset — it needs `page_size`, and expands to `0` without one rather
-/// than leaving the token in the URL, since a literal `{offset}` reaching the provider is a
-/// silent 404 rather than a config error anyone would see.
+/// sites that paginate by offset; it needs `page_size`, and expands to `0` without one instead of
+/// leaving the token in the URL, since a literal `{offset}` reaching the provider is a silent 404,
+/// not a config error anyone would see.
 fn expand_page_tokens(template: &str, page: u32, page_size: Option<u32>) -> String {
     let offset = page_size
         .and_then(|size| page.checked_sub(1)?.checked_mul(size))
@@ -140,13 +142,13 @@ fn expand_page_tokens(template: &str, page: u32, page_size: Option<u32>) -> Stri
         .replace("{offset}", &offset.to_string())
 }
 
-/// Expand a chapter-list path template against the series path.
+/// Expands a chapter-list path template against the series path.
 ///
 /// Three tokens: `{path}` is the series path verbatim, `{slug}` its last non-empty segment (how
 /// most sites key a chapter endpoint), and `{seg:N}` the 0-based Nth segment.
 ///
 /// `{seg:N}` exists because `{slug}` is wrong for any site whose series URL ends in a
-/// human-readable name rather than its key — `WeebCentral`'s `/series/{id}/{Name}` is keyed by the
+/// human-readable name instead of its key: `WeebCentral`'s `/series/{id}/{Name}` is keyed by the
 /// id, so `{slug}` builds `/series/One-Piece/full-chapter-list`, which answers 200 with an empty
 /// document. That is the worst possible failure shape: no error, and every series silently
 /// ingests zero chapters.
@@ -165,11 +167,11 @@ fn expand_series_tokens(template: &str, series_path: &str) -> String {
     out
 }
 
-/// Read a chapter row's access state: locked when `chapters.locked` matches inside it, with the
+/// Reads a chapter row's access state: locked when `chapters.locked` matches inside it, with the
 /// unlock time taken from `chapters.unlock` where the site publishes one.
 ///
 /// A row is free unless the lock selector actually matches, so a provider that stops rendering
-/// its lock marker degrades to "everything is free" rather than to "nothing is readable".
+/// its lock marker degrades to "everything is free", not to "nothing is readable".
 /// The opposite default would empty every reader's unread count on a layout change.
 fn extract_access(
     row: ElementRef<'_>,
@@ -204,9 +206,10 @@ fn extract_access(
     Ok(ChapterAccess::EarlyAccess { unlocks_at })
 }
 
-/// Append `extra` onto `base`, skipping case-insensitive duplicates. Used to fold an
-/// "Artist" selector's results into the "Author" list without repeating a credit that
-/// lists the same person under both roles.
+/// Appends `extra` onto `base`, skipping case-insensitive duplicates.
+///
+/// Folds an "Artist" selector's results into the "Author" list without repeating a credit
+/// that lists the same person under both roles.
 fn merge_unique(mut base: Vec<String>, extra: Vec<String>) -> Vec<String> {
     for item in extra {
         if !base.iter().any(|b: &String| b.eq_ignore_ascii_case(&item)) {
@@ -216,8 +219,10 @@ fn merge_unique(mut base: Vec<String>, extra: Vec<String>) -> Vec<String> {
     base
 }
 
-/// Extract the first link href under `root` matching `spec` (`@attr` defaults to `href`),
-/// relativised against `page_url`. `spec` of [`SELF_SPEC`] reads `root`'s own attribute.
+/// Extracts the first link href under `root` matching `spec` (`@attr` defaults to `href`),
+/// relativised against `page_url`.
+///
+/// A `spec` of [`SELF_SPEC`] reads `root`'s own attribute.
 ///
 /// A link [`is_series_link`] rejects yields `None`, so its row is skipped like a row with no
 /// link at all.
@@ -241,12 +246,12 @@ fn extract_series_href(
         .map(|href| relativize(page_url, href)))
 }
 
-/// Whether `href`, resolved against the listing page at `page_url`, can be a series on the
+/// Returns whether `href`, resolved against the listing page at `page_url`, can be a series on the
 /// provider serving that page.
 ///
 /// Rejects another host and the listing page itself. Listing markup carries sponsored cards in
-/// the same container as the real rows — the Manganato family's advertisement is a
-/// `div.list-comic-item-wrap` like every other card — and [`relativize`] deliberately flattens a
+/// the same container as the real rows (the Manganato family's advertisement is a
+/// `div.list-comic-item-wrap` like every other card), and [`relativize`] deliberately flattens a
 /// foreign host to its path, so `https://bit.ly/scrailadi` arrives as `/scrailadi` and reads as
 /// an ordinary series slug. Registered once, it 404s on every scan for as long as the row
 /// survives; the same card with an unresolved `href` of `#` registers the listing page itself,
@@ -256,7 +261,7 @@ fn extract_series_href(
 /// redirects to one of them and the page URL is the one after redirects.
 fn is_series_link(page_url: &str, href: &str) -> bool {
     let Ok(base) = Url::parse(page_url) else {
-        // Nothing to compare against — leave the judgement to `relativize`'s own fallback.
+        // Nothing to compare against; leave the judgement to `relativize`'s own fallback.
         return true;
     };
     let Ok(joined) = base.join(href.trim()) else {
@@ -269,7 +274,7 @@ fn is_series_link(page_url: &str, href: &str) -> bool {
     host(&joined) == host(&base) && (joined.path() != base.path() || joined.query() != base.query())
 }
 
-/// Resolve a [`TextSource`] against a parsed page.
+/// Resolves a [`TextSource`] against a parsed page.
 ///
 /// [`TextSource::LabelledRow`] finds the row by its label since CSS cannot select on text; a
 /// page missing the row yields no values, which is correct, not a failure.
@@ -292,7 +297,7 @@ fn extract_text_source(
                             .eq_ignore_ascii_case(wanted)
                     }),
                     // No label element: the row's own text is `"Author Rakhyun"`, so the label
-                    // can only be matched as a prefix — equality would never hit.
+                    // can only be matched as a prefix; equality would never hit.
                     None => text_of(row)
                         .trim_start()
                         .to_ascii_lowercase()
@@ -303,7 +308,7 @@ fn extract_text_source(
                 }
                 // With no `value` selector, label and value share one text node: the label has
                 // to be dropped or it is stored as part of the first value. Split on the
-                // separator where there is one — the rendered label is rarely the configured one
+                // separator where there is one: the rendered label is rarely the configured one
                 // verbatim (`Author(s) :` is matched by `Author`), so slicing at the label's
                 // length is the fallback, not the rule.
                 let raw = if let Some(value_sel) = &cfg.value {
@@ -497,7 +502,7 @@ impl SourceAdapter for GenericConfigAdapter {
         let resp = ctx.fetch(&list_path).await?;
         let cfg = self.config.chapters.clone();
         // Sampled once for the whole page so every relative date on it resolves against the
-        // same instant — otherwise two rows reading "3 days ago" can land on different days.
+        // same instant; otherwise two rows reading "3 days ago" can land on different days.
         let now = OffsetDateTime::now_utc();
         parse_blocking(resp, move |root, resp| {
             let container_sel = parse_selector(&cfg.container)?;
@@ -587,12 +592,13 @@ mod tests {
         assert_eq!(merge_unique(authors.clone(), Vec::new()), authors);
     }
 
-    /// The Manganato family's listing pages carry a sponsored card in the same
+    /// A sponsored card linking off-site or to the listing page itself is not a series.
+    ///
+    /// The bug: the Manganato family's listing pages carry a sponsored card in the same
     /// `div.list-comic-item-wrap` container as every real row. Its link is a rotating `bit.ly`
-    /// short URL, which `relativize` flattened to `/scrailadi` — a plausible series slug that
-    /// production registered and then re-fetched into a 404 on every scan; the rotation whose
-    /// href had not been rewritten yet registered the listing page itself, which answers 200 and
-    /// fails on the missing series title.
+    /// short URL, which `relativize` flattened to `/scrailadi`, a plausible series slug that was
+    /// registered and then re-fetched into a 404 on every scan; a card whose href was `#`
+    /// registered the listing page itself, which answers 200 and fails on the missing title.
     #[test]
     fn a_sponsored_card_linking_off_site_or_to_the_page_itself_is_not_a_series() {
         const PAGE: &str = "https://www.mangakakalot.gg/manga-list/latest-manga";
@@ -633,13 +639,15 @@ mod token_tests {
             expand_page_tokens(t, 3, Some(32)),
             "/search?offset=64&limit=32"
         );
-        // Without a page size the token still resolves — a literal `{offset}` reaching the
+        // Without a page size the token still resolves: a literal `{offset}` reaching the
         // provider is a silent 404, not a config error anyone would see.
         assert_eq!(expand_page_tokens(t, 3, None), "/search?offset=0&limit=32");
     }
 
-    /// Regression: `WeebCentral`'s chapter endpoint is keyed by the id in `/series/{id}/{Name}`,
-    /// so `{slug}` — the last segment — built a URL that answers 200 with no chapters. Nothing
+    /// A segment token addresses the key, not the display name.
+    ///
+    /// The bug: `WeebCentral`'s chapter endpoint is keyed by the id in `/series/{id}/{Name}`, so
+    /// `{slug}`, the last segment, built a URL that answers 200 with no chapters. Nothing
     /// errored; every series simply ingested zero.
     #[test]
     fn a_segment_token_addresses_the_key_and_not_the_display_name() {

@@ -1,19 +1,20 @@
-//! Bespoke layouts that still reduce to selectors, so they need no Rust of their own.
+//! Owns the presets for bespoke layouts that still reduce to selectors, so they need no Rust of
+//! their own.
 
 use serde_json::json;
 use tankovault_domain::{AdapterKind, Politeness};
 
 use super::{BuiltinPreset, aggregators::aggregators};
 
-/// Bespoke layouts that still reduce to selectors, so they need no Rust of their own.
+/// Returns the bespoke layouts that still reduce to selectors.
 pub(super) fn selector_only() -> Vec<BuiltinPreset> {
     let mut all = vec![weebcentral(), mangapill()];
     all.extend(aggregators());
     all
 }
 
-/// Server-rendered, offset-paginated, and the only site here serving its chapter list from a
-/// URL of its own — all three expressible as config.
+/// Returns the preset for `WeebCentral`: server-rendered, offset-paginated, and the only site here
+/// serving its chapter list from a URL of its own, all three expressible as config.
 fn weebcentral() -> BuiltinPreset {
     BuiltinPreset {
         slug: "weebcentral",
@@ -47,7 +48,7 @@ fn weebcentral() -> BuiltinPreset {
                 "release": { "row": "li", "label": "strong", "match": "Released", "value": "span" }
             },
             "chapters": {
-                // The series page renders no chapter rows at all — they are swapped in from
+                // The series page renders no chapter rows at all; they are swapped in from
                 // this endpoint. Reading the series page instead yields zero chapters, which
                 // no error path reports because an empty list is a valid answer.
                 // `{seg:1}` and not `{slug}`: the series path is `/series/{id}/{Name}`, so
@@ -65,8 +66,8 @@ fn weebcentral() -> BuiltinPreset {
     }
 }
 
-/// No browsable catalogue: search is the only listing and it caps at 100 rows, so enumeration
-/// is the sitemap `robots.txt` advertises.
+/// Returns the preset for Mangapill, which has no browsable catalogue: search is the only listing
+/// and it caps at 100 rows, so enumeration is the sitemap `robots.txt` advertises.
 fn mangapill() -> BuiltinPreset {
     BuiltinPreset {
         slug: "mangapill",

@@ -1,4 +1,4 @@
-//! Fixture tests for the demonicscans.org custom adapter, using trimmed live markup so a
+//! Tests the demonicscans.org custom adapter against fixtures, using trimmed live markup so a
 //! provider layout change breaks a test, not production. No network is touched.
 
 use async_trait::async_trait;
@@ -62,10 +62,11 @@ async fn parses_catalog_with_next_marker() {
     assert!(page.items.iter().any(|i| i.path == "/manga/Shibuya-Noir"));
 }
 
-/// Regression: the home feed lists the site's text novels alongside its comics, at `/novel/`.
-/// The catalogue never yields that prefix and the site answers those pages with a 404, so every
-/// one ingested became a series whose every rescan spent its retry budget failing — four of them
-/// accounted for more than a thousand recorded failures before anyone looked.
+/// The latest feed keeps comics and drops the site's text novels.
+///
+/// The bug: the home feed lists the site's text novels alongside its comics, at `/novel/`. The
+/// catalogue never yields that prefix and the site answers those pages with a 404, so every one
+/// ingested became a series whose every rescan spent its retry budget failing.
 #[tokio::test]
 async fn parses_latest_feed() {
     let updates = adapter().list_latest(&ctx()).await.expect("latest parses");

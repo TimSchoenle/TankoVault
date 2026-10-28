@@ -1,4 +1,4 @@
-//! Fixture tests for the shipped provider presets against the actual `presets::builtin()`
+//! Tests the shipped provider presets against the actual `presets::builtin()`
 //! config, using markup/JSON trimmed from live solver-fetched responses.
 
 use async_trait::async_trait;
@@ -25,8 +25,8 @@ struct SiteFetcher {
     catalog_past_end: &'static str,
 }
 
-/// Whether `url` addresses the site root — where every preset reads its `latest` feed —
-/// rather than any document below it.
+/// Returns whether `url` addresses the site root (where every preset reads its `latest` feed),
+/// not any document below it.
 fn is_site_root(url: &str) -> bool {
     url.split_once("://")
         .is_some_and(|(_, rest)| !rest.trim_end_matches('/').contains('/'))
@@ -64,19 +64,19 @@ impl Fetcher for SiteFetcher {
     }
 }
 
-/// The same trimmed markup as it would arrive from another install of the theme.
+/// Returns the same trimmed markup as it would arrive from another install of the theme.
 ///
 /// The fixtures carry the absolute links their source site renders, and a listing row whose
-/// link points at a host the page did not come from is now dropped as sponsored content
-/// (`generic::is_series_link`). A fixture borrowed across presets — which is how the two
+/// link points at a host the page did not come from is dropped as sponsored content
+/// (`generic::is_series_link`). A fixture borrowed across presets (which is how the two
 /// pagination bugs below are pinned, since the bug is in the shared family default and not in
-/// anyone's markup — therefore has to move hosts with it.
+/// anyone's markup) therefore has to move hosts with it.
 fn served_by(fixture: &str, from: &str, to: &str) -> &'static str {
     // Leaked because `SiteFetcher` holds `&'static str`; one small allocation per test process.
     Box::leak(fixture.replace(from, to).into_boxed_str())
 }
 
-/// Build the live adapter for a shipped preset, paired with a fixture-serving context.
+/// Builds the live adapter for a shipped preset, paired with a fixture-serving context.
 fn preset_adapter(slug: &str, fetcher: SiteFetcher) -> (Box<dyn SourceAdapter>, Ctx) {
     let preset = builtin_presets()
         .into_iter()
@@ -106,7 +106,7 @@ const KUNMANGA_HOME: &str = include_str!("../fixtures/kunmanga/home.html");
 const MANGAREAD_BASE: &str = "https://www.mangaread.org";
 const YAKSHACOMICS_BASE: &str = "https://yakshacomics.com";
 
-/// The fixture set for kunmanga: every document any of its adapter calls can reach.
+/// Returns the fixture set for kunmanga: every document any of its adapter calls can reach.
 fn kunmanga_fixtures() -> SiteFetcher {
     SiteFetcher {
         catalog: KUNMANGA_CATALOG,
@@ -120,13 +120,14 @@ fn kunmanga_fixtures() -> SiteFetcher {
     }
 }
 
-/// Bug: the preset selected `link[rel=next]` as the has-next marker, but manhuaus paginates
-/// via an AJAX "LOAD MORE" control and renders neither that link nor `a.nextpostslink` — so
+/// A manhuaus catalogue page continues while pages yield items.
+///
+/// The bug: the preset selected `link[rel=next]` as the has-next marker, but manhuaus paginates
+/// via an AJAX "LOAD MORE" control and renders neither that link nor `a.nextpostslink`, so
 /// `has_next` was false on every page and the fan-out stopped after page 1.
 ///
-/// The *family default* now clears `catalog.next`, putting termination on item count; this
-/// pins that a populated listing continues, and that neither selector re-appears in the
-/// fixture.
+/// The *family default* clears `catalog.next`, putting termination on item count; this pins that
+/// a populated listing continues, and that neither selector re-appears in the fixture.
 #[tokio::test]
 async fn manhuaus_catalog_continues_while_pages_yield_items() {
     let (adapter, ctx) = preset_adapter(
@@ -151,7 +152,7 @@ async fn manhuaus_catalog_continues_while_pages_yield_items() {
     );
 }
 
-/// The other half: without a next-link marker, the walk must stop on its own — manhuaus
+/// The other half: without a next-link marker, the walk must stop on its own: manhuaus
 /// answers `200` with the `WordPress` `error404` shell and no items past the last page.
 #[tokio::test]
 async fn manhuaus_catalog_terminates_on_the_first_empty_page() {
@@ -194,8 +195,8 @@ async fn manhuaus_series_reads_lazy_cover() {
     assert_eq!(meta.title, "Reborn As The Heavenly Demon");
     assert_eq!(meta.status, SeriesStatus::Ongoing);
     assert!(meta.tags.iter().any(|t| t == "Action"));
-    // Read from the row labelled "Alternative", not the label itself — the old
-    // `div.summary-heading` selector harvested every row's label into `series_titles`.
+    // Read from the row labelled "Alternative", not the label itself; a plain
+    // `div.summary-heading` selector harvests every row's label into `series_titles`.
     assert_eq!(
         meta.alt_titles,
         vec![
@@ -249,10 +250,12 @@ async fn kunmanga_catalog_terminates_after_the_last_shard() {
     assert!(!past_end.has_next);
 }
 
-/// Bug: kunmanga inherited the Madara `latest` defaults, which select `div.page-item-detail`
-/// on `/`. This theme renders no such element anywhere, so `list_latest` returned an empty
-/// feed and every fast scan did nothing — silently, since an empty feed is not an error. The
-/// site's updates are the home page's "Manga Updates!" slider, so the preset selects that.
+/// kunmanga reads its latest feed from the home page's updates slider.
+///
+/// The bug: kunmanga inherited the Madara `latest` defaults, which select `div.page-item-detail` on
+/// `/`. This theme renders no such element anywhere, so `list_latest` returned an empty feed and
+/// every fast scan did nothing, silently, since an empty feed is not an error. The site's updates
+/// are the home page's "Manga Updates!" slider, so the preset selects that.
 #[tokio::test]
 async fn kunmanga_latest_reads_the_home_page_updates_slider() {
     let (adapter, ctx) = preset_adapter("kunmanga", kunmanga_fixtures());
@@ -299,7 +302,7 @@ async fn kunmanga_series_metadata_from_html() {
 async fn kunmanga_chapters_from_json_api() {
     let (adapter, ctx) = preset_adapter("kunmanga", kunmanga_fixtures());
 
-    // Chapters are NOT in the series HTML — they come from `/api/comics/{slug}/chapters`.
+    // Chapters are **not** in the series HTML; they come from `/api/comics/{slug}/chapters`.
     let chapters = adapter
         .fetch_chapters(&ctx, "/manga/its-just-business")
         .await
@@ -316,14 +319,16 @@ async fn kunmanga_chapters_from_json_api() {
     );
 }
 
-/// Bug: `mangaread` carried only a `catalog.path` override and inherited `a.nextpostslink` as
-/// its has-next marker. No live Madara install checked renders that element — the theme
-/// paginates through an always-present AJAX control — so `has_next` was false on page 1 and
-/// every full scan ingested 12 series out of the site's ~3 200, silently and forever, because a
-/// walk that ends early is indistinguishable from a catalogue that is small.
+/// The Madara family does not inherit a paginator nothing renders.
 ///
-/// The marker is cleared family-wide now, so a site that deviates has to *add* one (toonily
-/// does) rather than inherit one nothing renders.
+/// The bug: `mangaread` carried only a `catalog.path` override and inherited `a.nextpostslink` as
+/// its has-next marker. Live Madara installs do not render that element (the theme paginates
+/// through an always-present AJAX control), so `has_next` was false on page 1 and every full scan
+/// ingested 12 series out of the site's ~3 200, silently, because a walk that ends early is
+/// indistinguishable from a catalogue that is small.
+///
+/// The marker is cleared family-wide, so a site that deviates has to *add* one (toonily does)
+/// instead of inheriting one nothing renders.
 #[tokio::test]
 async fn the_madara_family_does_not_inherit_a_paginator_nothing_renders() {
     assert!(
@@ -349,10 +354,12 @@ async fn the_madara_family_does_not_inherit_a_paginator_nothing_renders() {
     assert!(!past_end.has_next, "an empty listing ends the walk");
 }
 
-/// Bug: `yakshacomics` inherited the family's yielded-items termination, and that host answers
-/// **every** 404 with a Cloudflare challenge the solver cannot clear. The empty page that ends a
-/// walk is therefore unreachable: the scan enumerated all 52 series correctly, then failed on
-/// the request that should have said "stop", and was redelivered — forever. Its preset names
+/// `yakshacomics` ends its walk on the marker, not on an empty page.
+///
+/// The bug: `yakshacomics` inherited the family's yielded-items termination, and that host
+/// answers **every** 404 with a Cloudflare challenge the solver cannot clear. The empty page that
+/// ends a walk is therefore unreachable: the scan enumerated all 52 series correctly, then failed
+/// on the request that should have said "stop", and was redelivered forever. Its preset names
 /// `link[rel=next]`, which this install renders on every page but the last, so the walk ends
 /// without ever asking for a page past the end.
 ///

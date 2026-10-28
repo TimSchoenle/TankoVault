@@ -1,10 +1,11 @@
-//! Iken, the platform a cluster of scanlator sites runs on (here: Vortex Scans and friends).
+//! Owns the adapter for Iken, the platform a cluster of scanlator sites runs on (here: Vortex Scans
+//! and friends).
 //!
 //! The reader is a JavaScript app over a JSON API on a sibling host (`api.<domain>`), so there
-//! is no server-rendered markup to select from at all — the API *is* the source. It answers with
+//! is no server-rendered markup to select from at all: the API *is* the source. It answers with
 //! more than the pages show, including the paywall flags (`isLocked`, `unlockAt`) that the
-//! rendered page only expresses as a lock icon, so [`ChapterAccess`] is filled in exactly rather
-//! than inferred.
+//! rendered page only expresses as a lock icon, so [`ChapterAccess`] is filled in exactly, not
+//! inferred.
 
 use crate::error::AdapterError;
 use crate::json::parse_json_body;
@@ -20,8 +21,10 @@ use tankovault_domain::{ContentType, SeriesStatus};
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
-/// Rows per query page. The API accepts more, but the payload carries every series' recent
-/// chapters inline, so a larger page multiplies bytes rather than saving requests.
+/// Rows per query page.
+///
+/// The API accepts more, but the payload carries every series' recent chapters inline, so a
+/// larger page multiplies bytes instead of saving requests.
 const PAGE_SIZE: u32 = 40;
 
 /// The envelope `/api/query` answers with.
@@ -30,7 +33,7 @@ const PAGE_SIZE: u32 = 40;
 struct QueryResponse {
     #[serde(default)]
     posts: Vec<PostRow>,
-    /// Series matching the query across all pages — the site's own answer to "is there a next
+    /// Series matching the query across all pages: the site's own answer to "is there a next
     /// page", which is what ends the catalogue walk.
     #[serde(default)]
     total_count: u32,
@@ -59,7 +62,7 @@ struct PostResponse {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PostDetail {
-    /// Numeric id — the only key `/api/chapters` accepts, and it appears nowhere but here.
+    /// Numeric id: the only key `/api/chapters` accepts, and it appears nowhere but here.
     id: i64,
     post_title: String,
     /// The synopsis, as the HTML the editor stored.
@@ -118,7 +121,7 @@ struct ChapterRow {
     is_locked: bool,
 }
 
-/// Map the platform's `seriesType` to the medium.
+/// Maps the platform's `seriesType` to the medium.
 fn content_type_of(series_type: Option<&str>) -> ContentType {
     match series_type.map(str::to_ascii_lowercase).as_deref() {
         Some("manga") => ContentType::Manga,
@@ -129,7 +132,7 @@ fn content_type_of(series_type: Option<&str>) -> ContentType {
     }
 }
 
-/// Map the platform's `seriesStatus` vocabulary, which [`map_status`](crate::html::map_status)
+/// Maps the platform's `seriesStatus` vocabulary, which [`map_status`](crate::html::map_status)
 /// does not cover on its own: `COMING_SOON` and `MASS_RELEASED` are both states of a series
 /// that is still releasing.
 fn status_of(series_status: Option<&str>) -> SeriesStatus {
@@ -142,10 +145,10 @@ fn status_of(series_status: Option<&str>) -> SeriesStatus {
     }
 }
 
-/// Read the access state an Iken chapter row advertises.
+/// Reads the access state an Iken chapter row advertises.
 ///
 /// `unlockAt` is parsed when present and left unknown when absent or unparseable, which keeps
-/// the chapter locked rather than freeing it on a date nobody published.
+/// the chapter locked instead of freeing it on a date nobody published.
 fn access_of(row: &ChapterRow) -> ChapterAccess {
     if !row.is_locked {
         return ChapterAccess::Free;
@@ -158,16 +161,16 @@ fn access_of(row: &ChapterRow) -> ChapterAccess {
     }
 }
 
-/// Collapse the whitespace a hand-entered field arrives with.
+/// Collapses the whitespace a hand-entered field arrives with.
 ///
-/// Titles on this platform are stored exactly as typed, newlines included — and a title is
+/// Titles on this platform are stored exactly as typed, newlines included, and a title is
 /// normalised into the matching key, so `"\n\nWhy I Quit\n"` and `"Why I Quit"` would key
 /// differently and split one series across two.
 fn tidy(value: &str) -> String {
     value.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// The chapter number, whichever way the row spells it.
+/// Returns the chapter number, whichever way the row spells it.
 fn number_of(value: &Value) -> Option<f64> {
     value
         .as_f64()
@@ -184,7 +187,7 @@ impl PostRow {
     }
 }
 
-/// The reader path for a series, which is what gets stored and what a reader opens.
+/// Returns the reader path for a series, which is what gets stored and what a reader opens.
 fn series_path(slug: &str) -> String {
     format!("/series/{slug}")
 }
@@ -198,11 +201,11 @@ pub struct IkenAdapter {
 }
 
 impl IkenAdapter {
-    /// Build from the provider config.
+    /// Builds from the provider config.
     ///
     /// # Errors
-    /// [`AdapterError::Config`] when `api` is missing — failing here names the problem instead
-    /// of every request 404ing later.
+    /// Returns [`AdapterError::Config`] when `api` is missing; failing here names the problem
+    /// instead of every request 404ing later.
     pub fn new(config: &Value) -> Result<Self, AdapterError> {
         let api = config
             .get("api")
@@ -219,7 +222,7 @@ impl IkenAdapter {
         Ok(Self { api })
     }
 
-    /// The series slug out of a stored `/series/{slug}` path.
+    /// Returns the series slug out of a stored `/series/{slug}` path.
     fn slug_of(series_path: &str) -> &str {
         series_path
             .trim_end_matches('/')
@@ -235,7 +238,7 @@ impl IkenAdapter {
         Ok(body.post)
     }
 
-    /// One `/api/query` page, ordered as the caller asks.
+    /// Fetches one `/api/query` page, ordered as the caller asks.
     async fn query(
         &self,
         ctx: &Ctx,
@@ -260,8 +263,8 @@ impl SourceAdapter for IkenAdapter {
         // under it: a series that gains a chapter mid-walk moves to page 1 and the entry that
         // took its place is never seen.
         let body = self.query(ctx, page, "postTitle", "asc").await?;
-        // Novels share these endpoints with comics. Dropping them here rather than at ingest
-        // keeps `total_count` — and therefore `has_next` — the site's own count, which is what
+        // Novels share these endpoints with comics. Dropping them here, not at ingest, keeps
+        // `total_count` (and therefore `has_next`) the site's own count, which is what
         // it applies to: a filtered page can legitimately be empty while more pages remain.
         let items = body
             .posts
@@ -336,7 +339,7 @@ impl SourceAdapter for IkenAdapter {
     ) -> Result<Vec<ChapterMeta>, AdapterError> {
         let slug = Self::slug_of(path).to_owned();
         // The chapter endpoint is keyed by the numeric series id, which only the detail
-        // document carries — so a chapter fetch always costs two requests.
+        // document carries, so a chapter fetch always costs two requests.
         let series_id = self.detail(ctx, &slug).await?.id;
 
         let url = format!("{}/api/chapters?postId={series_id}", self.api);
@@ -370,13 +373,14 @@ impl SourceAdapter for IkenAdapter {
     }
 }
 
-/// Whether the platform's `seriesType` names a novel. `isNovel` is the primary flag, but rows
-/// predating it carry the fact only here.
+/// Returns whether the platform's `seriesType` names a novel.
+///
+/// `isNovel` is the primary flag, but rows predating it carry the fact only here.
 fn is_novel_type(series_type: Option<&str>) -> bool {
     series_type.is_some_and(is_prose_medium)
 }
 
-/// Split the platform's newline-separated alternative titles, then apply the ordinary
+/// Splits the platform's newline-separated alternative titles, then apply the ordinary
 /// separator rules to each line.
 fn split_alt_titles(value: Option<&str>) -> Vec<String> {
     value
@@ -432,7 +436,7 @@ mod tests {
     }
 
     /// A locked chapter with no announced date must stay locked. Reading the missing date as
-    /// "unlocks now" would put a chapter the reader cannot open into their unread count — the
+    /// "unlocks now" would put a chapter the reader cannot open into their unread count: the
     /// exact failure the early-access model exists to prevent.
     #[test]
     fn a_locked_chapter_without_a_date_stays_locked() {
@@ -462,9 +466,11 @@ mod tests {
         assert_eq!(content_type_of(Some("MANHWA")), ContentType::Manhwa);
     }
 
-    /// Regression: `postTitle` is stored as typed and several carry leading or embedded
-    /// newlines. A title becomes the matching key, so an untidied one keys differently from the
-    /// same title read anywhere else and splits one series into two.
+    /// A hand-entered title is whitespace-normalised.
+    ///
+    /// The bug: `postTitle` is stored as typed and several carry leading or embedded newlines. A
+    /// title becomes the matching key, so an untidied one keys differently from the same title read
+    /// anywhere else and splits one series into two.
     #[test]
     fn a_hand_entered_title_is_whitespace_normalised() {
         assert_eq!(

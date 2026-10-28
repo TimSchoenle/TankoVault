@@ -1,4 +1,4 @@
-//! Adapter error type.
+//! Owns the adapter error type.
 
 use crate::diagnostics::{describe, envelope, http_reason};
 use tankovault_domain::ResolveError;
@@ -79,7 +79,7 @@ pub enum AdapterError {
     /// never reached the site's application.
     ///
     /// The distinction this draws is the whole point. Reported as the [`Self::Http`] status it
-    /// wears, a dead origin is a `404` — which reads as "this page moved", sends the next reader
+    /// wears, a dead origin is a `404`, which reads as "this page moved", sends the next reader
     /// looking for a renamed route, and is the one verdict that is certainly wrong: the site is
     /// not being served to us at all, so no path on it would have worked either.
     #[error(
@@ -93,7 +93,7 @@ pub enum AdapterError {
         /// have reported and what an operator will see in the provider's own access log.
         status: u16,
         /// The web server whose stock error page was recognised, such as `nginx`. Drawn from a
-        /// fixed marker table, so it names a product rather than the `Server` header.
+        /// fixed marker table, so it names a product, not the `Server` header.
         server: &'static str,
     },
     /// No adapter is registered for a `custom` provider slug.
@@ -102,7 +102,7 @@ pub enum AdapterError {
 }
 
 impl AdapterError {
-    /// Classify a non-success response.
+    /// Classifies a non-success response.
     ///
     /// The fetch stack relabels an interstitial/throttle body only when something upstream
     /// reports it honestly; when nothing does, a `403` challenge page recorded as a plain
@@ -134,7 +134,7 @@ impl AdapterError {
         }
     }
 
-    /// A required element was absent from an otherwise successful response.
+    /// Builds the error for a required element absent from an otherwise successful response.
     ///
     /// Checks for a challenge/throttle body first: a `200` interstitial parses cleanly and
     /// matches no selector, and reporting that as "not found" sends the reader chasing
@@ -155,15 +155,15 @@ impl AdapterError {
         Self::Missing(format!("{what}; {}", describe(resp)))
     }
 
-    /// Whether a **later** attempt could plausibly succeed.
+    /// Returns whether a **later** attempt could plausibly succeed.
     ///
     /// Wider than [`FetchError::is_transient`] (immediate in-stack retries only): this also
     /// counts an unsolved challenge, a solver outage and rate limiting as worth redelivering,
     /// and excludes anything that repeats identically on replay (stale selector, malformed
     /// body, bad config).
     ///
-    /// [`Self::Unserved`] is excluded on purpose, and it is the one exclusion that is a *policy*
-    /// rather than a fact. A dead origin does recover — but not within a run, and not on any
+    /// [`Self::Unserved`] is excluded on purpose, and it is the one exclusion that is a *policy*,
+    /// not a fact. A dead origin does recover, but not within a run, and not on any
     /// timescale the delivery ladder spans, so spending three deliveries on it only triples the
     /// requests aimed at a site that is already answering none of them. Coming back later is the
     /// scheduler's decision, taken per provider with a growing cooldown, not the task's.
@@ -249,11 +249,11 @@ mod tests {
         );
     }
 
-    /// The failure this classification exists for, as nine providers served it for a day: the
-    /// origin's nginx answering `/` — a route a live site cannot 404 — from its own error page.
-    /// Read as a plain `404` it says "the feed moved", which is why the first investigation went
-    /// looking for a renamed route; what it actually says is that nothing on the site is being
-    /// served, and the message has to say so.
+    /// A bare server error page is reported as the site not being served.
+    ///
+    /// The bug: the origin's nginx answered `/`, a route a live site cannot 404, from its own
+    /// error page. Read as a plain `404` it says "the feed moved"; what it actually says is that
+    /// nothing on the site is being served, and the message has to say so.
     #[test]
     fn a_bare_server_error_page_is_reported_as_the_site_not_being_served() {
         let err = AdapterError::from_response(&resp(
@@ -287,7 +287,7 @@ mod tests {
 
     /// The discriminating case, and the one that must keep working: a series the provider really
     /// did remove. Its 404 comes from the application, wearing the site's own theme, and stays a
-    /// plain `404` — the path is genuinely gone and the message should say that.
+    /// plain `404`: the path is genuinely gone and the message should say that.
     #[test]
     fn a_sites_own_404_is_still_a_plain_404() {
         let themed = format!(

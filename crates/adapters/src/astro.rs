@@ -1,12 +1,12 @@
-//! Sites built on Astro islands (here: Asura Scans and `HiveToons`).
+//! Owns the adapter for sites built on Astro islands (here: Asura Scans and `HiveToons`).
 //!
 //! Both render their catalogue, series metadata and chapter list from React islands, and their
-//! DOM carries nothing but Tailwind utility classes — there is no `.chapter-row` to select, only
+//! DOM carries nothing but Tailwind utility classes: there is no `.chapter-row` to select, only
 //! `class="group flex items-center justify-between px-4 py-4"`. A selector set written against
 //! that breaks on any restyle.
 //!
 //! The island's `props` attribute is the better contract: it is the component's own input,
-//! named by the component's own field names, and it carries strictly more than the DOM does —
+//! named by the component's own field names, and it carries strictly more than the DOM does,
 //! including the paywall flags (`is_locked`/`unlock_time` on Asura, `isLocked`/`isTimeLocked` on
 //! `HiveToons`) that the rendered page only expresses as an icon.
 
@@ -24,8 +24,10 @@ use tankovault_domain::{ContentType, SeriesStatus};
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
-/// Which site's field names to read. The transport, the island decoding and the paging are
-/// identical; only the names differ, so this is an enum rather than two adapters.
+/// Which site's field names to read.
+///
+/// The transport, the island decoding and the paging are identical; only the names differ, so
+/// this is an enum, not two adapters.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AstroFlavour {
     /// `asurascans.com`.
@@ -35,7 +37,8 @@ pub enum AstroFlavour {
 }
 
 impl AstroFlavour {
-    /// The slug the factory dispatches on, or `None` for a slug this adapter does not serve.
+    /// Returns the flavour for the slug the factory dispatches on, or `None` for a slug this
+    /// adapter does not serve.
     #[must_use]
     pub fn from_slug(slug: &str) -> Option<Self> {
         match slug {
@@ -45,7 +48,7 @@ impl AstroFlavour {
         }
     }
 
-    /// Catalogue path template, `{page}` substituted.
+    /// Returns the catalogue path template, with `{page}` to substitute.
     fn catalog_path(self) -> &'static str {
         match self {
             Self::Asura => "/browse?page={page}",
@@ -53,7 +56,7 @@ impl AstroFlavour {
         }
     }
 
-    /// The island prop holding the catalogue page's series array, and the one holding the
+    /// Returns the island prop holding the catalogue page's series array, and the one holding the
     /// collection total.
     fn catalog_keys(self) -> (&'static str, &'static str) {
         match self {
@@ -62,7 +65,7 @@ impl AstroFlavour {
         }
     }
 
-    /// The prop holding the chapter array on a series page.
+    /// Returns the prop holding the chapter array on a series page.
     fn chapters_key(self) -> &'static str {
         match self {
             Self::Asura => "chapters",
@@ -70,7 +73,7 @@ impl AstroFlavour {
         }
     }
 
-    /// Series-path prefix, which is also how a catalogue slug becomes a stored path.
+    /// Returns the series-path prefix, which is also how a catalogue slug becomes a stored path.
     fn series_prefix(self) -> &'static str {
         match self {
             Self::Asura => "/comics",
@@ -79,11 +82,11 @@ impl AstroFlavour {
     }
 }
 
-/// Astro serialises every prop value as a `[type_tag, value]` pair; this unwraps them.
+/// Unwraps the `[type_tag, value]` pair Astro serialises every prop value as.
 ///
 /// A genuine two-element array whose first element is a number would be misread as a wrapper.
-/// No prop in either site's payload has that shape, and the alternative — threading Astro's
-/// type tags through — buys nothing, since every tag in use here denotes a plain JSON value.
+/// No prop in either site's payload has that shape, and the alternative (threading Astro's
+/// type tags through) buys nothing, since every tag in use here denotes a plain JSON value.
 fn unwrap_astro(value: Value) -> Value {
     match value {
         Value::Array(items) if items.len() == 2 && items[0].is_number() => {
@@ -97,10 +100,10 @@ fn unwrap_astro(value: Value) -> Value {
     }
 }
 
-/// The first island whose decoded props contain `key`, or `None`.
+/// Returns the first island whose decoded props contain `key`, or `None`.
 ///
 /// A page carries a dozen islands and only one of them is the list being looked for, so this
-/// selects by the presence of the field rather than by island order or component name — both of
+/// selects by the presence of the field, not by island order or component name: both of
 /// which change when the page is re-laid-out and neither of which is part of any contract.
 fn island_with(root: ElementRef<'_>, key: &str) -> Option<Value> {
     let selector = crate::html::parse_selector("astro-island").ok()?;
@@ -120,7 +123,7 @@ fn island_with(root: ElementRef<'_>, key: &str) -> Option<Value> {
     None
 }
 
-/// Read the first present string field out of `candidates`.
+/// Reads the first present string field out of `candidates`.
 fn first_str(value: &Value, candidates: &[&str]) -> Option<String> {
     candidates
         .iter()
@@ -130,7 +133,7 @@ fn first_str(value: &Value, candidates: &[&str]) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// Read a chapter number from whichever numeric or string field the site uses.
+/// Reads a chapter number from whichever numeric or string field the site uses.
 fn chapter_number(value: &Value) -> Option<f64> {
     let raw = value.get("number").or_else(|| value.get("chapter"))?;
     raw.as_f64()
@@ -138,14 +141,15 @@ fn chapter_number(value: &Value) -> Option<f64> {
         .filter(|n: &f64| n.is_finite())
 }
 
-/// The access state a chapter object advertises, as of `now`.
+/// Returns the access state a chapter object advertises, as of `now`.
 ///
 /// Asura marks the chapters it currently gates with `is_premium`, and stamps
-/// `early_access_until` on *every* chapter — expired windows included — so neither field alone
+/// `early_access_until` on *every* chapter, expired windows included, so neither field alone
 /// is the answer: the flag misses a window whose flag has not been set yet, and the date alone
 /// would read the whole back catalogue as paid.
+///
 /// `HiveToons` publishes flags only (`isLocked`, and `isPermanentlyLocked` for chapters that
-/// never open), so its locked chapters carry no unlock time — which the read paths treat as
+/// never open), so its locked chapters carry no unlock time, which the read paths treat as
 /// still locked, the conservative and correct reading.
 fn access_of(value: &Value, now: OffsetDateTime) -> ChapterAccess {
     let unlocks_at = first_str(value, &["unlock_time", "early_access_until", "freeAt"])
@@ -163,18 +167,17 @@ fn access_of(value: &Value, now: OffsetDateTime) -> ChapterAccess {
     ChapterAccess::EarlyAccess { unlocks_at }
 }
 
-/// Map either site's status vocabulary onto the domain's.
+/// Maps either site's status vocabulary onto the domain's.
 fn status_of(value: &Value) -> SeriesStatus {
     first_str(value, &["status", "postStatus", "seriesStatus"])
         .as_deref()
         .map_or(SeriesStatus::Unknown, crate::html::map_status)
 }
 
-/// Whether a catalogue row is a text novel rather than a comic.
+/// Returns whether a catalogue row is a text novel, not a comic.
 ///
 /// `HiveToons` sells both under one catalogue and one URL prefix, and a novel's "chapter" is
-/// prose — there are no pages to read and nothing this application can track. Six of the first
-/// 126 rows are novels, and they were being ingested as ordinary series.
+/// prose: there are no pages to read and nothing this application can track.
 ///
 /// The medium is what decides, not the URL: the platform stores prose at `/series/<slug>` like
 /// everything else.
@@ -183,7 +186,7 @@ fn is_prose(row: &Value) -> bool {
         || row.get("isNovel").and_then(Value::as_bool) == Some(true)
 }
 
-/// Map either site's medium vocabulary onto the domain's.
+/// Maps either site's medium vocabulary onto the domain's.
 fn content_type_of(value: &Value) -> ContentType {
     match first_str(value, &["type", "postType", "seriesType"])
         .map(|s| s.to_ascii_lowercase())
@@ -203,17 +206,18 @@ pub struct AstroIslandAdapter {
 }
 
 impl AstroIslandAdapter {
-    /// Build for a dispatch slug.
+    /// Builds for a dispatch slug.
     ///
     /// # Errors
-    /// [`AdapterError::UnknownCustom`] for a slug this adapter does not serve.
+    /// Returns [`AdapterError::UnknownCustom`] for a slug this adapter does not serve.
     pub fn new(slug: &str) -> Result<Self, AdapterError> {
         AstroFlavour::from_slug(slug)
             .map(|flavour| Self { flavour })
             .ok_or_else(|| AdapterError::UnknownCustom(slug.to_owned()))
     }
 
-    /// Series entries out of a catalogue island, and how many rows the island actually held.
+    /// Returns the series entries out of a catalogue island, and how many rows the island actually
+    /// held.
     ///
     /// The two numbers differ because prose is dropped here (see [`is_prose`]), and the caller
     /// needs the *unfiltered* count: `has_next` is decided against the site's own collection
@@ -256,7 +260,7 @@ impl SourceAdapter for AstroIslandAdapter {
             })?;
             let (items, rows) = AstroIslandAdapter::catalog_items(flavour, &island);
             // The island states the collection total, so the walk ends on the site's own count
-            // rather than on "this page had rows" — which never goes false on either site,
+            // instead of on "this page had rows", which never goes false on either site,
             // because both re-serve the last page for any page number past the end.
             //
             // `rows`, not `items.len()`: the total counts novels, so a page whose prose rows
@@ -272,9 +276,9 @@ impl SourceAdapter for AstroIslandAdapter {
 
     async fn list_latest(&self, ctx: &Ctx) -> Result<Vec<LatestUpdate>, AdapterError> {
         // The catalogue's first page, not the home page. The home page renders its own islands
-        // (carousels, a hero, a "latest chapters" strip) and none of them is the series list —
-        // so reading it returned an empty feed, and an empty feed is a valid answer that no
-        // error path reports. Every fast scan silently did nothing.
+        // (carousels, a hero, a "latest chapters" strip) and none of them is the series list,
+        // so reading it returns an empty feed, which is a valid answer that no error path
+        // reports.
         let path = self.flavour.catalog_path().replace("{page}", "1");
         let resp = ctx.fetch(&path).await?;
         let flavour = self.flavour;
@@ -417,7 +421,7 @@ impl SourceAdapter for AstroIslandAdapter {
     }
 }
 
-/// Render a chapter number the way the sites spell it in a URL: `196`, not `196`.
+/// Renders a chapter number the way the sites spell it in a URL: `196`, not `196.0`.
 fn trim_number(number: f64) -> String {
     if number.fract() == 0.0 {
         format!("{number:.0}")
@@ -478,8 +482,10 @@ mod tests {
         );
     }
 
-    /// Regression: Asura gates a chapter with `is_premium` and never publishes `is_locked`, so
-    /// testing only the flags the adapter knew read the whole site as free — chapter 72 of
+    /// Asura gates with `is_premium` and stamps expired windows too.
+    ///
+    /// The bug: Asura gates a chapter with `is_premium` and never publishes `is_locked`, so
+    /// testing only the flags the adapter knew read the whole site as free; chapter 72 of
     /// *The Youngest Son of the Eunhae Merchant Group* was offered as a free read six hours
     /// before its window closed. Its `early_access_until` cannot be the test on its own either:
     /// chapter 71 carries one too, from the window that has already expired.
@@ -529,8 +535,10 @@ mod tests {
         );
     }
 
-    /// Regression: `HiveToons` sells prose novels from the same catalogue, under the same
-    /// `/series/<slug>` prefix, and they were ingested as ordinary comics — a "chapter" of one
+    /// A novel row is prose and a comic row is not.
+    ///
+    /// The bug: `HiveToons` sells prose novels from the same catalogue, under the same
+    /// `/series/<slug>` prefix, and they were ingested as ordinary comics; a "chapter" of one
     /// is text, so there is nothing to read and nothing to track. The catalogue row says which
     /// it is; nothing was reading it.
     #[test]
@@ -546,7 +554,7 @@ mod tests {
     }
 
     /// The walk ends on the site's own collection total, so paging has to count the rows the
-    /// page *held*, not the ones that survived the filter — otherwise a catalogue containing
+    /// page *held*, not the ones that survived the filter; otherwise a catalogue containing
     /// novels never reaches its own end and the walk runs to the planner's cap.
     #[test]
     fn dropping_a_novel_does_not_shorten_the_page_the_walk_counts() {

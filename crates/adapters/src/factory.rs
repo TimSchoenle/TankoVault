@@ -1,4 +1,4 @@
-//! Adapter construction: map a provider's `adapter` kind + `config` to a live adapter.
+//! Owns adapter construction: maps a provider's `adapter` kind and `config` to a live adapter.
 
 use crate::astro::AstroIslandAdapter;
 use crate::config::AdapterConfig;
@@ -21,7 +21,7 @@ use crate::webtoons::WebtoonsAdapter;
 use serde_json::Value;
 use tankovault_domain::AdapterKind;
 
-/// Deep-merge `over` into `base` (object keys recurse; other values replace).
+/// Deep-merges `over` into `base` (object keys recurse; other values replace).
 fn merge(base: &mut Value, over: &Value) {
     match (base, over) {
         (Value::Object(b), Value::Object(o)) => {
@@ -33,10 +33,10 @@ fn merge(base: &mut Value, over: &Value) {
     }
 }
 
-/// Build the adapter for a provider.
+/// Builds the adapter for a provider.
 ///
 /// `Madara` merges the provider's `config` onto the Madara defaults, `GenericConfig` takes
-/// `config` as it stands, and `Custom` dispatches by slug — `kunmanga` reuses the Madara HTML
+/// `config` as it stands, and `Custom` dispatches by slug; `kunmanga` reuses the Madara HTML
 /// selectors and overrides chapter fetching alone.
 ///
 /// Every one of them is wrapped in the prose guard (`medium::ProseFiltered`). This is the single
@@ -44,7 +44,7 @@ fn merge(base: &mut Value, over: &Value) {
 /// adapter added.
 ///
 /// # Errors
-/// Malformed effective config, or an unregistered custom provider slug.
+/// Returns an [`AdapterError`] for a malformed effective config or an unregistered custom slug.
 pub fn build_adapter(
     adapter: AdapterKind,
     slug: &str,
@@ -53,7 +53,7 @@ pub fn build_adapter(
     Ok(ProseFiltered::wrap(build_source(adapter, slug, config)?))
 }
 
-/// The provider's own adapter, before the prose guard is applied.
+/// Builds the provider's own adapter, before the prose guard is applied.
 fn build_source(
     adapter: AdapterKind,
     slug: &str,
@@ -68,7 +68,7 @@ fn build_source(
             mangathemesia_default_config(),
             config,
         )?))),
-        // The family's chapter list is a JSON endpoint, not markup — see `ManganatoAdapter`.
+        // The family's chapter list is a JSON endpoint, not markup; see `ManganatoAdapter`.
         AdapterKind::Manganato => Ok(Box::new(ManganatoAdapter::new(family_config(
             manganato_default_config(),
             config,
@@ -84,7 +84,7 @@ fn build_source(
         AdapterKind::Custom => match slug {
             "demonicscans" => Ok(Box::new(DemonicScansAdapter::new())),
             // Hybrid: Madara-shaped HTML for catalogue/series, JSON API for chapters. Three
-            // installs of one hosted platform, told apart only by host — the adapter is
+            // installs of one hosted platform, told apart only by host; the adapter is
             // identical for all of them, so the slug list is the whole registration.
             "kunmanga" | "zinmanga" | "kunmangaonline" => Ok(Box::new(KunMangaAdapter::new(
                 family_config(madara_default_config(), config)?,
@@ -96,7 +96,7 @@ fn build_source(
             "omegascans" => Ok(Box::new(HeanCmsAdapter::new(config)?)),
             // Iken: one hosted platform behind several scanlator sites, driven entirely by its
             // JSON API. Not a `family`, because a family merges *selectors* onto defaults and
-            // there is no markup here to select — the whole config is the API host, so a new
+            // there is no markup here to select: the whole config is the API host, so a new
             // site on the platform is a preset entry plus its slug in this list.
             "vortexscans" | "magustoon" | "nyxscans" | "kencomics" | "sanascans" | "orionscans"
             | "renascans" | "kaynscans" | "hijalascans" => Ok(Box::new(IkenAdapter::new(config)?)),
@@ -114,7 +114,7 @@ fn build_source(
     }
 }
 
-/// Merge a provider `config` onto a family's selector defaults and parse the result.
+/// Merges a provider `config` onto a family's selector defaults and parse the result.
 fn family_config(mut defaults: Value, config: &Value) -> Result<AdapterConfig, AdapterError> {
     merge(&mut defaults, config);
     AdapterConfig::from_value(&defaults)

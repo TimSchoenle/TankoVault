@@ -1,4 +1,4 @@
-//! Reading JSON API responses that may arrive as raw JSON, JSON re-serialised inside
+//! Owns reading JSON API responses that may arrive as raw JSON, JSON re-serialised inside
 //! solver-rendered markup, or an unsolved interstitial; [`parse_json_body`] recovers the first
 //! two and names the third instead of reporting it as malformed JSON.
 
@@ -9,18 +9,19 @@ use serde::de::DeserializeOwned;
 use tankovault_fetch::FetchResponse;
 use tankovault_solver::{detect_challenge_body, is_rate_limit_page};
 
-/// Upper bound on JSON candidates extracted from one body. A document embedding more
-/// distinct objects than this is not a wrapped API response, and scanning on would cost more
-/// than it could recover.
+/// Upper bound on JSON candidates extracted from one body.
+///
+/// A document embedding more distinct objects than this is not a wrapped API response, and scanning
+/// on would cost more than it could recover.
 const MAX_CANDIDATES: usize = 8;
 
-/// Deserialize `T` from a response whose body is JSON, or contains JSON.
+/// Deserializes `T` from a response whose body is JSON, or contains JSON.
 ///
 /// `what` names the endpoint in error messages (e.g. `"kunmanga chapters API"`).
 ///
 /// # Errors
-/// - [`AdapterError::Challenged`] if the body is a bot-management interstitial.
-/// - [`AdapterError::Parse`], carrying the response envelope, if no candidate deserialized.
+/// Returns [`AdapterError::Challenged`] if the body is a bot-management interstitial, or
+/// [`AdapterError::Parse`], carrying the response envelope, if no candidate deserialized.
 pub(crate) fn parse_json_body<T: DeserializeOwned>(
     what: &str,
     resp: &FetchResponse,
@@ -51,7 +52,7 @@ pub(crate) fn parse_json_body<T: DeserializeOwned>(
     Err(failure(what, resp, cause.as_ref()))
 }
 
-/// JSON objects embedded in rendered markup, best candidate first.
+/// Returns the JSON objects embedded in rendered markup, best candidate first.
 ///
 /// `<pre>` blocks are tried first since that is the original text, not a re-rendering; the scan
 /// then widens to the raw document and finally to entity-decoded text content, which recovers a
@@ -68,7 +69,7 @@ fn wrapped_candidates(body: &str) -> Vec<String> {
     out
 }
 
-/// The inner text of every `<pre …>…</pre>` element, in document order.
+/// Returns the inner text of every `<pre …>…</pre>` element, in document order.
 fn pre_blocks(body: &str) -> Vec<&str> {
     let mut out = Vec::new();
     for tail in body.split("<pre").skip(1) {
@@ -82,10 +83,10 @@ fn pre_blocks(body: &str) -> Vec<&str> {
     out
 }
 
-/// Drop element markup, keeping text content.
+/// Drops element markup, keeping text content.
 ///
-/// Only correct for text a DOM produced — where a literal `<` in the payload is necessarily
-/// escaped as `&lt;` — which is exactly the case this module handles.
+/// Only correct for text a DOM produced, where a literal `<` in the payload is necessarily
+/// escaped as `&lt;`, which is exactly the case this module handles.
 fn strip_tags(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut depth = 0usize;
@@ -100,13 +101,13 @@ fn strip_tags(s: &str) -> String {
     out
 }
 
-/// Append every balanced JSON object found in `doc` (outermost first) to `out`, stopping at
+/// Appends every balanced JSON object found in `doc` (outermost first) to `out`, stopping at
 /// [`MAX_CANDIDATES`].
 ///
-/// Single-pass and linear in body length — re-scanning to the end of the document from every
+/// Single-pass and linear in body length: re-scanning to the end of the document from every
 /// `{` is a remotely triggerable quadratic `DoS` given the fetch stack's multi-MiB body cap.
 fn collect_objects(doc: &str, out: &mut Vec<String>) {
-    /// How many candidate openings to track at once — bounds the working set against a
+    /// How many candidate openings to track at once; bounds the working set against a
     /// hostile body while staying above [`MAX_CANDIDATES`].
     const TRACKED_OPENS: usize = MAX_CANDIDATES * 8;
 
@@ -134,8 +135,8 @@ fn collect_objects(doc: &str, out: &mut Vec<String>) {
             b'"' => in_string = true,
             b'{' => {
                 depth += 1;
-                // Only object-opening braces (key or empty object next) count as candidates —
-                // keeps the scan off JS blocks and CSS rules in the rendered page.
+                // Only object-opening braces (key or empty object next) count as candidates,
+                // which keeps the scan off JS blocks and CSS rules in the rendered page.
                 if pending.len() < TRACKED_OPENS && opens_object(bytes, i) {
                     pending.push((depth, i));
                 }
@@ -166,7 +167,7 @@ fn collect_objects(doc: &str, out: &mut Vec<String>) {
     }
 }
 
-/// Whether the byte after the brace at `start` (ignoring whitespace) starts a key or closes
+/// Returns whether the byte after the brace at `start` (ignoring whitespace) starts a key or closes
 /// an empty object.
 fn opens_object(bytes: &[u8], start: usize) -> bool {
     bytes
@@ -176,7 +177,7 @@ fn opens_object(bytes: &[u8], start: usize) -> bool {
         .is_some_and(|b| matches!(b, b'"' | b'}'))
 }
 
-/// Turn an exhausted parse into the most specific error the response supports.
+/// Turns an exhausted parse into the most specific error the response supports.
 fn failure(what: &str, resp: &FetchResponse, cause: Option<&serde_json::Error>) -> AdapterError {
     if let Some(kind) = detect_challenge_body(&resp.body) {
         return AdapterError::Challenged {
@@ -192,7 +193,7 @@ fn failure(what: &str, resp: &FetchResponse, cause: Option<&serde_json::Error>) 
         };
     }
     // Distinguishing "the JSON is not what we expect" from "there is no JSON here" is the
-    // difference between a contract change and a blocked fetch — two different fixes.
+    // difference between a contract change and a blocked fetch: two different fixes.
     let detail = match cause {
         Some(e) => format!("response did not match the expected shape ({e})"),
         None => "response contained no JSON object".to_owned(),
@@ -225,8 +226,10 @@ mod tests {
         }
     }
 
-    /// Regression: `collect_objects` used to re-scan to end-of-document from every `{`, which
-    /// is quadratic and remotely triggerable given the fetch stack's body-size cap.
+    /// `collect_objects` is linear in body length.
+    ///
+    /// The bug: it re-scanned to end-of-document from every `{`, which is quadratic and remotely
+    /// triggerable given the fetch stack's body-size cap.
     #[test]
     fn collect_objects_is_linear_in_body_length() {
         let depth = 60_000;

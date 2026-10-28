@@ -1,7 +1,7 @@
-//! WEBTOON (`webtoons.com`) — the one licensed source in this catalogue.
+//! Owns the adapter for WEBTOON (`webtoons.com`), the one licensed source in this catalogue.
 //!
-//! Two things make it unlike every other provider here, and both are why it needs code rather
-//! than selectors:
+//! Two things make it unlike every other provider here, and both are why it needs code, not
+//! selectors:
 //!
 //! 1. **There is no catalogue listing.** Browsing is by genre, and `robots.txt` disallows
 //!    `/*/search`. The genre pages *are* the enumeration, so a catalogue page here is a genre.
@@ -9,10 +9,10 @@
 //!    list is several fetches and the config-driven adapter's one-page read would silently
 //!    truncate every long-running title to its newest ten.
 //!
-//! Fast Pass (paid early-access) episodes are **not rendered to an anonymous visitor at all** —
-//! verified against a Fast Pass title, where the logged-out page carries no lock markup and no
-//! locked rows. So every episode this adapter can see is readable, and it reports them free
-//! rather than inventing a lock state it has no evidence for.
+//! Fast Pass (paid early-access) episodes are **not rendered to an anonymous visitor at all**: a
+//! Fast Pass title's logged-out page carries no lock markup and no locked rows. So every episode
+//! this adapter can see is readable, and it reports them free instead of inventing a lock state
+//! it has no evidence for.
 
 use crate::error::AdapterError;
 use crate::html::{
@@ -28,9 +28,10 @@ use std::collections::HashSet;
 use tankovault_domain::{ContentType, SeriesStatus};
 use time::OffsetDateTime;
 
-/// The site's English genre slugs, read off its own genre navigation. One catalogue page per
-/// genre; a series in several genres is yielded several times, which the ingest deduplicates by
-/// path.
+/// The site's English genre slugs, read off its own genre navigation.
+///
+/// One catalogue page per genre; a series in several genres is yielded several times, which the
+/// ingest deduplicates by path.
 const GENRES: [&str; 17] = [
     "action",
     "comedy",
@@ -51,14 +52,17 @@ const GENRES: [&str; 17] = [
     "tiptoon",
 ];
 
-/// Episode-list pages fetched per series before giving up. Ten rows per page, so this reaches
-/// 2 000 episodes — past the longest title on the site.
+/// Episode-list pages fetched per series before giving up.
+///
+/// Ten rows per page, so this reaches 2 000 episodes, past the longest title on the site.
 const MAX_EPISODE_PAGES: u32 = 200;
 
 /// The WEBTOON adapter.
 pub struct WebtoonsAdapter;
 
 impl WebtoonsAdapter {
+    /// Creates the adapter.
+    ///
     /// Stateless: the provider's base URL and the fetch stack arrive per call in [`Ctx`], so
     /// one instance serves every provider configured against this adapter.
     #[must_use]
@@ -66,7 +70,7 @@ impl WebtoonsAdapter {
         Self
     }
 
-    /// Strip any existing `page=` parameter, so appending one cannot produce a duplicate.
+    /// Strips any existing `page=` parameter, so appending one cannot produce a duplicate.
     fn base_series_path(path: &str) -> String {
         let Some((head, query)) = path.split_once('?') else {
             return path.to_owned();

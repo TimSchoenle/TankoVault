@@ -1,5 +1,5 @@
-//! Rules over `.gitattributes`: that a generated artefact checks out the way its generator writes
-//! it.
+//! Owns the rules over `.gitattributes`: that a generated artefact checks out the way its generator
+//! writes it.
 
 use std::path::{Path, PathBuf};
 
@@ -11,11 +11,11 @@ use super::Finding;
 /// rendered document against the committed one for exact equality, `xtask notices --check` does
 /// the same for `THIRD-PARTY-NOTICES`, and every generator writes `\n`. `.gitattributes` also
 /// says `* text=auto`, so without an explicit `eol` these check out CRLF wherever
-/// `core.autocrlf` is on — and the comparison then fails for every Windows developer on a clean
+/// `core.autocrlf` is on, and the comparison then fails for every Windows developer on a clean
 /// tree, having verified nothing.
 ///
-/// It fails *misleadingly*, which is why this is a rule rather than a convention. The message is
-/// "openapi.json is out of date; run `cargo run -p xtask -- openapi`" — so the obvious reading is
+/// It fails *misleadingly*, which is why this is a rule instead of a convention. The message is
+/// "openapi.json is out of date; run `cargo run -p xtask -- openapi`", so the obvious reading is
 /// that the artefact is stale, and doing what it says rewrites the file with LF, leaves `git
 /// diff` empty because the index was already normalised, and leaves the gate red. `xtask ci` is
 /// this repository's definition of done, and it could not pass on the platform `.gitattributes`
@@ -53,7 +53,7 @@ pub(super) fn generated_artefacts_check_out_as_lf(root: &Path) -> anyhow::Result
 ///
 /// Split out so the parse is testable without a filesystem, like the rest of these rules. A
 /// line-based read: `.gitattributes` is `<pattern> <attr>...` per line, and attributes for one
-/// path may legally be spread over several lines — this requires them together, which is how
+/// path may legally be spread over several lines; this requires them together, which is how
 /// every entry in this repository's file is written and the only form that reads unambiguously.
 fn offenders(contents: &str) -> Vec<(usize, String)> {
     let mut out = Vec::new();
@@ -103,7 +103,7 @@ mod tests {
     }
 
     /// Prose describing the rule contains the very attribute it looks for, so a comment that is
-    /// not skipped makes documenting the rule break it — the reason [`super::super::text`] has an
+    /// not skipped makes documenting the rule break it: the reason [`super::super::text`] has an
     /// `is_comment` at all.
     #[test]
     fn prose_naming_the_attribute_does_not_fire() {

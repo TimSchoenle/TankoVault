@@ -1,4 +1,4 @@
-//! The build epoch is declared once and reaches every image build.
+//! Owns the rule that the build epoch is declared once and reaches every image build.
 
 use super::yaml::{is_job_header, workflow_env_value};
 use crate::repo_lint::Finding;
@@ -8,18 +8,17 @@ use std::path::{Path, PathBuf};
 /// **Every workflow that builds an image declares one constant `SOURCE_DATE_EPOCH`, at workflow
 /// level, and nothing else names it.** buildx propagates the variable from its environment into
 /// the solve as `build-arg:SOURCE_DATE_EPOCH`, so its value is part of the cache key of every
-/// stage in `deploy/docker/Dockerfile`. There is no channel that reaches the exporter — where
-/// `rewrite-timestamp=true` needs it — without also reaching the build.
+/// stage in `deploy/docker/Dockerfile`. There is no channel that reaches the exporter (where
+/// `rewrite-timestamp=true` needs it) without also reaching the build.
 ///
-/// So a *derived* epoch cannot be reproducibility for free; it is a guaranteed cache miss. The
-/// repository has now paid for that twice, in opposite directions. Passed as
-/// `--build-arg SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)` it went to the warm-up and both
-/// publishing builds, which agreed with each other and with nothing `ci.yml` wrote: the warm-up
-/// cold-compiled the workspace on every release, 31 minutes. Moved to a step `env:` on the
-/// publishing build alone — on the belief that an environment value stops at the exporter — it
-/// inverted the failure: the warm-up became a 28-second import and each of the eighteen legs
-/// recompiled the whole workspace instead, 24 minutes apiece (release v1.5.2). Both spellings are
-/// the same wire format, which is why this rule reads the value rather than the syntax.
+/// So a *derived* epoch cannot be reproducibility for free; it is a guaranteed cache miss, and it
+/// fails in both directions. Passed as `--build-arg SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)`
+/// it reaches the warm-up and both publishing builds, which agree with each other and with nothing
+/// `ci.yml` wrote, so the warm-up cold-compiles the workspace on every release (31 minutes). Set as
+/// a step `env:` on the publishing build alone (on the belief that an environment value stops at
+/// the exporter) it inverts the failure: the warm-up is a 28-second import and each of the eighteen
+/// legs recompiles the whole workspace instead, 24 minutes apiece. Both spellings are the same wire
+/// format, which is why this rule reads the value instead of the syntax.
 ///
 /// The three checks are one rule because any of them alone is satisfiable while broken: agreeing
 /// on `${{ steps.epoch.outputs.value }}` in both files is textual agreement and per-commit drift,
@@ -86,8 +85,8 @@ pub(in crate::repo_lint) fn the_build_epoch_is_one_constant(
             Some((line, value)) => declared.push((name.clone(), *line, value.clone())),
         }
 
-        // Anything naming the epoch outside its one declaration overrides it for that step —
-        // `build-args:` and a step `env:` alike — which is the failure the constant exists to
+        // Anything naming the epoch outside its one declaration overrides it for that step
+        // (`build-args:` and a step `env:` alike), which is the failure the constant exists to
         // prevent.
         let declared_line = declaration.map(|(line, _)| line).unwrap_or_default();
         for (index, line) in text.lines().enumerate() {
@@ -97,8 +96,8 @@ pub(in crate::repo_lint) fn the_build_epoch_is_one_constant(
             // Removing it is the one exception, and only in a job that runs no buildx: there the
             // value reaches no cache key, while leaving it set breaks every packager that sets
             // its own timestamps. Inside a job that *does* build, an `unset` is the same
-            // regression by subtraction — buildx then passes no `build-arg` at all, so the build
-            // misses every layer a build carrying the constant exported — and is still reported.
+            // regression by subtraction (buildx then passes no `build-arg` at all, so the build
+            // misses every layer a build carrying the constant exported), and is still reported.
             if line.trim() == format!("unset {EPOCH}")
                 && !job_builds_images(&text, index, BUILD_ACTION)
             {
@@ -117,7 +116,7 @@ pub(in crate::repo_lint) fn the_build_epoch_is_one_constant(
         }
     }
 
-    // Cross-file agreement, reported once against the first file in name order rather than n times.
+    // Cross-file agreement, reported once against the first file in name order, not n times.
     declared.sort();
     if let Some(((_, _, first), rest)) = declared.split_first()
         && let Some((name, line, value)) = rest.iter().find(|(_, _, value)| value != first)
@@ -146,7 +145,7 @@ pub(in crate::repo_lint) fn the_build_epoch_is_one_constant(
 /// Textual, like the rest of this module: a job is a two-space-indented key under `jobs:`, and
 /// everything nested inside one is indented further, so the nearest such key at or above the line
 /// is its job and the block runs to the next one. A line that sits above the first job header
-/// counts as building, so an unrecognised layout is judged conservatively rather than waved
+/// counts as building, so an unrecognised layout is judged conservatively instead of waved
 /// through.
 fn job_builds_images(text: &str, line: usize, build_action: &str) -> bool {
     let Some(start) = text
@@ -171,12 +170,11 @@ mod tests {
     use super::*;
     use crate::repo_lint::tempdir;
 
-    /// The bug this pins, in both of the shapes it has taken. Release 1.5.1 passed
-    /// `SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)` as a build arg, so the release warm-up could
-    /// import nothing `ci.yml` wrote and cold-compiled the workspace every time. Release 1.5.2
-    /// moved the same value to a step `env:` on the publishing build, believing an environment
-    /// value reaches only the exporter; buildx passes it as `build-arg:SOURCE_DATE_EPOCH` either
-    /// way, so all eighteen legs recompiled instead — 24 minutes each, against a `builder` the
+    /// The bug this pins, in both of its shapes. Passed as a build arg,
+    /// `SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)` left the release warm-up nothing `ci.yml`
+    /// wrote to import, so it cold-compiled the workspace every time. The same value in a step
+    /// `env:` on the publishing build looks as if it reaches only the exporter, but buildx passes
+    /// it as `build-arg:SOURCE_DATE_EPOCH` either way, so all eighteen legs recompiled instead: 24 minutes each, against a `builder` the
     /// warm-up had just imported in 28 seconds.
     ///
     /// The reader has to find the top-level declaration and *only* that one: a job- or step-level
@@ -190,14 +188,14 @@ mod tests {
             Some((3, "0".to_owned()))
         );
 
-        // The 1.5.2 shape: workflow level, but derived. Read, and reported by the caller.
+        // The derived shape: workflow level, but not a literal. Read, and reported by the caller.
         let derived = "env:\n  SOURCE_DATE_EPOCH: ${{ steps.epoch.outputs.value }}\n";
         assert_eq!(
             workflow_env_value(derived, "SOURCE_DATE_EPOCH"),
             Some((2, "${{ steps.epoch.outputs.value }}".to_owned()))
         );
 
-        // A step `env:` is nested, so it is not the declaration — the caller reports it as the
+        // A step `env:` is nested, so it is not the declaration: the caller reports it as the
         // override it is.
         let step =
             "jobs:\n  build:\n    steps:\n      - env:\n          SOURCE_DATE_EPOCH: \"7\"\n";
@@ -208,7 +206,7 @@ mod tests {
         let after = "env:\n  A: b\n\njobs:\n  x:\n    SOURCE_DATE_EPOCH: \"9\"\n";
         assert_eq!(workflow_env_value(after, "SOURCE_DATE_EPOCH"), None);
 
-        // A comment describing the rule — including this one's own rationale in both workflows —
+        // A comment describing the rule (including this one's own rationale in both workflows)
         // is not a declaration.
         let documented = "env:\n  # SOURCE_DATE_EPOCH: \"0\" was derived once; never again\n";
         assert_eq!(workflow_env_value(documented, "SOURCE_DATE_EPOCH"), None);
@@ -220,14 +218,13 @@ mod tests {
 
     /// The bug this pins: the desktop job in `release-please.yaml` inherited the workflow-level
     /// `SOURCE_DATE_EPOCH`, and appimagetool passes a `-mkfs-time` of its own to mksquashfs,
-    /// which refuses a timestamp from the command line and the environment at once. Release
-    /// v2.0.0's `AppImage` leg died as `linuxdeploy failed with exit code Some(1)` and took every
-    /// installer for that release with it. The fix removes the variable in that one job — which
-    /// this rule forbade outright, because until then any line naming the epoch outside its
-    /// declaration was an override.
+    /// which refuses a timestamp from the command line and the environment at once. The
+    /// `AppImage` leg died as `linuxdeploy failed with exit code Some(1)` and took every
+    /// installer for the release with it. The fix removes the variable in that one job, so this
+    /// rule may not treat every line naming the epoch outside its declaration as an override.
     ///
-    /// The exception has to stay job-scoped. Ahead of a buildx step an `unset` is the original
-    /// cache-key regression written backwards: buildx then passes no `build-arg` at all, so the
+    /// The exception has to stay job-scoped. Ahead of a buildx step an `unset` is the
+    /// cache-key bug written backwards: buildx then passes no `build-arg` at all, so the
     /// build reuses no layer that a build carrying the constant exported.
     #[test]
     fn an_unset_is_allowed_only_in_a_job_that_builds_no_image() {

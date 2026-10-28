@@ -1,11 +1,11 @@
-//! Fuzzes `tankovault_config::load`, the layered `TANKOVAULT_*` environment reader every
-//! service boots through. The environment isn't attacker-controlled the way provider HTML is,
-//! so the threat model is a typo: figment ignores an unknown key rather than rejecting it, so
-//! this target looks for the worse case — a correctly-spelled key whose value aborts a service
-//! at startup instead of producing a typed error.
+//! Owns the fuzz target that exercises `tankovault_config::load`, the layered `TANKOVAULT_*`
+//! environment reader every service boots through. The environment isn't attacker-controlled the
+//! way provider HTML is, so the threat model is a typo: figment ignores an unknown key instead of
+//! rejecting it, so this target looks for the worse case: a correctly-spelled key whose value
+//! aborts a service at startup instead of producing a typed error.
 //!
 //! # Oracle
-//! 1. `Ok` or `ConfigError`, never a panic — through extraction and the post-parse accessors
+//! 1. `Ok` or `ConfigError`, never a panic: through extraction and the post-parse accessors
 //!    (`InternalAuthConfig::resolve`, `EmailConfig::effective_port`) where a second round of
 //!    interpretation happens.
 //! 2. The internal-token length floor holds over a value that came through env parsing:
@@ -17,14 +17,14 @@
 //!
 //! # Input shape
 //! One `KEY=VALUE` per line, with the `TANKOVAULT_` prefix supplied by this target so seeds
-//! stay readable text rather than an opaque byte blob, and so mutation time isn't spent
+//! stay readable text instead of an opaque byte blob, and so mutation time isn't spent
 //! generating a prefix that `Env::prefixed` just discards.
 //!
-//! The keys that make `load` read the filesystem are filtered out — `TANKOVAULT_CONFIG` (a TOML
+//! The keys that make `load` read the filesystem are filtered out: `TANKOVAULT_CONFIG` (a TOML
 //! file or directory), `TANKOVAULT_SECRETS_DIR`, and anything ending `_FILE` (a path holding one
 //! value). A reproducer whose behaviour depends on a file elsewhere on the machine isn't a
 //! reproducer. The value *parsing* those layers feed is the same code this target already
-//! covers through the environment; what they add is I/O, which belongs to `terrace-config` —
+//! covers through the environment; what they add is I/O, which belongs to `terrace-config`:
 //! it owns those providers and fuzzes them itself.
 
 #![no_main]
@@ -92,7 +92,7 @@ const BASE_ENV: &[(&str, &str)] = &[
     ("TANKOVAULT_TELEMETRY__SERVICE_NAME", "fuzz"),
 ];
 
-/// The most bytes of environment one iteration will build — an unbounded input here becomes
+/// The most bytes of environment one iteration will build: an unbounded input here becomes
 /// an unbounded `set_env` loop.
 const MAX_PAIRS: usize = 64;
 
@@ -151,8 +151,8 @@ fuzz_target!(|data: &str| {
             cfg.features.refresh_secs
         );
 
-        // (1) continued: accessors that interpret what was parsed. No invariant asserted here
-        // — the port default `effective_port` applies is policy, not a bound — only totality.
+        // (1) continued: accessors that interpret what was parsed. Only totality is asserted
+        // here: the port default `effective_port` applies is policy, not a bound.
         let _ = cfg.email.effective_port();
         let _ = cfg.email.effective_envelope_from();
         let _ = cfg.email.is_enabled();

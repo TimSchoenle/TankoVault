@@ -1,4 +1,4 @@
-//! Rules from the estate's writing standards that a text scan can check.
+//! Owns the rules from the estate's writing standards that a text scan can check.
 //!
 //! The doc-comment contract and the prose contract in `TimSchoenle/actions` (`docs/doc-comments/`
 //! and `docs/readme/PROSE.md`) each name one mechanical check with a budget. Everything else in
@@ -300,7 +300,7 @@ after \u{2014} the fences
         assert_eq!(counted_em_dashes(markdown), 1);
     }
 
-    /// A fence line inside an HTML comment used to open a fence, so every line after the
+    /// The bug: a fence line inside an HTML comment opened a fence, so every line after the
     /// comment was skipped as code until a matching fence turned up, and the budget went unchecked.
     #[test]
     fn a_fence_inside_an_html_comment_opens_nothing() {
@@ -326,8 +326,8 @@ after \u{2014} the fence
         assert_eq!(counted_em_dashes(markdown), 1);
     }
 
-    /// A line of three backticks, text and three more backticks is a code span, but it used to
-    /// open a fence, and every line after it went uncounted until a closing fence turned up.
+    /// A line of three backticks, text and three more backticks is a code span. The bug: it opened
+    /// a fence, and every line after it went uncounted until a closing fence turned up.
     #[test]
     fn a_backtick_run_with_a_backtick_in_its_info_string_is_a_code_span() {
         let markdown = "\

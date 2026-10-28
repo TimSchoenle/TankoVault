@@ -1,4 +1,5 @@
-//! Registry calls in the publish workflow: each one retried, each image reference fully named.
+//! Owns the rules over registry calls in the publish workflow: each one retried, each image
+//! reference fully named.
 
 use super::PUBLISH_WORKFLOW;
 use super::yaml::{expression, job_lines, shell_variable, step_output, workflow_env_value};
@@ -8,22 +9,20 @@ use std::path::{Path, PathBuf};
 
 /// **Every registry command in the publishing jobs of `release-please.yaml` runs through the retry
 /// helper.** GHCR reports a throttled token request as `403 Forbidden` / `DENIED` with no
-/// `Retry-After` — indistinguishable from a permissions failure — so buildx, syft and cosign all
+/// `Retry-After` (indistinguishable from a permissions failure), so buildx, syft and cosign all
 /// give up on the first response.
 ///
 /// A release makes eighteen `build` legs and nine `manifest` legs hit that registry inside a few
-/// minutes, and `ci.yml` reads the same registry's build cache on the same push. At v2.0.0 two
-/// `manifest` legs lost that race one second apart, each *after* its image was pushed:
-/// `publish api` on the SBOM's pull, and `publish bootstrap` between the two `imagetools create`
-/// calls — which left Docker Hub carrying `v2.0.0` and GHCR not. At v2.1.0 it was the by-digest
-/// push in `build`, which had no wrapper because the rule only covered `manifest`:
-/// `bootstrap (arm64)` died on `failed to fetch oauth token: denied: denied` while its seventeen
-/// siblings pushed to the same registry and passed. That is what makes this recur silently: it
+/// minutes, and `ci.yml` reads the same registry's build cache on the same push. A leg that loses
+/// that race dies *after* its image was pushed, on the SBOM's pull or between the two
+/// `imagetools create` calls, leaving Docker Hub carrying the release and GHCR not; in `build`
+/// the by-digest push dies on `failed to fetch oauth token: denied: denied` while its seventeen
+/// siblings pass. That is what makes this recur silently: it
 /// looks like a flake, it is load, and the next call added outside the wrapper brings it back on
 /// a release nobody is watching.
 ///
 /// `oras` is on the list for the same reason as the rest of it: attaching the configuration
-/// contract is a registry write on the publishing path, and it is the last call of the leg —
+/// contract is a registry write on the publishing path, and it is the last call of the leg;
 /// everything it can lose has already been pushed by the time it runs.
 ///
 /// Scoped to those two jobs on purpose. `plan`'s `imagetools inspect` probes are *deliberately*
@@ -106,7 +105,7 @@ pub(in crate::repo_lint) fn registry_calls_in_publish_retry(
     }
 
     // The jobs above only *reference* the installer, so a wrapper that stopped being written would
-    // leave every call above failing with "no such file" — a message about the helper's path, not
+    // leave every call above failing with "no such file": a message about the helper's path, not
     // about the registry.
     let action = root
         .join(HELPER_ACTION.trim_start_matches("$/"))
@@ -132,12 +131,12 @@ pub(in crate::repo_lint) fn registry_calls_in_publish_retry(
 /// that default is part of Docker's reference grammar. `oras` implements the OCI grammar, which
 /// has no default: it reads `timschoenle` as the registry host and resolves *that*.
 ///
-/// So the short form works for every tool this workflow used until the configuration contract
-/// arrived, and fails for the one that attaches it. Release v8.1.0 pushed and signed all nine
-/// images and then lost all nine `publish` legs at `oras attach`, five retries each, to
-/// `dial tcp: lookup timschoenle: server misbehaving` — a DNS error naming neither the reference
-/// nor the fact that the `cosign sign` two steps above it had read the same string differently.
-/// Nothing was attached, no SBOM was attested, and `helm-release` never ran.
+/// So the short form works for every tool this workflow runs except the one that attaches the
+/// configuration contract. A release using it pushes and signs all nine images and then loses all
+/// nine `publish` legs at `oras attach`, five retries each, to
+/// `dial tcp: lookup timschoenle: server misbehaving`: a DNS error naming neither the reference
+/// nor the fact that the `cosign sign` two steps above it read the same string differently.
+/// Nothing is attached, no SBOM is attested, and `helm-release` never runs.
 ///
 /// The reference is followed through the indirection the workflow writes it with: the use site
 /// holds `${{ steps.names.outputs.dockerhub }}`, and the host is in the shell line that builds
@@ -187,7 +186,7 @@ pub(in crate::repo_lint) fn image_references_name_their_registry(
 
 /// Every step `env:` entry naming an image, as its 1-based line number, key and value as written.
 ///
-/// Keyed on the `_IMAGE` suffix rather than on the commands that read it: the value is set in a
+/// Keyed on the `_IMAGE` suffix instead of on the commands that read it: the value is set in a
 /// step's `env:` and consumed several lines below, so the call is not what a reference can be
 /// matched against.
 fn image_env_references(text: &str) -> Vec<(usize, String, String)> {
@@ -213,7 +212,7 @@ fn image_env_references(text: &str) -> Vec<(usize, String, String)> {
 /// A reference resolved as far as this file describes it: a `${{ steps.<id>.outputs.<name> }}`
 /// becomes the value the shell line `echo "<name>=…"` writes, and the `${VAR}` that value carries
 /// becomes the workflow-level `env:` entry. Anything neither names is left as written, which
-/// [`names_a_registry`] then refuses rather than reading past.
+/// [`names_a_registry`] then refuses instead of reading past.
 fn resolve_reference(text: &str, reference: &str) -> String {
     let mut resolved = reference.to_owned();
     if let Some((span, body)) = expression(&resolved) {
@@ -230,8 +229,8 @@ fn resolve_reference(text: &str, reference: &str) -> String {
             resolved.replace_range(span, &value);
         }
     }
-    // Bounded rather than looped to exhaustion: one substitution can introduce the next — the
-    // GHCR name is `${GHCR_REGISTRY}/${GITHUB_REPOSITORY,,}/${BIN}` — and only the host matters,
+    // Bounded, not looped to exhaustion: one substitution can introduce the next (the
+    // GHCR name is `${GHCR_REGISTRY}/${GITHUB_REPOSITORY,,}/${BIN}`), and only the host matters,
     // so a reference that is still expanding after this many passes has already been read.
     for _ in 0..4 {
         let Some((span, name)) = shell_variable(&resolved) else {
@@ -245,7 +244,7 @@ fn resolve_reference(text: &str, reference: &str) -> String {
     resolved
 }
 
-/// Whether the reference's first path segment is a registry host rather than a namespace: a host
+/// Whether the reference's first path segment is a registry host instead of a namespace: a host
 /// carries a dot or a port, and `localhost` is the one that carries neither.
 ///
 /// An unexpanded `$` in that segment is not a host either. The rule cannot see what it expands
@@ -259,18 +258,18 @@ fn names_a_registry(reference: &str) -> bool {
 mod tests {
     use super::*;
 
-    /// The bug this pins: release 2.0.0 published seven of nine images. GHCR reports a throttled
+    /// The bug this pins: a release published seven of nine images. GHCR reports a throttled
     /// token request as `403 Forbidden` / `DENIED` with no `Retry-After`, which is the same
-    /// response as a permissions failure, so nothing retried it — `publish api` died on the SBOM's
+    /// response as a permissions failure, so nothing retried it: `publish api` died on the SBOM's
     /// pull and `publish bootstrap` between the two `imagetools create` calls, both *after* their
     /// images had been pushed, one second apart, while the seven legs that had finished their
     /// registry work moments earlier all passed.
     ///
-    /// Release 2.1.0 then failed the same way one job earlier: the by-digest push in `build` was a
-    /// `docker/build-push-action` step, which cannot be wrapped and was outside this rule, and
-    /// `bootstrap (arm64)` died on `failed to fetch oauth token: denied: denied` while seventeen
-    /// sibling legs pushed to the same registry and passed. Which is why the rule now reads both
-    /// publishing jobs and counts `docker buildx build` as a registry call.
+    /// The same failure one job earlier: a by-digest push in `build` written as a
+    /// `docker/build-push-action` step cannot be wrapped, and `bootstrap (arm64)` died on
+    /// `failed to fetch oauth token: denied: denied` while seventeen sibling legs pushed to the
+    /// same registry and passed. So the rule reads both publishing jobs and counts
+    /// `docker buildx build` as a registry call.
     ///
     /// The rule has to stay inside those jobs: `plan` probes the registry with the same
     /// `imagetools` command and is deliberately unretried, because a failed probe there is the
@@ -294,15 +293,15 @@ steps:\n      \
 
         let lines = job_lines(workflow, "manifest");
         // `plan`'s probe above and `summary`'s call below are outside the job, and the comment is
-        // not a call — so the one unwrapped `docker pull` is all that is left to report.
+        // not a call, so the one unwrapped `docker pull` is all that is left to report.
         let unwrapped: Vec<usize> = lines
             .iter()
             .filter(|(_, line)| line.contains("docker pull"))
             .map(|(index, _)| *index)
             .collect();
         assert_eq!(unwrapped, vec![10]);
-        // The installer is now a shared composite action, and the line referencing it is what the
-        // rule reads as "installed" — a job that calls the helper without installing it is the
+        // The installer is a shared composite action, and the line referencing it is what the
+        // rule reads as "installed": a job that calls the helper without installing it is the
         // no-op the guard reports.
         assert!(
             lines
@@ -313,10 +312,9 @@ steps:\n      \
         assert!(!lines.iter().any(|(_, line)| line.contains("inspect")));
     }
 
-    /// The v2.1.0 shape specifically: an unwrapped `docker buildx build` in the `build` job. It
-    /// pushes to both registries by digest, so it is a registry call like any other — but it did
-    /// not read as one while the command list only named `imagetools`, `pull`, `sign` and
-    /// `attest`.
+    /// The by-digest shape specifically: an unwrapped `docker buildx build` in the `build` job.
+    /// It pushes to both registries by digest, so it is a registry call like any other, though a
+    /// command list naming only `imagetools`, `pull`, `sign` and `attest` misses it.
     #[test]
     fn an_unwrapped_by_digest_push_is_a_registry_call() {
         let workflow = "\
@@ -345,10 +343,10 @@ steps:\n      \
         );
     }
 
-    /// The bug this pins: release v8.1.0 built its Docker Hub references as
+    /// The bug this pins: a release built its Docker Hub references as
     /// `timschoenle/tankovault-<bin>`, with no registry in front of the namespace. Docker's
     /// reference grammar defaults that to Docker Hub, so every `docker` and `cosign` call made
-    /// with the same string succeeded — the images were pushed, the manifest lists assembled and
+    /// with the same string succeeded: the images were pushed, the manifest lists assembled and
     /// every digest signed. `oras` implements the OCI grammar, which has no default: it read
     /// `timschoenle` as the registry host, and all nine `publish` legs died on
     /// `dial tcp: lookup timschoenle: server misbehaving` while attaching the configuration
@@ -397,7 +395,7 @@ GHCR_IMAGE: ${{ steps.names.outputs.ghcr }}\n";
         );
         // The bug and its sibling that never had it: only the tag is left unexpanded on the GHCR
         // name, and the host is in front of it. Neither took the digest the step above writes
-        // under the same output name — which would have passed, since a digest carries a colon.
+        // under the same output name, which would have passed, since a digest carries a colon.
         assert!(!names_a_registry(&resolved[0].1));
         assert!(names_a_registry(&resolved[1].1));
 

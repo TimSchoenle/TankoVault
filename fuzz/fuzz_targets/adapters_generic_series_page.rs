@@ -1,14 +1,15 @@
-//! Fuzzes `GenericConfigAdapter`'s full extraction pipeline — html5ever's tree repair, then
-//! selector walking, then text parsing — against the `manhuaus` preset (the plain Madara
-//! defaults every config-driven provider inherits) on malformed upstream HTML.
+//! Owns the fuzz target that exercises `GenericConfigAdapter`'s full extraction pipeline
+//! (html5ever's tree repair, then selector walking, then text parsing) against the `manhuaus`
+//! preset (the plain Madara defaults every config-driven provider inherits) on malformed upstream
+//! HTML.
 //!
 //! Leaf-level fuzzing alone misses the tree builder's contribution: element reconstruction can
 //! duplicate an `<a>` across siblings, so extracted text need not be a substring of the input.
 //! `demonicscans`/`kunmanga` are excluded: they're custom adapters, and `kunmanga`'s chapter
-//! walk is a paginated loop needing a fetcher that terminates rather than one that repeats.
+//! walk is a paginated loop needing a fetcher that terminates instead of one that repeats.
 //!
 //! # Oracle
-//! `Ok` or a typed [`AdapterError`] — never a panic, never a hang. Content correctness is
+//! `Ok` or a typed [`AdapterError`]: never a panic, never a hang. Content correctness is
 //! covered by `crates/adapters/tests/madara_presets_fixture.rs`.
 
 #![no_main]
@@ -23,7 +24,7 @@ const PRESET: &str = "manhuaus";
 
 /// Answers every request with the same fuzz input.
 ///
-/// Sound only because each call fetches exactly one document — a paginated walk against this
+/// Sound only because each call fetches exactly one document: a paginated walk against this
 /// would never terminate, which is why this target excludes `kunmanga`.
 struct OneBody(Arc<str>);
 

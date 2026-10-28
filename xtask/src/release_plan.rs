@@ -1,10 +1,9 @@
-//! `xtask release-plan` — which images a release actually has to rebuild.
+//! Owns `xtask release-plan`, which decides the images a release has to rebuild.
 //!
-//! A release used to publish all nine images unconditionally. This decides the set instead, from
-//! the workspace dependency graph plus a table of the paths that are inputs to a build without
-//! belonging to any package. Everything it does not recognise counts as a change to everything:
-//! the cost of an unnecessary rebuild is runner minutes, and the cost of a missed one is a
-//! service shipping stale code under a version that claims otherwise.
+//! It decides the set from the workspace dependency graph and a table of the paths that are
+//! inputs to a build without belonging to any package. Everything it does not recognise counts
+//! as a change to everything: the cost of an unnecessary rebuild is runner minutes, and the cost
+//! of a missed one is a service shipping stale code under a version that claims otherwise.
 //!
 //! Each image is diffed from **the tag it is currently published at**, not from the previous
 //! release. A leg that failed at `v1.0.1` is therefore picked up at `v1.0.2` instead of being
@@ -49,7 +48,7 @@ enum Rule {
 /// inputs but reach no image. Longest prefix wins, so `deploy/docker/` overrides `deploy/`.
 ///
 /// `crates/`, `services/` and `xtask/` are deliberately absent: those fall through to package
-/// ownership, which is derived from `cargo metadata` rather than listed here.
+/// ownership, which is derived from `cargo metadata`, not listed here.
 const RULES: &[(&str, Rule)] = &[
     // The build definition itself, and the files every runtime stage copies.
     ("deploy/docker/", Rule::Every),
@@ -70,8 +69,8 @@ const RULES: &[(&str, Rule)] = &[
     ("Cargo.toml", Rule::Every),
     ("Cargo.lock", Rule::Every),
     // The generator that writes the configuration contract every runtime stage copies in. Package
-    // ownership would say the opposite of the truth here: nothing depends on this crate — it
-    // depends on all nine services — so the graph maps it to no image at all, while its output is
+    // ownership would say the opposite of the truth here: nothing depends on this crate (it
+    // depends on all nine services), so the graph maps it to no image at all, while its output is
     // inside every one of them. A changed `External` declaration or a renamed service is a change
     // to every published image.
     ("crates/config-contract/", Rule::Every),
@@ -81,10 +80,10 @@ const RULES: &[(&str, Rule)] = &[
     ("openapi.json", Rule::Package("tankovault-api-client")),
     // The SPA is its own workspace; `spa_roots` connects it back to this one.
     ("web/", Rule::Spa),
-    // Inputs to a gate, a document or an editor — never to an image. A path git *ignores* needs no
+    // Inputs to a gate, a document or an editor: never to an image. A path git *ignores* needs no
     // entry: it cannot reach the diff this classifies, and `build-inputs-are-classified` exempts
-    // it — which is why `.idea/` and `.vscode/` are deliberately absent rather than overlooked.
-    // The build-output entries below predate that exemption and stay for its no-git fallback.
+    // it, which is why `.idea/` and `.vscode/` are deliberately absent, not overlooked.
+    // The build-output entries below serve that exemption's no-git fallback.
     ("deploy/", Rule::Inert),
     (".github/", Rule::Inert),
     ("docs/", Rule::Inert),
@@ -113,7 +112,7 @@ const RULES: &[(&str, Rule)] = &[
     ("justfile", Rule::Inert),
 ];
 
-/// Run the planner and write its outputs.
+/// Runs the planner and writes its outputs.
 ///
 /// `bases` is a JSON object mapping each deployable binary to the git ref its published image was
 /// built from; a binary that is absent, or maps to an empty string, has never been published and
@@ -188,7 +187,7 @@ fn select(root: &Path, deployable: &[String], bases: &Path) -> anyhow::Result<Ve
     Ok(selected.into_iter().collect())
 }
 
-/// Write `images`, `service_bins` and `any` to `$GITHUB_OUTPUT` when it is set, and to stdout
+/// Writes `images`, `service_bins` and `any` to `$GITHUB_OUTPUT` when it is set, and to stdout
 /// always.
 fn emit(selected: &[String]) -> anyhow::Result<()> {
     let images = serde_json::to_string(selected)?;
@@ -206,8 +205,8 @@ fn emit(selected: &[String]) -> anyhow::Result<()> {
 }
 
 /// The binaries an image is published for: the Dockerfile's `SERVICE_BINS` minus the deploy
-/// blacklist. Read rather than listed, so the release workflow can no longer name a set that has
-/// drifted from either.
+/// blacklist. Read, not listed, so the release workflow cannot name a set that has drifted from
+/// either.
 fn deployable_bins(root: &Path) -> anyhow::Result<Vec<String>> {
     let dockerfile = root.join("deploy/docker/Dockerfile");
     let text = std::fs::read_to_string(&dockerfile).map_err(|error| {
@@ -404,7 +403,7 @@ fn cargo_metadata(root: &Path) -> anyhow::Result<Vec<Package>> {
 
 /// The host-workspace packages `web/frontend` path-depends on.
 ///
-/// Its manifest is read directly rather than through `cargo metadata`: it is an excluded member
+/// Its manifest is read directly instead of through `cargo metadata`: it is an excluded member
 /// (`exclude = ["web/frontend", …]`), so it is its own workspace on its own toolchain, and
 /// resolving it needs a wasm target this command has no reason to require.
 fn spa_roots(root: &Path, packages: &[Package]) -> Vec<String> {
@@ -492,7 +491,7 @@ fn impacts_since(
         // commit itself. Believed literally, that marks every image changed on every release and
         // this command becomes a no-op. The rewrite is safe to ignore because no binary reads
         // `CARGO_PKG_VERSION`; the version reaches an image only through `cargo auditable`'s
-        // dependency-list section, which is audit metadata rather than behaviour.
+        // dependency-list section, which is audit metadata, not behaviour.
         if matches!(path.as_str(), "Cargo.toml" | "Cargo.lock")
             && version_only_change(root, base, &path, &members)?
         {
@@ -671,7 +670,7 @@ fn is_version_assignment(trimmed: &str) -> bool {
 
 /// Whether a top-level repository entry is something the planner can classify.
 ///
-/// `member_roots` is the set of first path components of the workspace's members — the
+/// `member_roots` is the set of first path components of the workspace's members: the
 /// directories package ownership covers. `repo-lint` calls this over the real tree so a new
 /// top-level entry has to be given a verdict here before it can reach `main`.
 pub(crate) fn top_level_is_classified(entry: &str, member_roots: &BTreeSet<String>) -> bool {
@@ -684,7 +683,7 @@ pub(crate) fn top_level_is_classified(entry: &str, member_roots: &BTreeSet<Strin
 
 /// The first path component of every `members = [...]` entry in the root manifest.
 ///
-/// A line read rather than `cargo metadata`, so `repo-lint` stays a set of file scans.
+/// A line read instead of `cargo metadata`, so `repo-lint` stays a set of file scans.
 pub(crate) fn member_roots(manifest: &str) -> BTreeSet<String> {
     let mut roots = BTreeSet::new();
     let mut in_members = false;
@@ -805,7 +804,7 @@ mod tests {
         assert!(!hit("api", "web/frontend/src/main.rs"));
     }
 
-    /// `crates/api-client` is not a dependency of any *server* binary — the SPA is what uses it.
+    /// `crates/api-client` is not a dependency of any *server* binary: the SPA is what uses it.
     /// Without `spa_roots`, a regenerated client would rebuild nothing at all.
     #[test]
     fn a_crate_only_the_spa_uses_still_reaches_the_frontend_image() {
@@ -843,7 +842,7 @@ mod tests {
 
     /// `.cargo/` holds two gate configurations and, one day, possibly a `config.toml` that sets
     /// rustflags. The directory has to default to "rebuild everything" while the two files that
-    /// change often — a dated advisory exception, a mutants filter — do not, or every such edit
+    /// change often (a dated advisory exception, a mutants filter) do not, or every such edit
     /// republishes nine images for nothing.
     #[test]
     fn cargo_gate_configuration_is_carved_out_of_the_cargo_directory() {
@@ -868,7 +867,7 @@ mod tests {
         }
     }
 
-    /// An unrecognised path is a change to everything. The alternative — assuming it is inert —
+    /// An unrecognised path is a change to everything. The alternative (assuming it is inert)
     /// is a service silently shipping stale code, which no later gate would catch.
     #[test]
     fn an_unrecognised_path_reaches_every_image() {
@@ -881,7 +880,7 @@ mod tests {
 
     /// release-please rewrites `[workspace.package] version` on the release commit itself. Read
     /// literally that marks every image changed on every release, and the whole command becomes a
-    /// no-op — so the version line is masked before the two revisions are compared.
+    /// no-op, so the version line is masked before the two revisions are compared.
     #[test]
     fn a_version_only_manifest_edit_masks_to_nothing() {
         let before = "[workspace.package]\nversion = \"0.4.1\"\nedition = \"2024\"\n";

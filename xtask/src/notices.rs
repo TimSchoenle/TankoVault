@@ -1,8 +1,9 @@
-//! `xtask notices [--check]` — generate (or verify) the committed `THIRD-PARTY-NOTICES`.
+//! Owns `xtask notices [--check]`, which generates (or verifies) the committed
+//! `THIRD-PARTY-NOTICES`.
 //!
 //! Why the file exists: `deny.toml`'s `[licenses] allow` list is entirely permissive, and every
 //! licence on it bar `CC0-1.0`/`0BSD` requires its notice text to accompany a *binary*
-//! distribution. The images are exactly that, and the attested SBOM is not a substitute — it
+//! distribution. The images are exactly that, and the attested SBOM is not a substitute: it
 //! records composition and carries no licence text at all. So the notices ship inside every
 //! image beside `LICENSE` (asserted by `deploy/docker/cst/*.yaml`) and are served to readers by
 //! `services/frontend`, whose WASM bundle is a binary distribution of its own.
@@ -14,7 +15,7 @@
 //!
 //! Generation runs `--frozen`, so it reads only the two lockfiles and the extracted crate
 //! sources: no network, no <https://clearlydefined.io> round-trip, no build timestamp. That is
-//! what makes `--check`'s comparison a statement about this repository rather than about a
+//! what makes `--check`'s comparison a statement about this repository, not about a
 //! third-party service's mood.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -28,7 +29,7 @@ use serde::{Deserialize, Serialize};
 /// The committed artefact, at the repository root beside `LICENSE`.
 ///
 /// Extensionless on purpose: `.dockerignore` excludes `**/*.md` wholesale, so a
-/// `THIRD-PARTY-NOTICES.md` would be absent from the build context — the images would ship
+/// `THIRD-PARTY-NOTICES.md` would be absent from the build context; the images would ship
 /// without it and only the structure tests would say so.
 const ARTEFACT: &str = "THIRD-PARTY-NOTICES";
 
@@ -68,12 +69,12 @@ const SECTIONS: &[Section] = &[
     },
 ];
 
-/// Generate the notices file, or with `check` compare the freshly rendered document against the
+/// Generates the notices file, or with `check` compares the freshly rendered document against the
 /// committed one without writing.
 ///
 /// # Errors
 /// When `cargo-about` is absent or fails (an unsatisfiable licence is a failure, by `--fail`),
-/// when the artefact cannot be written, or — under `check` — when the committed file differs
+/// when the artefact cannot be written, or (under `check`) when the committed file differs
 /// from what the current lockfiles produce.
 pub(crate) fn run(root: &Path, check: bool) -> Result<()> {
     let mut rendered = header();
@@ -103,17 +104,17 @@ pub(crate) fn run(root: &Path, check: bool) -> Result<()> {
     Ok(())
 }
 
-/// Strip `\r` so a CRLF working copy and an LF render compare equal.
+/// Strips `\r` so a CRLF working copy and an LF render compare equal.
 fn normalise(text: &str) -> String {
     text.replace('\r', "")
 }
 
-/// Write the same harvest as JSON, for the SPA's `/licenses` screen to render.
+/// Writes the same harvest as JSON, for the SPA's `/licenses` screen to render.
 ///
 /// **Not a committed artefact, and deliberately so.** It is a second representation of the
 /// ~500 KB already in `THIRD-PARTY-NOTICES`, and committing it would double the weight of the
 /// repository's generated files to gain a drift gate over data the plain-text `--check` already
-/// covers — the two come out of one [`merge`], so a lockfile that would change this one changes
+/// covers: the two come out of one [`merge`], so a lockfile that would change this one changes
 /// that one too. The image build runs this into the frontend image instead; a checkout that has
 /// not run it renders the screen's unavailable state.
 ///
@@ -161,7 +162,7 @@ pub(crate) fn run_json(root: &Path, out: &Path) -> Result<()> {
 
 /// The structured inventory, one entry per dependency graph.
 ///
-/// The schema `web/frontend/src/models.rs` mirrors — a separate workspace, so nothing but
+/// The schema `web/frontend/src/models.rs` mirrors: a separate workspace, so nothing but
 /// `xtask repo-lint` holds the two in step.
 #[derive(Serialize)]
 struct Document<'a> {
@@ -171,7 +172,7 @@ struct Document<'a> {
 /// One graph: what it ships as, and the licences it resolves to.
 #[derive(Serialize)]
 struct DocumentSection<'a> {
-    /// Stable key the SPA translates — `backend` or `frontend`. The prose below is the fallback
+    /// Stable key the SPA translates: `backend` or `frontend`. The prose below is the fallback
     /// for a locale that carries no string for it, so a new section is never nameless.
     slug: &'a str,
     title: &'a str,
@@ -184,14 +185,14 @@ struct DocumentSection<'a> {
 struct DocumentLicence<'a> {
     id: &'a str,
     name: &'a str,
-    /// Distinct crates covered — the number the plain-text summary line carries, from the same
+    /// Distinct crates covered: the number the plain-text summary line carries, from the same
     /// [`covered`], so the page and the document cannot disagree.
     crates: usize,
     notices: Vec<Notice>,
 }
 
 /// What `cargo about generate --format json` reports: one entry per licence file it harvested,
-/// so the same licence appears many times over — see [`render`].
+/// so the same licence appears many times over; see [`render`].
 #[derive(Deserialize)]
 struct Harvest {
     licenses: Vec<Licence>,
@@ -220,11 +221,11 @@ struct CrateRef {
     version: String,
 }
 
-/// Run `cargo about generate` over one workspace and parse what it harvested.
+/// Runs `cargo about generate` over one workspace and parses what it harvested.
 ///
-/// JSON rather than the handlebars renderer, because the document this produces has to merge
+/// JSON instead of the handlebars renderer, because the document this produces has to merge
 /// duplicate licence texts and handlebars cannot (see [`render`]). Written to a file with
-/// `--output-file` and read back rather than captured from stdout: cargo-about refuses to write
+/// `--output-file` and read back, not captured from stdout: cargo-about refuses to write
 /// a redirected stdout under `PowerShell`, so capturing the pipe fails on the platform this
 /// repository is developed on and works in CI.
 fn harvest(root: &Path, section: &Section) -> Result<Harvest> {
@@ -258,7 +259,7 @@ fn harvest(root: &Path, section: &Section) -> Result<Harvest> {
 
     if !out.status.success() {
         // cargo-about reports the unsatisfied crate and licence on stderr, and that message is
-        // the entire diagnosis — an accepted-list decision, not a bug to go hunting for.
+        // the entire diagnosis: an accepted-list decision, not a bug to go hunting for.
         bail!(
             "`cargo about generate` failed in {}: {}\n{}",
             if section.dir.is_empty() {
@@ -278,7 +279,7 @@ fn harvest(root: &Path, section: &Section) -> Result<Harvest> {
 
 /// One crate, as a notice names it.
 ///
-/// Name and version apart rather than one `"name version"` string, because the JSON document
+/// Name and version apart instead of one `"name version"` string, because the JSON document
 /// carries them as separate fields. Ordering is unchanged by the split: a crate name cannot
 /// contain a space, so the space that separated them sorted below every character a name can
 /// hold, and `(name, version)` orders exactly as `"name version"` did.
@@ -309,14 +310,13 @@ struct LicenceNotices<'a> {
 /// Group one workspace's harvest into the distinct notices each licence covers.
 ///
 /// **Identical notices are kept once.** cargo-about hands back one entry per licence *file*, so a
-/// graph of 531 crates yields 531 copies of ~10 licences — the Apache-2.0 text alone appeared
-/// 370 times in the first draft of this file, at 11 KB a copy: 989 KB of document against 332 KB
-/// now.
+/// graph of 531 crates yields 531 copies of ~10 licences: the Apache-2.0 text alone
+/// would appear 370 times, at 11 KB a copy.
 ///
 /// **Merging is on the text, not on the SPDX id.** An MIT file *is* mostly its copyright line,
 /// and the 72 distinct MIT notices in this graph name 72 different copyright holders; collapsing
 /// those to one would drop exactly the part the licence requires be reproduced. Whitespace is
-/// folded for the comparison only — two texts differing by a line wrap are the same notice — and
+/// folded for the comparison only (two texts differing by a line wrap are the same notice), and
 /// the first copy is kept verbatim. See [`cluster`] for the near-identical case, which is a
 /// device of the plain-text rendering alone.
 fn merge(harvest: &Harvest) -> Vec<LicenceNotices<'_>> {
@@ -377,9 +377,9 @@ fn merge(harvest: &Harvest) -> Vec<LicenceNotices<'_>> {
 /// Distinct crates covered by a licence's notices.
 ///
 /// Distinct, not the sum over notices: a crate whose vendored files carry several notices under
-/// one licence — `ring` is the case, with fifteen ISC notices of its own — is one crate under
-/// that licence. Summing counted it once per notice, which is how the ISC summary line came to
-/// claim more crates than the section beneath it named.
+/// one licence (`ring` is the case, with fifteen ISC notices of its own) is one crate under
+/// that licence. Summing would count it once per notice, and the ISC summary line would claim more
+/// crates than the section beneath it names.
 fn covered(notices: &[Notice]) -> usize {
     notices
         .iter()
@@ -388,7 +388,7 @@ fn covered(notices: &[Notice]) -> usize {
         .len()
 }
 
-/// Render one workspace's merged harvest as the plain-text section.
+/// Renders one workspace's merged harvest as the plain-text section.
 fn render(harvest: &Harvest) -> String {
     let licences = merge(harvest);
 
@@ -468,14 +468,14 @@ const MIN_SHARED_OPENING: usize = 1024;
 /// instead of once per crate.
 ///
 /// Apache-2.0 is the case this exists for: 37 distinct notices in this graph, nearly all of them
-/// the same 9.7 KB body with a different attribution filled into the appendix — 400 KB of the
-/// same text. **Clustered, deliberately, rather than factoring out one opening common to the
+/// the same 9.7 KB body with a different attribution filled into the appendix; 400 KB of the
+/// same text. **Clustered, deliberately, instead of factoring out one opening common to the
 /// whole licence**: the first attempt did the latter and silently did nothing, because a single
 /// copy that differs in its opening line drops the common prefix to zero for all 37.
 ///
 /// **The split is lossless, which is the only reason it is acceptable in this document.** An
 /// opening and a block concatenate back to the bytes that crate shipped, up to trailing
-/// whitespace — nothing is summarised, dropped or reformatted.
+/// whitespace: nothing is summarised, dropped or reformatted.
 fn cluster(mut notices: Vec<Notice>) -> Vec<Cluster> {
     // By text, so notices sharing an opening are adjacent and the grouping is a single pass.
     notices.sort_by(|a, b| a.text.cmp(&b.text));
@@ -526,7 +526,7 @@ fn shared_opening(a: &str, b: &str) -> usize {
     let common = a.bytes().zip(b.bytes()).take_while(|(x, y)| x == y).count();
     // Cut at the end of the last wholly-shared line, found over *bytes*: the common run is a byte
     // count and can land inside a multi-byte character, which slicing would panic on. An index
-    // just past a newline is always a `char` boundary, so both halves slice safely — and neither
+    // just past a newline is always a `char` boundary, so both halves slice safely, and neither
     // half ends mid-word, which a raw byte cut would allow.
     a.as_bytes()[..common]
         .iter()
@@ -615,7 +615,7 @@ mod tests {
         ARTEFACT, Harvest, SECTIONS, banner, header, normalise, render, whitespace_folded,
     };
 
-    /// Build a harvest the way cargo-about reports one: one entry per licence *file*, so the
+    /// Builds a harvest the way cargo-about reports one: one entry per licence *file*, so the
     /// same licence recurs once per crate that carries it.
     fn harvest(entries: &[(&str, &str, &str, &[&str])]) -> Harvest {
         let licenses = entries
@@ -637,7 +637,7 @@ mod tests {
 
     /// The reason this renderer exists instead of a handlebars template. cargo-about emits one
     /// entry per licence file, and the first generated draft of this artefact was 989 KB
-    /// containing the Apache-2.0 text 370 times — one copy per crate. Handlebars cannot merge
+    /// containing the Apache-2.0 text 370 times: one copy per crate. Handlebars cannot merge
     /// them; the merge is why the JSON output is parsed at all.
     #[test]
     fn an_identical_notice_is_printed_once_however_many_crates_carry_it() {
@@ -653,7 +653,7 @@ mod tests {
             1,
             "the text must appear once:\n{rendered}"
         );
-        // …and every crate is still attributed, which is the point of merging rather than
+        // …and every crate is still attributed, which is the point of merging instead of
         // dropping.
         for krate in ["alpha 1.0.0", "beta 1.0.0", "gamma 1.0.0"] {
             assert!(rendered.contains(krate), "{krate} lost its attribution");
@@ -666,7 +666,7 @@ mod tests {
 
     /// The other half of the merge, and the one with legal teeth: an MIT notice is mostly its
     /// copyright line, so two MIT files that name different holders are two notices. Merging on
-    /// the SPDX id instead of the text would print one of them and silently drop the other —
+    /// the SPDX id instead of the text would print one of them and silently drop the other:
     /// dropping exactly the part MIT requires be reproduced.
     #[test]
     fn notices_differing_only_in_their_copyright_line_are_both_printed() {
@@ -693,8 +693,8 @@ mod tests {
         );
     }
 
-    /// Whitespace-only differences are the same notice — a re-wrapped copy of a licence is not a
-    /// different licence — and folding them is what keeps the merge effective.
+    /// Whitespace-only differences are the same notice (a re-wrapped copy of a licence is not a
+    /// different licence), and folding them is what keeps the merge effective.
     #[test]
     fn a_rewrapped_copy_is_the_same_notice() {
         assert_eq!(
@@ -723,7 +723,7 @@ mod tests {
 
     /// The shared-opening split, and the property that makes it acceptable at all: what is
     /// printed still **reconstructs each crate's notice byte for byte**. Apache-2.0 is why it
-    /// exists — 37 notices in this graph share a 9.7 KB body and differ only in the attribution
+    /// exists: 37 notices in this graph share a 9.7 KB body and differ only in the attribution
     /// filled into the appendix, which is 400 KB of the same text printed over and over.
     ///
     /// If this test is ever in the way, the thing to check is reconstruction, not the size: a
@@ -747,7 +747,7 @@ mod tests {
             "the shared body must be printed once"
         );
         assert!(rendered.contains(&body), "…and verbatim");
-        // Each crate's own notice is the printed opening plus its own block, which is exactly
+        // Each crate's own notice is the printed opening and its own block, which is exactly
         // the text that crate shipped.
         for original in [&alpha, &beta] {
             let tail = original.strip_prefix(&body).unwrap();
@@ -757,7 +757,7 @@ mod tests {
     }
 
     /// The split must not fire where it would only fragment a notice. MIT files begin with their
-    /// copyright line, so two of them share almost nothing — printing "the shared opening" of
+    /// copyright line, so two of them share almost nothing: printing "the shared opening" of
     /// `Copyright (c) ` and then two remainders would be strictly worse to read than two notices.
     #[test]
     fn notices_that_share_only_a_few_bytes_are_printed_whole() {
@@ -784,7 +784,7 @@ mod tests {
     }
 
     /// Licences are ordered by how much of the graph they cover, and the order must come from
-    /// the data rather than from a hasher: `--check` compares the whole document, so an
+    /// the data instead of from a hasher: `--check` compares the whole document, so an
     /// unstable order would fail the gate on a tree nobody had touched.
     #[test]
     fn the_document_is_ordered_by_coverage_and_is_stable() {
@@ -805,7 +805,7 @@ mod tests {
 
     /// The artefact must not gain an extension. `.dockerignore` excludes `**/*.md` and
     /// `**/*.txt` is the kind of thing it may exclude next; the images copy this path verbatim,
-    /// and a rename would make the `COPY` fail the build rather than ship a wrong file — but
+    /// and a rename would make the `COPY` fail the build instead of shipping a wrong file, but
     /// only after a full image build, which is the slowest place to learn it.
     #[test]
     fn the_artefact_name_is_extensionless() {
@@ -876,9 +876,9 @@ mod tests {
         }
     }
 
-    /// Pins why `--check` compares normalised text rather than bytes: the renderer emits LF and
+    /// Pins why `--check` compares normalised text, not bytes: the renderer emits LF and
     /// this repository is developed on Windows, so a byte comparison would be a gate that fails
-    /// locally and passes in CI — the shape of failure that gets a gate deleted rather than read.
+    /// locally and passes in CI; the shape of failure that gets a gate deleted instead of read.
     #[test]
     fn line_endings_do_not_decide_the_check() {
         assert_eq!(normalise("a\r\nb\r\n"), normalise("a\nb\n"));

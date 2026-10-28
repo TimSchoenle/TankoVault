@@ -1,9 +1,9 @@
-//! The configuration surface, read out of the config structs themselves: [`Table`]/[`walk`]
+//! Owns the configuration surface, read out of the config structs themselves: [`Table`]/[`walk`]
 //! descend `#[derive(Deserialize)]` structs from each service's root `Config`, and
 //! [`direct_env_keys`] finds the keys no config struct has a field for: `std::env::var("…")`
 //! call sites that bypass the layering, and the loader-builder calls that name the variables
 //! driving it. The walker **refuses** any `serde` attribute it doesn't model (`alias`,
-//! `rename_all`) rather than guessing, since a gate that quietly mis-derives blesses a wrong
+//! `rename_all`) instead of guessing, since a gate that quietly mis-derives blesses a wrong
 //! document with a green tick.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -44,16 +44,16 @@ struct TypeRef {
 
 /// Every `#[derive(Deserialize)]` struct parsed from a set of source files, by name.
 ///
-/// A name can map to more than one definition — two services may each declare a `Config`, and
+/// A name can map to more than one definition: two services may each declare a `Config`, and
 /// nothing stops an unrelated DTO from colliding with a config block. The ambiguity is only an
-/// error if a walk actually reaches it, so it is recorded rather than rejected on sight.
+/// error if a walk actually reaches it, so it is recorded, not rejected on sight.
 #[derive(Default)]
 pub(super) struct Table {
     blocks: BTreeMap<String, Vec<Block>>,
 }
 
 impl Table {
-    /// Parse every `.rs` file under `dir`, recursively.
+    /// Parses every `.rs` file under `dir`, recursively.
     ///
     /// # Errors
     /// An unreadable file, a file that does not parse as Rust, or a `serde` attribute the
@@ -65,7 +65,7 @@ impl Table {
         Ok(())
     }
 
-    /// Parse one `.rs` file.
+    /// Parses one `.rs` file.
     ///
     /// # Errors
     /// As [`Self::parse_dir`].
@@ -92,7 +92,7 @@ pub(super) struct External {
 }
 
 impl External {
-    /// Register `table` as the blocks of the crate a type path names as `ident`.
+    /// Registers `table` as the blocks of the crate a type path names as `ident`.
     pub(super) fn insert(&mut self, ident: &str, table: Table) {
         self.crates.insert(ident.to_owned(), table);
     }
@@ -121,10 +121,10 @@ struct Found<'a> {
 /// Every environment key a service reads through `tankovault_config::load`, derived by
 /// descending from its root config struct.
 ///
-/// `local` is that service's own source; `shared` is `crates/config` plus the one domain type a
+/// `local` is that service's own source; `shared` is `crates/config` and the one domain type a
 /// config struct names. A bare type name resolves against `local` first and `shared` second,
 /// which is how `DatabaseConfig` (imported) and `AuthConfig` (declared next to `Config`) can sit
-/// in the same struct — but a name present in *both* is an error rather than a coin toss. A type
+/// in the same struct, but a name present in *both* is an error instead of a coin toss. A type
 /// qualified by a crate in `external` resolves there, and so does every bare name beneath it.
 ///
 /// # Errors
@@ -169,8 +169,8 @@ impl<'a> Scope<'a> {
 
         stack.push(name.to_owned());
         for field in &found.block.fields {
-            // A field whose type names a struct in a table is a nested block; anything else — a
-            // scalar, a `Vec`, an enum — is a value figment parses directly.
+            // A field whose type names a struct in a table is a nested block; anything else (a
+            // scalar, a `Vec`, an enum) is a value figment parses directly.
             let nested = match field.ty.as_ref() {
                 Some(ty) => self
                     .resolve(&ty.name, ty.qualifier.as_deref(), found.within)?
@@ -178,7 +178,7 @@ impl<'a> Scope<'a> {
                 None => None,
             };
             // The derive's own claim that this is a block. Without this a block the walker cannot
-            // see — one declared in a crate it was not told about — is a leaf, and the document
+            // see (one declared in a crate it was not told about) is a leaf, and the document
             // is checked against one key where the code reads many.
             if field.nested && nested.is_none() {
                 bail!(
@@ -189,9 +189,9 @@ impl<'a> Scope<'a> {
                 );
             }
             // A flattened field owns no segment of its own: serde merges its block into this
-            // one, so its keys are derived at this level. That only holds for a block —
+            // one, so its keys are derived at this level. That only holds for a block:
             // `#[serde(flatten)]` over a map collects whatever keys the input happens to carry,
-            // which no walk can enumerate, so it is refused rather than derived as empty.
+            // which no walk can enumerate, so it is refused, not derived as empty.
             if field.flatten {
                 let Some((ty, inner)) = nested else {
                     bail!(
@@ -215,9 +215,9 @@ impl<'a> Scope<'a> {
         Ok(())
     }
 
-    /// Look a type name up.
+    /// Looks a type name up.
     ///
-    /// `Ok(None)` means "not a config block" — a `String`, a `Vec`, an enum — which is the common
+    /// `Ok(None)` means "not a config block" (a `String`, a `Vec`, an enum), which is the common
     /// case and is what makes a field a leaf.
     fn resolve(
         &self,
@@ -423,10 +423,10 @@ fn field_serde(attrs: &[syn::Attribute]) -> Result<FieldMeta> {
     Ok(out)
 }
 
-/// Consume a `= value` or `(…)` payload so `parse_nested_meta` can reach the next entry.
+/// Consumes a `= value` or `(…)` payload so `parse_nested_meta` can reach the next entry.
 ///
 /// Without this, an attribute the walker does not care about (`default = "…"`,
-/// `deserialize_with = "…"`) is a parse error rather than something ignored.
+/// `deserialize_with = "…"`) is a parse error instead of something ignored.
 fn skip_value(meta: &syn::meta::ParseNestedMeta<'_>) -> syn::Result<()> {
     if meta.input.peek(syn::Token![=]) {
         meta.value()?.parse::<syn::Expr>()?;
@@ -457,7 +457,7 @@ fn skip_any_value(meta: &syn::meta::ParseNestedMeta<'_>) -> syn::Result<()> {
 
 /// Reduce a declared type to the name a lookup can use.
 ///
-/// `Option<T>` and `Box<T>` are transparent to figment, so they unwrap — `Option<NatsConfig>`
+/// `Option<T>` and `Box<T>` are transparent to figment, so they unwrap: `Option<NatsConfig>`
 /// on the API's `Config` still contributes `TANKOVAULT_NATS__URL`. `Vec<T>` and `HashMap<K, V>`
 /// deliberately do not: a list is one value figment parses as JSON, not a nested block.
 fn type_ref(ty: &syn::Type) -> Option<TypeRef> {
@@ -491,18 +491,18 @@ fn type_ref(ty: &syn::Type) -> Option<TypeRef> {
 ///
 /// Two kinds, and both have to be here or the document would promise a key nothing reads:
 ///
-/// * `env::var("LITERAL")` — read straight from the environment, bypassing the layering.
+/// * `env::var("LITERAL")`: read straight from the environment, bypassing the layering.
 /// * the `terrace_config::Terrace` builder calls that name the variables *driving* the
 ///   layering. `TANKOVAULT_CONFIG` and `TANKOVAULT_SECRETS_DIR` are read inside the
 ///   dependency, from a name it derives from the prefix, so no `env::var` literal for them
-///   exists in this tree — `crates/config/src/loader.rs` spells them out to the builder for
+///   exists in this tree: `crates/config/src/loader.rs` spells them out to the builder for
 ///   exactly this reason. `reserve` is scanned for the same reason in reverse: a reserved key
 ///   is one a file may not supply, which is behaviour an operator has to be told about.
 ///
 /// Textual on purpose. Every one of these is a bare string literal, so the literal *is* the
-/// key and a parser would add nothing; what matters is that the list is derived rather than
-/// kept by hand, which is how `TANKOVAULT_CONFIRM_RESET` went undocumented until someone read
-/// for it.
+/// key and a parser would add nothing; what matters is that the list is derived, not
+/// kept by hand, because a hand-kept list leaves a key undocumented until someone reads for
+/// it.
 ///
 /// # Errors
 /// An unreadable source file.
@@ -525,7 +525,7 @@ pub(super) fn direct_env_keys(dirs: &[std::path::PathBuf]) -> Result<BTreeSet<St
                     let Some(end) = rest.find('"') else { continue };
                     let literal = &rest[..end];
                     // A key, not prose about one. Without this the scan reads its own
-                    // documentation — `env::var("TANKOVAULT_…")` above is a literal too.
+                    // documentation: `env::var("TANKOVAULT_…")` above is a literal too.
                     if literal.starts_with("TANKOVAULT_") && is_key_text(literal) {
                         keys.insert(literal.to_owned());
                     }
@@ -536,7 +536,7 @@ pub(super) fn direct_env_keys(dirs: &[std::path::PathBuf]) -> Result<BTreeSet<St
     Ok(keys)
 }
 
-/// Whether a string literal is a bare environment key rather than prose mentioning one.
+/// Whether a string literal is a bare environment key, not prose mentioning one.
 fn is_key_text(literal: &str) -> bool {
     literal
         .chars()
@@ -641,7 +641,7 @@ mod tests {
     }
 
     /// `#[serde(rename)]` decides the key; `#[serde(skip)]` removes it. Both are what figment
-    /// actually matches, so the derived surface must follow them rather than the field name.
+    /// actually matches, so the derived surface must follow them instead of the field name.
     #[test]
     fn rename_and_skip_follow_serde_not_the_field_name() {
         assert_eq!(
@@ -722,7 +722,7 @@ mod tests {
         assert!(format!("{err:#}").contains("rename_all"), "{err:#}");
     }
 
-    /// A name in both tables is an error rather than a silent pick. Local-first resolution is
+    /// A name in both tables is an error instead of a silent pick. Local-first resolution is
     /// what lets an imported `DatabaseConfig` and a locally declared `AuthConfig` share a
     /// struct; it must not become a way for an unrelated DTO to shadow a shared block.
     #[test]
@@ -794,7 +794,7 @@ mod tests {
     }
 
     /// A block declared in another crate is descended into, and a bare name inside it resolves
-    /// in that crate rather than in this workspace.
+    /// in that crate instead of in this workspace.
     #[test]
     fn a_block_from_an_external_crate_is_walked_in_its_own_crate() {
         let local = table(

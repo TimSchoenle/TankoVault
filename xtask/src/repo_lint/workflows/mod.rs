@@ -1,4 +1,4 @@
-//! Rules over `.github/workflows`: the Postgres major the tests run, advisory ignores,
+//! Owns the rules over `.github/workflows`: the Postgres major the tests run, advisory ignores,
 //! concurrency groups, the OIDC token the release signs with, and the order release-please tags
 //! in.
 

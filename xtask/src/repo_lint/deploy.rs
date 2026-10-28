@@ -1,4 +1,4 @@
-//! Rules tying the workspace manifest to what actually ships: every binary built, nothing
+//! Owns the rules tying the workspace manifest to what actually ships: every binary built, nothing
 //! published that the deploy blacklist excludes, every build input classified.
 
 use std::collections::BTreeSet;
@@ -11,8 +11,8 @@ use super::text::{is_comment, walk};
 
 /// **Every workspace binary must be listed in the Dockerfile's `SERVICE_BINS`.** The Dockerfile
 /// compiles all binaries in one `cargo` invocation from a literal list, so a `[[bin]]` added to
-/// the workspace without updating it produces an image that fails at the final `COPY` — only
-/// once someone tries to build the service nobody knew was missing. This reads `SERVICE_BINS`
+/// the workspace without updating it produces an image that fails at the final `COPY`, and
+/// only when someone tries to build the service nobody knew was missing. This reads `SERVICE_BINS`
 /// and every manifest's `[[bin]] name = …` and reports each direction of disagreement.
 /// (`web/frontend` doesn't count: it's outside the host workspace and its `app` binary is a
 /// `wasm32` artefact `dx` builds, not one any runtime stage copies.) Every workspace binary is
@@ -87,11 +87,11 @@ pub(super) fn dockerfile_ships_every_workspace_binary(root: &Path) -> anyhow::Re
 /// binary in a matrix publishes what must not be published, and a name the Dockerfile does not
 /// build fails at the final `COPY`.
 ///
-/// The other direction — a deployable binary *missing* from the publish set — is no longer a
-/// matrix check, because `release-please.yaml` no longer carries one. It derives its set from
+/// The other direction (a deployable binary *missing* from the publish set) is not a matrix
+/// check, because `release-please.yaml` carries none. It derives its set from
 /// `xtask release-plan`, which computes `SERVICE_BINS` minus this blacklist and so cannot omit a
 /// service by drifting. What that moves the risk to is the derivation being quietly replaced by a
-/// literal again, which would publish a hand-maintained list while every gate still passed; so
+/// literal, which would publish a hand-maintained list while every gate still passed; so
 /// the publish workflow is required to contain no literal image matrix and to invoke the planner.
 pub(super) fn deploy_blacklist_is_honoured(root: &Path) -> anyhow::Result<Vec<Finding>> {
     const RULE: &str = "deploy-blacklist-is-honoured";
@@ -187,7 +187,7 @@ pub(super) fn deploy_blacklist_is_honoured(root: &Path) -> anyhow::Result<Vec<Fi
 }
 
 /// **Every top-level path must be something `release-plan` can classify.** The planner decides
-/// which images a release rebuilds from the workspace dependency graph plus a table of the inputs
+/// which images a release rebuilds from the workspace dependency graph and a table of the inputs
 /// that belong to no package (`RULES`, `xtask/src/release_plan.rs`). A new top-level entry that
 /// matches neither is the one failure that is silent in the dangerous direction: the planner
 /// treats it as a change to everything and says so on stderr, but nobody reads a release log that
@@ -196,9 +196,9 @@ pub(super) fn deploy_blacklist_is_honoured(root: &Path) -> anyhow::Result<Vec<Fi
 ///
 /// **Paths git ignores are exempt, and that exemption is load-bearing.** The planner classifies
 /// the output of `git diff --name-only`, which no ignored path can appear in, so a `RULES` entry
-/// for one would never be consulted — while its absence aborted the whole local `xtask ci` run for
-/// anyone holding a `.idea/`, invisibly to CI, whose checkout has none. Asking `git check-ignore`
-/// rather than naming each editor keeps `RULES` from growing an entry per tool, and stays honest:
+/// for one would never be consulted, while its absence would abort the whole local `xtask ci` run
+/// for anyone holding a `.idea/`, invisibly to CI, whose checkout has none. Asking `git check-ignore`
+/// instead of naming each editor keeps `RULES` from growing an entry per tool, and stays honest:
 /// `check-ignore` never reports a *tracked* path, so committing one puts it back under the rule.
 pub(super) fn build_inputs_are_classified(root: &Path) -> anyhow::Result<Vec<Finding>> {
     const RULE: &str = "build-inputs-are-classified";
@@ -255,8 +255,8 @@ pub(super) fn build_inputs_are_classified(root: &Path) -> anyhow::Result<Vec<Fin
 
 /// Which of `names` git ignores, as paths relative to `root`.
 ///
-/// Empty when git cannot answer — no git on `PATH`, no checkout, a failing invocation — so the
-/// rule falls back to demanding a classification for everything rather than passing silently.
+/// Empty when git cannot answer (no git on `PATH`, no checkout, a failing invocation), so the
+/// rule falls back to demanding a classification for everything instead of passing silently.
 fn git_ignored(root: &Path, names: &[&str]) -> BTreeSet<String> {
     let ignored = || -> Option<BTreeSet<String>> {
         let mut child = Command::new("git")
@@ -294,7 +294,7 @@ fn git_ignored(root: &Path, names: &[&str]) -> BTreeSet<String> {
 ///
 /// Split out so the parse can be tested against the forms that must and must not be recognised,
 /// without a filesystem. Shared with `release-plan`, which derives the publishable set from the
-/// same declaration rather than from a list of its own.
+/// same declaration instead of from a list of its own.
 pub(crate) fn service_bins(dockerfile: &str) -> Option<(usize, Vec<String>)> {
     for (index, line) in dockerfile.lines().enumerate() {
         let Some(value) = line.trim().strip_prefix("ARG SERVICE_BINS=") else {
@@ -338,7 +338,7 @@ fn bin_targets(manifest: &str) -> Vec<String> {
 /// What one image matrix gets wrong, as the detail text of each violation.
 ///
 /// Pure, so both directions can be tested without a workflow tree: a blacklisted name present,
-/// and a name nothing builds. Completeness is deliberately not checked here — every remaining
+/// and a name nothing builds. Completeness is deliberately not checked here: every remaining
 /// literal matrix is one that narrows on purpose (`ci.yml` on pull requests), and the publish
 /// workflow has no literal at all.
 fn matrix_violations(built: &[String], excluded: &[Exclusion], names: &[String]) -> Vec<String> {
@@ -431,7 +431,7 @@ mod tests {
     use crate::repo_lint::tempdir;
 
     /// The bug: an IDE's `.idea/` in the working copy failed this rule, so `xtask ci` aborted
-    /// before the gates after it ran — while CI, whose checkout has no such directory, stayed
+    /// before the gates after it ran; while CI, whose checkout has no such directory, stayed
     /// green. An ignored path cannot appear in the `git diff` the planner classifies, so it needs
     /// no verdict. The second half is the half that keeps this honest: the exemption is git's
     /// answer, not a list of editor names, so a path that stops being ignored is covered again.
@@ -545,7 +545,7 @@ mod tests {
     }
 
     /// Both literal forms an image matrix takes, and the prose about them that must not read as
-    /// one — the whole rule is a text scan over files that also *describe* their matrices.
+    /// one: the whole rule is a text scan over files that also *describe* their matrices.
     #[test]
     fn image_matrices_are_read_in_both_forms_but_not_out_of_comments() {
         let workflow = "    strategy:\n\
@@ -563,8 +563,8 @@ mod tests {
         assert_eq!(matrices[1], (5, vec!["api".into(), "render".into()]));
     }
 
-    /// The rule exists because `xtask` — a task runner with a `reset` command — was in both
-    /// release matrices and would have been pushed to GHCR and Docker Hub under a version tag.
+    /// The bug: `xtask` (a task runner with a `reset` command) sat in both release matrices and
+    /// would be pushed to GHCR and Docker Hub under a version tag.
     #[test]
     fn a_matrix_may_narrow_but_may_not_name_what_must_not_ship() {
         let built = ["api".to_owned(), "render".to_owned(), "xtask".to_owned()];

@@ -1,5 +1,5 @@
-//! Rules over the served SPA shell and the frontend sources: the Content-Security-Policy and
-//! the two injection sinks it exists to make unreachable.
+//! Owns the rules over the served SPA shell and the frontend sources: the Content-Security-Policy
+//! and the two injection sinks it exists to make unreachable.
 
 use std::path::Path;
 
@@ -41,7 +41,7 @@ fn grants_unsafe_eval(line: &str) -> bool {
 
 pub(super) fn no_dangerous_inner_html(root: &Path) -> Vec<Finding> {
     // The one legitimate use: `icons::Ic` renders a compile-time-constant path, not
-    // caller-supplied data. Budget of one, not a blanket exemption — a second use must be
+    // caller-supplied data. Budget of one, not a blanket exemption: a second use must be
     // argued in review, not inherited from this one.
     const ALLOWED: [(&str, usize); 1] = [("web/frontend/src/icons.rs", 1)];
 
@@ -90,7 +90,7 @@ pub(super) fn no_dangerous_inner_html(root: &Path) -> Vec<Finding> {
 }
 
 /// **The app shell loads nothing off-origin.** `default-src 'self'` refuses a CDN `<script>` or
-/// `<link>` in `web/frontend/index.html` at browser runtime and nothing at build time — the
+/// `<link>` in `web/frontend/index.html` at browser runtime and nothing at build time: the
 /// symptom is a missing font or dead feature in production only, and CDN-loading a boot script
 /// would also silently drop it from the CSP's inline-script hashes.
 pub(super) fn shell_loads_nothing_off_origin(root: &Path) -> anyhow::Result<Vec<Finding>> {
@@ -192,24 +192,24 @@ pub(super) fn autostart_entry_agrees(root: &Path) -> anyhow::Result<Vec<Finding>
 /// `platform::desktop` sizes the window from the rail, the content gutters and the widest
 /// `--measure` any route asks for, so the window it opens is one the content column can actually
 /// fill. Two of those live in `input.css` and one in `components::shell`, and nothing compiles a
-/// Rust constant against a stylesheet — so a retuned `--rail-w` would silently leave the window
+/// Rust constant against a stylesheet, so a retuned `--rail-w` would silently leave the window
 /// short again, which is the defect the sum replaced (a 1760px ceiling gave Discover five covers
 /// across where the layout fits seven).
 /// The grid probe's three measured boxes must be siblings, never nested.
 ///
 /// **A resize event bubbles in the desktop build.** dioxus-desktop dispatches it to the target's
 /// ancestors as well, so a box observed *inside* another delivers its own width to the outer
-/// box's handler too — and the outer one holds the width the whole page size is derived from.
-/// The probe used to be exactly that shape: a full-width `div` with the `--card` and `--gap`
-/// spans inside it. Discover measured 1438 px, then 190, then 18, settled on one column and
-/// fetched a one-column page into a seven-column grid. It survived review because on the *first*
-/// screen of a session the window's own resize fires the outer box again afterwards and hides
-/// it; only a fresh navigation shows it.
+/// box's handler too, and the outer one holds the width the whole page size is derived from.
+/// Nested that way (a full-width `div` with the `--card` and `--gap` spans inside
+/// it), Discover measures 1438 px, then 190, then 18, settles on one column and fetches a
+/// one-column page into a seven-column grid. It passes review because on the *first* screen of a
+/// session the window's own resize fires the outer box again afterwards and hides it; only a
+/// fresh navigation shows it.
 ///
-/// Nesting is checked as brace depth rather than by parsing `rsx!`: the three handlers are
+/// Nesting is checked as brace depth instead of by parsing `rsx!`: the three handlers are
 /// written as siblings in one element, so they sit at one depth, and any re-nesting moves one of
 /// them. Depth is counted over the whole file, which is why an unbalanced brace inside a string
-/// would confuse it — there are none, and a false positive here is a failed lint, not a shipped
+/// would confuse it: there are none, and a false positive here is a failed lint, not a shipped
 /// bug.
 pub(super) fn resize_probes_are_siblings(root: &Path) -> anyhow::Result<Vec<Finding>> {
     let file = root.join("web/frontend/src/components/grid.rs");
@@ -280,14 +280,14 @@ fn resize_handler_depths(source: &str) -> Vec<(usize, i32)> {
 /// A route behind `Elevated` answers `403` until the caller presents a second factor, and the SPA
 /// has exactly one mechanism for that: `StepUpGate`, whose `client(api)` attaches the grant and
 /// whose `refused(…)` turns the refusal into the prompt. The same call made on the plain
-/// `api.client()` compiles, gets the `403`, and has no way to answer it — `friendly_error` words
+/// `api.client()` compiles, gets the `403`, and has no way to answer it: `friendly_error` words
 /// it as "you don't have permission to do that", which is the one sentence a reader cannot act on
 /// for a permission they hold.
 ///
-/// The defect this closes: Account → Sync's "Connect `AniList`" button fetched the consent URL on
-/// the plain client, so an owner account — entitled to link a tracker, and holding the factor to
-/// prove it — was refused with no prompt to clear. The series sidebar's link/unlink and the user
-/// inspector's force-pull/unlink were the same shape and reported nothing at all.
+/// The defect this closes: a "Connect `AniList`" button that fetches the consent URL on the
+/// plain client refuses an owner account (entitled to link a tracker, and holding the factor to
+/// prove it) with no prompt to clear, and a link/unlink or force-pull of the same shape reports
+/// nothing at all.
 ///
 /// Nothing else can see this. `web/frontend` is a separate workspace, `openapi.json` is the only
 /// artefact relating a generated method to the route behind it, and both spellings of the call
@@ -296,7 +296,7 @@ fn resize_handler_depths(source: &str) -> Vec<(usize, i32)> {
 pub(super) fn elevated_calls_carry_the_elevation(root: &Path) -> anyhow::Result<Vec<Finding>> {
     /// How far back to look for the `let client = …` a call is made on. Every call site binds it
     /// immediately above its `spawn`; the widest gap in the tree is 35 lines, so this is headroom
-    /// rather than a guess, and a site that outgrows it is reported rather than skipped.
+    /// instead of a guess, and a site that outgrows it is reported, not skipped.
     const WINDOW: usize = 60;
 
     let spec = root.join("openapi.json");
@@ -478,7 +478,7 @@ pub(super) fn the_window_ceiling_matches_the_layout(root: &Path) -> anyhow::Resu
 /// The pixel value of the first `<token>:` declaration in `styles`.
 ///
 /// The first, deliberately: `:root` opens the file and the narrow-viewport overrides come after,
-/// and it is the `:root` value the desktop window is sized against — no window this rule is about
+/// and it is the `:root` value the desktop window is sized against; no window this rule is about
 /// is narrow enough to reach those media queries.
 fn first_css_px(styles: &str, token: &str) -> Option<f64> {
     without_block_comments(styles)
@@ -493,8 +493,8 @@ fn first_css_px(styles: &str, token: &str) -> Option<f64> {
 ///
 /// [`is_comment`] is line-based and knows nothing of CSS block comments, while `input.css`
 /// documents almost every token directly above the line declaring it. A scan that trusted lines
-/// would read a number straight out of the sentence explaining the rule — which is how the first
-/// draft of this reader answered `999px` to a comment.
+/// would read a number straight out of the sentence explaining the rule, and answer `999px` to a
+/// comment.
 fn without_block_comments(styles: &str) -> String {
     let mut out = String::with_capacity(styles.len());
     let mut rest = styles;
@@ -537,11 +537,11 @@ fn quoted_after(text: &str, prefix: &str) -> Option<String> {
 mod tests {
     use super::*;
 
-    /// A rule only ever seen green is indistinguishable from one whose pattern never fires —
+    /// A rule only ever seen green is indistinguishable from one whose pattern never fires:
     /// exactly how a mistyped `clippy.toml` path behaves.
     #[test]
     fn the_csp_rule_fires_on_a_policy_and_not_on_prose_about_one() {
-        // Assembled rather than written out, so this file doesn't contain the string it forbids.
+        // Assembled, not written out, so this file doesn't contain the string it forbids.
         let granted = format!("script-src 'self' '{}'", "unsafe-eval");
         assert!(grants_unsafe_eval(&granted));
         assert!(grants_unsafe_eval(&format!(
@@ -574,7 +574,7 @@ mod tests {
     }
 
     /// The measured column is per route and the ceiling is built from the widest of them, so the
-    /// reader has to take the maximum rather than the first — and `none` (the console's
+    /// reader has to take the maximum instead of the first, and `none` (the console's
     /// full-bleed opt-out) is not a width.
     #[test]
     fn the_ceiling_rule_takes_the_widest_measured_column() {
@@ -638,7 +638,7 @@ mod tests {
         );
     }
 
-    /// The binding has to be the nearest one above the call — a closure two actions up binds its
+    /// The binding has to be the nearest one above the call: a closure two actions up binds its
     /// own client, and reading *that* would clear an ungated call sitting under it.
     #[test]
     fn the_binding_reader_takes_the_nearest_one_inside_the_window() {
@@ -656,7 +656,7 @@ mod tests {
         assert_eq!(client_binding(&lines, 1, 60), Some(lines[0]));
 
         // A binding beyond the window is out of reach, which is not the same as ungated: the
-        // rule reports it so a call site that changed shape is looked at rather than cleared.
+        // rule reports it so a call site that changed shape is looked at instead of cleared.
         let far = [
             "let client = gate.client(api);",
             "// …",

@@ -1,13 +1,13 @@
-//! Undo, in the catalogue, what the alias over-attach did before the matcher stopped doing it.
+//! Owns the catalogue repair for the alias over-attach.
 //!
-//! The scan-time canonicaliser used to treat an exact hit on *any* alternative title as identity,
-//! so a source attached to a series on a shredded sentence fragment or a shared `(Colored)` label.
-//! Attaching also files that source's own alternative titles under the series it joined, so each
-//! wrong attach widened the net for the next one. On the catalogue this was diagnosed against, one
-//! row had accumulated 309 sources across three providers and 1 140 alternative titles.
+//! A canonicaliser that treats an exact hit on *any* alternative title as identity attaches a
+//! source to a series on a shredded sentence fragment or a shared `(Colored)` label. Attaching
+//! also files that source's own alternative titles under the series it joined, so each wrong
+//! attach widens the net for the next one. On one production catalogue a single row held 309
+//! sources across three providers and 1 140 alternative titles.
 //!
-//! `tankovault_matcher` and `find_candidates` stop it happening again; nothing in the normal path
-//! undoes what is already stored, because ingest only ever inserts and updates. This does, in
+//! `tankovault_matcher` and `find_candidates` prevent new over-attaches; nothing in the normal
+//! path undoes what is already stored, because ingest only ever inserts and updates. This does, in
 //! three passes that are deliberately ordered:
 //!
 //! 1. **Keys.** Re-derive every stored normalized key from the title beside it. Keys are
@@ -18,18 +18,18 @@
 //!    invitation the next attach accepts. Safe in the direction that matters: a legitimately
 //!    shared title is re-inserted by the next scan of each series, a shredded fragment is not.
 //! 3. **Report.** Rank the series whose sources the matcher would not attach today, worst first,
-//!    asking `tankovault_matcher` — the scorer the ingest path asks — rather than a similarity
+//!    asking `tankovault_matcher` (the scorer the ingest path asks) instead of a similarity
 //!    rule of this tool's own, which would drift away from it. A source is listed when its
 //!    provider title scores below `Thresholds::low` against the series it is filed under, the
-//!    band where the matcher would have created a separate series rather than even queueing the
+//!    band where the matcher would create a separate series without even queueing the
 //!    pair.
 //!
 //! Passes 1 and 2 write under `--apply`. **Pass 3 never writes on its own**, and the reason is
-//! evidence rather than caution: a low score against today's canonical title is not proof of a
+//! evidence, not caution: a low score against today's canonical title is not proof of a
 //! bad attach, because a past writer renamed series without rewriting their keys, so a source
 //! that attached correctly to "Ubel Blatt II" now scores against "Ubel Blatt II: Knights of the
-//! Fallen King" and fails. Measured on the catalogue this was written against, the sources-per-
-//! provider distribution decays smoothly from 48 202 series with one to 26 with more than ten —
+//! Fallen King" and fails. Measured on one production catalogue, the sources-per-
+//! provider distribution decays smoothly from 48 202 series with one to 26 with more than ten:
 //! there is no cut-off separating the pathology from a `(Colored)` edition, and a blanket sweep
 //! shatters the catalogue in the other direction to fix a minority. So an operator reads the
 //! ranking and names the series to split:
@@ -43,8 +43,8 @@
 //! # What a split deliberately does not move
 //!
 //! `watchlist_entries` and `read_progress` key on `series_id`, and they stay on the surviving
-//! series. That is the right default — a user who tracked the row tracked the work it is named
-//! after, and the sources leaving are the ones that never belonged — but it means progress a user
+//! series. That is the right default (a user who tracked the row tracked the work it is named
+//! after, and the sources leaving are the ones that never belonged), but it means progress a user
 //! recorded against a chapter that moves away stays behind. Re-attributing it is a judgement this
 //! tool does not make.
 
@@ -76,7 +76,7 @@ struct Filed {
 struct Split {
     series_id: Uuid,
     canonical_title: String,
-    /// Total sources and alternative titles on the row — the two numbers that tell an operator
+    /// Total sources and alternative titles on the row: the two numbers that tell an operator
     /// whether they are looking at a `(Colored)` edition or at a runaway.
     sources: usize,
     aliases: usize,
@@ -84,12 +84,12 @@ struct Split {
     strays: BTreeMap<String, Vec<Stray>>,
 }
 
-/// Report — or with `apply`, perform — the repair passes; with `split`, detach one named series'
+/// Reports (or with `apply`, performs) the repair passes; with `split`, detaches one named series'
 /// strays instead.
 ///
 /// # Errors
 /// Any database failure, or a `split` id that names no series. Under `apply` each pass is its own
-/// transaction, so an interrupted run leaves the catalogue at a pass boundary rather than
+/// transaction, so an interrupted run leaves the catalogue at a pass boundary, not
 /// part-way through one.
 pub(crate) async fn run(
     pool: &tankovault_db::PgPool,
@@ -225,7 +225,7 @@ fn report(splits: &[Split]) {
     );
 }
 
-/// Move one series' strays onto series of their own, grouped so every source of one work lands
+/// Moves one series' strays onto series of their own, grouped so every source of one work lands
 /// together.
 async fn detach(pool: &tankovault_db::PgPool, split: &Split) -> anyhow::Result<()> {
     let mut tx = pool.begin().await?;
@@ -256,7 +256,7 @@ async fn detach(pool: &tankovault_db::PgPool, split: &Split) -> anyhow::Result<(
 /// Every series holding a source the matcher would not have attached, worst first. `only` narrows
 /// it to one series.
 ///
-/// Keys are re-derived here rather than read: pass 1 rewrites them, and in a dry run it has not,
+/// Keys are re-derived here, not read: pass 1 rewrites them, and in a dry run it has not,
 /// so reading `series.normalized_title` would judge half the catalogue against a name it no
 /// longer goes by and report a split for every stale key.
 async fn find_strays(
@@ -320,7 +320,7 @@ async fn find_strays(
     {
         // Everything the ingest path would have known about the series at attach time, and
         // nothing it would not: a provider title carries no medium, year, credit or genre, so
-        // scoring here is purely textual — which is the conservative reading, since no
+        // scoring here is purely textual, which is the conservative reading, since no
         // corroborating signal can lift a coincidence over the floor either.
         // The series' own alternative titles count as evidence in the survey, so a romaji listing
         // and a punctuation variant are not reported as strays. They are dropped once an operator
@@ -358,8 +358,8 @@ async fn find_strays(
                 authors: Vec::new(),
             };
             // Below the review floor is the one unambiguous verdict: the matcher would have
-            // created a separate series rather than even queueing the pair. The review band is
-            // left alone — a punctuation variant, a romaji listing and a `(Colored)` edition all
+            // created a separate series without even queueing the pair. The review band is
+            // left alone: a punctuation variant, a romaji listing and a `(Colored)` edition all
             // score there, and moving them would shatter the catalogue to fix a minority.
             if assess(&query, &candidate).score >= thresholds.low {
                 continue;

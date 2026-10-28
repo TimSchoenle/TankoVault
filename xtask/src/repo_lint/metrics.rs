@@ -1,4 +1,4 @@
-//! The metrics catalogue rule: every emitted series has a row, and every row is emitted.
+//! Owns the metrics catalogue rule: every emitted series has a row, and every row is emitted.
 
 use std::path::Path;
 
@@ -21,7 +21,7 @@ const CATALOGUE_SRC: &str = "crates/service/src/metrics.rs";
 ///
 /// Nothing else can catch this. A metric name is a string: a typo compiles, a new counter with
 /// no row compiles and exposes a series with no `# HELP`, `# TYPE` or unit, and a row for a
-/// metric nobody emits compiles and reads as coverage that does not exist — which is the exact
+/// metric nobody emits compiles and reads as coverage that does not exist, which is the exact
 /// defect `docs/OBSERVABILITY.md` carried by hand until this rule replaced the hand-checking.
 ///
 /// `crates/fetch` and `crates/solver` sit below `tankovault-service` and cannot import the
@@ -126,7 +126,7 @@ fn catalogue_names(
 /// Every recording macro in `src`, as (1-based line, resolved name).
 ///
 /// `None` for a name that is neither a string literal nor a `…::IDENT` path, which the rule
-/// reports rather than silently passing — an unresolvable name is a hole in the check.
+/// reports instead of silently passing: an unresolvable name is a hole in the check.
 fn recorded_metrics(
     src: &str,
     constants: &std::collections::HashMap<String, String>,
@@ -168,7 +168,7 @@ fn recorded_metrics(
 ///
 /// This was convention, held only by copy-paste: a new service that omits
 /// `spawn_metrics_server` compiles, passes every other gate, reports healthy, and is silently
-/// unscrapable. `bootstrap` is exempt — it is a one-shot CLI that exits.
+/// unscrapable. `bootstrap` is exempt: it is a one-shot CLI that exits.
 pub(super) fn every_service_serves_metrics(root: &Path) -> anyhow::Result<Vec<Finding>> {
     const REQUIRED: [(&str, &str); 3] = [
         (

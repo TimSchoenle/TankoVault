@@ -1,8 +1,8 @@
-//! `xtask repo-lint` — invariants no compiler or linter can see: two artefacts that must agree
+//! Owns `xtask repo-lint`: invariants no compiler or linter can see: two artefacts that must agree
 //! with nothing connecting them (a CSP and the HTML it governs, a secret published in a compose
 //! file and the code meant to refuse it). These are text scans, not parsers: comment lines are
 //! skipped ([`text::is_comment`]) so a rule can't fire on the prose describing it, and every
-//! allowance is an explicit path listed in the rule rather than a sprinklable "ignore" comment.
+//! allowance is an explicit path listed in the rule instead of a sprinklable "ignore" comment.
 //!
 //! One module per artefact family; [`text`] holds the scanning primitives they share. A rule's
 //! reason lives on the rule, so read it there before changing it.
@@ -33,10 +33,10 @@ struct Finding {
     detail: String,
 }
 
-/// Run every rule over `root`.
+/// Runs every rule over `root`.
 ///
 /// # Errors
-/// Every violation found, listed. Rules run to completion rather than stopping at the first,
+/// Every violation found, listed. Rules run to completion instead of stopping at the first,
 /// so one invocation reports the whole set.
 pub(crate) fn run(root: &Path) -> anyhow::Result<()> {
     let mut findings = Vec::new();

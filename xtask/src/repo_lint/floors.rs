@@ -1,4 +1,5 @@
-//! Rules over the committed coverage floors: that both parse, under the parser the gate uses.
+//! Owns the rules over the committed coverage floors: that both parse, under the parser the gate
+//! uses.
 
 use std::path::{Path, PathBuf};
 
@@ -8,7 +9,7 @@ use crate::coverage::{Floor, Suite, parse_optional_floor};
 /// **Both coverage floors must parse, and only the integration one may be `unset`.**
 ///
 /// The two files are read by CI jobs on different paths: `.github/coverage-floor.txt` on every
-/// pull request, `.github/coverage-floor-integration.txt` only on the `full` path — the weekly
+/// pull request, `.github/coverage-floor-integration.txt` only on the `full` path; the weekly
 /// schedule or an explicit dispatch. So a typo in the integration floor is invisible for up to a
 /// week, and the run that finds it is the expensive one: an instrumented build of the whole
 /// workspace against a Docker Postgres, failing on a line it could have rejected in
@@ -18,8 +19,8 @@ use crate::coverage::{Floor, Suite, parse_optional_floor};
 /// it there: that floor is the only coverage gate on the fast path, and a sentinel would disable
 /// it silently while still reporting a green run.
 ///
-/// This rule parses rather than scans, deliberately against the grain of the other rules in this
-/// module — reimplementing the format as a text scan would let the check and the gate disagree,
+/// This rule parses instead of scanning, deliberately against the grain of the other rules in this
+/// module: reimplementing the format as a text scan would let the check and the gate disagree,
 /// which is the class of bug the whole of `repo-lint` exists to catch.
 pub(super) fn coverage_floors_parse(root: &Path) -> anyhow::Result<Vec<Finding>> {
     let mut findings = Vec::new();
@@ -76,7 +77,7 @@ mod tests {
     }
 
     /// A file that is all comments has no value line to point at, so the finding lands on the
-    /// end of the file rather than on line 0, which no editor will open.
+    /// end of the file instead of on line 0, which no editor will open.
     #[test]
     fn a_file_with_no_value_points_at_its_end() {
         assert_eq!(value_line("# only\n# prose\n"), 2);

@@ -1,6 +1,6 @@
-//! Shared text-scanning primitives. Every rule is a text scan rather than a parser, so these
-//! are what the rules are built from — most importantly [`is_comment`], which keeps a rule from
-//! firing on the prose that documents it.
+//! Owns the shared text-scanning primitives. Every rule is a text scan instead of a parser, so
+//! these are what the rules are built from: most importantly [`is_comment`], which keeps a rule
+//! from firing on the prose that documents it.
 
 use std::path::{Path, PathBuf};
 
@@ -16,8 +16,8 @@ pub(super) fn const_str(source: &str, name: &str) -> Option<(usize, String)> {
         if is_comment(trimmed) {
             continue;
         }
-        // A visibility modifier is not part of the declaration this rule is about — the
-        // constant is the literal, whoever else may read it. Stripped rather than matched so
+        // A visibility modifier is not part of the declaration this rule is about: the
+        // constant is the literal, whoever else may read it. Stripped, not matched, so
         // `pub`, `pub(crate)` and a bare `const` all parse.
         let trimmed = trimmed
             .strip_prefix("pub(crate) ")
@@ -113,7 +113,7 @@ fn array_entries(line: &str) -> impl Iterator<Item = String> + '_ {
 // Scanning
 // ---------------------------------------------------------------------------------------
 
-/// Apply `check` to every non-comment line of every file under `root` with one of `extensions`,
+/// Applies `check` to every non-comment line of every file under `root` with one of `extensions`,
 /// skipping any path containing one of `excluded` as a component.
 pub(super) fn scan(
     root: &Path,
@@ -158,7 +158,7 @@ pub(super) fn is_comment(line: &str) -> bool {
 
 /// Every file under `root` with one of `extensions`, skipping `excluded` directories.
 ///
-/// Infallible by design: an unreadable directory is skipped rather than reported. The rules
+/// Infallible by design: an unreadable directory is skipped, not reported. The rules
 /// this feeds are about what the tree *contains*, and a path the process cannot open contains
 /// nothing it could be judged on. The two rules that read a specific, required file
 /// (`index.html`, the compose file) check for it themselves and fail loudly.
@@ -209,7 +209,7 @@ mod tests {
     #[test]
     fn a_rules_own_documentation_does_not_trip_it() {
         // Every line here is a comment carrying the forbidden string. If `is_comment` ever
-        // stops covering one of these, the rule that forbids it can no longer be documented.
+        // stops covering one of these, the rule that forbids it cannot be documented.
         assert!(is_comment("// a CSP must never grant 'unsafe-eval'"));
         assert!(is_comment("/// see `dangerous_inner_html`"));
         assert!(is_comment("//! 'unsafe-eval'"));
@@ -242,7 +242,7 @@ mod tests {
         assert_eq!(entries, ["MIT", "Apache-2.0"]);
 
         // `[bans] deny` is a list of crates, not licences: asking for it under `[licenses]`
-        // must find nothing rather than the wrong array.
+        // must find nothing instead of the wrong array.
         assert!(toml_string_array(deny, "[licenses]", "deny").is_none());
         // A top-level key (`about.toml` has no tables at all) is `""`.
         assert_eq!(

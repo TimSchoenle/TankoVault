@@ -1,5 +1,6 @@
-//! Fuzzes the text/URL helpers in `tankovault_adapters::html` over arbitrary UTF-8, the shape
-//! of text arriving off a provider's page (anchor text, attributes, status labels).
+//! Owns the fuzz target that exercises the text/URL helpers in `tankovault_adapters::html` over
+//! arbitrary UTF-8, the shape of text arriving off a provider's page (anchor text, attributes,
+//! status labels).
 //!
 //! # Oracle
 //! No panic on any input: these are total functions returning `Option`/`String`/an enum, so any

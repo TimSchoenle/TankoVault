@@ -1,15 +1,15 @@
-//! Fuzzes `tankovault_auth::verify_access_token` — the whole of the API's authentication, with
-//! no second check behind it: a string that gets past it is a principal. `jsonwebtoken` parses
-//! the token; what this target covers is what this repo adds around it — the pinned algorithm,
-//! and `AccessClaims::user_id`'s `Uuid::from_str` on an attacker-chosen `sub`.
+//! Owns the fuzz target that exercises `tankovault_auth::verify_access_token`: the whole of the
+//! API's authentication, with no second check behind it: a string that gets past it is a principal.
+//! `jsonwebtoken` parses the token; what this target covers is what this repo adds around it: the
+//! pinned algorithm, and `AccessClaims::user_id`'s `Uuid::from_str` on an attacker-chosen `sub`.
 //!
 //! # Oracle
 //! 1. No panic, over arbitrary UTF-8.
-//! 2. A token that verifies carries `alg: HS256` in its own header — the defence against JWT
+//! 2. A token that verifies carries `alg: HS256` in its own header: the defence against JWT
 //!    algorithm-confusion (swap `alg` for `none` or `RS256` to sign your own claims), checked
 //!    via `decode_header` so a disagreement between what verified and what the header says
 //!    fails here.
-//! 3. A token that verifies under one secret does not verify under another — cheap to assert,
+//! 3. A token that verifies under one secret does not verify under another: cheap to assert,
 //!    and guards a future change that widens key handling (e.g. an empty secret treated as
 //!    "no verification").
 //! 4. `user_id()` is total: a validly-signed token with a non-UUID `sub` yields `None`, not a
@@ -63,6 +63,6 @@ fuzz_target!(|data: &str| {
     );
 
     // (4) `Uuid::from_str` over an attacker-chosen subject; unasserted since a non-UUID `sub`
-    // yielding `None` is correct — only that asking cannot abort is being claimed.
+    // yielding `None` is correct: only that asking cannot abort is being claimed.
     let _ = claims.user_id();
 });

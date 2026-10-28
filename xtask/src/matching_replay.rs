@@ -1,4 +1,5 @@
-//! `matching-replay`: re-judge exported sweep decisions with the current matcher, offline.
+//! Owns `matching-replay`, which re-judges exported sweep decisions with the current matcher,
+//! offline.
 //!
 //! The input is one `merge_decisions` row per line, exported by query A10 of
 //! `docs/MATCHING_OVERHAUL.md`. The report is the stored-verdict → replayed-verdict table; with
@@ -23,7 +24,7 @@ pub(crate) struct Args {
 }
 
 impl Args {
-    /// Read `--input <path> [--out <path>]`.
+    /// Reads `--input <path> [--out <path>]`.
     ///
     /// # Errors
     /// A missing `--input`, a flag without its value, or an unknown argument.

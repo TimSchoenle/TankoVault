@@ -1,10 +1,10 @@
-//! Challenge-solving decorator: detect a bot-management challenge in-band, delegate to a
-//! [`ChallengeSolver`], cache the solved session, and replay (`docs/ARCHITECTURE.md` §9).
+//! Owns the challenge-solving decorator: it detects a bot-management challenge in-band, delegates
+//! to a [`ChallengeSolver`], caches the solved session, and replays it (`docs/ARCHITECTURE.md`
+//! §9).
 //!
-//! Sessions are cached per provider and replayed on later requests so one solve
-//! amortises across many fetches until it expires; expiry re-triggers a solve, not a
-//! block. The store is abstracted so a Redis-backed implementation (shared across worker
-//! replicas) can replace the in-memory default without touching this decorator.
+//! Sessions are cached per provider and replayed, so one solve serves many fetches until it
+//! expires; expiry triggers a new solve, not a block. The store is a trait, so a Redis-backed one
+//! shared across worker replicas can replace the in-memory default.
 
 use crate::error::FetchError;
 use crate::fetcher::Fetcher;
@@ -19,24 +19,22 @@ use tankovault_solver::{
 use time::{Duration, OffsetDateTime};
 use tokio::sync::RwLock;
 
-/// Ceiling on the rendered `Cookie` header, in bytes.
+/// The ceiling on the rendered `Cookie` header, in bytes.
 ///
-/// Origins reject an oversized header block outright — nginx answers `400 Request Header Or
-/// Cookie Too Large` from its own error page, which is indistinguishable from a bad request
-/// unless something knows to look. The jar a solver hands back is a *browser's*: on a site with
-/// an analytics and ad stack it accumulates cookies that have nothing to do with clearance, and
-/// replaying all of them is what pushes the header past the origin's buffer.
+/// Origins reject an oversized header block outright: nginx answers `400 Request Header Or Cookie
+/// Too Large` from its own error page, which looks like any bad request. A solver's jar is a
+/// browser's, and on a site with an analytics and ad stack it collects cookies unrelated to
+/// clearance that push the header past the origin's buffer.
 ///
-/// Half of nginx's stock 8 KiB buffer, leaving room for the rest of the header block (an
-/// emulation profile sends a dozen headers of its own).
+/// Half of nginx's stock 8 KiB buffer, leaving room for the rest of the header block.
 const MAX_COOKIE_HEADER_BYTES: usize = 4096;
 
-/// Cookie names carrying bot-management clearance or a server session, in the order they are
-/// preferred when the jar does not fit.
+/// The cookie names carrying bot-management clearance or a server session, in order of
+/// preference when the jar does not fit.
 ///
-/// Matched as a case-insensitive prefix, because every one of these is versioned or suffixed in
-/// practice (`wordpress_logged_in_<hash>`, `__cf_bm`). Dropping any of them costs the session;
-/// dropping an analytics cookie costs nothing, so when something has to go it must not be these.
+/// Matched as a case-insensitive prefix, because these are versioned or suffixed in practice
+/// (`wordpress_logged_in_<hash>`, `__cf_bm`). Dropping one costs the session; dropping an
+/// analytics cookie costs nothing.
 const ESSENTIAL_COOKIE_PREFIXES: [&str; 8] = [
     "cf_clearance",
     "__cf",
@@ -48,17 +46,18 @@ const ESSENTIAL_COOKIE_PREFIXES: [&str; 8] = [
     "session",
 ];
 
-/// A cached solved session (cookies + UA + expiry).
+/// A cached solved session: cookies, user agent and expiry.
 #[derive(Debug, Clone)]
 pub struct SolvedSession {
-    /// The jar the solver came back with, name and value. Empty means the solve cleared
-    /// nothing, and such a session is never replayed.
+    /// The solver's cookie jar as name and value pairs.
+    ///
+    /// Empty means the solve cleared nothing, and such a session is never replayed.
     pub cookies: Vec<(String, String)>,
-    /// The browser identity the cookies were issued to. Replaying the cookies under a different
-    /// one is what invalidates a `cf_clearance`.
+    /// The browser identity the cookies were issued to; replaying them under another one
+    /// invalidates a `cf_clearance`.
     pub user_agent: String,
-    /// When this deployment stops replaying the session, from `solver.session_ttl_secs`. It is
-    /// not the cookies' own expiry.
+    /// When this deployment stops replaying the session, from `solver.session_ttl_secs`; not the
+    /// cookies' own expiry.
     pub expires_at: OffsetDateTime,
 }
 
@@ -67,38 +66,33 @@ impl SolvedSession {
         self.expires_at > OffsetDateTime::now_utc()
     }
 
-    /// Whether replaying this session can achieve anything.
+    /// Returns whether replaying this session can achieve anything.
     ///
-    /// Two ways it cannot, and both were replayed anyway:
-    ///
-    /// A session with **no cookies** carries only the solver's user-agent. Applying it swaps this
-    /// provider's browser identity for the solver's on every subsequent request and gains nothing
-    /// in return — there is no clearance to preserve. Solvers return one routinely: a tier that
-    /// fetched the page without a browser has no cookie jar to report, which is exactly what the
-    /// provider behind this module's own regression tests does.
+    /// A session with **no cookies** carries only the solver's user agent. Applying it swaps the
+    /// provider's browser identity for the solver's on every later request and preserves no
+    /// clearance. Solvers return one routinely: a tier that fetched without a browser has no jar.
     ///
     /// A session whose **browser has no emulation profile** cannot be presented coherently. The
-    /// clearance is bound to the handshake as much as to the user-agent, so the fetch layer drops
-    /// a user-agent it cannot match (`base::can_reproduce`) — and cookies bound to a user-agent
-    /// that is no longer sent will not be honoured. Caching that session only stops us re-solving
-    /// for the rest of its TTL.
+    /// fetch layer drops a user agent it cannot match (`base::can_reproduce`), and cookies bound
+    /// to an unsent user agent are not honoured. Caching it would only suppress re-solving for
+    /// its TTL.
     fn is_replayable(&self) -> bool {
         !self.cookies.is_empty() && crate::base::can_reproduce(&self.user_agent)
     }
 
-    /// Render the `Cookie` header value, bounded by [`MAX_COOKIE_HEADER_BYTES`].
+    /// Renders the `Cookie` header value, bounded by [`MAX_COOKIE_HEADER_BYTES`].
     ///
-    /// Truncation is a last resort and is reported, but it beats the alternative: a header the
-    /// origin refuses fails *every* request for as long as the session is cached, whereas a jar
-    /// missing an analytics cookie is a jar the site never reads.
+    /// Truncation is a last resort and is reported. A header the origin refuses fails every
+    /// request while the session is cached, whereas a missing analytics cookie is one the site
+    /// never reads.
     fn cookie_header(&self) -> String {
         let rendered = render_cookies(self.cookies.iter());
         if rendered.len() <= MAX_COOKIE_HEADER_BYTES {
             return rendered;
         }
 
-        // Essentials first, then the rest in the order the solver reported them, stopping at the
-        // cap. Stable and explainable — no cookie is dropped while a less important one is kept.
+        // Essentials first, then the rest in the solver's order, stopping at the cap, so no
+        // cookie is dropped while a less important one is kept.
         let (essential, rest): (Vec<_>, Vec<_>) = self
             .cookies
             .iter()
@@ -142,19 +136,18 @@ fn is_essential(name: &str) -> bool {
 /// Storage for solved sessions, keyed by provider slug.
 #[async_trait]
 pub trait SessionStore: Send + Sync {
-    /// Fetch a still-valid session for `provider`, if any.
+    /// Returns a still-valid session for `provider`, if any.
     async fn get(&self, provider: &str) -> Option<SolvedSession>;
-    /// Store (or replace) the session for `provider`.
+    /// Stores or replaces the session for `provider`.
     async fn put(&self, provider: &str, session: SolvedSession);
-    /// Discard `provider`'s session before it expires.
+    /// Discards `provider`'s session before it expires.
     ///
-    /// A cached session is replayed on every request until its TTL lapses, so one the origin has
-    /// started refusing fails *every* fetch for that provider until then. Expiry alone cannot
-    /// recover from that; this is what lets the stack drop a session and start over.
+    /// A cached session is replayed on every request until its TTL lapses, so one the origin
+    /// refuses would fail every fetch until then. This lets the stack drop it and start over.
     async fn invalidate(&self, provider: &str);
 }
 
-/// Process-local session store (default; suitable for a single replica or tests).
+/// Stores sessions in process memory: the default, for a single replica or tests.
 #[derive(Default)]
 pub struct InMemorySessionStore {
     map: RwLock<HashMap<String, SolvedSession>>,
@@ -182,8 +175,9 @@ pub struct SolvingFetcher<F> {
 }
 
 impl<F> SolvingFetcher<F> {
-    /// Wraps `inner`, solving through `solver` and caching the result in `store`. Requests that
-    /// meet no challenge never touch either.
+    /// Wraps `inner`, solving through `solver` and caching sessions in `store`.
+    ///
+    /// Requests that meet no challenge touch neither.
     #[must_use]
     pub fn new(inner: F, solver: Arc<dyn ChallengeSolver>, store: Arc<dyn SessionStore>) -> Self {
         Self {
@@ -194,27 +188,21 @@ impl<F> SolvingFetcher<F> {
     }
 }
 
-/// The status to report for a solved page.
+/// Returns the status to report for a solved page.
 ///
-/// **The page outranks the report.** A solver back-end's status is second-hand, and a
-/// challenge-solving browser reports `200` for any navigation that completed — throttle notice
-/// included, since providers routinely serve one as a rendered page under a success status. A
-/// document that *is* the provider's "Too Many Requests" page is a `429` whatever the solver
-/// claims, and on a back-end that reports no status at all it is the only evidence there is.
-///
-/// Believing the report over the body is what let a rendered `429` travel all the way to an
-/// adapter as a successful fetch, where the only available verdict was "unparseable".
+/// **The page outranks the report.** A solver's status is second-hand, and a browser reports
+/// `200` for any completed navigation, a rendered throttle notice included. A document that is
+/// the provider's "Too Many Requests" page is a `429` whatever the solver claims, and on a
+/// back-end that reports no status it is the only evidence. Believing the report would carry a
+/// rendered `429` to an adapter as an unparseable success.
 fn solved_status(reported: Option<u16>, html: &str) -> u16 {
     if is_rate_limit_page(html) {
         return 429;
     }
-    // A redirect is the one status the body outranks in the other direction. The solver drives
-    // a browser, which follows redirects before it returns — so a reported `3xx` describes a hop
-    // that has already been taken and the html is the *destination* document. `BaseHttpFetcher`
-    // follows redirects too and never surfaces one, so believing this report made the same URL
-    // succeed unsolved and fail solved: `/manga/page/1/` on a Madara site 301s to `/manga/`, and
-    // every full scan of a Cloudflare-gated one failed on its first page with the archive it had
-    // just been handed.
+    // A redirect is outranked the other way. The solver's browser follows redirects before it
+    // returns, so a reported `3xx` is a hop already taken and the html is the destination.
+    // `BaseHttpFetcher` follows redirects too, so believing the report would make a URL such as
+    // a Madara `/manga/page/1/` (a 301 to `/manga/`) succeed unsolved and fail solved.
     match reported {
         Some(status) if (300..400).contains(&status) => 200,
         Some(status) => status,
@@ -233,11 +221,10 @@ fn apply_session(mut req: FetchRequest, session: &SolvedSession) -> FetchRequest
     req
 }
 
-/// Whether the origin refused the request because of its *headers* rather than its target.
+/// Returns whether the origin refused the request because of its headers, not its target.
 ///
 /// `431` says so by status. nginx says it with a `400` and its own error page, whose title names
-/// the reason — indistinguishable from an ordinary bad request without reading it, which is how a
-/// provider spent a day failing every fetch behind a session it had grown too large to send.
+/// the reason; without reading it, the refusal looks like an ordinary bad request.
 fn refuses_our_headers(resp: &FetchResponse) -> bool {
     const REASONS: [&str; 2] = ["header or cookie too large", "header fields too large"];
 
@@ -255,8 +242,8 @@ fn refuses_our_headers(resp: &FetchResponse) -> bool {
 #[async_trait]
 impl<F: Fetcher> Fetcher for SolvingFetcher<F> {
     async fn get(&self, req: FetchRequest) -> Result<FetchResponse, FetchError> {
-        // Replay a cached session if we have one, keeping the request as it arrived so the
-        // recovery below can re-issue it without one.
+        // Replays a cached session, keeping the request as it arrived so the recovery below can
+        // re-issue it without one.
         let (prepared, replayed) = match self.store.get(&req.provider_slug).await {
             Some(session) => (apply_session(req.clone(), &session), true),
             None => (req.clone(), false),
@@ -282,8 +269,8 @@ impl<F: Fetcher> Fetcher for SolvingFetcher<F> {
 }
 
 impl<F: Fetcher> SolvingFetcher<F> {
-    /// Pass `resp` through unless it is a challenge, in which case solve it and answer with the
-    /// solved page (or a replay of `req` under the fresh session).
+    /// Passes `resp` through unless it is a challenge; then solves it and answers with the solved
+    /// page or a replay of `req` under the fresh session.
     async fn solve_if_challenged(
         &self,
         req: FetchRequest,
@@ -303,8 +290,7 @@ impl<F: Fetcher> SolvingFetcher<F> {
                 kind: Some(kind),
             })
             .await;
-        // Recorded before the `?`: a solve that failed still cost the seconds it took, and
-        // attributing them is the point of the breakdown.
+        // Recorded before the `?`: a failed solve still cost its seconds.
         crate::accounting::record(crate::accounting::Metered::Solve(solve_started.elapsed()));
         let outcome = solved.map_err(|e| {
             if e.is_transient() {
@@ -332,10 +318,9 @@ impl<F: Fetcher> SolvingFetcher<F> {
             );
         }
 
-        // Use the solver's fetched page directly, but only once it's confirmed to be the
-        // *page* and not the interstitial again — a solver that timed out mid-challenge still
-        // returns 200-shaped HTML, and passing that off as content reaches the adapter
-        // disguised as a malformed body.
+        // Uses the solver's page directly, once it is confirmed to be the page and not the
+        // interstitial again: a solver that timed out mid-challenge still returns 200-shaped
+        // HTML, which an adapter would report as a malformed body.
         if let Some(html) = outcome.html {
             if let Some(kind) = detect_challenge_body(&html) {
                 tracing::warn!(
@@ -362,8 +347,8 @@ impl<F: Fetcher> SolvingFetcher<F> {
             });
         }
 
-        // Otherwise replay the original request — with the fresh session when it can carry
-        // anything, and as it stands when it cannot.
+        // Otherwise replays the original request, with the fresh session when it carries
+        // anything.
         let replay = if replayable {
             apply_session(req, &session)
         } else {
@@ -429,13 +414,12 @@ mod tests {
         FetchRequest::new("https://example.test/api/items", "example")
     }
 
-    /// A user-agent the deployed solver actually returns, so a session built with it is one the
-    /// fetch layer can present.
+    /// A user agent the deployed solver returns, so a session built with it can be presented.
     const SOLVER_UA: &str =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:150.0) Gecko/20100101 Firefox/150.0";
 
-    /// A solving stack whose solver reports `cookies` and `user_agent`, plus the store it writes
-    /// to, so a test can ask what was cached.
+    /// Builds a solving stack whose solver reports `cookies` and `user_agent`, plus its store, so
+    /// a test can ask what was cached.
     fn solving_session(
         cookies: Vec<(String, String)>,
         user_agent: &str,
@@ -467,13 +451,10 @@ mod tests {
         assert!(store.get("example").await.is_some());
     }
 
-    /// A solve that returned **no cookies** must not be cached.
+    /// A solve that returned **no cookies** is not cached.
     ///
-    /// It carries nothing but the solver's user-agent, so caching it swapped this provider's
-    /// browser identity for the solver's on every later request while preserving no clearance at
-    /// all — pure incoherence for no benefit. Solvers return one routinely: a tier that fetched the
-    /// page without a browser has no cookie jar to report, which is what the provider that prompted
-    /// this work does.
+    /// The bug: caching it swaps the provider's browser identity for the solver's on every later
+    /// request while preserving no clearance.
     #[tokio::test]
     async fn a_cookieless_session_is_not_cached() {
         let (fetcher, store) = solving_session(Vec::new(), SOLVER_UA);
@@ -484,9 +465,8 @@ mod tests {
         );
     }
 
-    /// A session whose browser has no emulation profile must not be cached either: the fetch layer
-    /// drops a user-agent it cannot match to a handshake, and cookies bound to a user-agent that is
-    /// no longer sent will not be honoured. Caching it only suppresses the next solve.
+    /// A session whose browser has no emulation profile is not cached: its user agent would be
+    /// dropped and its cookies not honoured, so caching it only suppresses the next solve.
     #[tokio::test]
     async fn a_session_whose_browser_cannot_be_reproduced_is_not_cached() {
         let (fetcher, store) = solving_session(clearance(), "SolverUA/2.0");
@@ -509,9 +489,8 @@ mod tests {
 
     #[tokio::test]
     async fn the_solved_status_and_headers_reach_the_caller() {
-        // A page the provider served with a non-success status is not a successful fetch,
-        // however well the challenge in front of it was solved. Flattening it to 200 hid
-        // every rendered 429/503 from the layers that handle exactly those.
+        // A page served with a non-success status is not a successful fetch, however well the
+        // challenge was solved; flattening it to 200 would hide a rendered 429 or 503.
         let resp = solving_with(
             "<html><head><title>Down for maintenance</title></head><body>back soon</body></html>",
             Some(503),
@@ -524,11 +503,11 @@ mod tests {
         assert_eq!(resp.header("Retry-After"), Some("30"));
     }
 
-    /// Regression: a solved fetch whose winning tier reported a redirect used to fail the
-    /// caller, even though the browser had already followed it and the body was the
-    /// destination. `/manga/page/1/` on a Madara site 301s to `/manga/`, so the first page of
-    /// every full scan of a Cloudflare-gated one errored — while the same URL fetched without
-    /// a solve succeeded, because `BaseHttpFetcher` follows redirects itself.
+    /// A reported redirect is a hop the solver already followed.
+    ///
+    /// The bug: failing on a reported `3xx` rejects the destination document the browser handed
+    /// back. `/manga/page/1/` on a Madara site 301s to `/manga/`, so every full scan of a
+    /// Cloudflare-gated one fails on its first page.
     #[tokio::test]
     async fn a_reported_redirect_is_a_hop_the_solver_already_followed() {
         let resp = solving_with(
@@ -545,9 +524,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_throttle_page_outranks_a_solver_reported_200() {
-        // A solver reports 200 for any navigation that completed, throttle notice included.
-        // Believing that over the page in front of us is what kept a rendered 429 arriving at
-        // adapters as content.
+        // A solver reports 200 for any completed navigation, throttle notice included; the page
+        // decides.
         let resp = solving_with(
             "<html lang=\"en\"><head><meta charset=\"utf-8\">\
              <title>Too Many Requests</title></head><body></body></html>",
@@ -582,10 +560,10 @@ mod tests {
         assert_eq!(resp.status, 200);
     }
 
-    /// A jar too large to send costs the provider *every* fetch until the session's TTL lapses,
-    /// which is how one provider spent a day answering `400 Request Header Or Cookie Too Large`.
-    /// The essentials are what a site actually reads; the rest is a browser's accumulated
-    /// analytics, and dropping those is strictly better than sending a header nobody accepts.
+    /// An oversized jar keeps the cookies that carry the session.
+    ///
+    /// The bug: a jar too large to send fails every fetch until the session's TTL lapses, with
+    /// `400 Request Header Or Cookie Too Large`. The rest is a browser's accumulated analytics.
     #[test]
     fn an_oversized_cookie_jar_keeps_the_cookies_that_carry_the_session() {
         let mut cookies = vec![("cf_clearance".to_owned(), "x".repeat(600))];
@@ -612,9 +590,8 @@ mod tests {
         );
     }
 
-    /// The cap is a ceiling, not a filter: an ordinary jar has to travel intact and in the
-    /// solver's own order, because a site is free to care about a cookie this crate has never
-    /// heard of.
+    /// A jar within the cap travels intact and in the solver's order: a site may care about a
+    /// cookie this crate has never heard of.
     #[test]
     fn a_jar_within_the_cap_is_replayed_verbatim() {
         let session = SolvedSession {
@@ -628,9 +605,8 @@ mod tests {
         assert_eq!(session.cookie_header(), "_ga=1; cf_clearance=abc");
     }
 
-    /// Only the origin refusing our *headers* may discard a session — a `400` on its own is an
-    /// ordinary bad request, and dropping the session for one would re-solve the challenge on
-    /// every malformed URL a provider has.
+    /// Only a header-size refusal discards a session: a plain `400` is an ordinary bad request,
+    /// and dropping the session for one would re-solve on every malformed URL.
     #[test]
     fn only_a_header_size_refusal_counts_as_one() {
         let nginx = |status: u16, reason: &str| FetchResponse {
@@ -662,8 +638,8 @@ mod tests {
         }));
     }
 
-    /// Refuses any request carrying a `Cookie`, exactly as an origin whose header buffer the jar
-    /// has outgrown does, and serves content to one without.
+    /// Refuses any request carrying a `Cookie`, like an origin whose header buffer the jar has
+    /// outgrown, and serves content to one without.
     struct RefusesCookies;
 
     #[async_trait]
@@ -691,9 +667,10 @@ mod tests {
         }
     }
 
-    /// The self-healing half. Without it the refused session is replayed on every request until
-    /// its TTL lapses, so one oversized jar costs the provider every fetch for the whole window —
-    /// and nothing in the failure feed says the session is the reason.
+    /// A session the origin refuses is dropped and the request retried without it.
+    ///
+    /// The bug: otherwise the refused session is replayed until its TTL lapses, failing every
+    /// fetch with nothing in the failure feed naming the session.
     #[tokio::test]
     async fn a_session_the_origin_refuses_is_dropped_and_the_request_retried_without_it() {
         let store: Arc<dyn SessionStore> = Arc::new(InMemorySessionStore::default());
@@ -732,8 +709,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_solver_that_hands_back_the_interstitial_has_not_solved_anything() {
-        // Accepting this as a 200 is how an unsolved challenge reaches an adapter disguised
-        // as content, which the adapter can only report as a malformed body.
+        // Accepted as a 200, an unsolved challenge would reach the adapter as a malformed body.
         let err = solving(
             "<html><head><title>Just a moment...</title></head>\
              <body><div class=\"cf-turnstile\"></div></body></html>",

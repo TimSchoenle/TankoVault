@@ -1,16 +1,16 @@
-//! The innermost fetcher: `wreq` with a browser emulation profile, a validating
-//! (SSRF-safe) DNS resolver, per-hop redirect scheme validation, and a bounded text body.
+//! Owns the innermost fetcher: `wreq` with a browser emulation profile, an SSRF-safe DNS
+//! resolver, per-hop redirect scheme validation, and a bounded text body.
 //!
-//! Emulation exists because providers fingerprint the TLS `ClientHello` and HTTP/2 frames and
-//! cross-check them against `User-Agent` — a browser UA over a non-browser handshake is a
-//! *stronger* bot signal than no disguise. `wreq`'s profile owns the matching header set, so
-//! this layer must never hand-set a header a profile owns.
+//! Providers fingerprint the TLS `ClientHello` and HTTP/2 frames and cross-check them against
+//! `User-Agent`, so a browser user agent over a non-browser handshake is a stronger bot signal
+//! than no disguise. `wreq`'s profile owns the matching header set, and this layer must never
+//! hand-set a header a profile owns.
 //!
-//! A solved challenge session is the one case that sets a user-agent per request, because its
-//! clearance cookies are bound to it. That user-agent therefore arrives with a **client of its
-//! own**: the profile is resolved from the user-agent itself, so the handshake we present is the
-//! one the session was earned with. A session whose browser no profile reproduces is not
-//! impersonated at all — see [`client_for`].
+//! A solved challenge session is the one case that sets a user agent per request, because its
+//! clearance cookies are bound to it. That user agent gets a **client of its own**, with the
+//! profile resolved from the user agent, so the handshake is the one the session was earned
+//! with. A session whose browser no profile reproduces is not impersonated: see
+//! [`client_for`](BaseHttpFetcher::client_for).
 
 use crate::error::FetchError;
 use crate::fetcher::Fetcher;
@@ -27,30 +27,25 @@ use tankovault_domain::BrowserEmulation;
 use url::Url;
 use wreq_util::{Emulation, Platform, Profile};
 
-/// Maximum redirects followed before erroring.
+/// The most redirects followed before erroring.
 const MAX_REDIRECTS: usize = 5;
-/// Hard cap on response body size (guards memory and the no-binary-content invariant).
+/// The hard cap on response body size, which guards memory and the no-binary-content invariant.
 ///
-/// Raised from 8 MiB, which was inconsistent rather than merely tight: a sitemap shard that the
-/// **solver** path hands back at 26 MB — it returns the browser's rendered body with no cap at
-/// all — was refused outright when the same document arrived on the plain path at 2.9 MB raw
-/// and growing. One transport accepting a document the other rejects makes a provider's
-/// catalogue depend on whether its session happened to be cached, which is not a property
-/// anything upstream can reason about.
+/// The solver path returns the browser's rendered body uncapped, so a cap much tighter than
+/// the largest sitemap shard would make a provider's catalogue depend on whether its session
+/// happened to be cached.
 ///
-/// The bound that matters is concurrency × this value: `Politeness::MAX_CONCURRENCY` is 16
-/// in-flight requests per provider, so a provider at the ceiling can hold 256 MiB of bodies at
-/// once. That is inside the worker's compose memory limit, and no provider comes close in
-/// practice — only sitemap shards are anywhere near this size, and they are fetched one at a
-/// time by a catalogue walk.
+/// The bound that matters is concurrency times this value: `Politeness::MAX_CONCURRENCY` is 16
+/// in-flight requests per provider, so a provider at the ceiling can hold 256 MiB of bodies.
+/// That fits the worker's compose memory limit, and only sitemap shards come near this size,
+/// fetched one at a time by a catalogue walk.
 const MAX_BODY_BYTES: usize = 16 * 1024 * 1024;
 
-/// Resolve a domain-level browser family to a concrete emulation profile.
+/// Resolves a browser family to a concrete emulation profile.
 ///
-/// The newest build in each family is chosen deliberately: fingerprints of long-superseded
-/// releases are themselves anomalous. Bumping `wreq-util` moves every provider forward
-/// without a database migration — which is why [`BrowserEmulation`] names families, not
-/// versions.
+/// It picks the newest build in each family, because fingerprints of long-superseded releases
+/// are themselves anomalous. [`BrowserEmulation`] names families, not versions, so bumping
+/// `wreq-util` moves every provider forward without a database migration.
 fn profile_for(browser: BrowserEmulation) -> Emulation {
     let (profile, platform) = match browser {
         BrowserEmulation::Chrome => (Profile::Chrome149, Platform::Windows),
@@ -65,14 +60,12 @@ fn profile_for(browser: BrowserEmulation) -> Emulation {
         .build()
 }
 
-/// Every build this workspace can reproduce, newest first within a family.
+/// Lists every build this workspace can reproduce, newest first within a family.
 ///
-/// The table exists so a **solved session** can be replayed by a client that presents the browser
-/// that earned it. Clearance is bound to the handshake as well as the user-agent, so an entry is
-/// matched on the exact major and an unmatched major declines: "Firefox 150's user-agent over
-/// Firefox 151's `ClientHello`" is precisely the contradiction this prevents, not a near-enough
-/// answer. Declining costs a solve per fetch and stays coherent; approximating spends the solve
-/// *and* announces itself.
+/// It lets a **solved session** be replayed by a client presenting the browser that earned it.
+/// Clearance is bound to the handshake as well as the user agent, so an entry matches only the
+/// exact major, and an unmatched major declines. Declining costs a solve per fetch and stays
+/// coherent; approximating spends the solve and announces itself.
 const PROFILES: &[(BrowserEmulation, u32, Profile)] = &[
     (BrowserEmulation::Chrome, 149, Profile::Chrome149),
     (BrowserEmulation::Chrome, 148, Profile::Chrome148),
@@ -98,9 +91,11 @@ const PROFILES: &[(BrowserEmulation, u32, Profile)] = &[
     (BrowserEmulation::OkHttp, 5, Profile::OkHttp5),
 ];
 
-/// Which platforms a family has a profile for, mirroring `wreq-util`'s own per-family platform
-/// list. A combination outside it (Firefox on Android, Safari anywhere but macOS) would build an
-/// emulation whose headers and handshake disagree about the operating system.
+/// Returns whether a family has a profile for `platform`, mirroring `wreq-util`'s per-family
+/// list.
+///
+/// A pair outside it, such as Firefox on Android, would build an emulation whose headers and
+/// handshake disagree about the operating system.
 const fn supports(family: BrowserEmulation, platform: BrowserPlatform) -> bool {
     match family {
         BrowserEmulation::Chrome => matches!(
@@ -124,8 +119,8 @@ const fn supports(family: BrowserEmulation, platform: BrowserPlatform) -> bool {
     }
 }
 
-/// The emulation that reproduces `identity`, or `None` when this workspace cannot present that
-/// browser — in which case the caller must not present its user-agent either.
+/// Returns the emulation that reproduces `identity`, or `None` when this workspace cannot
+/// present that browser, in which case the caller must not send its user agent either.
 fn emulation_for(identity: BrowserIdentity) -> Option<Emulation> {
     if !supports(identity.family, identity.platform) {
         return None;
@@ -149,19 +144,20 @@ fn emulation_for(identity: BrowserIdentity) -> Option<Emulation> {
     )
 }
 
-/// Whether this workspace can present `user_agent` over a handshake that matches it.
+/// Returns whether this workspace can present `user_agent` over a matching handshake.
 ///
-/// The question [`crate::solving`] asks before caching a solved session: a session whose browser
-/// has no profile can still be replayed, but only with its user-agent dropped, and cookies bound
-/// to a user-agent that is no longer sent are cookies that will not be honoured.
+/// [`crate::solving`] asks before caching a solved session. A session whose browser has no
+/// profile replays only with its user agent dropped, and its cookies are then not honoured.
 pub(crate) fn can_reproduce(user_agent: &str) -> bool {
     BrowserIdentity::from_user_agent(user_agent)
         .is_some_and(|identity| emulation_for(identity).is_some())
 }
 
-/// Client policy that every client this fetcher builds shares — the SSRF resolver, the redirect
-/// rule and the timeouts. Retained because a solved session's client is built after construction
-/// and must be identical to the default one in every respect except the emulation profile.
+/// Holds the policy every client this fetcher builds shares: the SSRF resolver, the redirect
+/// rule and the timeouts.
+///
+/// A solved session's client is built after construction and must match the default one in
+/// everything but the emulation profile.
 struct ClientPolicy {
     connect_timeout: Duration,
     request_timeout: Duration,
@@ -175,10 +171,9 @@ fn build_client(
         if attempt.previous.len() >= MAX_REDIRECTS {
             return attempt.error("too many redirects");
         }
-        // `wreq` 6 carries a `http::Uri` here rather than a `url::Url`, and `Uri::scheme`
-        // is `Option<&Scheme>` — a scheme-relative or malformed target yields `None`, which
-        // must fall to `stop()` with the other non-HTTP schemes rather than being unwrapped.
-        // Resolved before the branch because `follow`/`stop` consume `attempt`.
+        // `wreq` 6 carries an `http::Uri` here, whose scheme is optional: a scheme-relative or
+        // malformed target has none and must `stop()` with the other non-HTTP schemes.
+        // Resolved before the branch because `follow` and `stop` consume `attempt`.
         let http_scheme = matches!(attempt.uri.scheme_str(), Some("http" | "https"));
         if http_scheme {
             attempt.follow()
@@ -203,34 +198,33 @@ fn build_client(
         .map_err(|e| FetchError::Transport(e.to_string()))
 }
 
-/// `wreq`-backed base fetcher. One per provider (carries that provider's identity).
+/// Sends provider requests through `wreq`; one per provider, carrying its identity.
 pub struct BaseHttpFetcher {
     client: wreq::Client,
-    /// The identifiable bot user-agent, present **iff** emulation is off. `None` therefore
-    /// means "a profile owns the identity headers", which is also what gates the default
-    /// `Accept`/`Accept-Language` below — one field, so the two can never disagree.
+    /// The identifiable bot user agent, present **iff** emulation is off.
+    ///
+    /// `None` means a profile owns the identity headers. The same field gates the default
+    /// `Accept` and `Accept-Language`, so the two can never disagree.
     bot_user_agent: Option<String>,
     /// Clients built to match a solved session's browser, tagged with the identity each
     /// reproduces.
     ///
-    /// A list, not a map: a provider's sessions come from one solver, whose browser varies over
-    /// the handful of builds and platforms it rotates through, so this holds single digits and a
-    /// scan beats hashing.
+    /// A list, not a map: a provider's sessions come from one solver rotating through a handful
+    /// of builds and platforms, so it holds single digits and a scan beats hashing.
     session_clients: RwLock<Vec<(BrowserIdentity, wreq::Client)>>,
-    /// Retained so a session client is built with the policy the default one has.
+    /// The policy a session client is built with, the same as the default client's.
     policy: ClientPolicy,
 }
 
 impl BaseHttpFetcher {
-    /// Build a base fetcher.
+    /// Builds a base fetcher.
     ///
     /// `emulation` selects the browser to impersonate; `None` crawls as an identifiable bot
-    /// sending `default_user_agent` verbatim. `default_user_agent` is ignored whenever
-    /// `emulation` is `Some`, because the profile's user-agent is the one that matches the
-    /// handshake.
+    /// sending `default_user_agent` verbatim. Under emulation `default_user_agent` is ignored,
+    /// because only the profile's user agent matches the handshake.
     ///
     /// # Errors
-    /// Returns [`FetchError::Transport`] if the underlying client cannot be built.
+    /// [`FetchError::Transport`] if the underlying client cannot be built.
     pub fn new(
         default_user_agent: impl Into<String>,
         emulation: Option<BrowserEmulation>,
@@ -251,19 +245,18 @@ impl BaseHttpFetcher {
         })
     }
 
-    /// The client to send `req` with, and the user-agent to set on it.
+    /// Returns the client to send a request with, and the user agent to set on it.
     ///
-    /// A solved session's user-agent is only presented by a client that reproduces the browser it
-    /// names. When no profile does — an unknown family, a build newer than the table, a
-    /// family/platform pair `wreq-util` has no profile for — the user-agent is **dropped** rather
-    /// than sent over a contradicting handshake, and the request goes out as this provider's own
-    /// configured identity. Its clearance cookies will not be honoured; that is the honest
-    /// outcome, and [`crate::solving`] is where the session is refused before it gets this far.
+    /// A session's user agent is presented only by a client that reproduces the browser it
+    /// names. When no profile does (an unknown family, a build newer than the table, an
+    /// unsupported platform), the user agent is **dropped**, not sent over a contradicting
+    /// handshake, and the request goes out as the provider's own identity. Its clearance cookies
+    /// will then not be honoured; [`crate::solving`] refuses such a session before it gets here.
     fn client_for(&self, session_user_agent: Option<&str>) -> (wreq::Client, Option<String>) {
         let Some(user_agent) = session_user_agent else {
             return (self.client.clone(), self.bot_user_agent.clone());
         };
-        // Not emulating: no profile owns the identity, so a session user-agent is sent as-is.
+        // Not emulating: no profile owns the identity, so a session user agent is sent as is.
         if self.bot_user_agent.is_some() {
             return (self.client.clone(), Some(user_agent.to_owned()));
         }
@@ -279,7 +272,7 @@ impl BaseHttpFetcher {
         (self.client.clone(), None)
     }
 
-    /// The client that presents `user_agent`'s browser, building and caching one on first use, or
+    /// Returns the client presenting `user_agent`'s browser, built and cached on first use, or
     /// `None` when no profile reproduces it.
     fn matched_client(&self, user_agent: &str) -> Option<wreq::Client> {
         let identity = BrowserIdentity::from_user_agent(user_agent)?;
@@ -302,9 +295,9 @@ impl BaseHttpFetcher {
                     .push((identity, client.clone()));
                 Some(client)
             }
-            // A client that will not build is a broken binary, not a property of this request, and
-            // the provider's own client is still usable — so carry on without the session identity
-            // rather than failing a fetch that can still succeed unauthenticated.
+            // A client that will not build is a broken binary, not a property of this request,
+            // and the provider's own client still works, so the fetch goes on without the
+            // session identity.
             Err(e) => {
                 tracing::warn!(error = %e, "could not build a session-matched client");
                 None
@@ -317,9 +310,9 @@ impl BaseHttpFetcher {
 impl Fetcher for BaseHttpFetcher {
     /// Times and counts the request, failures included.
     ///
-    /// This is the workspace's only choke point for provider traffic — every adapter, every
-    /// scan tier and both solver paths come through here — so it is where "is this provider
-    /// still answering us" becomes a number instead of a log line.
+    /// This is the only choke point for provider traffic (every adapter, scan tier and solver
+    /// path comes through here), so it is where "is this provider still answering" becomes a
+    /// number.
     async fn get(&self, req: FetchRequest) -> Result<FetchResponse, FetchError> {
         let provider = req.provider_slug.clone();
         let started = std::time::Instant::now();
@@ -338,9 +331,8 @@ impl Fetcher for BaseHttpFetcher {
         let elapsed = started.elapsed();
         metrics::histogram!("provider_fetch_duration_seconds", "provider" => provider)
             .record(elapsed.as_secs_f64());
-        // Counted even when the request failed: a scan task that spent four minutes on requests
-        // that all timed out has spent four minutes, and a breakdown that omitted them would
-        // report the time as unaccounted for.
+        // Counted even when the request failed: time spent on requests that timed out was
+        // still spent.
         crate::accounting::record(crate::accounting::Metered::Request(elapsed));
 
         result
@@ -353,10 +345,7 @@ impl BaseHttpFetcher {
         // Cheap pre-flight; the resolver enforces the address-range check at connect time.
         ssrf::validate_url(&url)?;
 
-        // `.as_str()`: `wreq` 6 takes `IntoUri` (a `http::Uri`), which `url::Url` does not
-        // implement. Going through the string is the lossless hop — `Url` has already
-        // normalised and, above, been SSRF-validated in that form.
-        // The client and the user-agent are chosen together, so the handshake and the identity
+        // The client and the user agent are chosen together, so the handshake and the identity
         // header can never describe different browsers.
         let (client, user_agent) = self.client_for(req.user_agent.as_deref());
         let mut builder = client.get(url.as_str());
@@ -364,20 +353,17 @@ impl BaseHttpFetcher {
             builder = builder.header(wreq::header::USER_AGENT, ua);
         }
         if self.bot_user_agent.is_some() {
-            // Not emulating: no profile owns the content-negotiation headers, so supply
-            // plausible defaults. Under emulation these come from the profile and must not
-            // be overwritten.
+            // Not emulating: no profile owns the content-negotiation headers, so plausible
+            // defaults are supplied. Under emulation they come from the profile.
             builder = builder
                 .header(
                     wreq::header::ACCEPT,
                     "text/html,application/xhtml+xml,application/xml;q=0.9,application/json;q=0.8,*/*;q=0.5",
                 )
                 .header(wreq::header::ACCEPT_LANGUAGE, "en-US,en;q=0.8")
-                // Spelled out because the client no longer offers gzip on its own: with its
-                // gzip decoding off, the header `wreq` would synthesise omits gzip, and an
-                // identifiable bot that refuses the web's default encoding is both slower and
-                // more conspicuous than one that takes it. Under emulation the profile owns
-                // this header and neither this branch nor `wreq` touches it.
+                // Spelled out because, with its gzip decoding off, the header `wreq` would
+                // synthesise omits gzip, and a bot refusing the web's default encoding is slower
+                // and more conspicuous. Under emulation the profile owns this header.
                 .header(wreq::header::ACCEPT_ENCODING, "gzip, deflate, br, zstd");
         }
         for (k, v) in &req.headers {
@@ -388,23 +374,21 @@ impl BaseHttpFetcher {
 
         let status = resp.status().as_u16();
         let final_url = resp.uri().to_string();
-        // `wreq` decodes brotli, zstd and deflate and strips both headers as it does; gzip it
-        // leaves to [`decode_gzip`], so the announcement is still here and has to be removed
-        // once the body is decoded — a caller reading `content-encoding` off decoded text would
-        // otherwise be told it is still compressed, and `content-length` counts the compressed
-        // bytes, which no longer describes anything the caller holds.
+        // `wreq` decodes brotli, zstd and deflate and strips both headers; gzip is left to
+        // `decode_gzip`, so its headers are removed here once the body is decoded. Otherwise
+        // `content-encoding` would call decoded text compressed, and `content-length` would
+        // count bytes the caller does not hold.
         let gzipped = resp
             .headers()
             .get(wreq::header::CONTENT_ENCODING)
             .is_some_and(|v| {
-                // `x-gzip` is the pre-RFC-2616 spelling and still reaches us from older
-                // origins; it names the same stream format.
+                // `x-gzip` is the pre-RFC-2616 spelling of the same format, still sent by older
+                // origins.
                 v.as_bytes().eq_ignore_ascii_case(b"gzip")
                     || v.as_bytes().eq_ignore_ascii_case(b"x-gzip")
             });
-        // Every header is materialised, deliberately not an allowlist of the few call sites
-        // happen to read: `FetchResponse::headers` is documented as "response headers", and
-        // narrowing it would make that a silent lie for whatever a future reader adds.
+        // Every header is kept, not an allowlist of the ones read today:
+        // `FetchResponse::headers` promises the response headers.
         let mut headers = Vec::with_capacity(resp.headers().len());
         headers.extend(resp.headers().iter().map(|(k, v)| {
             (
@@ -419,11 +403,11 @@ impl BaseHttpFetcher {
             });
         }
 
-        // Pre-size from `Content-Length` when declared, clamped to the cap so a hostile header
-        // cannot force an 8 MiB allocation for a 200-byte body.
+        // Pre-size from `Content-Length`, clamped to the cap so a hostile header cannot force a
+        // huge allocation for a small body.
         //
-        // The header is a hint, never a bound: the streaming check below is what actually
-        // enforces `MAX_BODY_BYTES`, since a server is free to send more than it announced.
+        // The header is a hint, never a bound: the streaming check below enforces
+        // `MAX_BODY_BYTES`, since a server may send more than it announced.
         let declared = resp
             .content_length()
             .and_then(|n| usize::try_from(n).ok())
@@ -442,8 +426,8 @@ impl BaseHttpFetcher {
         if gzipped {
             buf = decode_gzip(&buf)?;
         }
-        // `from_utf8` first so the happy path *moves* the buffer instead of copying up to
-        // 8 MiB; `from_utf8_lossy` handles the rare body with a bad byte.
+        // `from_utf8` first, so the happy path moves the buffer instead of copying it;
+        // `from_utf8_lossy` handles the rare body with a bad byte.
         let body = String::from_utf8(buf)
             .unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned());
 
@@ -457,21 +441,20 @@ impl BaseHttpFetcher {
     }
 }
 
-/// Decode a `gzip` body across **every** member of the stream.
+/// Decodes a `gzip` body across **every** member of the stream.
 ///
-/// The client's own gzip decoding is off ([`build_client`]) because it reads one member: it
-/// stops at the first member's end-of-stream marker, reports the body as finished, and drops
-/// whatever follows. An origin that flushes mid-document emits a member per flush, so the body
-/// arrives cut at the first flush — a `200`, the headers intact, and on a `WordPress` origin
-/// that flushes after `wp_head()` the `<head>` and nothing after it. Nothing downstream can
-/// tell that from a short page: the adapter reports the title selector it could not find, and a
-/// truncated transfer reads as a site redesign.
+/// The client's own gzip decoding is off ([`build_client`]) because it reads one member and
+/// drops whatever follows. An origin that flushes mid-document emits a member per flush, so the
+/// body would arrive cut at the first flush: a `200` with intact headers and, on a `WordPress`
+/// origin that flushes after `wp_head()`, only the `<head>`. Downstream that reads as a site
+/// redesign, not a truncated transfer.
+///
+/// A member cut in half is an error, so a truncated transfer is loud. The size cap is applied
+/// again because the streaming loop counted compressed bytes.
 ///
 /// # Errors
-/// [`FetchError::Transport`] if the stream is not valid gzip — including a member cut in half,
-/// which is what makes a genuinely truncated transfer loud here rather than silent — and
-/// [`FetchError::BodyTooLarge`] if it inflates past [`MAX_BODY_BYTES`]. The cap is re-applied
-/// because the bytes counted while streaming were the compressed ones.
+/// [`FetchError::Transport`] if the stream is not valid gzip, a member cut in half included,
+/// [`FetchError::BodyTooLarge`] if it inflates past [`MAX_BODY_BYTES`].
 fn decode_gzip(raw: &[u8]) -> Result<Vec<u8>, FetchError> {
     let cap = u64::try_from(MAX_BODY_BYTES).unwrap_or(u64::MAX);
     let mut out = Vec::new();
@@ -487,11 +470,11 @@ fn decode_gzip(raw: &[u8]) -> Result<Vec<u8>, FetchError> {
     Ok(out)
 }
 
-/// Fold a status into one of five label values.
+/// Folds a status into one of five label values.
 ///
-/// The class, not the code: `provider_fetch_total` is already labelled by provider, and a
-/// provider crossed with every status a hostile or broken site can return is an unbounded
-/// label source for a distinction no panel makes.
+/// The class, not the code: `provider_fetch_total` is already labelled by provider, and crossing
+/// that with every status a broken site can return is an unbounded label source for a
+/// distinction no panel makes.
 fn status_class(status: u16) -> &'static str {
     match status {
         200..=299 => "2xx",
@@ -530,8 +513,8 @@ mod tests {
         .expect("client builds")
     }
 
-    /// The profile owns `User-Agent`; overriding it with the configured bot string would
-    /// contradict the TLS fingerprint, so the field must be dropped when emulating.
+    /// Under emulation the profile owns `User-Agent`; the configured bot string would
+    /// contradict the TLS fingerprint.
     #[test]
     fn emulated_client_defers_to_the_profile_user_agent() {
         assert!(
@@ -549,9 +532,9 @@ mod tests {
         );
     }
 
-    /// A per-request user-agent (a solved challenge session) still wins — the clearance cookie is
-    /// bound to the user-agent the solver's browser presented — but only together with a client
-    /// that reproduces that browser.
+    /// A solved session's user agent wins, sent by a client that reproduces its browser.
+    ///
+    /// The clearance cookie is bound to the user agent the solver's browser presented.
     #[test]
     fn a_session_user_agent_is_sent_with_a_client_that_matches_it() {
         let f = build(Some(BrowserEmulation::Chrome));
@@ -560,19 +543,17 @@ mod tests {
         let (_, sent) = f.client_for(Some(firefox));
         assert_eq!(sent.as_deref(), Some(firefox));
 
-        // And the client is reused rather than rebuilt per request.
+        // The client is reused, not rebuilt per request.
         let _ = f.client_for(Some(firefox));
         assert_eq!(f.session_clients.read().expect("not poisoned").len(), 1);
     }
 
-    /// A session whose browser no profile reproduces must not have its user-agent sent at all.
+    /// A session whose browser no profile reproduces does not have its user agent sent.
     ///
-    /// This is the defect the whole identity table exists for. The deployed solver is Camoufox —
-    /// a **Firefox**, which rotates the platform it presents per solve — while every provider
-    /// defaults to a Chrome profile. Replaying such a session used to mean a Firefox user-agent
-    /// over a Chrome `ClientHello` with `sec-ch-ua` headers Firefox does not implement: three
-    /// contradictions at once, and a stronger bot signal than crawling honestly. When no profile
-    /// matches, the honest request is the provider's own identity and a failed clearance.
+    /// The bug: the deployed solver, Camoufox, is a Firefox that rotates its platform per solve,
+    /// while providers default to a Chrome profile. Replaying its session sends a Firefox user
+    /// agent over a Chrome `ClientHello` with `sec-ch-ua` headers Firefox does not implement, a
+    /// stronger bot signal than crawling honestly.
     #[test]
     fn an_unreproducible_session_user_agent_is_dropped_rather_than_contradicted() {
         let f = build(Some(BrowserEmulation::Chrome));
@@ -593,8 +574,8 @@ mod tests {
         );
     }
 
-    /// Without emulation nothing owns the identity, so a session user-agent is sent verbatim —
-    /// there is no handshake for it to contradict.
+    /// Without emulation a session user agent is sent verbatim: there is no handshake for it to
+    /// contradict.
     #[test]
     fn an_unemulated_client_sends_a_session_user_agent_as_it_is() {
         let f = build(None);
@@ -604,9 +585,10 @@ mod tests {
         assert_eq!(default.as_deref(), Some("TankoVaultBot/0.1"));
     }
 
-    /// The solver's own user-agents, captured 2026-08-12, resolve to a profile — the point of the
-    /// exercise. If `wreq-util` ever drops the Firefox build Camoufox ships, this fails here
-    /// rather than silently degrading every provider to a solve per fetch.
+    /// The deployed solver's user agents resolve to a profile.
+    ///
+    /// If `wreq-util` drops the Firefox build Camoufox ships, this fails instead of every provider
+    /// silently degrading to a solve per fetch.
     #[test]
     fn the_deployed_solvers_browser_has_a_profile() {
         for ua in [
@@ -635,7 +617,7 @@ mod tests {
         }
     }
 
-    /// One gzip member per fragment, which is what an origin flushing mid-document emits.
+    /// Encodes one gzip member per fragment, as an origin flushing mid-document does.
     fn gzip_members(fragments: &[&str]) -> Vec<u8> {
         use flate2::Compression;
         use flate2::write::GzEncoder;
@@ -652,11 +634,9 @@ mod tests {
 
     /// A body flushed as several gzip members decodes whole, not down to the first one.
     ///
-    /// The bug: `wreq` decompresses with a decoder that stops at the first member's
-    /// end-of-stream marker and reports the body finished, so a `WordPress` origin that flushes
-    /// after `wp_head()` answered with a `200` carrying its `<head>` and nothing else. Four
-    /// providers' series pages parsed to "required element not found: series title" against
-    /// markup none of them had changed.
+    /// The bug: `wreq`'s decoder stops at the first member's end-of-stream marker, so a
+    /// `WordPress` origin that flushes after `wp_head()` answers with only its `<head>`, and the
+    /// adapter reports "required element not found: series title".
     #[test]
     fn a_gzip_body_decodes_past_its_first_member() {
         let head = "<html><head><title>Series</title></head>";
@@ -668,8 +648,8 @@ mod tests {
         );
     }
 
-    /// A member cut in half is an error rather than the bytes that did arrive: a partial
-    /// document accepted as a success is exactly the failure this decoder replaced.
+    /// A member cut in half is an error, not the bytes that did arrive: a partial document must
+    /// not pass as a success.
     #[test]
     fn a_half_written_gzip_member_is_an_error() {
         let whole = gzip_members(&["<html><head><title>Series</title></head>"]);
@@ -680,7 +660,7 @@ mod tests {
         ));
     }
 
-    /// The size cap counts inflated bytes: the streaming loop only ever saw the compressed ones.
+    /// The size cap counts inflated bytes; the streaming loop saw only compressed ones.
     #[test]
     fn the_size_cap_applies_to_the_inflated_body() {
         let bomb = "a".repeat(MAX_BODY_BYTES + 1);

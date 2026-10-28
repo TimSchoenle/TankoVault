@@ -1,4 +1,4 @@
-//! Exponential-backoff-with-jitter retry decorator for transient errors.
+//! Owns the retry decorator for transient errors, with jittered exponential backoff.
 
 use crate::error::FetchError;
 use crate::fetcher::Fetcher;
@@ -15,8 +15,8 @@ pub struct RetryingFetcher<F> {
 }
 
 impl<F> RetryingFetcher<F> {
-    /// `max_attempts` total tries (design caps this at ~4); backoff grows from
-    /// `base_delay` up to `max_delay`, each step jittered.
+    /// Wraps `inner` with up to `max_attempts` tries, backing off from `base_delay` up to
+    /// `max_delay` with jitter.
     #[must_use]
     pub fn new(inner: F, max_attempts: u32, base_delay: Duration, max_delay: Duration) -> Self {
         Self {
@@ -48,9 +48,8 @@ impl<F: Fetcher> Fetcher for RetryingFetcher<F> {
 }
 
 impl<F> RetryingFetcher<F> {
-    /// Jittered exponential backoff for `attempt` (1-based), capped at `max_delay`.
-    ///
-    /// One line because the policy is shared; see [`crate::jitter`].
+    /// Returns the jittered exponential backoff for the 1-based `attempt`, capped at
+    /// `max_delay`; the policy is [`crate::jitter`]'s.
     fn backoff(&self, attempt: u32) -> Duration {
         crate::jitter::full_jitter_now(self.base_delay, self.max_delay, attempt)
     }

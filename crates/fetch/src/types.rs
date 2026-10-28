@@ -1,26 +1,28 @@
-//! Request/response value types crossing the fetch stack.
+//! Defines the request and response types that cross the fetch stack.
 
 use tankovault_solver::ResponseView;
 
-/// Max bytes of a response body the classifier scans for challenge markers.
+/// The most body bytes the classifier scans for challenge markers.
 const SNIPPET_CAP: usize = 64 * 1024;
 
-/// A GET request through the fetch stack. (Only GET is exposed — this system never POSTs
-/// to providers, and there is no image/binary fetch path.)
+/// A GET request through the fetch stack.
+///
+/// Only GET exists: this system never posts to providers, and there is no image or binary fetch
+/// path.
 #[derive(Debug, Clone)]
 pub struct FetchRequest {
-    /// Absolute target URL.
+    /// The absolute target URL.
     pub url: String,
-    /// Provider slug — keys the rate limiter and solved-session cache.
+    /// The provider slug, which keys the rate limiter and the solved-session cache.
     pub provider_slug: String,
-    /// Extra request headers.
+    /// The extra request headers.
     pub headers: Vec<(String, String)>,
-    /// Overriding user-agent (e.g. a solved-session UA); falls back to the stack default.
+    /// An overriding user agent, such as a solved session's; the stack default otherwise.
     pub user_agent: Option<String>,
 }
 
 impl FetchRequest {
-    /// A bare GET for `url` attributed to `provider_slug`.
+    /// Builds a bare GET for `url`, attributed to `provider_slug`.
     #[must_use]
     pub fn new(url: impl Into<String>, provider_slug: impl Into<String>) -> Self {
         Self {
@@ -31,7 +33,7 @@ impl FetchRequest {
         }
     }
 
-    /// Add a request header.
+    /// Adds a request header.
     #[must_use]
     pub fn with_header(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
         self.headers.push((name.into(), value.into()));
@@ -39,28 +41,26 @@ impl FetchRequest {
     }
 }
 
-/// A response. `body` is bounded UTF-8 text (HTML/JSON) — never binary/image content.
+/// A response whose `body` is bounded UTF-8 text (HTML or JSON), never binary content.
 #[derive(Debug, Clone)]
 pub struct FetchResponse {
-    /// HTTP status code.
+    /// The HTTP status code.
     pub status: u16,
-    /// Final URL after any redirects.
+    /// The final URL after any redirects.
     pub url: String,
-    /// Response headers.
+    /// The response headers.
     pub headers: Vec<(String, String)>,
-    /// Bounded response body as text.
+    /// The bounded response body as text.
     pub body: String,
-    /// Whether this response was served from the conditional/body cache.
+    /// Whether the conditional body cache served this response.
     pub from_cache: bool,
 }
 
 impl FetchResponse {
-    /// A header value by case-insensitive name.
+    /// Returns a header value by case-insensitive name.
     ///
-    /// Case-insensitive because the name is compared against whatever casing the *provider*
-    /// sent, and HTTP/2 lowercases while HTTP/1.1 does not — so a stack that matched
-    /// case-sensitively would read `Retry-After` from one protocol version and miss it on the
-    /// other, silently disabling the backoff layer for half the fleet.
+    /// HTTP/2 lower-cases header names and HTTP/1.1 does not, so a case-sensitive match would
+    /// read `Retry-After` on one protocol and miss it on the other.
     ///
     /// ```
     /// use tankovault_fetch::FetchResponse;
@@ -83,11 +83,9 @@ impl FetchResponse {
     /// assert_eq!(resp.header("Server"), Some("cloudflare"));
     /// assert_eq!(resp.header("x-absent"), None);
     ///
-    /// // `is_success` is strictly 2xx, so a redirect is *not* success even though it carries no
-    /// // error. That looks harsh for a `304`, and is the point: `from_cache` is how a
-    /// // cache-validated response is recognised, and the stack normalises the status to the
-    /// // cached `200` before an adapter ever sees it. A `304` reaching an adapter means the
-    /// // validation path is broken, so it must not read as success.
+    /// // `is_success` is strictly 2xx, so a `304` is not success. The stack turns a validated
+    /// // cache hit into the cached `200` with `from_cache` set, so a `304` reaching an adapter
+    /// // means the validation path is broken.
     /// assert!(resp.header("retry-after").is_some() && !resp.is_success());
     /// assert!(!FetchResponse { status: 304, ..resp.clone() }.is_success());
     /// assert!(FetchResponse { status: 204, ..resp }.is_success());
@@ -100,7 +98,7 @@ impl FetchResponse {
             .map(|(_, v)| v.as_str())
     }
 
-    /// Whether the status is 2xx.
+    /// Returns whether the status is 2xx.
     #[must_use]
     pub fn is_success(&self) -> bool {
         (200..300).contains(&self.status)

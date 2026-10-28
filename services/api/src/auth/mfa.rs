@@ -258,7 +258,9 @@ pub async fn mfa_verify(
 /// the audit record only; the caller answers identically whichever one failed.
 ///
 /// # Errors
-/// Returns a database or configuration failure. A *wrong* factor is `Ok((false, _))`.
+/// Returns a database or configuration failure from the TOTP or recovery-code check, or
+/// `ApiError::Internal` when no factor is set. A *wrong* factor is `Ok((false, _))`, and so is
+/// every security-key assertion failure, whatever its cause.
 async fn present_factor(
     state: &AppState,
     user_id: tankovault_domain::UserId,

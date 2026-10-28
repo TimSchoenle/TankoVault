@@ -4,7 +4,7 @@ All seven workstreams of the bot-management tier, from detection to a shared ses
 
 The tier itself is specified in [`docs/ARCHITECTURE.md`](ARCHITECTURE.md) §9. Read
 [`docs/ENGINEERING_GUIDE.md`](ENGINEERING_GUIDE.md) first. Every workstream below assumes the
-house rules — `#[expect]` over `#[allow]`, short comments except where they carry risk, and a fix
+house rules: `#[expect]` over `#[allow]`, short comments except where they carry risk, and a fix
 that could silently return gets a test whose doc comment says what the bug was.
 
 ---
@@ -13,7 +13,7 @@ that could silently return gets a test whose doc comment says what the bug was.
 
 | # | Workstream | State | Blocking? |
 |---|---|---|---|
-| W1 | Detection: the JS Detections beacon is not an interstitial | **landed on this branch** | — |
+| W1 | Detection: the JS Detections beacon is not an interstitial | **landed on this branch** |: |
 | W2 | Session lifecycle: cache after validation, evict on failure | open | no |
 | W3 | Observability: make a dark provider visible | open | no |
 | W4 | Cookie scoping: a clearance cookie must not leave its host | open | wire change |
@@ -24,7 +24,7 @@ that could silently return gets a test whose doc comment says what the bug was.
 W2, W3, W5 and W6's breaker are independent and can land in any order. W4 and W6's classification
 both change the `/v1/solve` wire and share a deployment-ordering constraint (§4.4).
 
-**If you only do one after W1, do W5.** The solver drives Camoufox — a Firefox — while every
+**If you only do one after W1, do W5.** The solver drives Camoufox (a Firefox) while every
 provider defaults to a Chrome emulation profile, so a replayed session presents a Firefox
 user-agent over a Chrome handshake with client hints Firefox does not send. The session cache is
 the entire reason a 30–60 s solve is affordable, and it is very likely failing on every replay
@@ -42,9 +42,9 @@ feature enabled. A fully rendered `200` therefore classified as `ChallengeKind::
 
 The classifier is consulted twice per fetch, and the false positive is fatal at both:
 
-1. [`detect_challenge`](../crates/fetch/src/solving.rs) — the direct `200` is read as an
+1. [`detect_challenge`](../crates/fetch/src/solving.rs): the direct `200` is read as an
    interstitial, so a 30–60 s solve is spent on a page already in hand.
-2. [`detect_challenge_body`](../crates/fetch/src/solving.rs) — the solver returns that same real page,
+2. [`detect_challenge_body`](../crates/fetch/src/solving.rs): the solver returns that same real page,
    the "did the solver hand back the interstitial?" guard fires, and the fetch fails as
    `unsolved challenge: CloudflareJs`. No solver back-end could ever have won.
 
@@ -60,9 +60,9 @@ curl -s -o /dev/null -w '%{http_code}\n' https://weebcentral.com/series/01J76XY8
 | browser `User-Agent` | `200`, ~59 KB of real series markup | **yes** |
 | `/search/data?…` (htmx fragment) | `200`, ~195 KB | no |
 
-The last row is why the symptom looked provider-specific rather than systemic: WeebCentral's
+The last row is why the symptom looked provider-specific, not systemic: WeebCentral's
 catalogue and latest-feed scans read fragments and kept working, while every series and chapter
-page — full documents — failed. Any provider whose zone has JS Detections on had the same defect.
+page (full documents) failed. Any provider whose zone has JS Detections on had the same defect.
 
 ### W1, the landed fix
 
@@ -70,29 +70,29 @@ page — full documents — failed. Any provider whose zone has JS Detections on
 point (`…/orchestrate/`, `chl_page`) counts, alongside the untouched `cf_chl_opt`,
 `<title>Just a moment` and Turnstile markers.
 
-- [`crates/solver/src/detection.rs`](../crates/solver/src/detection.rs) — `loads_challenge_orchestration`, the narrowed branch, the doctest contract, and `the_js_detections_beacon_is_not_a_challenge`
-- [`crates/solver/tests/prop_detection.rs`](../crates/solver/tests/prop_detection.rs) — the marker generator emits the orchestration URL and the beacon as separate fragments, so the differential property still reaches the `CloudflareJs` branch
+- [`crates/solver/src/detection.rs`](../crates/solver/src/detection.rs): `loads_challenge_orchestration`, the narrowed branch, the doctest contract, and `the_js_detections_beacon_is_not_a_challenge`
+- [`crates/solver/tests/prop_detection.rs`](../crates/solver/tests/prop_detection.rs): the marker generator emits the orchestration URL and the beacon as separate fragments, so the differential property still reaches the `CloudflareJs` branch
 - [`fuzz/dictionaries/solver.dict`](../fuzz/dictionaries/solver.dict) and the `cloudflare-jsd-beacon-on-content` seed
-- [`docs/ARCHITECTURE.md`](ARCHITECTURE.md) — the marker list in the spec, which is what seeded the mistake
+- [`docs/ARCHITECTURE.md`](ARCHITECTURE.md): the marker list in the spec, which is what seeded the mistake
 
 The real `403` block page now classifies as `CloudflareManaged` through the status+header fallback,
 which is the more accurate label and still buys a solve. That is deliberate: a residential-proxy
 tier is the only thing that can beat an IP-level deny. W6 refines it.
 
 **Do not widen these markers again.** If a provider is later found challenging in a shape none of
-them catch, add the *specific* new marker with a test carrying the captured markup — never a
+them catch, add the *specific* new marker with a test carrying the captured markup: never a
 substring that a content page can also contain, and never a body-size heuristic, which fails open
 on a large interstitial and closed on a small page.
 
 ---
 
-## 2. Environment prerequisite — read before starting
+## 2. Environment prerequisite: read before starting
 
 `cargo check` on any crate that pulls `wreq` **fails on the current Windows host**, and did before
 any of this work: `btls-sys v0.5.6` (BoringSSL) dies in its CMake `TryCompile`, with MSBuild
 crashing inside `TrackedVCToolTask` under the VS 18 BuildTools `v180` toolset. Disk is not the
 cause (282 GB free). That covers `tankovault-solver`, `tankovault-fetch`, `tankovault-adapters` and
-every service — i.e. everything this plan touches.
+every service: i.e. everything this plan touches.
 
 Options, best first:
 
@@ -100,7 +100,7 @@ Options, best first:
    `cargo check -p tankovault-solver` completes. This is the only way to run the real suites
    locally, and W2/W4/W5 all need `tankovault-fetch` to compile.
 2. **Verify in Docker**, in the repo's own builder image. This works today and is what the fetch
-   changes on this branch were gated with — a real compile of the real crates, not a harness:
+   changes on this branch were gated with: a real compile of the real crates, not a harness:
 
    ```bash
    docker run --rm -v "$PWD:/src:ro" -v tv-target:/target -v tv-cargo:/cargo \
@@ -112,8 +112,8 @@ Options, best first:
    ```
 
    Three details are load-bearing. `RUSTFLAGS=-C target-feature=-crt-static` is what lets bindgen
-   `dlopen` libclang — musl's default static CRT forbids it, and this is the same reason
-   `deploy/docker/Dockerfile` builds natively rather than with `--target`. The named volumes keep
+   `dlopen` libclang: musl's default static CRT forbids it, and this is the same reason
+   `deploy/docker/Dockerfile` builds natively, not with `--target`. The named volumes keep
    the target directory off the bind mount, where a cold BoringSSL build is minutes slower. And on
    Git Bash, prefix the command with `MSYS_NO_PATHCONV=1` or `-w /src` is rewritten to a Windows
    path. First run ≈ 15 minutes for BoringSSL and the dependency graph; afterwards seconds.
@@ -129,7 +129,7 @@ Whatever you use, report verification as scoped: name the command you ran and st
 
 ## 3. Workstreams
 
-### W2 — A session is cached before anything has validated it
+### W2: A session is cached before anything has validated it
 
 **Problem.** [`solve_if_challenged`](../crates/fetch/src/solving.rs) writes the solved session to the
 store, and only then checks whether the returned HTML is still an interstitial. A solve that failed
@@ -138,7 +138,7 @@ provider replays them. Symmetrically, nothing evicts a session that keeps coming
 the replay path in [`SolvingFetcher::get`](../crates/fetch/src/solving.rs) errors and leaves the
 proven-stale session in place.
 
-**Rule to implement.** A session is stored only once something has succeeded with it — the solver's
+**Rule to implement.** A session is stored only once something has succeeded with it: the solver's
 own page passed the interstitial guard, or the replay it enabled returned a clean response. Any
 request that carried a session and was still challenged evicts it.
 
@@ -147,7 +147,7 @@ request that carried a session and was still challenged evicts it.
 - `SessionStore` gains `async fn invalidate(&self, provider: &str)`; implement for
   `InMemorySessionStore` (and for the Redis store if W7 has landed).
 - Move the `store.put` below the `detect_challenge_body(&html)` guard.
-- On the no-HTML path the replay needs the session value, not the store entry — keep
+- On the no-HTML path the replay needs the session value, not the store entry: keep
   `apply_session(req, &session)` and write to the store only after `detect_challenge(&resp2)` comes
   back `None`.
 - Before delegating to the solver, if the request that was challenged had a cached session applied,
@@ -155,10 +155,10 @@ request that carried a session and was still challenged evicts it.
 
 **Tests** (`crates/fetch/src/solving.rs`, each with a doc comment naming the bug):
 
-- `a_failed_solve_does_not_leave_a_session_behind` — solver returns the interstitial; the fetch
+- `a_failed_solve_does_not_leave_a_session_behind`: solver returns the interstitial; the fetch
   errors and `store.get(provider)` is `None`.
 - `a_replay_that_is_still_challenged_evicts_the_session`.
-- `a_solved_page_caches_its_session` — the positive case, so the fix cannot be "never cache".
+- `a_solved_page_caches_its_session`: the positive case, so the fix cannot be "never cache".
 
 A recording `SessionStore` double (counting `put`/`invalidate`) is needed; put it in the existing
 `mod tests`, not in `test-support`, until a second crate wants it.
@@ -167,31 +167,31 @@ A recording `SessionStore` double (counting `put`/`invalidate`) is needed; put i
 
 ---
 
-### W3 — A permanently dark provider was invisible
+### W3: A permanently dark provider was invisible
 
 **Problem.** The only signal this defect produced was a per-fetch error string. Nothing counted
-challenges by kind, and nothing counted the outcome of a solve *as the fetch layer judged it* —
+challenges by kind, and nothing counted the outcome of a solve *as the fetch layer judged it*:
 `solve_attempts_total` lives in [`crates/solver/src/http.rs`](../crates/solver/src/http.rs) and
 reports `ok` for a solve that returned the interstitial, because from the service's side it did
 succeed. WeebCentral sat at 100 % unsolved from the first scan and no panel could show it.
 
-**Changes** — all in `crates/fetch/src/solving.rs`, following the `metrics::counter!` style already
+**Changes**: all in `crates/fetch/src/solving.rs`, following the `metrics::counter!` style already
 used in [`base.rs`](../crates/fetch/src/base.rs):
 
 | Metric | Labels | Incremented |
 |---|---|---|
 | `challenge_detections_total` | `provider`, `kind` | every positive `detect_challenge` |
 | `challenge_solves_total` | `provider`, `kind`, `result` (`solved`/`unsolved`/`error`) | after each solve; `unsolved` is precisely the case that hid this bug |
-| `challenge_session_replays_total` | `provider`, `result` (`ok`/`challenged`) | whenever a cached session was applied — this is also W5's evidence |
+| `challenge_session_replays_total` | `provider`, `result` (`ok`/`challenged`) | whenever a cached session was applied: this is also W5's evidence |
 
 Cardinality is bounded: `provider` already labels `provider_fetch_total`, `kind` has four values.
 
 **Mandatory, and the compiler cannot see it.** Every emitted series needs a row in
 `tankovault_service::metrics::CATALOGUE` and a `names::*` constant beside it
-([`crates/service/src/metrics.rs`](../crates/service/src/metrics.rs)) — `name`, `kind`, `unit`,
+([`crates/service/src/metrics.rs`](../crates/service/src/metrics.rs)): `name`, `kind`, `unit`,
 `emitted_by`, `help`. `xtask repo-lint`'s `metrics-catalogue` rule fails both ways: a counter with
 no row, and a row nobody emits. `crates/fetch` sits below `tankovault-service` in the graph and so
-spells its names as **literals** rather than importing the constants, exactly as
+spells its names as **literals** instead of importing the constants, exactly as
 [`base.rs`](../crates/fetch/src/base.rs) does; the lint is what keeps the two spellings
 equal, and it also rejects a name that is neither a literal nor a `names::*` constant.
 
@@ -202,33 +202,33 @@ measured" for a claim that these three now falsify.
 **Follow-up, different repo.** Dashboards and alert rules live in `TimSchoenle/helm-charts` under
 `charts/tankovault/`. The alert worth adding there:
 `challenge_solves_total{result="unsolved"} / challenge_detections_total > 0.5` sustained 30 m, per
-provider — "this provider is dark and every scan is paying full solve cost to discover it". That is
-a separate PR against that repo; note it in the PR description rather than leaving it implied.
+provider: "this provider is dark and every scan is paying full solve cost to discover it". That is
+a separate PR against that repo; note it in the PR description instead of leaving it implied.
 
 ---
 
-### W4 — A clearance cookie is replayed to hosts it was never issued for
+### W4: A clearance cookie is replayed to hosts it was never issued for
 
 **Problem.** `ScrapeResult`'s cookie type
 ([`TrawlCookie`](../crates/solver/src/trawl.rs)) decodes only `name` and `value`, discarding
 TRAWL's `domain`. Sessions are then keyed by **provider slug alone**
 ([`SolvingFetcher::get`](../crates/fetch/src/solving.rs)) and `apply_session` attaches the whole jar
 to every request that provider makes. A `cf_clearance` issued for `weebcentral.com` is therefore
-sent to whatever other host that provider's pages point at — image CDNs on unrelated domains
+sent to whatever other host that provider's pages point at: image CDNs on unrelated domains
 included. That is a session credential leaving its origin, so it is a security fix, not a tidy-up,
 and its rationale earns a real comment (rule 4a).
 
 **Changes.**
 
-- `SolveOutcome.cookies` becomes `Vec<SolvedCookie>` — `{ name, value, domain: Option<String> }`,
+- `SolveOutcome.cookies` becomes `Vec<SolvedCookie>`: `{ name, value, domain: Option<String> }`,
   `domain` defaulted. Carry the domain through `TrawlSolver` from TRAWL's payload.
 - Key the store by `(provider, host)`, host taken from the *request* URL.
 - `apply_session` sends only cookies whose domain matches the request host: exact match, or a
   leading-dot domain matched as a suffix on a label boundary. A cookie with no domain belongs to the
   host that was solved and goes nowhere else.
 
-**Wire compatibility.** `/v1/solve` is produced by two services — `challenge-solver` and `render`,
-both mounting the router from [`crates/solver/src/http.rs`](../crates/solver/src/http.rs) — and
+**Wire compatibility.** `/v1/solve` is produced by two services (`challenge-solver` and `render`,
+both mounting the router from [`crates/solver/src/http.rs`](../crates/solver/src/http.rs)) and
 consumed by the worker. A tuple → struct change is **not** backward compatible in serde. Give the
 worker a tolerant decoder for one release (an untagged enum accepting both `["name","value"]` and
 `{"name":…,"value":…,"domain":…}`), deploy the solver services first, then drop the tuple arm in the
@@ -244,27 +244,27 @@ only exists between two running versions.
 
 ---
 
-### W5 — The scanner and the solver must present the same fingerprint
+### W5: The scanner and the solver must present the same fingerprint
 
 **This is what makes the session cache work at all, not a refinement of it.** Cloudflare issues
-`cf_clearance` against a triple — the egress IP, the `User-Agent` string, and the TLS/HTTP2
+`cf_clearance` against a triple: the egress IP, the `User-Agent` string, and the TLS/HTTP2
 fingerprint of the connection that earned it. We reproduce exactly one third of that faithfully.
 
 | Component | Solver side | Scanner side | Shared? |
 |---|---|---|---|
 | User-agent | the browser's own, returned as `SolveOutcome.user_agent` | replayed verbatim ([`base.rs`](../crates/fetch/src/base.rs)) | yes |
-| TLS ClientHello + HTTP/2 settings | whatever Chromium `ghcr.io/germondai/trawl` bundles | `Profile::Chrome149`, fixed at build time ([`profile_for`](../crates/fetch/src/base.rs)) | **no — by luck only** |
+| TLS ClientHello + HTTP/2 settings | whatever Chromium `ghcr.io/germondai/trawl` bundles | `Profile::Chrome149`, fixed at build time ([`profile_for`](../crates/fetch/src/base.rs)) | **no: by luck only** |
 | Egress IP | the container's, unless a proxy tier won | the worker container's | usually, see below |
 
 Nothing in the repository relates the TRAWL image digest in
 [`deploy/docker-compose.yml`](../deploy/docker-compose.yml) to the profile constant in `base.rs`.
-They agree, if they agree, by coincidence, and drift silently the next time either is bumped —
+They agree, if they agree, by coincidence, and drift silently the next time either is bumped:
 the same shape of invisible coupling that produced the beacon defect this document opens with.
 
 When they disagree, the clearance cookie is rejected on first replay and the caching tier collapses
 into one 30–60 s solve *per fetch* instead of one amortised over hundreds. The failure is silent:
 the solve keeps succeeding, so `solve_attempts_total` stays green while throughput dies. And the
-mismatched pair is actively worse than no disguise — a browser UA over a handshake that is not that
+mismatched pair is actively worse than no disguise: a browser UA over a handshake that is not that
 browser's is a stronger bot signal than an honest one, as `base.rs`'s own module doc says.
 
 The IP third has one case that no fingerprint work can fix: TRAWL's tier ladder ends in a
@@ -284,30 +284,30 @@ chasing signals that are not in play:
 | Header set, order, and UA-CH (`sec-ch-ua`, `sec-ch-ua-platform`, `sec-ch-ua-mobile`) | yes | yes |
 | `screen.width`, `devicePixelRatio`, timezone, WebGL/canvas, `hardwareConcurrency`, `navigator.webdriver` | **no** | **no** |
 
-The bottom row is what `/cdn-cgi/challenge-platform/scripts/jsd/main.js` collects — the beacon this
+The bottom row is what `/cdn-cgi/challenge-platform/scripts/jsd/main.js` collects: the beacon this
 document opens with. It is JavaScript, it runs in TRAWL's browser during the solve, and our replayed
 requests execute none of it. There is no screen resolution to match and nothing to compare it
 against; the cookie is the evidence that the check already passed. Do not attempt to synthesise
 those values, and do not treat their absence as the reason a replay failed.
 
 So the two sides do not need *identical* fingerprints. They need **non-contradictory** ones on the
-axes a JS-free request still exposes — and there is a contradiction in the code today:
+axes a JS-free request still exposes, and there is a contradiction in the code today:
 
 ```rust
 BrowserEmulation::Chrome => (Profile::Chrome149, Platform::Windows),
 ```
 
 `Platform::Windows` drives `sec-ch-ua-platform: "Windows"` and a Windows handshake, while TRAWL runs
-Chromium in a Linux container and its user-agent — the one we replay verbatim — is very likely
+Chromium in a Linux container and its user-agent (the one we replay verbatim) is very likely
 `(X11; Linux x86_64)`. Every replayed request would then announce a Linux browser alongside Windows
 client hints: a self-contradiction visible without a line of JavaScript, and a stronger signal than
-either half alone. **Check it first** — one solve's `SolveOutcome.user_agent` settles whether TRAWL
-overrides its UA — and derive `Platform` from the answer along with the version. Matching the Chrome
+either half alone. **Check it first** (one solve's `SolveOutcome.user_agent` settles whether TRAWL
+overrides its UA) and derive `Platform` from the answer along with the version. Matching the Chrome
 major while leaving the platform wrong fixes nothing.
 
 The residual limit is worth stating plainly: if a zone re-runs its JS device check on every
-navigation rather than trusting the clearance cookie, no HTTP client can ever satisfy it. The
-correct answer there is not a better profile — it is to fetch that provider through the browser and
+navigation instead of trusting the clearance cookie, no HTTP client can ever satisfy it. The
+correct answer there is not a better profile: it is to fetch that provider through the browser and
 pay for it, which is what `SolveOutcome.html` already allows.
 
 #### The two identities are not the same browser *family*
@@ -320,7 +320,7 @@ pay for it, which is what `SolveOutcome.html` already allows.
 
 Camoufox is a hardened **Firefox**. Its TLS stack is NSS and its HTTP/2 settings are Firefox's, no
 matter what user-agent it is configured to present. Meanwhile every provider defaults to
-`BrowserEmulation::Chrome` — an absent `emulation` key reads as Chrome
+`BrowserEmulation::Chrome`: an absent `emulation` key reads as Chrome
 ([`default_emulation`](../crates/domain/src/politeness.rs)), and that is the stored default for
 the whole catalogue.
 
@@ -328,14 +328,14 @@ So a replayed session sends a **Firefox user-agent over a Chrome ClientHello, wi
 client hints that Firefox does not implement and never sends**. This is not a version to tune
 closer; it is the wrong browser, contradicted on three axes at once, and it is the default state of
 every Cloudflare-gated provider in the deployment. If any of these sessions have ever been accepted
-on replay, that is the surprise — not the reverse.
+on replay, that is the surprise: not the reverse.
 
 Nothing in the workspace could have reported it: the image digest and the profile constant are in
 different files, in different languages, with no gate relating them.
 
-#### Plan — synchronise by construction, then prove it
+#### Plan: synchronise by construction, then prove it
 
-**S0 — Establish what the solver is, before changing anything. — done, 2026-08-12.** The pinned
+**S0: Establish what the solver is, before changing anything. Done.** The pinned
 image was run and asked to solve; these are its own answers, not inferences:
 
 | Probe | Result |
@@ -345,20 +345,20 @@ image was run and asked to solve; these are its own answers, not inferences:
 
 Three facts follow, and each changes the design:
 
-1. The solver is a **Firefox 150** while the scanner default is Chrome — confirmed, not inferred.
+1. The solver is a **Firefox 150** while the scanner default is Chrome: confirmed, not inferred.
 2. **The platform rotates per solve.** Camoufox randomises the OS it presents, so no static pin can
    ever match; the profile has to be resolved per session, from that session's own user-agent.
    S1's declared identity is therefore a *backstop and a lint*, never the mechanism.
 3. The solver's plain-fetch tier answers this provider with the real page and **no cookies at all**.
-   A cookie-less session was still being cached and replayed — swapping the provider's browser
+   A cookie-less session was still being cached and replayed: swapping the provider's browser
    identity for the solver's on every later request while preserving no clearance whatsoever.
 
-**S1 — One declared identity, in one place, with a gate. — table landed, lint outstanding.**
+**S1: One declared identity, in one place, with a gate. Table landed, lint outstanding.**
 `PROFILES` in [`base.rs`](../crates/fetch/src/base.rs) is now the single table relating a browser
 family, major and platform to the `wreq_util::Profile`/`Platform` pair that reproduces it, and
 `BrowserIdentity` ([`crates/fetch/src/identity.rs`](../crates/fetch/src/identity.rs))
 is what a user-agent parses into. Matching is on the **exact** major: an unmatched build declines
-rather than approximating, so a Camoufox bump ahead of `wreq-util` degrades to a solve per fetch
+instead of approximating, so a Camoufox bump ahead of `wreq-util` degrades to a solve per fetch
 instead of announcing a mismatch.
 
 Still to do: the `repo-lint` rule (`xtask/src/repo_lint/`, alongside `deploy.rs` and `tls.rs`, which
@@ -366,52 +366,52 @@ exist for exactly this class of cross-file invariant) asserting that the TRAWL i
 `docker-compose.yml` and every family in `PROFILES` agree, so a Renovate bump of the image or of
 `wreq-util` fails a gate instead of silently narrowing what can be replayed.
 
-**S1b — Use the identity per request. — landed.** `BaseHttpFetcher` keeps a cache of clients keyed
+**S1b: Use the identity per request. Landed.** `BaseHttpFetcher` keeps a cache of clients keyed
 by `BrowserIdentity` and chooses the client and the user-agent *together*, so the handshake and the
 identity header can never describe different browsers. An identity with no profile has its
-user-agent dropped rather than sent over a contradicting handshake, and `SolvingFetcher` refuses to
-cache a session that cannot be replayed at all — no cookies, or a browser we cannot present.
+user-agent dropped, not sent over a contradicting handshake, and `SolvingFetcher` refuses to
+cache a session that cannot be replayed at all: no cookies, or a browser we cannot present.
 
-**S2 — Negotiate at runtime; the constant is only a backstop.** Add `GET /v1/solver-identity` to the
-shared router in [`crates/solver/src/http.rs`](../crates/solver/src/http.rs) — one place, so
-`challenge-solver` and `render` cannot answer differently — returning the back-end's browser family,
+**S2: Negotiate at runtime; the constant is only a backstop.** Add `GET /v1/solver-identity` to the
+shared router in [`crates/solver/src/http.rs`](../crates/solver/src/http.rs): one place, so
+`challenge-solver` and `render` cannot answer differently: returning the back-end's browser family,
 major, platform and user-agent, with an `InternalRoute` entry beside `solve_route`. The worker reads
 it at boot, compares it against the compiled identity, and refuses to replay sessions it cannot
 match. Per session, `SolveOutcome.user_agent` stays authoritative. Emit
 `solver_identity_match{backend}` as a 0/1 gauge and log the mismatch with both sides named, so this
 class of drift can never again be silent (catalogue duty per W3).
 
-**S3 — Prove equality; do not assert it.** Stand a fingerprint echo up *inside* the compose network
-— not `tls.peet.ws`, not `browserleaks`; CI must not depend on a third party for a gate — and drive
+**S3: Prove equality; do not assert it.** Stand a fingerprint echo up *inside* the compose network:
+not `tls.peet.ws`, not `browserleaks`; CI must not depend on a third party for a gate, and drive
 it from both clients: once through the worker's `BaseHttpFetcher`, once through a TRAWL solve
 pointed at it. Compare:
 
 - the **normalised ClientHello**: GREASE values stripped and extension IDs sorted, because Chrome
-  permutes extension order per connection while Firefox does not — raw-byte equality would fail on
+  permutes extension order per connection while Firefox does not: raw-byte equality would fail on
   Chrome for a reason that means nothing;
 - the **HTTP/2 opening state**: `SETTINGS` values, initial window, priority frames and
   pseudo-header order.
 
 The assertion is **equality between the two, not correctness of either**. That is what makes this
-implementable without a JA4 library — parse the ClientHello, normalise, hash, compare — and what
+implementable without a JA4 library (parse the ClientHello, normalise, hash, compare) and what
 makes it fail on any future drift from either side. Docker-gated, so it runs with the integration
-suites rather than on every `cargo check`.
+suites, not on every `cargo check`.
 
-**S4 — Where equality is unreachable, stop pretending.** Two honest endings, in order of cost:
+**S4: Where equality is unreachable, stop pretending.** Two honest endings, in order of cost:
 
 1. **Match the family.** Point the scanner at `BrowserEmulation::Firefox` for providers whose
-   sessions come from a Firefox solver — `wreq-util` ships `Profile::Firefox151`. Note this is a
+   sessions come from a Firefox solver: `wreq-util` ships `Profile::Firefox151`. Note this is a
    *data* change as much as a code one: `emulation` lives in each provider's stored `Politeness`
    JSONB, so changing a preset default does not touch existing rows. Plan the backfill, or the fix
    applies only to providers registered afterwards.
 2. **Make it one client.** For a provider that still challenges after S1–S3, fetch through the
-   solved browser itself rather than replaying its cookies into a different stack. The fingerprint
+   solved browser itself instead of replaying its cookies into a different stack. The fingerprint
    is then identical by construction, because it is the same client. `SolveOutcome.html` is already
    the single-request form of this; the general form is a browser-backed fetcher used until the
-   provider stops challenging. Expensive per request, and correct — which is the right trade for a
+   provider stops challenging. Expensive per request, and correct, which is the right trade for a
    provider that would otherwise be dark.
 
-**S5 — Keep them synchronised over time.** Synchronisation is a state, not an event:
+**S5: Keep them synchronised over time.** Synchronisation is a state, not an event:
 
 - Group the TRAWL image and the `wreq`/`wreq-util` bumps into one Renovate PR
   ([`renovate.json`](../renovate.json)) so they can never move independently.
@@ -427,7 +427,7 @@ Then read W3's `challenge_session_replays_total` to confirm the work did what it
 is the check on the change, not the trigger for it.
 
 **Do not cache a proxy-tier session** regardless of any of the above: decode `tier` from TRAWL's
-response, surface it on `SolveOutcome`, and skip the store when the proxy tier won — that session is
+response, surface it on `SolveOutcome`, and skip the store when the proxy tier won: that session is
 bound to an address the worker does not have.
 
 Cost to account for throughout: `BaseHttpFetcher` builds its client once per provider, so a
@@ -435,11 +435,11 @@ per-session profile means a small client cache keyed by profile, not a rebuild p
 
 ---
 
-### W6 — A WAF deny is not a challenge, and a blocked provider should stop paying for one
+### W6: A WAF deny is not a challenge, and a blocked provider should stop paying for one
 
 **Problem.** Cloudflare's "Attention Required! / Sorry, you have been blocked" page (error 1020) is a
 deny, not a puzzle. Today it reaches the managed-challenge fallback and every queued task for that
-provider spends the full TRAWL tier ladder — 30–60 s each — rediscovering the same verdict.
+provider spends the full TRAWL tier ladder (30–60 s each) rediscovering the same verdict.
 
 **Changes.**
 
@@ -448,23 +448,23 @@ provider spends the full TRAWL tier ladder — 30–60 s each — rediscovering 
   an IP deny) but make the label honest.
 - Add a per-provider circuit breaker in `SolvingFetcher`: after N consecutive unsolved outcomes,
   short-circuit to `FetchError::Challenge` for T minutes without calling the solver. Defaults worth
-  starting from: N = 3, T = 15 min, both config-backed. Count it —
-  `challenge_breaker_open_total{provider}` — or the breaker becomes the next invisible failure; the
+  starting from: N = 3, T = 15 min, both config-backed. Count it
+  (`challenge_breaker_open_total{provider}`) or the breaker becomes the next invisible failure; the
   catalogue duty in W3 applies to that name too.
 - Config surface changed → update [`docs/CONFIGURATION.md`](CONFIGURATION.md);
   `cargo run -p xtask -- config-docs` prints the current surface.
 
 **Wire tolerance, do this first.** `SolveRequest.kind` is `Option<ChallengeKind>` and crosses
 worker → solver. An unknown variant string fails deserialization of the **whole request**, so a new
-variant deployed to workers before solvers breaks every solve. `#[serde(other)]` does not help here
-— serde allows it only on unit variants of internally or adjacently tagged enums, and this is a
+variant deployed to workers before solvers breaks every solve. `#[serde(other)]` does not help here:
+serde allows it only on unit variants of internally or adjacently tagged enums, and this is a
 plain externally tagged one. Add a `deserialize_with` on the field that maps an unrecognised string
 to `None` (the value is advisory; `TrawlSolver` deliberately does not forward it, as
 `a_solve_posts_the_target_url_and_its_time_budget` pins), ship that, *then* add the variant.
 
 ---
 
-### W7 — Every worker replica solves independently
+### W7: Every worker replica solves independently
 
 [`services/worker/src/main.rs`](../services/worker/src/main.rs) wires
 `InMemorySessionStore`, so N replicas mean N solves per provider per TTL, and a rolling restart
@@ -473,7 +473,7 @@ discards every session. The trait exists precisely so this can be swapped
 
 Implement `RedisSessionStore` in `crates/fetch` behind a feature, modelled on
 [`crates/service/src/ratelimit/redis.rs`](../crates/service/src/ratelimit/redis.rs) (`fred`, already
-a workspace dependency). Key `solved_session:{provider}:{host}` — the same key W4 introduces —
+a workspace dependency). Key `solved_session:{provider}:{host}` (the same key W4 introduces)
 value JSON, Redis TTL set from `ttl_secs` so expiry is enforced in one place. The DSN is a
 `SecretString` (rule 9). New config key → regenerate `docs/CONFIGURATION.md`.
 
@@ -490,7 +490,7 @@ failure mode for no gain.
 cargo check -p tankovault-solver
 ```
 
-Then the narrowest test that covers what you touched — `cargo test -p tankovault-fetch solving`,
+Then the narrowest test that covers what you touched: `cargo test -p tankovault-fetch solving`,
 `cargo test -p tankovault-solver detection`. Do not run `xtask ci` per edit.
 
 ### 4.2 Before asking for review
@@ -512,7 +512,7 @@ handling:
 1. Capture the current bodies with the `curl` probes in §1 and confirm the classifier's verdict on
    the real bytes (`detect_challenge_body` on the saved file).
 2. Run a real scan of `weebcentral` through a worker and read `challenge_detections_total` and
-   `challenge_solves_total` — a correct fix shows **no** detections on series pages, not merely
+   `challenge_solves_total`: a correct fix shows **no** detections on series pages, not merely
    successful solves.
 3. Keep the captured bodies out of the repo; embed the minimal decisive fragment in a test instead,
    as `the_js_detections_beacon_is_not_a_challenge` does.

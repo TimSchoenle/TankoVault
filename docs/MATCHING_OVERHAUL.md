@@ -6,7 +6,7 @@ and missed identical ones. WP0 to WP8 are implemented except WP3c and WP8c.
 **Audience:** the engineer or agent implementing this. **Status:** WP0–WP8 are implemented
 except WP3c (mirror groups, conditional) and WP8c (an operator's selection, not code); see
 [§9](#9-implementation-notes) for where the code departs from the letter of this plan. **Source:** an analysis of the production catalogue (2026-10-19) against the code
-at `5cad031`. Every production number below came from a query in [Appendix A](#appendix-a--production-evidence);
+at `5cad031`. Every production number below came from a query in [Appendix A](#appendix-a-production-evidence);
 re-run them before acting on any number that matters to a decision.
 
 Read [`CLAUDE.md`](../CLAUDE.md) and [`ENGINEERING_GUIDE.md`](ENGINEERING_GUIDE.md) first. Their
@@ -36,7 +36,7 @@ miss works that are the same. The production evidence says the causes are, in or
 3. **Mirror providers create duplicate series.** About half of the 236k sources come from mirror
    families that list the same catalogue. A mirror listing only matches a series that AniList has
    renamed through an alias, which is discounted below the attach threshold, so registration
-   creates a new series that the sweep then merges — a churn that also spreads every bad alias.
+   creates a new series that the sweep then merges: a churn that also spreads every bad alias.
 4. **The numeric guard can be bypassed.** `numeric_signatures_agree` passes when *any* title of
    the candidate carries the same numbers, so once a sequel's alias lands on a series every
    further sequel attaches (Douluo Dalu 4 merged into 5).
@@ -46,7 +46,7 @@ miss works that are the same. The production evidence says the causes are, in or
 The trusted signals left are: primary titles (the canonical title and every source's own listing
 title), first-party chapter timing (`chapters.discovered_at`) for ongoing works, and an AniList id
 once WP4 makes it trustworthy. This plan rebuilds the decision on those, then repairs the existing
-damage. Image comparison (covers or pages) was evaluated and rejected on cost — see
+damage. Image comparison (covers or pages) was evaluated and rejected on cost: see
 [§8](#8-rejected-alternatives).
 
 Total estimate: **2.5–3.5 engineer-weeks**, sliced into the PRs in [§6](#6-sequencing-and-pr-slicing).
@@ -57,7 +57,7 @@ Total estimate: **2.5–3.5 engineer-weeks**, sliced into the PRs in [§6](#6-se
 
 | Finding | Number | Implication |
 |---|---|---|
-| Series / sources | 76k / 236k | — |
+| Series / sources | 76k / 236k |: |
 | Series with no source (orphans) | 23,500; 22,696 have a sourced twin with the same normalized title | Leftovers of a fixed bug (`f686b3b`, 2026-09-30); cleanup only (WP6) |
 | Orphans inside AniList-id clusters of >16 series | 22,967 of 24,661 clustered | The clusters are copies of one title, kept apart by `MAX_KEY_FANOUT` |
 | Automatic merges total | 480,209 (10 reverted, 0 flagged) | No operator labels exist |
@@ -65,7 +65,7 @@ Total estimate: **2.5–3.5 engineer-weeks**, sliced into the PRs in [§6](#6-se
 | …of which absorbed side had sources | 93,177 (50,151 exact title, 42,297 alias) | The population that can be wrong |
 | Merges run with type/year/author guards off | 442,900 | Guards were switched off at runtime via tunables |
 | Sourced merges where a disabled guard fired | 13,295, of which 12,356 via alias | Alias route dominates the suspicious set |
-| Sourced merges with AniList id on both sides | 26,385; 1,828 disagree (1,296 via alias) | Many exact-title disagreements are manga-vs-novel AniList entries (consecutive ids) — correct merges |
+| Sourced merges with AniList id on both sides | 26,385; 1,828 disagree (1,296 via alias) | Many exact-title disagreements are manga-vs-novel AniList entries (consecutive ids): correct merges |
 | Alias merges checkable by live chapter timing | 3,773 of 42,294 (9%): 3,465 agree (median gap 4.2 h), 297 unclear, 11 contradict | Live timing is a strong confirmation where it exists; coverage grows weekly |
 | Provider `published_at` gap on shared chapters | mean 1,621 days on "contradicting" pairs | Provider dates are unreliable; only `discovered_at` is usable |
 | Deferred-merge journal rows | 1,800,193 | Journal bloat (WP7) |
@@ -105,7 +105,7 @@ Ingest (`decide`, used by `resolve_canonical_series` and the sync resolver):
 
 | Condition | Decision |
 |---|---|
-| Any veto fires | `Create` (numeric) or `Ambiguous` (others) — never `Attach` |
+| Any veto fires | `Create` (numeric) or `Ambiguous` (others): never `Attach` |
 | Primary identity (`exact_title`, `compact_identity`, `source_title_identity`) | `Attach` |
 | Alias identity only | `Ambiguous` |
 | Fuzzy score ≥ `high` with no identity | `Ambiguous` (was `Attach`) |
@@ -135,25 +135,25 @@ Each package lists files, the change, the tests that must pin it, the gates to r
 acceptance check. Per `CLAUDE.md` rule 8, every regression test's doc comment names the
 production bug it pins (quote the titles from this document).
 
-### WP0 — Offline replay harness (do first; every later package is measured with it)
+### WP0: Offline replay harness (do first; every later package is measured with it)
 
 **Why.** `merge_decisions.evidence` stores both sides' full facts for every sweep decision
 (`services/control-plane/src/dedupe/journal.rs::evidence_json`). That is enough to re-adjudicate every
 historical merge offline with a changed matcher, without a database.
 
 **Change.**
-- `xtask/src/` — new subcommand `matching-replay --input <jsonl> [--out <jsonl>]`. Reads rows
+- `xtask/src/`: new subcommand `matching-replay --input <jsonl> [--out <jsonl>]`. Reads rows
   exported by Appendix A query A10, rebuilds both `SeriesMatchFacts`-equivalents from
   `evidence.left` / `evidence.right`, runs the same `best_reading` logic as the sweep (lift
   `best_reading`, `query_of`, `candidate_of` out of `services/control-plane/src/dedupe/` into
   `crates/matcher` as a pure `adjudicate_pair(left, right, trigram, thresholds)` so the harness
-  and the sweep share one implementation), and reports old verdict → new verdict counts plus the
+  and the sweep share one implementation), and reports old verdict → new verdict counts and the
   changed rows.
 - Fixture sets, committed under `crates/matcher/tests/fixtures/` (titles and facts only, no ids
   that identify users):
-  - `confirmed_same.jsonl` — the 3,465 `live_agree` merges (query A9 with
+  - `confirmed_same.jsonl`: the 3,465 `live_agree` merges (query A9 with
     `verdict = 'live_agree'`). Must stay `Auto` after every package.
-  - `confirmed_wrong.jsonl` — hand-checked wrong merges from this analysis (hub absorptions,
+  - `confirmed_wrong.jsonl`: hand-checked wrong merges from this analysis (hub absorptions,
     `unknown`/`status`/`sao`/`fairy tail` keys, Douluo Dalu 4/5, Higurashi arcs, Kaiji parts,
     A Year of Marvels months). Must not be `Auto` after WP1+WP2.
 - `crates/matcher/tests/replay.rs` runs both fixture sets as an ordinary test.
@@ -163,7 +163,7 @@ historical merge offline with a changed matcher, without a database.
 **Acceptance.** The harness reproduces the stored verdict for ≥ 99% of an unmodified-matcher
 replay of the export (differences come only from facts that changed since; list them).
 
-### WP1 — Untrusted metadata stops deciding; aliases need corroboration
+### WP1: Untrusted metadata stops deciding; aliases need corroboration
 
 **Files.** `crates/matcher/src/assess.rs`, `crates/matcher/src/decide.rs`,
 `crates/matcher/src/types.rs`, `crates/domain/src/matching.rs`, `crates/matcher/src/tests.rs`,
@@ -187,17 +187,17 @@ replay of the export (differences come only from facts that changed since; list 
 5. `MergeGuards` and the four `block_auto_merge_on_*` tunables: leave the keys and defaults alone
    in this package. With metadata out of the score, `author/year/type` guards only matter if an
    operator turns them back on; deprecating them is a separate config-surface change (needs
-   `docs/CONFIGURATION.md` + `just regenerate`) and is out of scope here.
+   `docs/CONFIGURATION.md` and `just regenerate`) and is out of scope here.
 
 **Tests that change meaning.** `an_alias_hit_that_agrees_on_the_medium_still_attaches` and
 `shared_author_lifts_an_ambiguous_match` pin the behaviour this package removes. Do not delete
-them silently (rule 5): invert them and rewrite their doc comments to state why — cite the hub
+them silently (rule 5): invert them and rewrite their doc comments to state why: cite the hub
 survivors and the 12,356 alias merges where a metadata guard fired. The `MatchingConfig` doctest
 bands (`scoring(0.9)` attaches) also change: a fuzzy 0.9 with no identity is now `Ambiguous`.
 
 **Knock-on.** `services/sync/src/engine/resolve.rs` scores remote tracker entries through the
 same matcher. Expect fewer automatic tracker mappings for entries that only matched on fuzzy
-score + metadata. Run `cargo test -p tankovault-sync` scoped to `reconcile_tests` and report the
+score and metadata. Run `cargo test -p tankovault-sync` scoped to `reconcile_tests` and report the
 change.
 
 **Gates.** `cargo check -p tankovault-matcher -p tankovault-config -p tankovault-control-plane
@@ -209,11 +209,11 @@ tankovault-matcher -p tankovault-config`.
 primary identity; alias-only `confirmed_same` rows become `Review` until WP4/WP5 add
 corroboration (expected and reported, not a failure). `confirmed_wrong` none `Auto`.
 
-### WP2 — Title rules: numbers, editions, junk aliases, franchise names
+### WP2: Title rules: numbers, editions, junk aliases, franchise names
 
 **Files.** `crates/matcher/src/similarity.rs`, `crates/matcher/src/title.rs`,
 `crates/matcher/src/assess.rs`, new `crates/matcher/src/edition.rs`,
-`crates/domain/src/normalize.rs` (only if a normalization rule changes — see note).
+`crates/domain/src/normalize.rs` (only if a normalization rule changes: see note).
 
 **Change.**
 1. **Numeric check against own titles.** `numeric_signatures_agree` currently returns true if
@@ -241,7 +241,7 @@ corroboration (expected and reported, not a failure). `confirmed_wrong` none `Au
    `Fairy Tail: 100 Years Quest`), it does not set `alias_identity`; it sets `containment` only.
 
 Note on normalization: none of the above changes `normalize_title`. If you do change it (for
-example to fold `×` to `x`), `normalized_title` is a persisted key — you must also run the
+example to fold `×` to `x`), `normalized_title` is a persisted key: you must also run the
 `rebuild_normalized_keys` operator action after deploy and say so in the PR.
 
 **Tests.** One per rule, each naming the production case: Douluo Dalu 4 vs 5 via alias
@@ -256,7 +256,7 @@ tankovault-matcher`; WP0 replay.
 **Acceptance.** Replay: every `confirmed_wrong` case that is a numeric, edition, junk-alias or
 franchise case is `Distinct` or `Review`; `confirmed_same` unchanged versus WP1.
 
-### WP3 — Ingest: listing titles as identity, alias filing, mirror groups
+### WP3: Ingest: listing titles as identity, alias filing, mirror groups
 
 **3a. Source listing title as a match key.**
 - Migration `migrations/0066_source_title_key.up.sql` (+ `.down.sql`): add
@@ -279,7 +279,7 @@ franchise case is `Distinct` or `Review`; `confirmed_same` unchanged versus WP1.
 
 These are new/changed `query!` invocations: run `cargo run -p xtask -- sqlx-prepare` against a
 migrated database, and the Docker suite `repo_query_plans` (its EXPLAIN cost ceiling covers
-`find_candidates`) plus `repo_matching` and `repo_ingest`.
+`find_candidates`) and `repo_matching` and `repo_ingest`.
 
 **3b. Do not file aliases on a weak attach.** `crates/db/src/repo/catalog/ingest.rs::try_ingest`
 calls `add_series_titles` for every attach. Make `resolve_canonical_series` return the basis it
@@ -292,10 +292,10 @@ provenance.
 
 **3c. Mirror groups (conditional).** 3a already covers mirrors, because mirrors list identical
 titles. Only build this if, after 3a ships, query A11 still shows new-series creation from mirror
-providers. If needed: `providers.config.mirror_group` (string) plus a per-adapter-family
+providers. If needed: `providers.config.mirror_group` (string) and a per-adapter-family
 `path_id` extractor in `crates/adapters`; a new source whose extracted id matches a source in the
 same group attaches to that source's series without scoring. Verify first that ids actually
-agree across the family with query A12 — do not assume.
+agree across the family with query A12: do not assume.
 
 **Tests.** `crates/db/tests/repo_ingest.rs`: a stub listing under an AniList-renamed series
 attaches via another source's listing title (name the `legend of star general` churn: 37 merges
@@ -308,7 +308,7 @@ repo_ingest --test repo_matching --test repo_query_plans`.
 **Acceptance.** Query A11 run one week after deploy: new series created from mirror providers
 that the sweep later merges drops by > 80% versus the week before.
 
-### WP4 — AniList enrichment that can be trusted
+### WP4: AniList enrichment that can be trusted
 
 **Files.** `services/sync/src/providers/anilist/graphql.rs` (`METADATA_QUERY`),
 `services/sync/src/providers/anilist/parse.rs`, `services/sync/src/engine/metadata.rs`,
@@ -341,7 +341,7 @@ case, e.g. 150193/150194).
 -p tankovault-sync`; Docker `cargo test -p tankovault-sync --features integration` if any
 repository query changed.
 
-### WP5 — Live chapter timing as corroboration and veto
+### WP5: Live chapter timing as corroboration and veto
 
 **Why.** For chapters released after both sources were already being scanned, the same work shows
 up on both within hours (prod median 4.2 h); different works do not. It needs no new fetching.
@@ -357,7 +357,7 @@ signal means nothing.
   chapters. Indexes: `chapters_source_disc_access_idx (series_source_id, discovered_at DESC)`
   already exists; confirm the plan in `repo_query_plans`.
 - `services/control-plane/src/dedupe/pass.rs::judge`: call it for pairs whose best reading is an alias
-  hit or a review candidate (not for every pair — it is the expensive part), map ≤ 72 h to
+  hit or a review candidate (not for every pair: it is the expensive part), map ≤ 72 h to
   `live_timing_agreement`, > 14 days to `live_timing_conflict`, store the numbers in `evidence`.
 - Do not use `chapters.published_at` anywhere in matching: prod showed a mean 1,621-day gap on
   pairs that are the same work, because mirrors stamp their own upload date.
@@ -369,12 +369,12 @@ within hours → agreement; two works with overlapping chapter numbers 1–100 d
 **Gates.** `cargo check -p tankovault-db -p tankovault-control-plane`; `sqlx-prepare`; Docker
 `repo_matching`, `repo_query_plans`.
 
-### WP6 — Orphan cleanup and the registration race
+### WP6: Orphan cleanup and the registration race
 
 1. **Twin rule in the sweep.** A series with zero sources whose normalized title equals a sourced
    series' title, and which shares its AniList id when both have one, merges into that series
    without the `MAX_KEY_FANOUT` cap. Implement as a dedicated shortlist in `pairs.rs` (not by
-   lifting the cap globally — the cap is what kept 24.7k copies from collapsing on junk keys).
+   lifting the cap globally: the cap is what kept 24.7k copies from collapsing on junk keys).
    Expected: ~22,700 merges; run it from the console's whole-catalogue sweep, not the scheduled
    one, so the 200-per-run ceiling does not apply.
 2. **Delete the rest.** Remaining zero-source series with no watchlist entry, progress, sync
@@ -390,16 +390,16 @@ within hours → agreement; two works with overlapping chapter numbers 1–100 d
 **Gates.** `cargo check -p tankovault-db -p tankovault-control-plane`; `sqlx-prepare`; Docker
 `repo_ingest`, `repo_matching`.
 
-### WP7 — Merge journal hygiene
+### WP7: Merge journal hygiene
 
 `dedupe/journal.rs` writes a `merge_decisions` row with outcome `deferred` every time the per-run merge
 ceiling defers a pair, so the same pair is journalled on every run (1,800,193 rows). Change it to
 journal a deferral only when the pair has no deferred row newer than its last scoring, and add a
 retention delete for `outcome = 'deferred'` rows older than 14 days (a maintenance task next to
-the existing purge). Keep `merged`, `queued`, `distinct` rows indefinitely — they are the undo
+the existing purge). Keep `merged`, `queued`, `distinct` rows indefinitely: they are the undo
 journals and the replay corpus.
 
-### WP8 — Targeted undo of existing wrong merges
+### WP8: Targeted undo of existing wrong merges
 
 **Order.** After WP1–WP2 are deployed (otherwise the next sweep re-merges what you revert).
 
@@ -414,7 +414,7 @@ revert. Before any bulk revert:
   applying the union-row deletes there, or refuse with `DbError::Conflict` and require reverting
   the later merge first. Document which in the function's `# Errors`.
 
-**8b. Batch revert action.** An admin endpoint taking a list of decision ids plus a dry-run flag,
+**8b. Batch revert action.** An admin endpoint taking a list of decision ids and a dry-run flag,
 looping over the existing `revert_merge_decision` (which already reverts, suppresses the pair and
 disentangles). Newest decision first within a survivor. Needs an `admin_access_matrix.rs` row and
 `openapi.json` regeneration.
@@ -445,9 +445,9 @@ hubs no longer hold other works.
   stay as they are. During the rollout of WP1–WP3, consider pausing the scheduled sweep with the
   flag so the new rules are not mixed with a backlog of old-rule `deferred` pairs; re-enable after
   WP7.
-- New `query!` → `sqlx-prepare` + the Docker suites that cover it (`repo_query_plans` for any
-  candidate/pair query). New endpoint → access-matrix row + `openapi.json`. Config surface change
-  → `docs/CONFIGURATION.md` + `just regenerate`. New dependency → `Cargo.lock` moved →
+- New `query!` → `sqlx-prepare` and the Docker suites that cover it (`repo_query_plans` for any
+  candidate/pair query). New endpoint → access-matrix row and `openapi.json`. Config surface change
+  → `docs/CONFIGURATION.md` and `just regenerate`. New dependency → `Cargo.lock` moved →
   `cargo run -p xtask -- notices`.
 - Commit messages: Conventional Commits with the owning scope (`matcher`, `db`, `sync`,
   `control-plane`, `worker`). WP1 changes automatic-merge behaviour operators rely on; describe
@@ -459,15 +459,15 @@ hubs no longer hold other works.
 
 | PR | Packages | Depends on | Size |
 |---|---|---|---|
-| 1 | WP0 replay harness + fixtures | — | 2–3 days |
+| 1 | WP0 replay harness + fixtures | none | 2–3 days |
 | 2 | WP1 + WP2 (matcher only) | 1 | 3–4 days |
-| 3 | WP7 journal hygiene | — | 1 day |
-| 4 | WP6 orphan twin rule + registration race | — | 2 days |
+| 3 | WP7 journal hygiene | none | 1 day |
+| 4 | WP6 orphan twin rule + registration race | none | 2 days |
 | 5 | WP3a + WP3b (migration, ingest, candidates) | 2 | 3–4 days |
 | 6 | WP4 AniList | 2 | 2–3 days |
 | 7 | WP5 live timing | 2 | 3–4 days |
-| 8 | WP8a chained-revert fix + 8b batch endpoint | — | 2–3 days |
-| — | WP8c undo campaign (operational, not code) | 2, 5, 8 deployed | 2–3 days |
+| 8 | WP8a chained-revert fix + 8b batch endpoint | none | 2–3 days |
+|: | WP8c undo campaign (operational, not code) | 2, 5, 8 deployed | 2–3 days |
 | 9 | WP3c mirror groups | only if A11 says so | 2–3 days |
 
 PRs 3, 4 and 8 are independent of the matcher work and can go in parallel.
@@ -541,7 +541,7 @@ done harm. Each is in the code with its reason.
 - Roman numerals are `ii`–`ix`; `i`, `v` and `x` are left out (pronoun, `versus`, the `×` of
   `Spy × Family`). Spelled ordinals are `second`–`tenth`; `first` is left out.
 - Numbers and edition markers are compared against the matched title and the candidate's canonical
-  title, and — in the sweep — between the two canonical titles. A cross-language pair whose one
+  title, and (in the sweep) between the two canonical titles. A cross-language pair whose one
   canonical title carries a number (`The Second Coming of Gluttony` against its romanised title)
   therefore reads as distinct. Accepted as the conservative failure.
 - `alias_is_distinctive` lives in `tankovault_domain::normalize`, because `crates/db` applies it at
@@ -552,7 +552,7 @@ done harm. Each is in the code with its reason.
 - Write time applies a narrower predicate than match time. `add_series_titles` drops only
   placeholder text (`alias_is_placeholder`: the deny-list, and empty keys); the length rules apply
   only when matching (`alias_is_distinctive`). `series_titles` also feeds catalogue search, and
-  the length rules would have dropped real short titles from it — `Kureimoa` for *Claymore*, which
+  the length rules would have dropped real short titles from it: `Kureimoa` for *Claymore*, which
   `repo_tracking::the_search_matches_canonical_titles_alt_titles_tags_and_authors` pins.
 
 **WP3.**
@@ -575,7 +575,7 @@ done harm. Each is in the code with its reason.
   the search's id as a mapping without checking titles, because the search returns only an id;
   verifying it needs the search to return titles too, and is left as a follow-up. The parser's `NOVEL` refusal applies to the public lookups only;
   list entries are the user's own choice.
-- A failed by-id lookup is now an error rather than `None`, so re-verification never removes a
+- A failed by-id lookup is now an error, not `None`, so re-verification never removes a
   mapping because `AniList` was unreachable.
 - Re-verification runs in the sync service, detached from the request, at the provider's rate
   limit: `POST /v1/admin/sync/mappings/reverify` (`dry_run`) starts it and
@@ -593,15 +593,15 @@ done harm. Each is in the code with its reason.
   not the scheduled one. Twins merge with trigger `sweep_twin`, reason `orphan_twin`.
 
 **WP8.**
-- 8a refuses rather than resolves: a revert whose survivor has since been merged away is a
+- 8a refuses, not resolves: a revert whose survivor has since been merged away is a
   `409` naming the newer survivor, and reverting the later merge first makes it applicable.
 - 8b: `POST /v1/admin/merge-decisions/revert-batch`, at most 50 decisions a request, reverted
-  newest first across the whole batch rather than per survivor, so a chain inside one batch
+  newest first across the whole batch, not per survivor, so a chain inside one batch
   unwinds. There is no console control yet.
 
 ---
 
-## Appendix A — Production evidence
+## Appendix A: Production evidence
 
 Queries as run on 2026-10-19 with their results. All are read-only.
 
@@ -811,7 +811,7 @@ ORDER BY m.survivor_id, m.decided_at DESC;
 
 ---
 
-## Appendix B — Code map
+## Appendix B: Code map
 
 | Concern | Location |
 |---|---|

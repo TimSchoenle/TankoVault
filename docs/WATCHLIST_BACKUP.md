@@ -3,7 +3,7 @@
 The watchlist backup file: its format, how an import finds each series again, and the limits on a
 restore.
 
-A reader can download their watchlist as a file and restore it — into the same deployment after a
+A reader can download their watchlist as a file and restore it: into the same deployment after a
 database wipe, or into a different deployment altogether. This document covers the file format,
 how an import finds each series again, and the limits that make the import safe to expose.
 
@@ -34,12 +34,12 @@ Both import routes take `mode` (`merge` \| `overwrite` \| `replace`) and `match_
 A uuid means nothing outside the database that minted it, so the document never carries one. Each
 entry names its series by what another catalogue can rediscover independently, strongest first:
 
-1. **External tracker ids** (`anilist`, …) — matched against `sync_mappings`.
-2. **Provider pages** — each source carries the provider `slug`, the site-relative `path` and the
+1. **External tracker ids** (`anilist`, …): matched against `sync_mappings`.
+2. **Provider pages**: each source carries the provider `slug`, the site-relative `path` and the
    absolute `url`. A page matches a local `series_sources` row by *either* slug and path (survives
    a provider moving domain) *or* the URL's host (ignoring `www.`) and the path below the
    provider's `base_url` (survives another deployment naming the provider differently).
-3. **Title** — only with `match_titles`, and only when exactly one series carries the canonical or
+3. **Title**: only with `match_titles`, and only when exactly one series carries the canonical or
    an alternative title under the same whitespace-insensitive normalisation the matcher uses.
    Titles are where different works collide, so an ambiguous title matches nothing.
 
@@ -81,7 +81,7 @@ version's shape is frozen and refuses unknown fields. Changing what an entry hol
 2. add its arm to `parse_document` and bump `CURRENT_VERSION`;
 3. keep every older arm, so existing backups still restore.
 
-A document with a version newer than the server's is refused by name rather than partly read.
+A document with a version newer than the server's is refused by name, not partly read.
 
 ## Security properties
 

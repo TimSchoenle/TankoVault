@@ -66,8 +66,8 @@ Fired together, as the ~14-minute refresh does.
 ## What this shows
 
 1. **Cold cache costs 10–20× on the reading surfaces** (continue_reading 34 → 786 ms, me_stats
-   33 → 593 ms) at identical plans. That is pattern 1 of the brief — variance at constant row
-   count is cache state — and it holds without any write load. It does **not** explain 30 s on
+   33 → 593 ms) at identical plans. That is pattern 1 of the brief (variance at constant row
+   count is cache state) and it holds without any write load. It does **not** explain 30 s on
    its own: locally the worst cold Home statement is 1.4 s on an idle NVMe-backed instance whose
    whole database (1.1 GB) nearly fits the container. Production's gap to that is some
    combination of a larger database, the crawler's concurrent writes evicting the working set,
@@ -75,7 +75,7 @@ Fired together, as the ~14-minute refresh does.
    them. Not reproduced locally.
 2. **`stats::system_overview` and `stats::provider_stats` are never warm.** Their warm runs still
    read 17 516 and 32 176 blocks: they aggregate all of `chapters` (554 MB) through 256 MB of
-   `shared_buffers`, so every execution goes back to the page cache — which, inside a 1 GB
+   `shared_buffers`, so every execution goes back to the page cache: which, inside a 1 GB
    cgroup, competes with Postgres's own memory. The overview's estimate (185 113) is past
    `jit_above_cost`; with production's `jit=off` that costs nothing today, but the cost is the
    whole-table count, which grows with the data (pattern 4 confirmed).
@@ -94,7 +94,7 @@ Fired together, as the ~14-minute refresh does.
    browse count and page generic estimates (1.97 M, 494 k) are the `$n IS NULL OR …` arms
    costed without values; they run fast here but would JIT if `jit` were ever re-enabled.
 5. **The unread predicate's four copies are cheap warm (32–39 ms each) and 0.3–0.8 s cold.**
-   Four of them per Home load quadruples the cold-read cost rather than the CPU cost (pattern 3
+   Four of them per Home load quadruples the cold-read cost, not the CPU cost (pattern 3
    confirmed as a multiplier, not as the root cause).
 6. **Scan triage is small here** (148 k tasks). Its cold cost is dominated by reading
    `scan_tasks` whole; production's 10–30 s is consistent with unbounded history, which the
@@ -105,13 +105,13 @@ Fired together, as the ~14-minute refresh does.
 - The slow log's **29.9 s / 0-row entries are cancellations, not completions.** sqlx logs from
   `QueryLogger::drop`, and `TANKOVAULT_SECURITY__REQUEST_TIMEOUT_SECS` defaults to 30. The request
   timeout drops the future; nothing sends a cancel to Postgres, so the backend keeps executing
-  until it next writes to the closed socket — the load outlives the request.
+  until it next writes to the closed socket: the load outlives the request.
 - **No `statement_timeout` exists anywhere.** `DatabaseConfig::acquire_timeout_secs`' doc comment
   says "Statement/acquire timeout", but `crates/db/src/pool.rs` only passes it to
   `acquire_timeout`.
 - The pool sets no `min_connections`, `idle_timeout` or `max_lifetime` (sqlx defaults: 0, 10 min,
   30 min). With `min_connections = 0`, a quiet API closes idle connections and the next request
-  resolves `postgres` through Docker DNS again — a plausible path for the one "failed to lookup
+  resolves `postgres` through Docker DNS again: a plausible path for the one "failed to lookup
   address information" 500, unconfirmed. Phase 1 item 4; not changed.
 - Pattern 2 (token refresh re-rendering Home) is **not yet verified** against the frontend code.
 

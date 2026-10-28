@@ -1,19 +1,18 @@
-//! Database-layer test harness for `TankoVault`.
+//! Owns the database-layer test harness for `TankoVault`.
 //!
-//! A Postgres container (via testcontainers) shared by every test binary and run;
-//! [`TestDb::spawn`] creates a freshly-migrated database inside it per test, inside a container
-//! reused across the whole run rather than started per test. Also holds
-//! service-agnostic in-memory doubles ([`RecordingAuditSink`], [`RecordingMailer`]) and the
-//! entity builders in [`seed`].
+//! A Postgres container (via testcontainers) shared by every test binary and run; [`TestDb::spawn`]
+//! creates a freshly-migrated database inside it per test, inside a container reused across the
+//! whole run, not started per test. Also holds service-agnostic in-memory doubles
+//! ([`RecordingAuditSink`], [`RecordingMailer`]) and the entity builders in [`seed`].
 //!
 //! Depends on no `services/*` crate, so repository-layer suites can use it without compiling a
-//! service (ARCH-17); the in-process API router harness lives in `services/api/test-support`.
+//! service; the in-process API router harness lives in `services/api/test-support`.
 //!
 //! # On `# Panics`
 //!
 //! This crate is exempt from `clippy::missing_panics_doc` (an `expect` at the crate root, so the
 //! exemption lapses if the last panicking helper is ever removed): a harness helper panics *by
-//! design* — a failure here is a failed test — and `Result` would only move the `unwrap` into
+//! design* (a failure here is a failed test), and `Result` would only move the `unwrap` into
 //! every caller.
 #![expect(
     clippy::missing_panics_doc,
@@ -44,25 +43,25 @@ use time::Duration;
 use tokio::sync::OnceCell;
 use uuid::Uuid;
 
-/// The JWT signing secret every harness signs with. Fixed so a test can mint a token that the
-/// router will accept, and long enough to satisfy the production strength check.
+/// The JWT signing secret every harness signs with.
 ///
-/// Kept as raw bytes rather than a [`SecretSlice`] because a `const` cannot hold a heap
-/// allocation. [`test_jwt_secret`] is the wrapped form the auth API takes; this constant is
-/// the one place in the workspace where the two spellings meet, and it is test-only.
+/// Fixed so a test can mint a token that the router will accept, and long enough to satisfy the
+/// production strength check. Kept as raw bytes, not a [`SecretSlice`], because a `const` cannot
+/// hold a heap allocation. [`test_jwt_secret`] is the wrapped form the auth API takes; this
+/// constant is the one place in the workspace where the two spellings meet, and it is test-only.
 pub const TEST_JWT_SECRET: &[u8] = b"integration-test-jwt-secret-please-rotate-0123456789";
 
-/// [`TEST_JWT_SECRET`] in the [`SecretSlice`] form `tankovault_auth` and the API's `AppState`
-/// both take.
+/// Returns [`TEST_JWT_SECRET`] in the [`SecretSlice`] form `tankovault_auth` and the API's
+/// `AppState` both take.
 #[must_use]
 pub fn test_jwt_secret() -> SecretSlice<u8> {
     SecretSlice::from(TEST_JWT_SECRET.to_vec())
 }
 
-/// A `Bearer …` header value carrying a freshly-minted, valid access token for `user`, signed
-/// with [`TEST_JWT_SECRET`].
+/// Returns a `Bearer …` header value carrying a freshly-minted, valid access token for `user`,
+/// signed with [`TEST_JWT_SECRET`].
 ///
-/// Lives here rather than on the HTTP harness so a repository-layer test can mint the same token
+/// Lives here, not on the HTTP harness, so a repository-layer test can mint the same token
 /// the router would accept.
 ///
 /// # Panics
@@ -94,27 +93,28 @@ static PG: OnceCell<PgContainer> = OnceCell::const_new();
 ///
 /// **Track `deploy/docker-compose.yml`.** The planner is a major-version artefact, so a suite
 /// that asserts on query plans ([`TestDb::spawn_with_catalogue`]) proves nothing about
-/// production unless the majors match — and the schema's generated columns and trigram indexes
+/// production unless the majors match, and the schema's generated columns and trigram indexes
 /// need a modern major regardless, which the testcontainers default is not.
 ///
 /// The *name* is overridden as well as the tag: migration 0027 does `CREATE EXTENSION vector`,
 /// so stock `postgres` cannot run the migration set at all and every integration test would
-/// fail at schema setup rather than on anything it meant to assert.
+/// fail at schema setup instead of on anything it meant to assert.
 const POSTGRES_IMAGE: &str = "pgvector/pgvector";
 const POSTGRES_TAG: &str = "pg18";
 
-/// The fixed name of the shared container. A *name* is what makes reuse possible: it is how
-/// `testcontainers` finds the already-running container instead of creating a second one, so
-/// every test binary and every run converge on the same instance. See [`shared_container`].
+/// Returns the fixed name of the shared container.
 ///
-/// The major is **part of the name**, and derived from [`POSTGRES_TAG`] rather than written out,
-/// because reuse attaches by name: a container built from an older tag would otherwise be found,
-/// started and reused forever after a bump, leaving the suite testing the very major it was
-/// meant to leave — silently, since nothing in the run names a version.
+/// A *name* is what makes reuse possible: it is how `testcontainers` finds the already-running
+/// container instead of creating a second one, so every test binary and every run converge on the
+/// same instance. See [`shared_container`].
 ///
-/// The move to pgvector (`18-alpine` → `pg18`) changes this string, which is the property that
-/// matters: a developer with a stock-Postgres container left over from before migration 0027
-/// gets a new one rather than a silent `CREATE EXTENSION vector` failure on every run.
+/// The major is **part of the name**, and derived from [`POSTGRES_TAG`], not written out, because
+/// reuse attaches by name: a container built from an older tag would otherwise be found, started
+/// and reused forever after a bump, leaving the suite testing the very major it was meant to
+/// leave, silently, since nothing in the run names a version. The image is not in the name, so
+/// an image change that keeps the tag's leading segment needs a rename here; otherwise a
+/// leftover container from the old image is reused and fails every run on
+/// `CREATE EXTENSION vector`.
 fn container_name() -> String {
     let major = POSTGRES_TAG.split('-').next().unwrap_or(POSTGRES_TAG);
     format!("tankovault-test-postgres-{major}")
@@ -129,14 +129,13 @@ const STALE_DB_AFTER: StdDuration = StdDuration::from_hours(1);
 
 /// The catalogue-fixture template database, cloned by [`TestDb::spawn_with_catalogue`].
 ///
-/// **Bump the version suffix whenever [`catalogue`]'s generator changes — or a migration does.**
+/// **Bump the version suffix whenever [`catalogue`]'s generator changes, or a migration does.**
 ///
 /// The template caches a *migrated database with rows in it*, so both halves are part of what it
-/// caches, and this name is the entire cache key. Only the generator used to be named here, and
-/// that omission is a real trap: adding a migration leaves every later run cloning a template
-/// built before it, and the failure is `relation "…" does not exist` from a suite that has
-/// nothing to do with the change. Rebuilding costs seconds; a stale template costs an
-/// afternoon.
+/// caches, and this name is the entire cache key. Adding a migration without a bump leaves every
+/// later run cloning a template built before it, and the failure is `relation "…" does not
+/// exist` from a suite that has nothing to do with the change. Rebuilding costs seconds; a stale
+/// template costs an afternoon.
 ///
 /// The name deliberately does not match the `tv_test_%` pattern [`sweep_stale_dbs`] drops: it is
 /// meant to outlive a run.
@@ -151,46 +150,46 @@ const CATALOGUE_LOCK: i64 = 0x7401_0CA7;
 
 /// A running Postgres container plus the base URL of its maintenance connection.
 struct PgContainer {
-    /// Held so the handle outlives the pools built from it. Dropping it does **not** stop
-    /// Postgres: the container is started with [`ReuseDirective::Always`], and `ContainerAsync`'s
-    /// remove-on-drop is skipped for a reused container. That is deliberate — see
-    /// [`shared_container`].
+    /// Held so the handle outlives the pools built from it.
+    ///
+    /// Dropping it does **not** stop Postgres: the container is started with
+    /// [`ReuseDirective::Always`], and `ContainerAsync`'s remove-on-drop is skipped for a reused
+    /// container. That is deliberate; see [`shared_container`].
     _container: ContainerAsync<Postgres>,
-    /// `postgres://postgres:postgres@host:port` — without a trailing database name.
+    /// `postgres://postgres:postgres@host:port`, without a trailing database name.
     base_url: String,
 }
 
-/// Start (or attach to) the one shared Postgres container, then sweep stale test databases.
+/// Starts (or attaches to) the one shared Postgres container, then sweeps stale test databases.
 ///
-/// # Why this reuses a container instead of starting a fresh one (ARCH-6b)
+/// # Why this reuses a container instead of starting a fresh one
 ///
-/// [`PG`] is a `static`, and Rust never drops statics — so `ContainerAsync`'s remove-on-drop
-/// never ran, and `testcontainers` 0.25 ships **no** Ryuk-style reaper (its `watchdog` feature
-/// fires on `SIGTERM`/`SIGINT`/`SIGQUIT`, not on a test binary exiting normally). The result was
-/// one leaked container *per test binary*, on every platform, every `--features integration`
-/// run. Upgrading does not fix it: 0.27 has the same feature set in this respect.
+/// [`PG`] is a `static`, and Rust never drops statics, so `ContainerAsync`'s remove-on-drop never
+/// runs, and `testcontainers` ships **no** Ryuk-style reaper (its `watchdog` feature fires on
+/// `SIGTERM`/`SIGINT`/`SIGQUIT`, not on a test binary exiting normally). A fresh container per
+/// binary would therefore leak one container *per test binary*, on every platform, every
+/// `--features integration` run.
 ///
 /// So the container is named and started with [`ReuseDirective::Always`]: the first binary to
 /// need it creates it, every later binary and every later run attaches to the same one, and it
-/// is never removed. That bounds the count at exactly one forever rather than leaking one per
-/// binary — but it moves the cost, because a container that is never removed accumulates the
-/// `tv_test_*` databases every [`TestDb::spawn`] creates inside it. Hence [`sweep_stale_dbs`],
-/// which is not optional garnish: reuse *without* the sweep trades a container leak for
-/// unbounded disk growth, which is why ARCH-6b was left open until both halves existed.
+/// is never removed. That bounds the count at exactly one, but it moves the cost, because a
+/// container that is never removed accumulates the `tv_test_*` databases every
+/// [`TestDb::spawn`] creates inside it. Hence [`sweep_stale_dbs`], which is not optional: reuse
+/// *without* the sweep trades a container leak for unbounded disk growth.
 ///
-/// Removing the container by hand is still always safe — the next run recreates it:
+/// Removing the container by hand is always safe; the next run recreates it:
 /// `docker rm -f tankovault-test-postgres-18`. That also discards the catalogue template
 /// [`TestDb::spawn_with_catalogue`] caches inside it, which the next run rebuilds.
 ///
-/// # Why it starts the container before asking for it (ARCH-6c)
+/// # Why it starts the container before asking for it
 ///
-/// Reuse attaches to a **running** container. A named container that exists and is *stopped* —
-/// which is what every host reboot and every Docker restart leaves behind — matches neither
-/// path: reuse does not find it, creation collides with the name, and `testcontainers` surfaces
-/// a `409 Conflict` that this call used to report as "is Docker running?" while Docker was
-/// plainly running. So the container is started first, unconditionally.
+/// Reuse attaches to a **running** container. A named container that exists and is *stopped*
+/// (what every host reboot and every Docker restart leaves behind) matches neither path: reuse
+/// does not find it, creation collides with the name, and `testcontainers` surfaces a `409
+/// Conflict` while Docker is plainly running. So the container is started first,
+/// unconditionally.
 ///
-/// `docker start` rather than removing and recreating, deliberately. Starting an already-running
+/// `docker start`, not removing and recreating, deliberately. Starting an already-running
 /// container is a documented no-op success, so this is safe to issue from every test binary
 /// concurrently, whereas removing one on a name conflict would race a *sibling binary* that had
 /// just created it. It also preserves the published port, since the mapping is fixed at creation
@@ -234,11 +233,11 @@ async fn shared_container() -> &'static PgContainer {
     .await
 }
 
-/// Best-effort `docker start` of the shared container; see [`shared_container`] for why.
+/// Runs a best-effort `docker start` of the shared container; see [`shared_container`] for why.
 ///
 /// Deliberately returns nothing. There is no outcome a caller could act on: success means the
-/// container was stopped and now is not, and *every* failure — no such container, no `docker`
-/// binary, a daemon that is down — is either the normal first-run case or something the
+/// container was stopped and now is not, and *every* failure (no such container, no `docker`
+/// binary, a daemon that is down) is either the normal first-run case or something the
 /// `start()` that follows reports with a better message than this could.
 fn start_if_stopped() {
     let _ = std::process::Command::new("docker")
@@ -248,12 +247,12 @@ fn start_if_stopped() {
         .status();
 }
 
-/// Drop every `tv_test_*` database older than [`STALE_DB_AFTER`], once per test binary.
+/// Drops every `tv_test_*` database older than [`STALE_DB_AFTER`], once per test binary.
 ///
-/// # Why an age threshold rather than "drop them all"
+/// # Why an age threshold, not "drop them all"
 ///
-/// The container is shared, so a sweep cannot assume it is alone: another test binary — or
-/// another developer's `cargo test` against the same reused container — may be mid-run, and
+/// The container is shared, so a sweep cannot assume it is alone: another test binary (or another
+/// developer's `cargo test` against the same reused container) may be mid-run, and
 /// dropping its database would fail that run with an error pointing nowhere near the cause.
 /// Age is the only signal available, which is why [`TestDb::spawn`] puts a creation timestamp in
 /// the database *name*: `pg_database` records no creation time, so without the name carrying it
@@ -261,10 +260,9 @@ fn start_if_stopped() {
 /// exist; a database still present after it belongs to a binary that has exited.
 ///
 /// A name that does not parse as `tv_test_<unix-seconds>_<hex>` is treated as stale
-/// unconditionally: the only source of one is a run from before this scheme existed, so those
-/// are exactly the leaked databases the sweep is for.
+/// unconditionally: nothing current generates one, so it can only be a leaked database.
 ///
-/// Failures here are logged to stderr and ignored rather than panicking. The sweep is
+/// Failures here are logged to stderr and ignored, not panicked on. The sweep is
 /// housekeeping; a test run must not fail because a *previous* run's leftovers could not be
 /// cleaned up.
 async fn sweep_stale_dbs(base_url: &str) {
@@ -306,9 +304,10 @@ async fn sweep_stale_dbs(base_url: &str) {
     admin.close().await.ok();
 }
 
-/// Whether `name` is a `tv_test_*` database old enough to drop, given the current unix time.
+/// Returns whether `name` is a `tv_test_*` database old enough to drop, given the current unix
+/// time.
 ///
-/// Split out from [`sweep_stale_dbs`] so the parsing rules are testable without Docker — the
+/// Split out from [`sweep_stale_dbs`] so the parsing rules are testable without Docker: the
 /// interesting cases are all name-shaped, and the two that matter are the boundary (a database
 /// exactly at the threshold is *not* stale, so a run cannot delete its own database one second
 /// early) and the unparseable legacy name.
@@ -317,8 +316,8 @@ fn is_stale(name: &str, now: u64) -> bool {
         return false;
     };
     let Some((created, _uuid)) = rest.split_once('_') else {
-        // Pre-timestamp name (`tv_test_<uuid>`): only a run from before this scheme could have
-        // created it, so it is leaked by definition.
+        // Pre-timestamp name (`tv_test_<uuid>`): nothing current creates one, so it is leaked by
+        // definition.
         return true;
     };
     match created.parse::<u64>() {
@@ -327,14 +326,14 @@ fn is_stale(name: &str, now: u64) -> bool {
     }
 }
 
-/// Seconds since the unix epoch, saturating at 0 if the system clock is before it.
+/// Returns seconds since the unix epoch, saturating at 0 if the system clock is before it.
 fn unix_secs() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs())
 }
 
-/// A pool onto one test's database inside the shared container.
+/// Opens a pool onto one test's database inside the shared container.
 async fn connect_pool(base_url: &str, db_name: &str) -> PgPool {
     PgPoolOptions::new()
         .max_connections(8)
@@ -343,15 +342,15 @@ async fn connect_pool(base_url: &str, db_name: &str) -> PgPool {
         .expect("connect to isolated test database")
 }
 
-/// A connection to the container's maintenance database, for statements that cannot run inside
-/// a transaction or against the database they operate on.
+/// Opens a connection to the container's maintenance database, for statements that cannot run
+/// inside a transaction or against the database they operate on.
 async fn maintenance_conn(base_url: &str) -> PgConnection {
     PgConnection::connect(&format!("{base_url}/postgres"))
         .await
         .expect("connect to maintenance database")
 }
 
-/// Create `db_name` as a clone of the catalogue template, building the template first if this is
+/// Creates `db_name` as a clone of the catalogue template, building the template first if this is
 /// the run that finds it missing.
 ///
 /// Everything happens under [`CATALOGUE_LOCK`]; see there for why the clone is inside it too.
@@ -382,7 +381,7 @@ async fn clone_catalogue_template(base_url: &str, db_name: &str) {
     .await
     .expect("clone the catalogue template");
 
-    // Releasing explicitly rather than relying on the close below, so a later refactor that
+    // Released explicitly instead of relying on the close below, so a later refactor that
     // pools this connection cannot turn the lock into a deadlock that only shows up under `-j`.
     sqlx::query("SELECT pg_advisory_unlock($1)")
         .bind(CATALOGUE_LOCK)
@@ -392,12 +391,12 @@ async fn clone_catalogue_template(base_url: &str, db_name: &str) {
     admin.close().await.ok();
 }
 
-/// Build the catalogue template. Caller holds [`CATALOGUE_LOCK`].
+/// Builds the catalogue template; the caller holds [`CATALOGUE_LOCK`].
 ///
 /// # Why it seeds under a scratch name and renames
 ///
-/// The template is a cache with no validity check beyond its name, so a seed that dies halfway —
-/// a cancelled `cargo test`, a container restart — must not leave a half-filled database sitting
+/// The template is a cache with no validity check beyond its name, so a seed that dies halfway (a
+/// cancelled `cargo test`, a container restart) must not leave a half-filled database sitting
 /// under the template name for every later run to clone. Under a scratch name a crash leaves
 /// litter that is merely ignored, and the rename is atomic, so the template name only ever
 /// appears once the fixture behind it is complete.
@@ -447,7 +446,7 @@ pub struct TestDb {
 }
 
 impl TestDb {
-    /// Create a new isolated database, run every migration against it, and return a pool.
+    /// Creates a new isolated database, runs every migration against it, and returns a pool.
     pub async fn spawn() -> Self {
         let container = shared_container().await;
         // The unix timestamp is load-bearing, not decoration: `pg_database` records no creation
@@ -456,7 +455,7 @@ impl TestDb {
         let db_name = format!("tv_test_{}_{}", unix_secs(), Uuid::new_v4().simple());
 
         // `CREATE DATABASE` cannot run inside a transaction, so it goes over a plain
-        // connection to the maintenance database rather than through the pool.
+        // connection to the maintenance database, not through the pool.
         let mut admin = maintenance_conn(&container.base_url).await;
         // The database name is a generated UUID hex, not user input, so asserting it safe is
         // sound; `CREATE DATABASE` cannot bind parameters, hence the format.
@@ -477,16 +476,16 @@ impl TestDb {
         Self { pool }
     }
 
-    /// As [`TestDb::spawn`], but the database arrives already holding a production-shaped
-    /// workload — catalogue, chapters, readers and their watchlists — analysed.
+    /// Like [`TestDb::spawn`], but the database arrives already holding a production-shaped
+    /// workload (catalogue, chapters, readers and their watchlists), analysed.
     ///
     /// For suites that assert on **query plans**. Every planner choice is a cost comparison, so
     /// an assertion is only meaningful where the fixture has the volume production has. The
     /// catalogue builder keeps production's shape and scales its volume down.
     ///
     /// The rows come from a `CREATE DATABASE … TEMPLATE` clone of a template built once per
-    /// container, so the per-test cost is a file copy (~200 ms) rather than a re-seed (~15 s) —
-    /// and the clone carries the template's statistics, which is what makes the copy plan like
+    /// container, so the per-test cost is a file copy (~200 ms), not a re-seed (~15 s), and the
+    /// clone carries the template's statistics, which is what makes the copy plan like
     /// the original.
     pub async fn spawn_with_catalogue() -> Self {
         let container = shared_container().await;
@@ -497,7 +496,7 @@ impl TestDb {
         }
     }
 
-    /// Seed a user with the given username, capabilities and account status.
+    /// Seeds a user with the given username, capabilities and account status.
     ///
     /// The email is derived from the username so callers need only supply a name unique within
     /// the test. The harness authenticates by minting access tokens directly (see [`bearer`]);
@@ -530,7 +529,7 @@ impl TestDb {
         user_id
     }
 
-    /// Run a statement against this test's database.
+    /// Runs a statement against this test's database.
     ///
     /// Exists for one job: **aging rows so a time-dependent branch can be reached**. Token
     /// expiry (`RESET_TOKEN_TTL`, `VERIFY_TOKEN_TTL`, refresh lifetime) is compared against
@@ -561,13 +560,13 @@ pub struct RecordingAuditSink {
 }
 
 impl RecordingAuditSink {
-    /// Every event recorded so far, in order.
+    /// Returns every event recorded so far, in order.
     #[must_use]
     pub fn events(&self) -> Vec<AuditEvent> {
         self.events.lock().expect("audit sink mutex").clone()
     }
 
-    /// The recorded events whose outcome is [`AuditOutcome::Denied`].
+    /// Returns the recorded events whose outcome is [`AuditOutcome::Denied`].
     #[must_use]
     pub fn denials(&self) -> Vec<AuditEvent> {
         self.events()
@@ -588,17 +587,16 @@ impl AuditSink for RecordingAuditSink {
 ///
 /// # Why this exists
 ///
-/// The HTTP harness previously hard-wired the disabled default mailer, and `auth::register` forks on
-/// `state.mailer.is_enabled()`. The consequence was that the **email-verification half of
-/// registration had never been executed by any test** — every registration took the
-/// "no mailer, activate immediately" branch. So did password reset, confirmation resend, and
-/// the address-change notices. This double flips that fork on.
+/// `auth::register` forks on `state.mailer.is_enabled()`, so a harness wired to the disabled
+/// default mailer never executes the **email-verification half of registration**: every
+/// registration takes the "no mailer, activate immediately" branch, and so do password reset,
+/// confirmation resend and the address-change notices. This double flips that fork on.
 ///
 /// # Awaiting a fire-and-forget send
 ///
 /// `api::mailer::send_in_background` spawns the send, so the message is not in the recorder
 /// when the HTTP response returns. [`Self::next_message`] awaits the spawned task through a
-/// channel rather than sleeping, so a test stays deterministic; the timeout is a failure
+/// channel instead of sleeping, so a test stays deterministic; the timeout is a failure
 /// deadline, not a delay.
 pub struct RecordingMailer {
     enabled: bool,
@@ -616,14 +614,14 @@ impl Default for RecordingMailer {
 }
 
 impl RecordingMailer {
-    /// A mailer that reports itself as configured, so the flows that branch on
+    /// Creates a mailer that reports itself as configured, so the flows that branch on
     /// `is_enabled()` take their email-bearing path.
     #[must_use]
     pub fn enabled() -> Self {
         Self::with_enabled(true)
     }
 
-    /// A mailer that records but reports itself as *not* configured — the shape of a
+    /// Creates a mailer that records but reports itself as *not* configured: the shape of a
     /// deployment without SMTP, which is the branch the rest of the suite exercises.
     #[must_use]
     pub fn disabled() -> Self {
@@ -641,28 +639,28 @@ impl RecordingMailer {
         }
     }
 
-    /// A mailer whose every send takes `delay` before it records anything — a stand-in for a
-    /// slow SMTP relay.
+    /// Makes every send take `delay` before it records anything, a stand-in for a slow SMTP
+    /// relay.
     ///
-    /// For the SEC-10 timing tests: the anti-enumeration property of
+    /// For the anti-enumeration timing tests: the anti-enumeration property of
     /// `/v1/auth/password/forgot` and `/v1/auth/verify-email/resend` is that the handler does
     /// *no* account-dependent work before answering, and the only step in that work a test can
     /// make arbitrarily slow is the send. With a delay far larger than any plausible handler
-    /// cost, "the response came back fast" is a reliable proof that the work was detached
-    /// rather than a flaky measurement of one `INSERT`.
+    /// cost, "the response came back fast" is a reliable proof that the work was detached,
+    /// not a flaky measurement of one `INSERT`.
     #[must_use]
     pub fn with_send_delay(mut self, delay: StdDuration) -> Self {
         self.send_delay = delay;
         self
     }
 
-    /// Every message captured so far, in send order.
+    /// Returns every message captured so far, in send order.
     #[must_use]
     pub fn sent(&self) -> Vec<EmailMessage> {
         self.sent.lock().expect("mailer mutex").clone()
     }
 
-    /// Await the next message, failing the test if none arrives.
+    /// Awaits the next message, failing the test if none arrives.
     ///
     /// # Panics
     /// If no message is delivered within ten seconds, which means the flow under test did not
@@ -675,7 +673,7 @@ impl RecordingMailer {
             .expect("the mailer's channel is kept open by the sender half")
     }
 
-    /// The first `https?://…` run in `text`, with trailing punctuation trimmed.
+    /// Returns the first `https?://…` run in `text`, with trailing punctuation trimmed.
     ///
     /// Reset and confirmation links are only ever reachable through the email body, so a test
     /// that completes either flow has to read the link back out of the message the way a user
@@ -717,9 +715,9 @@ mod tests {
 
     /// The sweep must not delete a database belonging to a run that is still going.
     ///
-    /// The container is shared across test binaries and across developers' runs (ARCH-6b), so a
-    /// sweep is never alone. A fresh database — and, at the boundary, one exactly
-    /// [`STALE_DB_AFTER`] old — has to survive; only strictly older names may be dropped. If this
+    /// The container is shared across test binaries and across developers' runs, so a sweep is
+    /// never alone. A fresh database (and, at the boundary, one exactly [`STALE_DB_AFTER`] old)
+    /// has to survive; only strictly older names may be dropped. If this
     /// ever flips to `>=`, a run whose clock lands on the boundary drops its own database and
     /// fails with an error pointing nowhere near the cause.
     #[test]
@@ -732,10 +730,10 @@ mod tests {
 
     /// A name from before the timestamp scheme is stale unconditionally.
     ///
-    /// `tv_test_<uuid>` is what the harness generated before ARCH-6b, so the only thing that can
-    /// have created one is a run that has already exited — which makes these precisely the
-    /// leaked databases the sweep exists to remove. Treating them as *fresh* instead (the easy
-    /// mistake, since they carry no age) would leave the pre-existing leak permanently.
+    /// Nothing current generates `tv_test_<uuid>`, so the only thing that can have created one
+    /// is a run that has already exited, which makes these precisely the leaked databases the
+    /// sweep exists to remove. Treating them as *fresh* instead (the easy mistake, since they
+    /// carry no age) would leave the leak permanently.
     #[test]
     fn a_pre_timestamp_name_is_stale() {
         assert!(is_stale("tv_test_9f2b4c8e1a", NOW));

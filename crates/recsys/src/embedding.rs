@@ -161,32 +161,54 @@ impl GramAccumulator {
 /// and the basis becomes rank-1.
 fn orthonormalise(matrix: &mut [f64], dim: usize, k: usize) {
     for column in 0..k {
-        for previous in 0..column {
-            let mut dot = 0.0;
-            for row in 0..dim {
-                dot += matrix[previous * dim + row] * matrix[column * dim + row];
-            }
-            for row in 0..dim {
-                matrix[column * dim + row] -= dot * matrix[previous * dim + row];
+        if orthogonalise(matrix, dim, column) {
+            continue;
+        }
+        // A collapsed column has no direction left; zeros would leave every embedding with a dead
+        // component. The replacement axis must itself be orthogonal to the columns before it, or
+        // the basis loses rank: take the one with the largest residual, which is at least
+        // `1 / sqrt(dim)` because `column < k <= dim`.
+        let mut best = (0, f64::NEG_INFINITY);
+        for axis in 0..dim {
+            let residual = 1.0
+                - (0..column)
+                    .map(|previous| matrix[previous * dim + axis].powi(2))
+                    .sum::<f64>();
+            if residual > best.1 {
+                best = (axis, residual);
             }
         }
-        let mut norm = 0.0;
         for row in 0..dim {
-            norm += matrix[column * dim + row] * matrix[column * dim + row];
+            matrix[column * dim + row] = f64::from(u8::from(row == best.0));
         }
-        let norm = norm.sqrt();
-        if norm > 1e-12 {
-            for row in 0..dim {
-                matrix[column * dim + row] /= norm;
-            }
-        } else {
-            // A collapsed column has no direction left. A unit axis keeps the basis full-rank;
-            // zeros would leave every embedding with a dead component.
-            for row in 0..dim {
-                matrix[column * dim + row] = f64::from(u8::from(row == column % dim));
-            }
+        orthogonalise(matrix, dim, column);
+    }
+}
+
+/// Removes the earlier columns' components from `column` and normalises it, returning `false`
+/// (and leaving it unnormalised) when nothing of it is left.
+fn orthogonalise(matrix: &mut [f64], dim: usize, column: usize) -> bool {
+    for previous in 0..column {
+        let mut dot = 0.0;
+        for row in 0..dim {
+            dot += matrix[previous * dim + row] * matrix[column * dim + row];
+        }
+        for row in 0..dim {
+            matrix[column * dim + row] -= dot * matrix[previous * dim + row];
         }
     }
+    let mut norm = 0.0;
+    for row in 0..dim {
+        norm += matrix[column * dim + row] * matrix[column * dim + row];
+    }
+    let norm = norm.sqrt();
+    if norm <= 1e-12 {
+        return false;
+    }
+    for row in 0..dim {
+        matrix[column * dim + row] /= norm;
+    }
+    true
 }
 
 /// A fixed projection from the sparse feature space into `k` dimensions.
@@ -280,6 +302,26 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// A collapsed column's replacement axis must be orthogonal to the columns before it.
+    ///
+    /// The bug: with one feature ever seen, every column collapses onto that feature's axis, and
+    /// the fallback picked axis `column % dim`, which for column 1 of a 2-wide basis is the
+    /// same axis column 0 already holds. The basis came back with two parallel columns.
+    #[test]
+    fn a_collapsed_column_is_replaced_by_an_orthogonal_axis() {
+        let mut gram = GramAccumulator::new(2);
+        gram.push(&[(1, 1.0)]);
+        let basis = gram.basis(2, 1, 42);
+        let columns = basis.as_columns();
+        let (first, second) = columns.split_at(2);
+        assert!((cosine(first, first) - 1.0).abs() < 1e-3, "{columns:?}");
+        assert!((cosine(second, second) - 1.0).abs() < 1e-3, "{columns:?}");
+        assert!(
+            cosine(first, second).abs() < 1e-3,
+            "parallel columns: {columns:?}"
+        );
     }
 
     /// Series sharing features land closer than series sharing none.

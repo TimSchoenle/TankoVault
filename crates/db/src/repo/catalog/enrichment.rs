@@ -16,16 +16,16 @@ use uuid::Uuid;
 /// The smallest weight a tag link may carry.
 ///
 /// `series_tags_weight_check` enforces `weight > 0`, and `AniList` publishes tags with a rank of
-/// zero — a term somebody proposed and nobody upvoted. Flooring keeps the term (it is still
-/// evidence, just the weakest kind) where dropping it would silently narrow the vocabulary and a
-/// literal `0.0` would abort the transaction that carried it.
+/// zero: a term somebody proposed and nobody upvoted. Flooring keeps the term as the weakest
+/// evidence, where dropping it would narrow the vocabulary and a literal `0.0` would abort the
+/// transaction.
 pub const MIN_TAG_WEIGHT: f32 = 0.01;
 
 /// Minimal series row for the enrichment worker: enough to look the series up upstream.
 ///
-/// Carries no current field values on purpose — [`super::merge_metadata`] reads those under the
-/// row lock when the answer comes back, which is seconds of upstream latency later. Resolving
-/// priority against a value read here would decide against one a concurrent scan has replaced.
+/// Carries no current field values: [`super::merge_metadata`] reads those under the row lock
+/// when the answer arrives, seconds later, and a value read here may have been replaced by a
+/// concurrent scan by then.
 pub struct SeriesEnrichmentRow {
     /// The series to enrich.
     pub id: SeriesId,
@@ -49,15 +49,17 @@ impl From<EnrichmentRow> for SeriesEnrichmentRow {
     }
 }
 
-/// One page of series for the background enrichment sweep, least-recently-attempted first.
+/// Returns one page of series for the background enrichment sweep, least-recently-attempted first.
 ///
 /// Every row returned must get `metadata_checked_at` stamped (success, failure, or unresolved
 /// alike) before the next page is asked for, or an unstamped row leads every subsequent page
 /// and the sweep spins on it.
 ///
+/// An empty page is the sweep's only termination signal, so a caller must not default an error
+/// to empty.
+///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; an exhausted sweep is an empty `Vec` — its only termination
-/// signal, so a failure must not be defaulted to empty.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn list_series_for_enrichment<'e, E: PgExecutor<'e>>(
     exec: E,
     limit: i64,
@@ -80,8 +82,10 @@ pub async fn list_series_for_enrichment<'e, E: PgExecutor<'e>>(
 /// Which of `series_ids` have not had metadata attempted since `stale_before`. One statement for
 /// the whole set.
 ///
+/// Unknown ids are absent from the result.
+///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; unknown ids are absent from the result.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn series_needing_metadata<'e, E: PgExecutor<'e>>(
     exec: E,
     series_ids: &[Uuid],
@@ -113,7 +117,7 @@ pub struct SeriesIdentityTitles {
 /// What an upstream record has to match before it is trusted as this series.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; an erased series is `Ok(None)`.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn series_identity_titles<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
@@ -137,12 +141,13 @@ pub async fn series_identity_titles<'e, E: PgExecutor<'e>>(
     }))
 }
 
-/// Record that a series was examined by an enrichment pass that had nothing to write.
+/// Records that a series was examined by an enrichment pass that had nothing to write.
 ///
-/// Does not touch `updated_at` — a no-op lookup must not reshuffle listings ordered by it.
+/// Leaves `updated_at` alone, so a no-op lookup does not reshuffle listings ordered by it. An
+/// erased `series_id` matches nothing.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; an erased `series_id` matches nothing and is still `Ok(())`.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn mark_metadata_checked<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
@@ -183,14 +188,16 @@ pub struct MetadataSweepCoverage {
     /// Series the sweep has never attempted. These lead every work list, so a figure that never
     /// falls is the signal that the sweep is not running at all.
     pub never_checked: i64,
-    /// Series attempted within the last day — how much ground the recent runs actually covered.
+    /// Series attempted within the last day: how much ground the recent runs covered.
     pub checked_last_day: i64,
 }
 
-/// Read the enrichment sweep's state.
+/// Reads the enrichment sweep's state.
+///
+/// The row is created by migration 0034 and cannot be absent.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; the row is created by migration 0034 and cannot be absent.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn read_sweep_state<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<MetadataSweepState> {
     let state = sqlx::query_as!(
         MetadataSweepState,
@@ -202,7 +209,7 @@ pub async fn read_sweep_state<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<Metada
     Ok(state)
 }
 
-/// Read how far the sweep has got through the catalogue.
+/// Reads how far the sweep has got through the catalogue.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -222,7 +229,7 @@ pub async fn read_sweep_coverage<'e, E: PgExecutor<'e>>(
     Ok(coverage)
 }
 
-/// Mark a sweep as started, clearing the previous run's counters.
+/// Marks a sweep as started, clearing the previous run's counters.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -238,7 +245,7 @@ pub async fn begin_sweep<'e, E: PgExecutor<'e>>(exec: E) -> DbResult<()> {
     Ok(())
 }
 
-/// Publish the counters of a sweep still in flight.
+/// Publishes the counters of a sweep still in flight.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -260,7 +267,7 @@ pub async fn record_sweep_progress<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// Close a sweep out, recording how it ended.
+/// Closes a sweep out, recording how it ended.
 ///
 /// **Must run on the failure path too**, or `running` stays true forever and the console reports
 /// a sweep in flight that no longer exists.
@@ -289,19 +296,18 @@ pub async fn finish_sweep<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// Record that a scan's own genre chips classify this series as adult.
+/// Records that a scan's own genre chips classify this series as adult.
 ///
-/// Writes `adult_inferred` and only ever sets it: there is no call that clears it. A provider
-/// dropping the chip from one page, or an adapter selector breaking, must not reopen a gate
-/// that a previous scan closed — the two are indistinguishable from here, and one of them is
-/// a silent regression that shows adult series to readers who never opted in. Clearing a
-/// wrong verdict is an operator action against the database, deliberately not a code path.
+/// Only ever sets `adult_inferred`; no call clears it. A provider dropping the chip from a page
+/// and a broken adapter selector look the same from here, and the second would silently show
+/// adult series to readers who never opted in. Clearing a wrong verdict is an operator action
+/// against the database, not a code path.
 ///
-/// Guarded on the current value so a re-scan of an already-flagged series writes nothing,
-/// keeping `updated_at` and the row version untouched under at-least-once delivery.
+/// Guarded on the current value, so a rescan of a flagged series writes nothing and leaves
+/// `updated_at` alone under at-least-once delivery. An erased `series_id` is a no-op.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; an erased `series_id` is a no-op `Ok(())`.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn mark_adult_inferred<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
@@ -320,9 +326,9 @@ pub async fn mark_adult_inferred<'e, E: PgExecutor<'e>>(
 pub struct MetadataEnrichment<'a> {
     /// The fields another source can also supply, resolved under the operator's priority.
     pub candidate: MetadataCandidate<'a>,
-    /// Whether upstream classifies the work as adult. `None` means "no opinion", which must not
-    /// clear a flag another source set — this is a content gate, and losing it is the failure
-    /// that shows adult series to readers who never opted in.
+    /// Whether upstream classifies the work as adult. `None` means no opinion and must not clear
+    /// a flag another source set: losing this content gate shows adult series to readers who
+    /// never opted in.
     pub is_adult: Option<bool>,
     /// Upstream's average score, 0..100. Overwritten when present: a score drifts, and a stale
     /// one is worse than the current one.
@@ -342,15 +348,15 @@ pub struct MetadataEnrichment<'a> {
 
 /// Folds an enrichment batch into a series, in one transaction.
 ///
-/// The prioritised fields go through [`merge_metadata`]; the upstream-only signals are recorded
-/// as given; titles, tags and authors are added rather than replaced. Idempotent, so a retried
-/// batch writes nothing new.
+/// The prioritised fields go through [`merge_metadata`], the upstream-only signals are recorded
+/// as given, and titles, tags and authors are added, never replaced. Idempotent, so a retried
+/// batch writes nothing new; an erased `series_id` is a no-op.
 ///
 /// Also stamps `metadata_checked_at`, so a successful enrichment leaves the sweep's work list
-/// the same way a fruitless lookup does (see [`list_series_for_enrichment`]).
+/// the way a fruitless lookup does (see [`list_series_for_enrichment`]).
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; an erased `series_id` is a no-op `Ok(())`.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn apply_enrichment(
     pool: &sqlx::PgPool,
     series_id: SeriesId,
@@ -415,7 +421,7 @@ pub enum TitleOrigin {
 }
 
 impl TitleOrigin {
-    /// The stored spelling, as `series_titles_origin_check` allows it.
+    /// Returns the stored spelling, as `series_titles_origin_check` allows it.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -435,18 +441,18 @@ impl From<MetadataSource> for TitleOrigin {
     }
 }
 
-/// Add alternative titles (idempotent on the natural key), recording `origin` on the rows this
+/// Adds alternative titles, idempotent on the natural key, recording `origin` on the rows this
 /// creates. A title the series already holds keeps the provenance it was first filed under.
 ///
 /// Placeholder text ([`alias_is_placeholder`]: `unknown`, `status`, `no alternative titles`) is
-/// dropped rather than stored: it joined unrelated series in production, and every merge copied
-/// the absorbed side's aliases onto the survivor, so one such key pulled in the next. A short
-/// title that is real (`Kureimoa`) is kept for search; the matcher already refuses it as an
-/// identity.
+/// dropped: as an alias it joins unrelated series, and every merge copies the absorbed side's
+/// aliases onto the survivor, so one such key pulls in the next. A real short title
+/// (`Kureimoa`) is kept for search; the matcher refuses it as an identity.
+///
+/// An unknown `series_id` is a foreign-key violation.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; unknown `series_id` is a foreign-key violation. No title left
-/// to store is a silent `Ok(())`.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn add_series_titles(
     conn: &mut sqlx::PgConnection,
     series_id: SeriesId,
@@ -499,12 +505,12 @@ pub enum TagKind {
     Theme,
     /// The audience a publisher aimed the work at.
     Demographic,
-    /// Computed here rather than stated by any provider.
+    /// Computed here; no provider states it.
     Derived,
 }
 
 impl TagKind {
-    /// The token stored in `tags.kind`.
+    /// Returns the token stored in `tags.kind`.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -523,15 +529,15 @@ impl TagKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TagSource {
     /// A scraping adapter, which knows a name and nothing else. Its token is also spelled
-    /// literally in [`add_series_tags`]' conflict predicate — a rename must change both, or the
-    /// precedence rule stops matching and silently becomes last-writer-wins.
+    /// literally in [`add_series_tags`]' conflict predicate, so a rename must change both or the
+    /// precedence rule silently becomes last-writer-wins.
     Provider,
     /// `AniList`, which ranks a term as well as naming it.
     AniList,
 }
 
 impl TagSource {
-    /// The token stored in `series_tags.source`.
+    /// Returns the token stored in `series_tags.source`.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -544,19 +550,19 @@ impl TagSource {
 /// One tag attached to a series, with the strength and provenance the link table stores.
 #[derive(Debug, Clone, Copy)]
 pub struct TagLink<'a> {
-    /// The term, which is matched by name rather than by any upstream id.
+    /// The term, matched by name, not by any upstream id.
     pub name: &'a str,
     /// Which vocabulary it belongs to, and so how the recommender weights it.
     pub kind: TagKind,
-    /// `(0, 1]`. Zero is not merely discouraged — `series_tags_weight_check` rejects it, so a
-    /// caller with a zero-ranked term must floor it or drop the term.
+    /// `(0, 1]`. `series_tags_weight_check` rejects zero, so a caller with a zero-ranked term
+    /// must floor it or drop the term.
     pub weight: f32,
     /// Who supplied it, which decides whether it may overwrite an existing link.
     pub source: TagSource,
 }
 
 impl<'a> TagLink<'a> {
-    /// A plain genre from a scraping adapter: wholly present, no rank to carry.
+    /// Returns a plain genre from a scraping adapter: wholly present, no rank to carry.
     #[must_use]
     pub const fn genre(name: &'a str) -> Self {
         Self {
@@ -568,16 +574,17 @@ impl<'a> TagLink<'a> {
     }
 }
 
-/// Add tag links to a series (idempotent). Empty/unslugifiable names are skipped, as are terms
-/// `blocked` refuses.
+/// Adds tag links to a series, idempotently. Empty or unslugifiable names are skipped, as are
+/// terms `blocked` refuses.
 ///
-/// The guard is applied *here*, at the one statement that interns a term into the shared `tags`
-/// vocabulary, rather than at each caller: a refused term must never reach the table, and a
-/// filter at one of the two producers is a filter the other one does not have.
+/// The guard sits at the one statement that interns a term into the shared `tags` vocabulary,
+/// not at each caller, so a refused term never reaches the table from either producer. The
+/// statements run in the caller's transaction.
+///
+/// An unknown `series_id` is a foreign-key violation.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; unknown `series_id` is a foreign-key violation. All-empty
-/// names is `Ok(())`. Statements share the caller's transaction, not their own.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn add_series_tags(
     conn: &mut sqlx::PgConnection,
     series_id: SeriesId,
@@ -607,10 +614,9 @@ pub async fn add_series_tags(
         return Ok(());
     }
 
-    // `DO NOTHING`, not `DO UPDATE`: a no-op update would still take a write lock on a
-    // globally-shared `tags` row, serializing concurrent ingests of the same genre. The cost is
-    // that `kind` is first-writer-wins — a term already interned as a genre stays one — which is
-    // the right way round, since the coarse vocabulary is the one every provider agrees on.
+    // `DO NOTHING`, not `DO UPDATE`: a no-op update would still take a write lock on a shared
+    // `tags` row and serialise concurrent ingests of the same genre. `kind` is therefore
+    // first-writer-wins, which suits the coarse vocabulary every provider agrees on.
     sqlx::query!(
         "INSERT INTO tags (slug, name, kind) \
          SELECT * FROM UNNEST($1::text[], $2::text[], $3::text[]) \
@@ -644,16 +650,17 @@ pub async fn add_series_tags(
     Ok(())
 }
 
-/// Add author/artist credits to a series (idempotent, additive-only — mirrors
-/// [`add_series_tags`]). Empty/unslugifiable names are skipped, as are terms `blocked` refuses.
+/// Adds author and artist credits to a series, idempotently and additively, like
+/// [`add_series_tags`]. Empty or unslugifiable names are skipped, as are terms `blocked` refuses.
 ///
-/// The guard is the same one the tag writer applies, and for the same reason: a template that
-/// renders `Genres: Updating` renders `Author: Updating` from the row below it, and a credit is
-/// the recommender's strongest feature axis, so guarding only tags left the placeholder as a
-/// first-class term.
+/// The guard is the tag writer's: a template that renders `Genres: Updating` renders
+/// `Author: Updating` from the row below, and a credit is the recommender's strongest feature
+/// axis.
+///
+/// An unknown `series_id` is a foreign-key violation.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; identical to [`add_series_tags`].
+/// [`crate::DbError::Sqlx`] only.
 pub async fn add_series_authors(
     conn: &mut sqlx::PgConnection,
     series_id: SeriesId,
@@ -687,8 +694,8 @@ pub async fn add_series_authors(
     Ok(())
 }
 
-/// Slugify a list of display names, dropping empties, refused terms and repeats of a slug
-/// already kept.
+/// Slugifies a list of display names, dropping empties, refused terms and repeats of a slug already
+/// kept.
 ///
 /// De-duplication is required: a slug bound twice in one `UNNEST` insert is harmless, but the
 /// link statement would then attach the same `(series_id, author_id)` pair twice.

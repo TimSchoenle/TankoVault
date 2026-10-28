@@ -49,8 +49,10 @@ pub struct IngestOutcome {
     pub new_chapters: Vec<f64>,
 }
 
-/// Persist a scanned series and its chapters in a single transaction. All writes are
-/// idempotent, so replaying under at-least-once delivery converges without false-new chapters.
+/// Persists a scanned series and its chapters in a single transaction.
+///
+/// All writes are idempotent, so a replay under at-least-once delivery converges without
+/// false-new chapters.
 ///
 /// `canonicaliser` decides which series the scan belongs to; `priority` decides which of the
 /// scan's values are allowed to replace what another source already wrote; `blocked` decides
@@ -58,12 +60,12 @@ pub struct IngestOutcome {
 /// series as adult. This function only writes.
 ///
 /// Only a new source is canonicalised; a registered one is ingested into the series it is filed
-/// under. Canonicalising a known source again, on a title that no longer matches (the norm once
-/// `AniList` has renamed the series), creates a series the source never moves to — an empty
-/// duplicate per scan, and a `chapter.discovered` naming a series nobody watches.
+/// under. Canonicalising a known source again, on a title `AniList` has since renamed, would
+/// create an empty duplicate per scan and a `chapter.discovered` naming a series nobody
+/// watches.
 ///
-/// A crash after commit but before the caller publishes `chapter.discovered` can still lose
-/// events — a replay must not report false-new chapters.
+/// A crash after commit but before the caller publishes `chapter.discovered` can lose events,
+/// and a replay must not report false-new chapters.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] for any database failure, rolling back the whole transaction so a
@@ -92,8 +94,8 @@ pub async fn ingest_series(
     )))
 }
 
-/// One ingest attempt; `None` when the source was filed under another series in the meantime
-/// and everything this attempt wrote has been rolled back.
+/// Returns one ingest attempt; `None` when the source was filed under another series in the
+/// meantime and everything this attempt wrote has been rolled back.
 async fn try_ingest(
     pool: &sqlx::PgPool,
     scanned: &ScannedSeries,
@@ -131,9 +133,9 @@ async fn try_ingest(
         .await?;
     }
     if !scanned.tags.is_empty() {
-        // Classified from the *raw* scrape, before the blocklist runs. The blocklist exists to
-        // drop template labels, but it is operator-editable, and a term added to it must not be
-        // able to hide an adult signal from the gate as a side effect.
+        // Classified from the *raw* scrape, before the blocklist runs. The blocklist drops
+        // template labels but is operator-editable, and a term added to it must not hide an adult
+        // signal from the gate.
         if adult.classifies_any(&scanned.tags) {
             mark_adult_inferred(&mut *tx, series_id).await?;
         }
@@ -159,11 +161,11 @@ async fn try_ingest(
         return Ok(None);
     }
 
-    // One statement, not a per-chapter loop: this transaction holds row locks on shared
-    // `tags`/`authors` rows, so per-chapter round trips would stall other providers' ingests.
+    // One statement, not a per-chapter loop: this transaction holds row locks on shared `tags`
+    // and `authors` rows, so per-chapter round trips would stall other providers' ingests.
     //
-    // `source_path` goes down with it because `chapters.path` is stored relative to it (migration
-    // 0055) — the compression is the repo layer's business, so the scan hands over whole paths.
+    // `source_path` goes with it because `chapters.path` is stored relative to it (migration
+    // 0055). The compression is the repo layer's business, so the scan hands over whole paths.
     let mut new_chapters =
         upsert_chapters(&mut *tx, source_id, &scanned.source_path, &scanned.chapters).await?;
     // `RETURNING` doesn't promise order; sort for a deterministic notification stream.

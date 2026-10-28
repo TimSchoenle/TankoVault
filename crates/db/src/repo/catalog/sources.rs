@@ -42,7 +42,8 @@ impl TryFrom<SourceRow> for SeriesSource {
     }
 }
 
-/// The series the `(provider, path)` source is filed under, `None` when it is not registered.
+/// Returns the series the `(provider, path)` source is filed under, `None` when it is not
+/// registered.
 ///
 /// # Errors
 /// [`crate::DbError::Sqlx`] only.
@@ -61,15 +62,17 @@ pub async fn attached_series<'e, E: PgExecutor<'e>>(
     Ok(id.map(SeriesId::from_uuid))
 }
 
-/// Upsert the (provider, path) source for a series. Idempotent on `(provider_id, source_path)`.
+/// Upserts the (provider, path) source for a series. Idempotent on `(provider_id, source_path)`.
 ///
-/// On conflict, the existing row's id comes back (a source keeps its identity across re-scans)
-/// and `series_id` is not updated — an already-attached source is never re-pointed. The second
-/// element is the series the row is actually filed under; a caller that just created
-/// `series_id` must compare the two, because on a mismatch its new series holds no source.
+/// On conflict the existing row's id comes back, so a source keeps its identity across rescans,
+/// and `series_id` is not updated, so an attached source is never re-pointed. The second
+/// element is the series the row is filed under; a caller that just created `series_id` must
+/// compare the two, because on a mismatch its new series holds no source.
+///
+/// An unknown `series_id` or `provider_id` is a foreign-key violation.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; unknown `series_id`/`provider_id` is a foreign-key violation.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn upsert_source<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
@@ -100,16 +103,14 @@ pub async fn upsert_source<'e, E: PgExecutor<'e>>(
     ))
 }
 
-/// Ensure a series **source** row exists for a catalogue entry.
+/// Ensures a series **source** row exists for a catalogue entry.
 ///
 /// Creates a canonical series from the listing title when the source is new, and does nothing
-/// at all when it already exists, so it never downgrades metadata a later `Series` task has
-/// enriched.
+/// when it exists, so it never downgrades metadata a later `Series` task enriched. The result
+/// does not say which happened; [`register_source_stubs`] counts.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only; an already-registered source is `Ok(())` with nothing
-/// written — indistinguishable from a fresh registration; use [`register_source_stubs`] to
-/// count.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn register_source_stub(
     pool: &sqlx::PgPool,
     provider_id: ProviderId,
@@ -119,7 +120,7 @@ pub async fn register_source_stub(
 ) -> DbResult<()> {
     let mut tx = pool.begin().await?;
 
-    // Already registered (this or an earlier scan) — leave the enriched row untouched.
+    // Already registered by this or an earlier scan: leave the enriched row untouched.
     if attached_series(&mut *tx, provider_id, source_path)
         .await?
         .is_some()
@@ -141,10 +142,10 @@ pub async fn register_source_stub(
     Ok(())
 }
 
-/// Canonicalise a catalogue listing title into a series id, creating one if nothing matches.
+/// Canonicalises a catalogue listing title into a series id, creating one if nothing matches.
 ///
-/// Listing title carries no description/cover/type/status/year on purpose — a stub must never
-/// overwrite what a later `Series` task enriched with blanks.
+/// The stub carries no description, cover, type, status or year, so it never blanks what a
+/// later `Series` task enriched.
 async fn resolve_stub_series(
     conn: &mut sqlx::PgConnection,
     title: &str,
@@ -162,11 +163,11 @@ async fn resolve_stub_series(
     resolve_canonical_series(conn, &meta, canonicaliser).await
 }
 
-/// Upsert several `(provider, path)` sources in one statement. Idempotent on
-/// `(provider_id, source_path)`, like [`upsert_source`].
+/// Upserts several `(provider, path)` sources in one statement. Idempotent on `(provider_id,
+/// source_path)`, like [`upsert_source`].
 ///
-/// `DISTINCT ON (source_path)` is required rather than tidy: a catalogue page can list the same
-/// path twice, and `ON CONFLICT DO UPDATE` cannot touch one row twice in a single statement.
+/// `DISTINCT ON (source_path)` is required: a catalogue page can list the same path twice, and
+/// `ON CONFLICT DO UPDATE` cannot touch one row twice in a single statement.
 async fn upsert_sources(
     conn: &mut sqlx::PgConnection,
     provider_id: ProviderId,
@@ -180,8 +181,8 @@ async fn upsert_sources(
         .map(|_| SeriesSourceId::new().as_uuid())
         .collect();
     let series_ids: Vec<Uuid> = rows.iter().map(|(s, _, _)| s.as_uuid()).collect();
-    // Borrowed for the same reason as in `register_source_stubs`: the `UNNEST` arrays live
-    // only for this statement, so cloning each path and title is pure waste (PERF-19).
+    // Borrowed, as in `register_source_stubs`: the `UNNEST` arrays live only for this
+    // statement, so cloning each path and title would be waste.
     let paths: Vec<&str> = rows.iter().map(|(_, p, _)| p.as_str()).collect();
     let titles: Vec<&str> = rows.iter().map(|(_, _, t)| t.as_str()).collect();
     let normalized: Vec<String> = titles.iter().map(|t| normalize_title(t)).collect();
@@ -211,11 +212,11 @@ async fn upsert_sources(
 /// amortise to near-nothing per entry while a chunk still holds its locks for a bounded time.
 const STUB_CHUNK: usize = 500;
 
-/// Register one chunk of genuinely-new entries in a single transaction.
+/// Registers one chunk of genuinely-new entries in a single transaction.
 ///
-/// Canonicalisation genuinely cannot be batched — each entry resolves against the series its
-/// predecessors created, and that is visible inside the transaction — but the `upsert_source`
-/// tail can, so a chunk costs `begin + N canonicalisations + 1 insert + commit` instead of
+/// Canonicalisation cannot be batched, since each entry resolves against the series its
+/// predecessors created inside the transaction, but the `upsert_source` tail can. A chunk costs
+/// `begin + N canonicalisations + 1 insert + commit` instead of
 /// `N × (begin + check + canonicalisation + insert + commit)`.
 async fn register_chunk(
     pool: &sqlx::PgPool,
@@ -227,9 +228,8 @@ async fn register_chunk(
     let mut sources = Vec::with_capacity(chunk.len());
     let mut created = Vec::new();
     for (path, title) in chunk {
-        // Per entry, inside the transaction, deliberately: the policy is a pure function over
-        // values, so the only reason it cannot be lifted out of this loop is the one that
-        // matters — entry N must be able to match the series entry N-1 just created (PERF-15).
+        // Per entry, inside the transaction: entry N must be able to match the series entry N-1
+        // just created.
         let resolved = resolve_stub_series(&mut tx, title, canonicaliser).await?;
         if resolved.created {
             created.push(resolved.series_id.as_uuid());
@@ -242,7 +242,7 @@ async fn register_chunk(
     Ok(chunk.len())
 }
 
-/// Delete each series in `created` that holds no source.
+/// Deletes each series in `created` that holds no source.
 ///
 /// `upsert_sources` keeps a path's existing series on conflict, so a path a concurrent scan
 /// registered between the batch existence check and this chunk lands on that scan's series, and
@@ -270,39 +270,27 @@ async fn discard_unsourced(conn: &mut sqlx::PgConnection, created: &[Uuid]) -> D
     Ok(())
 }
 
-/// Register a whole catalogue page's worth of entries, skipping those already known.
+/// Registers a whole catalogue page's worth of entries, skipping those already known.
 ///
-/// Same semantics as calling [`register_source_stub`] per entry, but set-based where it can be:
-/// the "is this source already registered?" check — the *only* work needed for the overwhelming
-/// majority of entries on a re-scan — is answered for the entire batch in one query, and the
-/// genuinely-new remainder is registered `STUB_CHUNK` entries per transaction.
+/// The same as [`register_source_stub`] per entry, but set-based where it can be: the "already
+/// registered?" check, the only work most entries need on a rescan, is one query for the whole
+/// batch, and the new remainder is registered `STUB_CHUNK` entries per transaction.
 ///
-/// # Why the chunking matters (PERF-15)
+/// The chunking matters for a **first** scan, which is all new: one transaction per entry would
+/// cost 20 000 transactions of about 5 round trips for a sitemap page, blowing the `JetStream`
+/// ack deadline and causing redelivery of the very scans that matter most.
 ///
-/// A re-scan was already cheap; a **first** scan is all-new, and one transaction per entry meant
-/// 20 000 fresh entries on a sitemap page cost 20 000 transactions of ~5 round trips each. That
-/// is what blows the `JetStream` ack deadline the worker's queue module warns about, causing
-/// redelivery and duplicated work — a self-amplifying slowdown on exactly the scans that matter
-/// most.
+/// A source a concurrent scan registers between the batch check and the chunk keeps the series
+/// that scan filed it under, since `upsert_sources` never re-points, and the series this chunk
+/// created for it is deleted before commit (`discard_unsourced`).
 ///
-/// The per-entry existence check inside the transaction is *not* repeated here: the caller-side
-/// batch check already filtered. A source registered by a concurrent scan in the window between
-/// the two keeps the series that scan filed it under (`upsert_sources` is `ON CONFLICT DO UPDATE`
-/// on `(provider_id, source_path)` and never re-points), and the series this chunk created for
-/// it is deleted again before commit (`discard_unsourced`).
-///
-/// Returns the number of sources newly registered. A chunk that fails is retried entry by entry
-/// so one bad entry costs only itself: losing one series must not lose the rest, and the
-/// enrichment task is enqueued regardless (`docs/ARCHITECTURE.md` §12).
+/// Returns the number of sources newly registered. A failed chunk is retried entry by entry,
+/// and an entry that fails again is logged at `warn` and left out of the count, so losing one
+/// series does not lose the page (`docs/ARCHITECTURE.md` §12). The count is therefore the only
+/// failure signal: `0` on a page of new entries is a failure report.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable, and only from the **batch
-/// existence check**. Past that point registration failures are deliberately *not* errors: a
-/// failed chunk is retried entry by entry, and an entry that fails again is logged at `warn` and
-/// omitted from the count. That is the `docs/ARCHITECTURE.md` §12 rule stated above — losing one series must not
-/// lose the page — but it means the returned count is the only signal a caller has, so
-/// `Ok(0)` on a page of genuinely new entries is a failure report, not an empty page. An empty
-/// `entries` short-circuits to `Ok(0)` without touching the database.
+/// [`crate::DbError::Sqlx`] only, from the batch existence check.
 pub async fn register_source_stubs(
     pool: &sqlx::PgPool,
     provider_id: ProviderId,
@@ -313,9 +301,8 @@ pub async fn register_source_stubs(
         return Ok(0);
     }
 
-    // Borrowed, not owned: `sqlx` encodes `&[&str]` as `text[]` just as it does `&[String]`,
-    // so copying every path onto the heap bought nothing. A catalogue page can be 20 000
-    // entries, which is 20 000 allocations made and discarded within one statement (PERF-19).
+    // Borrowed: `sqlx` encodes `&[&str]` as `text[]` like `&[String]`, and a catalogue page can
+    // be 20 000 entries, each an allocation discarded within one statement.
     let paths: Vec<&str> = entries.iter().map(|(path, _)| *path).collect();
     let known: std::collections::HashSet<String> = sqlx::query_scalar!(
         "SELECT source_path FROM series_sources WHERE provider_id = $1 AND source_path = ANY($2)",
@@ -358,14 +345,13 @@ pub async fn register_source_stubs(
     Ok(registered)
 }
 
-/// Record the result of a source scan: content hash + chapter count + timestamp.
+/// Records the result of a source scan: content hash, chapter count and timestamp.
+///
+/// A missing `source_id` matches nothing. The only caller writes inside the ingest transaction
+/// that created the source; elsewhere a no-op would only make the next scan redo work.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. A `source_id` that no longer
-/// exists matches nothing and is still `Ok(())`, not [`crate::DbError::NotFound`]. Its only
-/// caller writes inside the ingest transaction that created the source, so the row is there; a
-/// silent no-op elsewhere would mean the next scan re-does work the hash was meant to skip,
-/// which is wasteful rather than wrong.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn update_source_scan<'e, E: PgExecutor<'e>>(
     exec: E,
     source_id: SeriesSourceId,
@@ -384,15 +370,12 @@ pub async fn update_source_scan<'e, E: PgExecutor<'e>>(
     Ok(())
 }
 
-/// The previously stored content hash for a source, if any (change-detection skip).
+/// Returns the stored content hash for a source, if any, for the change-detection skip.
+///
+/// No such source and a source never scanned are both `None`: there is no hash, so scan.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. Two different situations
-/// collapse into one `Ok(None)` — no such source, and a source registered but never scanned —
-/// and the `flatten` is what merges them. Both mean the same thing to the caller: there is no
-/// hash to compare against, so scan. That makes `None` the safe default and an error the one
-/// answer that must not be swallowed into it silently, since defaulting a failure to `Some(hash)`
-/// would skip a scan that should have run.
+/// [`crate::DbError::Sqlx`] only.
 pub async fn source_content_hash<'e, E: PgExecutor<'e>>(
     exec: E,
     provider_id: ProviderId,
@@ -408,14 +391,13 @@ pub async fn source_content_hash<'e, E: PgExecutor<'e>>(
     Ok(hash.flatten())
 }
 
-/// List the sources of a canonical series (for the "Read on: A · B · C" strip).
+/// Lists the sources of a canonical series, for the "Read on: A · B · C" strip.
+///
+/// An unknown `series_id` and a series no provider carries are the same empty list: the series
+/// page establishes that the series exists, and this only decides whether the strip renders.
 ///
 /// # Errors
-/// [`crate::DbError::Sqlx`] only — no other variant is reachable. An unknown `series_id` and a
-/// series no provider carries are the same empty `Vec`, not [`crate::DbError::NotFound`]: the
-/// series page establishes the series exists, and this only decides whether the "Read on" strip
-/// renders. The `try_from` per row cannot currently fail, for the same reason as in
-/// [`super::series::get_series`].
+/// [`crate::DbError::Sqlx`] only.
 pub async fn list_sources_for_series<'e, E: PgExecutor<'e>>(
     exec: E,
     series_id: SeriesId,
@@ -431,18 +413,15 @@ pub async fn list_sources_for_series<'e, E: PgExecutor<'e>>(
     .await?;
     rows.into_iter().map(SeriesSource::try_from).collect()
 }
-/// The `(provider_id, base_url)` a source belongs to — the minimal input the API needs
-/// to resolve a source's relative paths into absolute links at read time.
+/// Returns the `(provider_id, base_url)` a source belongs to, which the API needs to resolve a
+/// source's relative paths into absolute links.
+///
+/// The absent case is an error, unlike most of this crate, because every caller is resolving a
+/// link it has committed to rendering and there is no partial answer.
 ///
 /// # Errors
-/// - [`crate::DbError::NotFound`] if `source_id` names no source. The inner join means a source
-///   whose provider row has been deleted reports the same thing, which is correct for the
-///   caller's purpose: without a `base_url` there is no way to build the link either way.
-/// - [`crate::DbError::Sqlx`] for any driver or connection failure.
-///
-/// The absent case is an error rather than `Ok(None)` here — unlike most of this crate — because
-/// every caller is resolving a link it has already committed to rendering, and there is no
-/// sensible partial answer.
+/// [`crate::DbError::NotFound`] when `source_id` names no source or its provider is gone;
+/// otherwise [`crate::DbError::Sqlx`].
 pub async fn source_provider_base_url<'e, E: PgExecutor<'e>>(
     exec: E,
     source_id: SeriesSourceId,

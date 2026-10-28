@@ -130,7 +130,7 @@ leaves the screen stuck on its signed-out result, 401ing forever.
 | `src/app.rs` | Route table, root contexts, bundled `@font-face` rules. |
 | `src/api/` | The `Api` handle (`mod.rs`) and user-facing failure text (`error.rs`). |
 | `src/state/` | Session (`mod.rs`), unverified JWT claim decoding (`jwt.rs`), appearance knobs (`prefs.rs`). |
-| `crates/inkstone-ui/` | The design system's components, in a crate with no application in it: see its README. A workspace member, so the gates below cover it. |
+| `crates/inkstone-ui/` | The design system's components, in a crate with no application in it: see its README. It is a workspace member, so the gates below cover it. |
 | `src/components/` | App-flavoured wrappers over that kit (i18n and icons injected), and the shell, rail, command bar and cover cards. |
 | `src/hooks.rs` | `Reload`, `Busy` and `Outcome`: the three patterns every screen repeats. |
 | `src/util.rs` | Dependency-free formatting (relative time, chapter numbers, thousands). |
@@ -144,8 +144,8 @@ leaves the screen stuck on its signed-out result, 401ing forever.
 
 Use `async_view` / `async_list` from `components` instead of open-coding the
 loading/error/empty match. They make "a failed fetch is always visible and always retryable" a
-property of the app, not of each screen: something the hand-rolled matches they
-replaced had already drifted away from in several places.
+property of the app, not of each screen. The hand-rolled matches they replaced had already
+lost that property in several places.
 
 ## Messages (i18n)
 
